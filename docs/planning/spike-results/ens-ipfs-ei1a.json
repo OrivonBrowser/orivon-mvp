@@ -1,0 +1,620 @@
+{
+  "gate": "ei-1a",
+  "question": "Can .eth tabs be served by a loopback TLS server in a utilityProcess, reached via --host-resolver-rules MAP *.eth and a per-run cert accepted by setCertificateVerifyProc, without giving .eth documents local-network privilege, with a port fixed synchronously before app.ready?",
+  "versions": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54",
+    "node": "24.18.1",
+    "runAsNode": null,
+    "hasBrowserWindow": true
+  },
+  "platform": "linux x64 (kernel 7.0.0-34-generic), headless via scripts/run-headless.mjs (xvfb-run, Wayland stripped); every run asserted process.versions.electron and created a BrowserWindow (show:false)",
+  "measuredAt": "2026-09-24T12:38:26.603Z",
+  "verdict": "GO, conditional (see findings.md): gates 1, 2, 4 pass outright; gate 3 passes only vacuously, because Electron 44 force-disables Chromium Local Network Access for every page",
+  "gates": {
+    "1": {
+      "pass": true,
+      "rule": "first matching MAP clause wins; specific dev clauses must precede MAP *.eth; a second appendSwitch(\"host-resolver-rules\") replaces the first",
+      "devFirst": {
+        "switchValue": "MAP dev.eth 127.0.0.1:42729,MAP squat.eth 127.0.0.1:46173,MAP bad.test 127.0.0.1:46173,MAP *.eth 127.0.0.1:41161",
+        "default": {
+          "https://vitalik.eth/": "server=W host=vitalik.eth",
+          "http://dev.eth/": "server=D path=/",
+          "https://other.eth/": "server=W host=other.eth",
+          "https://squat.eth/": "ERR_CERT_AUTHORITY_INVALID",
+          "https://bad.test/": "ERR_CERT_AUTHORITY_INVALID"
+        },
+        "persist:x": {
+          "https://vitalik.eth/": "server=W host=vitalik.eth",
+          "http://dev.eth/": "server=D path=/",
+          "https://other.eth/": "server=W host=other.eth",
+          "https://squat.eth/": "ERR_CERT_AUTHORITY_INVALID",
+          "https://bad.test/": "ERR_CERT_AUTHORITY_INVALID"
+        }
+      },
+      "wildFirst": {
+        "switchValue": "MAP *.eth 127.0.0.1:45243,MAP dev.eth 127.0.0.1:45801,MAP squat.eth 127.0.0.1:41827,MAP bad.test 127.0.0.1:41827",
+        "default": {
+          "https://vitalik.eth/": "server=W host=vitalik.eth",
+          "http://dev.eth/": "ERR_EMPTY_RESPONSE (-324) loading 'http://dev.eth/'",
+          "https://other.eth/": "server=W host=other.eth",
+          "https://squat.eth/": "LOADED",
+          "https://bad.test/": "ERR_CERT_AUTHORITY_INVALID"
+        },
+        "persist:x": {
+          "https://vitalik.eth/": "server=W host=vitalik.eth",
+          "http://dev.eth/": "ERR_EMPTY_RESPONSE (-324) loading 'http://dev.eth/'",
+          "https://other.eth/": "server=W host=other.eth",
+          "https://squat.eth/": "LOADED",
+          "https://bad.test/": "ERR_CERT_AUTHORITY_INVALID"
+        }
+      },
+      "appendSwitchTwice": {
+        "switchValue": "MAP *.eth 127.0.0.1:33153",
+        "default": {
+          "https://vitalik.eth/": "server=W host=vitalik.eth",
+          "http://dev.eth/": "ERR_EMPTY_RESPONSE (-324) loading 'http://dev.eth/'",
+          "https://other.eth/": "server=W host=other.eth",
+          "https://squat.eth/": "LOADED",
+          "https://bad.test/": "ERR_CONNECTION_REFUSED"
+        },
+        "persist:x": {
+          "https://vitalik.eth/": "server=W host=vitalik.eth",
+          "http://dev.eth/": "ERR_EMPTY_RESPONSE (-324) loading 'http://dev.eth/'",
+          "https://other.eth/": "server=W host=other.eth",
+          "https://squat.eth/": "LOADED",
+          "https://bad.test/": "ERR_CONNECTION_REFUSED"
+        }
+      },
+      "rulesVisibleOnNetworkServiceCmdline": [
+        "Network Service"
+      ]
+    },
+    "2": {
+      "pass": true,
+      "certVariants": {
+        "SAN *.eth": {
+          "navMs": 56,
+          "href": "https://vitalik.eth/",
+          "isSecureContext": true,
+          "subtle": "object",
+          "script": "ran",
+          "digestBytes": 32,
+          "img": "loaded",
+          "sw": {
+            "registered": true,
+            "scope": "https://vitalik.eth/",
+            "state": "activating"
+          },
+          "who": "server=W host=vitalik.eth"
+        },
+        "SAN per-name": {
+          "navMs": 74,
+          "href": "https://vitalik.eth/",
+          "isSecureContext": true,
+          "subtle": "object",
+          "script": "ran",
+          "digestBytes": 32,
+          "img": "loaded",
+          "sw": {
+            "registered": true,
+            "scope": "https://vitalik.eth/",
+            "state": "activating"
+          },
+          "who": "server=W host=vitalik.eth"
+        },
+        "SAN nomatch.example": {
+          "navMs": 57,
+          "href": "https://vitalik.eth/",
+          "isSecureContext": true,
+          "subtle": "object",
+          "script": "ran",
+          "digestBytes": 32,
+          "img": "loaded",
+          "sw": {
+            "registered": true,
+            "scope": "https://vitalik.eth/",
+            "state": "activating"
+          },
+          "who": "server=W host=vitalik.eth"
+        }
+      },
+      "chromiumOwnVerdictForAllThree": "net::ERR_CERT_AUTHORITY_INVALID (-202); verify proc returned 0 on fingerprint match; no certificate-error event for any .eth host",
+      "sanMatters": false,
+      "fingerprintFormat": "Certificate.fingerprint === 'sha256/' + base64(SHA-256(DER)) (matched X509Certificate.raw hash)",
+      "nonEthBadCert": "https://bad.test/ -> ERR_CERT_AUTHORITY_INVALID in 10-12 ms, certificate-error fired, both sessions",
+      "ethWithWrongCert": "https://squat.eth/ (a .eth name, other cert) -> ERR_CERT_AUTHORITY_INVALID in 20-25 ms",
+      "partitionWithoutItsOwnVerifyProc": "ERR_CERT_AUTHORITY_INVALID (-202) loading 'https://vitalik.eth/'",
+      "opensslEcP256CertMs": 15
+    },
+    "3": {
+      "pass": true,
+      "vacuous": true,
+      "why": "Electron 44 shell/browser/feature_list.cc appends network::features::kLocalNetworkAccessChecks to disable_features; base::FeatureList::InitFromCommandLine registers disables before enables (\"disabled ones take precedence\"), so --enable-features cannot turn it back on (tried via appendSwitch and on real argv)",
+      "baselineNoFlags": {
+        "argv": "not recorded in this run",
+        "appendedSwitches": [],
+        "perms": [
+          "check:media",
+          "check:web-app-installation",
+          "check:geolocation",
+          "check:background-sync"
+        ],
+        "permissionRequests": 0,
+        "pages": {
+          "pub": {
+            "url": "https://example.com/",
+            "isSecureContext": true,
+            "ownScript": null,
+            "probes": {
+              "same-origin-api": "OK 404 basic 41ms",
+              "loopback-cors": "OK 200 cors 6ms",
+              "loopback-nocors": "OK 0 opaque 2ms",
+              "loopback-tas": "OK 200 cors 3ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 2ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          },
+          "plain": {
+            "url": "https://plain.eth/",
+            "isSecureContext": true,
+            "ownScript": "ran",
+            "probes": {
+              "same-origin-api": "OK 200 basic 2ms",
+              "loopback-cors": "OK 200 cors 1ms",
+              "loopback-nocors": "OK 0 opaque 1ms",
+              "loopback-tas": "OK 200 cors 1ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 1ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          },
+          "tapa": {
+            "url": "https://tapa.eth/",
+            "isSecureContext": true,
+            "ownScript": "ran",
+            "probes": {
+              "same-origin-api": "OK 200 basic 5ms",
+              "loopback-cors": "OK 200 cors 2ms",
+              "loopback-nocors": "OK 0 opaque 3ms",
+              "loopback-tas": "OK 200 cors 3ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 1ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 2ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          }
+        }
+      },
+      "lnaViaAppendSwitch": {
+        "argv": "not recorded in this run",
+        "appendedSwitches": [
+          [
+            "enable-features",
+            "LocalNetworkAccessChecks:LocalNetworkAccessChecksWarn/false,LocalNetworkAccessChecksWebSockets"
+          ]
+        ],
+        "perms": [
+          "check:media",
+          "check:web-app-installation",
+          "check:geolocation",
+          "check:background-sync"
+        ],
+        "permissionRequests": 0,
+        "pages": {
+          "pub": {
+            "url": "https://example.com/",
+            "isSecureContext": true,
+            "ownScript": null,
+            "probes": {
+              "same-origin-api": "OK 404 basic 108ms",
+              "loopback-cors": "OK 200 cors 9ms",
+              "loopback-nocors": "OK 0 opaque 2ms",
+              "loopback-tas": "OK 200 cors 2ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 2ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          },
+          "plain": {
+            "url": "https://plain.eth/",
+            "isSecureContext": true,
+            "ownScript": "ran",
+            "probes": {
+              "same-origin-api": "OK 200 basic 2ms",
+              "loopback-cors": "OK 200 cors 2ms",
+              "loopback-nocors": "OK 0 opaque 1ms",
+              "loopback-tas": "OK 200 cors 1ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 1ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 1ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          },
+          "tapa": {
+            "url": "https://tapa.eth/",
+            "isSecureContext": true,
+            "ownScript": "ran",
+            "probes": {
+              "same-origin-api": "OK 200 basic 2ms",
+              "loopback-cors": "OK 200 cors 1ms",
+              "loopback-nocors": "OK 0 opaque 1ms",
+              "loopback-tas": "OK 200 cors 1ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 1ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          }
+        }
+      },
+      "lnaRequestedOnArgv": {
+        "argv": "not recorded in this run",
+        "appendedSwitches": [],
+        "perms": [
+          "check:media",
+          "check:web-app-installation",
+          "check:geolocation",
+          "check:background-sync"
+        ],
+        "permissionRequests": 0,
+        "pages": {
+          "pub": {
+            "url": "https://example.com/",
+            "isSecureContext": true,
+            "ownScript": null,
+            "probes": {
+              "same-origin-api": "OK 404 basic 47ms",
+              "loopback-cors": "OK 200 cors 5ms",
+              "loopback-nocors": "OK 0 opaque 1ms",
+              "loopback-tas": "OK 200 cors 2ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 2ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          },
+          "plain": {
+            "url": "https://plain.eth/",
+            "isSecureContext": true,
+            "ownScript": "ran",
+            "probes": {
+              "same-origin-api": "OK 200 basic 4ms",
+              "loopback-cors": "OK 200 cors 3ms",
+              "loopback-nocors": "OK 0 opaque 3ms",
+              "loopback-tas": "OK 200 cors 2ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 1ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          },
+          "tapa": {
+            "url": "https://tapa.eth/",
+            "isSecureContext": true,
+            "ownScript": "ran",
+            "probes": {
+              "same-origin-api": "OK 200 basic 2ms",
+              "loopback-cors": "OK 200 cors 2ms",
+              "loopback-nocors": "OK 0 opaque 3ms",
+              "loopback-tas": "OK 200 cors 2ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 1ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 1ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          }
+        }
+      },
+      "lnaPlusAddressSpaceOverride": {
+        "argv": [
+          "--enable-features=LocalNetworkAccessChecks",
+          "--ip-address-space-overrides=127.0.0.1:41597=public"
+        ],
+        "appendedSwitches": [],
+        "perms": [
+          "check:media",
+          "check:web-app-installation",
+          "check:geolocation",
+          "check:background-sync"
+        ],
+        "permissionRequests": 0,
+        "pages": {
+          "pub": {
+            "url": "https://example.com/",
+            "isSecureContext": true,
+            "ownScript": null,
+            "probes": {
+              "same-origin-api": "OK 404 basic 46ms",
+              "loopback-cors": "OK 200 cors 12ms",
+              "loopback-nocors": "OK 0 opaque 3ms",
+              "loopback-tas": "OK 200 cors 3ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 2ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          },
+          "plain": {
+            "url": "https://plain.eth/",
+            "isSecureContext": true,
+            "ownScript": "ran",
+            "probes": {
+              "same-origin-api": "OK 200 basic 2ms",
+              "loopback-cors": "OK 200 cors 1ms",
+              "loopback-nocors": "OK 0 opaque 1ms",
+              "loopback-tas": "OK 200 cors 1ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 1ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          },
+          "tapa": {
+            "url": "https://tapa.eth/",
+            "isSecureContext": true,
+            "ownScript": "ran",
+            "probes": {
+              "same-origin-api": "OK 200 basic 2ms",
+              "loopback-cors": "OK 200 cors 1ms",
+              "loopback-nocors": "OK 0 opaque 2ms",
+              "loopback-tas": "OK 200 cors 3ms",
+              "lan-cors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-nocors": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "lan-dead-tas": "BLOCKED TypeError: Failed to fetch 0ms",
+              "loopback-ws": "OK open 2ms"
+            },
+            "fixtureSaw": [
+              "F GET loopback-cors",
+              "F GET loopback-nocors",
+              "F GET loopback-tas",
+              "F UPGRADE ws"
+            ]
+          }
+        }
+      },
+      "addressSpaceOverrideReachesNetworkService": [
+        "Browser",
+        "Network Service"
+      ],
+      "permissionNamesInBinary": [
+        "local-network-access",
+        "local-network",
+        "loopback-network"
+      ],
+      "permissionNamesInElectronDts": "none",
+      "notMeasurable": "the effect of treat-as-public-address or --ip-address-space-overrides under enforced LNA (LNA cannot be enabled in Electron 44)"
+    },
+    "4": {
+      "pass": true,
+      "randomPort": {
+        "random_20000_32767": {
+          "tries": 3000,
+          "inUse": 0
+        },
+        "random_49152_65535": {
+          "tries": 3000,
+          "inUse": 0
+        },
+        "probeThenBind": {
+          "iterations": 200,
+          "bindFailures": 0,
+          "delayMs": 150,
+          "avgProbeMsPlainNode": 62
+        }
+      },
+      "linuxEphemeralRange": "32768-60999",
+      "execFileSyncProbeMs": {
+        "run1": [
+          104,
+          92,
+          78,
+          72,
+          71
+        ],
+        "run2": [
+          83,
+          129,
+          140,
+          123,
+          99
+        ]
+      },
+      "inProcessSyncListen": [
+        {
+          "host": "127.0.0.1",
+          "syncAddress": null,
+          "ms": 3.093879
+        },
+        {
+          "host": "(none: wildcard ::)",
+          "syncAddress": {
+            "address": "::",
+            "family": "IPv6",
+            "port": 35721
+          },
+          "ms": 0.510493
+        }
+      ],
+      "utilityBind": {
+        "run1": {
+          "isUtility": true,
+          "main": {
+            "port": 34415,
+            "ok": true,
+            "ms": 6
+          },
+          "taken": {
+            "port": 44269,
+            "ok": false,
+            "code": "EADDRINUSE",
+            "ms": 2
+          },
+          "forkToReportMs": 132,
+          "switchToBindMs": 210
+        },
+        "run2": {
+          "isUtility": true,
+          "main": {
+            "port": 39555,
+            "ok": true,
+            "ms": 8
+          },
+          "taken": {
+            "port": 46569,
+            "ok": false,
+            "code": "EADDRINUSE",
+            "ms": 3
+          },
+          "forkToReportMs": 192,
+          "switchToBindMs": 321
+        }
+      },
+      "tabOnFailure": {
+        "run1": {
+          "live": "loaded 134ms",
+          "dead": "ERR_CONNECTION_REFUSED after 48ms",
+          "closer": "ERR_CONNECTION_RESET after 21ms",
+          "plainhttp": "ERR_SSL_PROTOCOL_ERROR after 25ms",
+          "taken": "ERR_CERT_AUTHORITY_INVALID after 35ms",
+          "silent": "ERR_TIMED_OUT after 30032ms"
+        },
+        "run2": {
+          "live": "loaded 166ms",
+          "dead": "ERR_CONNECTION_REFUSED after 63ms",
+          "closer": "ERR_CONNECTION_RESET after 35ms",
+          "plainhttp": "ERR_SSL_PROTOCOL_ERROR after 46ms",
+          "taken": "ERR_CERT_AUTHORITY_INVALID after 49ms",
+          "silent": "ERR_TIMED_OUT after 30034ms"
+        }
+      },
+      "squatterSawSNI": "{\"sni\":\"taken.eth\",\"err\":\"ERR_SSL_SSL/TLS_ALERT_CERTIFICATE_UNKNOWN\",\"t\":1790252990862}"
+    }
+  },
+  "fallback": {
+    "sizedBecause": "gate 3 pass is vacuous; checked cheaply, not built",
+    "protocolHandleHttpsOrigin": {
+      "navMs": 296,
+      "href": "https://vitalik.eth/",
+      "isSecureContext": true,
+      "subtle": "object",
+      "script": "ran",
+      "digestBytes": 32,
+      "img": "loaded",
+      "sw": {
+        "registered": true,
+        "scope": "https://vitalik.eth/",
+        "state": "activating"
+      },
+      "who": "served by protocol.handle"
+    },
+    "handledResponseSetCookie": {
+      "documentCookie": "",
+      "storedInJar": false
+    },
+    "passThroughViaSesFetch": {
+      "cookieStoredAndResent": "cookie=sid=abc",
+      "corsEnforced": false,
+      "bodyWithoutACAOReadable": {
+        "status": 200,
+        "type": "basic",
+        "body": "secret-body"
+      },
+      "originHeaderAtUpstream": [
+        null,
+        null,
+        null
+      ]
+    },
+    "websocket": {
+      "wss": "open",
+      "wentThroughHandler": false,
+      "originAtUpstream": [
+        "https://vitalik.eth"
+      ]
+    }
+  },
+  "harnessNote": "app.exit(0) with a still-open BrowserWindow holding a loaded page hung the main process in 6/7 runs (both g4 runs, ux n1/n2, m1/m2 with a main-process-served page); 0/2 after win.destroy(). Independent of utilityProcess. Not a design finding."
+}

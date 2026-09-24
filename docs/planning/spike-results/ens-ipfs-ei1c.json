@@ -1,0 +1,4379 @@
+{
+  "spike": "EI-1c: IPFS fetch from untrusted trustless gateways, every block verified locally",
+  "measuredAt": "2026-09-24T12:05Z..12:55Z",
+  "platform": {
+    "node": "v24.11.1",
+    "os": "Linux 7.0.0-34-generic x64",
+    "network": "residential one residential line",
+    "dns": "ISP resolver (router the local router) hijacks several gateway names; all gateway fetches used a lookup through 1.1.1.1 (undici Agent with custom lookup)"
+  },
+  "caveats": [
+    "Gateways cache at the CDN edge: a second fetch of the same CID is warm. Cold-vs-warm order is recorded per run (raw-first vs CAR-first controls on distinct 28-29 MB files).",
+    "One client, one location, one afternoon. Numbers are indicative, not a benchmark.",
+    "app.ens.eth IPNS record is NOT on the routing system the gateways use; it was read from eth.limo and w3name. Gateway IPNS support was proven with a throwaway record published through delegated-ipfs.dev (1 h lifetime)."
+  ],
+  "q1_contenthash": {
+    "vitalik.eth": {
+      "rpc": "https://ethereum-rpc.publicnode.com",
+      "resolver": "0x231b0ee14048e9dccd1d247744d114a4eb5e8e63",
+      "namehash": "0xee6c4522aab0003e8d14cd40a6af439055fd2577951148c14b6cea9a53475835",
+      "contenthashHex": "0xe30101701220591877291658c1ce6aded152a0d1d79da3119f55d5e797c3d6f4561cb2242232",
+      "rpcMs": 323,
+      "protocol": "ipfs",
+      "protocolCodec": "0xe3",
+      "cidVersion": 1,
+      "cidCodec": "0x70",
+      "multihashCode": "0x12",
+      "digestLength": 32,
+      "cid": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi"
+    },
+    "ens.eth": {
+      "rpc": "https://ethereum-rpc.publicnode.com",
+      "resolver": "0x4976fb03c32e5b8cfe2b6ccb31c09ba78ebaba41",
+      "namehash": "0x4e34d3a81dc3a20f71bbdf2160492ddaa17ee7e5523757d47153379c13cb46df",
+      "contenthashHex": "0xe30101701220adbee9ad34d5e60cf6a77a82ad98bcc8cdb88f9372b3f95f019d7a1083ee8327",
+      "rpcMs": 139,
+      "protocol": "ipfs",
+      "protocolCodec": "0xe3",
+      "cidVersion": 1,
+      "cidCodec": "0x70",
+      "multihashCode": "0x12",
+      "digestLength": 32,
+      "cid": "bafybeifnx3u22ngv4ygpnj32qkwzrpgizw4i7e3swp4v6am5piiih3ude4"
+    },
+    "tornadocash.eth": {
+      "rpc": "https://ethereum-rpc.publicnode.com",
+      "resolver": "0x4976fb03c32e5b8cfe2b6ccb31c09ba78ebaba41",
+      "namehash": "0xe6ae31d630cc7a8279c0f1c7cbe6e7064814c47d1785fa2703d9ae511ee2be0c",
+      "contenthashHex": "0xe30101701220c3a350e49a11cfc9cab672331d51ad1b723e0d3db9cd73a316ebaa7788595fe8",
+      "rpcMs": 132,
+      "protocol": "ipfs",
+      "protocolCodec": "0xe3",
+      "cidVersion": 1,
+      "cidCodec": "0x70",
+      "multihashCode": "0x12",
+      "digestLength": 32,
+      "cid": "bafybeigduniojgqrz7e4vntsgmovdli3oi7a2pnzzvz2gfxlvj3yqwk75a"
+    },
+    "app.ens.eth": {
+      "rpc": "https://ethereum-rpc.publicnode.com",
+      "resolver": "0x4976fb03c32e5b8cfe2b6ccb31c09ba78ebaba41",
+      "namehash": "0x50a74dcf107973068dfc00db69ecf98b49d52f5361cb4db5feb740fc9f4f74d1",
+      "contenthashHex": "0xe5010172002408011220656699aad7e0be52b569c5daeb5997fb27ee75544ed075ccd2e47af9c6f78e70",
+      "rpcMs": 126,
+      "protocol": "ipns",
+      "protocolCodec": "0xe5",
+      "cidVersion": 1,
+      "cidCodec": "0x72",
+      "multihashCode": "0x0",
+      "digestLength": 36,
+      "cid": "bafzaajaiaejcazlgtgvnpyf6kk2wtro25nmzp6zh5z2vitwqoxgnfzd27hdppdtq",
+      "cidBase36": "k51qzi5uqu5dipklqpo2uq7advlajxx5wxob0mwyqbxb5zu4htblc4bjipy834",
+      "identityDigestUtf8": "\b\u0001\u0012 ef����R�i���Y��'�uTN�u���z����p",
+      "libp2pKey": true
+    },
+    "uniswap.eth": {
+      "rpc": "https://ethereum-rpc.publicnode.com",
+      "resolver": "0x4976fb03c32e5b8cfe2b6ccb31c09ba78ebaba41",
+      "namehash": "0xec9ec573cf97ad1c270be71ac1de3b382790cb346036130c7d7ff844bf8f4974",
+      "contenthashHex": "0xe5010170000f6170702e756e69737761702e6f7267",
+      "rpcMs": 134,
+      "protocol": "ipns",
+      "protocolCodec": "0xe5",
+      "cidVersion": 1,
+      "cidCodec": "0x70",
+      "multihashCode": "0x0",
+      "digestLength": 15,
+      "cid": "bafyaad3bobyc45lonfzxoylqfzxxezy",
+      "cidBase36": "kulp4d0a83a3nxolvguymxnf35zl3",
+      "identityDigestUtf8": "app.uniswap.org"
+    }
+  },
+  "q2_fetch": {
+    "targets": {
+      "page": {
+        "what": "vitalik.eth /index.html",
+        "root": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi",
+        "rootIsHamt": false,
+        "rootEntries": 8,
+        "file": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "fileBytes": 39173,
+        "blocks": 2
+      },
+      "big": {
+        "what": "kubo_v0.22.0_darwin-amd64.tar.gz from dist.ipfs.tech (DNSLink /ipfs/QmcQFi...)",
+        "path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "fileCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "fileBytes": 29442647,
+        "blocks": 117,
+        "layout": "CIDv0, dag-pb leaves of 262158 B (256 KiB data), root with 113 links, 3 directory blocks on the path",
+        "sha512MatchesPublishedSidecar": true
+      },
+      "controls": "big2..big5: sibling kubo v0.22.0 tarballs (27-29 MB) used for cold raw-first and cold CAR-first runs"
+    },
+    "summaryMs": {
+      "page_raw_warm": "249-1119, median ~300 (2 requests) on tgw/orbitor/filebase; dget.top 621-946 (subdomain redirect per block)",
+      "page_car_warm": "215-281 (1 request); cold first requests 479 (tgw), 867 (filebase)",
+      "big_raw8or16_cold": [
+        5546,
+        5488,
+        5615
+      ],
+      "big_raw_warm": {
+        "raw4": [
+          8300,
+          4946,
+          4340,
+          4332
+        ],
+        "raw8": [
+          4961,
+          5914,
+          6591
+        ],
+        "raw16": [
+          4085,
+          4577,
+          4440,
+          4456
+        ]
+      },
+      "big_car_cold": {
+        "trustless-gateway.link": [
+          37420,
+          27348
+        ],
+        "ipfs.orbitor.dev": [
+          62803
+        ],
+        "ipfs.filebase.io": [
+          70412
+        ]
+      },
+      "big_car_after_raw_warmed_gateway": {
+        "trustless-gateway.link": [
+          23765
+        ],
+        "ipfs.orbitor.dev": [
+          8507,
+          7928
+        ]
+      },
+      "big_car_fully_warm": {
+        "trustless-gateway.link": [
+          10089,
+          6844
+        ],
+        "ipfs.orbitor.dev": [
+          5587,
+          5359
+        ]
+      },
+      "wholeSite": {
+        "vitalik.eth 100.4 MB 1695 blocks": {
+          "raw16_tgw_with_orbitor_failover": 36087,
+          "car_all_tgw": 136564,
+          "car_all_orbitor": "stream terminated at 184 s"
+        },
+        "tornadocash.eth 150.0 MB 820 blocks": {
+          "car_all_tgw_cold": 75914,
+          "raw16_tgw_after": 21597
+        },
+        "ens.eth 16.7 MB 515 blocks": {
+          "car_all_tgw_cold": 107049
+        },
+        "app.ens.eth 9.6 MB 414 blocks": {
+          "car_all_tgw": "HTTP 520 at 28 s",
+          "car_all_orbitor": "terminated at 31 s",
+          "raw16": "407 of 414 blocks; 7 blocks 504 on tgw and timed out on orbitor, twice"
+        }
+      }
+    },
+    "bytesTransferred": {
+      "page_raw": 39598,
+      "page_car": 39734,
+      "big_raw": 29460864,
+      "big_car": 29465248,
+      "big_file": 29442647,
+      "note": "body bytes only; CAR adds ~0.08 % framing, raw per-block adds nothing but costs one request per block (117 vs 1)"
+    },
+    "requests": {
+      "page_raw": 2,
+      "page_car": 1,
+      "big_raw": 117,
+      "big_car": 1
+    },
+    "failures": {
+      "ipfs.orbitor.dev": [
+        "page CAR: HTTP 502 after 30 s (cold, once)",
+        "dag-scope=all CAR stream terminated mid-body twice (app.ens.eth 31 s, vitalik.eth 184 s)"
+      ],
+      "ipfs.filebase.io": [
+        "page raw: 30 s timeout once, 25.5 s once (cold)",
+        "big raw-8: a block timed out at 30 s (no failover configured)",
+        "big CAR: 55 s to response headers, 70 s total"
+      ],
+      "trustless-gateway.link": [
+        "dag-scope=all CAR for app.ens.eth: HTTP 520 at 28 s",
+        "504 on 7 app.ens.eth blocks (content unavailable), 1 transient 504 in 1695 vitalik.eth blocks"
+      ],
+      "dget.top": [
+        "every request 301s to a subdomain (<cid>.ipfs.dget.top); CAR content-type has no version/order params"
+      ]
+    },
+    "carStreaming": {
+      "streamed": true,
+      "evidence": "no content-length; first block verified after ~2.7-3.2 KB of a 29.5 MB body, at 0.21-2.8 s, while the body took 5-70 s. Verification runs block by block as bytes arrive (@ipld/car CarBlockIterator.fromIterable over the response body).",
+      "carHeaderRoot": "the CAR header lists the terminal entity (the file CID), not the requested root; X-Ipfs-Roots lists every CID on the path. Correctness therefore comes from walking the path from OUR root through the CAR blocks, not from the header."
+    },
+    "entityBytes": {
+      "supported": [
+        "trustless-gateway.link",
+        "ipfs.orbitor.dev",
+        "dget.top"
+      ],
+      "big 0:1048575": {
+        "carBlocks": 8,
+        "carBytes": 1065618,
+        "msTgw": 679,
+        "msOrbitor": 639,
+        "rawRequests": 9,
+        "rawBytes": 1327425
+      },
+      "big 10000000:10999999": {
+        "carBlocks": 8,
+        "carBytes": 1065618,
+        "msTgw": 1574,
+        "msOrbitor": 904,
+        "rawRequests": 8,
+        "rawBytes": 1065267
+      },
+      "note": "the CAR held exactly the path blocks + file root + covering leaves. ipfs-unixfs-exporter asks for one extra leaf when the range ends exactly on a block boundary (0:1048575 = 4 x 256 KiB): raw fetched it (9 requests), the CAR-only store missed it harmlessly."
+    },
+    "runs": [
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 479,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 462,
+          "firstChunk": 469,
+          "firstVerifiedBlock": 471,
+          "total": 477
+        },
+        "firstVerifiedBlockAfterBytes": 2373,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 278,
+        "msPathResolved": 277,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 282,
+        "msPathResolved": 282,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 249,
+        "msPathResolved": 249,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 30319,
+        "error": "HTTP 502 ",
+        "verifyMs": 0,
+        "verifyBlocks": 0
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 735,
+        "msPathResolved": 734,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 308,
+        "msPathResolved": 307,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 288,
+        "msPathResolved": 287,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 867,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "Filebase",
+          "cf-cache-status": null
+        },
+        "carTimings": {
+          "headers": 803,
+          "firstChunk": 805,
+          "firstVerifiedBlock": 806,
+          "total": 860
+        },
+        "firstVerifiedBlockAfterBytes": 4291,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 30235,
+        "error": "The operation was aborted due to timeout",
+        "verifyMs": 1,
+        "verifyBlocks": 1
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 25551,
+        "msPathResolved": 25551,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 311,
+        "msPathResolved": 310,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 361,
+        "error": "HTTP 301 https://bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi.ipfs.dget.top/index.html?format=car&dag-scope=entity",
+        "verifyMs": 0,
+        "verifyBlocks": 0
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 946,
+        "msPathResolved": 945,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 684,
+        "msPathResolved": 683,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 734,
+        "msPathResolved": 733,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 217,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "HIT"
+        },
+        "carTimings": {
+          "headers": 199,
+          "firstChunk": 208,
+          "firstVerifiedBlock": 211,
+          "total": 215
+        },
+        "firstVerifiedBlockAfterBytes": 2485,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 404,
+        "msPathResolved": 403,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 304,
+        "msPathResolved": 304,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 324,
+        "msPathResolved": 323,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 264,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "DYNAMIC"
+        },
+        "carTimings": {
+          "headers": 246,
+          "firstChunk": 250,
+          "firstVerifiedBlock": 255,
+          "total": 262
+        },
+        "firstVerifiedBlockAfterBytes": 1360,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 287,
+        "msPathResolved": 287,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 292,
+        "msPathResolved": 291,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 1119,
+        "msPathResolved": 1118,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 270,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "Filebase",
+          "cf-cache-status": null
+        },
+        "carTimings": {
+          "headers": 199,
+          "firstChunk": 203,
+          "firstVerifiedBlock": 207,
+          "total": 264
+        },
+        "firstVerifiedBlockAfterBytes": 3122,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 360,
+        "msPathResolved": 359,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 308,
+        "msPathResolved": 308,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 349,
+        "msPathResolved": 348,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 196,
+        "error": "HTTP 301 https://bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi.ipfs.dget.top/index.html?format=car&dag-scope=entity",
+        "verifyMs": 0,
+        "verifyBlocks": 0
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 621,
+        "msPathResolved": 620,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 819,
+        "msPathResolved": 819,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 641,
+        "msPathResolved": 640,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 215,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "HIT"
+        },
+        "carTimings": {
+          "headers": 201,
+          "firstChunk": 207,
+          "firstVerifiedBlock": 209,
+          "total": 213
+        },
+        "firstVerifiedBlockAfterBytes": 2484,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 253,
+        "msPathResolved": 253,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 305,
+        "msPathResolved": 304,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 275,
+        "msPathResolved": 274,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 243,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "DYNAMIC"
+        },
+        "carTimings": {
+          "headers": 224,
+          "firstChunk": 228,
+          "firstVerifiedBlock": 233,
+          "total": 241
+        },
+        "firstVerifiedBlockAfterBytes": 1360,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 273,
+        "msPathResolved": 272,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 257,
+        "msPathResolved": 256,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 282,
+        "msPathResolved": 281,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 281,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "Filebase",
+          "cf-cache-status": null
+        },
+        "carTimings": {
+          "headers": 212,
+          "firstChunk": 214,
+          "firstVerifiedBlock": 217,
+          "total": 278
+        },
+        "firstVerifiedBlockAfterBytes": 3122,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 334,
+        "msPathResolved": 334,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 345,
+        "msPathResolved": 344,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 0,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 354,
+        "msPathResolved": 353,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 265,
+        "error": "HTTP 301 https://bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi.ipfs.dget.top/index.html?format=car&dag-scope=entity",
+        "verifyMs": 0,
+        "verifyBlocks": 0
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 741,
+        "msPathResolved": 740,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 845,
+        "msPathResolved": 845,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 668,
+        "msPathResolved": 667,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "requests": 2,
+        "bytesTransferred": 39598,
+        "failures": 0,
+        "status": {
+          "200": 2
+        },
+        "errors": [],
+        "maxInFlight": 1,
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "car",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 468,
+        "fileBytes": 39173,
+        "sha256": "6075ceeda43e6294695598985a302981fd5709adbb9110b8370705110cc36097",
+        "sha512": "3df726f350cb291d05f838afbe48a97da651b456f3cc775ae538e320d45bbdec3e4ca92e6f15eabba98bf859851dd495d8c42d3d0fb774b59d6196255db2f9ea",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": null,
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "CloudFront",
+          "cf-cache-status": null
+        },
+        "carTimings": {
+          "headers": 440,
+          "firstChunk": 445,
+          "firstVerifiedBlock": 449,
+          "total": 461
+        },
+        "firstVerifiedBlockAfterBytes": 6776,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 1,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "page",
+        "what": "vitalik.eth index.html",
+        "gateway": "https://dget.top",
+        "method": "car",
+        "arg": "0:1000",
+        "cidPath": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi/index.html",
+        "ms": 453,
+        "fileBytes": 1001,
+        "sha256": "7f6d57cd70f4e7b0a408a57a095ee14a69b35f032575e124d558d384f29aba29",
+        "sha512": "fe03ac9d1892a242268dc9d13eb985b45fd23a676b261a34513661aa8dd070e003822d7a8283f466f67d51f318dfdfab89ef8c60918bd4303fde12f5868a7186",
+        "entryCid": "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+        "carRoots": [
+          "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car",
+          "x-ipfs-roots": "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi,bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4",
+          "x-ipfs-path": null,
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "CloudFront",
+          "cf-cache-status": null
+        },
+        "carTimings": {
+          "headers": 417,
+          "firstChunk": 422,
+          "firstVerifiedBlock": 428,
+          "total": 445
+        },
+        "firstVerifiedBlockAfterBytes": 2680,
+        "requests": 1,
+        "bytesTransferred": 39734,
+        "blocksInCar": 2,
+        "blocksUsedByExporter": 2,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 2,
+          "dagPbBlocks": 1,
+          "rawBlocks": 1,
+          "maxBlockBytes": 39173,
+          "maxRawLeafBytes": 39173,
+          "maxLinksPerNode": 8,
+          "hamtFanouts": []
+        },
+        "verifyMs": 2,
+        "verifyBlocks": 2
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 37420,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "carRoots": [
+          "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 1500,
+          "firstChunk": 1506,
+          "firstVerifiedBlock": 1510,
+          "total": 37264
+        },
+        "firstVerifiedBlockAfterBytes": 3123,
+        "requests": 1,
+        "bytesTransferred": 29465248,
+        "blocksInCar": 117,
+        "blocksUsedByExporter": 117,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 70,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 8300,
+        "msPathResolved": 423,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 117,
+        "bytesTransferred": 29460864,
+        "failures": 0,
+        "status": {
+          "200": 117
+        },
+        "errors": [],
+        "maxInFlight": 4,
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 44,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 4961,
+        "msPathResolved": 416,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 117,
+        "bytesTransferred": 29460864,
+        "failures": 0,
+        "status": {
+          "200": 117
+        },
+        "errors": [],
+        "maxInFlight": 8,
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 49,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 4085,
+        "msPathResolved": 397,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 117,
+        "bytesTransferred": 29460864,
+        "failures": 0,
+        "status": {
+          "200": 117
+        },
+        "errors": [],
+        "maxInFlight": 16,
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 51,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 62803,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "carRoots": [
+          "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 1033,
+          "firstChunk": 1037,
+          "firstVerifiedBlock": 1040,
+          "total": 62604
+        },
+        "firstVerifiedBlockAfterBytes": 2729,
+        "requests": 1,
+        "bytesTransferred": 29465248,
+        "blocksInCar": 117,
+        "blocksUsedByExporter": 117,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 64,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 4946,
+        "msPathResolved": 441,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 117,
+        "bytesTransferred": 29460864,
+        "failures": 0,
+        "status": {
+          "200": 117
+        },
+        "errors": [],
+        "maxInFlight": 4,
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 68,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 5914,
+        "msPathResolved": 526,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 117,
+        "bytesTransferred": 29460864,
+        "failures": 0,
+        "status": {
+          "200": 117
+        },
+        "errors": [],
+        "maxInFlight": 8,
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 67,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 4577,
+        "msPathResolved": 413,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 117,
+        "bytesTransferred": 29460864,
+        "failures": 0,
+        "status": {
+          "200": 117
+        },
+        "errors": [],
+        "maxInFlight": 16,
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 62,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 10089,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "carRoots": [
+          "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "HIT"
+        },
+        "carTimings": {
+          "headers": 250,
+          "firstChunk": 256,
+          "firstVerifiedBlock": 259,
+          "total": 9901
+        },
+        "firstVerifiedBlockAfterBytes": 3161,
+        "requests": 1,
+        "bytesTransferred": 29465248,
+        "blocksInCar": 117,
+        "blocksUsedByExporter": 117,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 61,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 5587,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "carRoots": [
+          "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "HIT"
+        },
+        "carTimings": {
+          "headers": 211,
+          "firstChunk": 214,
+          "firstVerifiedBlock": 218,
+          "total": 5358
+        },
+        "firstVerifiedBlockAfterBytes": 2729,
+        "requests": 1,
+        "bytesTransferred": 29465248,
+        "blocksInCar": 117,
+        "blocksUsedByExporter": 117,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 59,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big2",
+        "what": "kubo v0.22.0 darwin-arm64 (cold raw-first control)",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-arm64.tar.gz",
+        "ms": 5546,
+        "msPathResolved": 434,
+        "fileBytes": 27988982,
+        "sha256": "b49469e2f14188c5ffa0f317db40401d4eb178010ed4e0257f5619908b39f5ed",
+        "sha512": "d1d563b94bcc2bd21ee28e662742406e82445e039afb695756b7f96f7d032bef7c22ae6bafb2aa6f0aa83e92844c44a986d73495e11d5a105ea22450c2cb6e60",
+        "entryCid": "QmUeuKF1yVMyN3qZDmyy46cXjBWnydEK4CA9zWAKtfGVER",
+        "requests": 111,
+        "bytesTransferred": 28006827,
+        "failures": 0,
+        "status": {
+          "200": 111
+        },
+        "errors": [],
+        "maxInFlight": 8,
+        "shape": {
+          "blocks": 111,
+          "dagPbBlocks": 111,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 107,
+          "hamtFanouts": []
+        },
+        "verifyMs": 51,
+        "verifyBlocks": 111
+      },
+      {
+        "target": "big2",
+        "what": "kubo v0.22.0 darwin-arm64 (cold raw-first control)",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-arm64.tar.gz",
+        "ms": 23765,
+        "fileBytes": 27988982,
+        "sha256": "b49469e2f14188c5ffa0f317db40401d4eb178010ed4e0257f5619908b39f5ed",
+        "sha512": "d1d563b94bcc2bd21ee28e662742406e82445e039afb695756b7f96f7d032bef7c22ae6bafb2aa6f0aa83e92844c44a986d73495e11d5a105ea22450c2cb6e60",
+        "entryCid": "QmUeuKF1yVMyN3qZDmyy46cXjBWnydEK4CA9zWAKtfGVER",
+        "carRoots": [
+          "QmUeuKF1yVMyN3qZDmyy46cXjBWnydEK4CA9zWAKtfGVER"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmUeuKF1yVMyN3qZDmyy46cXjBWnydEK4CA9zWAKtfGVER",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-arm64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 2784,
+          "firstChunk": 2798,
+          "firstVerifiedBlock": 2804,
+          "total": 23595
+        },
+        "firstVerifiedBlockAfterBytes": 3122,
+        "requests": 1,
+        "bytesTransferred": 28010989,
+        "blocksInCar": 111,
+        "blocksUsedByExporter": 111,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 111,
+          "dagPbBlocks": 111,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 107,
+          "hamtFanouts": []
+        },
+        "verifyMs": 60,
+        "verifyBlocks": 111
+      },
+      {
+        "target": "big3",
+        "what": "kubo v0.22.0 linux-386 (cold raw-first control)",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_linux-386.tar.gz",
+        "ms": 5488,
+        "msPathResolved": 551,
+        "fileBytes": 28273895,
+        "sha256": "6dd9c81134f086972064d69d1c0a7971649ab62555977620f13cc12a083faf6a",
+        "sha512": "548612155a591e03975f0d2540f2c22fa39cefa306465cf94fdb5f15dfd18e92c48a1a3448aa6e378394faf07e4951af026633ccc3de68b175be3e54f3e70fc2",
+        "entryCid": "QmQ8JQbig7rN11nqQJswJVXSMK6tqu8VbDqFZW5asD2Ckx",
+        "requests": 112,
+        "bytesTransferred": 28291802,
+        "failures": 0,
+        "status": {
+          "200": 112
+        },
+        "errors": [],
+        "maxInFlight": 8,
+        "shape": {
+          "blocks": 112,
+          "dagPbBlocks": 112,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 108,
+          "hamtFanouts": []
+        },
+        "verifyMs": 57,
+        "verifyBlocks": 112
+      },
+      {
+        "target": "big3",
+        "what": "kubo v0.22.0 linux-386 (cold raw-first control)",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_linux-386.tar.gz",
+        "ms": 8507,
+        "fileBytes": 28273895,
+        "sha256": "6dd9c81134f086972064d69d1c0a7971649ab62555977620f13cc12a083faf6a",
+        "sha512": "548612155a591e03975f0d2540f2c22fa39cefa306465cf94fdb5f15dfd18e92c48a1a3448aa6e378394faf07e4951af026633ccc3de68b175be3e54f3e70fc2",
+        "entryCid": "QmQ8JQbig7rN11nqQJswJVXSMK6tqu8VbDqFZW5asD2Ckx",
+        "carRoots": [
+          "QmQ8JQbig7rN11nqQJswJVXSMK6tqu8VbDqFZW5asD2Ckx"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmQ8JQbig7rN11nqQJswJVXSMK6tqu8VbDqFZW5asD2Ckx",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_linux-386.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 244,
+          "firstChunk": 246,
+          "firstVerifiedBlock": 248,
+          "total": 8274
+        },
+        "firstVerifiedBlockAfterBytes": 2729,
+        "requests": 1,
+        "bytesTransferred": 28296001,
+        "blocksInCar": 112,
+        "blocksUsedByExporter": 112,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 112,
+          "dagPbBlocks": 112,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 108,
+          "hamtFanouts": []
+        },
+        "verifyMs": 74,
+        "verifyBlocks": 112
+      },
+      {
+        "target": "big4",
+        "what": "kubo v0.22.0 freebsd-amd64 (cold car control)",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_freebsd-amd64.tar.gz",
+        "ms": 27348,
+        "fileBytes": 28992845,
+        "sha256": "c62168cb8f0ec49a5d865c8b8da84ccc48ede5f2b3a9424f1cee748a191d0d6b",
+        "sha512": "2247a543f0c7aa547e6483fb60479baf3f5335fc91e9435bb3e6b241de582186747daeb7e28fa09735093fb9b81f7564f1c0320237de12ed2684fed0220327f5",
+        "entryCid": "QmNhSFPgJaYRBdaMv1f96XjdJttNNw8z4tFrFWv5Ppy7KJ",
+        "carRoots": [
+          "QmNhSFPgJaYRBdaMv1f96XjdJttNNw8z4tFrFWv5Ppy7KJ"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmNhSFPgJaYRBdaMv1f96XjdJttNNw8z4tFrFWv5Ppy7KJ",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_freebsd-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 1228,
+          "firstChunk": 1235,
+          "firstVerifiedBlock": 1240,
+          "total": 27164
+        },
+        "firstVerifiedBlockAfterBytes": 3066,
+        "requests": 1,
+        "bytesTransferred": 29015248,
+        "blocksInCar": 115,
+        "blocksUsedByExporter": 115,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 115,
+          "dagPbBlocks": 115,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 111,
+          "hamtFanouts": []
+        },
+        "verifyMs": 75,
+        "verifyBlocks": 115
+      },
+      {
+        "target": "big4",
+        "what": "kubo v0.22.0 freebsd-amd64 (cold car control)",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_freebsd-amd64.tar.gz",
+        "ms": 6591,
+        "msPathResolved": 685,
+        "fileBytes": 28992845,
+        "sha256": "c62168cb8f0ec49a5d865c8b8da84ccc48ede5f2b3a9424f1cee748a191d0d6b",
+        "sha512": "2247a543f0c7aa547e6483fb60479baf3f5335fc91e9435bb3e6b241de582186747daeb7e28fa09735093fb9b81f7564f1c0320237de12ed2684fed0220327f5",
+        "entryCid": "QmNhSFPgJaYRBdaMv1f96XjdJttNNw8z4tFrFWv5Ppy7KJ",
+        "requests": 115,
+        "bytesTransferred": 29010938,
+        "failures": 0,
+        "status": {
+          "200": 115
+        },
+        "errors": [],
+        "maxInFlight": 8,
+        "shape": {
+          "blocks": 115,
+          "dagPbBlocks": 115,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 111,
+          "hamtFanouts": []
+        },
+        "verifyMs": 58,
+        "verifyBlocks": 115
+      },
+      {
+        "target": "big5",
+        "what": "kubo v0.22.0 openbsd-amd64 (cold car control)",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_openbsd-amd64.tar.gz",
+        "ms": 5615,
+        "msPathResolved": 567,
+        "fileBytes": 28725572,
+        "sha256": "50548fc96016d6387d5c988b02a91b8a35d09e7d63b5ac5327c795153c6b3e86",
+        "sha512": "878693f6946c4e8e3ec5b02d87cc8215e71d007ff4b43f9679b1d49c7b4df32d1135df0eae50a700cf44803ca0fe39f2dbdb4d0232ef9df0aec7231a5c0b196e",
+        "entryCid": "QmRCDMP4PDrj2kfJjC1muVVDygvQ3asrKwBAqf7kzM7Uzq",
+        "requests": 114,
+        "bytesTransferred": 28743603,
+        "failures": 0,
+        "status": {
+          "200": 114
+        },
+        "errors": [],
+        "maxInFlight": 16,
+        "shape": {
+          "blocks": 114,
+          "dagPbBlocks": 114,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 110,
+          "hamtFanouts": []
+        },
+        "verifyMs": 72,
+        "verifyBlocks": 114
+      },
+      {
+        "target": "big5",
+        "what": "kubo v0.22.0 openbsd-amd64 (cold car control)",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_openbsd-amd64.tar.gz",
+        "ms": 7928,
+        "fileBytes": 28725572,
+        "sha256": "50548fc96016d6387d5c988b02a91b8a35d09e7d63b5ac5327c795153c6b3e86",
+        "sha512": "878693f6946c4e8e3ec5b02d87cc8215e71d007ff4b43f9679b1d49c7b4df32d1135df0eae50a700cf44803ca0fe39f2dbdb4d0232ef9df0aec7231a5c0b196e",
+        "entryCid": "QmRCDMP4PDrj2kfJjC1muVVDygvQ3asrKwBAqf7kzM7Uzq",
+        "carRoots": [
+          "QmRCDMP4PDrj2kfJjC1muVVDygvQ3asrKwBAqf7kzM7Uzq"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmRCDMP4PDrj2kfJjC1muVVDygvQ3asrKwBAqf7kzM7Uzq",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_openbsd-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 233,
+          "firstChunk": 235,
+          "firstVerifiedBlock": 239,
+          "total": 7721
+        },
+        "firstVerifiedBlockAfterBytes": 2729,
+        "requests": 1,
+        "bytesTransferred": 28747876,
+        "blocksInCar": 114,
+        "blocksUsedByExporter": 114,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 114,
+          "dagPbBlocks": 114,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 110,
+          "hamtFanouts": []
+        },
+        "verifyMs": 85,
+        "verifyBlocks": 114
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 33646,
+        "error": "The operation was aborted due to timeout",
+        "verifyMs": 32,
+        "verifyBlocks": 59
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.filebase.io",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 70412,
+        "fileBytes": 29442647,
+        "sha256": "e3cb84cf911b66676656197364789d08e4d01d74957ef68d3e1f82721408053c",
+        "sha512": "1b9f9f9a26240791d3449cd98d0e64b713e0d40cf91b507845ddc9f5e714f172f9e1e72ed0f2a066c9c3e04002c800d3859c6a72ffacf127805fb19163a8377a",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "carRoots": [
+          "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "Filebase",
+          "cf-cache-status": null
+        },
+        "carTimings": {
+          "headers": 55459,
+          "firstChunk": 55466,
+          "firstVerifiedBlock": 55549,
+          "total": 70188
+        },
+        "firstVerifiedBlockAfterBytes": 4183,
+        "requests": 1,
+        "bytesTransferred": 29465248,
+        "blocksInCar": 117,
+        "blocksUsedByExporter": 117,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 117,
+          "dagPbBlocks": 117,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 90,
+        "verifyBlocks": 117
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "arg": "0:1048575",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 679,
+        "fileBytes": 1048576,
+        "sha256": "54e08551ecb05b3a6254c9a67f2e1064772a477d089e4271a4f83078163eb0c2",
+        "sha512": "2f4c07448cea807fc9088fb29336ca1f15aaeb47efca2991eb92a7c6ed23ff26b231b05a65a13b5c537889e2f619dff6e6a6547f6bb1c4a7c3324988132e1ef3",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "carRoots": [
+          "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 291,
+          "firstChunk": 296,
+          "firstVerifiedBlock": 301,
+          "total": 658
+        },
+        "firstVerifiedBlockAfterBytes": 3051,
+        "requests": 1,
+        "bytesTransferred": 1065618,
+        "blocksInCar": 8,
+        "blocksUsedByExporter": 8,
+        "blocksUnused": 0,
+        "missingBlocks": [
+          "QmT5JhxMtvgqKRvNYuzPMAhmW3pRntQd5pr9QfdRroifQa"
+        ],
+        "shape": {
+          "blocks": 8,
+          "dagPbBlocks": 8,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 4,
+        "verifyBlocks": 8
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "range": "0:1048575",
+        "ms": 836,
+        "msPathResolved": 499,
+        "fileBytes": 1048576,
+        "sha256": "54e08551ecb05b3a6254c9a67f2e1064772a477d089e4271a4f83078163eb0c2",
+        "sha512": "2f4c07448cea807fc9088fb29336ca1f15aaeb47efca2991eb92a7c6ed23ff26b231b05a65a13b5c537889e2f619dff6e6a6547f6bb1c4a7c3324988132e1ef3",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 9,
+        "bytesTransferred": 1327425,
+        "failures": 0,
+        "status": {
+          "200": 9
+        },
+        "errors": [],
+        "maxInFlight": 5,
+        "shape": {
+          "blocks": 9,
+          "dagPbBlocks": 9,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 4,
+        "verifyBlocks": 9
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "arg": "10000000:10999999",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 1574,
+        "fileBytes": 1000000,
+        "sha256": "70294ca4c634da06213b57eded87c6be16786a3562181e8fc92b8eb7d73517a8",
+        "sha512": "bc5a96aaa85454477db3a222be4f5700e912c7d1de4bfc593b9e9a95d48fd2f88b861a53a07703393ac656ce13cc8abdb7976f41ebdd7ea32b2cc8bfb8276c93",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "carRoots": [
+          "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 292,
+          "firstChunk": 298,
+          "firstVerifiedBlock": 303,
+          "total": 1540
+        },
+        "firstVerifiedBlockAfterBytes": 3119,
+        "requests": 1,
+        "bytesTransferred": 1065618,
+        "blocksInCar": 8,
+        "blocksUsedByExporter": 8,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 8,
+          "dagPbBlocks": 8,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 3,
+        "verifyBlocks": 8
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "range": "10000000:10999999",
+        "ms": 753,
+        "msPathResolved": 455,
+        "fileBytes": 1000000,
+        "sha256": "70294ca4c634da06213b57eded87c6be16786a3562181e8fc92b8eb7d73517a8",
+        "sha512": "bc5a96aaa85454477db3a222be4f5700e912c7d1de4bfc593b9e9a95d48fd2f88b861a53a07703393ac656ce13cc8abdb7976f41ebdd7ea32b2cc8bfb8276c93",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 8,
+        "bytesTransferred": 1065267,
+        "failures": 0,
+        "status": {
+          "200": 8
+        },
+        "errors": [],
+        "maxInFlight": 4,
+        "shape": {
+          "blocks": 8,
+          "dagPbBlocks": 8,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 3,
+        "verifyBlocks": 8
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "arg": "0:1048575",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 639,
+        "fileBytes": 1048576,
+        "sha256": "54e08551ecb05b3a6254c9a67f2e1064772a477d089e4271a4f83078163eb0c2",
+        "sha512": "2f4c07448cea807fc9088fb29336ca1f15aaeb47efca2991eb92a7c6ed23ff26b231b05a65a13b5c537889e2f619dff6e6a6547f6bb1c4a7c3324988132e1ef3",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "carRoots": [
+          "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 247,
+          "firstChunk": 254,
+          "firstVerifiedBlock": 260,
+          "total": 613
+        },
+        "firstVerifiedBlockAfterBytes": 2729,
+        "requests": 1,
+        "bytesTransferred": 1065618,
+        "blocksInCar": 8,
+        "blocksUsedByExporter": 8,
+        "blocksUnused": 0,
+        "missingBlocks": [
+          "QmT5JhxMtvgqKRvNYuzPMAhmW3pRntQd5pr9QfdRroifQa"
+        ],
+        "shape": {
+          "blocks": 8,
+          "dagPbBlocks": 8,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 5,
+        "verifyBlocks": 8
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "range": "0:1048575",
+        "ms": 969,
+        "msPathResolved": 566,
+        "fileBytes": 1048576,
+        "sha256": "54e08551ecb05b3a6254c9a67f2e1064772a477d089e4271a4f83078163eb0c2",
+        "sha512": "2f4c07448cea807fc9088fb29336ca1f15aaeb47efca2991eb92a7c6ed23ff26b231b05a65a13b5c537889e2f619dff6e6a6547f6bb1c4a7c3324988132e1ef3",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 9,
+        "bytesTransferred": 1327411,
+        "failures": 0,
+        "status": {
+          "200": 9
+        },
+        "errors": [],
+        "maxInFlight": 5,
+        "shape": {
+          "blocks": 8,
+          "dagPbBlocks": 8,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 4,
+        "verifyBlocks": 8
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "arg": "10000000:10999999",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "ms": 904,
+        "fileBytes": 1000000,
+        "sha256": "70294ca4c634da06213b57eded87c6be16786a3562181e8fc92b8eb7d73517a8",
+        "sha512": "bc5a96aaa85454477db3a222be4f5700e912c7d1de4bfc593b9e9a95d48fd2f88b861a53a07703393ac656ce13cc8abdb7976f41ebdd7ea32b2cc8bfb8276c93",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "carRoots": [
+          "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "MISS"
+        },
+        "carTimings": {
+          "headers": 345,
+          "firstChunk": 360,
+          "firstVerifiedBlock": 389,
+          "total": 876
+        },
+        "firstVerifiedBlockAfterBytes": 2729,
+        "requests": 1,
+        "bytesTransferred": 1065618,
+        "blocksInCar": 8,
+        "blocksUsedByExporter": 8,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 8,
+          "dagPbBlocks": 8,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 18,
+        "verifyBlocks": 8
+      },
+      {
+        "target": "big",
+        "what": "kubo v0.22.0 darwin-amd64 tarball from dist.ipfs.tech",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "8",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-amd64.tar.gz",
+        "range": "10000000:10999999",
+        "ms": 775,
+        "msPathResolved": 449,
+        "fileBytes": 1000000,
+        "sha256": "70294ca4c634da06213b57eded87c6be16786a3562181e8fc92b8eb7d73517a8",
+        "sha512": "bc5a96aaa85454477db3a222be4f5700e912c7d1de4bfc593b9e9a95d48fd2f88b861a53a07703393ac656ce13cc8abdb7976f41ebdd7ea32b2cc8bfb8276c93",
+        "entryCid": "QmdeRa5j5qZxYP2Q9UYqMdKheUMCcAHwudKknRA52cHgD2",
+        "requests": 8,
+        "bytesTransferred": 1065267,
+        "failures": 0,
+        "status": {
+          "200": 8
+        },
+        "errors": [],
+        "maxInFlight": 4,
+        "shape": {
+          "blocks": 8,
+          "dagPbBlocks": 8,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 113,
+          "hamtFanouts": []
+        },
+        "verifyMs": 4,
+        "verifyBlocks": 8
+      },
+      {
+        "target": "big2",
+        "what": "kubo v0.22.0 darwin-arm64 (cold raw-first control)",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-arm64.tar.gz",
+        "ms": 4340,
+        "msPathResolved": 466,
+        "fileBytes": 27988982,
+        "sha256": "b49469e2f14188c5ffa0f317db40401d4eb178010ed4e0257f5619908b39f5ed",
+        "sha512": "d1d563b94bcc2bd21ee28e662742406e82445e039afb695756b7f96f7d032bef7c22ae6bafb2aa6f0aa83e92844c44a986d73495e11d5a105ea22450c2cb6e60",
+        "entryCid": "QmUeuKF1yVMyN3qZDmyy46cXjBWnydEK4CA9zWAKtfGVER",
+        "requests": 111,
+        "bytesTransferred": 28006827,
+        "failures": 0,
+        "status": {
+          "200": 111
+        },
+        "errors": [],
+        "maxInFlight": 4,
+        "shape": {
+          "blocks": 111,
+          "dagPbBlocks": 111,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 107,
+          "hamtFanouts": []
+        },
+        "verifyMs": 48,
+        "verifyBlocks": 111
+      },
+      {
+        "target": "big3",
+        "what": "kubo v0.22.0 linux-386 (cold raw-first control)",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "4",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_linux-386.tar.gz",
+        "ms": 4332,
+        "msPathResolved": 461,
+        "fileBytes": 28273895,
+        "sha256": "6dd9c81134f086972064d69d1c0a7971649ab62555977620f13cc12a083faf6a",
+        "sha512": "548612155a591e03975f0d2540f2c22fa39cefa306465cf94fdb5f15dfd18e92c48a1a3448aa6e378394faf07e4951af026633ccc3de68b175be3e54f3e70fc2",
+        "entryCid": "QmQ8JQbig7rN11nqQJswJVXSMK6tqu8VbDqFZW5asD2Ckx",
+        "requests": 112,
+        "bytesTransferred": 28291802,
+        "failures": 0,
+        "status": {
+          "200": 112
+        },
+        "errors": [],
+        "maxInFlight": 4,
+        "shape": {
+          "blocks": 112,
+          "dagPbBlocks": 112,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 108,
+          "hamtFanouts": []
+        },
+        "verifyMs": 67,
+        "verifyBlocks": 112
+      },
+      {
+        "target": "big2",
+        "what": "kubo v0.22.0 darwin-arm64 (cold raw-first control)",
+        "gateway": "https://trustless-gateway.link",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-arm64.tar.gz",
+        "ms": 4440,
+        "msPathResolved": 457,
+        "fileBytes": 27988982,
+        "sha256": "b49469e2f14188c5ffa0f317db40401d4eb178010ed4e0257f5619908b39f5ed",
+        "sha512": "d1d563b94bcc2bd21ee28e662742406e82445e039afb695756b7f96f7d032bef7c22ae6bafb2aa6f0aa83e92844c44a986d73495e11d5a105ea22450c2cb6e60",
+        "entryCid": "QmUeuKF1yVMyN3qZDmyy46cXjBWnydEK4CA9zWAKtfGVER",
+        "requests": 111,
+        "bytesTransferred": 28006827,
+        "failures": 0,
+        "status": {
+          "200": 111
+        },
+        "errors": [],
+        "maxInFlight": 16,
+        "shape": {
+          "blocks": 111,
+          "dagPbBlocks": 111,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 107,
+          "hamtFanouts": []
+        },
+        "verifyMs": 46,
+        "verifyBlocks": 111
+      },
+      {
+        "target": "big3",
+        "what": "kubo v0.22.0 linux-386 (cold raw-first control)",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "raw",
+        "arg": "16",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_linux-386.tar.gz",
+        "ms": 4456,
+        "msPathResolved": 414,
+        "fileBytes": 28273895,
+        "sha256": "6dd9c81134f086972064d69d1c0a7971649ab62555977620f13cc12a083faf6a",
+        "sha512": "548612155a591e03975f0d2540f2c22fa39cefa306465cf94fdb5f15dfd18e92c48a1a3448aa6e378394faf07e4951af026633ccc3de68b175be3e54f3e70fc2",
+        "entryCid": "QmQ8JQbig7rN11nqQJswJVXSMK6tqu8VbDqFZW5asD2Ckx",
+        "requests": 112,
+        "bytesTransferred": 28291802,
+        "failures": 0,
+        "status": {
+          "200": 112
+        },
+        "errors": [],
+        "maxInFlight": 16,
+        "shape": {
+          "blocks": 112,
+          "dagPbBlocks": 112,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 108,
+          "hamtFanouts": []
+        },
+        "verifyMs": 68,
+        "verifyBlocks": 112
+      },
+      {
+        "target": "big2",
+        "what": "kubo v0.22.0 darwin-arm64 (cold raw-first control)",
+        "gateway": "https://trustless-gateway.link",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-arm64.tar.gz",
+        "ms": 6844,
+        "fileBytes": 27988982,
+        "sha256": "b49469e2f14188c5ffa0f317db40401d4eb178010ed4e0257f5619908b39f5ed",
+        "sha512": "d1d563b94bcc2bd21ee28e662742406e82445e039afb695756b7f96f7d032bef7c22ae6bafb2aa6f0aa83e92844c44a986d73495e11d5a105ea22450c2cb6e60",
+        "entryCid": "QmUeuKF1yVMyN3qZDmyy46cXjBWnydEK4CA9zWAKtfGVER",
+        "carRoots": [
+          "QmUeuKF1yVMyN3qZDmyy46cXjBWnydEK4CA9zWAKtfGVER"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmUeuKF1yVMyN3qZDmyy46cXjBWnydEK4CA9zWAKtfGVER",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_darwin-arm64.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "HIT"
+        },
+        "carTimings": {
+          "headers": 236,
+          "firstChunk": 245,
+          "firstVerifiedBlock": 249,
+          "total": 6683
+        },
+        "firstVerifiedBlockAfterBytes": 3160,
+        "requests": 1,
+        "bytesTransferred": 28010989,
+        "blocksInCar": 111,
+        "blocksUsedByExporter": 111,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 111,
+          "dagPbBlocks": 111,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 107,
+          "hamtFanouts": []
+        },
+        "verifyMs": 48,
+        "verifyBlocks": 111
+      },
+      {
+        "target": "big3",
+        "what": "kubo v0.22.0 linux-386 (cold raw-first control)",
+        "gateway": "https://ipfs.orbitor.dev",
+        "method": "car",
+        "cidPath": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_linux-386.tar.gz",
+        "ms": 5359,
+        "fileBytes": 28273895,
+        "sha256": "6dd9c81134f086972064d69d1c0a7971649ab62555977620f13cc12a083faf6a",
+        "sha512": "548612155a591e03975f0d2540f2c22fa39cefa306465cf94fdb5f15dfd18e92c48a1a3448aa6e378394faf07e4951af026633ccc3de68b175be3e54f3e70fc2",
+        "entryCid": "QmQ8JQbig7rN11nqQJswJVXSMK6tqu8VbDqFZW5asD2Ckx",
+        "carRoots": [
+          "QmQ8JQbig7rN11nqQJswJVXSMK6tqu8VbDqFZW5asD2Ckx"
+        ],
+        "carHeaders": {
+          "content-type": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+          "x-ipfs-roots": "QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH,bafybeia5d63mrbmcmlakxa2hrlml35bhli4smjx5qloxy2lbrzfwxsw3ty,QmbMfrkhe58Ss9zJvanC9dvnxYrqj1SxFDspboSEbVuDaJ,QmQ8JQbig7rN11nqQJswJVXSMK6tqu8VbDqFZW5asD2Ckx",
+          "x-ipfs-path": "/ipfs/QmcQFiYTDih9UiF4swN797eCZYNL4em74XPmLvYu7WvsdH/kubo/v0.22.0/kubo_v0.22.0_linux-386.tar.gz",
+          "transfer-encoding": null,
+          "content-length": null,
+          "server": "cloudflare",
+          "cf-cache-status": "HIT"
+        },
+        "carTimings": {
+          "headers": 246,
+          "firstChunk": 253,
+          "firstVerifiedBlock": 262,
+          "total": 5205
+        },
+        "firstVerifiedBlockAfterBytes": 2729,
+        "requests": 1,
+        "bytesTransferred": 28296001,
+        "blocksInCar": 112,
+        "blocksUsedByExporter": 112,
+        "blocksUnused": 0,
+        "missingBlocks": [],
+        "shape": {
+          "blocks": 112,
+          "dagPbBlocks": 112,
+          "rawBlocks": 0,
+          "maxBlockBytes": 262158,
+          "maxRawLeafBytes": 0,
+          "maxLinksPerNode": 108,
+          "hamtFanouts": []
+        },
+        "verifyMs": 83,
+        "verifyBlocks": 112
+      }
+    ]
+  },
+  "q3_tamper": {
+    "raw": {
+      "case": "raw block, byte 20000 of index.html (39173 B raw leaf) flipped",
+      "caughtBy": "BlockVerifyError",
+      "error": "sha2-256 mismatch for bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4: got 6db6b107d8758228…",
+      "stack": [
+        "BlockVerifyError: sha2-256 mismatch for bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4: got 6db6b107d8758228…",
+        "at verifyBlockInner (file://lib.mjs:73:48)",
+        "at verifyBlock (file://lib.mjs:61:16)",
+        "at #fetch (file://lib.mjs:141:17)",
+        "at process.processTicksAndRejections (node:internal/process/task_queues:103:5)"
+      ],
+      "gatewayDropped": [
+        "http://127.0.0.1:18931"
+      ],
+      "proxy": [
+        {
+          "url": "/ipfs/bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4?format=raw",
+          "flippedAt": 20000,
+          "sent": 39173
+        }
+      ]
+    },
+    "exporterAlone": {
+      "case": "same tampered raw block through a blockstore that does not hash",
+      "exporterThrew": false,
+      "bytesReturned": 39173,
+      "differsFromVerified": true,
+      "firstDiffAt": 20000
+    },
+    "carSmall": {
+      "case": "CAR for vitalik.eth/index.html, stream byte 20000 flipped (inside the raw leaf data)",
+      "caughtBy": "BlockVerifyError",
+      "error": "sha2-256 mismatch for bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4: got 6e42531fbf31193d…",
+      "stack": [
+        "BlockVerifyError: sha2-256 mismatch for bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4: got 6e42531fbf31193d…",
+        "at verifyBlockInner (file://lib.mjs:73:48)",
+        "at verifyBlock (file://lib.mjs:61:16)",
+        "at fetchCar (file://lib.mjs:183:5)"
+      ],
+      "blocksVerifiedBeforeFailure": [
+        "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi"
+      ],
+      "bytesReceived": 39734
+    },
+    "carBig": {
+      "case": "CAR for the 30 MB kubo tarball, stream byte 5,000,000 flipped",
+      "caughtBy": "BlockVerifyError",
+      "error": "sha2-256 mismatch for QmbHjUX6dLZ67v6JFaNEKPH1Uutmw7KYkVHHECLvNRiSv1: got 66e7b2352f199855…",
+      "ms": 1447,
+      "blocksVerifiedBeforeFailure": 23,
+      "bytesReceivedAtFailure": 5261123,
+      "proxy": [
+        {
+          "flippedAt": 5000000,
+          "sent": 7212549,
+          "closedEarly": false
+        }
+      ]
+    },
+    "carCid0": {
+      "case": "CAR for index.html: last byte of the index.html CID flipped in the header roots (stream offset 49; CID occurs at 14,366,525)",
+      "carAcceptedAllBlocksVerified": true,
+      "carRoots": [
+        "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3asy"
+      ],
+      "result": "content read from our trusted root; header root not used",
+      "bytes": 39173,
+      "blocksVerified": [
+        "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi",
+        "bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3as4"
+      ]
+    },
+    "carCid1": {
+      "case": "CAR for index.html: last byte of the index.html CID flipped in the root dir block data (the link to index.html) (stream offset 401; CID occurs at 14,366,525)",
+      "caughtBy": "BlockVerifyError",
+      "error": "sha2-256 mismatch for bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi: got ab891a06fe760547…",
+      "blocksVerified": []
+    },
+    "carCid2": {
+      "case": "CAR for index.html: last byte of the index.html CID flipped in the section CID of the index.html block (stream offset 560; CID occurs at 14,366,525)",
+      "caughtBy": "BlockVerifyError",
+      "error": "sha2-256 mismatch for bafkreidaoxho3jb6mkkgsvmytbndakmb7vlqtln3seilqnyhauiqzq3asy: got 6075ceeda43e6294…",
+      "blocksVerified": [
+        "bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi"
+      ]
+    }
+  },
+  "q4_ipns": {
+    "name": "k51qzi5uqu5dipklqpo2uq7advlajxx5wxob0mwyqbxb5zu4htblc4bjipy834",
+    "nameCidCodec": "0x72",
+    "nameMultihash": "0x0",
+    "sources": {
+      "ethLimo": {
+        "status": 200,
+        "ct": "application/vnd.ipfs.ipns-record",
+        "ms": 786,
+        "package": {
+          "value": "/ipfs/bafybeiho37vhh7qnzrs2drjuasagbebojgbx7467ag5aktifdhhz7smc2q",
+          "sequence": "100001",
+          "ttlNs": "31553269010700000",
+          "ttlSeconds": 31553269.0107,
+          "validity": "2034-12-24T12:12:59.530000000Z",
+          "validityType": "EOL",
+          "hasV1Signature": true,
+          "bytes": 405
+        },
+        "byHand": {
+          "value": "/ipfs/bafybeiho37vhh7qnzrs2drjuasagbebojgbx7467ag5aktifdhhz7smc2q",
+          "sequence": "100001",
+          "ttlNs": "31553269010700000",
+          "validity": "2034-12-24T12:12:59.530000000Z"
+        }
+      },
+      "w3name": {
+        "status": 200,
+        "ct": "application/json;charset=UTF-8",
+        "ms": 467,
+        "package": {
+          "value": "/ipfs/bafybeiho37vhh7qnzrs2drjuasagbebojgbx7467ag5aktifdhhz7smc2q",
+          "sequence": "100001",
+          "ttlNs": "31553269010700000",
+          "ttlSeconds": 31553269.0107,
+          "validity": "2034-12-24T12:12:59.530000000Z",
+          "validityType": "EOL",
+          "hasV1Signature": true,
+          "bytes": 405
+        },
+        "byHand": {
+          "value": "/ipfs/bafybeiho37vhh7qnzrs2drjuasagbebojgbx7467ag5aktifdhhz7smc2q",
+          "sequence": "100001",
+          "ttlNs": "31553269010700000",
+          "validity": "2034-12-24T12:12:59.530000000Z"
+        }
+      },
+      "https://trustless-gateway.link": {
+        "status": 500,
+        "ct": "text/plain; charset=utf-8",
+        "ms": 422,
+        "text": "routing: not found"
+      },
+      "https://ipfs.orbitor.dev": {
+        "status": 500,
+        "ct": "text/plain; charset=utf-8",
+        "ms": 626,
+        "text": "routing: not found"
+      },
+      "https://ipfs.filebase.io": {
+        "status": 500,
+        "ct": "text/plain; charset=utf-8",
+        "ms": 499,
+        "text": "routing: not found"
+      }
+    },
+    "recordsIdentical": true,
+    "negative": {
+      "flippedSignature": "SignatureVerificationError: Record signature verification failed",
+      "flippedSignatureByHand": "bad signature",
+      "wrongName": "SignatureVerificationError: Record signature verification failed",
+      "wrongNameByHand": "bad signature",
+      "expiredByHand": "expired 2034-12-24T12:12:59.530000000Z"
+    },
+    "root": {
+      "cid": "bafybeiho37vhh7qnzrs2drjuasagbebojgbx7467ag5aktifdhhz7smc2q",
+      "type": "directory",
+      "unixfsType": "directory",
+      "entries": 40,
+      "sample": [
+        "404",
+        "404.html",
+        "_headers",
+        "_next",
+        "address",
+        "android-chrome-144x144.png",
+        "android-chrome-192x192.png",
+        "android-chrome-512x512.png",
+        "apple-touch-icon.png",
+        "browserconfig.xml",
+        "dotbox",
+        "ens-v2"
+      ],
+      "indexHtmlBytes": 41947,
+      "ms": 160,
+      "requests": 2,
+      "shape": {
+        "blocks": 2,
+        "dagPbBlocks": 2,
+        "rawBlocks": 0,
+        "maxBlockBytes": 41961,
+        "maxRawLeafBytes": 0,
+        "maxLinksPerNode": 40,
+        "hamtFanouts": []
+      }
+    },
+    "publishControl": {
+      "name": "k51qzi5uqu5dj90qt4xtc4y9sofoxyy77ukcftzm7ab5y1chaov8hqoxletomv",
+      "put": 200,
+      "polls": [
+        {
+          "gw": "https://trustless-gateway.link",
+          "status": 200,
+          "ms": 297,
+          "verified": {
+            "value": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi",
+            "sequence": "1",
+            "ttlNs": "300000000000",
+            "ttlSeconds": 300,
+            "validity": "2026-09-24T13:36:15.838000000Z",
+            "validityType": "EOL",
+            "hasV1Signature": true,
+            "bytes": 397
+          }
+        },
+        {
+          "gw": "https://ipfs.orbitor.dev",
+          "status": 200,
+          "ms": 82,
+          "verified": {
+            "value": "/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi",
+            "sequence": "1",
+            "ttlNs": "300000000000",
+            "ttlSeconds": 300,
+            "validity": "2026-09-24T13:36:15.838000000Z",
+            "validityType": "EOL",
+            "hasV1Signature": true,
+            "bytes": 397
+          }
+        }
+      ]
+    }
+  },
+  "q5_dnslink": {
+    "uniswap": {
+      "contenthashDecoded": "ipns://app.uniswap.org (CIDv1 dag-pb, identity multihash of the ASCII DNS name, 15 bytes)",
+      "apex": {
+        "nodeSystemResolveTxt": {
+          "ok": true,
+          "txt": [
+            "TWIST=/.well-known/twist.json"
+          ],
+          "ms": 38
+        },
+        "nodeResolver1111": {
+          "ok": true,
+          "txt": [
+            "TWIST=/.well-known/twist.json"
+          ],
+          "ms": 45
+        },
+        "dohCloudflareJson": {
+          "ok": true,
+          "txt": [
+            "TWIST=/.well-known/twist.json"
+          ],
+          "ms": 284
+        },
+        "dohGoogleJson": {
+          "ok": true,
+          "txt": [
+            "TWIST=/.well-known/twist.json"
+          ],
+          "ms": 179
+        }
+      },
+      "dnslinkTxt": {
+        "nodeSystemResolveTxt": {
+          "ok": false,
+          "error": "ENOTFOUND",
+          "ms": 44
+        },
+        "nodeResolver1111": {
+          "ok": false,
+          "error": "ENODATA",
+          "ms": 39
+        },
+        "dohCloudflareJson": {
+          "ok": true,
+          "txt": [],
+          "ms": 65
+        },
+        "dohGoogleJson": {
+          "ok": true,
+          "txt": [],
+          "ms": 61
+        }
+      },
+      "chain": {
+        "chain": [
+          {
+            "domain": "app.uniswap.org",
+            "dnslink": []
+          }
+        ],
+        "final": null,
+        "reason": "no dnslink record"
+      },
+      "ethLimo": {
+        "status": 500,
+        "xIpfsPath": null,
+        "location": null
+      }
+    },
+    "chainExample": {
+      "txt": {
+        "nodeSystemResolveTxt": {
+          "ok": true,
+          "txt": [
+            "dnslink=/ipns/website.ipfs.io"
+          ],
+          "ms": 33
+        },
+        "nodeResolver1111": {
+          "ok": true,
+          "txt": [
+            "dnslink=/ipns/website.ipfs.io"
+          ],
+          "ms": 41
+        },
+        "dohCloudflareJson": {
+          "ok": true,
+          "txt": [
+            "dnslink=/ipns/website.ipfs.io"
+          ],
+          "ms": 64
+        },
+        "dohGoogleJson": {
+          "ok": true,
+          "txt": [
+            "dnslink=/ipns/website.ipfs.io"
+          ],
+          "ms": 57
+        }
+      },
+      "chain": {
+        "chain": [
+          {
+            "domain": "ipfs.io",
+            "dnslink": [
+              "/ipns/website.ipfs.io"
+            ]
+          },
+          {
+            "domain": "website.ipfs.io",
+            "dnslink": [
+              "/ipfs/bafybeiealq5axr4jqdvfcltkq5g3kt2l5fjs3o3i5mks6ujpmoi3pb6d2y"
+            ]
+          }
+        ],
+        "final": "/ipfs/bafybeiealq5axr4jqdvfcltkq5g3kt2l5fjs3o3i5mks6ujpmoi3pb6d2y"
+      }
+    },
+    "cnameExample": {
+      "txt": {
+        "nodeSystemResolveTxt": {
+          "ok": true,
+          "txt": [
+            "dnslink=/ipfs/bafybeiejegeowlh5warqnrjjmhbkf7hdjaiuhnpqajbktx6ta77urqmljy"
+          ],
+          "ms": 618
+        },
+        "nodeResolver1111": {
+          "ok": true,
+          "txt": [
+            "dnslink=/ipfs/bafybeiejegeowlh5warqnrjjmhbkf7hdjaiuhnpqajbktx6ta77urqmljy"
+          ],
+          "ms": 481
+        },
+        "dohCloudflareJson": {
+          "ok": true,
+          "txt": [
+            "dnslink=/ipfs/bafybeiejegeowlh5warqnrjjmhbkf7hdjaiuhnpqajbktx6ta77urqmljy"
+          ],
+          "ms": 121
+        },
+        "dohGoogleJson": {
+          "ok": true,
+          "txt": [
+            "dnslink=/ipfs/bafybeiejegeowlh5warqnrjjmhbkf7hdjaiuhnpqajbktx6ta77urqmljy"
+          ],
+          "ms": 92
+        }
+      }
+    }
+  },
+  "q6_limits": {
+    "observed": {
+      "maxBlockBytes": 318408,
+      "maxBlockWhere": "raw leaf site.js in dist.ipfs.tech (single-block file); every chunked file used 262144 B raw leaves or 262158 B dag-pb leaves",
+      "maxLinksPerNode": 289,
+      "maxLinksWhere": "plain (non-HAMT) directory in ens.eth; HAMT shards: 256",
+      "hamtFanout": [
+        256
+      ],
+      "hamtWhere": "en.wikipedia-on-ipfs.org /wiki (4 dag-pb blocks from root to article)",
+      "maxDagDepth": 6,
+      "maxDagDepthWhere": "vitalik.eth, ens.eth, app.ens.eth (directory nesting + file DAG)",
+      "fileDagDepth": "2 for <= 45.6 MB (174 x 256 KiB), 3 for kubo v0.40.0 linux-amd64 53.8 MB",
+      "maxFileLinks": 113,
+      "sites": [
+        {
+          "label": "en.wikipedia HAMT path",
+          "mode": "path",
+          "ms": 2091,
+          "shape": {
+            "blocks": 5,
+            "dagPbBlocks": 4,
+            "rawBlocks": 1,
+            "maxBlockBytes": 115823,
+            "maxRawLeafBytes": 115823,
+            "maxLinksPerNode": 256,
+            "hamtFanouts": [
+              256
+            ]
+          }
+        },
+        {
+          "label": "53.8 MB file, one byte at 50 MB",
+          "mode": "path",
+          "ms": 1071,
+          "shape": {
+            "blocks": 6,
+            "dagPbBlocks": 6,
+            "rawBlocks": 0,
+            "maxBlockBytes": 262158,
+            "maxRawLeafBytes": 0,
+            "maxLinksPerNode": 94,
+            "hamtFanouts": []
+          }
+        },
+        {
+          "label": "tornadocash.eth",
+          "mode": "car-all",
+          "ms": 75914,
+          "blocks": 820,
+          "bytes": 150058688,
+          "shape": {
+            "maxDepth": 3,
+            "maxLinks": 126,
+            "maxBlock": 262144,
+            "hamtShards": 0,
+            "hamtFanouts": [],
+            "hamtMaxShardDepth": 0,
+            "files": 0,
+            "dirs": 7,
+            "maxFileBytes": 9628846,
+            "maxFileLinks": 37,
+            "missing": 0,
+            "rawLeaves": 740,
+            "pbLeaves": 0,
+            "maxPathDepth": 0,
+            "maxDirEntries": 126,
+            "visited": 820
+          }
+        },
+        {
+          "label": "ens.eth",
+          "mode": "car-all",
+          "ms": 107049,
+          "blocks": 515,
+          "bytes": 16744362,
+          "shape": {
+            "maxDepth": 6,
+            "maxLinks": 289,
+            "maxBlock": 262144,
+            "hamtShards": 0,
+            "hamtFanouts": [],
+            "hamtMaxShardDepth": 0,
+            "files": 0,
+            "dirs": 42,
+            "maxFileBytes": 2755617,
+            "maxFileLinks": 11,
+            "missing": 0,
+            "rawLeaves": 464,
+            "pbLeaves": 0,
+            "maxPathDepth": 0,
+            "maxDirEntries": 289,
+            "visited": 515
+          }
+        },
+        {
+          "label": "app.ens.eth",
+          "mode": "raw-all",
+          "ms": 67092,
+          "blocks": 407,
+          "bytes": 9644742,
+          "error": "The operation was aborted due to timeout",
+          "shape": {
+            "maxDepth": 6,
+            "maxLinks": 242,
+            "maxBlock": 262158,
+            "hamtShards": 0,
+            "hamtFanouts": [],
+            "hamtMaxShardDepth": 0,
+            "files": 0,
+            "dirs": 34,
+            "maxFileBytes": 1647029,
+            "maxFileLinks": 7,
+            "missing": 7,
+            "rawLeaves": 0,
+            "pbLeaves": 368,
+            "maxPathDepth": 0,
+            "maxDirEntries": 242,
+            "visited": 407
+          }
+        },
+        {
+          "label": "app.ens.eth-retry",
+          "mode": "raw-all",
+          "ms": 58572,
+          "blocks": 407,
+          "bytes": 9644742,
+          "error": "The operation was aborted due to timeout",
+          "shape": {
+            "maxDepth": 6,
+            "maxLinks": 242,
+            "maxBlock": 262158,
+            "hamtShards": 0,
+            "hamtFanouts": [],
+            "hamtMaxShardDepth": 0,
+            "files": 0,
+            "dirs": 34,
+            "maxFileBytes": 1647029,
+            "maxFileLinks": 7,
+            "missing": 7,
+            "rawLeaves": 0,
+            "pbLeaves": 368,
+            "maxPathDepth": 0,
+            "maxDirEntries": 242,
+            "visited": 407
+          }
+        },
+        {
+          "label": "vitalik.eth",
+          "mode": "raw-all",
+          "ms": 36087,
+          "blocks": 1695,
+          "bytes": 100434401,
+          "shape": {
+            "maxDepth": 6,
+            "maxLinks": 110,
+            "maxBlock": 262144,
+            "hamtShards": 0,
+            "hamtFanouts": [],
+            "hamtMaxShardDepth": 0,
+            "files": 0,
+            "dirs": 390,
+            "maxFileBytes": 17831482,
+            "maxFileLinks": 69,
+            "missing": 0,
+            "rawLeaves": 1252,
+            "pbLeaves": 0,
+            "maxPathDepth": 0,
+            "maxDirEntries": 110,
+            "visited": 1695
+          }
+        },
+        {
+          "label": "vitalik.eth-car",
+          "mode": "car-all",
+          "ms": 136564,
+          "blocks": 1695,
+          "bytes": 100499441,
+          "shape": {
+            "maxDepth": 6,
+            "maxLinks": 110,
+            "maxBlock": 262144,
+            "hamtShards": 0,
+            "hamtFanouts": [],
+            "hamtMaxShardDepth": 0,
+            "files": 0,
+            "dirs": 390,
+            "maxFileBytes": 17831482,
+            "maxFileLinks": 69,
+            "missing": 0,
+            "rawLeaves": 1252,
+            "pbLeaves": 0,
+            "maxPathDepth": 0,
+            "maxDirEntries": 110,
+            "visited": 1695
+          }
+        },
+        {
+          "label": "tornadocash.eth-raw",
+          "mode": "raw-all",
+          "ms": 21597,
+          "blocks": 820,
+          "bytes": 150026817,
+          "shape": {
+            "maxDepth": 3,
+            "maxLinks": 126,
+            "maxBlock": 262144,
+            "hamtShards": 0,
+            "hamtFanouts": [],
+            "hamtMaxShardDepth": 0,
+            "files": 0,
+            "dirs": 7,
+            "maxFileBytes": 9628846,
+            "maxFileLinks": 37,
+            "missing": 0,
+            "rawLeaves": 740,
+            "pbLeaves": 0,
+            "maxPathDepth": 0,
+            "maxDirEntries": 126,
+            "visited": 820
+          }
+        }
+      ]
+    },
+    "proposed": {
+      "maxBlockBytes": 2097152,
+      "maxLinksPerNode": 10000,
+      "maxDagDepth": 64,
+      "maxPathSegments": 64,
+      "hamtFanout": "power of two, <= 1024 (only 256 seen)",
+      "maxIpnsRecordBytes": 10240,
+      "maxDnslinkChainHops": 4,
+      "ipnsCacheTtlCapSeconds": 3600,
+      "maxBlocksPerOpen": 10000,
+      "rawConcurrencyPerGateway": 8,
+      "blockTimeToFirstByteMs": 10000,
+      "blockTotalMs": 30000,
+      "carIdleMs": 15000,
+      "rationale": "block cap 6.6x the largest block seen; links cap 35x the widest node seen and above the ~4k-entry size at which kubo auto-shards; depth 10x the deepest DAG seen; app.ens.eth record TTL is 365 days, so the TTL must be capped, not trusted"
+    }
+  },
+  "q7_gateways": {
+    "probe": {
+      "https://cloudflare-ipfs.com": {
+        "dnsHijackedByIsp": false
+      },
+      "https://ipfs.runfission.com": {
+        "dnsHijackedByIsp": false
+      },
+      "https://dlunar.net": {
+        "dnsHijackedByIsp": false
+      },
+      "https://flk-ipfs.xyz": {
+        "dnsHijackedByIsp": false
+      },
+      "https://inbrowser.link": {
+        "dnsHijackedByIsp": true,
+        "raw": 403,
+        "rawFollowed": 403,
+        "car": 403,
+        "carContentType": "text/plain",
+        "ipnsRecord": 403,
+        "ipnsContentType": "text/plain",
+        "rawLatencyMsMedian": null
+      },
+      "https://ipfs.eth.aragon.network": {
+        "dnsHijackedByIsp": true,
+        "raw": "CERT_HAS_EXPIRED",
+        "rawFollowed": "CERT_HAS_EXPIRED",
+        "car": "CERT_HAS_EXPIRED",
+        "ipnsRecord": "CERT_HAS_EXPIRED",
+        "rawLatencyMsMedian": null
+      },
+      "https://gateway.pinata.cloud": {
+        "dnsHijackedByIsp": true,
+        "raw": 403,
+        "rawFollowed": 403,
+        "car": 403,
+        "carContentType": "text/plain;charset=UTF-8",
+        "ipnsRecord": 403,
+        "ipnsContentType": "text/plain",
+        "rawLatencyMsMedian": null
+      },
+      "https://gateway.lighthouse.storage": {
+        "dnsHijackedByIsp": false,
+        "raw": 402,
+        "rawFollowed": 402,
+        "car": 402,
+        "carContentType": "application/octet-stream",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": null
+      },
+      "https://ipfs.le-space.de": {
+        "dnsHijackedByIsp": false,
+        "raw": "ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR",
+        "rawFollowed": "ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR",
+        "car": "ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR",
+        "ipnsRecord": "ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR",
+        "rawLatencyMsMedian": null
+      },
+      "https://trustless-gateway.link": {
+        "dnsHijackedByIsp": true,
+        "raw": 200,
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 43
+      },
+      "https://gw.ipfs-lens.dev": {
+        "dnsHijackedByIsp": true,
+        "raw": 200,
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.raw",
+        "ipnsRecord": 403,
+        "ipnsContentType": "text/html; charset=UTF-8",
+        "rawLatencyMsMedian": 37
+      },
+      "https://ipfs.ecolatam.com": {
+        "dnsHijackedByIsp": true,
+        "raw": 410,
+        "rawFollowed": 410,
+        "car": 410,
+        "carContentType": "text/html",
+        "ipnsRecord": 410,
+        "ipnsContentType": "text/html",
+        "rawLatencyMsMedian": null
+      },
+      "https://dweb.link": {
+        "dnsHijackedByIsp": false,
+        "raw": 301,
+        "rawLocation": "https://trustless-gateway.link/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi?format=raw",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 76
+      },
+      "https://ipfs.io": {
+        "dnsHijackedByIsp": true,
+        "raw": 301,
+        "rawLocation": "https://trustless-gateway.link/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi?format=raw",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 79
+      },
+      "https://storry.tv": {
+        "dnsHijackedByIsp": false,
+        "raw": 301,
+        "rawLocation": "https://bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi.ipfs.storry.tv/?format=raw",
+        "rawFollowed": 404,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/html",
+        "rawLatencyMsMedian": null
+      },
+      "https://w3s.link": {
+        "dnsHijackedByIsp": true,
+        "raw": 301,
+        "rawLocation": "https://dweb.link/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi?format=raw",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 112
+      },
+      "https://gateway.ipfs.io": {
+        "dnsHijackedByIsp": false,
+        "raw": 301,
+        "rawLocation": "https://ipfs.io/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi?format=raw",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 116
+      },
+      "https://nftstorage.link": {
+        "dnsHijackedByIsp": false,
+        "raw": 302,
+        "rawLocation": "https://ipfs.io/ipfs/bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi?format=raw",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 119
+      },
+      "https://ipfs.storry.tv": {
+        "dnsHijackedByIsp": false,
+        "raw": 301,
+        "rawLocation": "https://bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi.ipfs.storry.tv/?format=raw",
+        "rawFollowed": 404,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/html",
+        "rawLatencyMsMedian": null
+      },
+      "https://eth.sucks": {
+        "dnsHijackedByIsp": true,
+        "raw": 404,
+        "rawFollowed": 404,
+        "car": 404,
+        "carContentType": "text/html",
+        "ipnsRecord": 200,
+        "ipnsContentType": "text/html",
+        "rawLatencyMsMedian": null
+      },
+      "https://delegated-ipfs.dev": {
+        "dnsHijackedByIsp": false,
+        "raw": 302,
+        "rawLocation": "https://docs.ipfs.tech/concepts/public-utilities/",
+        "rawFollowed": 200,
+        "rawVerified": false,
+        "car": 200,
+        "carContentType": "text/html; charset=utf-8",
+        "ipnsRecord": 200,
+        "ipnsContentType": "text/html; charset=utf-8",
+        "rawLatencyMsMedian": 270
+      },
+      "https://apac.orbitor.dev": {
+        "dnsHijackedByIsp": true,
+        "raw": "The operation was aborted due to timeout",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 50
+      },
+      "https://ipfs.orbitor.dev": {
+        "dnsHijackedByIsp": true,
+        "raw": "The operation was aborted due to timeout",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 49
+      },
+      "https://latam.orbitor.dev": {
+        "dnsHijackedByIsp": true,
+        "raw": "The operation was aborted due to timeout",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 56
+      },
+      "https://eu.orbitor.dev": {
+        "dnsHijackedByIsp": true,
+        "raw": "The operation was aborted due to timeout",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car; version=1; order=dfs; dups=n",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 54
+      },
+      "https://ipfs.filebase.io": {
+        "dnsHijackedByIsp": false,
+        "raw": 200,
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": "The operation was aborted due to timeout",
+        "ipnsRecord": 500,
+        "ipnsContentType": "text/plain; charset=utf-8",
+        "rawLatencyMsMedian": 45
+      },
+      "https://dget.top": {
+        "dnsHijackedByIsp": false,
+        "raw": 301,
+        "rawLocation": "https://bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi.ipfs.dget.top/?format=raw",
+        "rawFollowed": 200,
+        "rawVerified": true,
+        "car": 200,
+        "carContentType": "application/vnd.ipld.car",
+        "ipnsRecord": "The operation was aborted due to timeout",
+        "rawLatencyMsMedian": 112
+      },
+      "https://hardbin.com": {
+        "dnsHijackedByIsp": true,
+        "raw": "UND_ERR_CONNECT_TIMEOUT",
+        "rawFollowed": "UND_ERR_CONNECT_TIMEOUT",
+        "car": "UND_ERR_CONNECT_TIMEOUT",
+        "ipnsRecord": "UND_ERR_CONNECT_TIMEOUT",
+        "rawLatencyMsMedian": null
+      },
+      "https://ipfs.cyou": {
+        "dnsHijackedByIsp": true,
+        "raw": "UND_ERR_CONNECT_TIMEOUT",
+        "rawFollowed": "UND_ERR_CONNECT_TIMEOUT",
+        "car": "UND_ERR_CONNECT_TIMEOUT",
+        "ipnsRecord": "UND_ERR_CONNECT_TIMEOUT",
+        "rawLatencyMsMedian": null
+      },
+      "https://4everland.io": {
+        "dnsHijackedByIsp": false,
+        "raw": 301,
+        "rawLocation": "https://bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi.ipfs.4everland.io/?format=raw",
+        "rawFollowed": "The operation was aborted due to timeout",
+        "car": "The operation was aborted due to timeout",
+        "ipnsRecord": "The operation was aborted due to timeout",
+        "rawLatencyMsMedian": null
+      }
+    },
+    "shortlist": [
+      {
+        "gateway": "https://trustless-gateway.link",
+        "operator": "IPFS Shipyard (rainbow, behind Cloudflare)",
+        "raw": true,
+        "car": true,
+        "entityBytes": true,
+        "ipnsRecord": "yes (throwaway record read back in 297 ms)",
+        "latencyMs": 43,
+        "notes": "trustless only (406 for deserialised); ipfs.io, dweb.link, w3s.link, gateway.ipfs.io, nftstorage.link 301/302 here for ?format=raw|car. Single-stream CAR slow (0.8-1.2 MB/s cold, 2.9-4.1 MB/s warm). DNS-hijacked by the ISP."
+      },
+      {
+        "gateway": "https://ipfs.orbitor.dev",
+        "operator": "unknown (Cloudflare, no x-ipfs-pop); eu./apac./latam. variants behave the same",
+        "raw": true,
+        "car": true,
+        "entityBytes": true,
+        "ipnsRecord": "yes (throwaway record read back in 82 ms)",
+        "latencyMs": 49,
+        "notes": "one cold 502, dag-scope=all streams terminated twice; independence from Shipyard not established. DNS-hijacked by the ISP."
+      },
+      {
+        "gateway": "https://ipfs.filebase.io",
+        "operator": "Filebase",
+        "raw": true,
+        "car": true,
+        "entityBytes": "not tested",
+        "ipnsRecord": "format understood (routing: not found for real names); positive control not run",
+        "latencyMs": 45,
+        "notes": "slow on cold content (30 s timeouts, 55 s to first CAR byte); third choice / fallback only"
+      }
+    ],
+    "rejected": {
+      "ipfs.io / dweb.link / w3s.link / gateway.ipfs.io / nftstorage.link": "redirect trustless requests to trustless-gateway.link; deserialised responses 429 with Sunset 2026-09-21 (\"switching to a service worker gateway only\")",
+      "gw.ipfs-lens.dev": "answers ?format=car with application/vnd.ipld.raw (ignores format)",
+      "storry.tv / ipfs.storry.tv": "subdomain redirect, raw 404, CAR of 59 bytes (header only)",
+      "eth.sucks": "returns deserialised HTML (200 text/html) for ?format=ipns-record",
+      "eth.limo": "by ENS name only (vitalik.eth.limo/?format=raw works); ignores dag-scope=entity (returned the whole 100 MB site for the root); /ipfs/<cid> 404. The only non-w3name source of the app.ens.eth IPNS record",
+      "gateway.pinata.cloud, inbrowser.link": "403",
+      "gateway.lighthouse.storage": "402",
+      "4everland.io": "subdomain redirect then 504/timeouts",
+      "cloudflare-ipfs.com": "no longer resolves",
+      "ipfs.cyou, hardbin.com": "connect timeouts",
+      "ipfs.eth.aragon.network, ipfs.le-space.de": "TLS errors (expired / internal)",
+      "ipfs.ecolatam.com": "410",
+      "delegated-ipfs.dev": "routing API only (302 to docs for /ipfs/)"
+    },
+    "rateLimits": "no 429 on trustless requests: 1695 raw requests at 16 in flight (~47 req/s) against trustless-gateway.link, 1 transient 504. dweb.link/ipfs.io 429 only on deserialised requests (sunset).",
+    "ispDnsBlocking": "the measuring line's ISP resolver: ipfs.io -> national block page (self-signed cert), trustless-gateway.link / w3s.link / inbrowser.link -> an ISP landing page, gateway.pinata.cloud -> 127.0.0.1, all orbitor.dev hosts hijacked. Blocking is DNS-only: the real IPs (via 1.1.1.1 or DoH) connect fine. Node dns.resolveTxt via the system resolver still returned correct DNSLink TXT records."
+  },
+  "q8_packages": {
+    "versions": {
+      "@chainsafe/is-ip": "2.1.0",
+      "@dnsquery/dns-packet": "6.1.1",
+      "@ipld/car": "5.4.7",
+      "@ipld/dag-cbor": "10.0.2",
+      "@ipld/dag-json": "11.0.1",
+      "@ipld/dag-pb": "4.2.0",
+      "@leichtgewicht/ip-codec": "2.0.5",
+      "@libp2p/crypto": "5.1.23",
+      "@libp2p/crypto/node_modules/protons-runtime": "7.1.2",
+      "@libp2p/interface": "3.3.0",
+      "@libp2p/logger": "6.2.13",
+      "@multiformats/dns": "1.0.15",
+      "@multiformats/multiaddr": "13.0.3",
+      "@multiformats/murmur3": "2.2.8",
+      "@noble/curves": "2.4.0",
+      "@noble/hashes": "2.4.0",
+      "abort-error": "1.0.2",
+      "cborg": "6.1.2",
+      "eventemitter3": "5.0.4",
+      "hamt-sharding": "3.0.8",
+      "hashlru": "2.3.0",
+      "interface-blockstore": "7.0.1",
+      "interface-datastore": "10.0.1",
+      "interface-store": "8.0.0",
+      "ipfs-unixfs": "13.1.2",
+      "ipfs-unixfs-exporter": "16.2.3",
+      "ipns": "11.0.1",
+      "ipns/node_modules/protons-runtime": "7.1.2",
+      "it-last": "3.0.11",
+      "it-map": "3.1.6",
+      "it-merge": "3.0.15",
+      "it-parallel": "3.0.16",
+      "it-peekable": "3.0.10",
+      "it-pipe": "3.0.1",
+      "it-pushable": "3.2.4",
+      "it-queueless-pushable": "2.0.5",
+      "it-stream-types": "2.0.4",
+      "it-to-buffer": "5.0.0",
+      "main-event": "1.0.5",
+      "ms": "4.0.0-nightly.202508271359",
+      "multiformats": "14.0.5",
+      "p-defer": "4.0.1",
+      "p-queue": "9.3.3",
+      "p-timeout": "7.0.2",
+      "progress-events": "1.1.0",
+      "protons-runtime": "8.0.1",
+      "race-signal": "2.0.2",
+      "sparse-array": "1.3.2",
+      "supports-color": "10.2.2",
+      "timestamp-nano": "1.0.1",
+      "uint8-varint": "3.0.0",
+      "uint8arraylist": "3.0.2",
+      "uint8arrays": "6.1.1",
+      "utf8-codec": "1.0.0",
+      "varint": "6.0.0",
+      "weald": "1.1.3"
+    },
+    "counts": {
+      "multiformats+@ipld/car+@ipld/dag-pb+ipfs-unixfs-exporter+ipfs-unixfs": {
+        "packages": 35,
+        "bytes": 5309318
+      },
+      "ipnsAlone": {
+        "packages": 31,
+        "bytes": 8561658
+      },
+      "@noble/curves+@noble/hashes": {
+        "packages": 2,
+        "bytes": 2282878
+      },
+      "allFiveNamedPlusIpns": {
+        "packages": 56,
+        "bytes": 12628355,
+        "du": "19M"
+      },
+      "coreNamedPlusNoblePlusCborg": {
+        "packages": 37,
+        "bytes": 7592093
+      }
+    },
+    "ipnsAddsOverHandRolled": "19 packages, ~5.0 MB: @libp2p/crypto, @libp2p/interface, @libp2p/logger, @multiformats/multiaddr, @multiformats/dns, @dnsquery/dns-packet, @leichtgewicht/ip-codec, @chainsafe/is-ip, interface-datastore, weald, supports-color, ms (nightly), hashlru, main-event, timestamp-nano, utf8-codec, protons-runtime@7 (x2), ipns. No transports, no libp2p node, no native code.",
+    "nativeCheck": "repository scripts/check-no-native-modules.mjs over every scratch tree: ok, 0 offenders, 0 prebuilt; no binding.gyp, no prebuilds/, no *.node, no *.wasm, no node-gyp in any install script (only three prepare scripts, which npm does not run for registry installs)",
+    "exporter": {
+      "getReturningPromise": {
+        "ok": false,
+        "error": "TypeError: source is not iterable"
+      },
+      "getAsAsyncGenerator": {
+        "ok": true,
+        "value": "hello"
+      },
+      "exporterDoesNotHash": {
+        "ok": true,
+        "value": "exporter returned \"Hello\" for a block whose bytes do not match its CID"
+      },
+      "identityCidNeedsNoFetch": {
+        "ok": false,
+        "error": "Error: store called"
+      },
+      "identityDagPbGoesThroughStore": {
+        "ok": true,
+        "value": "directory"
+      },
+      "dagCborLinkRefused": {
+        "ok": false,
+        "error": "BlockVerifyError: codec 0x71 refused"
+      },
+      "otherHashRefused": {
+        "ok": false,
+        "error": "BlockVerifyError: hash 0x13 refused"
+      },
+      "oversizeBlockRefused": {
+        "ok": false,
+        "error": "BlockVerifyError: block 2097153 B over cap 2097152"
+      },
+      "depthBombRefused": {
+        "ok": true,
+        "value": {
+          "withoutLimitBytesRead": 1,
+          "withLimit64": "DAG depth 65 over 64"
+        }
+      },
+      "linksBombRefused": {
+        "ok": false,
+        "error": "Error: 20000 links over 10000"
+      }
+    },
+    "exporterUnhandledRejection": "ipfs-unixfs-exporter 16.2.3: when get() throws for a block two or more levels down a file DAG, the error reaches the consumer AND is raised as an unhandledRejection (file.js walkDAG: void childQueue.add(...)). With Node defaults that kills the process (seen: q8-exporter.mjs exited 1). Reproduced at DAG depths 2, 3, 4; not at depth 1."
+  }
+}

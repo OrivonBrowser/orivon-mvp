@@ -1,0 +1,1729 @@
+{
+  "spike": "EI-1b",
+  "measuredAt": "2026-09-24T13:26:46+00:00",
+  "platform": {
+    "os": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "machine": "x86_64"
+  },
+  "versions": {
+    "@a16z/helios": "0.11.1",
+    "viem": "2.56.8",
+    "electron": "44.0.0",
+    "electronNode": "24.18.1",
+    "electronChrome": "152.0.7977.54",
+    "plainNode": "24.11.1"
+  },
+  "environmentNotes": [
+    "Electron runs launched through scripts/run-headless.mjs (xvfb, Wayland stripped), ELECTRON_RUN_AS_NODE unset; main and host reported process.versions.electron=44.0.0, host process.type=utility, ozone x11.",
+    "A parallel EI-1a headless Electron spike was running on the same machine during most Electron timings; absolute ms carry that CPU contention.",
+    "This network resolves non-existent hostnames to 127.0.0.1 (ISP search domain), so ECONNREFUSED in endpoint probes means NXDOMAIN."
+  ],
+  "q1_wasmInitUtilityProcess": {
+    "initialises": true,
+    "processType": "utility",
+    "entryShape": "ESM entry, body inside functions, no top-level await; config over process.parentPort",
+    "createProviderMs_utility": {
+      "median": 263.4,
+      "min": 208.6,
+      "max": 303.5,
+      "n": 8
+    },
+    "wasmInstantiateMs_utility": {
+      "median": 15.0
+    },
+    "createProviderMs_plainNode": {
+      "median": 138.4
+    },
+    "wasmLoadPath": "bundle fetches new URL(\"data:application/wasm;base64,...\") through globalThis.fetch; utilityProcess has no WebAssembly.instantiateStreaming, glue falls back to WebAssembly.instantiate (no shim needed)",
+    "shimsNeeded": [
+      "REQUIRED: globalThis.WorkerGlobalScope with Symbol.hasInstance(o => o === globalThis). Without it the first consensus-side fetch that throws (offline, DNS failure, allowlist refusal, blocked redirect, connection refused) panics in zduny-wasm-timer (\"no supported global object available: Object { obj: JsValue(global) }\") and kills Helios: measured in plain Node and in the Electron 44 utility process",
+      "egress guard must let data:application/wasm through fetch",
+      "EIP-1193 wrapper mapping Helios revert strings to {code:3,data} for viem CCIP-Read (see q6)"
+    ],
+    "utilityGlobalsBeforeGuard": {
+      "fetch": "function",
+      "WebSocket": "function",
+      "XMLHttpRequest": "undefined",
+      "EventSource": "undefined",
+      "localStorage": "undefined"
+    },
+    "utilitySandbox": "the forked NodeService utility runs with --service-sandbox-type=none"
+  },
+  "q2_firstWindow": {
+    "method": "main creates BrowserWindow(show:false) + loadFile; modes: nohost, host (fork right after window creation), host-after-show (fork on ready-to-show). 10 ms interval lag sampler in main, bucketed by phase.",
+    "readyToShowMs": {
+      "host": {
+        "median": 526.8,
+        "min": 472.7,
+        "max": 626.3,
+        "n": 5
+      },
+      "host-after-show": {
+        "median": 501.1,
+        "min": 461.2,
+        "max": 519.6,
+        "n": 3
+      },
+      "nohost": {
+        "median": 512.3,
+        "min": 484.5,
+        "max": 686.8,
+        "n": 5
+      }
+    },
+    "mainLagMaxMs": {
+      "host": {
+        "boot": {
+          "median": 78.5,
+          "max": 87.7
+        },
+        "fork+wasm-init": {
+          "median": 233.5,
+          "max": 282.2
+        },
+        "sync": {
+          "median": 2.5,
+          "max": 4.6
+        },
+        "idle": {
+          "median": 3.8,
+          "max": 4.9
+        }
+      },
+      "host-after-show": {
+        "boot": {
+          "median": 85.3,
+          "max": 98.5
+        },
+        "window": {
+          "median": 180.8,
+          "max": 201.1
+        },
+        "fork+wasm-init": {
+          "median": 3.5,
+          "max": 11.2
+        },
+        "sync": {
+          "median": 3,
+          "max": 5.6
+        },
+        "idle": {
+          "median": 3.8,
+          "max": 6.7
+        }
+      },
+      "nohost": {
+        "boot": {
+          "median": 84.9,
+          "max": 130.5
+        },
+        "window": {
+          "median": 199.4,
+          "max": 236.7
+        },
+        "idle": {
+          "median": 2.3,
+          "max": 5.7
+        }
+      }
+    },
+    "hostWaitSyncedMs_1dayCheckpoint": {
+      "median": 1207.6
+    },
+    "hostOwnEventLoopMaxMs": {
+      "median": 56.7
+    },
+    "conclusion": "No measurable delay to ready-to-show. The ~200 ms main-loop stall is window creation itself (present in nohost). Forked after ready-to-show, WASM init + sync cost main <= 11 ms."
+  },
+  "q3_sync": {
+    "checkpoints": [
+      {
+        "targetDays": 1,
+        "slot": 15278368,
+        "root": "0xe4ca6b9a2f24e3a1262140050c07dfa222b9a6d95f18ff5be93080ae4008313e",
+        "slotTime": "2026-09-23T11:53:59.000Z",
+        "agree": true,
+        "headerSources": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 404,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        },
+        "bootstrapServed": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        }
+      },
+      {
+        "targetDays": 10,
+        "slot": 15213568,
+        "root": "0xca6472e69d476a7f8e7136e10c89d38434b0a5ef528d0b6d9760c6de7bced6f9",
+        "slotTime": "2026-09-14T11:53:59.000Z",
+        "agree": true,
+        "headerSources": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 404,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        },
+        "bootstrapServed": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        }
+      },
+      {
+        "targetDays": 13,
+        "slot": 15191968,
+        "root": "0x2c1494576dd077e0579396da5f8bb8a11ea52a2450cf853a71e2f5f71622200a",
+        "slotTime": "2026-09-11T11:53:59.000Z",
+        "agree": true,
+        "headerSources": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        },
+        "bootstrapServed": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        }
+      },
+      {
+        "targetDays": 15,
+        "slot": 15177568,
+        "root": "0x6f827b5374d8bc1b0455d26b7f1dc41444c88fcd04e75704ffd68c79e3ff8d75",
+        "slotTime": "2026-09-09T11:53:59.000Z",
+        "agree": true,
+        "headerSources": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        },
+        "bootstrapServed": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        }
+      },
+      {
+        "targetDays": 25,
+        "slot": 15105568,
+        "root": "0xdcd001cd710535e970a3b96649859ee04002ca1d575b6ffe95b2fab1cfa74134",
+        "slotTime": "2026-08-30T11:53:59.000Z",
+        "agree": true,
+        "headerSources": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 404,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        },
+        "bootstrapServed": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        }
+      },
+      {
+        "targetDays": 45,
+        "slot": 14961600,
+        "root": "0x37874aa7553c211067711ee47b3862678bc2a9a70006d1c1cadaa8b0479adb08",
+        "slotTime": "2026-08-10T12:00:23.000Z",
+        "agree": true,
+        "headerSources": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        },
+        "bootstrapServed": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        }
+      },
+      {
+        "targetDays": 90,
+        "slot": 14637600,
+        "root": "0xef4daf77adcff0a9c3526f4c22b6429241ddf543afa0cc19cce4c5e09c17dede",
+        "slotTime": "2026-06-26T12:00:23.000Z",
+        "agree": true,
+        "headerSources": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        },
+        "bootstrapServed": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        }
+      },
+      {
+        "targetDays": 160,
+        "slot": 14133600,
+        "root": "0x3bde6ff13cabdddd94f6591cdafada48e2dea2de6a76d7723e336e3d55d8c120",
+        "slotTime": "2026-04-17T12:00:23.000Z",
+        "agree": true,
+        "headerSources": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        },
+        "bootstrapServed": {
+          "https://ethereum-beacon-api.publicnode.com": 200,
+          "https://lodestar-mainnet.chainsafe.io": 200,
+          "http://testing.mainnet.beacon-api.nimbus.team": 200
+        }
+      }
+    ],
+    "agreementNote": "publicnode and Nimbus returned the same root for every slot; Lodestar agreed where it answered (13, 15, 45, 90, 160 days) and 404ed headers-by-slot for 1, 10, 25 days but served every bootstrap.",
+    "nodeRuns": {
+      "d1-first": {
+        "waitSyncedMs": 1058.2,
+        "syncError": null,
+        "blockNumberAfter": 26047236,
+        "blockNumberError": null,
+        "inProcessEventLoopMaxMs": 46.04,
+        "consoleLines": [],
+        "bootstrapRequested": null
+      },
+      "d10": {
+        "waitSyncedMs": 1488.8,
+        "syncError": null,
+        "blockNumberAfter": 26047238,
+        "blockNumberError": null,
+        "inProcessEventLoopMaxMs": 222.04,
+        "consoleLines": [],
+        "bootstrapRequested": "0xca6472e69d476a7f8e7136e10c89d38434b0a5ef528d0b6d9760c6de7bced6f9"
+      },
+      "d13": {
+        "waitSyncedMs": 1515.2,
+        "syncError": null,
+        "blockNumberAfter": 26047238,
+        "blockNumberError": null,
+        "inProcessEventLoopMaxMs": 268.17,
+        "consoleLines": [],
+        "bootstrapRequested": "0x2c1494576dd077e0579396da5f8bb8a11ea52a2450cf853a71e2f5f71622200a"
+      },
+      "d15": {
+        "waitSyncedMs": 1517.1,
+        "syncError": null,
+        "blockNumberAfter": 26047238,
+        "blockNumberError": null,
+        "inProcessEventLoopMaxMs": 308.02,
+        "consoleLines": [],
+        "bootstrapRequested": "0x6f827b5374d8bc1b0455d26b7f1dc41444c88fcd04e75704ffd68c79e3ff8d75"
+      },
+      "d25": {
+        "waitSyncedMs": 1775,
+        "syncError": null,
+        "blockNumberAfter": 26047239,
+        "blockNumberError": null,
+        "inProcessEventLoopMaxMs": 511.97,
+        "consoleLines": [],
+        "bootstrapRequested": "0xdcd001cd710535e970a3b96649859ee04002ca1d575b6ffe95b2fab1cfa74134"
+      },
+      "d45": {
+        "waitSyncedMs": 2100.9,
+        "syncError": null,
+        "blockNumberAfter": 26047244,
+        "blockNumberError": null,
+        "inProcessEventLoopMaxMs": 872.94,
+        "consoleLines": [],
+        "bootstrapRequested": "0x37874aa7553c211067711ee47b3862678bc2a9a70006d1c1cadaa8b0479adb08"
+      },
+      "d160": {
+        "waitSyncedMs": 5207,
+        "syncError": null,
+        "blockNumberAfter": 26047245,
+        "blockNumberError": null,
+        "inProcessEventLoopMaxMs": 2858.42,
+        "consoleLines": [],
+        "bootstrapRequested": "0x3bde6ff13cabdddd94f6591cdafada48e2dea2de6a76d7723e336e3d55d8c120"
+      },
+      "nocp": {
+        "waitSyncedMs": 9358,
+        "syncError": null,
+        "blockNumberAfter": 26047246,
+        "blockNumberError": null,
+        "inProcessEventLoopMaxMs": 6241.12,
+        "consoleLines": [],
+        "bootstrapRequested": "0x9b41a80f58c52068a00e8535b8d6704769c7577a5fd506af5e0c018687991d55"
+      },
+      "badcp": {
+        "waitSyncedMs": 3296.6,
+        "syncError": "sync failed: invalid sync committee period",
+        "blockNumberAfter": null,
+        "blockNumberError": null,
+        "inProcessEventLoopMaxMs": 174.33,
+        "consoleLines": [],
+        "bootstrapRequested": "0x9b41a80f58c52068a00e8535b8d6704769c7577a5fd506af5e0c018687991d55"
+      }
+    },
+    "nodeRepeats": {
+      "d1_waitSyncedMs": [
+        1259.5,
+        1149.3,
+        1096.3
+      ],
+      "d10_waitSyncedMs": [
+        1696.8,
+        1472.8,
+        1863.1
+      ]
+    },
+    "utilityProcessRuns": {
+      "d1_waitSyncedMs": [
+        1285.9,
+        1072.1,
+        1458.5,
+        1165.3,
+        1052.3,
+        1249.9,
+        1137.9,
+        1430.7
+      ],
+      "d10_waitSyncedMs": [
+        1337.5,
+        1491.4
+      ]
+    },
+    "pastAgeLimit": "No warning, no error, no console output at 25, 45 or 160 days; all synced. helios-ts 0.11.1 builds Config with ..Default::default(), so max_checkpoint_age=0 and strict_checkpoint_age=false; the only age check (consensus.rs:544-551) is tracing::warn!(\"checkpoint too old, consider using a more recent block\"), which never surfaces in the WASM build. Orivon must enforce the age itself.",
+    "noCheckpoint": "Helios silently uses its baked default root 0x9b41a80f58c52068a00e8535b8d6704769c7577a5fd506af5e0c018687991d55 (slot 12704096, ~2025-10-01, ~359 days old) and syncs forward 315 periods (9.4 s; one later run failed with \"sync failed: invalid sync committee period\"). The ethpandaops list is NOT contacted.",
+    "malformedCheckpoint": "A 63-hex-digit checkpoint fails B256::from_hex and silently falls back to the same baked default (helios-ts ethereum.rs: .and_then(|c| B256::from_hex(c).ok()).unwrap_or(base.default_checkpoint)). Orivon must validate ^0x[0-9a-f]{64}$ itself.",
+    "dbTypeNote": "In the JS build the checkpoint is always Some(..), so db.load_checkpoint() is never read; Orivon must persist and pass the checkpoint itself."
+  },
+  "q4_egress": {
+    "guard": "globalThis.fetch replaced before Helios import (origin allowlist, redirect:\"error\", data:application/wasm allowed); XMLHttpRequest/WebSocket/EventSource replaced by throwing stubs; net.Socket.prototype.connect logged independently.",
+    "otherNetworkApisUsedByHelios": "none: no XMLHttpRequest/WebSocket/EventSource call, and every TCP connect went to a configured host (WebSocket global exists in Node 24 and in the utility process, so the guard must replace it).",
+    "urlsAttempted": {
+      "wasm": "data:application/wasm;base64,<4201477 chars> (1x at init)",
+      "consensus": [
+        "/eth/v1/beacon/light_client/bootstrap/{root}",
+        "/eth/v1/beacon/light_client/updates?start_period=P&count<=128",
+        "/eth/v1/beacon/light_client/finality_update",
+        "/eth/v2/beacon/blocks/{slot} (full beacon block, once per new slot while running)"
+      ],
+      "execution": [
+        "eth_createAccessList",
+        "eth_getProof (by EIP-1898 {blockHash})",
+        "eth_getCode",
+        "eth_getBlockByNumber",
+        "eth_getBlockByHash (historical blocks)"
+      ],
+      "neverSent": [
+        "eth_call"
+      ]
+    },
+    "refusedAcrossAllRuns": 0,
+    "fallbackListContacted": false,
+    "fallbackProbes": {
+      "bogusCheckpoint": "sync failed: could not fetch bootstrap: rpc error on method: bootstrap, message: status: 404, message: NOT_FOUND: Block root 0x1111111111111111111111111111111111111111111111111111111111111111 not found",
+      "noCheckpointBootstrap404": "sync failed: could not fetch bootstrap: rpc error on method: bootstrap, message: status: 404, message: not found",
+      "note": "Neither failure path, nor the no-checkpoint path, attempted raw.githubusercontent.com or operationsolarstorm.org; helios-ts never sets fallback/load_external_fallback. Allowlist refusal of the fallback therefore could not be exercised: Helios never tried."
+    },
+    "embeddedUrls": [
+      "https://raw.githubusercontent.com/ethpandaops/checkpoint-sync-health-checks/master/_data/endpoints.yaml",
+      "https://ethereum.operationsolarstorm.org (default consensus RPC when none is passed; 301 -> http://testing.mainnet.beacon-api.nimbus.team)"
+    ]
+  },
+  "q5_memory": {
+    "samples": 61,
+    "minutes": 60,
+    "intervalSeconds": 60,
+    "mode": "Electron utility process, host-after-show, idle after sync, 1-day checkpoint",
+    "rssMB": {
+      "start": 160.7,
+      "end": 200,
+      "min": 139.2,
+      "max": 202.9,
+      "meanFirst10min": 148.3,
+      "meanLast10min": 201.1
+    },
+    "heapUsedMB": {
+      "start": 9.7,
+      "end": 11.1,
+      "max": 11.9
+    },
+    "appMetricsWorkingSetMB": {
+      "start": 161.2,
+      "end": 200.6,
+      "max": 203.7
+    },
+    "blockNumberAdvance": [
+      26047302,
+      26047599
+    ],
+    "egressAtEnd": {
+      "fetchCount": 614,
+      "refused": 0,
+      "byOrigin": {
+        "null": 1,
+        "https://ethereum-beacon-api.publicnode.com": 613
+      },
+      "rpcMethods": {}
+    },
+    "series": [
+      {
+        "min": 0,
+        "rss": 160.7,
+        "heapUsed": 9.7,
+        "block": 26047302
+      },
+      {
+        "min": 1,
+        "rss": 139.2,
+        "heapUsed": 10.1,
+        "block": 26047307
+      },
+      {
+        "min": 2,
+        "rss": 143.8,
+        "heapUsed": 10.6,
+        "block": 26047312
+      },
+      {
+        "min": 3,
+        "rss": 145.3,
+        "heapUsed": 11.3,
+        "block": 26047317
+      },
+      {
+        "min": 4,
+        "rss": 145.8,
+        "heapUsed": 10.7,
+        "block": 26047322
+      },
+      {
+        "min": 5,
+        "rss": 149.3,
+        "heapUsed": 11.3,
+        "block": 26047327
+      },
+      {
+        "min": 6,
+        "rss": 148.4,
+        "heapUsed": 9.5,
+        "block": 26047332
+      },
+      {
+        "min": 7,
+        "rss": 149.3,
+        "heapUsed": 9.9,
+        "block": 26047337
+      },
+      {
+        "min": 8,
+        "rss": 152.8,
+        "heapUsed": 10.1,
+        "block": 26047342
+      },
+      {
+        "min": 9,
+        "rss": 153.7,
+        "heapUsed": 10.2,
+        "block": 26047347
+      },
+      {
+        "min": 10,
+        "rss": 155,
+        "heapUsed": 10.3,
+        "block": 26047351
+      },
+      {
+        "min": 11,
+        "rss": 152.3,
+        "heapUsed": 9.6,
+        "block": 26047356
+      },
+      {
+        "min": 12,
+        "rss": 156.5,
+        "heapUsed": 10.3,
+        "block": 26047361
+      },
+      {
+        "min": 13,
+        "rss": 156.9,
+        "heapUsed": 10.2,
+        "block": 26047366
+      },
+      {
+        "min": 14,
+        "rss": 158.3,
+        "heapUsed": 9.8,
+        "block": 26047371
+      },
+      {
+        "min": 15,
+        "rss": 160.8,
+        "heapUsed": 10.3,
+        "block": 26047376
+      },
+      {
+        "min": 16,
+        "rss": 161.7,
+        "heapUsed": 10.3,
+        "block": 26047381
+      },
+      {
+        "min": 17,
+        "rss": 160.9,
+        "heapUsed": 9.9,
+        "block": 26047386
+      },
+      {
+        "min": 18,
+        "rss": 163.5,
+        "heapUsed": 10.4,
+        "block": 26047391
+      },
+      {
+        "min": 19,
+        "rss": 165.1,
+        "heapUsed": 10.4,
+        "block": 26047396
+      },
+      {
+        "min": 20,
+        "rss": 166.6,
+        "heapUsed": 10.2,
+        "block": 26047401
+      },
+      {
+        "min": 21,
+        "rss": 170.8,
+        "heapUsed": 10.7,
+        "block": 26047406
+      },
+      {
+        "min": 22,
+        "rss": 168.8,
+        "heapUsed": 9.9,
+        "block": 26047411
+      },
+      {
+        "min": 23,
+        "rss": 170.7,
+        "heapUsed": 10.3,
+        "block": 26047416
+      },
+      {
+        "min": 24,
+        "rss": 173.9,
+        "heapUsed": 10.8,
+        "block": 26047421
+      },
+      {
+        "min": 25,
+        "rss": 171.6,
+        "heapUsed": 9.8,
+        "block": 26047426
+      },
+      {
+        "min": 26,
+        "rss": 176.4,
+        "heapUsed": 10.5,
+        "block": 26047431
+      },
+      {
+        "min": 27,
+        "rss": 175.5,
+        "heapUsed": 10.5,
+        "block": 26047436
+      },
+      {
+        "min": 28,
+        "rss": 174.9,
+        "heapUsed": 10.4,
+        "block": 26047441
+      },
+      {
+        "min": 29,
+        "rss": 176.9,
+        "heapUsed": 10.1,
+        "block": 26047446
+      },
+      {
+        "min": 30,
+        "rss": 181.4,
+        "heapUsed": 10.8,
+        "block": 26047451
+      },
+      {
+        "min": 31,
+        "rss": 181.3,
+        "heapUsed": 10.2,
+        "block": 26047456
+      },
+      {
+        "min": 32,
+        "rss": 183,
+        "heapUsed": 10.3,
+        "block": 26047461
+      },
+      {
+        "min": 33,
+        "rss": 185.1,
+        "heapUsed": 10.6,
+        "block": 26047466
+      },
+      {
+        "min": 34,
+        "rss": 186.1,
+        "heapUsed": 10.4,
+        "block": 26047471
+      },
+      {
+        "min": 35,
+        "rss": 186.8,
+        "heapUsed": 10.5,
+        "block": 26047476
+      },
+      {
+        "min": 36,
+        "rss": 185.4,
+        "heapUsed": 10.4,
+        "block": 26047481
+      },
+      {
+        "min": 37,
+        "rss": 187.8,
+        "heapUsed": 10.2,
+        "block": 26047486
+      },
+      {
+        "min": 38,
+        "rss": 188.5,
+        "heapUsed": 10.2,
+        "block": 26047491
+      },
+      {
+        "min": 39,
+        "rss": 189.5,
+        "heapUsed": 9.8,
+        "block": 26047496
+      },
+      {
+        "min": 40,
+        "rss": 192,
+        "heapUsed": 10.4,
+        "block": 26047501
+      },
+      {
+        "min": 41,
+        "rss": 192.7,
+        "heapUsed": 10.5,
+        "block": 26047506
+      },
+      {
+        "min": 42,
+        "rss": 196.8,
+        "heapUsed": 10.6,
+        "block": 26047511
+      },
+      {
+        "min": 43,
+        "rss": 197.3,
+        "heapUsed": 10.5,
+        "block": 26047516
+      },
+      {
+        "min": 44,
+        "rss": 198.1,
+        "heapUsed": 10.7,
+        "block": 26047521
+      },
+      {
+        "min": 45,
+        "rss": 197.3,
+        "heapUsed": 9.8,
+        "block": 26047525
+      },
+      {
+        "min": 46,
+        "rss": 199.7,
+        "heapUsed": 10.7,
+        "block": 26047531
+      },
+      {
+        "min": 47,
+        "rss": 198.8,
+        "heapUsed": 10.8,
+        "block": 26047536
+      },
+      {
+        "min": 48,
+        "rss": 201.4,
+        "heapUsed": 11.4,
+        "block": 26047541
+      },
+      {
+        "min": 49,
+        "rss": 199.4,
+        "heapUsed": 11.2,
+        "block": 26047546
+      },
+      {
+        "min": 50,
+        "rss": 201.6,
+        "heapUsed": 10.6,
+        "block": 26047550
+      },
+      {
+        "min": 51,
+        "rss": 199.9,
+        "heapUsed": 10.6,
+        "block": 26047554
+      },
+      {
+        "min": 52,
+        "rss": 200.6,
+        "heapUsed": 10.8,
+        "block": 26047559
+      },
+      {
+        "min": 53,
+        "rss": 201.5,
+        "heapUsed": 11.4,
+        "block": 26047564
+      },
+      {
+        "min": 54,
+        "rss": 201.1,
+        "heapUsed": 11.3,
+        "block": 26047569
+      },
+      {
+        "min": 55,
+        "rss": 202.3,
+        "heapUsed": 11.9,
+        "block": 26047574
+      },
+      {
+        "min": 56,
+        "rss": 200.9,
+        "heapUsed": 10.6,
+        "block": 26047579
+      },
+      {
+        "min": 57,
+        "rss": 201.9,
+        "heapUsed": 11.1,
+        "block": 26047584
+      },
+      {
+        "min": 58,
+        "rss": 202.9,
+        "heapUsed": 11.3,
+        "block": 26047589
+      },
+      {
+        "min": 59,
+        "rss": 199.4,
+        "heapUsed": 10.5,
+        "block": 26047594
+      },
+      {
+        "min": 60,
+        "rss": 200,
+        "heapUsed": 11.1,
+        "block": 26047599
+      }
+    ],
+    "finished": true,
+    "trend": "RSS rose about 1.1 MB/min from 139 MB (minute 1, after first GC) and plateaued at 199-203 MB from minute 48 to 60; JS heapUsed flat at 10-12 MB, so the growth is outside the JS heap (WASM linear memory or native). Plateau not proven beyond one hour. The run had no WorkerGlobalScope shim and no beacon error occurred, so no panic."
+  },
+  "q6_resolution": {
+    "transport": "viem custom(eip1193) over HeliosProvider; Universal Resolver resolveWithGateways(dnsEncode(name), contenthash(namehash), [\"x-batch-gateway:true\"]); ccipRead.request injected (https only, pre-guard fetch)",
+    "names": {
+      "vitalik.eth": {
+        "contenthash": "0xe30101701220591877291658c1ce6aded152a0d1d79da3119f55d5e797c3d6f4561cb2242232",
+        "resolver": "0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63",
+        "ms": 640,
+        "rpc": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        },
+        "matchesUnverifiedReference": true
+      },
+      "ens.eth": {
+        "contenthash": "0xe30101701220adbee9ad34d5e60cf6a77a82ad98bcc8cdb88f9372b3f95f019d7a1083ee8327",
+        "resolver": "0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41",
+        "ms": 404,
+        "rpc": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        },
+        "matchesUnverifiedReference": true
+      },
+      "tornadocash.eth": {
+        "contenthash": "0xe30101701220c3a350e49a11cfc9cab672331d51ad1b723e0d3db9cd73a316ebaa7788595fe8",
+        "resolver": "0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41",
+        "ms": 346,
+        "rpc": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        },
+        "matchesUnverifiedReference": true
+      },
+      "app.ens.eth": {
+        "contenthash": "0xe5010172002408011220656699aad7e0be52b569c5daeb5997fb27ee75544ed075ccd2e47af9c6f78e70",
+        "resolver": "0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41",
+        "ms": 240,
+        "rpc": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        },
+        "matchesUnverifiedReference": true
+      },
+      "uniswap.eth": {
+        "contenthash": "0xe5010170000f6170702e756e69737761702e6f7267",
+        "resolver": "0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41",
+        "ms": 344,
+        "rpc": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        },
+        "matchesUnverifiedReference": true
+      }
+    },
+    "namesFirstRun": {
+      "vitalik.eth": {
+        "ms": 688
+      },
+      "ens.eth": {
+        "ms": 294
+      },
+      "tornadocash.eth": {
+        "ms": 478
+      },
+      "app.ens.eth": {
+        "ms": 348
+      },
+      "uniswap.eth": {
+        "ms": 348
+      }
+    },
+    "ccipWithoutShim": "fails: HeliosProvider rethrows new Error(err.toString()) = \"Error: execution reverted: 556f1830...\" (hex, no 0x, no .data), so viem never sees OffchainLookup.",
+    "ccip": [
+      {
+        "kind": "addr",
+        "name": "test.offchaindemo.eth",
+        "ok": true,
+        "value": "0x779981590E7Ccc0CFAe8040Ce7151324747cDb97",
+        "ms": 3804,
+        "rpc": {
+          "eth_createAccessList": 5,
+          "eth_getProof": 38,
+          "eth_getCode": 28
+        },
+        "gateway": [
+          "https://ens-gateway.gregskril.workers.dev/lookup/0x35b920d43"
+        ],
+        "matchesReference": true,
+        "error": null
+      },
+      {
+        "kind": "text:url",
+        "name": "test.offchaindemo.eth",
+        "ok": true,
+        "value": null,
+        "ms": 3228,
+        "rpc": {
+          "eth_createAccessList": 5,
+          "eth_getProof": 38,
+          "eth_getCode": 28
+        },
+        "gateway": [
+          "https://ens-gateway.gregskril.workers.dev/lookup/0x35b920d43"
+        ],
+        "matchesReference": true,
+        "error": null
+      },
+      {
+        "kind": "addr",
+        "name": "jesse.base.eth",
+        "ok": true,
+        "value": "0x2211d1D0020DAEA8039E46Cf1367962070d77DA9",
+        "ms": 3509,
+        "rpc": {
+          "eth_createAccessList": 5,
+          "eth_getProof": 37,
+          "eth_getCode": 27
+        },
+        "gateway": [
+          "https://api.coinbase.com/api/v1/domain/resolver/resolveDomai"
+        ],
+        "matchesReference": true,
+        "error": null
+      },
+      {
+        "kind": "addr",
+        "name": "lsd.cb.id",
+        "ok": true,
+        "value": "0xd3a5609a08Faf0BB64A654824262C33cD344e5ba",
+        "ms": 3688,
+        "rpc": {
+          "eth_createAccessList": 5,
+          "eth_getProof": 38,
+          "eth_getCode": 28
+        },
+        "gateway": [
+          "https://api.coinbase.com/api/v1/subdomain/resolver/resolveSu"
+        ],
+        "matchesReference": true,
+        "error": null
+      },
+      {
+        "kind": "addr",
+        "name": "brantly.cb.id",
+        "ok": false,
+        "value": null,
+        "ms": 4952,
+        "rpc": {
+          "eth_createAccessList": 8,
+          "eth_getProof": 48,
+          "eth_getCode": 32
+        },
+        "gateway": [
+          "https://api.coinbase.com/api/v1/subdomain/resolver/resolveSu"
+        ],
+        "matchesReference": false,
+        "error": "Execution reverted with reason: Error: revert: ccip 404."
+      },
+      {
+        "kind": "text:url",
+        "name": "jesse.base.eth",
+        "ok": true,
+        "value": "jesse.xyz",
+        "ms": 3324,
+        "rpc": {
+          "eth_createAccessList": 5,
+          "eth_getProof": 37,
+          "eth_getCode": 27
+        },
+        "gateway": [
+          "https://api.coinbase.com/api/v1/domain/resolver/resolveDomai"
+        ],
+        "matchesReference": true,
+        "error": null
+      },
+      {
+        "kind": "contenthash",
+        "name": "test.offchaindemo.eth",
+        "ok": true,
+        "value": "0x",
+        "ms": 3190,
+        "rpc": {
+          "eth_createAccessList": 5,
+          "eth_getProof": 38,
+          "eth_getCode": 28
+        },
+        "gateway": [
+          "https://ens-gateway.gregskril.workers.dev/lookup/0x35b920d43"
+        ],
+        "matchesReference": true,
+        "error": null
+      }
+    ],
+    "ccipFinalizedClient": [
+      {
+        "name": "test.offchaindemo.eth",
+        "ok": true,
+        "ms": 3153,
+        "value": "0x779981590E7Ccc0CFAe8040Ce7151324747cDb97"
+      },
+      {
+        "name": "jesse.base.eth",
+        "ok": true,
+        "ms": 3349,
+        "value": "0x2211d1D0020DAEA8039E46Cf1367962070d77DA9"
+      }
+    ],
+    "utilityProcess": {
+      "note": "Electron 44 utility process, WorkerGlobalScope + revert shims, CCIP via its own https-only fetch",
+      "results": [
+        {
+          "name": "vitalik.eth",
+          "ok": true,
+          "contenthash": "0xe30101701220591877291658c1ce6aded152a0d1d79da3119f55d5e797c3d6f4561cb2242232",
+          "ms": 564
+        },
+        {
+          "name": "app.ens.eth",
+          "ok": true,
+          "contenthash": "0xe5010172002408011220656699aad7e0be52b569c5daeb5997fb27ee75544ed075ccd2e47af9c6f78e70",
+          "ms": 403
+        },
+        {
+          "name": "test.offchaindemo.eth",
+          "ok": true,
+          "addr": "0x779981590E7Ccc0CFAe8040Ce7151324747cDb97",
+          "ms": 3258
+        }
+      ],
+      "mainLagMaxMs": {
+        "boot": 54.8,
+        "window": 113.8,
+        "fork+wasm-init": 4.7,
+        "sync": 3.7,
+        "idle": 4.8
+      }
+    }
+  },
+  "q6b_blockTags": {
+    "heliosLatest": 26047263,
+    "referenceLatest": 26047264,
+    "heliosFinalized": {
+      "number": 26047177,
+      "hash": "0x962fd03f20b6bb1e91c94747302c6da5117a22ec27143cd591c1243d539e3919",
+      "timestamp": 1790251223
+    },
+    "finalizedHashMatchesReference": true,
+    "finalizedLag": {
+      "blocks": 86,
+      "minutes": 17.2
+    },
+    "finalizedLagFirstRun": {
+      "blocks": 81,
+      "minutes": 16.2
+    },
+    "contenthashLatencyMs": {
+      "latest": [
+        348,
+        310,
+        342
+      ],
+      "finalized": [
+        247,
+        768,
+        370
+      ]
+    },
+    "contenthashLatencyMsFirstRun": {
+      "latest": [
+        339,
+        360,
+        331
+      ],
+      "finalized": [
+        323,
+        334,
+        345
+      ]
+    },
+    "explicitBlockNumbers": [
+      {
+        "backFromFinalized": 0,
+        "ok": true,
+        "ms": 328
+      },
+      {
+        "backFromFinalized": 1,
+        "ok": true,
+        "ms": 784
+      },
+      {
+        "backFromFinalized": 32,
+        "ok": true,
+        "ms": 818
+      },
+      {
+        "backFromFinalized": 63,
+        "ok": true,
+        "ms": 792
+      },
+      {
+        "backFromFinalized": 64,
+        "ok": true,
+        "ms": 719
+      },
+      {
+        "backFromFinalized": 65,
+        "ok": true,
+        "ms": 1356
+      },
+      {
+        "backFromFinalized": 128,
+        "ok": true,
+        "ms": 905
+      },
+      {
+        "backFromFinalized": 256,
+        "ok": true,
+        "ms": 863
+      },
+      {
+        "backFromFinalized": 1000,
+        "ok": true,
+        "ms": 1034
+      },
+      {
+        "backFromFinalized": 8000,
+        "ok": true,
+        "ms": 829
+      },
+      {
+        "backFromFinalized": 0,
+        "ok": true,
+        "ms": 318
+      },
+      {
+        "backFromFinalized": 8190,
+        "ok": false,
+        "ms": 1412
+      },
+      {
+        "backFromFinalized": 8191,
+        "ok": false,
+        "ms": 1385
+      },
+      {
+        "backFromFinalized": 8192,
+        "ok": false,
+        "ms": 1356
+      },
+      {
+        "backFromFinalized": 8300,
+        "ok": false,
+        "ms": 1359
+      },
+      {
+        "backFromFinalized": 20000,
+        "ok": false,
+        "ms": 1424
+      },
+      {
+        "backFromFinalized": 100000,
+        "ok": false,
+        "ms": 1433
+      }
+    ],
+    "explicitLimitError": "Error: evm error: \"block 26038987 is outside EIP-2935 ring buffer range (latest: 26047263, buffer size: 8191)\"",
+    "viemCcipCallbackBlock": "viem call.js:170 calls offchainLookup(client,{data,requestOptions,to}) without blockNumber/blockTag, so the CCIP callback runs at client.experimental_blockTag ?? \"latest\". Setting experimental_blockTag:\"finalized\" on the client keeps both calls at finalized (measured working); an explicit blockNumber is NOT propagated to the callback."
+  },
+  "q7_tamper": {
+    "name": "vitalik.eth",
+    "truth": "0xe30101701220591877291658c1ce6aded152a0d1d79da3119f55d5e797c3d6f4561cb2242232",
+    "persistent": [
+      {
+        "case": "storageProofNode",
+        "ok": false,
+        "heliosError": "Error: evm error: \"invalid storage proof for address: 0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe, slot: 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc\"",
+        "ms": 3611,
+        "requests": {
+          "eth_createAccessList": 4,
+          "eth_getProof": 31,
+          "eth_getCode": 5
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "storageValue",
+        "ok": false,
+        "heliosError": "Error: evm error: \"invalid storage proof for address: 0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe, slot: 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc\"",
+        "ms": 3137,
+        "requests": {
+          "eth_createAccessList": 4,
+          "eth_getProof": 28,
+          "eth_getCode": 4
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "accountProofNode",
+        "ok": false,
+        "heliosError": "Error: evm error: \"invalid account proof for address: 0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe\"",
+        "ms": 2998,
+        "requests": {
+          "eth_createAccessList": 4,
+          "eth_getProof": 28
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "storageHash",
+        "ok": false,
+        "heliosError": "Error: evm error: \"invalid account proof for address: 0x0000000000000000000000000000000000000000\"",
+        "ms": 2652,
+        "requests": {
+          "eth_createAccessList": 4,
+          "eth_getProof": 28
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "codeHash",
+        "ok": false,
+        "heliosError": "Error: evm error: \"invalid account proof for address: 0x0000000000000000000000000000000000000000\"",
+        "ms": 2344,
+        "requests": {
+          "eth_createAccessList": 4,
+          "eth_getProof": 28
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "balance",
+        "ok": false,
+        "heliosError": "Error: evm error: \"invalid account proof for address: 0x0000000000000000000000000000000000000000\"",
+        "ms": 2382,
+        "requests": {
+          "eth_createAccessList": 4,
+          "eth_getProof": 29
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "codeByte",
+        "ok": false,
+        "heliosError": "Error: evm error: \"code hash mismatch for address: 0xED73a03F19e8D849E44a39252d222c6ad5217E1e, found: 0xddebc7deb97223c24c0da173895ca7cb155fd5f966cf2645fc8e777776944e8e, expected: 0x45a5315ffdf517a1a511c8b34496fa2852b83deb3288ced9494f73be7563fcf5\"",
+        "ms": 67285,
+        "requests": {
+          "eth_createAccessList": 4,
+          "eth_getProof": 47,
+          "eth_getCode": 28
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "staleProof",
+        "ok": false,
+        "heliosError": "Error: evm error: \"invalid account proof for address: 0xED73a03F19e8D849E44a39252d222c6ad5217E1e\"",
+        "ms": 2459,
+        "requests": {
+          "eth_createAccessList": 4,
+          "eth_getProof": 28
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "accessListEmpty",
+        "ok": true,
+        "heliosError": null,
+        "ms": 1754,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 14,
+          "eth_getCode": 4
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "accessListBogus",
+        "ok": true,
+        "heliosError": null,
+        "ms": 321,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "accessListError",
+        "ok": true,
+        "heliosError": null,
+        "ms": 95,
+        "requests": {
+          "eth_createAccessList": 1
+        },
+        "wrongValueReturned": false
+      },
+      {
+        "case": "ethCallLie",
+        "ok": true,
+        "heliosError": null,
+        "ms": 298,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        },
+        "wrongValueReturned": false
+      }
+    ],
+    "singleResponse": [
+      {
+        "case": "storageProofNode",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 2581,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 21,
+          "eth_getCode": 7
+        }
+      },
+      {
+        "case": "storageValue",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 313,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 3
+        }
+      },
+      {
+        "case": "accountProofNode",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 401,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 3
+        }
+      },
+      {
+        "case": "storageHash",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 285,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 3
+        }
+      },
+      {
+        "case": "codeHash",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 509,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        }
+      },
+      {
+        "case": "balance",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 296,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        }
+      },
+      {
+        "case": "codeByte",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 321,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        }
+      },
+      {
+        "case": "staleProof",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 383,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 3
+        }
+      },
+      {
+        "case": "accessListEmpty",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 375,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 3,
+          "eth_getCode": 1
+        }
+      },
+      {
+        "case": "accessListBogus",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 374,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        }
+      },
+      {
+        "case": "accessListError",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 173,
+        "requests": {
+          "eth_createAccessList": 1
+        }
+      },
+      {
+        "case": "ethCallLie",
+        "ok": true,
+        "equalsTruth": true,
+        "ms": 481,
+        "requests": {
+          "eth_createAccessList": 1,
+          "eth_getProof": 6,
+          "eth_getCode": 4
+        }
+      }
+    ],
+    "viemSurface": "viem shortMessage \"An unknown RPC error occurred.\"; the Helios text is in the cause",
+    "conclusion": "No case ever produced a wrong contenthash. One altered response: Helios rejects it and re-fetches (or reuses verified state) and returns the true value. Altered on every response: resolution fails with invalid storage proof / invalid account proof / code hash mismatch. eth_call is never sent to the RPC; access-list lies change cost, not result."
+  },
+  "q8_universalResolver": {
+    "viemMainnet": "0xeeeeeeee14d718c2b47d9923deab1335e144eeee (blockCreated 23085558)",
+    "ensDocsDeploymentsMainnet": "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe (docs.ens.domains/learn/deployments, fetched 2026-09-24)",
+    "ensContractsRepo": "ensdomains/ens-contracts deployments/mainnet/UniversalResolver.json (branches staging and mainnet) = 0xED73a03F19e8D849E44a39252d222c6ad5217E1e, block 23085497, commit \"chore: deploy UR update\" 2025-08-07",
+    "onChain": "Helios-proven EIP-1967 implementation slot (0x3608...2bbc) of 0xeeee...eeee = 0xed73a03f19e8d849e44a39252d222c6ad5217e1e",
+    "conclusion": "viem ships ENS current mainnet UR (the proxy); its implementation is the address ens-contracts publishes. The proxy is upgradable, so the ENS proxy admin is part of the trust base."
+  },
+  "q9_endpoints": {
+    "execution": {
+      "https://1rpc.io/eth": {
+        "pass": false,
+        "syncError": null,
+        "steps": {
+          "blockNumber": 3,
+          "vitalik.eth": "FAIL: Error: evm error: \"server returned an error response: error code -32001: You've reached the usage limit for your current plan. To continue with higher limits an",
+          "app.ens.eth": "FAIL: Error: evm error: \"server returned an error response: error code -32001: You've reached the usage limit for your current plan. To continue with higher limits an",
+          "vitalik.eth@finalized": "FAIL: Error: evm error: \"server returned an error response: error code -32001: You've reached the usage limit for your current plan. To continue with higher limits an",
+          "ccip test.offchaindemo.eth addr": "FAIL: Error: evm error: \"server returned an error response: error code -32001: You've reached the usage limit for your current plan. To continue with higher limits an"
+        },
+        "note": "first attempt hung past a 300 s timeout (earlier curl got a 301 on eth_createAccessList); retry failed with -32001 usage limit"
+      },
+      "https://eth.drpc.org": {
+        "pass": true,
+        "syncError": null,
+        "steps": {
+          "blockNumber": 3,
+          "vitalik.eth": 887,
+          "app.ens.eth": 358,
+          "vitalik.eth@finalized": 374,
+          "ccip test.offchaindemo.eth addr": 4812
+        }
+      },
+      "https://eth.llamarpc.com": {
+        "pass": false,
+        "syncError": null,
+        "steps": {
+          "blockNumber": 7,
+          "vitalik.eth": "FAIL: Error: evm error: \"HTTP error 525 with body: <!DOCTYPE html>\\n<!--[if lt IE 7]> <html class=\\\"no-js ie6 oldie\\\" lang=\\\"en-US\\\"> <![endif]-->\\n<!--[if IE 7]>    ",
+          "app.ens.eth": "FAIL: Error: evm error: \"HTTP error 525 with body: <!DOCTYPE html>\\n<!--[if lt IE 7]> <html class=\\\"no-js ie6 oldie\\\" lang=\\\"en-US\\\"> <![endif]-->\\n<!--[if IE 7]>    ",
+          "vitalik.eth@finalized": "FAIL: Error: evm error: \"HTTP error 525 with body: <!DOCTYPE html>\\n<!--[if lt IE 7]> <html class=\\\"no-js ie6 oldie\\\" lang=\\\"en-US\\\"> <![endif]-->\\n<!--[if IE 7]>    ",
+          "ccip test.offchaindemo.eth addr": "FAIL: Error: evm error: \"HTTP error 525 with body: <!DOCTYPE html>\\n<!--[if lt IE 7]> <html class=\\\"no-js ie6 oldie\\\" lang=\\\"en-US\\\"> <![endif]-->\\n<!--[if IE 7]>    "
+        }
+      },
+      "https://eth-mainnet.public.blastapi.io": {
+        "pass": true,
+        "syncError": null,
+        "steps": {
+          "blockNumber": 5,
+          "vitalik.eth": 4002,
+          "app.ens.eth": 2048,
+          "vitalik.eth@finalized": 2210,
+          "ccip test.offchaindemo.eth addr": 5816
+        }
+      },
+      "https://ethereum-rpc.publicnode.com": {
+        "pass": true,
+        "syncError": null,
+        "steps": {
+          "blockNumber": 7,
+          "vitalik.eth": 3254,
+          "app.ens.eth": 774,
+          "vitalik.eth@finalized": 1103,
+          "ccip test.offchaindemo.eth addr": 3958
+        }
+      },
+      "https://mainnet.gateway.tenderly.co": {
+        "pass": true,
+        "syncError": null,
+        "steps": {
+          "blockNumber": 8,
+          "vitalik.eth": 1086,
+          "app.ens.eth": 1016,
+          "vitalik.eth@finalized": 5783,
+          "ccip test.offchaindemo.eth addr": 27721
+        }
+      },
+      "https://rpc.flashbots.net": {
+        "pass": false,
+        "syncError": null,
+        "steps": {
+          "blockNumber": 5,
+          "vitalik.eth": "FAIL: Error: evm error: \"server returned an error response: error code -32602: distance to target block exceeds maximum proof window\"",
+          "app.ens.eth": "FAIL: Error: evm error: \"server returned an error response: error code -32602: distance to target block exceeds maximum proof window\"",
+          "vitalik.eth@finalized": "FAIL: Error: evm error: \"server returned an error response: error code -32602: distance to target block exceeds maximum proof window\"",
+          "ccip test.offchaindemo.eth addr": "FAIL: Error: evm error: \"server returned an error response: error code -32602: distance to target block exceeds maximum proof window\""
+        }
+      },
+      "https://rpc.mevblocker.io": {
+        "pass": true,
+        "syncError": null,
+        "steps": {
+          "blockNumber": 4,
+          "vitalik.eth": 1078,
+          "app.ens.eth": 412,
+          "vitalik.eth@finalized": 760,
+          "ccip test.offchaindemo.eth addr": 4098
+        }
+      },
+      "https://eth.drpc.org (with WorkerGlobalScope shim)": {
+        "pass": true,
+        "syncError": null,
+        "steps": {
+          "blockNumber": 3,
+          "vitalik.eth": 692,
+          "app.ens.eth": 352,
+          "vitalik.eth@finalized": 272,
+          "ccip test.offchaindemo.eth addr": 4117
+        }
+      },
+      "https://eth.merkle.io": {
+        "pass": false,
+        "note": "hung past a 200 s timeout under Helios; curl probe returned -32005 \"Rate limit exceeded\" / 1015"
+      },
+      "https://cloudflare-eth.com": {
+        "pass": false,
+        "note": "curl: eth_getProof -32603 Internal error, eth_createAccessList -32601 Method not found"
+      },
+      "https://rpc.ankr.com/eth": {
+        "pass": false,
+        "note": "curl: API key required"
+      }
+    },
+    "consensus": {
+      "https://ethereum-beacon-api.publicnode.com": {
+        "pass": true,
+        "note": "all LC paths + /eth/v2/beacon/blocks; brotli"
+      },
+      "http://testing.mainnet.beacon-api.nimbus.team": {
+        "pass": true,
+        "note": "plain HTTP only (https refused); synced 4.5 s",
+        "sync": 4509.5
+      },
+      "http://unstable.mainnet.beacon-api.nimbus.team": {
+        "pass": true,
+        "note": "plain HTTP only",
+        "sync": 2385.7
+      },
+      "https://lodestar-mainnet.chainsafe.io": {
+        "pass": false,
+        "note": "LC API ok but /eth/v2/beacon/blocks/{slot} 404: waitSynced() resolves, then eth_blockNumber fails \"out of sync: 1790252431 seconds behind\""
+      },
+      "https://www.lightclientdata.org": {
+        "pass": false,
+        "note": "503"
+      },
+      "checkpointz hosts (sync-mainnet.beaconcha.in, mainnet-checkpoint-sync.stakely.io, mainnet.checkpoint.sigp.io, mainnet-checkpoint-sync.attestant.io, beaconstate-mainnet.chainsafe.io, beaconstate.ethstaker.cc, checkpointz.pietjepuk.net)": {
+        "pass": false,
+        "note": "no LC API (404); serve /eth/v2/beacon/blocks/finalized only; usable as independent checkpoint sources for EI-6"
+      },
+      "eth-beacon-chain.drpc.org, lb.drpc.org": {
+        "pass": false,
+        "note": "404 / token required"
+      },
+      "beaconstate.info, onfinality, llamarpc beacon, nodies, blastapi beacon": {
+        "pass": false,
+        "note": "NXDOMAIN or timeout here"
+      }
+    }
+  },
+  "robustness_timerPanic": {
+    "panicText": "panicked at .../zduny-wasm-timer-0.2.9/src/timer/global/wasm.rs:76:14: no supported global object available: Object { obj: JsValue(global) } -> uncaught RuntimeError \"unreachable\"",
+    "triggers": "any consensus-RPC fetch that rejects (Helios retries sync/poll with a wasm-timer backoff). Execution-RPC fetch rejections do not panic: they fail fast with \"Error: error sending request\". HTTP error statuses (404/503) do not panic.",
+    "node": {
+      "refusedByGuard": "panic",
+      "redirectBlocked": "panic",
+      "connectionRefused": "panic",
+      "withShim": {
+        "a": "sync failed: could not fetch bootstrap: rpc error on method: bootstrap, message: error sending request",
+        "b": "sync failed: could not fetch bootstrap: rpc error on method: bootstrap, message: error sending request",
+        "c": "sync failed: could not fetch bootstrap: rpc error on method: bootstrap, message: error sending request"
+      }
+    },
+    "nodeOutageMidRun": {
+      "noShim": "panic 3 s after the beacon went down (runs/offline-nowgs.log)",
+      "withShim": "survived a 45 s beacon outage; eth_blockNumber served the stale head until ~60 s behind, then \"out of sync: 67 seconds behind\"; recovered within 15 s of the endpoint returning"
+    },
+    "electronUtility": {
+      "noShim": {
+        "messages": [
+          "hello",
+          "wasm-ready",
+          "uncaught"
+        ],
+        "uncaught": "unreachable"
+      },
+      "withShim": {
+        "syncError": "sync failed: could not fetch bootstrap: rpc error on method: bootstrap, message: error sending request"
+      }
+    }
+  },
+  "idleBandwidth": {
+    "note": "plain Node, publicnode beacon, 3 min idle after sync; wire = TCP bytes read (brotli)",
+    "cons": "https://ethereum-beacon-api.publicnode.com",
+    "minutes": 3,
+    "sync": 1181.3,
+    "syncError": null,
+    "decodedAfterSync": {
+      "lightClient": {
+        "n": 15,
+        "MB": 0.07,
+        "enc": [
+          "br"
+        ]
+      },
+      "beaconBlock": {
+        "n": 16,
+        "MB": 4.66,
+        "enc": [
+          "br"
+        ]
+      }
+    },
+    "wireMBAfterSync": 1,
+    "wireMBperHour": 20.1
+  },
+  "recommendations": {
+    "maxCheckpointAgeDays": 14,
+    "maxCheckpointAgeReason": "Helios mainnet max_checkpoint_age (1,209,600 s) that helios-ts drops; sync cost is no constraint (160 d synced in 5.2 s); the stored checkpoint is ~15 min old after each sync, so only a fresh install of a >14-day-old release (or a >14-day idle install) fails closed. Enforce on Orivon-stored {root, slot/timestamp}; reject non-^0x[0-9a-f]{64}$ roots. Weak-subjectivity period not computed.",
+    "requiredAroundHelios": [
+      "WorkerGlobalScope shim before any Helios code runs",
+      "EIP-1193 wrapper turning \"execution reverted: <hex>\" into {code:3,data:0x<hex>}",
+      "checkpoint format + age check, never omit the checkpoint",
+      "per-resolution timeout",
+      "confirm readiness with eth_blockNumber after waitSynced",
+      "fork the host after the first window is shown",
+      "viem client experimental_blockTag:\"finalized\" if proofs must be at finalized (CCIP callback ignores explicit blockNumber)"
+    ],
+    "shortlist": {
+      "execution": [
+        "https://eth.drpc.org",
+        "https://rpc.mevblocker.io",
+        "https://ethereum-rpc.publicnode.com",
+        "https://mainnet.gateway.tenderly.co (slow CCIP)",
+        "https://eth-mainnet.public.blastapi.io (slower)"
+      ],
+      "consensus": [
+        "https://ethereum-beacon-api.publicnode.com",
+        "http://unstable.mainnet.beacon-api.nimbus.team (HTTP only)",
+        "http://testing.mainnet.beacon-api.nimbus.team (HTTP only)"
+      ],
+      "gap": "only one HTTPS keyless consensus endpoint passed"
+    }
+  }
+}
