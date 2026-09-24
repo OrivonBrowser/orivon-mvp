@@ -6,9 +6,11 @@
 // trigger this exists for (README.md) never has anything but hintedUrl to
 // start from. Every byte goes to the origin's staging area as it arrives
 // and is hashed from there (fetch-asset.ts): nothing is held whole in
-// memory. TOFU vs. decideUpdate() branching and persistence are index.ts's
-// job, not this file's -- why this file exists on its own: README.md,
-// Design notes.
+// memory. The site's own published hash tree (ddoc-declaration.ts) is
+// fetched too and handed on beside the computed tree, never compared here:
+// it decides nothing about whether the bundle loads. TOFU vs.
+// decideUpdate() branching and persistence are index.ts's job, not this
+// file's -- why this file exists on its own: README.md, Design notes.
 
 import type { Manifest } from '../contracts/index.js'
 import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES, bundleTreeFromLeaves } from '../broker/policy/bundle-hash.js'
@@ -20,10 +22,12 @@ import { ensurePublicUnicastOrigin } from './install-origin.js'
 import type { InstallOriginResult } from './install-origin.js'
 import { isOrivonErrorLike } from '../broker/errors.js'
 import { MAX_MANIFEST_BYTES, describeValue, parseManifest } from './manifest.js'
-import { BUNDLE_TIMEOUT_MS, ByteBudget, NOT_MODIFIED, fetchWithBudget, raceAbort, rejected } from './fetch-budget.js'
+import { BUNDLE_TIMEOUT_MS, ByteBudget, NOT_MODIFIED, fetchWithBudget, joinChunks, raceAbort, rejected } from './fetch-budget.js'
 import type { Fetch, FetchBundleRejected } from './fetch-budget.js'
 import { FETCH_CONCURRENCY, fetchAssetToStaging, forEachBounded, resolveUrl, stageBytes } from './fetch-asset.js'
 import type { StagedAsset } from './fetch-asset.js'
+import { fetchDdocDeclaration } from './ddoc-declaration.js'
+import type { DdocDeclaration } from './ddoc-declaration.js'
 import type { LoaderStorage } from './storage.js'
 import { conditionalHeaders, validatorsFrom } from './update-check.js'
 import type { ManifestValidators } from './update-check.js'
@@ -41,6 +45,8 @@ export interface FetchBundleOk {
   readonly entries: readonly StagedAsset[]
   /** The manifest response's validators, for the next check to be conditional on. */
   readonly validators?: ManifestValidators
+  /** What the site publishes at DDOC_PATH, `undefined` when it publishes nothing readable. Never checked against `tree` here. */
+  readonly declaration: DdocDeclaration | undefined
 }
 
 /**
@@ -104,9 +110,7 @@ async function fetchManifest (
     return { ok: false, notModified: true, reason: `the manifest for ${canonicalOrigin} is unchanged since the last check` }
   }
 
-  const bytes = new Uint8Array(fetched.byteLength)
-  let offset = 0
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
+  const bytes = joinChunks(chunks, fetched.byteLength)
 
   const parsed = parseManifest(new TextDecoder('utf-8', { fatal: false }).decode(bytes))
   if (!parsed.ok) return rejected(parsed.reason)
@@ -220,6 +224,8 @@ async function fetchStaged (
     return rejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
   }
 
+  const declaration = await fetchDdocDeclaration(fetchFn, canonicalOrigin, pinnedAddresses, budget, bundleController.signal)
+
   const context = { fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, assetCap: limits.assetBytes, bundleSignal: bundleController.signal }
   const assets = await forEachBounded(assetPaths, FETCH_CONCURRENCY, async (path) => await fetchAssetToStaging(context, path), () => { bundleController.abort() })
   if (!Array.isArray(assets)) return assets
@@ -238,5 +244,5 @@ async function fetchStaged (
     return rejected(`bundle has no leaf at the manifest's declared entry point: ${manifest.entry}`)
   }
 
-  return { ok: true, canonicalOrigin, manifest, tree, entries, ...(fetchedManifest.validators !== undefined && { validators: fetchedManifest.validators }) }
+  return { ok: true, canonicalOrigin, manifest, tree, entries, declaration, ...(fetchedManifest.validators !== undefined && { validators: fetchedManifest.validators }) }
 }

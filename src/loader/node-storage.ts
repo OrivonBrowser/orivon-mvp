@@ -16,6 +16,7 @@ import { decodePercentEscapes, foldForIdentity } from '../broker/policy/canonica
 import { confinePath } from '../broker/policy/paths.js'
 import { parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
+import { ddocToJson } from './ddoc-declaration.js'
 import type { AssetStream, LoaderStorage, OpenedAsset, StagingWriter } from './storage.js'
 import { appRootDirectoryName } from './storage.js'
 
@@ -29,6 +30,10 @@ function pinPath (userDataPath: string, origin: string): string {
 
 function updateCheckPath (userDataPath: string, origin: string): string {
   return join(appRoot(userDataPath, origin), 'update-check.json')
+}
+
+function ddocPath (userDataPath: string, origin: string): string {
+  return join(appRoot(userDataPath, origin), 'ddoc.json')
 }
 
 /**
@@ -262,6 +267,16 @@ async function removeEmptyAncestors (root: string, from: string): Promise<void> 
   }
 }
 
+/** A small JSON record beside `pin.json`: written atomically, or deleted when `value` is undefined. */
+async function writeOrRemove (userDataPath: string, origin: string, path: string, value: object | undefined): Promise<void> {
+  if (value !== undefined) {
+    await writeAtomically(userDataPath, origin, path, new TextEncoder().encode(JSON.stringify(value)))
+    return
+  }
+  requireRealDirectory(appRoot(userDataPath, origin))
+  await rm(path, { force: true })
+}
+
 export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
   return {
     readPin: async (origin) => {
@@ -302,13 +317,17 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
       }
     },
     writeUpdateCheck: async (origin, record) => {
-      const path = updateCheckPath(userDataPath, origin)
-      if (record !== undefined) {
-        await writeAtomically(userDataPath, origin, path, new TextEncoder().encode(JSON.stringify(record)))
-        return
+      await writeOrRemove(userDataPath, origin, updateCheckPath(userDataPath, origin), record)
+    },
+    readDdoc: async (origin) => {
+      try {
+        return JSON.parse(await readFile(ddocPath(userDataPath, origin), 'utf8')) as unknown
+      } catch {
+        return undefined
       }
-      requireRealDirectory(appRoot(userDataPath, origin))
-      await rm(path, { force: true })
+    },
+    writeDdoc: async (origin, declaration) => {
+      await writeOrRemove(userDataPath, origin, ddocPath(userDataPath, origin), declaration === undefined ? undefined : ddocToJson(declaration))
     },
     writeAsset: async (origin, path, content) => {
       const resolved = resolveAssetPath(codeRoot(userDataPath, origin), path)

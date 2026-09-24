@@ -43,7 +43,8 @@ function isCanonicalOrigin (origin: string): boolean {
 /** The only schema version that exists. Bumped, never mutated in place -- see PinRecord. */
 export const PIN_SCHEMA_VERSION = 1
 
-const BUNDLE_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
+/** A bundle hash or a leaf digest, exactly: lowercase hex, never repaired into shape. */
+export const BUNDLE_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
 
 /** One entry in the pinned asset set. Same shape as bundle-hash.ts's PathLeaf. */
 export type PinnedAsset = PathLeaf

@@ -254,8 +254,8 @@ describe('fetchBundle: F2 -- resolves the install origin once and reuses the val
 
     expect(result.ok).toBe(true)
     expect(resolveCalls).toBe(1)
-    // One call for the manifest, one per asset.
-    expect(pinnedAddressesSeen).toHaveLength(1 + paths.length)
+    // One call for the manifest, one for the published DDOC hash tree, one per asset.
+    expect(pinnedAddressesSeen).toHaveLength(2 + paths.length)
     for (const addresses of pinnedAddressesSeen) expect(addresses).toEqual(['93.184.216.34'])
   })
 })

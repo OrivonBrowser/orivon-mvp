@@ -1,7 +1,8 @@
 # `src/trust/`: the trust indicator
 
 **What lives here.** The delivery ladder, the connection ladder built from the broker's
-per-app connection log, and operation scoring. Click-through shows **the actual evidence, not
+per-app connection log, operation scoring, and DDOC: whether the pinned bundle matches the hash
+tree its site publishes. Click-through shows **the actual evidence, not
 a grade** ([`ADR-0006`](../../docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
 
 **What it depends on.** [`src/contracts/`](../contracts/), and the broker's connection log
@@ -96,3 +97,11 @@ totals only, kept in memory per origin for the current process run and discarded
 never a per-request history, and never which third-party host was reached beyond what
 `connection-log.ts` already legitimately records. This is a count for the indicator, not browsing
 history.
+
+**DDOC compares against the current pin, and a matching root alone is not enough**
+([`ddoc.ts`](ddoc.ts)). It is computed when the popover asks, from the pin and the tree stored
+beside it, so a tree left from an earlier bundle can only fail, never verify. Both the root and
+every leaf must match: a right root beside a wrong leaf table would mislead a provider that reads
+the table. Its wording states what was compared, "files match the hash tree this site publishes",
+and never that the domain's owner published them. The tree sits on the same host as the files
+(`ADR-0029`), and saying more would be the overclaim this component exists to prevent.

@@ -20,7 +20,7 @@
 // consent prompt a real install shows. The provenance refinement A46
 // describes -- proving the navigation was user-typed -- is NOT enforced yet.
 
-import { parseManifest } from '../../loader/manifest.js'
+import { MAX_MANIFEST_BYTES, parseManifest } from '../../loader/manifest.js'
 import { requestInstallConsent } from '../consent/install-consent.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from '../consent/install-consent.js'
 import type { Broker } from '../../broker/broker-contracts.js'
@@ -55,7 +55,8 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', '::1'])
  */
 const ETH_NAME = /^[a-z0-9][a-z0-9-]*\.eth$/
 
-export const MAX_DEV_MANIFEST_BYTES = 64 * 1024
+/** The loader's own cap, so a manifest an install would accept is never refused on this path. */
+export const MAX_DEV_MANIFEST_BYTES = MAX_MANIFEST_BYTES
 
 /**
  * Whether `origin` may take this path. `enabled` is the caller's developer-
@@ -136,7 +137,7 @@ export async function grantDevOrigin (deps: DevGrantDeps, origin: string): Promi
     return { outcome: 'rejected', reason: `manifest fetch failed: ${error instanceof Error ? error.message : String(error)}` }
   }
   if (!response.ok) return { outcome: 'rejected', reason: `manifest fetch returned HTTP ${String(response.status)}` }
-  if (response.text.length > MAX_DEV_MANIFEST_BYTES) {
+  if (new TextEncoder().encode(response.text).length > MAX_DEV_MANIFEST_BYTES) {
     return { outcome: 'rejected', reason: `manifest exceeds ${String(MAX_DEV_MANIFEST_BYTES)} bytes` }
   }
 

@@ -193,6 +193,14 @@ export interface FetchedBody {
   readonly byteLength: number
 }
 
+/** A small body fetched into memory, joined back into one buffer of its counted `byteLength`. */
+export function joinChunks (chunks: readonly Uint8Array[], byteLength: number): Uint8Array {
+  const bytes = new Uint8Array(byteLength)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
+  return bytes
+}
+
 /**
  * One fetch, streamed chunk by chunk into `onChunk` -- never buffered here
  * -- with the byte caps applied on both sides of the download: the DECLARED

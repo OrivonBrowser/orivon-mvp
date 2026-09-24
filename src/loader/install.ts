@@ -1,14 +1,15 @@
 // Persisting an accepted bundle: staged files committed into the code cache,
-// then the pin record. Split out of index.ts (Rule 2), which keeps the
-// update decision; this file only ever runs once that decision said
-// "install". See README.md's Design notes for what is written, when, and
-// what a crash part-way through leaves behind.
+// then the pin record, then the hash tree the site published with it. Split
+// out of index.ts (Rule 2), which keeps the update decision; this file only
+// ever runs once that decision said "install". See README.md's Design notes
+// for what is written, when, and what a crash part-way through leaves behind.
 
 import type { Manifest } from '../contracts/index.js'
 import type { BundleTree } from '../broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import type { StagedAsset } from './fetch-asset.js'
+import type { DdocDeclaration } from './ddoc-declaration.js'
 import type { CreateLoaderOptions, LoadInstalled, LoadRejected } from './index.js'
 import { leafOf } from './leaf-hash.js'
 import type { LoaderStorage } from './storage.js'
@@ -22,6 +23,15 @@ async function onDiskLeafIs (storage: LoaderStorage, origin: string, path: strin
     return await leafOf(path, stream.byteLength, stream.chunks) === leaf
   } catch {
     return false
+  }
+}
+
+/** Evidence, not identity: failing to store it is logged and never fails the install that carried it. */
+async function storeDdoc (storage: LoaderStorage, origin: string, declaration: DdocDeclaration | undefined): Promise<void> {
+  try {
+    await storage.writeDdoc(origin, declaration)
+  } catch (error) {
+    console.error('[loader] could not store the published DDOC hash tree', origin, error)
   }
 }
 
@@ -43,6 +53,7 @@ async function install (
   manifest: Manifest,
   tree: BundleTree,
   entries: readonly StagedAsset[],
+  declaration: DdocDeclaration | undefined,
   now: number,
   existingPin: PinRecord | null | undefined
 ): Promise<{ readonly pin: PinRecord, readonly changed: boolean }> {
@@ -55,10 +66,14 @@ async function install (
   const unchanged = existingPin !== null && existingPin !== undefined && existingPin.bundleHash === tree.root
   const pin = unchanged ? existingPin : fromBundleTree(canonicalOrigin, tree.root, tree.assets, manifest.version, now)
   if (!unchanged) {
+    // Removed first, so a crash before the new one is written reads as "not
+    // published" against the new pin, never as the old pin's tree failing.
+    await storeDdoc(storage, canonicalOrigin, undefined)
     await storage.writePin(canonicalOrigin, pin)
     changed = true
     await warnUndeclaredReferences(storage, canonicalOrigin, manifest, tree)
   }
+  await storeDdoc(storage, canonicalOrigin, declaration)
   await storage.clearStaging(canonicalOrigin)
   return { pin, changed }
 }
@@ -79,11 +94,12 @@ export async function installAndNotify (
   manifest: Manifest,
   tree: BundleTree,
   entries: readonly StagedAsset[],
+  declaration: DdocDeclaration | undefined,
   existingPin: PinRecord | null | undefined
 ): Promise<LoadInstalled | LoadRejected> {
   let installed: { readonly pin: PinRecord, readonly changed: boolean }
   try {
-    installed = await install(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), existingPin)
+    installed = await install(options.storage, canonicalOrigin, manifest, tree, entries, declaration, options.now(), existingPin)
   } catch (error) {
     // The raw message is a node:fs one and carries the absolute host path it
     // failed on. policy/paths.ts's CONFINEMENT_ERROR_CODE states the rule:

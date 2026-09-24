@@ -99,7 +99,7 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
       // bytes the person was just shown -- see Loader.installFetched's own
       // doc for why re-fetching here would be a correctness defect, not a
       // missed optimisation.
-      const installed = await deps.loader.installFetched(result.canonicalOrigin, result.manifest, result.tree, result.entries)
+      const installed = await deps.loader.installFetched(result.canonicalOrigin, result.manifest, result.tree, result.entries, result.declaration)
       return installed.outcome === 'installed' ? await finishInstall(deps, installed) : installed
     }
 
@@ -113,7 +113,7 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
         return result
       }
       if (!accepted) return result
-      const installed = await deps.loader.installFetched(result.canonicalOrigin, result.manifest, result.tree, result.entries)
+      const installed = await deps.loader.installFetched(result.canonicalOrigin, result.manifest, result.tree, result.entries, result.declaration)
       if (installed.outcome !== 'installed') return installed
       // A172(3): `requestedPatterns` is the manifest's WHOLE current
       // declared set (patternSetFromCapabilities, src/loader/index.ts) --
@@ -165,7 +165,7 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
       // (rollback-notice), 'needs-reconsent' or 'needs-capability-prompt' --
       // driven through this same function, recursively, exactly like a
       // fresh load() result would be.
-      const reconsidered = await deps.loader.reconsider(result.canonicalOrigin, result.manifest, result.tree, result.entries, {
+      const reconsidered = await deps.loader.reconsider(result.canonicalOrigin, result.manifest, result.tree, result.entries, result.declaration, {
         ...context,
         acknowledgedRollbackVersion: result.manifest.version
       })

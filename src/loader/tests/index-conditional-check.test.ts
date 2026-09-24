@@ -118,7 +118,7 @@ describe('a check once the interval has passed', () => {
     expect(updated.outcome).toBe('needs-reconsent')
     expect(host.calls.at(-1)?.url).toBe(`${ORIGIN}/index.html`)
     if (updated.outcome !== 'needs-reconsent') return
-    expect((await loader.installFetched(ORIGIN, updated.manifest, updated.tree, updated.entries)).outcome).toBe('installed')
+    expect((await loader.installFetched(ORIGIN, updated.manifest, updated.tree, updated.entries, updated.declaration)).outcome).toBe('installed')
 
     // The record still names v1's manifest, which is no longer pinned: one full check re-learns the validators.
     clock.now = 2 * HOUR

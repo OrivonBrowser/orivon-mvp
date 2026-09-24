@@ -17,6 +17,8 @@
 
 import { deliveryLadder } from '../../trust/delivery-ladder.js'
 import type { DeliveryLadderResult, PinCoverageEvidence } from '../../trust/delivery-ladder.js'
+import { ddocVerdict } from '../../trust/ddoc.js'
+import type { DdocVerdict, PublishedTree } from '../../trust/ddoc.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 
 export type ConnectionState = 'secure' | 'insecure' | 'cached'
@@ -26,6 +28,8 @@ export interface SiteTrust {
   readonly delivery: DeliveryLadderResult
   /** `undefined` when never pinned -- mirrors `delivery.evidence.pinned`, split out so a caller need not reach into delivery evidence for what is really identity, not a trust fact. */
   readonly pin: { readonly bundleHash: string, readonly version: string, readonly pinnedAt: number } | undefined
+  /** The pinned bundle against the hash tree the site published with it (ADR-0029). */
+  readonly ddoc: DdocVerdict
 }
 
 /**
@@ -52,6 +56,7 @@ export function buildSiteTrust (
   pin: PinRecord | null,
   servedFromCache: boolean,
   pinCoverage: PinCoverageEvidence | undefined,
+  published: PublishedTree | undefined,
   now: number
 ): SiteTrust {
   const connection: ConnectionState = servedFromCache ? 'cached' : origin.startsWith('https://') ? 'secure' : 'insecure'
@@ -74,6 +79,7 @@ export function buildSiteTrust (
   return {
     connection,
     delivery,
-    pin: pin === null ? undefined : { bundleHash: pin.bundleHash, version: pin.version, pinnedAt: pin.pinnedAt }
+    pin: pin === null ? undefined : { bundleHash: pin.bundleHash, version: pin.version, pinnedAt: pin.pinnedAt },
+    ddoc: ddocVerdict(pin, published)
   }
 }

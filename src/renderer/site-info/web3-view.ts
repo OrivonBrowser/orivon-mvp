@@ -1,4 +1,5 @@
 import type { SiteTrust } from '../../main/browsing/site-trust.js'
+import type { DdocVerdict } from '../../trust/ddoc.js'
 import type { DeliveryRung } from '../../trust/delivery-ladder.js'
 import { backIcon } from './icons.js'
 
@@ -18,6 +19,21 @@ const RUNG_LABELS: Record<DeliveryRung, string> = {
 
 function bundleHashShort (hash: string): string {
   return `${hash.slice(0, 8)}…${hash.slice(-6)}`
+}
+
+// Says only what was compared. The anchor is the site's own host, so a
+// match is never worded as proof of who owns the domain (ADR-0029).
+function ddocLabel (ddoc: DdocVerdict): string {
+  switch (ddoc.status) {
+    case 'not-checked': return 'Not checked: this site is not installed'
+    case 'not-published': return 'Not published by this site'
+    case 'verified': return 'Files match the hash tree this site publishes (same host)'
+    case 'failed': {
+      if (ddoc.differingCount === 0) return 'Failed: the published hash tree contradicts its own root'
+      const more = ddoc.differingCount > ddoc.differing.length ? ', …' : ''
+      return `Failed: ${String(ddoc.differingCount)} file(s) differ from what this site publishes: ${ddoc.differing.join(', ')}${more}`
+    }
+  }
 }
 
 export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null, onBack: () => void): void {
@@ -64,7 +80,8 @@ export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null,
     const rows: Array<[string, string]> = [
       ['Bundle hash', bundleHashShort(trust.pin.bundleHash)],
       ['Version', trust.pin.version],
-      ['Pinned', new Date(trust.pin.pinnedAt).toLocaleString()]
+      ['Pinned', new Date(trust.pin.pinnedAt).toLocaleString()],
+      ['DDOC', ddocLabel(trust.ddoc)]
     ]
     const coverage = trust.delivery.evidence.pinCoverage
     if (coverage !== undefined) {
@@ -86,6 +103,7 @@ export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null,
   const unknown = document.createElement('dl')
   unknown.className = 'evidence-list unknown'
   const unknownRows: Array<[string, string]> = [['Connections', 'Not observed yet'], ['Operations', 'Not observed yet']]
+  if (trust.pin === undefined) unknownRows.unshift(['DDOC', ddocLabel(trust.ddoc)])
   for (const [term, value] of unknownRows) {
     const dt = document.createElement('dt')
     dt.textContent = term

@@ -24,9 +24,10 @@
 // are exported for that file's use only, not for any outside consumer.
 
 import type { ConsentGranularity, Manifest } from '../contracts/index.js'
-import { MAX_BUNDLE_ENTRIES, collisionKey, isValidCanonicalPath } from '../broker/policy/canonical-path.js'
+import { MANIFEST_PATH, MAX_BUNDLE_ENTRIES, collisionKey, isValidCanonicalPath } from '../broker/policy/canonical-path.js'
 import { ownProperty } from '../broker/policy/own-property.js'
 import { compareVersions } from '../broker/policy/update.js'
+import { DDOC_PATH } from './ddoc-declaration.js'
 import { readCapabilities } from './manifest-capabilities.js'
 
 export interface ManifestOk {
@@ -325,12 +326,16 @@ function isAbsoluteUrl (text: string): boolean {
   }
 }
 
+/** The manifest is always a leaf, and the published hash tree never is one (ADR-0029). */
+const RESERVED_KEYS = new Set([MANIFEST_PATH, DDOC_PATH].map((path) => collisionKey(path.slice(1))))
+
 /**
- * `assets` (ADR-0011), validated the same way `entry` is, plus two checks
- * `optionalStringArray` alone cannot do: no element may duplicate `entry`
- * itself (one file, one name for it in the manifest), and no two elements
- * may duplicate each other (`seen` tracks what validateOne has already
- * passed, since it runs once per element in array order).
+ * `assets` (ADR-0011), validated the same way `entry` is, plus three checks
+ * `optionalStringArray` alone cannot do: no element may name a reserved
+ * path, no element may duplicate `entry` itself (one file, one name for it
+ * in the manifest), and no two elements may duplicate each other (`seen`
+ * tracks what validateOne has already passed, since it runs once per
+ * element in array order).
  *
  * Compared via `collisionKey` (canonical-path.ts), never the raw string --
  * the same idiom bundle-hash.ts's `bundleTree()` and pin.ts already use for
@@ -349,6 +354,7 @@ function readAssets (value: Record<string, unknown>, entry: string): readonly st
   return optionalStringArray(value, '', 'assets', MAX_ASSETS, (item, index) => {
     validateRelativePath(`assets[${index}]`, item)
     const key = collisionKey(item)
+    if (RESERVED_KEYS.has(key)) reject(`assets[${index}] names a reserved path the loader fetches on its own, never as an asset: ${describeValue(item)}`)
     if (key === entryKey) reject(`assets[${index}] duplicates entry: ${describeValue(item)}`)
     const priorIndex = seen.get(key)
     if (priorIndex !== undefined) reject(`assets[${index}] duplicates assets[${priorIndex}]: ${describeValue(item)}`)

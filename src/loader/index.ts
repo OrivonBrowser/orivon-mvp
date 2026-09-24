@@ -30,6 +30,8 @@ import { withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patter
 import { fetchBundle } from './fetch-bundle.js'
 import type { Fetch, StagedAsset } from './fetch-bundle.js'
 import { installAndNotify } from './install.js'
+import { parseDdocDeclaration } from './ddoc-declaration.js'
+import type { DdocDeclaration } from './ddoc-declaration.js'
 import type { LoaderStorage } from './storage.js'
 import { patternSetFromCapabilities } from './update-patterns.js'
 import { originFromUrl } from '../broker/policy/origin.js'
@@ -181,6 +183,8 @@ export interface LoadNeedsReconsent {
   readonly tree: BundleTree
   /** Every leaf, waiting in staging -- so a caller can persist after approval without re-fetching. */
   readonly entries: readonly StagedAsset[]
+  /** The hash tree the site published with this bundle, stored beside the pin on approval. */
+  readonly declaration: DdocDeclaration | undefined
 }
 
 export interface LoadNeedsCapabilityPrompt {
@@ -189,6 +193,7 @@ export interface LoadNeedsCapabilityPrompt {
   readonly manifest: Manifest
   readonly tree: BundleTree
   readonly entries: readonly StagedAsset[]
+  readonly declaration: DdocDeclaration | undefined
   /** What the new manifest asks for -- the prompt's own job to render, not this file's. */
   readonly requestedPatterns: PatternSet
 }
@@ -215,6 +220,7 @@ export interface LoadNeedsRollbackChoice {
   readonly manifest: Manifest
   readonly tree: BundleTree
   readonly entries: readonly StagedAsset[]
+  readonly declaration: DdocDeclaration | undefined
   /** The origin's own floor, so a prompt can say what's already been seen, not just what's being offered now. */
   readonly versionFloor: string
 }
@@ -271,7 +277,7 @@ export interface Loader {
    * DIFFERENT bytes than what was approved, which is a correctness defect,
    * not a missed optimisation.
    */
-  installFetched(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[]): Promise<LoadInstalled | LoadRejected>
+  installFetched(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[], declaration: DdocDeclaration | undefined): Promise<LoadInstalled | LoadRejected>
 
   /**
    * S4-5: re-runs the update decision against an ALREADY-FETCHED
@@ -292,7 +298,7 @@ export interface Loader {
    * `'needs-capability-prompt'` -- never `'needs-rollback-choice'` again,
    * since the floor check now passes.
    */
-  reconsider(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[], context: LoadContext): Promise<LoadResult>
+  reconsider(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[], declaration: DdocDeclaration | undefined, context: LoadContext): Promise<LoadResult>
 
   /**
    * The pin currently on disk for `origin`, or `null` if never pinned or
@@ -302,6 +308,9 @@ export interface Loader {
    * read-only.
    */
   pinFor(origin: string): Promise<PinRecord | null>
+
+  /** The hash tree the site published with its pinned bundle, or `undefined` when it published none readable. Same read-only stance as `pinFor`. */
+  ddocFor(origin: string): Promise<DdocDeclaration | undefined>
 }
 
 /**
@@ -334,13 +343,14 @@ async function decideAndRoute (
   manifest: Manifest,
   tree: BundleTree,
   entries: readonly StagedAsset[],
+  declaration: DdocDeclaration | undefined,
   context: LoadContext
 ): Promise<LoadResult> {
   const rawPin = await options.storage.readPin(canonicalOrigin)
   if (rawPin === undefined) {
     // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
     // is no continuity to protect and nothing to prompt for.
-    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, undefined)
+    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, undefined)
   }
 
   // A pin record exists but fails to parse (corrupt bytes, a schema this
@@ -376,7 +386,7 @@ async function decideAndRoute (
 
   switch (decision) {
     case 'rollback-choice':
-      return { outcome: 'needs-rollback-choice', canonicalOrigin, manifest, tree, entries, versionFloor: context.versionFloor }
+      return { outcome: 'needs-rollback-choice', canonicalOrigin, manifest, tree, entries, declaration, versionFloor: context.versionFloor }
     case 'capability-prompt':
       return {
         outcome: 'needs-capability-prompt',
@@ -384,14 +394,15 @@ async function decideAndRoute (
         manifest,
         tree,
         entries,
+        declaration,
         requestedPatterns: declaredPatterns
       }
     case 'reconsent':
-      return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
+      return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries, declaration }
     case 'silent':
-      return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, existingPin)
+      return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, existingPin)
     case 'rollback-notice': {
-      const result = await installAndNotify(options, canonicalOrigin, manifest, tree, entries, existingPin)
+      const result = await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, existingPin)
       return result.outcome === 'installed' ? { ...result, rollbackNotice: true } : result
     }
     default: {
@@ -422,7 +433,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
       return { outcome: 'up-to-date', canonicalOrigin: origin }
     }
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
-    const result = await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, context)
+    const result = await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, context)
     if (result.outcome === 'installed') {
       await saveCheckRecord(options.storage, origin, checkRecord(options.now(), fetched.validators, await pinnedManifestLeaf(options.storage, origin)))
     } else if (result.outcome !== 'rejected') {
@@ -435,7 +446,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
   async function checkInFull (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
     const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve, options.storage)
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
-    return await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, context)
+    return await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, context)
   }
 
   async function reconsider (
@@ -443,28 +454,34 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     manifest: Manifest,
     tree: BundleTree,
     entries: readonly StagedAsset[],
+    declaration: DdocDeclaration | undefined,
     context: LoadContext
   ): Promise<LoadResult> {
-    return await decideAndRoute(options, canonicalOrigin, manifest, tree, entries, context)
+    return await decideAndRoute(options, canonicalOrigin, manifest, tree, entries, declaration, context)
   }
 
   async function installFetched (
     canonicalOrigin: string,
     manifest: Manifest,
     tree: BundleTree,
-    entries: readonly StagedAsset[]
+    entries: readonly StagedAsset[],
+    declaration: DdocDeclaration | undefined
   ): Promise<LoadInstalled | LoadRejected> {
     // Every caller is acting on an approved needs-reconsent/needs-capability-
     // prompt outcome, and both exist only once decideAndRoute found a pin for
     // this origin -- so there is always one to read back here (possibly
     // unparseable: `null`, never the TOFU `undefined`).
     const existingPin = parsePinRecord(await options.storage.readPin(canonicalOrigin))
-    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, existingPin)
+    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, existingPin)
   }
 
   async function pinFor (origin: string): Promise<PinRecord | null> {
     return parsePinRecord(await options.storage.readPin(origin))
   }
 
-  return { load, reconsider, installFetched, pinFor }
+  async function ddocFor (origin: string): Promise<DdocDeclaration | undefined> {
+    return parseDdocDeclaration(await options.storage.readDdoc(origin))
+  }
+
+  return { load, reconsider, installFetched, pinFor, ddocFor }
 }

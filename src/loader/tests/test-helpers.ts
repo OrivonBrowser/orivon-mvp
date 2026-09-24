@@ -12,6 +12,8 @@ import type { Resolver } from '../../broker/policy/connect.js'
 import { parsePinRecord } from '../../broker/policy/pin.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 import { appRootDirectoryName } from '../storage.js'
+import { ddocToJson } from '../ddoc-declaration.js'
+import type { DdocDeclaration } from '../ddoc-declaration.js'
 import type { Fetch, FetchResponse } from '../fetch-budget.js'
 import type { LoaderStorage, OpenedAsset } from '../storage.js'
 
@@ -184,6 +186,7 @@ export function memoryStorage (): MemoryStorage {
   let nextIdentity = 0
   const pins = new Map<string, unknown>()
   const updateChecks = new Map<string, unknown>()
+  const ddocs = new Map<string, unknown>()
   const assets = new Map<string, Map<string, Uint8Array>>()
   const staged = new Map<string, Uint8Array>()
   let nextId = 0
@@ -234,6 +237,12 @@ export function memoryStorage (): MemoryStorage {
     writeUpdateCheck: vi.fn(async (origin: string, record: unknown) => {
       if (record === undefined) updateChecks.delete(origin)
       else updateChecks.set(origin, record)
+    }),
+    readDdoc: vi.fn(async (origin: string) => ddocs.get(origin)),
+    // Held in its JSON form, as node-storage.ts writes it, so a read goes back through the parser.
+    writeDdoc: vi.fn(async (origin: string, declaration: DdocDeclaration | undefined) => {
+      if (declaration === undefined) ddocs.delete(origin)
+      else ddocs.set(origin, JSON.parse(JSON.stringify(ddocToJson(declaration))))
     }),
     writePin: vi.fn(async (origin: string, record: PinRecord) => { pins.set(origin, record) }),
     writeAsset: vi.fn(async (origin: string, path: string, content: Uint8Array) => { writeAsset(origin, path, content) }),

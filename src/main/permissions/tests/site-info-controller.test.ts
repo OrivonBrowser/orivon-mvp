@@ -21,6 +21,7 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
     installFetched: async () => { throw new Error('not stubbed') },
     reconsider: async () => { throw new Error('not stubbed') },
     pinFor: async () => null,
+    ddocFor: async () => undefined,
     ...overrides
   }
 }

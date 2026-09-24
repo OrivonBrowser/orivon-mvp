@@ -124,9 +124,9 @@ describe('installFromHint', () => {
   // switch (F14) fails to compile if that union grows without a matching
   // case, which is what will force this table to grow too.
   it.each([
-    ['needs-reconsent', { outcome: 'needs-reconsent', canonicalOrigin: APP, manifest: manifestWith(), tree: { root: 'sha256:' + 'a'.repeat(64), assets: [] }, entries: [] }],
-    ['needs-capability-prompt', { outcome: 'needs-capability-prompt', canonicalOrigin: APP, manifest: manifestWith(), tree: { root: 'sha256:' + 'a'.repeat(64), assets: [] }, entries: [], requestedPatterns: {} }],
-    ['needs-rollback-choice', { outcome: 'needs-rollback-choice', canonicalOrigin: APP, manifest: manifestWith(), tree: { root: 'sha256:' + 'a'.repeat(64), assets: [] }, entries: [], versionFloor: '1.0.0' }],
+    ['needs-reconsent', { outcome: 'needs-reconsent', canonicalOrigin: APP, manifest: manifestWith(), tree: { root: 'sha256:' + 'a'.repeat(64), assets: [] }, entries: [], declaration: undefined }],
+    ['needs-capability-prompt', { outcome: 'needs-capability-prompt', canonicalOrigin: APP, manifest: manifestWith(), tree: { root: 'sha256:' + 'a'.repeat(64), assets: [] }, entries: [], declaration: undefined, requestedPatterns: {} }],
+    ['needs-rollback-choice', { outcome: 'needs-rollback-choice', canonicalOrigin: APP, manifest: manifestWith(), tree: { root: 'sha256:' + 'a'.repeat(64), assets: [] }, entries: [], declaration: undefined, versionFloor: '1.0.0' }],
     ['rejected', { outcome: 'rejected', reason: 'malformed manifest' }]
   ] satisfies Array<[string, LoadResult]>)('never calls registerApp for outcome "%s" (A60)', async (_label, loadResult) => {
     const registerApp = vi.fn(async () => {})
@@ -158,7 +158,8 @@ describe('installFromHint', () => {
       }),
       installFetched: vi.fn(async () => { throw new Error('installFetched was not stubbed for this test') }),
       reconsider: vi.fn(async () => { throw new Error('reconsider was not stubbed for this test') }),
-      pinFor: vi.fn(async () => null)
+      pinFor: vi.fn(async () => null),
+      ddocFor: vi.fn(async () => undefined)
     }
     const deps: AppInstallDeps = { broker, loader }
 

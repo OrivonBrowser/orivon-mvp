@@ -1,8 +1,9 @@
 # `src/loader/`: the app loader
 
 **What lives here.** Manifest discovery at `/.well-known/orivon.json`, asset fetch and cache,
-per-version hash pinning, and the update decision (silent / re-consent / capability prompt /
-reject).
+per-version hash pinning, the hash tree a site publishes about its bundle
+(`/.well-known/orivon-ddoc.json`), and the update decision (silent / re-consent / capability
+prompt / reject).
 
 **What it depends on.** [`src/contracts/`](../contracts/) and [`src/broker/`](../broker/)
 (for storage and the grant ledger).
@@ -156,6 +157,18 @@ then renders blank: the file is not pinned, so the cache refuses it. When a bund
 subresource elements and logs every same-origin path the pinned set lacks. It only warns: ADR-0011
 has the loader read the list, never infer it, and a runtime `import()` a scan cannot see is the
 publisher's to declare either way.
+
+**The site's published hash tree is carried, never judged.**
+[`ddoc-declaration.ts`](ddoc-declaration.ts) fetches `/.well-known/orivon-ddoc.json` after the
+manifest, with the same pinned addresses and byte budget, and never after a 304.
+[`install.ts`](install.ts) stores it as `ddoc.json` beside `pin.json`, and
+[`../trust/ddoc.ts`](../trust/ddoc.ts) compares the two when the Web3 Score page asks
+(`ADR-0029`). Nothing in this directory reads the tree to decide anything, for two reasons. The
+owner put that decision with the Web3 Score. And a tree served by the same host as the files
+cannot stop that host. So a 404, an unreadable file and a mismatch all install exactly as they
+would without it. The old tree is removed before a new pin is written, so an interrupted install
+leaves "not published", never an earlier bundle's tree failing the new pin. Storing it can fail
+without failing the install, because it is evidence, not identity.
 
 **The real adapter (`electronFetch`/`netFetch`) is tested for real, not only through a stub
 `Fetch`.** [`test/e2e-loader-adapter.test.ts`](../../test/e2e-loader-adapter.test.ts) drives the

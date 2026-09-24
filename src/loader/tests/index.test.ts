@@ -122,7 +122,7 @@ describe('createLoader: refetch against an existing pin', () => {
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(now), resolve: PUBLIC_RESOLVER })
     const pending = await loader.load(ORIGIN, NO_GRANTS)
     if (pending.outcome !== 'needs-reconsent') throw new Error(`fixture expected needs-reconsent, got ${pending.outcome}`)
-    return await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries)
+    return await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries, pending.declaration)
   }
 
   it('replacing a pin leaves the previous bundle\'s files on disk -- a page still running it may load them; the next start prunes', async () => {
@@ -531,7 +531,7 @@ describe('createLoader: against the real node:fs storage', () => {
     const loader = createLoader({ fetch: stubFetch(updated), storage, now: fixedNow(1_700_000_009_000), resolve: PUBLIC_RESOLVER })
     const pending = await loader.load(ORIGIN, NO_GRANTS)
     if (pending.outcome !== 'needs-reconsent') throw new Error(`fixture expected needs-reconsent, got ${pending.outcome}`)
-    const again = await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries)
+    const again = await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries, pending.declaration)
 
     expect(again.outcome).toBe('installed')
     expect(await readFile(join(appDir, 'code', 'index.html'), 'utf8')).toBe('<!doctype html><p>v2</p>')

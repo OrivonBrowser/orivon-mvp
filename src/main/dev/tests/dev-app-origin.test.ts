@@ -112,7 +112,9 @@ describe('grantDevOrigin', () => {
       ['404', async () => ({ ok: false, status: 404, text: '' })],
       ['not json', okFetch('<!doctype html>')],
       ['not a manifest', okFetch(JSON.stringify({ hello: 'world' }))],
-      ['over the byte cap', okFetch('x'.repeat(MAX_DEV_MANIFEST_BYTES + 1))]
+      ['over the byte cap', okFetch('x'.repeat(MAX_DEV_MANIFEST_BYTES + 1))],
+      // Two UTF-8 bytes per character: under the cap counted in characters, over it in bytes.
+      ['over the byte cap in bytes only', okFetch('\u00e9'.repeat(MAX_DEV_MANIFEST_BYTES / 2 + 1))]
     ]
     for (const [label, fetchManifest] of cases) {
       const { broker, registerApp } = fakeBroker()
@@ -120,6 +122,16 @@ describe('grantDevOrigin', () => {
       expect(result.outcome, label).toBe('rejected')
       expect(registerApp, label).not.toHaveBeenCalled()
     }
+  })
+
+  // A port's generated asset list takes a real manifest well past 64 KiB.
+  it('accepts a manifest over 64 KiB that the loader itself would accept', async () => {
+    const assets = Array.from({ length: 2000 }, (_, index) => `static/js/chunk-${String(index).padStart(5, '0')}.bundle.js`)
+    const text = JSON.stringify({ ...MANIFEST, assets }, null, 2)
+    expect(text.length).toBeGreaterThan(64 * 1024)
+    const { broker } = fakeBroker()
+    const result = await grantDevOrigin({ broker, fetchManifest: okFetch(text), consent: async () => true }, 'http://127.0.0.1:8874')
+    expect(result.outcome).toBe('dev-granted')
   })
 
   it('rejects rather than throwing when the fetch itself fails', async () => {

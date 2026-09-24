@@ -15,6 +15,7 @@
 // rather than exposing it to callers.
 
 import type { PinRecord } from '../broker/policy/pin.js'
+import type { DdocDeclaration } from './ddoc-declaration.js'
 import type { UpdateCheckRecord } from './update-check.js'
 
 /** A readable file: its byte length, and its bytes as a stream of chunks -- never the whole file in one buffer. */
@@ -138,6 +139,14 @@ export interface LoaderStorage {
   readUpdateCheck(origin: string): Promise<unknown>
   /** Persists `origin`'s last update check, outside `code/`; `undefined` deletes it. */
   writeUpdateCheck(origin: string, record: UpdateCheckRecord | undefined): Promise<void>
+  /**
+   * The raw value last passed to `writeDdoc` for `origin`, or undefined when
+   * there is none or it cannot be read. Never throws; the caller parses it
+   * (`ddoc-declaration.ts`), since the file is as untrusted as any other on disk.
+   */
+  readDdoc(origin: string): Promise<unknown>
+  /** Persists the hash tree `origin` published with its pinned bundle, outside `code/`; `undefined` deletes it. */
+  writeDdoc(origin: string, declaration: DdocDeclaration | undefined): Promise<void>
 }
 
 /**

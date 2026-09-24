@@ -92,8 +92,8 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       const loader = ctx.loader
       const origin = originFromUrl(url)
       if (loader === undefined || origin === null) return null
-      const pin = await loader.pinFor(origin)
-      return buildSiteTrust(origin, pin, trustSources.isOriginServedFromCacheSync(origin), trustSources.pinCoverageFor(origin), Date.now())
+      const [pin, published] = await Promise.all([loader.pinFor(origin), loader.ddocFor(origin)])
+      return buildSiteTrust(origin, pin, trustSources.isOriginServedFromCacheSync(origin), trustSources.pinCoverageFor(origin), published, Date.now())
     },
 
     async storageDeclarationFor (url) {
