@@ -7,7 +7,8 @@
 // registered and removed per open -- see permissions-panel.ts.
 
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import { SETTINGS_COMMAND_CHANNEL } from '../channels.js'
+import { LIGHT_CLIENT_STATUS_CHANNEL, SETTINGS_COMMAND_CHANNEL } from '../channels.js'
+import type { LightClientView } from '../verifier/status-view.js'
 import type { AppPermissions, PermissionsController, SiteNotificationRow, SiteNotificationsController } from '../permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../../contracts/index.js'
 
@@ -30,6 +31,14 @@ export type SettingsCommand =
    * a grant, so its own list. Reset forgets one, and the site asks again. */
   | { type: 'listSiteNotifications' }
   | { type: 'resetSiteNotifications', origin: string }
+  /** The Ethereum light client's state, read-only. Changes are pushed on LIGHT_CLIENT_STATUS_CHANNEL while the panel is open. */
+  | { type: 'lightClient' }
+
+export interface LightClientSource {
+  view: () => LightClientView
+  /** Returns the unsubscribe. */
+  subscribe: (listener: () => void) => () => void
+}
 
 function isFromSettingsWindow (event: IpcMainInvokeEvent, settingsWebContents: WebContents): boolean {
   return event.senderFrame !== null && event.senderFrame === settingsWebContents.mainFrame
@@ -39,9 +48,13 @@ export function registerSettingsIpc (
   settingsWebContents: WebContents,
   permissions: PermissionsController,
   onContentHeight: (height: number) => void = () => {},
-  sites?: SiteNotificationsController
-): void {
-  ipcMain.handle(SETTINGS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: SettingsCommand): void | readonly SiteNotificationRow[] | Promise<void | readonly AppPermissions[]> => {
+  sites?: SiteNotificationsController,
+  lightClient?: LightClientSource
+): () => void {
+  const unsubscribe = lightClient?.subscribe(() => {
+    if (!settingsWebContents.isDestroyed()) settingsWebContents.send(LIGHT_CLIENT_STATUS_CHANNEL, lightClient.view())
+  })
+  ipcMain.handle(SETTINGS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: SettingsCommand): void | readonly SiteNotificationRow[] | LightClientView | null | Promise<void | readonly AppPermissions[]> => {
     if (!isFromSettingsWindow(event, settingsWebContents)) return
 
     switch (command.type) {
@@ -64,6 +77,9 @@ export function registerSettingsIpc (
         // Typed on the wire, not trusted: the renderer picks the payload.
         if (typeof command.origin === 'string') sites?.reset(command.origin)
         return
+      case 'lightClient':
+        return lightClient?.view() ?? null
     }
   })
+  return () => { unsubscribe?.() }
 }

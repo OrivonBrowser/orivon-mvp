@@ -1,9 +1,11 @@
 # `src/trust/`: the trust indicator
 
-**What lives here.** The delivery ladder, the connection ladder built from the broker's
-per-app connection log, operation scoring, and DDOC: whether the pinned bundle matches the hash
-tree its site publishes. Click-through shows **the actual evidence, not
-a grade** ([`ADR-0006`](../../docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
+**What lives here.** The Website level this browser can observe (Level 1 or 2 of the canonical
+[Web3 scores](https://docs.orivonstack.com/docs/implementations/web3-score) page), the delivery
+ladder, the connection ladder built from the broker's per-app connection log, operation scoring,
+and the same-host hash tree check: whether the pinned bundle matches the tree its site publishes.
+Click-through shows the level and, beneath it, **the actual evidence it rests on**
+([`ADR-0006`](../../docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
 
 **What it depends on.** [`src/contracts/`](../contracts/), and the broker's connection log
 *through a contract*, never by reaching into broker internals.
@@ -105,3 +107,12 @@ every leaf must match: a right root beside a wrong leaf table would mislead a pr
 the table. Its wording states what was compared, "files match the hash tree this site publishes",
 and never that the domain's owner published them. The tree sits on the same host as the files
 (`ADR-0029`), and saying more would be the overclaim this component exists to prevent.
+
+**The Website level stops at 2, and 2 needs every hop and every byte verified**
+([`website-level.ts`](website-level.ts)). Levels 1 and 2 are observations: does DDOC hold. Level
+3 and above are judgements about the code itself, and only a Web3 Score provider may give them,
+so this file has no type for them. Level 2 needs each pointer from a `.eth` name to its content
+proven, and each file served checked against the CID it names. A DNSLink hop is a TXT record
+anyone on the DNS path can forge, so a name through one is Level 1 however well its bytes check.
+An ordinary site is Level 1 even with a matching same-host hash tree, since the tree is not
+anchored off the host (`open-questions.md` A254).

@@ -15,6 +15,7 @@ import type { WebContentsView, View } from 'electron'
 import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from '../browsing/omnibox.js'
+import { isDevEthName } from '../dev/eth-resolver.js'
 import type { SubsystemContext } from '../registry.js'
 import { appTabArgsFor, closeParkedViews, makeTabView, partitionChanged, partitionForTarget, repartitionView, wireView } from './tab-view.js'
 import type { TabShell, TabViewHost } from './tab-view.js'
@@ -357,7 +358,7 @@ export class TabManager {
    * silently doing nothing, so a bad paste has a visible, safe result.
    * Never the dashboard -- see BLANK_URL's own comment for why. */
   private resolveTarget (rawInput: string): string {
-    const result = parseOmniboxInput(rawInput)
+    const result = parseOmniboxInput(rawInput, isDevEthName)
     if (result.kind === 'reject') return BLANK_URL
     return result.url
   }

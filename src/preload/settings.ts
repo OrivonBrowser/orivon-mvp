@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { SETTINGS_COMMAND_CHANNEL } from '../main/channels.js'
+import { LIGHT_CLIENT_STATUS_CHANNEL, SETTINGS_COMMAND_CHANNEL } from '../main/channels.js'
 import type { SettingsCommand } from '../main/ipc/settings-ipc.js'
+import type { LightClientView } from '../main/verifier/status-view.js'
 import type { AppPermissions, SiteNotificationRow } from '../main/permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../contracts/index.js'
 
@@ -40,6 +41,17 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     },
     resetSiteNotifications: async (origin: string): Promise<void> => {
       await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'resetSiteNotifications', origin } satisfies SettingsCommand)
+    },
+    /** The Ethereum light client's state in words; null when this build has none to report. */
+    lightClient: async (): Promise<LightClientView | null> => {
+      const result: unknown = await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'lightClient' } satisfies SettingsCommand)
+      return typeof result === 'object' && result !== null ? result as LightClientView : null
+    },
+    /** Pushed by main whenever that state changes while the panel is open. */
+    onLightClient: (listener: (view: LightClientView) => void): void => {
+      ipcRenderer.on(LIGHT_CLIENT_STATUS_CHANNEL, (_event, view: unknown) => {
+        if (typeof view === 'object' && view !== null) listener(view as LightClientView)
+      })
     },
     /** Tells main how tall the rendered content is, so the panel sizes to it
      * (src/main/permissions-panel.ts). Fire-and-forget: a panel that failed

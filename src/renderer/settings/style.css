@@ -152,3 +152,38 @@ button:focus-visible {
 .revoke-btn:hover {
   background: color-mix(in srgb, var(--wdanger) 10%, transparent);
 }
+
+/* The Ethereum light client section (light-client-view.ts). */
+.light-client {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--wborder);
+  border-radius: 10px;
+  background: var(--wsurface);
+}
+.light-client-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.light-client-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.light-client-state {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wink-dim) 18%, transparent);
+}
+.light-client-state.state-synced { color: #15803d; background: color-mix(in srgb, #15803d 14%, transparent); }
+.light-client-state.state-failed,
+.light-client-state.state-down { color: var(--wdanger); background: color-mix(in srgb, var(--wdanger) 12%, transparent); }
+.light-client-summary { margin: 8px 0 4px; }
+.light-client-detail { margin: 4px 0; color: var(--wink-dim); }
+.light-client-endpoints { margin: 8px 0 0; }
+.light-client-endpoint-label { margin-top: 6px; font-weight: 600; }
+.light-client-endpoint { margin: 0; color: var(--wink-dim); word-break: break-all; }

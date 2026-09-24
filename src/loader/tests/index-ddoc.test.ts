@@ -72,7 +72,7 @@ describe('createLoader: the published DDOC hash tree is stored beside the pin', 
     const pending = await loader.load(ORIGIN, NO_GRANTS)
     expect(pending.outcome).toBe('needs-reconsent')
     if (pending.outcome !== 'needs-reconsent') return
-    await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries, pending.declaration)
+    await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries, pending.declaration, undefined)
 
     expect(await loader.ddocFor(ORIGIN)).toBeUndefined()
     expect(await verdictFor(loader)).toEqual({ status: 'not-published' })
@@ -100,7 +100,7 @@ describe('createLoader: the published DDOC hash tree is stored beside the pin', 
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(storage.writePin).mockRejectedValueOnce(new Error('disk full'))
-    const result = await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries, pending.declaration)
+    const result = await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries, pending.declaration, undefined)
 
     expect(result.outcome).toBe('rejected')
     expect(await loader.ddocFor(ORIGIN)).toBeUndefined()

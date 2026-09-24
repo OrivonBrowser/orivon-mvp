@@ -23,7 +23,7 @@ import type { CapabilityKind, Manifest } from '../contracts/index.js'
 import type { BundleTree } from '../broker/policy/bundle-hash.js'
 import type { Resolver } from '../broker/policy/connect.js'
 import { parsePinRecord } from '../broker/policy/pin.js'
-import type { PinRecord } from '../broker/policy/pin.js'
+import type { ContentAddress, PinRecord } from '../broker/policy/pin.js'
 import { decideUpdate } from '../broker/policy/update.js'
 import type { PatternSet } from '../broker/policy/update.js'
 import { withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
@@ -39,8 +39,11 @@ import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
 import { leafOf } from './leaf-hash.js'
 import { parseManifest } from './manifest.js'
 import { checkRecord, checkedRecently, loadCheckRecord, pinnedManifestLeaf, saveCheckRecord, validatorsForPin } from './update-check.js'
+import type { LoadInstalled, LoadRejected, LoadResult } from './load-result.js'
+import { pinnedToRoot } from './content-root.js'
 
 export type { Fetch, FetchResponse } from './fetch-bundle.js'
+export type { LoadInstalled, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadRejected, LoadResult, LoadUpToDate } from './load-result.js'
 export type { LoaderStorage } from './storage.js'
 export { appRootDirectoryName } from './storage.js'
 
@@ -83,6 +86,13 @@ export interface CreateLoaderOptions {
    * the bundle. Unset means every call checks in full.
    */
   readonly updateCheckIntervalMs?: number
+  /**
+   * The content address an origin's bundle is served from, for an origin
+   * fetched from IPFS (a `.eth` name), and undefined for every other. Looked
+   * up once per load: every request of that load is then pinned to its
+   * root, and the pin records it. Throws when it cannot be verified.
+   */
+  readonly contentAddress?: (origin: string) => Promise<ContentAddress | undefined>
 }
 
 /**
@@ -139,113 +149,6 @@ export interface LoadContext {
   readonly declinedCapabilities?: readonly CapabilityKind[] | undefined
 }
 
-export interface LoadInstalled {
-  readonly outcome: 'installed'
-  readonly canonicalOrigin: string
-  readonly manifest: Manifest
-  readonly pin: PinRecord
-  /**
-   * True only when this install is a below-floor version the user has
-   * already chosen, at least once, to accept from this origin
-   * (decideUpdate()'s `rollback-notice`, 2026-09-04). Absent for every other
-   * install -- the caller uses this to show an ongoing, passive,
-   * non-blocking notice, never a prompt (the owner's own "warn every time,
-   * but never require a click" framing). Never present alongside a TOFU or
-   * ordinary `silent` install.
-   *
-   * A caller that ignores this field still gets a SAFE install --
-   * decideUpdate() only reaches `rollback-notice` once it has confirmed the
-   * update neither widens authority nor changes the bundle in a way that
-   * would need reconsent (fixed 2026-09-05, `ADR-0013`'s own amendment: it
-   * used to skip those checks entirely for an acknowledged rollback, which is
-   * why this field existing was not enough on its own). What a caller loses by ignoring it is purely
-   * the ongoing visibility the owner asked for -- the user never being told
-   * they are still running an origin's below-floor version -- which is the
-   * entire reason this outcome is distinguished from an ordinary `installed`
-   * result rather than folded into it. A future caller keyed only on
-   * `outcome === 'installed'` (an `installFromHint`-shaped helper, say) has
-   * to consciously decide to drop that visibility, not do it by accident.
-   */
-  readonly rollbackNotice?: true
-  /**
-   * Set by `src/main/install/app-install.ts`, never by this loader: this
-   * install is what registered the origin with the broker this session. A
-   * tab built before that has no app-tab flag, so it runs without its
-   * shims until it reloads once.
-   */
-  readonly newlyRegistered?: true
-}
-
-export interface LoadNeedsReconsent {
-  readonly outcome: 'needs-reconsent'
-  readonly canonicalOrigin: string
-  readonly manifest: Manifest
-  readonly tree: BundleTree
-  /** Every leaf, waiting in staging -- so a caller can persist after approval without re-fetching. */
-  readonly entries: readonly StagedAsset[]
-  /** The hash tree the site published with this bundle, stored beside the pin on approval. */
-  readonly declaration: DdocDeclaration | undefined
-}
-
-export interface LoadNeedsCapabilityPrompt {
-  readonly outcome: 'needs-capability-prompt'
-  readonly canonicalOrigin: string
-  readonly manifest: Manifest
-  readonly tree: BundleTree
-  readonly entries: readonly StagedAsset[]
-  readonly declaration: DdocDeclaration | undefined
-  /** What the new manifest asks for -- the prompt's own job to render, not this file's. */
-  readonly requestedPatterns: PatternSet
-}
-
-/**
- * 2026-09-04, T19 policy reversal: a below-floor version used to be a
- * silent, no-prompt `rejected`. It is now a warned CHOICE the first time for
- * a given origin -- proceed with this older version, or keep what's cached
- * -- never a hard block. Carries `tree`/`entries`/`manifest` for the same
- * reason `LoadNeedsReconsent`/`LoadNeedsCapabilityPrompt` carry them --
- * so a caller doesn't have to re-fetch to act on the choice.
- *
- * NOT the same reason, though: for those two, approving is terminal --
- * `widensAuthority`/`isSameBundle` (`ordinaryEscalation`, `update.ts`)
- * already ran, so persisting the result on approval is safe. Here they have
- * NOT run yet -- `decideUpdate` returns `rollback-choice` before either
- * check, so this manifest could also widen capabilities. Approving must
- * record the acknowledgement and let `decideUpdate` run again (now correctly
- * reaching `ordinaryEscalation`), never persist this result directly.
- */
-export interface LoadNeedsRollbackChoice {
-  readonly outcome: 'needs-rollback-choice'
-  readonly canonicalOrigin: string
-  readonly manifest: Manifest
-  readonly tree: BundleTree
-  readonly entries: readonly StagedAsset[]
-  readonly declaration: DdocDeclaration | undefined
-  /** The origin's own floor, so a prompt can say what's already been seen, not just what's being offered now. */
-  readonly versionFloor: string
-}
-
-export interface LoadRejected {
-  readonly outcome: 'rejected'
-  /**
-   * Developer-facing, same stance as fetch-bundle.ts's FetchBundleRejected --
-   * and, additionally, never a host filesystem path. Every other rejection
-   * here is a string this module wrote about the fetch or the manifest; the
-   * storage one is the only place a raw node:fs message could reach this
-   * field, and installOrReject below logs that message rather than returning
-   * it.
-   */
-  readonly reason: string
-}
-
-/** This origin was checked less than `updateCheckIntervalMs` ago, or its host answered the conditional manifest request with 304; no bundle was fetched and nothing changed. */
-export interface LoadUpToDate {
-  readonly outcome: 'up-to-date'
-  readonly canonicalOrigin: string
-}
-
-export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadNeedsRollbackChoice | LoadRejected | LoadUpToDate
-
 export interface Loader {
   /**
    * `hintedUrl` names the origin to install -- from a `<link
@@ -277,7 +180,7 @@ export interface Loader {
    * DIFFERENT bytes than what was approved, which is a correctness defect,
    * not a missed optimisation.
    */
-  installFetched(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[], declaration: DdocDeclaration | undefined): Promise<LoadInstalled | LoadRejected>
+  installFetched(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[], declaration: DdocDeclaration | undefined, content: ContentAddress | undefined): Promise<LoadInstalled | LoadRejected>
 
   /**
    * S4-5: re-runs the update decision against an ALREADY-FETCHED
@@ -298,7 +201,7 @@ export interface Loader {
    * `'needs-capability-prompt'` -- never `'needs-rollback-choice'` again,
    * since the floor check now passes.
    */
-  reconsider(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[], declaration: DdocDeclaration | undefined, context: LoadContext): Promise<LoadResult>
+  reconsider(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[], declaration: DdocDeclaration | undefined, content: ContentAddress | undefined, context: LoadContext): Promise<LoadResult>
 
   /**
    * The pin currently on disk for `origin`, or `null` if never pinned or
@@ -344,13 +247,14 @@ async function decideAndRoute (
   tree: BundleTree,
   entries: readonly StagedAsset[],
   declaration: DdocDeclaration | undefined,
+  content: ContentAddress | undefined,
   context: LoadContext
 ): Promise<LoadResult> {
   const rawPin = await options.storage.readPin(canonicalOrigin)
   if (rawPin === undefined) {
     // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
     // is no continuity to protect and nothing to prompt for.
-    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, undefined)
+    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, content, undefined)
   }
 
   // A pin record exists but fails to parse (corrupt bytes, a schema this
@@ -386,7 +290,7 @@ async function decideAndRoute (
 
   switch (decision) {
     case 'rollback-choice':
-      return { outcome: 'needs-rollback-choice', canonicalOrigin, manifest, tree, entries, declaration, versionFloor: context.versionFloor }
+      return { outcome: 'needs-rollback-choice', canonicalOrigin, manifest, tree, entries, declaration, content, versionFloor: context.versionFloor }
     case 'capability-prompt':
       return {
         outcome: 'needs-capability-prompt',
@@ -395,14 +299,15 @@ async function decideAndRoute (
         tree,
         entries,
         declaration,
+        content,
         requestedPatterns: declaredPatterns
       }
     case 'reconsent':
-      return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries, declaration }
+      return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries, declaration, content }
     case 'silent':
-      return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, existingPin)
+      return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, content, existingPin)
     case 'rollback-notice': {
-      const result = await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, existingPin)
+      const result = await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, content, existingPin)
       return result.outcome === 'installed' ? { ...result, rollbackNotice: true } : result
     }
     default: {
@@ -417,6 +322,16 @@ async function decideAndRoute (
 }
 
 export function createLoader (options: CreateLoaderOptions): Loader {
+  /** An origin's content address, or `undefined` for one not served from IPFS; a rejection when it cannot be verified. */
+  async function contentOf (origin: string | null): Promise<ContentAddress | undefined | LoadRejected> {
+    if (origin === null || options.contentAddress === undefined) return undefined
+    try {
+      return await options.contentAddress(origin)
+    } catch (error) {
+      return { outcome: 'rejected', reason: `${origin}'s content could not be verified: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+
   async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
     const interval = options.updateCheckIntervalMs
     const origin = originFromUrl(hintedUrl)
@@ -426,14 +341,21 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     if (previous !== undefined && checkedRecently(previous.checkedAt, options.now(), interval)) {
       return { outcome: 'up-to-date', canonicalOrigin: origin }
     }
+    const content = await contentOf(origin)
+    if (content !== undefined && 'outcome' in content) return content
     const validators = await validatorsForPin(options.storage, origin, previous)
-    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve, options.storage, undefined, validators)
+    // The name still points at the pinned root: nothing to fetch, so no gateway is asked for anything.
+    if (content !== undefined && (await pinFor(origin))?.content?.cid === content.cid) {
+      await saveCheckRecord(options.storage, origin, checkRecord(options.now(), validators, previous?.manifestLeaf))
+      return { outcome: 'up-to-date', canonicalOrigin: origin }
+    }
+    const fetched = await fetchBundle(pinnedToRoot(options.fetch, content?.cid), hintedUrl, options.resolve, options.storage, undefined, validators)
     if ('notModified' in fetched) {
       await saveCheckRecord(options.storage, origin, checkRecord(options.now(), validators, previous?.manifestLeaf))
       return { outcome: 'up-to-date', canonicalOrigin: origin }
     }
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
-    const result = await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, context)
+    const result = await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, content, context)
     if (result.outcome === 'installed') {
       await saveCheckRecord(options.storage, origin, checkRecord(options.now(), fetched.validators, await pinnedManifestLeaf(options.storage, origin)))
     } else if (result.outcome !== 'rejected') {
@@ -444,9 +366,11 @@ export function createLoader (options: CreateLoaderOptions): Loader {
   }
 
   async function checkInFull (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
-    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve, options.storage)
+    const content = await contentOf(originFromUrl(hintedUrl))
+    if (content !== undefined && 'outcome' in content) return content
+    const fetched = await fetchBundle(pinnedToRoot(options.fetch, content?.cid), hintedUrl, options.resolve, options.storage)
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
-    return await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, context)
+    return await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, content, context)
   }
 
   async function reconsider (
@@ -455,9 +379,10 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     tree: BundleTree,
     entries: readonly StagedAsset[],
     declaration: DdocDeclaration | undefined,
+    content: ContentAddress | undefined,
     context: LoadContext
   ): Promise<LoadResult> {
-    return await decideAndRoute(options, canonicalOrigin, manifest, tree, entries, declaration, context)
+    return await decideAndRoute(options, canonicalOrigin, manifest, tree, entries, declaration, content, context)
   }
 
   async function installFetched (
@@ -465,14 +390,15 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     manifest: Manifest,
     tree: BundleTree,
     entries: readonly StagedAsset[],
-    declaration: DdocDeclaration | undefined
+    declaration: DdocDeclaration | undefined,
+    content: ContentAddress | undefined
   ): Promise<LoadInstalled | LoadRejected> {
     // Every caller is acting on an approved needs-reconsent/needs-capability-
     // prompt outcome, and both exist only once decideAndRoute found a pin for
     // this origin -- so there is always one to read back here (possibly
     // unparseable: `null`, never the TOFU `undefined`).
     const existingPin = parsePinRecord(await options.storage.readPin(canonicalOrigin))
-    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, existingPin)
+    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, content, existingPin)
   }
 
   async function pinFor (origin: string): Promise<PinRecord | null> {

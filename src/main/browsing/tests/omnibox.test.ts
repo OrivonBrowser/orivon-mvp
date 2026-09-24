@@ -55,26 +55,19 @@ describe('parseOmniboxInput', () => {
       })
     })
 
-    // orivon-ports' fake `.eth` names are served over plain http (no TLS
-    // certificate exists for one) -- defaulting to https here would fail
-    // outright rather than reaching the app. Real ENS resolution, when it
-    // exists, is a different code path entirely (README.md's own "No ENS
-    // yet"); this is only about what scheme bare address-bar text gets.
-    it('a bare .eth name defaults to http, not https', () => {
-      expect(parseOmniboxInput('freetube.eth')).toEqual({
-        kind: 'url',
-        url: 'http://freetube.eth/'
-      })
+    // A `.eth` name is served by the verifier over https; only a
+    // developer-mode name from orivon-ports' names file is plain http on
+    // loopback, with no certificate to present.
+    it('a bare .eth name defaults to https, where the verifier serves it', () => {
+      expect(parseOmniboxInput('vitalik.eth')).toEqual({ kind: 'url', url: 'https://vitalik.eth/' })
+      expect(parseOmniboxInput('app.ens.eth/path')).toEqual({ kind: 'url', url: 'https://app.ens.eth/path' })
     })
 
-    // The URL constructor itself lowercases the host, so the assertion here
-    // is really on the SCHEME: an uppercase .eth must still be recognised as
-    // one and default to http, not fall through to the https default.
-    it('a .eth name is matched case-insensitively', () => {
-      expect(parseOmniboxInput('FreeTube.ETH')).toEqual({
-        kind: 'url',
-        url: 'http://freetube.eth/'
-      })
+    it('a developer-mode .eth name defaults to http, case-insensitively', () => {
+      const dev = (host: string): boolean => host === 'freetube.eth'
+      expect(parseOmniboxInput('freetube.eth', dev)).toEqual({ kind: 'url', url: 'http://freetube.eth/' })
+      expect(parseOmniboxInput('FreeTube.ETH', dev)).toEqual({ kind: 'url', url: 'http://freetube.eth/' })
+      expect(parseOmniboxInput('vitalik.eth', dev)).toEqual({ kind: 'url', url: 'https://vitalik.eth/' })
     })
 
     it('an explicit https scheme on a .eth name is left alone, not downgraded', () => {

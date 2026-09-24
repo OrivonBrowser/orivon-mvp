@@ -41,10 +41,13 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Fixed OIDC logins losing state: a tab leaving an app now parks its view, so sessionStorage and history survive the provider round trip.
 - DDOC ships as evidence: sites publish their bundle hash tree, the Web3 Score page shows verified, failed, or not published.
 - orivon-ports now generates every port's assets list and hash tree; all five ports verify byte-for-byte against the shell.
+- `vitalik.eth` loads in the real shell from mainnet: name proven by Helios, every IPFS block hashed locally, 2.8 s.
+- Web3 Score page now leads with the Website level: verified `.eth` names reach Level 2; everything else stays Level 1.
 
 ### In my head
 
 - Built the harness but not the bridge generator: with one port done it is tooling for a sample of one.
 - Corrected: DDOC never needed trustless resolution; that belongs to the connection axis. Its same-host anchor stays provisional.
+- Any web page can time a `.eth` request and learn which names were opened recently (A256); no fix is free.
 
 ### Non-repo

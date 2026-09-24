@@ -1,35 +1,34 @@
-// The site-info popover's Web3 Score page: delivery evidence only, never a
-// grade (ADR-0006, ARCHITECTURE.md's "trust is shown as observed behaviour,
-// never as a grade"). Pure -- no `electron`, and no `../../loader/electron-
-// serve.js` import: the caller (./site-info-ipc.js) already has to read
-// `Loader.pinFor` and the loader's `isOriginServedFromCacheSync`/
-// `pinCoverageFor` for other reasons, so this file takes what those return
-// rather than reaching for them itself (matches `../../trust/`'s own rule
-// of never importing another stream's internals one level further out).
-//
-// THE FIRST PRODUCTION CALLER OF `deliveryLadder`
-// (`../../trust/delivery-ladder.js`) -- `src/trust/` has shipped since
-// build step 6 opened with no caller anywhere in `src/` (A181,
-// docs/open-questions.md). This is that caller, scoped to what a popover
-// can honestly show without a connection log (`src/trust/README.md`'s own
-// "Connections" and "Operations" stay unbuilt -- the popover renders them
-// as "Not observed yet", never a guess).
+// The site-info popover's Web3 Score page: the Website level this browser
+// can observe (1 or 2; `../../trust/website-level.ts`), and beneath it the
+// evidence it rests on. Pure -- no `electron`, and no `../../loader/electron-
+// serve.js` import: the caller (../permissions/site-info-controller.ts)
+// already reads `Loader.pinFor`, the loader's `isOriginServedFromCacheSync`/
+// `pinCoverageFor` and the verifier's evidence for a `.eth` name, so this
+// file takes what those return rather than reaching for them itself.
+// Connections and operations stay unobserved: the broker keeps no
+// connection log (`src/trust/README.md`), and the popover says so.
 
 import { deliveryLadder } from '../../trust/delivery-ladder.js'
 import type { DeliveryLadderResult, PinCoverageEvidence } from '../../trust/delivery-ladder.js'
 import { ddocVerdict } from '../../trust/ddoc.js'
 import type { DdocVerdict, PublishedTree } from '../../trust/ddoc.js'
+import { websiteLevel } from '../../trust/website-level.js'
+import type { WebsiteLevel } from '../../trust/website-level.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
+import type { EvidenceRow, NameEvidence } from '../verifier/name-evidence.js'
 
 export type ConnectionState = 'secure' | 'insecure' | 'cached'
 
 export interface SiteTrust {
   readonly connection: ConnectionState
+  readonly level: WebsiteLevel
   readonly delivery: DeliveryLadderResult
   /** `undefined` when never pinned -- mirrors `delivery.evidence.pinned`, split out so a caller need not reach into delivery evidence for what is really identity, not a trust fact. */
   readonly pin: { readonly bundleHash: string, readonly version: string, readonly pinnedAt: number } | undefined
   /** The pinned bundle against the hash tree the site published with it (ADR-0029). */
   readonly ddoc: DdocVerdict
+  /** How a `.eth` name led to this page's content; `undefined` for any other origin. */
+  readonly name: { readonly line: string, readonly rows: readonly EvidenceRow[] } | undefined
 }
 
 /**
@@ -57,7 +56,8 @@ export function buildSiteTrust (
   servedFromCache: boolean,
   pinCoverage: PinCoverageEvidence | undefined,
   published: PublishedTree | undefined,
-  now: number
+  now: number,
+  name?: NameEvidence
 ): SiteTrust {
   const connection: ConnectionState = servedFromCache ? 'cached' : origin.startsWith('https://') ? 'secure' : 'insecure'
 
@@ -68,8 +68,8 @@ export function buildSiteTrust (
     deliveryMethod: servedFromCache ? 'served-from-pinned-cache' : 'fetched-each-load',
     currentFetchMatchesPin: null,
     pinHasChanged: false,
-    addressIsContentAddressed: false,
-    nameResolvedTrustlessly: false,
+    addressIsContentAddressed: name?.content !== undefined,
+    nameResolvedTrustlessly: name?.nameProven ?? false,
     // Omitted, never set to `undefined`, when there is none to report --
     // `exactOptionalPropertyTypes` treats those as different things for an
     // optional-alone field, and `DeliveryHistoryInput.pinCoverage` is one.
@@ -78,8 +78,10 @@ export function buildSiteTrust (
 
   return {
     connection,
+    level: websiteLevel(name?.content, pin?.bundleHash),
     delivery,
     pin: pin === null ? undefined : { bundleHash: pin.bundleHash, version: pin.version, pinnedAt: pin.pinnedAt },
-    ddoc: ddocVerdict(pin, published)
+    ddoc: ddocVerdict(pin, published),
+    name: name === undefined ? undefined : { line: name.line, rows: name.rows }
   }
 }
