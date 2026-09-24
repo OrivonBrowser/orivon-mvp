@@ -18,7 +18,7 @@ import { HostSupervisor } from './host-supervisor.js'
 import { loopbackPort } from './loopback-port.js'
 import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
-import { ethTestSeam } from './test-seam.js'
+import { ethTestSeam, noteVerifierListening } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
 
 /** Started this long after ready at the latest, if no page has finished loading by then. */
@@ -106,10 +106,12 @@ export const verifierSubsystem: Subsystem = {
         listening: (value) => {
           fingerprint = value
           hostDown = undefined
+          noteVerifierListening(true)
         },
         down: (reason) => {
           fingerprint = undefined
           hostDown = reason
+          noteVerifierListening(false)
           console.error(`[verifier] ${reason}`)
         },
         status: (value) => { lightClient = value },

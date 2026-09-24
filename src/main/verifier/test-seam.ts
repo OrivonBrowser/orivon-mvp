@@ -9,7 +9,7 @@ const SEAM_ENABLED = typeof __ORIVON_DEV_GRANT_ENABLED__ !== 'undefined' && __OR
 
 // `var`, not `let`/`const`: TypeScript requires it for a `declare global` augmentation.
 declare global {
-  var __orivonDevEthFixtures: Readonly<Record<string, string>> | undefined
+  var __orivonDevEthFixtures: { readonly fixtures: Readonly<Record<string, string>>, listening: boolean } | undefined
 }
 
 export interface EthTestSeam {
@@ -37,6 +37,12 @@ export function parseEthTestSeam (env: Readonly<Record<string, string | undefine
 export function ethTestSeam (): EthTestSeam | undefined {
   if (!SEAM_ENABLED) return undefined
   const seam = parseEthTestSeam(process.env)
-  globalThis.__orivonDevEthFixtures = seam?.fixtures
+  if (seam !== undefined) globalThis.__orivonDevEthFixtures ??= { fixtures: seam.fixtures, listening: false }
   return seam
+}
+
+/** Lets a test build's suite see when the verifier can answer, rather than guess with a delay. */
+export function noteVerifierListening (listening: boolean): void {
+  if (!SEAM_ENABLED || globalThis.__orivonDevEthFixtures === undefined) return
+  globalThis.__orivonDevEthFixtures.listening = listening
 }

@@ -101,7 +101,11 @@ export default defineConfig({
           index: resolve(root, 'src/main/index.ts'),
           'verifier-host': resolve(root, 'src/verifier-host/entry.ts')
         }
-      }
+      },
+      // Dependencies stay external, loaded from node_modules at run time,
+      // except these ESM-only packages: this CommonJS output cannot require()
+      // them, so they are bundled into the verifier host instead.
+      externalizeDeps: { exclude: ['multiformats', '@ipld/dag-pb', 'ipfs-unixfs', 'ipfs-unixfs-exporter', 'ipns'] }
     }
   },
   preload: {
