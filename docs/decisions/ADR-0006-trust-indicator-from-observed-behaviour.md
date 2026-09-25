@@ -1,8 +1,9 @@
 # ADR-0006: The trust indicator is built from observed behaviour, not claims
 
 - **Status:** accepted, **amended 2026-09-15** (see the Amendment section below: a gap in the
-  D-ladder, not a reversal of anything above), and **twice on 2026-09-24**: DDOC ships as
-  evidence, and judged levels ship, from a provider that need not be trustless
+  D-ladder, not a reversal of anything above), **twice on 2026-09-24**: DDOC ships as
+  evidence, and judged levels ship, from a provider that need not be trustless, and **on
+  2026-09-25**: Website levels follow the canonical Web3 scores page
 - **Date:** 2026-08-18
 - **Type:** product / architecture
 - **Decided by:** owner (insisted the full spectrum matters, and proposed the attestation
@@ -30,7 +31,8 @@ remains the centralized host."*
 That is correct, and it recovers a level that was lost. `Old-Private-Plan/Web3 Verification
 levels` had **Level 3 = "the site's full stack runs entirely locally", marked *Automatic***.
 It does not appear in the public `web3-score.md`: contradiction **B3** in
-`open-questions.md`, resolved here in favour of the private version.
+`open-questions.md`, resolved here in favour of the private version. *(Reversed 2026-09-25,
+below: the canonical page's levels apply, and "runs entirely locally" is evidence.)*
 
 ## The insight this rests on
 **The capability broker is a trustlessity oracle.** It mediates every socket an app opens
@@ -157,9 +159,11 @@ No provider exists yet, so no judged level is ever displayed in month 1.
 - **Site L1** ("standard website, no DDOC"): automatic ✅
 - **Site L2** ("supports DDOC"): deferred, needs trustless DNS ❌ *(amended 2026-09-24: DDOC
   ships as evidence, below)*
-- **Site L3** ("full stack runs entirely locally"): automatic ✅ *(reinstated)*
+- **Site L3** ("full stack runs entirely locally"): automatic ✅ *(reinstated)* *(withdrawn
+  2026-09-25: the canonical L3 is judged; running locally is evidence, below)*
 - **Site L4**. The *"executes no external code without consent"* half is automatic via the
   broker ✅; the *"open source"* half needs a judge ❌ *(amended 2026-09-24: judged, and shipped)*
+  *(amended 2026-09-25: the level as a whole is a provider's; the broker's half is evidence)*
 - **Site L5 / operation depth**. Needs a judge ❌ *(amended 2026-09-24: judged, and shipped)*
 - **Connection ladder**. Automatic in full ✅
 
@@ -244,6 +248,26 @@ that provider. Which provider this build ships with is `open-questions.md` A250.
 Nostr signing, the Operation ladder's concrete instance, is an idea rather than a build step
 (`mvp-scope.md` §LATER), so the operation ladder has no scheduled instance; `orivon.id` signing
 remains the candidate.
+
+## Amendment, 2026-09-25: Website levels follow the canonical Web3 scores page
+
+The owner settled that every trust question follows the canonical pages. On every site, the
+Web3 Score page of the site-info popover leads with the canonical **Website level**, and the
+evidence this ADR builds sits beneath it:
+
+- **Only Level 1 and Level 2 are automatic.** Level 2 is a site that meets DDOC: an installed
+  site whose files match the hash tree it publishes (`ADR-0029`), or content that meets DDOC by
+  design, as a `.eth` name's IPFS content does (`ADR-0030`). Everything else is Level 1.
+- **Level 3 and above come only from a Web3 Score provider** assessing the site's content
+  identifier: the bundle hash of a hash-pinned app, or the CID of IPFS content. With no provider
+  configured (A250) they show grey `?`, and the page names the identifier a provider would assess.
+- **This withdraws the level list above.** "The full stack runs entirely locally" and the
+  "executes no external code without consent" half of Level 4 are observed facts, and stay
+  evidence under the level rather than levels of their own. `open-questions.md` B3 is answered
+  the other way: the public page's levels apply.
+- **Third-party code does not lower Level 2.** Level 2 asks whether the site's own files are what
+  it published; code fetched from elsewhere costs score in the judged levels and shows as pin
+  coverage, as the 2026-09-15 amendment says.
 
 ## Reversibility
 - **Cost to reverse:** cheap to extend, expensive to retract. Levels shown once become claims

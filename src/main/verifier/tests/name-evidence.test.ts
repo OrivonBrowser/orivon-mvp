@@ -21,7 +21,7 @@ function provenance (overrides: Partial<SiteProvenance>): SiteProvenance {
 describe('liveNameEvidence', () => {
   it('says where the name was proven, what it points to, and when it was checked', () => {
     const evidence = liveNameEvidence(provenance({}), NOW)
-    expect(evidence.content).toEqual({ source: 'live', cid: CID, ddoc: 'met' })
+    expect(evidence.content).toEqual({ source: 'live', cid: CID, pointersVerified: true })
     expect(evidence.nameProven).toBe(true)
     expect(evidence.line).toBe('Name verified by the light client at block 26,047,527, 3 minutes ago')
     expect(evidence.rows).toEqual([
@@ -52,13 +52,13 @@ describe('liveNameEvidence', () => {
         { step: 'contenthash', name: 'uni.eth', pointer: { kind: 'dnslink', domain: 'app.example' }, provenance: { via: 'fixture' } },
         { step: 'dnslink', domain: 'app.example', target: `/ipfs/${CID}` }
       ],
-      ddoc: { status: 'not-met', reason: 'via DNS: app.example', refusals: [] }
+      ddoc: { status: 'met', refusals: [] }
     }), NOW)
-    expect(viaDns.content).toEqual({ source: 'live', cid: CID, ddoc: 'not-met', reason: 'via DNS: app.example' })
+    expect(viaDns.content).toEqual({ source: 'live', cid: CID, pointersVerified: false })
     expect(viaDns.nameProven).toBe(false)
     expect(viaDns.line).toBe('Name not verified: it points through DNS (app.example)')
     expect(viaDns.rows.map((r) => r.value)).toContain('Via DNS: app.example, which anyone on the network path could forge')
-    expect(liveNameEvidence(provenance({ ddoc: { status: 'failed', resource: '/app.js', refusals: [] } }), NOW).content).toMatchObject({ ddoc: 'failed', reason: '/app.js' })
+    expect(liveNameEvidence(provenance({ ddoc: { status: 'failed', resource: '/app.js', refusals: [] } }), NOW).content).toMatchObject({ failedResource: '/app.js' })
   })
 })
 

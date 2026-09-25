@@ -35,7 +35,7 @@ function networkBlocker (platform) {
     return notice(
       'warn',
       'This tab is not a registered app tab',
-      'Orivon is here, but fetch routing is installed only for an INSTALLED app. Loading this app from a URL is not the same as installing it, and a loopback origin can never be installed. See this app\'s README, "Running it".'
+      'Orivon is here, but this origin has not been granted anything yet. Answer the permission prompt Orivon shows for it, and the tab reloads as the app. See this app\'s README, "Running it".'
     )
   }
   if (!platform.canReachYouTube) {

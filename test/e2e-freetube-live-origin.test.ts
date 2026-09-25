@@ -11,7 +11,7 @@
 //
 // The grant is issued through `__orivonDevGrant` rather than the consent
 // prompt, so this file isolates what a granted live origin can DO from how it
-// gets granted. The real prompt-to-app-tab path is e2e-dev-origin-grant.test.ts.
+// gets granted. The real prompt-to-app-tab path is e2e-loopback-grant.test.ts.
 //
 // NO HERMETIC_RESOLVER: the app has to reach real YouTube for this to mean
 // anything, so this is not hermetic and must not gate CI. SKIPPED UNDER CI

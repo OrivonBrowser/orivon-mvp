@@ -43,6 +43,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - orivon-ports now generates every port's assets list and hash tree; all five ports verify byte-for-byte against the shell.
 - `vitalik.eth` loads in the real shell from mainnet: name proven by Helios, every IPFS block hashed locally, 2.8 s.
 - Web3 Score page now leads with the Website level: verified `.eth` names reach Level 2; everything else stays Level 1.
+- Owner answered A254-A256: every DDOC site is Level 2, the contenthash anchors DDOC, and the `.eth` verifier's cache is now per site.
+- Build step 6 is done: ENS and IPFS docs, threats T27-T38 and the roadmap reshape all in review; only a Windows/macOS run remains.
+- Localhost apps now ask for permissions in every build, `npm start` included; before, only developer mode prompted, and `npm start` silently granted nothing.
 
 ### In my head
 

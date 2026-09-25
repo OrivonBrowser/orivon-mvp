@@ -94,9 +94,9 @@ function levelSection (trust: SiteTrust): HTMLElement[] {
 }
 
 // Says only what was compared. The anchor is the site's own host, so a
-// match is never worded as proof of who owns the domain (ADR-0029), nor as
-// DDOC, which needs an anchor off the host (A254). A `.eth` name's own
-// anchor is its contenthash, shown in the Name rows instead.
+// match is never worded as proof of who owns the domain (ADR-0029). A
+// `.eth` name's own anchor is its contenthash, shown in the Name rows
+// instead.
 function ddocLabel (ddoc: DdocVerdict): string {
   switch (ddoc.status) {
     case 'not-checked': return 'Not checked: this site is not installed'
@@ -151,7 +151,7 @@ export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null,
       ['Version', trust.pin.version],
       ['Pinned', new Date(trust.pin.pinnedAt).toLocaleString()]
     ]
-    if (trust.name === undefined) rows.push(['Hash tree', ddocLabel(trust.ddoc)])
+    if (trust.name === undefined) rows.push(['DDOC', ddocLabel(trust.ddoc)])
     const coverage = trust.delivery.evidence.pinCoverage
     if (coverage !== undefined) {
       const total = coverage.pinnedRequests + coverage.thirdPartyRequests
@@ -163,7 +163,7 @@ export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null,
   container.append(document.createElement('hr'))
 
   const unknownRows: Array<[string, string]> = [['Connections', 'Not observed yet'], ['Operations', 'Not observed yet']]
-  if (trust.pin === undefined && trust.name === undefined) unknownRows.unshift(['Hash tree', ddocLabel(trust.ddoc)])
+  if (trust.pin === undefined && trust.name === undefined) unknownRows.unshift(['DDOC', ddocLabel(trust.ddoc)])
   container.append(evidenceList(unknownRows, 'unknown'))
 
   container.append(paragraph('disclaimer', 'Observed by this browser, never guaranteed.'))

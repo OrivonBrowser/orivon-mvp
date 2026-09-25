@@ -52,10 +52,11 @@ nothing has not solved it. A thrown error that is not a `ResolutionError` is a b
 detected lie (`unverifiable`) above everything else, so that "one gateway was down" never hides
 "another sent a block that failed its hash". The message keeps every provider's reason.
 
-**[`pointer-chain.ts`](pointer-chain.ts) judges the pointers, not the bytes.** DDOC for a `.eth`
-name has two halves: every pointer from the name to the root verified, and every byte served
-checked against the root. The gatherer's per-navigation report adds the second. An installed app
-has only the first to store, since its bytes were checked when it was pinned. A DNSLink hop is
-not verified, because DNS can forge the TXT record; the bytes are still checked against the CID it
-named. That is why a DNSLink name is Level 1 and not a failure. A test build's `fixture`
+**[`pointer-chain.ts`](pointer-chain.ts) judges the pointers, not the bytes.** Two questions are
+kept apart. DDOC asks whether every byte served matched the content's hashes, and the gatherer's
+report answers it per mount. Whether every pointer from the name to the root was proven is the
+connection axis's question, the delivery ladder's D4, and this file answers it, for a live page
+and an installed app's stored chain alike. A DNSLink hop is not proven, because DNS can forge the
+TXT record, yet the bytes are still checked against the CID it named: DDOC holds, and the site is
+Level 2 with its DNS hop shown unproven. A test build's `fixture`
 provenance counts as proven: the seam that produces it is compiled out of an ordinary build.

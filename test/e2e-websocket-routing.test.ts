@@ -3,10 +3,11 @@
 // real RFC 6455 exchange with a hand-rolled server (no ws dependency); an
 // ungranted host takes the native WebSocket and meets the page's CSP.
 //
-// The page is served by this file's own server with the CSP a dev-granted
-// origin is given (src/loader/serve-csp.ts, the builder dev-csp.ts appends),
-// so it also MEASURES what that policy's connect-src 'self' does to a dev
-// server's own hot-reload socket on the page's host and port.
+// The page is served by this file's own server with the CSP an origin granted
+// without installing is given (src/loader/serve-csp.ts, the builder
+// src/main/install/granted-origin-csp.ts appends), so it also MEASURES what
+// that policy's connect-src 'self' does to a dev server's own hot-reload
+// socket on the page's host and port.
 //
 // Plain ws:, not wss:: e2e-connect-secure-capability.test.ts's header says
 // why a TLS round trip cannot be proven hermetically here. The wss: path
@@ -257,7 +258,7 @@ it('an app tab\'s WebSocket reaches a granted host over orivon.net, and an ungra
       check('and it was the page\'s connect-src that refused it', native.violations.some((v) => v.startsWith('connect-src <- ws://127.0.0.1:8889')), JSON.stringify(native))
 
       // (c) MEASURED: a dev server's hot-reload socket, on the page's own
-      // host and port, under the CSP a dev-granted origin is served.
+      // host and port, under the CSP an origin granted without installing is served.
       const hotReload = await evaluateRetrying(view, async () => await new Promise<unknown>((resolve) => {
         const before = (window as unknown as { __violations: string[] }).__violations.length
         const log: string[] = []

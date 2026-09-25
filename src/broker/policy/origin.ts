@@ -136,6 +136,11 @@ export function isLocalhostName (host: string): boolean {
   return normalized === 'localhost' || normalized.endsWith('.localhost')
 }
 
+/** This machine: a loopback literal in any spelling `classifyAddress` accepts, or a `localhost` name, which Chromium resolves to loopback itself and never puts on the wire. */
+export function isLoopbackHost (host: string): boolean {
+  return isLocalhostName(host) || classifyAddress(host) === 'loopback'
+}
+
 /**
  * True only if `origin` (already in `originFromUrl`'s canonical shape) may
  * ever be written to disk -- T13c: "Never persist grants for loopback,

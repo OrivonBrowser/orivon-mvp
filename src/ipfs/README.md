@@ -49,8 +49,11 @@ records the first resource that failed as `unverifiable`.
 **Limits are per request and count cache hits** ([`limits.ts`](limits.ts),
 [`blockstore.ts`](blockstore.ts)'s `blockstoreFor`). The exporter walks a DAG recursively, so a
 depth bomb is a chain of single-link nodes. Counting every block a request touches, cached or not,
-bounds that walk without needing to see the depth. Verified blocks are cached across sites,
-because a content-addressed block is the same block whoever links to it.
+bounds that walk without needing to see the depth. Verified blocks are cached per partition, the
+top-level page origin a mount belongs to ([`blockstore.ts`](blockstore.ts)'s `BlockCache`). A
+content-addressed block is the same block whoever links to it, so one cache would be correct; it
+would also answer a site's request faster when another site had fetched the block, which a page
+can time (`open-questions.md` A256).
 
 **An IPNS record older than one already seen is refused** ([`ipns.ts`](ipns.ts)). A gateway
 could otherwise serve an old, validly signed record and roll a site back. The highest sequence

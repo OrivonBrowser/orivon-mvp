@@ -1,5 +1,8 @@
-// Mounted `.eth` sites by host, kept a short while so one page's many
-// requests read one root without resolving the name for each.
+// Mounted `.eth` sites by host and partition, kept a short while so one
+// page's many requests read one root without resolving the name for each.
+// A partition is the top-level page origin a request came from: a name one
+// site's pages opened is cold for every other site, so timing a request
+// tells a page nothing about where the person has been (A256).
 
 import { ResolutionError } from '../resolution/records.js'
 import type { MountedSite } from '../resolution/providers.js'
@@ -40,15 +43,17 @@ export class Sites {
     private readonly timeoutMs = MOUNT_TIMEOUT_MS
   ) {}
 
-  /** Throws a ResolutionError. */
-  async get (host: string): Promise<SiteRecord> {
-    const current = this.entries.get(host)
+  /** Throws a ResolutionError. With no partition the mount is served once and never kept, nor are its blocks. */
+  async get (host: string, partition: string | undefined): Promise<SiteRecord> {
+    if (partition === undefined) return await this.mount(host, undefined)
+    const key = `${partition} ${host}`
+    const current = this.entries.get(key)
     if (current !== undefined && current.expires > this.now()) {
-      this.use(host, current)
+      this.use(key, current)
       return await current.settled
     }
-    const entry: Entry = { settled: this.mount(host), expires: this.now() + SITE_TTL_MS, failed: false }
-    this.use(host, entry)
+    const entry: Entry = { settled: this.mount(host, partition), expires: this.now() + SITE_TTL_MS, failed: false }
+    this.use(key, entry)
     entry.settled.catch(() => {
       entry.failed = true
       entry.expires = this.now() + FAILURE_TTL_MS
@@ -56,9 +61,9 @@ export class Sites {
     return await entry.settled
   }
 
-  /** The site currently mounted for `host`, without resolving anything. */
-  async current (host: string): Promise<SiteRecord | undefined> {
-    const entry = this.entries.get(host)
+  /** The site currently mounted for `host` in `partition`, without resolving anything. */
+  async current (host: string, partition: string): Promise<SiteRecord | undefined> {
+    const entry = this.entries.get(`${partition} ${host}`)
     if (entry === undefined) return undefined
     try {
       return await entry.settled
@@ -67,10 +72,10 @@ export class Sites {
     }
   }
 
-  /** Moves `host` to the newest end, and drops expired failures and the oldest names past the cap. */
-  private use (host: string, entry: Entry): void {
-    this.entries.delete(host)
-    this.entries.set(host, entry)
+  /** Moves `key` to the newest end, and drops expired failures and the oldest names past the cap. */
+  private use (key: string, entry: Entry): void {
+    this.entries.delete(key)
+    this.entries.set(key, entry)
     const now = this.now()
     for (const [name, kept] of this.entries) {
       if (kept.failed && kept.expires <= now) this.entries.delete(name)
@@ -86,7 +91,7 @@ export class Sites {
     this.entries.clear()
   }
 
-  private async mount (host: string): Promise<SiteRecord> {
+  private async mount (host: string, partition: string | undefined): Promise<SiteRecord> {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<never>((_resolve, reject) => {
@@ -99,7 +104,7 @@ export class Sites {
       return await Promise.race([deadline, this.mounting.run(async () => {
         controller.signal.throwIfAborted()
         const resolved = await this.registry.resolve(host, controller.signal)
-        const site = await this.registry.mount(resolved.name, resolved.records, controller.signal)
+        const site = await this.registry.mount(resolved.name, resolved.records, controller.signal, partition)
         return { site, resolver: resolved.resolver, mountedAt: this.now() }
       })])
     } finally {

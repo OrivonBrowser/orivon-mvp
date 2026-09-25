@@ -18,8 +18,8 @@ per-origin, with nothing installed to disk: search, channels, watch metadata, th
 video playback** all work, reaching live YouTube through the broker. Proven by
 `test/e2e-freetube-live-origin.test.ts`.
 
-Under `npm run dev`, opening its URL raises the real consent prompt and accepting it is the last
-step -- see §Consent without installing. Playback still depends on YouTube serving a stream at
+Opening its URL raises the real consent prompt, and accepting it is the last step -- see §Consent
+without installing. Playback still depends on YouTube serving a stream at
 all, which for most videos it will not (§Wall 2).
 
 ## Consent without installing
@@ -28,28 +28,25 @@ all, which for most videos it will not (§Wall 2).
 the first. `tab-view.ts`'s `appTabArgsFor` gates the app-tab flag, and therefore routed fetch, on
 `broker.app.isRegisteredSync(origin)` alone -- no pin, no cached bundle.
 
-**The install path refuses a loopback origin, by design, and still does by default.**
-`<link rel="orivon-manifest">` -> [`manifest-hint.ts`](../../../src/main/install/manifest-hint.ts) ->
-`installApp` -> [`app-install.ts`](../../../src/main/install/app-install.ts)'s `installFromHint` ->
-`Loader.load()`, which applies `ensurePublicUnicastOrigin` before any manifest is read (A46, T12).
+**The install path refuses a loopback origin**: `Loader.load()` applies
+`ensurePublicUnicastOrigin` before any manifest is read (A46, T12). So a loopback origin's
+`<link rel="orivon-manifest">` hint never goes there:
+[`app-install-subsystem.ts`](../../../src/main/install/app-install-subsystem.ts) hands it to
+[`grant-without-install.ts`](../../../src/main/install/grant-without-install.ts) instead, in every
+build, which fetches only the manifest, registers the origin, and raises the same consent prompt
+an install raises. Nothing is fetched as a bundle, hashed, pinned or served from cache; this
+directory's own `serve.mjs` keeps serving the page. It is bounded:
 
-**Under `npm run dev` a loopback origin takes a second path instead:**
-[`dev-app-origin.ts`](../../../src/main/dev/dev-app-origin.ts) fetches only the manifest, registers the
-origin, and raises the same consent prompt an install raises. Nothing is fetched as a bundle,
-hashed, pinned or served from cache; this directory's own `serve.mjs` keeps serving the page. It
-is bounded:
-
-- **Only `npm run dev` enables it** -- `scripts/dev.mjs` sets `ORIVON_DEV_ORIGINS=1`. `npm start`,
-  which is what a run-from-source user runs, never does, so the refusal above stands for them.
-- **Loopback literals and `.eth` names only** -- `127.0.0.1`, `[::1]`, or a single-label
-  `<name>.eth`, never a `localhost` *name*, whose answer depends on a resolver. `https:` is
-  refused for an `.eth` name outright: no such name will ever present a certificate, so an
-  attempt could not be told apart from a real one.
+- **Loopback only** -- a loopback literal such as `127.0.0.1` or `[::1]`, or a `localhost` name,
+  which Chromium resolves to loopback itself. An orivon-ports `.eth` name takes the same path only
+  under `npm run dev`, and never over `https:`: no such name will ever present a certificate, so
+  an attempt could not be told apart from a real one.
 - **Session-only** -- a loopback grant is never persisted (T13c).
 - **A re-hint cannot widen a held grant.** If the manifest now asks for more than was granted on a
   capability already held, the hint is refused rather than re-prompted, because an
   all-or-nothing accept would re-grant it under a row the prompt labels as already allowed.
-- **Not enforced:** A46's refinement that the navigation be *user-typed*.
+- **Not enforced:** that the navigation was *typed*. A link to a loopback URL leads to the same
+  prompt.
 
 Separating consent from install for public origins too touches ADR-0007/ADR-0009's framing, and is
 an owner-level decision this directory does not settle.
@@ -162,7 +159,7 @@ before choosing one.
 
 ```bash
 node test/apps/freetube/serve.mjs      # terminal 1: a plain static server on http://127.0.0.1:8874
-npm run dev                            # terminal 2: then open http://127.0.0.1:8874 and accept
+npm start                              # terminal 2: then open http://127.0.0.1:8874 and accept
 ```
 
 That is the whole of it: open the URL, answer the prompt, use the app.
@@ -197,10 +194,10 @@ layer. It models nothing else about an app tab: not the served CSP, not `<video>
 detected" banner and makes no request, since a browser would refuse the origin under CORS and
 strip the headers YouTube needs.
 
-**In Orivon without `npm run dev`** -- `npm start`, say -- the loopback origin takes the install
-path, which refuses it (§Consent without installing). No prompt appears, the tab is never
-registered, and `fetch` is never rerouted. `lib/views.js` names that state on screen before any
-request, rather than letting a doomed one report `Failed to fetch`.
+**In Orivon, until the prompt is answered**, the first load runs in an ordinary tab: the origin
+is not registered yet, and `fetch` is not rerouted (§Consent without installing). `lib/views.js`
+names that state on screen before any request, rather than letting a doomed one report
+`Failed to fetch`.
 
 ## Design notes
 

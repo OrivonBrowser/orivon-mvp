@@ -10,7 +10,7 @@ import { ResolutionError } from '../resolution/records.js'
 import type { GatheredFile } from '../resolution/providers.js'
 import { contentTypeFor } from '../loader/serve-content-type.js'
 import { parseRange } from '../loader/serve-range.js'
-import { CONTENT_ROOT_HEADER } from '../loader/content-root.js'
+import { CONTENT_ROOT_HEADER, PARTITION_HEADER } from '../loader/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { Sites } from './sites.js'
@@ -35,6 +35,25 @@ function hostOf (req: IncomingMessage): string | undefined {
   const servername = (req.socket as TLSSocket).servername
   if (typeof servername === 'string' && servername.toLowerCase() !== host) return undefined
   return host
+}
+
+/** An origin, as the shell names a request's top-level page; nothing else is taken as a partition. */
+const PARTITION = /^[a-z][a-z0-9+.-]*:\/\/[\x21-\x7e]{1,253}$/
+
+/**
+ * The cache this request may use, or undefined for none at all:
+ * - the one the shell named for the request's top-level page;
+ * - the name's own, for a request no page started (the browser's favicon
+ *   fetch, the loader), which Chromium marks `Sec-Fetch-Site: none`, or one
+ *   the name's own worker made, marked `same-origin`: neither mark can be
+ *   forged, and the shell strips any partition a frameless request set;
+ * - otherwise none: the request is served, and nothing it fetched is kept.
+ */
+function partitionOf (req: IncomingMessage, host: string): string | undefined {
+  const named = req.headers[PARTITION_HEADER]
+  if (typeof named === 'string' && PARTITION.test(named)) return named
+  const site = req.headers['sec-fetch-site']
+  return site === 'none' || site === 'same-origin' ? `https://${host}` : undefined
 }
 
 /** The path of an origin-form request target. `//x/y` would read as an authority, so it is refused, not reinterpreted. */
@@ -124,7 +143,7 @@ async function handle (sites: Sites, req: IncomingMessage, res: ServerResponse):
   let file: GatheredFile
   let root: string
   try {
-    const { site } = await sites.get(host)
+    const { site } = await sites.get(host, partitionOf(req, host))
     root = site.root.cid
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.

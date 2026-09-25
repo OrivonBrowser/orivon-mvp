@@ -120,7 +120,7 @@ export function platformBanner (platform) {
     return notice(
       'warn',
       'Orivon is present, but this tab is not a registered app tab',
-      'No permission prompt appeared because nothing asked for one: consent happens when an app is INSTALLED, and an app is installed from a public https origin, never from a URL merely opened in a tab. A loopback address such as 127.0.0.1 is refused outright as an install origin, so this app cannot be installed from a dev server at all.'
+      'Orivon asks for this app\'s permissions when the page loads. Answer that prompt, and the tab reloads as the app.'
     )
   }
   if (!platform.canReachYouTube) {

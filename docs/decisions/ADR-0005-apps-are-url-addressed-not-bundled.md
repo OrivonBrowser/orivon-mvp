@@ -1,7 +1,8 @@
 # ADR-0005: Apps are URL-addressed and cached, never bundled into the browser
 
 - **Status:** accepted, **amended 2026-09-03 to reorder fetch/cache relative to consent**, owner
-  decision recorded in full in `ADR-0012`
+  decision recorded in full in `ADR-0012`, and **2026-09-25: a `.eth` name delivers an app from
+  IPFS** (see the Amendment at the end)
 - **Date:** 2026-08-18
 - **Type:** architecture
 - **Decided by:** owner concern, resolved by AI recommendation
@@ -79,7 +80,7 @@ from cache thereafter, with update checks → **show the capability grant prompt
 app's own code first requests a capability**, not before. This originally read "fetch → show the
 capability grant prompt → cache → run from cache thereafter," with the prompt between fetch and
 cache; `ADR-0012` reverses that order. HTTPS in the MVP; IPFS and ENS-addressed delivery later,
-once trustless resolution exists.
+once trustless resolution exists. *(Amended 2026-09-25: both are in this build, below.)*
 
 ## Consequence that changes the build plan
 If an app is fetched from a URL, **its backend cannot run in the Electron main process**:
@@ -164,6 +165,14 @@ It is evidence, not a gate: the pin, the re-consent rules and the fail-closed se
 are unchanged, and a missing or mismatched tree never stops an install. Its anchor is the site's
 own host, which a compromised host can rewrite along with the files; `ADR-0029` states what it
 does and does not catch.
+
+## Amendment, 2026-09-25: a `.eth` name delivers an app from IPFS (`ADR-0030`)
+
+The "later" above arrived in this build. An app can be delivered from a `.eth` name: a light
+client proves the name's contenthash, its files come from IPFS with every block hashed against its
+CID, and it is served at `https://<name>.eth`, an origin like any other. Everything this ADR decides
+holds for it unchanged: URL-addressed, fetched and cached silently, hash-pinned under the same
+bundle hash, one consent dialog. The pin also records the CID the files were verified against.
 
 ## Reversibility
 - **Cost to reverse:** cheap. Nothing prevents bundling an app later if there is a reason.

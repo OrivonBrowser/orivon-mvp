@@ -76,13 +76,13 @@ export class ResolutionRegistry {
     throw exhausted(`${canonical} could not be resolved`, attempts)
   }
 
-  async mount (name: string, records: readonly NameRecord[], signal?: AbortSignal): Promise<MountedSite> {
+  async mount (name: string, records: readonly NameRecord[], signal?: AbortSignal, partition?: string): Promise<MountedSite> {
     const candidates = this.gatherers.filter((g) => g.supports(records))
     if (candidates.length === 0) throw new ResolutionError('unsupported', `no gatherer can load ${name}'s records`)
     const attempts: Attempt[] = []
     for (const gatherer of candidates) {
       try {
-        return await gatherer.mount(name, records, signal)
+        return await gatherer.mount(name, records, signal, partition)
       } catch (error) {
         attempts.push(attemptOf(gatherer.id, error))
       }

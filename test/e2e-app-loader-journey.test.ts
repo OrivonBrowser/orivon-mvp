@@ -25,10 +25,12 @@
 // see ./app-loader-journey-shim-entry.ts's own header for exactly what that
 // substitutes for and why). What is NOT exercised: a real grant reaching that
 // pipe via a real, accepted install. src/loader/install-origin.ts's A46 (no
-// loopback/non-https carve-out, deliberate, must not be weakened) means
-// Loader.load() can never accept ANY hermetic fixture's own origin -- so the
-// real hint above is proven to reach the real loader and be correctly
-// REFUSED for being non-public, and the granted round trip below is enabled
+// loopback/non-https carve-out) means Loader.load() can never accept ANY
+// hermetic fixture's own origin, so a loopback hint takes the
+// grant-without-install path instead (src/main/install/grant-without-
+// install.ts). The real hint above is proven to reach that path and be
+// refused, since this file has already registered the origin with an empty
+// grant the manifest would widen, and the granted round trip below is enabled
 // instead through src/main/dev-grant.ts's developer-only hook (the same
 // substitution test/e2e-capability-boundary.test.ts already makes, and for
 // the identical reason), acting on the SAME broker instance the real launched
@@ -210,7 +212,9 @@ it(
       // (test/launch-electron.mjs) -- both fire on every 'data' event, so
       // this adds a capture, it does not replace the existing forwarding.
       let mainStdout = ''
+      let mainStderr = ''
       app.process().stdout?.on('data', (chunk: Buffer) => { mainStdout += chunk.toString() })
+      app.process().stderr?.on('data', (chunk: Buffer) => { mainStderr += chunk.toString() })
       try {
         const fixtureOrigin = `http://127.0.0.1:${String(staticPort)}`
         const fixtureUrl = `${fixtureOrigin}/`
@@ -265,22 +269,23 @@ it(
         // ---- the real discovery-hint listener, observed for real --------
         // Fires automatically on load (src/preload/app.ts's fallback branch
         // calls installManifestHintWatcher() unconditionally) -- no action
-        // from this test triggers it. installFromHint's own same-origin
-        // check passes (this http origin matches its own hint), so the
-        // rejection below is install-origin.ts's A46 (https/public-unicast
-        // only, no exception) refusing the loader's own fetch, not an
-        // earlier, less meaningful failure.
+        // from this test triggers it. A loopback origin is granted without
+        // installing, never handed to the loader; this origin is already
+        // registered holding `tcp.connect` with no patterns, and its manifest
+        // asks for the echo port, so the hint is refused as widening a held
+        // grant -- before registerApp, and before any prompt is shown.
+        const refusal = `grant without installing refused for ${fixtureOrigin}: the manifest now asks for more than this session granted`
         const hintRejected = await waitFor(
-          () => mainStdout.includes(`manifest hint from ${fixtureOrigin} did not install: rejected`),
+          () => mainStdout.includes(`manifest hint from ${fixtureOrigin} did not install: rejected`) && mainStderr.includes(refusal),
           10_000
         )
         check(
           'the real <link rel="orivon-manifest"> hint reaches the real, production-wired discovery ' +
-          'listener (preload manifest-hint.ts -> main manifest-hint.ts -> the real installFromHint), ' +
-          'and is refused -- A46 has no loopback/non-https carve-out, so this http origin can never ' +
-          'complete a real install through this path (see this file\'s header)',
+          'listener (preload manifest-hint.ts -> main manifest-hint.ts -> the published installApp), ' +
+          'takes the loopback grant-without-install path, and is refused because the manifest would ' +
+          'widen a grant this session already holds',
           hintRejected,
-          hintRejected ? undefined : `stdout so far: ${mainStdout}`
+          hintRejected ? undefined : `stdout so far: ${mainStdout}\nstderr so far: ${mainStderr}`
         )
 
         // ---- denied before any grant, through the real shim --------------

@@ -10,36 +10,62 @@ import type { Fetch } from './gateways.js'
 import type { IpfsLimits } from './limits.js'
 import { BlockRefused, checkCidAccepted, inlineBlock, verifyBlock } from './verify-block.js'
 
-/** Verified blocks are content-addressed, so one cache serves every site. */
 const CACHE_BYTES = 64 * 1024 * 1024
 
-export class BlockSource {
-  private readonly cache = new Map<string, Uint8Array>()
-  private cachedBytes = 0
+/** Where verified blocks are kept between requests, keyed by partition as well as CID. */
+export interface BlockMemory {
+  remember: (partition: string, key: string, block: Uint8Array) => void
+  recall: (partition: string, key: string) => Uint8Array | undefined
+}
 
-  constructor (
-    private readonly fetch: Fetch,
-    private readonly pool: GatewayPool,
-    readonly limits: IpfsLimits
-  ) {}
+/** For a mount with no partition: it keeps nothing, so nothing it fetched can be timed later. */
+export const NO_BLOCK_MEMORY: BlockMemory = { remember: () => {}, recall: () => undefined }
 
-  private remember (key: string, bytes: Uint8Array): void {
-    if (bytes.length > CACHE_BYTES) return
-    this.cache.set(key, bytes)
-    this.cachedBytes += bytes.length
-    for (const [oldest, old] of this.cache) {
-      if (this.cachedBytes <= CACHE_BYTES) break
-      this.cache.delete(oldest)
-      this.cachedBytes -= old.length
+/**
+ * Verified blocks, least recently used dropped first, keyed by partition as
+ * well as CID: a block one site's pages fetched answers another site's
+ * request no faster, so its timing tells that site nothing (A256).
+ */
+export class BlockCache implements BlockMemory {
+  private readonly blocks = new Map<string, Uint8Array>()
+  private bytes = 0
+
+  remember (partition: string, key: string, block: Uint8Array): void {
+    if (block.length > CACHE_BYTES) return
+    this.blocks.set(`${partition}\n${key}`, block)
+    this.bytes += block.length
+    for (const [oldest, old] of this.blocks) {
+      if (this.bytes <= CACHE_BYTES) break
+      this.blocks.delete(oldest)
+      this.bytes -= old.length
     }
   }
 
+  recall (partition: string, key: string): Uint8Array | undefined {
+    const id = `${partition}\n${key}`
+    const block = this.blocks.get(id)
+    if (block === undefined) return undefined
+    this.blocks.delete(id)
+    this.blocks.set(id, block)
+    return block
+  }
+}
+
+export class BlockSource {
+  constructor (
+    private readonly fetch: Fetch,
+    private readonly pool: GatewayPool,
+    readonly limits: IpfsLimits,
+    private readonly cache: BlockMemory = new BlockCache(),
+    private readonly partition = ''
+  ) {}
+
+  private remember (key: string, bytes: Uint8Array): void {
+    this.cache.remember(this.partition, key, bytes)
+  }
+
   private recall (key: string): Uint8Array | undefined {
-    const bytes = this.cache.get(key)
-    if (bytes === undefined) return undefined
-    this.cache.delete(key)
-    this.cache.set(key, bytes)
-    return bytes
+    return this.cache.recall(this.partition, key)
   }
 
   private async fetchRaw (gateway: string, cid: CID, signal: AbortSignal): Promise<Uint8Array> {

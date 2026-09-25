@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isLocalhostName, isPersistableOrigin, originFromSenderFrame, originFromUrl, type SenderFrameLike } from '../origin.js'
+import { isLocalhostName, isLoopbackHost, isPersistableOrigin, originFromSenderFrame, originFromUrl, type SenderFrameLike } from '../origin.js'
 
 // Origin derivation is the first of the six security-critical areas in
 // docs/development/testing.md, and it has the property that qualifies an area
@@ -296,6 +296,26 @@ describe('isPersistableOrigin', () => {
 
   it('an unparseable string is refused rather than throwing', () => {
     expect(isPersistableOrigin('not a url')).toBe(false)
+  })
+})
+
+describe('isLoopbackHost', () => {
+  it('accepts every loopback literal, in the bracketed form URL.hostname gives IPv6', () => {
+    for (const host of ['127.0.0.1', '127.0.0.2', '127.255.255.254', '[::1]', '::1']) {
+      expect(isLoopbackHost(host)).toBe(true)
+    }
+  })
+
+  it('accepts the whole localhost namespace, which Chromium resolves to loopback without DNS', () => {
+    for (const host of ['localhost', 'app.localhost']) {
+      expect(isLoopbackHost(host)).toBe(true)
+    }
+  })
+
+  it('refuses every other host, private and unspecified ranges included', () => {
+    for (const host of ['example.com', 'localhost.example.com', '10.0.0.5', '192.168.1.9', '169.254.169.254', '0.0.0.0', '[::]', '']) {
+      expect(isLoopbackHost(host)).toBe(false)
+    }
   })
 })
 

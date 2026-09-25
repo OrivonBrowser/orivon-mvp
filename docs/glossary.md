@@ -21,10 +21,9 @@ Canonical everywhere. Three expansions are still in circulation:
 honest word: *Certification* implies an authority issuing a certificate, which is not what the
 mechanism does. It verifies that received data matches what the domain owner published, on the
 owner's own say-so. That distinction matters here specifically: in this build the published tree
-sits on the site's own host, with a `.eth` name's ENS record as the off-host anchor once build
-step 6 lands (`ADR-0029`), and `open-questions.md` C1 records that the vision's DNS trust root is
-forgeable on ICANN domains without DNSSEC, so *Certification* would oversell precisely the
-weakest link.
+sits on the site's own host, a `.eth` name's contenthash anchors its content off the host
+(`ADR-0029`), and `open-questions.md` C1 records that the vision's DNS trust root is forgeable on
+ICANN domains without DNSSEC, so *Certification* would oversell precisely the weakest link.
 
 **Action outstanding:** correct the other two documents (`Posts/Technical Specifications`,
 `Old-Private-Plan/Glossario`) to match. Not blocking the MVP.
@@ -110,11 +109,17 @@ much trust it requires. Levels remain unspecified (`web3-score.md`: "Work in pro
 
 **Web3 Score**: the umbrella for Trustlessity plus Security.
 
+**Website level**: a site's place on the canonical Web3 scores page's site ladder. Level 1 is a
+standard site; Level 2 a site that meets DDOC, which the browser detects itself; Level 3 and above
+are judged, and only a Web3 Score provider gives them. The Web3 Score page leads with it
+(`ADR-0006`).
+
 **Web3 Score provider**: an entity issuing judged scores. The user may choose several. Never
 required for the automatic ladders. In this build a provider need not be trustless, and may run
 locally (`ADR-0006`).
 
-**Attestation**: a provider's signed statement over a bundle hash ("hash X is Level 4").
+**Attestation**: a provider's signed statement over a content identifier, a bundle hash or a CID
+("hash X is Level 4").
 Verified locally and offline, so a provider cannot track users (`ADR-0006`).
 
 **Observed behaviour**: what the broker actually saw an app do. The basis of the MVP's
@@ -122,6 +127,34 @@ indicator. Always reported as *observed*, never *guaranteed*.
 
 **TOFU**: trust on first use. The delivery host is trusted once at install; the bundle is then
 pinned, so later host compromise cannot silently swap code (`ADR-0006` D2).
+
+## Names and content
+
+**`.eth` name**: an ENS name, loaded as the origin `https://<name>.eth` and served by the verifier
+(`ADR-0030`). A developer-mode name from `orivon-ports` is a different thing: plain HTTP on
+loopback, with no verification.
+
+**Contenthash**: the ENS record naming what a name's site is, ENSIP-7: an IPFS CID, an IPNS key,
+or a DNS name to follow through DNSLink.
+
+**CID**: an IPFS content identifier, the hash of a block and how to read it. A site's root CID
+commits to every file under it, so fetching by CID and hashing what arrives is the whole
+verification.
+
+**Trustless gateway**: an HTTP server that returns IPFS blocks as raw bytes, for the client to
+hash against their CIDs. It is trusted for availability only.
+
+**DNSLink**: a DNS TXT record (`_dnslink.<domain>`) naming IPFS content. Followed, and shown as an
+unproven hop: ordinary DNS can be forged on the path.
+
+**Light client**: a client that verifies Ethereum state from block headers and proofs rather than
+trusting an RPC's answer. Here, Helios, started at launch (`ADR-0031`).
+
+**Checkpoint**: the recent finalized beacon block root the light client starts from and trusts.
+Shipped with each release, replaced by the newest one verified here, refused past 14 days.
+
+**Verifier host**: the utility process that runs the light client, fetches and hashes IPFS blocks,
+and serves `.eth` names on loopback (`src/verifier-host/`).
 
 ## Compatibility tiers
 **Tier 1** already a web app · **Tier 2** Electron/Node · **Tier 3** native/JVM/Qt ·
