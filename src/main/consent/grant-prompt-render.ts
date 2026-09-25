@@ -58,7 +58,7 @@ export interface GrantPromptContent {
 }
 
 /**
- * ADR-0019's `web.context`. AT THE WARNING LEVEL OF `tcp.listen`
+ * ADR-0019's `web.context`. AT THE WARNING LEVEL A LISTEN/BIND GRANT CARRIES
  * (unconditional, never folded into a count): every granted origin gets its
  * OWN LINE, literally -- never "site.example and N others". Unlike an
  * ordinary `https.connect` host a person can skim past, "this app can act
@@ -88,9 +88,6 @@ function describeWebContextGrant (patterns: readonly Pattern[]): CapabilityGrant
   }
 }
 
-// `tcp.listen`/`udp.bind` never reach a wildcard-host branch: the contract
-// itself rejects a bare `"*"` port range (manifest.ts), and a listen/bind
-// pattern has no host at all -- only which ports.
 export function describeCapabilityGrant (capability: CapabilityKind, patterns: readonly Pattern[]): CapabilityGrantSummary {
   switch (capability) {
     case 'tcp.connect':
@@ -111,34 +108,45 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
         'This app can send data to any computer on the internet, not just specific ones.',
         patterns
       )
-    // A134: listening is a materially different act from connecting out --
-    // the manifest's own doc comment (TcpCapability.listen) promises this a
-    // "distinct, more serious prompt", and capability-api.md's open item 1
-    // requires it unconditionally, not only past some port-breadth
-    // threshold: `'*'` is already rejected for a listen pattern, so there
-    // is no "narrow" listen grant the way a single named host is a narrow
-    // connect grant. warning: true always, matching describeRollbackChoice's
-    // own unconditional case for the same reason -- every instance is the
-    // same shape of risk.
-    case 'tcp.listen':
+    // ADR-0034: two scopes per direction, each its own capability kind and
+    // its own wording -- "another program on this computer" is a materially
+    // narrower, less alarming claim than "any computer that can reach this
+    // port", and collapsing them into one sentence would either overstate
+    // the first or understate the second, the same reasoning `tcp.connect`
+    // and `https.connect` already keep separate for outbound reach. Every
+    // case here stays a warning unconditionally: an inbound grant has no
+    // "narrow enough to skip the warning" reading, whatever its scope.
+    case 'tcp.listen.local':
+      return {
+        warning: true,
+        message: `⚠ Accept connections from other programs on this device on ${portsPhrase(patterns)}`,
+        explanation: 'Any other program on this computer -- including another Orivon app -- can connect to this app on this port. Not reachable from your network or the internet.'
+      }
+    case 'udp.bind.local':
+      return {
+        warning: true,
+        message: `⚠ Receive data from other programs on this device on ${portsPhrase(patterns)}`,
+        explanation: 'Any other program on this computer -- including another Orivon app -- can send this app data on this port. Not reachable from your network or the internet.'
+      }
+    case 'tcp.listen.network':
       return {
         warning: true,
         message: `⚠ Accept incoming connections on ${portsPhrase(patterns)}`,
         explanation: 'This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can connect to this app, not only computers it reached out to first.'
       }
-    case 'udp.bind':
+    case 'udp.bind.network':
       return {
         warning: true,
         message: `⚠ Receive data on ${portsPhrase(patterns)}`,
         explanation: 'This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can send this app data, not only computers it contacted first.'
       }
-    // Not merged with udp.bind here -- that merge only makes sense when a
-    // single request names BOTH (a real P2P app's normal shape: one port
-    // range, two protocols), and this function renders exactly one
+    // Not merged with udp.bind.network here -- that merge only makes sense
+    // when a single request names BOTH (a real P2P app's normal shape: one
+    // port range, two protocols), and this function renders exactly one
     // capability at a time, including for the settings permissions list
     // (../permissions.ts), where each live grant is its own revocable row
     // and must stay that way. describeCapabilitySet's own mergeInboundRows
-    // is where the combined case lives.
+    // is where the combined case lives, for the `.network` pair only.
     case 'fs':
       // AR-04: `fs.userSelected` and a folder picker are unbuilt (queue item
       // 4.3). What a grant actually gives today is an app-private directory
@@ -220,16 +228,17 @@ export function describeGrantRequest (
 }
 
 /**
- * `tcp.listen` and `udp.bind` together, as one row -- a real P2P app (a
- * torrent client, say) declares both for the SAME reason, one port range
- * doing peer connections over TCP and DHT/exchange over UDP, and rendering
- * them as two separately-warned rows says the same underlying fact
- * ("other computers can reach this device") twice in different words. Only
- * called when a single request names BOTH; either alone still renders
- * through `describeCapabilityGrant`'s own case, unmerged, exactly as
- * before (the settings permissions list, ../permissions.ts, always calls
- * that path and never this one -- see the comment on the `udp.bind` case
- * above).
+ * `tcp.listen.network` and `udp.bind.network` together, as one row -- a real
+ * P2P app (a torrent client, say) declares both for the SAME reason, one
+ * port range doing peer connections over TCP and DHT/exchange over UDP, and
+ * rendering them as two separately-warned rows says the same underlying
+ * fact ("other computers on the network, or the internet if forwarded, can
+ * reach this device") twice in different words. Only called when a single
+ * request names BOTH.
+ *
+ * The `.local` pair (reachable only from this device) does not go through
+ * this merge: each renders on its own line, through the ordinary
+ * `describeCapabilityGrant` case, when both are declared together.
  */
 function describeInboundAccess (listenPatterns: readonly Pattern[], bindPatterns: readonly Pattern[]): CapabilityGrantSummary {
   const samePorts = listenPatterns.length === bindPatterns.length &&
@@ -289,18 +298,19 @@ function mergeRowsWithIdenticalMessage (rows: readonly CapabilityGrantSummary[])
  *
  * TWO MERGES RUN BEFORE RENDERING, both fixing REDUNDANT rows rather than
  * TRUE ones -- found against the torrent example manifest (capability-api.md:
- * `connect: ["*:*"]` + `listen` + `udp.bind` + `send: ["*:*"]` + `fs`),
- * which rendered 4 of 5 rows warned and one headline twice. Neither merge silences a real
- * warning: `tcp.listen`+`udp.bind` become one row (`describeInboundAccess`)
- * because they are one fact stated twice, and any two rows that render the
- * identical headline collapse into one (`mergeRowsWithIdenticalMessage`)
- * for the same reason. What is left after both is exactly as many warned
- * rows as there are DISTINCT kinds of breadth the manifest actually
- * declares -- for that manifest, two: it can reach anywhere outbound, and it
- * can be reached from anywhere inbound. Considered and rejected: a second,
- * lower-severity marker for `tcp.listen`/`udp.bind` (README, Design notes)
- * -- the two facts are not degrees of the same risk, so grading one below
- * the other would misstate it rather than declutter it.
+ * `connect: ["*:*"]` + `listen` + `bind` + `send: ["*:*"]` + `fs`), which
+ * rendered 4 of 5 rows warned and one headline twice. Neither merge
+ * silences a real warning: `tcp.listen.network`+`udp.bind.network` become
+ * one row (`describeInboundAccess`) because they are one fact stated
+ * twice, and any two rows that render the identical headline collapse into
+ * one (`mergeRowsWithIdenticalMessage`) for the same reason. What is left
+ * after both is exactly as many warned rows as there are DISTINCT kinds of
+ * breadth the manifest actually declares -- for that manifest, two: it can
+ * reach anywhere outbound, and it can be reached from anywhere on the
+ * network inbound. Considered and rejected: a second, lower-severity
+ * marker for `tcp.listen.network`/`udp.bind.network` (README, Design
+ * notes) -- the two facts are not degrees of the same risk, so grading one
+ * below the other would misstate it rather than declutter it.
  */
 function describeCapabilitySet (
   origin: string,
@@ -310,7 +320,7 @@ function describeCapabilitySet (
   message: string,
   held: readonly CapabilityKind[]
 ): GrantPromptContent {
-  const mergeInbound = capabilities.includes('tcp.listen') && capabilities.includes('udp.bind')
+  const mergeInbound = capabilities.includes('tcp.listen.network') && capabilities.includes('udp.bind.network')
   let inboundRowEmitted = false
   const rows: CapabilityGrantSummary[] = []
   // Parallel to `rows`, index for index: which declared capability (or,
@@ -320,12 +330,12 @@ function describeCapabilitySet (
   // DIFFERENT capability.
   const rowCapabilities: Array<readonly CapabilityKind[]> = []
   for (const capability of capabilities) {
-    const isInboundCapability = capability === 'tcp.listen' || capability === 'udp.bind'
+    const isInboundCapability = capability === 'tcp.listen.network' || capability === 'udp.bind.network'
     if (mergeInbound && isInboundCapability) {
       if (inboundRowEmitted) continue
       inboundRowEmitted = true
-      rows.push(describeInboundAccess(declared['tcp.listen'] ?? [], declared['udp.bind'] ?? []))
-      rowCapabilities.push(['tcp.listen', 'udp.bind'])
+      rows.push(describeInboundAccess(declared['tcp.listen.network'] ?? [], declared['udp.bind.network'] ?? []))
+      rowCapabilities.push(['tcp.listen.network', 'udp.bind.network'])
       continue
     }
     rows.push(describeCapabilityGrant(capability, declared[capability] ?? []))

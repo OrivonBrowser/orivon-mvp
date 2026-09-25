@@ -206,19 +206,53 @@ export interface TcpCapability {
    */
   readonly connect?: readonly Pattern[]
   /**
-   * Port ranges. `"*"` is REJECTED here -- a declared range is required, and
-   * privileged ports below 1024 are denied outright at every tier
-   * (capability-api.md's open item A9, point 1). Listening opens a service rather than making
-   * an outbound call, and gets a distinct, more serious prompt.
+   * Port ranges to accept inbound connections on, split by who may reach
+   * them (ADR-0034). See `BindScopes`.
    */
-  readonly listen?: readonly Pattern[]
+  readonly listen?: BindScopes
 }
 
 export interface UdpCapability {
-  /** Port ranges, same rules as tcp.listen. */
-  readonly bind?: readonly Pattern[]
+  /**
+   * Port ranges to receive datagrams on, split by who may reach them
+   * (ADR-0034). Same rules as `TcpCapability.listen`.
+   */
+  readonly bind?: BindScopes
   /** host:port patterns, same rules as tcp.connect. */
   readonly send?: readonly Pattern[]
+}
+
+/**
+ * ADR-0034. Two separately declared and granted ways to accept inbound
+ * traffic on a port, because the two claims are materially different: one
+ * program on this device asking to be reachable by other programs on this
+ * SAME device reads nothing like a program asking to be reachable by every
+ * device on the network, and the internet if the port is forwarded. A
+ * manifest declaring `network` also covers `local` -- the broader grant
+ * subsumes the narrower one, so an app never needs both to get the wider
+ * reach.
+ *
+ * At least one of the two must be present; an empty `BindScopes` is
+ * rejected as the same ambiguity every other optional list in this file
+ * rejects it as. Each list follows `TcpCapability.connect`'s existing port
+ * rules: `"*"` is REJECTED, a declared range is required, and privileged
+ * ports below 1024 are denied outright at every tier.
+ */
+export interface BindScopes {
+  /**
+   * Reachable only by other programs on this same computer -- other
+   * Orivon apps included, since nothing here is scoped to one app's own
+   * processes. Never reachable from the local network or the internet,
+   * whatever the port is forwarded to.
+   */
+  readonly local?: readonly Pattern[]
+  /**
+   * Reachable from every device on the local network, and from the
+   * internet if the port is forwarded. The distinct, more serious prompt
+   * (capability-api.md's open item A9, point 1) names this reach in
+   * plain words, the same way `tcp.connect: ["*:*"]` must.
+   */
+  readonly network?: readonly Pattern[]
 }
 
 /**
@@ -342,8 +376,14 @@ export interface Grant {
 
 export type CapabilityKind =
   | 'tcp.connect'
-  | 'tcp.listen'
-  | 'udp.bind'
+  /** Reachable only from this device (ADR-0034). */
+  | 'tcp.listen.local'
+  /** Reachable from the local network, and the internet if forwarded (ADR-0034). */
+  | 'tcp.listen.network'
+  /** Reachable only from this device (ADR-0034). */
+  | 'udp.bind.local'
+  /** Reachable from the local network, and the internet if forwarded (ADR-0034). */
+  | 'udp.bind.network'
   | 'udp.send'
   | 'https.connect'
   | 'fs'

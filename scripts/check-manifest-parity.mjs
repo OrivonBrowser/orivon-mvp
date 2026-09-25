@@ -41,6 +41,7 @@ export const PARITY_MAP = [
   { interfaceName: 'NetCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'NET_KEYS' },
   { interfaceName: 'TcpCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'TCP_KEYS' },
   { interfaceName: 'UdpCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'UDP_KEYS' },
+  { interfaceName: 'BindScopes', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'BIND_SCOPES_KEYS' },
   { interfaceName: 'HttpsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'HTTPS_KEYS' },
   { interfaceName: 'FsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'FS_KEYS' },
   { interfaceName: 'IdCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'ID_CAPABILITY_KEYS' },

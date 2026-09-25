@@ -182,6 +182,8 @@ export interface TcpServer extends Handle {
   /**
    * Resolved before the acquisition promise settles, so requesting `port: 0`
    * (ask the OS to pick) still yields a real, populated value. Rule 3 above.
+   * Reports which interface `listen`'s `scope` actually bound (ADR-0034):
+   * `127.0.0.1` for `'local'`, `0.0.0.0` for `'network'`.
    */
   readonly localAddress: string
   readonly localPort: number
@@ -236,6 +238,10 @@ export interface SendRefusal {
 export interface UdpSocket extends Handle {
   readonly readable: ReadableStream<Datagram>
   readonly writable: WritableStream<Datagram>
+  /**
+   * Reports which interface `udpBind`'s `scope` actually bound (ADR-0034):
+   * `127.0.0.1` for `'local'`, `0.0.0.0` for `'network'`.
+   */
   readonly localAddress: string
   /**
    * Resolved and populated at acquisition. THIS IS WHAT REMOVES THE

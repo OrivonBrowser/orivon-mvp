@@ -203,11 +203,17 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, soc
     const key = canonical(origin)
 
     // The narrowing, exactly as `connect` does it: what the user GRANTED, never
-    // what the manifest declared. `udp.bind` and `udp.send` are separate
-    // grants, and this one authorises only the bind -- an app that binds
-    // successfully still sends nothing until `udp.send` is granted too.
-    const current = ledger.currentGrant(key, 'udp.bind')
-    if (current === undefined) throw fail('denied', 'udp.bind is not granted to this origin')
+    // what the manifest declared. `udp.bind.network` and `udp.send` are
+    // separate grants, and this one authorises only the bind -- an app that
+    // binds successfully still sends nothing until `udp.send` is granted too.
+    //
+    // ONLY `.network` IS CHECKED HERE (ADR-0034): `opts` carries no `scope`
+    // parameter, and `deps.bind` binds every interface regardless of which
+    // grant authorised the call, so checking `.network` is what matches the
+    // adapter's actual reach. A `udp.bind.local` grant is not consulted by
+    // this function and authorises nothing through it.
+    const current = ledger.currentGrant(key, 'udp.bind.network')
+    if (current === undefined) throw fail('denied', 'udp.bind.network is not granted to this origin')
 
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
       let bound: BoundUdpSocket
@@ -267,8 +273,11 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, soc
   async function listen (origin: string, opts: { port: number }): Promise<FailableTcpServer> {
     const key = canonical(origin)
 
-    const current = ledger.currentGrant(key, 'tcp.listen')
-    if (current === undefined) throw fail('denied', 'tcp.listen is not granted to this origin')
+    // ONLY `.network` IS CHECKED HERE (ADR-0034): see `udpBind`'s own note
+    // above, which applies unchanged -- `deps.listen` binds every interface
+    // regardless of which grant authorised the call.
+    const current = ledger.currentGrant(key, 'tcp.listen.network')
+    if (current === undefined) throw fail('denied', 'tcp.listen.network is not granted to this origin')
 
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
       let listened: ListenedServer
