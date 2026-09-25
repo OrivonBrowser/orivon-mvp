@@ -7,6 +7,7 @@ import type { Fetch, FetchResponse } from './fetch-bundle.js'
 import type { RequestHeaders } from './fetch-budget.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../broker/policy/address.js'
+import { servedByVerifier } from './eth-origin.js'
 
 export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under
@@ -55,6 +56,7 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers
   // would break real installs for no security gain -- the property that
   // matters is "still public", not "still this exact address".
   const hostname = new URL(url).hostname
+  if (servedByVerifier(url)) return await netFetch(url, signal, headers)
   if (classifyAddress(hostname) === 'unparseable') {
     const resolved = await net.resolveHost(hostname)
     if (resolved.endpoints.length === 0) {

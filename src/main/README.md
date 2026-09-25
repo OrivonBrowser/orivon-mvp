@@ -30,7 +30,8 @@ to no single job, and `registry.ts`/`channels.ts` are the seam other packages
 | [`sessions/`](sessions/) | **Confine**: what an Electron `Session` is allowed to do | yes, each site's notification answer on disk | `permission-gate.ts` and `web-context-host.ts` only |
 | [`keyring/`](keyring/) | **Persist**: the identity seed, OS-keyring-backed or session-only | yes, the encrypted seed file | `electron-keychain.ts` only |
 | [`self-update/`](self-update/) | **Update itself**: check, notify, never install | last-check timestamp | `-runner` only |
-| [`dev/`](dev/) | **Dev only**: inert or compiled out of an ordinary build | no | `eth-resolver.ts` only |
+| [`dev/`](dev/) | **Dev only**: inert or compiled out of an ordinary build | no | `dev-csp.ts` only |
+| [`verifier/`](verifier/) | **Verify names**: start the `.eth` verifier, trust its certificate, choose its checkpoint | the host process, stored checkpoint and IPNS sequences | `verifier-subsystem.ts` only |
 
 Each directory carries its own `README.md` on this same template, plus its own `## Design notes`
 for the rationale specific to the files it holds.

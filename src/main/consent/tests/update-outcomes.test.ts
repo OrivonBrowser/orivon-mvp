@@ -21,15 +21,15 @@ function fakeTree (): { root: string, assets: [] } {
 }
 
 function reconsentResult (manifest = manifestWith()): LoadNeedsReconsent {
-  return { outcome: 'needs-reconsent', canonicalOrigin: APP, manifest, tree: fakeTree(), entries: [], declaration: { bundleHash: fakeTree().root, leaves: [] } }
+  return { outcome: 'needs-reconsent', canonicalOrigin: APP, manifest, tree: fakeTree(), entries: [], declaration: { bundleHash: fakeTree().root, leaves: [] }, content: { cid: 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi', via: 'ipfs', pointersVerified: true } }
 }
 
 function capabilityPromptResult (manifest = manifestWithCapabilities(), requestedPatterns: LoadNeedsCapabilityPrompt['requestedPatterns'] = { 'tcp.connect': ['api.example.com:443'] }): LoadNeedsCapabilityPrompt {
-  return { outcome: 'needs-capability-prompt', canonicalOrigin: APP, manifest, tree: fakeTree(), entries: [], declaration: undefined, requestedPatterns }
+  return { outcome: 'needs-capability-prompt', canonicalOrigin: APP, manifest, tree: fakeTree(), entries: [], declaration: undefined, content: undefined, requestedPatterns }
 }
 
 function rollbackChoiceResult (manifest = manifestWith('0.7.3'), versionFloor = '1.0.0'): LoadNeedsRollbackChoice {
-  return { outcome: 'needs-rollback-choice', canonicalOrigin: APP, manifest, tree: fakeTree(), entries: [], declaration: undefined, versionFloor }
+  return { outcome: 'needs-rollback-choice', canonicalOrigin: APP, manifest, tree: fakeTree(), entries: [], declaration: undefined, content: undefined, versionFloor }
 }
 
 describe('driveLoadResult: needs-reconsent', () => {
@@ -89,7 +89,7 @@ describe('driveLoadResult: needs-reconsent', () => {
 
     const result = await driveLoadResult({ broker: fakeBroker(), loader, reconsentPrompt }, pending, NO_GRANTS)
 
-    expect(loader.installFetched).toHaveBeenCalledExactlyOnceWith(pending.canonicalOrigin, pending.manifest, pending.tree, pending.entries, pending.declaration)
+    expect(loader.installFetched).toHaveBeenCalledExactlyOnceWith(pending.canonicalOrigin, pending.manifest, pending.tree, pending.entries, pending.declaration, pending.content)
     expect(loader.load).not.toHaveBeenCalled()
     expect(result).toBe(installed)
   })
@@ -169,7 +169,7 @@ describe('driveLoadResult: needs-capability-prompt', () => {
 
     const result = await driveLoadResult({ broker: fakeBroker(), loader, capabilityPrompt }, pending, NO_GRANTS)
 
-    expect(loader.installFetched).toHaveBeenCalledExactlyOnceWith(pending.canonicalOrigin, pending.manifest, pending.tree, pending.entries, pending.declaration)
+    expect(loader.installFetched).toHaveBeenCalledExactlyOnceWith(pending.canonicalOrigin, pending.manifest, pending.tree, pending.entries, pending.declaration, pending.content)
     expect(loader.load).not.toHaveBeenCalled()
     expect(result.outcome).toBe('installed')
   })
@@ -375,7 +375,7 @@ describe('driveLoadResult: needs-rollback-choice', () => {
     expect(acknowledgeRollback).toHaveBeenCalledExactlyOnceWith(APP, '0.7.3')
     // reconsider() is handed the SAME tree/entries the person was shown --
     // never load(), which would be a second network fetch.
-    expect(loader.reconsider).toHaveBeenCalledExactlyOnceWith(pending.canonicalOrigin, pending.manifest, pending.tree, pending.entries, pending.declaration, {
+    expect(loader.reconsider).toHaveBeenCalledExactlyOnceWith(pending.canonicalOrigin, pending.manifest, pending.tree, pending.entries, pending.declaration, pending.content, {
       ...context,
       acknowledgedRollbackVersion: '0.7.3'
     })
@@ -419,7 +419,7 @@ describe('driveLoadResult: needs-rollback-choice', () => {
     const result = await driveLoadResult({ broker: fakeBroker({ acknowledgeRollback: async () => {} }, calls), loader, rollbackChoicePrompt, capabilityPrompt }, pending, NO_GRANTS)
 
     expect(capabilityPrompt).toHaveBeenCalledExactlyOnceWith(APP, widened.manifest, widened.requestedPatterns)
-    expect(loader.installFetched).toHaveBeenCalledExactlyOnceWith(widened.canonicalOrigin, widened.manifest, widened.tree, widened.entries, widened.declaration)
+    expect(loader.installFetched).toHaveBeenCalledExactlyOnceWith(widened.canonicalOrigin, widened.manifest, widened.tree, widened.entries, widened.declaration, widened.content)
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
     expect(result).toBe(installed)
   })

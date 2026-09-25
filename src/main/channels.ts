@@ -66,3 +66,9 @@ export const MANIFEST_HINT_CHANNEL = 'orivon-loader:manifest-hint'
  * webContents identity, opened at different toolbar icons and never both
  * at once (`./permissions/popover-view.ts`). */
 export const SITE_INFO_COMMAND_CHANNEL = 'orivon-site-info:command'
+
+/**
+ * Main to the settings panel only: the light client's state, sent whenever
+ * it changes while the panel is open, so the page never polls for it.
+ */
+export const LIGHT_CLIENT_STATUS_CHANNEL = 'orivon-settings:light-client'

@@ -13,7 +13,7 @@ function ctxWith (broker: Broker | undefined, loader?: Loader): SubsystemContext
   return { broker, loader } as unknown as SubsystemContext
 }
 
-const NO_TRUST: SiteTrustSources = { isOriginServedFromCacheSync: () => false, pinCoverageFor: () => undefined }
+const NO_TRUST: SiteTrustSources = { isOriginServedFromCacheSync: () => false, pinCoverageFor: () => undefined, nameEvidenceFor: async () => undefined }
 
 function fakeLoader (overrides: Partial<Loader> = {}): Loader {
   return {
@@ -105,7 +105,8 @@ describe('createSiteInfoController -- siteTrustFor', () => {
     const loader = fakeLoader({ pinFor: async () => ({ schema: 1, origin: APP, bundleHash: 'a'.repeat(64), assets: [], version: '3.0.0', pinnedAt: 10 }) })
     const trustSources: SiteTrustSources = {
       isOriginServedFromCacheSync: (origin) => origin === APP,
-      pinCoverageFor: () => ({ pinnedRequests: 1, thirdPartyRequests: 0, deniedRequests: 0, pinnedBytes: 5, thirdPartyBytes: 0, bytesIncomplete: false })
+      pinCoverageFor: () => ({ pinnedRequests: 1, thirdPartyRequests: 0, deniedRequests: 0, pinnedBytes: 5, thirdPartyBytes: 0, bytesIncomplete: false }),
+      nameEvidenceFor: async () => undefined
     }
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), loader), trustSources)
 
@@ -114,6 +115,25 @@ describe('createSiteInfoController -- siteTrustFor', () => {
     expect(trust?.connection).toBe('cached')
     expect(trust?.pin).toEqual({ bundleHash: 'a'.repeat(64), version: '3.0.0', pinnedAt: 10 })
     expect(trust?.delivery.evidence.pinCoverage?.pinnedRequests).toBe(1)
+  })
+
+  it('asks the name-evidence source with the pin and cache facts, and shows what it answers', async () => {
+    const pin = { schema: 1 as const, origin: 'https://site.eth', bundleHash: 'a'.repeat(64), assets: [], version: '1.0.0', pinnedAt: 10 }
+    const asked: unknown[] = []
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader({ pinFor: async () => pin })), {
+      ...NO_TRUST,
+      isOriginServedFromCacheSync: () => true,
+      nameEvidenceFor: async (...args) => {
+        asked.push(args)
+        return { content: { source: 'pinned', cid: 'bafy', pointersVerified: true }, nameProven: true, line: 'Installed', rows: [] }
+      }
+    })
+
+    const trust = await controller.siteTrustFor('https://site.eth/app/')
+
+    expect(asked).toEqual([['https://site.eth', pin, true]])
+    expect(trust?.level.level).toBe(2)
+    expect(trust?.name?.line).toBe('Installed')
   })
 
   it('null with no loader published yet', async () => {

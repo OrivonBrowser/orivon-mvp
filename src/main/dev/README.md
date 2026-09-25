@@ -6,12 +6,13 @@ only from Node code already running inside this process (Playwright's
 `ORIVON_ENABLE_DEV_GRANT=1` was set at build time. `dev-app-origin.ts`: developer mode's half of
 the discovery trigger — a loopback origin gets its capabilities granted without being installed;
 no bundle is fetched, hashed, pinned or served from cache. `dev-csp.ts`: gives a dev-granted
-origin's documents the Content-Security-Policy an installed app is served with. `eth-resolver.ts`: developer-mode DNS
-override for `orivon-ports`' fake `.eth` names, inert unless both `ORIVON_ETH_NAMES_FILE` and
-`ORIVON_DEV_ORIGINS=1` are set. `dev-mode.ts`: the one reader of `ORIVON_DEV_ORIGINS=1`, which
+origin's documents the Content-Security-Policy an installed app is served with. `eth-resolver.ts`: reads
+`orivon-ports`' developer `.eth` names, served over plain http on loopback, into the resolver
+clauses and secure-origin list [`../verifier/`](../verifier/) puts ahead of every other `.eth` name;
+empty unless both `ORIVON_ETH_NAMES_FILE` and `ORIVON_DEV_ORIGINS=1` are set. `dev-mode.ts`: the one reader of `ORIVON_DEV_ORIGINS=1`, which
 every developer-mode path above and the shell's Inspect Element share.
 
-**What it depends on.** `electron` (`eth-resolver.ts` and `dev-csp.ts` only), `node:fs`,
+**What it depends on.** `electron` (`dev-csp.ts` only), `node:fs`,
 [`../../contracts/`](../../contracts/), [`../../broker/`](../../broker/) (`broker-contracts.ts`
 type, `policy/update.ts`, `policy/manifest-patterns.ts`, `grants/origin-hash.ts`),
 [`../../loader/manifest.ts`](../../loader/manifest.ts),

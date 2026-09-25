@@ -341,3 +341,30 @@ describe('fromBundleTree: rejects a record that could not have come from bundleT
     expect(parsePinRecord(built)).toEqual(built)
   })
 })
+
+describe('the content address of a bundle fetched from IPFS', () => {
+  const CID = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'
+  const content = { cid: CID, via: 'ipfs', block: 20_000_000, pointersVerified: true }
+
+  it('round-trips, and is absent from a record without one', () => {
+    expect(parsePinRecord({ ...validRaw(), content })?.content).toEqual(content)
+    expect(parsePinRecord(validRaw())).not.toHaveProperty('content')
+  })
+
+  it('may omit the block, as a test fixture name does', () => {
+    expect(parsePinRecord({ ...validRaw(), content: { cid: CID, via: 'ipns-key', pointersVerified: true } })?.content).toEqual({ cid: CID, via: 'ipns-key', pointersVerified: true })
+  })
+
+  it('makes the whole record unreadable when malformed, never silently dropped', () => {
+    for (const bad of [null, 'x', { ...content, cid: 'QmNotBase32' }, { ...content, via: 'swarm' }, { ...content, block: -1 }, { ...content, block: 1.5 }, { cid: CID, via: 'ipfs' }]) {
+      expect(parsePinRecord({ ...validRaw(), content: bad })).toBeNull()
+    }
+  })
+
+  it('is carried by fromBundleTree, checked the same way', () => {
+    const assets = [MANIFEST_LEAF, { path: '/index.html', leaf: OTHER_HASH }]
+    expect(fromBundleTree('https://site.eth', VALID_HASH, assets, '1.0.0', 1, { cid: CID, via: 'dnslink', pointersVerified: false }).content)
+      .toEqual({ cid: CID, via: 'dnslink', pointersVerified: false })
+    expect(() => fromBundleTree('https://site.eth', VALID_HASH, assets, '1.0.0', 1, { cid: 'nope', via: 'ipfs', pointersVerified: true })).toThrow()
+  })
+})

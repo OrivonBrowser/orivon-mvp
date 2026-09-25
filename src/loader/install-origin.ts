@@ -7,6 +7,7 @@ import { canonicalAddress, classifyAddress, isPublicUnicast } from '../broker/po
 import { MAX_ANSWERS } from '../broker/policy/connect.js'
 import type { Resolver } from '../broker/policy/connect.js'
 import { isLocalhostName } from '../broker/policy/origin.js'
+import { servedByVerifier } from './eth-origin.js'
 
 /**
  * `ensurePublicUnicastOrigin`'s success case: the validated, canonical
@@ -84,6 +85,9 @@ export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolv
   // answer could. Reuses ../broker/policy/origin.ts's own check (Rule 3) rather than
   // a second copy of the RFC 6761 reasoning.
   if (isLocalhostName(host)) return { ok: false, reason: `install origin's host is in the .localhost namespace: ${host}` }
+
+  // The verifier answers for it; there is nothing to resolve and no address to hand on.
+  if (servedByVerifier(canonicalOrigin)) return { ok: true, addresses: [] }
 
   // Never resolved when it's already a literal -- resolving a literal is
   // meaningless and risks a resolver treating it as a DNS label instead

@@ -60,7 +60,7 @@ function looksLikeHost (input: string): boolean {
   return false
 }
 
-export function parseOmniboxInput (raw: string): OmniboxResult {
+export function parseOmniboxInput (raw: string, isDevEthName: (host: string) => boolean = () => false): OmniboxResult {
   const trimmed = raw.trim()
 
   if (trimmed.length === 0) {
@@ -84,18 +84,16 @@ export function parseOmniboxInput (raw: string): OmniboxResult {
   // No recognised scheme: schemeless host-shaped input defaults to https,
   // except that a bare `host:port` form (including bracketed IPv6) defaults
   // to http, matching the common "point this at a local dev server" case --
-  // and except a `.eth` name, which is orivon-ports' own convention for a
-  // fake name over a plain loopback server (never real ENS; there is no
-  // trustless resolution yet, README.md's own "No ENS, no IPFS" line). Such
-  // a name has no TLS certificate to present, so defaulting it to https
-  // would try to negotiate TLS against a plain http server and fail outright
-  // rather than reaching it. Checked on the host portion only, so a path
-  // that happens to end in `.eth` (`example.com/x.eth`) is unaffected.
+  // and except a developer-mode `.eth` name from orivon-ports' names file,
+  // which is a plain http server on loopback with no certificate to present.
+  // Every other `.eth` name stays https: the verifier serves it (../verifier/).
+  // Checked on the host portion only, so a path that happens to end in
+  // `.eth` (`example.com/x.eth`) is unaffected.
   if (looksLikeHost(trimmed)) {
     const isBareHostPort =
       /^\[[0-9a-fA-F:]+\]:\d+$/.test(trimmed) || /^[^/?#]+:\d+([/?#].*)?$/.test(trimmed)
-    const isFakeEthName = /\.eth$/i.test((trimmed.split(/[/?#]/)[0] ?? '').replace(/:\d+$/, ''))
-    const scheme = (isBareHostPort || isFakeEthName) ? 'http://' : 'https://'
+    const host = (trimmed.split(/[/?#]/)[0] ?? '').replace(/:\d+$/, '').toLowerCase()
+    const scheme = (isBareHostPort || (host.endsWith('.eth') && isDevEthName(host))) ? 'http://' : 'https://'
     try {
       return { kind: 'url', url: new URL(scheme + trimmed).toString() }
     } catch {

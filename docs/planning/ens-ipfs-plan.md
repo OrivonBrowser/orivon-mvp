@@ -1,7 +1,9 @@
 # ENS names and IPFS delivery: the plan
 
-> **Proposed, not started.** Written 2026-09-24 against `main` at `e218ca4`, after the owner's
-> decisions of the same day (§Decisions taken). Nothing below is built.
+> **In progress.** Written 2026-09-24 against `main` at `e218ca4`, after the owner's decisions of
+> the same day (§Decisions taken). EI-1 to EI-11 are built on `stream/ens-ipfs`;
+> [§Where it stands](#where-it-stands) says what is left, and where the build departed from the
+> text below.
 
 **What this is.** The work queue for making `name.eth` load in this build as `https://name.eth`,
 with every byte checked locally against what the Ethereum chain says the name points to. External
@@ -153,7 +155,7 @@ Docs only, one PR, merged first.
   `open-questions.md` B3, which ADR-0006 resolved in favour of the private "Level 3 = runs
   locally" list, is reopened and answered the other way. `ARCHITECTURE.md`'s "trust is shown as
   observed behaviour, never as a grade" is rewritten to say what is true after this.
-- **ADR-0029, `.eth` names are origins.**
+- **ADR-0030, `.eth` names are origins** (numbered 0029 when this plan was written; DDOC took it).
   - Each name loads at `https://<name>.eth`.
   - Resolution and gathering are built-in providers behind the canonical interfaces (decision 5).
   - Content comes from IPFS, verified per block. The name is verified by a light client that
@@ -163,13 +165,13 @@ Docs only, one PR, merged first.
   - The bundle hash is unchanged (ADR-0009 stands). The CID is kept as provenance and as the
     identifier a provider assesses.
   - The serving mechanism stays *provisional* until EI-1a settles it.
-- **ADR-0030, Helios is admitted.** A Rust-built WASM dependency: why it breaches neither ADR-0002
+- **ADR-0031, Helios is admitted.** A Rust-built WASM dependency: why it breaches neither ADR-0002
   (which bounds code written here) nor Rule 8 (nothing compiles at install), and its conditions:
   exact version pin, provenance attestation checked on every bump, runs only in the verifier host
   behind an egress allowlist, always given a checkpoint.
 - ADR-0005 amended in place (its "IPFS and ENS-addressed delivery later" line).
   `open-questions.md` C5 answered for ENS and IPFS. Decision-log rows for decisions 1-5 and both
-  consequences, from `d-0101`.
+  consequences, from `d-0106` (`d-0101` to `d-0105` were taken by DDOC and the roadmap).
 
 **Exit:** merged; an edit naming `ipfs` under `src/` raises no scope warning; ADR-0006 and
 `ARCHITECTURE.md` no longer contradict decision 1.
@@ -225,7 +227,7 @@ enforcement and the public-unicast guard, and it needs its own security review.
 Also a shortlist of default endpoints: at least two per hop, no API key, with support for
 `eth_getProof`, `eth_createAccessList` and the beacon light-client API.
 
-**Exit:** one results note with numbers and a go or no-go on EI-1a; ADR-0029's mechanism section
+**Exit:** one results note with numbers and a go or no-go on EI-1a; ADR-0030's mechanism section
 settled.
 
 ### EI-2: `src/resolution/`, the canonical interfaces (durable, ~0.5 day)
@@ -533,3 +535,53 @@ in its own PR.
 
 Roughly five working weeks done one after another. EI-0 is its own PR; the rest group into one or
 two PRs a day.
+
+## Where it stands
+
+Updated 2026-09-24. Built on `stream/ens-ipfs`, each item to its exit criterion unless noted.
+
+| Item | State |
+|---|---|
+| EI-0 | **Partly.** `ADR-0030` and `ADR-0031` are written, and open questions A251 to A256 filed. The amendments (scope, `ADR-0005`, `ADR-0006`, `ADR-0029`, the hookify rule, the decision log) wait for the roadmap change, which edits the same lines and is not yet on `main` |
+| EI-1 | Done: [`spike-results/ens-ipfs.md`](spike-results/ens-ipfs.md). GO for the loopback design |
+| EI-2, EI-3, EI-4, EI-6 | Done, with unit tests |
+| EI-5, EI-7 | Done. `test/e2e-eth-verified.test.ts`: a fixture name loads verified, a tampered block is refused, and the Local Network Access canary holds |
+| EI-8 | Done. An opt-in live test resolves the five names through Helios and refuses a tampered proof; the real shell loads `vitalik.eth` from mainnet |
+| EI-9 | Done. `test/e2e-eth-install.test.ts` installs a `.eth` app through the real hint; its pin carries the CID and it opens from cache with the gateway gone |
+| EI-10 | Done. `test/e2e-eth-website-level.test.ts`: an `ipfs` fixture name is Level 2 with its CID, a DNSLink fixture is Level 1 naming the domain, an ordinary page is Level 1, and none shows Level 3 or above. A same-host hash tree stays Level 1 until A254 is settled |
+| EI-11 | Done. Settings section: `test/e2e-eth-light-client-status.test.ts`. The popover's `.eth` row is unit-tested (`src/main/verifier/tests/name-evidence.test.ts`) |
+| EI-12 | **Partly.** A README for each new directory. The rest edits the same pages as the roadmap change |
+
+**Where the build departed from the text above, and why:**
+
+- **A name is proven at the newest block the light client has verified**, not the finalized one.
+  Public RPCs serve storage proofs only for recent blocks, and finality lags by about 80 blocks.
+  `ADR-0030` records it as provisional.
+- **Execution RPCs fail over per request**, since the light client verifies every answer; one RPC
+  per instance, as Helios takes, failed intermittently.
+- **The loopback certificate is DER-encoded in the verifier host**, not built with `@peculiar/x509`,
+  which needs a process-global `reflect-metadata` polyfill (`src/verifier-host/README.md`).
+- **The gatherer reads file bytes with its own walker**; the exporter's reader can end the process
+  on a deep block failure. The exporter still resolves paths.
+- **IPNS records may also come from a w3name-style name service**: `app.ens.eth` publishes nowhere
+  a gateway looks.
+- **The IPFS limits were tightened** to what real sites measured, and `ipfs.io` left the gateway list,
+  since it now redirects trustless requests to `trustless-gateway.link`.
+- **`uniswap.eth`'s DNSLink no longer exists**, so a fixture stands in for the live Level 1 example.
+- **The fixture seam and a readiness flag** share one global, `__orivonDevEthFixtures`, which joins
+  `check-dev-grant-absent.mjs`'s markers.
+- **An open has no total-time limit** (EI-3). The per-block timeout, the per-open block and byte
+  limits, the mount deadline, and cancelling an open when its client leaves bound it instead; a
+  total-time cap would cut off a long video that is streaming correctly.
+- **EI-9's "zero gateway requests" is unit-tested** (`src/loader/tests/index-content.test.ts`), not
+  counted on the fixture gateway: the end-to-end run never reaches the next update check.
+- **The ordinary site in EI-10's e2e is plain HTTP on loopback**, not HTTPS: the level does not
+  depend on the scheme, and the suite has no HTTPS fixture server.
+- **The same-host hash tree row is labelled "Hash tree", not "DDOC"**, and is left out for a `.eth`
+  name, whose DDOC anchor is its contenthash (A255). Showing "DDOC: verified" beside Level 1 would
+  contradict the level's own meaning.
+- **The scores page is named, not linked, in the popover**: the popover has no path that opens a
+  tab.
+- **Killing the verifier host mid-load shows Chromium's connection-refused page**, not "Cannot
+  verify": the socket is gone. Nothing hangs, and the next load after the restart is served.
+
