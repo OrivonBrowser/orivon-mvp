@@ -15,7 +15,7 @@ the reach-only network path, and the CORS wrapper.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
-`writeFileAtomic`, `policy/origin.ts`, `broker-contracts.ts` types), [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts),
+`writeFileAtomic`, `policy/origin.ts`, `broker-contracts.ts` types), [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts),
 [`../shell/`](../shell/) (the two questions, `external-link-prompt.ts` and
 `notification-prompt.ts`; `showing-window.ts`; `exclusive-access-notice.ts`), the top-level
 `registry.ts`. Only `permission-gate.ts` and `web-context-host.ts` import `electron`: the
@@ -171,7 +171,7 @@ against the real shell, not assumed: `test/e2e-web-context-network.test.ts` fetc
 `https://example.com` through a context with both belts active and still gets a real response.
 This holds because `protocol.handle` REPLACES Chromium's network stack for the scheme it
 registers -- a request answered by a custom protocol handler never reaches the proxy-resolution
-step at all, the same reason [`../../loader/serve.ts`](../../loader/serve.ts)'s own app-origin
+step at all, the same reason [`../../loader/serve/serve.ts`](../../loader/serve/serve.ts)'s own app-origin
 handler never needed proxy awareness. The proxy only ever sees a connection attempt that
 `protocol.handle` did NOT intercept, which for `https:`/`http:` from inside a context should
 never happen -- so the discard-port proxy is a belt for exactly the gap outside those two

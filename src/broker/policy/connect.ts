@@ -169,7 +169,7 @@ function deny (reason: ConnectDenialReason, checked?: readonly string[]): Connec
 // can drift from this one.
 /** Re-exported from ./connect-preflight.ts, where the bound is applied, so every importer keeps one name for it (Rule 3). */
 export { MAX_PATTERNS } from './connect-preflight.js'
-// Exported so a second consumer (../../loader/install-origin.ts's T12 guard,
+// Exported so a second consumer (../../loader/fetch/install-origin.ts's T12 guard,
 // which resolves once against the same kind of untrusted answer count) shares
 // this bound instead of a second copy that can drift from it (Rule 3).
 export const MAX_ANSWERS = 64

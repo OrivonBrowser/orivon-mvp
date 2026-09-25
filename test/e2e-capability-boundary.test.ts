@@ -92,7 +92,7 @@ import {
   killChild, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, ECHO_PORT, STATIC_PORT } from './apps/fixture/config.mjs'
-import { parseManifest } from '../src/loader/manifest.js'
+import { parseManifest } from '../src/loader/manifest/manifest.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant } from '../src/contracts/index.js'
 

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// deliveryProvenanceFor closes over loader/electron-serve.ts's
+// deliveryProvenanceFor closes over loader/electron/serve.ts's
 // isOriginServedFromCache, which itself dynamically imports 'electron' --
-// mocked here the same way electron-serve.test.ts mocks it for
+// mocked here the same way electron/tests/serve.test.ts mocks it for
 // isOriginServedFromCache's own tests, so this suite never needs a real
 // Electron session either.
 

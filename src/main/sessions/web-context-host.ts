@@ -16,7 +16,7 @@ import { session as electronSession, WebContentsView } from 'electron'
 import type { Session, WebContents } from 'electron'
 import { LIMITS } from '../../contracts/index.js'
 import { originHash } from '../../broker/grants/origin-hash.js'
-import { reachOnlyHandlerFor } from '../../loader/electron-serve.js'
+import { reachOnlyHandlerFor } from '../../loader/electron/serve.js'
 import type { Broker, WebContextHost } from '../../broker/broker-contracts.js'
 
 const EMPTY_DOCUMENT = 'data:text/html,<!DOCTYPE html><html><head><title></title></head><body></body></html>'
@@ -41,7 +41,7 @@ function newHostId (): string {
 
 /**
  * ADR-0019's own network path, wrapped with CORS for the context's origin --
- * kept beside the host (spec item 5) rather than in loader/electron-serve.ts,
+ * kept beside the host (spec item 5) rather than in loader/electron/serve.ts,
  * which owns the reach DECISION but not this response shape. An `OPTIONS`
  * preflight is answered synthetically, never reaching the network; every
  * other response gets `access-control-allow-origin` for the context's own
@@ -170,7 +170,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
    * permission outright, cancel every download, cancel ws:/wss:, and answer
    * https/http through the reach-only path for `opener`, CORS-wrapped for
    * `origin`. Idempotent -- `protocol.handle` throws on a scheme already
-   * handled on the same session (electron-serve.ts's own registerAppOrigin
+   * handled on the same session (electron/serve.ts's own registerAppOrigin
    * precedent), and `will-download` is a plain EventEmitter listener that
    * would otherwise accumulate one per reuse of this slot's session.
    */

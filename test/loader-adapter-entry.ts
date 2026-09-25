@@ -7,16 +7,16 @@
 // test's own closeElectron() call ends this process.
 //
 // Exists because of A141 (docs/open-questions.md): no test anywhere
-// exercised the real electron-fetch.ts adapter before this -- every loader
+// exercised the real electron/fetch.ts adapter before this -- every loader
 // test injects a stub `Fetch`. This is what lets a test reach the REAL
 // `net.fetch` and `electronFetch`, against a REAL local server, from a REAL
 // Electron main process.
 
 import { app } from 'electron'
-import { electronFetch, netFetch } from '../src/loader/electron-fetch.js'
-import { electronResolveHost } from '../src/loader/electron-resolve.js'
-import { ByteBudget, fetchWithBudget } from '../src/loader/fetch-budget.js'
-import type { Fetch, FetchResponse } from '../src/loader/fetch-budget.js'
+import { electronFetch, netFetch } from '../src/loader/electron/fetch.js'
+import { electronResolveHost } from '../src/loader/electron/resolve.js'
+import { ByteBudget, fetchWithBudget } from '../src/loader/fetch/budget.js'
+import type { Fetch, FetchResponse } from '../src/loader/fetch/budget.js'
 
 /** What a real Response carries beyond FetchResponse's minimal structural
  * shape -- read here only for this probe's own reporting; production code
@@ -82,8 +82,8 @@ async function callElectronFetch (url: string, pinnedAddresses: readonly string[
 
 /** `netFetch` directly -- electronFetch's own guard-free primitive (the
  * exact net.fetch call electronFetch makes once its guard has passed).
- * Reports the real Response's own contract: what fetch-bundle.ts and
- * fetch-budget.ts actually read, plus `.type`/`.url` for the A59/A141
+ * Reports the real Response's own contract: what fetch/bundle.ts and
+ * fetch/budget.ts actually read, plus `.type`/`.url` for the A59/A141
  * regression check. */
 async function callNetFetch (url: string): Promise<NetFetchProbeResult> {
   const controller = new AbortController()
@@ -95,10 +95,10 @@ async function callNetFetch (url: string): Promise<NetFetchProbeResult> {
 }
 
 /** Feeds a `netFetch`-backed `Fetch` through the REAL, unmodified
- * `fetchWithBudget` -- proves the byte-cap/streaming pipeline fetch-bundle.ts
+ * `fetchWithBudget` -- proves the byte-cap/streaming pipeline fetch/bundle.ts
  * actually relies on works against a real net.fetch Response, and (pointed
  * at a redirecting url) proves `redirect: 'error'` really produces a
- * rejection here, not just in electron-fetch.ts's own comment. */
+ * rejection here, not just in electron/fetch.ts's own comment. */
 async function callNetFetchThroughBudget (url: string, assetCap: number): Promise<BudgetProbeResult> {
   const controller = new AbortController()
   const fetchFn: Fetch = async (target, _pinnedAddresses, signal) => await netFetch(target, signal)
@@ -112,7 +112,7 @@ async function callNetFetchThroughBudget (url: string, assetCap: number): Promis
 /** `electronResolveHost` directly -- A141's own gap, left open for this
  * adapter's resolver half (Finding 2): every existing test injects a fake
  * `Resolver`, so nothing here proved `net.resolveHost`'s real
- * `endpoints[].address` shape actually maps the way electron-resolve.ts
+ * `endpoints[].address` shape actually maps the way electron/resolve.ts
  * assumes, or what it does when Chromium's own resolver has no answer. */
 async function callResolveHost (host: string): Promise<ResolveHostProbeResult> {
   try {

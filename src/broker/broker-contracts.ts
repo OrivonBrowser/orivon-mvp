@@ -284,7 +284,7 @@ export interface Broker {
      * from it meanwhile.
      *
      * `manifest` MUST already be proven a leaf of a hash-pinned bundle
-     * (`src/loader/serve.ts`'s `verifiedManifestFor`), NEVER a manifest
+     * (`src/loader/serve/serve.ts`'s `verifiedManifestFor`), NEVER a manifest
      * merely read off disk: that is what separates this from the unverified
      * disk hydration A137 rejected. `GrantLedger.hydrateFromPinnedManifest`'s
      * own doc has the full reasoning, and what happens once `registerApp`

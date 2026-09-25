@@ -43,7 +43,7 @@ export interface SiteTrust {
  * `currentFetchMatchesPin` is always `null`: this function runs against an
  * ALREADY-SERVED tab, with no live fetch in progress to compare against
  * the pin -- that comparison already happened, once, when the bundle was
- * installed or last served (`decideAndRoute`/`serve-verify.ts`). Claiming
+ * installed or last served (`decideAndRoute`/`serve/verify.ts`). Claiming
  * a match here would be a guess dressed as an observation, exactly what
  * ADR-0006 exists to prevent. `pinHasChanged` is always `false`: `PinRecord`
  * keeps no history of a prior hash, so there is nothing here to claim

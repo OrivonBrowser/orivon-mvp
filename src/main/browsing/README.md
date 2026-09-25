@@ -8,13 +8,13 @@ Score page: `buildSiteTrust` computes the Website level (`../../trust/website-le
 delivery ladder (`../../trust/delivery-ladder.ts`). Pure — the caller (`../permissions/
 site-info-controller.ts`) supplies the pin, the cached-or-not flag, pin coverage and a `.eth`
 name's evidence (`../verifier/name-evidence.ts`) rather than this file reaching for
-`electron-serve.ts` or the verifier itself, matching `../../trust/`'s own "never import another
+`electron/serve.ts` or the verifier itself, matching `../../trust/`'s own "never import another
 stream's internals" one layer further out.
 
 **What it depends on.** [`../../broker/policy/`](../../broker/policy/) (`address.ts`,
 `connect.ts` types, `origin.ts`, `pin.ts`'s `PinRecord` type),
 [`../../trust/`](../../trust/) (`delivery-ladder.ts`, type and value), [`../../loader/`](../../loader/)
-(`electron-resolve.ts`, `electron-serve.ts`), `node:fs/promises`, `node:path`. `favicon.ts` is
+(`electron/resolve.ts`, `electron/serve.ts`), `node:fs/promises`, `node:path`. `favicon.ts` is
 the only file here that imports `electron`, and only dynamically, for the same reason
 [`../self-update/update-check-runner.ts`](../self-update/update-check-runner.ts) does (outside a
 real Electron process, `electron`'s entry point is a path string, not the API surface).
@@ -60,8 +60,8 @@ in main instead keeps the guarantee intact; the CSP only needs `img-src 'self' d
 unlike every other main-process network call in this codebase, which is either fixed
 ([`../self-update/update-check-runner.ts`](../self-update/update-check-runner.ts)'s
 `RELEASES_API`) or gated behind an app install
-([`../../loader/install-origin.ts`](../../loader/install-origin.ts),
-[`../../loader/electron-fetch.ts`](../../loader/electron-fetch.ts)). A page's own `<link rel="icon">` is fully
+([`../../loader/fetch/install-origin.ts`](../../loader/fetch/install-origin.ts),
+[`../../loader/electron/fetch.ts`](../../loader/electron/fetch.ts)). A page's own `<link rel="icon">` is fully
 attacker-controlled, so without a check `pickFaviconUrl` would hand `fetchFaviconDataUrl` a URL
 pointing anywhere, whether `169.254.169.254`, a LAN admin panel or a localhost service, and the main
 process would issue a real GET to it. `isSafeFaviconUrl` closes this the same way
@@ -69,7 +69,7 @@ process would issue a real GET to it. `isSafeFaviconUrl` closes this the same wa
 [`../../broker/policy/address.ts`](../../broker/policy/address.ts)'s
 `classifyAddress`/`isPublicUnicast` and
 [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts)'s `isLocalhostName` directly, and
-[`../../loader/electron-resolve.ts`](../../loader/electron-resolve.ts)'s `electronResolveHost` for
+[`../../loader/electron/resolve.ts`](../../loader/electron/resolve.ts)'s `electronResolveHost` for
 the one case those cannot answer alone (a hostname, which needs resolving before it can be
 classified), never a second implementation of any of the three (code-guidelines.md Rule 3).
 

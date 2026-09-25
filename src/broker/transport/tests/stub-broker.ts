@@ -43,7 +43,7 @@ export function stubBroker (
     isRegisteredSync: (origin: string) => boolean
     /** SYNCHRONOUS for the same reason, and used for the same kind of decision: which session a tab is built in. */
     hasGrantsSync: (origin: string) => boolean
-    /** SYNCHRONOUS, same reasoning as `isRegisteredSync`/`hasGrantsSync` above -- A200's `Broker.app.socketAllowanceSync` has no CONTROL_CHANNEL method (its one caller is electron-serve.ts's loader-side reach path, never ipc.ts), but the stub still needs to satisfy Broker's shape. */
+    /** SYNCHRONOUS, same reasoning as `isRegisteredSync`/`hasGrantsSync` above -- A200's `Broker.app.socketAllowanceSync` has no CONTROL_CHANNEL method (its one caller is electron/serve.ts's loader-side reach path, never ipc.ts), but the stub still needs to satisfy Broker's shape. */
     socketAllowanceSync: (origin: string) => number
     connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     /** A plain `FailableTcpSocket` is given a verified handshake's facts, so a test about the byte relay need not spell them out. */
@@ -118,7 +118,7 @@ export function stubBroker (
       persistedAppsSync: () => [],
       // Present so this stub still satisfies `Broker`; no test here drives
       // it -- A158's early-hydration seam is a loader-side caller
-      // (electron-serve.ts's registerServingFor), never reached via ipc.ts.
+      // (electron/serve.ts's registerServingFor), never reached via ipc.ts.
       hydrateFromPinnedManifest: async () => {},
       // Satisfies `Broker`; unused here -- `app.pickedPaths` is a
       // settings-surface call (PermissionsController), never CONTROL_CHANNEL.

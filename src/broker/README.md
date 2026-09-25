@@ -229,7 +229,7 @@ a number, and that number is then one a person saw at grant time.
 
 **It follows `fs.quotaBytes` exactly**, which already solved this for disk:
 optional in the manifest, enforced in the broker, rendered in the prompt. Both
-now share one validator (`readPositiveInteger`, `loader/manifest-capabilities.ts`)
+now share one validator (`readPositiveInteger`, `loader/manifest/capabilities.ts`)
 because the reason is shared, not only the shape.
 
 **Clamped, never rejected.** The manifest validator deliberately accepts a
@@ -384,8 +384,8 @@ heartbeat and dial timeout are (`transport/port-sink.ts`, `adapters/node-adapter
 `patternSetFromCapabilities` (Manifest.capabilities -> `update.ts`'s `PatternSet`) lives here
 because two consumers need the exact same conversion, the loader's update decision and
 `app.requestGrant`'s policy (`policy/request-grant.ts`), and `policy/` may never import
-`src/loader/` (this README's own "what it must never import"). `src/loader/update-patterns.ts`
-is a re-export of it.
+`src/loader/` (this README's own "what it must never import"). `src/loader/index.ts`
+imports it directly.
 
 **It must map every capability a manifest can declare, `https.connect` included.** A capability
 missing from the conversion is invisible to both consumers: a manifest update that ADDS it

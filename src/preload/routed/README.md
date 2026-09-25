@@ -181,11 +181,11 @@ This folder only intercepts the page's own JS-level `fetch()`, XHR, EventSource 
 calls. A passive subresource load pointed at a granted third-party host, whether an `<img>`,
 `<link>`, or `<video>` `src`/`href`, never reaches it at all: it is intercepted at the
 `protocol.handle` layer instead, inside the app's own partition
-([`../../loader/serve.ts`](../../loader/serve.ts)'s `fetchThirdParty`, dialled by
-[`../../loader/serve-reach.ts`](../../loader/serve-reach.ts)'s `nodeReachDial`, Node's own
+([`../../loader/serve/serve.ts`](../../loader/serve/serve.ts)'s `fetchThirdParty`, dialled by
+[`../../loader/reach/reach.ts`](../../loader/reach/reach.ts)'s `nodeReachDial`, Node's own
 `https` module). A 3xx from the granted host goes back to the page's own loader, which follows it
 through the same handler, so every hop is authorised afresh; a chain is capped at 20 hops
-([`../../loader/serve-reach-redirects.ts`](../../loader/serve-reach-redirects.ts)). See
+([`../../loader/reach/redirects.ts`](../../loader/reach/redirects.ts)). See
 `../../loader/README.md`'s Design notes for the full mechanism; this file's own list above covers
 only this folder's path.
 

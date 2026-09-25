@@ -161,7 +161,7 @@ appeared to work perfectly. Do not drop it.
 **It lives in [`test/e2e-app-loader-journey.test.ts`](../../test/e2e-app-loader-journey.test.ts)**,
 and the refusal goes through the real shim (`src/shim/net/net.ts`), not only the raw capability
 API. One link is substituted, and the file's header says exactly where: the fixture is served
-from loopback, and [`install-origin.ts`](../../src/loader/install-origin.ts) refuses a loopback
+from loopback, and [`install-origin.ts`](../../src/loader/fetch/install-origin.ts) refuses a loopback
 origin outright (A46), so no install can succeed. The real `<link rel="orivon-manifest">` hint is
 proven to reach the real listener and take the grant-without-install path instead; the granted
 round trip is enabled separately, through `src/main/dev/dev-grant.ts`'s developer-only hook,

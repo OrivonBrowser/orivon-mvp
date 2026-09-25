@@ -73,8 +73,8 @@ second `registerApp` call re-reading the same stale disk state.
 **`hydrateFromPinnedManifest` is the same read, run early (A158), not a second implementation of
 it.** `registerApp`'s hydration above waits for a fresh manifest, but there is a second, narrower
 source that already carries the same guarantee a fresh `registerApp` manifest does: a manifest that is a verified leaf
-of a hash-pinned bundle (`src/loader/serve.ts`'s `verifiedManifestFor`, gated on
-`serve-verify.ts`'s `verifyPinnedTree`) is cryptographically tied to the exact bundle a person
+of a hash-pinned bundle (`src/loader/serve/serve.ts`'s `verifiedManifestFor`, gated on
+`serve/verify.ts`'s `verifyPinnedTree`) is cryptographically tied to the exact bundle a person
 already consented to, not merely "a value saved to disk" in the sense `A137`'s ruling forbids
 trusting as authority. `A137`'s withdrawn attempt hydrated from a manifest persisted bare, for
 hydration's own sake, with no such tie: an attacker with local write access could plant a

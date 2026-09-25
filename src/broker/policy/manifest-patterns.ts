@@ -1,10 +1,9 @@
 // Manifest.capabilities -> update.ts's PatternSet -- the declared-authority
 // half of the conversion patternSetFromGrants (./update.ts) already performs
-// for the GRANTED half. Moved here from src/loader/update-patterns.ts
-// (2026-09-10, P4-1): ./request-grant.ts's subset check needs the exact same
-// conversion decideUpdate() does, and src/broker/ may never import
-// src/loader/ (../README.md) -- only the reverse. src/loader/update-patterns.ts
-// now re-exports this so its existing import path needs no change.
+// for the GRANTED half. Lives here because ./request-grant.ts's subset check
+// needs the exact same conversion decideUpdate() does, and src/broker/ may
+// never import src/loader/ (../README.md) -- only the reverse.
+// src/loader/index.ts imports this directly.
 
 import type { Capabilities, CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { PatternSet } from './update.js'

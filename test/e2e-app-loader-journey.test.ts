@@ -24,7 +24,7 @@
 // REAL, unmodified src/shim/net/net.ts (bundled by esbuild for this fixture,
 // see ./app-loader-journey-shim-entry.ts's own header for exactly what that
 // substitutes for and why). What is NOT exercised: a real grant reaching that
-// pipe via a real, accepted install. src/loader/install-origin.ts's A46 (no
+// pipe via a real, accepted install. src/loader/fetch/install-origin.ts's A46 (no
 // loopback/non-https carve-out) means Loader.load() can never accept ANY
 // hermetic fixture's own origin, so a loopback hint takes the
 // grant-without-install path instead (src/main/install/grant-without-

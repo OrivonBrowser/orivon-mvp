@@ -32,7 +32,7 @@ own close just dismissed).
 [`../../broker/`](../../broker/) (`broker-contracts.ts`, `policy/origin.ts`,
 `policy/request-grant.ts`, `policy/update.ts`'s `sameOwnPatterns`, `grants/ledger-storage.ts`
 types), [`../../loader/`](../../loader/) (`manifest.ts`; `index.ts`'s `Loader`/`LoadResult`
-types and `pinFor`; `electron-serve.ts`'s `isOriginServedFromCacheSync`/`pinCoverageFor`, real
+types and `pinFor`; `electron/serve.ts`'s `isOriginServedFromCacheSync`/`pinCoverageFor`, real
 implementations injected by `../shell/window.ts`, never imported by `site-info.ts`/`site-switches.ts`
 themselves), [`../../trust/`](../../trust/) (`delivery-ladder.ts` types, via `../browsing/site-trust.ts`),
 [`../consent/grant-prompt-render.ts`](../consent/grant-prompt-render.ts) and

@@ -1,9 +1,9 @@
 // End-to-end proof that S4-6's CSP (src/broker/policy/connect-src.ts, wired
-// in src/loader/serve.ts) is enforced by CHROMIUM ITSELF against the served
+// in src/loader/serve/serve.ts) is enforced by CHROMIUM ITSELF against the served
 // bundle's own document -- not merely computed correctly (src/broker/
 // policy/tests/connect-src.test.ts already proves that) and not merely
-// reflected in a header string (src/loader/tests/serve.test.ts and
-// src/loader/tests/electron-serve.test.ts already prove that too, against a
+// reflected in a header string (src/loader/serve/tests/serve.test.ts and
+// src/loader/electron/tests/serve.test.ts already prove that too, against a
 // stub session). None of those three prove the browser actually refuses a
 // non-granted connection because of it, which is the one thing a real
 // Electron launch can prove and a unit test cannot.
@@ -40,7 +40,7 @@ import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
 import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/node-storage.js'
+import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 

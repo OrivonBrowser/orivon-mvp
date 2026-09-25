@@ -1,6 +1,6 @@
 // T22's CSP source derivation (security-model.md, ADR-0006), pure and
 // side-effect-free -- computes the grant-derived SOURCE LISTS only;
-// src/loader/serve-csp.ts assembles them into the header the served
+// src/loader/serve/csp.ts assembles them into the header the served
 // response carries. See README.md's Design notes for this file's two scope
 // gaps (A42, A43).
 //
@@ -261,7 +261,7 @@ function isAnyHostThatAuthorises (entry: OmittedPattern): boolean {
 /**
  * The sources one origin's granted `https.connect` patterns contribute to
  * the reach directives (`connect-src`, `img-src`, `font-src`, `media-src`):
- * the requests `src/loader/serve.ts`'s `fetchThirdParty` authorises against
+ * the requests `src/loader/serve/serve.ts`'s `fetchThirdParty` authorises against
  * that same grant. No `'self'` -- the caller assembles each directive.
  *
  * SCHEME-QUALIFIED, `https://host:port`, never a bare `host:port`, and

@@ -11,7 +11,7 @@ import { session } from 'electron'
 import type { HeadersReceivedResponse, OnHeadersReceivedListenerDetails } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
-import { liveCspHeaderFor } from '../../loader/electron-serve.js'
+import { liveCspHeaderFor } from '../../loader/electron/serve.js'
 
 type HeadersListener = (details: OnHeadersReceivedListenerDetails, callback: (response: HeadersReceivedResponse) => void) => void
 

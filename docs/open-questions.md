@@ -103,7 +103,7 @@ None of these block starting the week-0 spike.
 | A12 | **RESOLVED 2026-09-09 (owner): `orivon.fs` stays byte-oriented, no encoding option at the capability layer.** Confirms the provisional reading already in `src/contracts/capability-api.ts`; text decoding belongs to `orivon-node-shim`. See `.claude/unattended-build-queue.md` decision 1 | Phase 1 contracts PR removes the PROVISIONAL markers; see below |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
-| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch-bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated. **RESOLVED 2026-09-22 for the two byte caps (owner):** calibrated against ASGARDEX's real build (a 31 MB wasm-heavy chunk, a 37 MB bundle), `MAX_ASSET_BYTES` is 64 MiB and `MAX_BUNDLE_BYTES` 512 MiB. They bound download and disk, not memory: the loader now streams each asset to staging and hashes it incrementally (`src/loader/leaf-hash.ts`), so no asset is held whole. **Still AI-recommended:** `MAX_PATH_BYTES`, `MAX_BUNDLE_ENTRIES` (no real bundle has come near either), `MAX_DDOC_BYTES` (656,384, sized like `MAX_MANIFEST_BYTES` for a full leaf table, `src/loader/ddoc-declaration.ts`, 2026-09-24), and the fetch time bounds that cite this entry (`FETCH_IDLE_TIMEOUT_MS` 20 s idle, `BUNDLE_TIMEOUT_MS` 30 min, `src/loader/fetch-budget.ts`) | The two byte caps: settled. The rest: when a real bundle or a slow real host hits one |
+| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch/bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated. **RESOLVED 2026-09-22 for the two byte caps (owner):** calibrated against ASGARDEX's real build (a 31 MB wasm-heavy chunk, a 37 MB bundle), `MAX_ASSET_BYTES` is 64 MiB and `MAX_BUNDLE_BYTES` 512 MiB. They bound download and disk, not memory: the loader now streams each asset to staging and hashes it incrementally (`src/loader/leaf-hash.ts`), so no asset is held whole. **Still AI-recommended:** `MAX_PATH_BYTES`, `MAX_BUNDLE_ENTRIES` (no real bundle has come near either), `MAX_DDOC_BYTES` (656,384, sized like `MAX_MANIFEST_BYTES` for a full leaf table, `src/loader/ddoc-declaration.ts`, 2026-09-24), and the fetch time bounds that cite this entry (`FETCH_IDLE_TIMEOUT_MS` 20 s idle, `BUNDLE_TIMEOUT_MS` 30 min, `src/loader/fetch/budget.ts`) | The two byte caps: settled. The rest: when a real bundle or a slow real host hits one |
 | A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/shell/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/shell/window.ts`. See below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
@@ -129,7 +129,7 @@ None of these block starting the week-0 spike.
 | A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/transport/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/transport/token-bucket.ts` and wired in `src/broker/transport/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
 | A45 | **RESOLVED 2026-09-03, `ADR-0011`.** `Manifest` gains `assets: readonly string[]`, publisher-declared alongside `entry` — a manifest field, not a crawl heuristic. See below | — |
 | A46 | **The loader never checks the install origin against private/loopback address ranges (T12).** `originFromUrl` validates only scheme and hostname syntax, never address class, and never calls `isPublicUnicast`/`classifyAddress` from `src/broker/policy/address.ts` — which already implements the correct "resolve once, validate every address" discipline for exactly this threat. `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/` (cloud metadata), or a low-TTL host that DNS-rebinds to either, all pass every check the loader runs today. **RESOLVED 2026-09-03 (owner): loopback is installable only as a user-supplied literal** — `127.0.0.1`, `[::1]` or `localhost`, and only when the URL came from a user action, never from a page-supplied hint and never via a hostname that *resolved* to loopback. Every other private, link-local and metadata range is refused outright | **NOW LIVE, trigger re-dated 2026-09-03** — the entry's own "ships inert" premise expired when `loaderSubsystem` was wired to a real `Loader` and a real Electron `Fetch` (`98c4871`, `stream/loader-05-node-storage`). See below |
-| A48 | **Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot be closed from this file alone, and now carry an explicit contract requirement on the real `Fetch` implementation.** (1) A `Fetch` (or its body stream's `read()`) that ignores its `AbortSignal` leaves the original promise permanently pending with its closures on every timeout — `BUNDLE_TIMEOUT_MS` (added this pass) bounds how many such abandoned attempts one `fetchBundle()` call can accumulate, but cannot force a foreign, non-cooperating promise to release whatever it holds (a socket, a timer). (2) The incremental byte cap can only refuse a chunk after `reader.read()` already returned it fully allocated — the real bound is "one chunk", not "the cap"; a BYOB reader would close this but requires the stream to declare `type: 'bytes'`, which this file's minimal structural `FetchResponse` type does not guarantee | **Before a real `Fetch`/stream implementation is wired in.** It must itself observe `AbortSignal` and promptly abort/release the underlying request, and should bound its own chunk sizes. See below |
+| A48 | **Two residual gaps in `fetch/bundle.ts`'s byte/time budget cannot be closed from this file alone, and now carry an explicit contract requirement on the real `Fetch` implementation.** (1) A `Fetch` (or its body stream's `read()`) that ignores its `AbortSignal` leaves the original promise permanently pending with its closures on every timeout — `BUNDLE_TIMEOUT_MS` (added this pass) bounds how many such abandoned attempts one `fetchBundle()` call can accumulate, but cannot force a foreign, non-cooperating promise to release whatever it holds (a socket, a timer). (2) The incremental byte cap can only refuse a chunk after `reader.read()` already returned it fully allocated — the real bound is "one chunk", not "the cap"; a BYOB reader would close this but requires the stream to declare `type: 'bytes'`, which this file's minimal structural `FetchResponse` type does not guarantee | **Before a real `Fetch`/stream implementation is wired in.** It must itself observe `AbortSignal` and promptly abort/release the underlying request, and should bound its own chunk sizes. See below |
 
 ---
 
@@ -1119,10 +1119,10 @@ for the fuller accounting.
 
 **Corrected 2026-09-22.** The paragraph above previously listed `form-action` among the
 directives `default-src` closed; the CSP spec lists no fallback for it, and it is now left unset
-on purpose (`src/loader/serve-csp.ts`, `src/loader/README.md` §What the served bundle's CSP
+on purpose (`src/loader/serve/csp.ts`, `src/loader/README.md` §What the served bundle's CSP
 admits): restricting it would refuse the redirects a form-post sign-in follows, and would bound
 nothing that navigation does not already leave open. The header today is built in
-`src/loader/serve-csp.ts`, not `serve.ts`, and admits more than it did: `'unsafe-eval'`,
+`src/loader/serve/csp.ts`, not `serve.ts`, and admits more than it did: `'unsafe-eval'`,
 `'wasm-unsafe-eval'`, `data:`/`blob:` in the subresource directives, `worker-src 'self' blob:`,
 `frame-src 'self' data: blob:`, and `https.connect`'s sources in `connect-src` (`d-0046` to
 `d-0048`). And `connect-src` is no longer the only gate an app tab's WebSocket meets: the page's
@@ -1440,7 +1440,7 @@ and is fully testable against an injected one.
 gains `assets: readonly string[]`, alongside `entry` — see the ADR for the full reasoning,
 including why the "publisher must keep it in sync" cost is deliberately not compensated for in
 this field's design: an app that loads more than it declared is the trust/Web3-Score system's
-concern (`ADR-0006`), not something the manifest format tries to predict. `src/loader/manifest.ts`
+concern (`ADR-0006`), not something the manifest format tries to predict. `src/loader/manifest/manifest.ts`
 validates it the same way `entry` is validated (`stream/contracts-11-manifest-assets`).
 `createLoader.load()`'s own `assetPaths` parameter is unchanged by this — a caller now reads it
 off `manifest.assets` rather than inventing or discovering it.
@@ -1457,7 +1457,7 @@ for the full account.
 
 ### A46 — the loader never checks the install origin against private/loopback address ranges (T12) **[RESOLVED 2026-09-03]**
 
-Found 2026-09-03 reviewing `stream/loader-02-fetch-cache` (build step 4). `fetch-bundle.ts`
+Found 2026-09-03 reviewing `stream/loader-02-fetch-cache` (build step 4). `fetch/bundle.ts`
 resolves `hintedUrl` through `originFromUrl` (`src/broker/policy/origin.ts`), which validates
 scheme and hostname syntax and nothing else — it never checks what address class the hostname
 resolves to, and never calls `isPublicUnicast`/`classifyAddress` from
@@ -1468,7 +1468,7 @@ discipline required to use it correctly: *resolve once, validate every returned 
 connect to the IP literal that was validated* — because a hostname is not an address, and a
 low-TTL DNS answer can change between a check and a connect. `src/broker/policy/connect.ts`
 already follows this discipline for outbound `tcp.connect`. The loader's install path does not
-follow it at all: nothing in `fetch-bundle.ts` or `origin.ts` resolves the install origin's
+follow it at all: nothing in `fetch/bundle.ts` or `origin.ts` resolves the install origin's
 hostname before treating it as fetchable.
 
 **Concretely:** `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/`
@@ -1547,10 +1547,10 @@ Re-resolving the name after the check reopens the window the check exists to clo
 
 **Implemented 2026-09-04 (`stream/loader-09-install-origin-guard`).** Found still genuinely
 unbuilt while scoping the discovery-trigger wiring — the resolution above recorded the owner's
-decision but nothing in `fetch-bundle.ts` yet acted on it. `fetchBundle()` now takes a `resolveFn:
+decision but nothing in `fetch/bundle.ts` yet acted on it. `fetchBundle()` now takes a `resolveFn:
 Resolver` (the same type `policy/connect.ts` defines) and rejects before its first network request
 if the install origin's hostname resolves — or, for a literal, classifies — as anything but
-public-unicast (`install-origin.ts`, split out once adding this pushed `fetch-bundle.ts` over the
+public-unicast (`install-origin.ts`, split out once adding this pushed `fetch/bundle.ts` over the
 500-line limit). No loopback carve-out is implemented: the only discovery trigger is the
 page-supplied hint, which is exactly the case this entry's own resolution says loopback must never
 be reachable from, so the carve-out has no live path to attach to. That leaves a real,
@@ -1581,7 +1581,7 @@ not itself serve a hint. Grants stay session-only (T13c).
 
 ---
 
-### A52 — two residual gaps a real `Fetch` must close, not `fetch-bundle.ts` **[AI-REC]**
+### A52 — two residual gaps a real `Fetch` must close, not `fetch/bundle.ts` **[AI-REC]**
 
 Found 2026-09-03, fixing an adversarial review's findings against `stream/loader-02-fetch-cache`
 (build step 4) before merge. Two of the three findings (an uncaught `new URL()` and the
@@ -1621,7 +1621,7 @@ naive real implementation is unlikely to provide.
 observe the `AbortSignal` it is given and promptly abort/release the underlying request on it —
 not merely tolerate the caller giving up on waiting — and (b) either use a BYOB reader with a
 bounded view size, or otherwise avoid handing back single chunks larger than a few times
-`MAX_ASSET_BYTES`'s neighbourhood. Neither is enforceable from `fetch-bundle.ts` as written.
+`MAX_ASSET_BYTES`'s neighbourhood. Neither is enforceable from `fetch/bundle.ts` as written.
 
 **Needed by:** whoever builds the real `Fetch` (wiring this loader to actual Node/Electron I/O
 is itself still open — see this file's own header and `CLAUDE.md`'s "Still open" note). Not
@@ -2064,11 +2064,11 @@ Found 2026-09-03, resolving PR #55's merge against `main` — checking that this
 renumbered `A48`→`A54`/`A49`→`A55` (see `A54`) did not collide with anything in the `## A.
 Awaiting owner decision` summary table near the top of this file.
 
-The table's `A48` row reads "Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot
+The table's `A48` row reads "Two residual gaps in `fetch/bundle.ts`'s byte/time budget cannot
 be closed from this file alone..." — but the entry actually titled `### A48` further down is
 "the credit-window backpressure design is half-built", a different topic entirely. The
 byte/time-budget text the table describes now matches `### A52` ("two residual gaps a real
-`Fetch` must close, not `fetch-bundle.ts`"). At some point `A48` was renumbered to `A52` and the
+`Fetch` must close, not `fetch/bundle.ts`"). At some point `A48` was renumbered to `A52` and the
 summary row was not updated to match — predates this branch and predates `A52`/`A53`'s own
 recent additions; not caused by, or a consequence of, this merge.
 
@@ -2153,10 +2153,10 @@ reversal, since it was the document making the now-superseded claim.
 ### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[RESOLVED 2026-09-04]**
 
 Filed 2026-09-03, `fix-62` (`stream/loader-05-node-storage`), while fixing `readPin`'s
-corrupt-pin handling and `electron-fetch.ts`'s redirect trust. (A57 taken by a parallel fix
+corrupt-pin handling and `electron/fetch.ts`'s redirect trust. (A57 taken by a parallel fix
 lane for a different gap, filed the same day — see that lane's own record.)
 
-`fetch-bundle.ts` already bounds ONE bundle install: `MAX_BUNDLE_BYTES` (64 MiB) and
+`fetch/bundle.ts` already bounds ONE bundle install: `MAX_BUNDLE_BYTES` (64 MiB) and
 `MAX_ASSET_BYTES` (16 MiB) cap a single `fetchBundle()` call. Nothing bounds total disk usage
 beyond that single call's own budget. Two distinct gaps, both real:
 
@@ -2229,11 +2229,11 @@ per-origin bound gap 1 relies on is now `MAX_BUNDLE_BYTES` 512 MiB (A15).
 
 ### A59 — whether `net.fetch`'s `Response.url` can be wrong on an ordinary, non-redirected fetch is unresearched **[RESOLVED 2026-09-13 — measured, then fixed via A141]**
 
-Found 2026-09-03, a review-pass follow-up to `electron-fetch.ts`'s `redirect: 'error'` fix.
+Found 2026-09-03, a review-pass follow-up to `electron/fetch.ts`'s `redirect: 'error'` fix.
 
 `node_modules/electron/electron.d.ts` documents the `.type` and `.url` values of `net.fetch`'s
 returned `Response` as incorrect — as an UNCONDITIONAL bullet under `net.fetch`'s own
-"Limitations", not one scoped to redirected responses. `fetch-bundle.ts`'s same-origin and
+"Limitations", not one scoped to redirected responses. `fetch/bundle.ts`'s same-origin and
 canonical-path checks (`fetchBundle`'s manifest and asset-loop checks alike) read
 `response.url` as their SOLE source of truth for where fetched bytes actually came from, on
 EVERY fetch — not only a would-be-redirected one.
@@ -2250,7 +2250,7 @@ than the response, mangled for some URL shapes, or something else) — is not st
 docs and was not resolved by a context7 query against live Electron documentation either; both
 are silent past the one-line "incorrect" warning. If `.url` on a successful, non-redirected
 `net.fetch` can name a different origin or path than where the bytes actually came from,
-`fetch-bundle.ts`'s origin and canonical-path checks would be trusting exactly the field that is
+`fetch/bundle.ts`'s origin and canonical-path checks would be trusting exactly the field that is
 wrong, on every single fetch they perform — not a narrow gap.
 
 **AI recommendation:** before the loader's discovery trigger (PR #63's `<link
@@ -2262,7 +2262,7 @@ nor available tooling explain the concrete failure mode well enough to reason ab
 first principles.
 
 **Needed by:** before the loader's discovery trigger is wired to anything live. See
-`electron-fetch.ts`'s `redirect: 'error'` comment, which cites this entry.
+`electron/fetch.ts`'s `redirect: 'error'` comment, which cites this entry.
 
 **Measured 2026-09-13 (lane S4-A59-probe, `spike/a59-response-url/`, throwaway, Electron 44.0.0,
 Chrome 152.0.7977.54; real launch confirmed via `app.getVersion()`/`MessageChannelMain`).** The
@@ -2272,7 +2272,7 @@ against two real local servers (`node:http`, and `node:https` with a throwaway, 
 self-signed cert, trusted narrowly by its exact SPKI hash via Chromium's own
 `--ignore-certificate-errors-spki-list` rather than by disabling certificate verification
 outright), called from a real Electron main process with
-`electron-fetch.ts`'s own options (`credentials: 'omit', redirect: 'error'`), across 20 distinct
+`electron/fetch.ts`'s own options (`credentials: 'omit', redirect: 'error'`), across 20 distinct
 request shapes: plain path, trailing slash, no trailing slash, a query string, a percent-encoded
 path segment (`/a%2Fb/c%20d`), a duplicate slash (`/a//b//c`), a fragment (correctly stripped
 before the network request — standard Fetch-spec behaviour, not an Electron quirk), combined
@@ -2288,7 +2288,7 @@ own harness with a second, minimal, options-free isolation script
 against a fresh `node:http` server, still returned `url: ''`. `response.type` is also confirmed
 wrong exactly as `electron.d.ts` warns — always `'default'`, never `'basic'`.
 
-**What this means for `fetch-bundle.ts`.** `originFromUrl('')` is `null` (`new URL('')` throws
+**What this means for `fetch/bundle.ts`.** `originFromUrl('')` is `null` (`new URL('')` throws
 with no base — confirmed), so `manifestOrigin !== canonicalOrigin` (`null !== canonicalOrigin`)
 is true on every call, and `fetchBundle` rejects **every** manifest fetch with "manifest was
 served from a different origin (invalid) than requested" — before ever reaching the asset loop,
@@ -2296,7 +2296,7 @@ which has the identical shape and would reject the same way. This is fail-closed
 hole: nothing is tricked into passing the check. But it means `fetchBundle` cannot succeed
 against a real `net.fetch` call as currently written, at all, regardless of which origin is being
 fetched — a correctness defect, not a narrow edge case. **Filed as A141, not fixed here**
-(`fetch-bundle.ts`/`electron-fetch.ts` are another lane's paths; the fix needs its own branch and
+(`fetch/bundle.ts`/`electron/fetch.ts` are another lane's paths; the fix needs its own branch and
 review).
 
 **Residual, not measured:** a real (CA-signed) HTTPS certificate chain — the SPKI allowlist
@@ -2314,7 +2314,7 @@ which is worse than what this entry originally worried about (a silently wrong o
 simpler to act on (the field is unusable outright, not subtly misleading).
 
 > **Closed 2026-09-13, lane S4-A141-fetch-url.** A141 (below) is fixed:
-> `fetch-bundle.ts` no longer reads `response.url` at all, so this question is moot rather than
+> `fetch/bundle.ts` no longer reads `response.url` at all, so this question is moot rather than
 > merely answered. See A141's own resolution block for what changed and how it was verified.
 
 ---
@@ -2394,7 +2394,8 @@ caller anywhere in `src/` that builds it via
 `patternSetFromGrants(await broker.app.grants(origin))` or any equivalent. Confirmed:
 `grep -rn "grantedPatterns" src/` finds only `update.ts`'s own field definition, `index.ts`'s
 `LoadContext.grantedPatterns` declaration and its one pass-through into `decideUpdate()`, a
-comment in `update-patterns.ts` explicitly disclaiming it ("this file produces `newPatterns`,
+comment in the loader's former `update-patterns.ts` (since removed; the import now goes straight
+to `manifest-patterns.ts`) explicitly disclaiming it ("this file produces `newPatterns`,
 never `grantedPatterns`" — a different, unrelated mapping from manifest capabilities to
 patterns, not from grants to patterns), and test-only construction in `update.test.ts` and
 `index.test.ts`. No production code path builds the value.
@@ -2426,7 +2427,7 @@ whatever the real `Broker`-facing accessor turns out to be named), not invent a 
 
 Found 2026-09-03, a review-pass follow-up.
 
-`nodeLoaderStorage` (`src/loader/node-storage.ts`) writes both the pinned asset bytes
+`nodeLoaderStorage` (`src/loader/cache/node-storage.ts`) writes both the pinned asset bytes
 (`writeAsset`) and the pin record (`writePin`) via a direct `writeFile` call each — no
 temp-file-then-rename, no `fsync`, nothing that makes either write atomic. `Loader.load()`
 (`src/loader/index.ts`) has no per-origin lock or serialization of any kind: nothing prevents
@@ -2622,7 +2623,7 @@ above: there is no allowlist, and the manifest is read before the person is aske
 Found 2026-09-05, `stream/loader-09-install-origin-guard`, fixing the DNS-rebinding/TOCTOU hole
 two independent review passes found in the T12/A46 install-origin guard (F2 in that lane's brief):
 `ensurePublicUnicastOrigin` resolved, validated, and then discarded the addresses, so
-`fetch-bundle.ts` named the install origin's host a SECOND time for every request — a fresh,
+`fetch/bundle.ts` named the install origin's host a SECOND time for every request — a fresh,
 independent resolution free to disagree with the guard's.
 
 `src/broker/policy/connect.ts`'s own discipline for the same problem, one layer down, is "resolve
@@ -2644,7 +2645,7 @@ Chromium-mediated fetch.** Confirmed directly against `node_modules/electron/ele
   either.
 - Rewriting the fetch URL itself to the validated IP literal was considered and rejected: it breaks
   TLS/SNI-based certificate validation for every real `https:` host (the certificate is issued for
-  the hostname, not the IP), and it breaks `fetch-bundle.ts`'s own same-origin check
+  the hostname, not the IP), and it breaks `fetch/bundle.ts`'s own same-origin check
   (`originFromUrl(response.url) === canonicalOrigin`), which can never hold once `response.url`'s
   host is an IP literal instead of the app's real hostname — trading a real, closed hole for a
   worse one (either every legitimate install starts failing, or that origin check gets loosened to
@@ -2652,11 +2653,11 @@ Chromium-mediated fetch.** Confirmed directly against `node_modules/electron/ele
 
 **What shipped instead, in this fix:** the install-origin guard's resolver was switched from
 `node-adapters.ts`'s node:dns-based `resolveHost` (correct for the broker's own raw-socket
-`tcp.connect`, wrong here) to `electron-resolve.ts`'s `electronResolveHost`, over Electron's
-`net.resolveHost` — Chromium's own resolver, the same one `electron-fetch.ts`'s `net.fetch` call
+`tcp.connect`, wrong here) to `electron/resolve.ts`'s `electronResolveHost`, over Electron's
+`net.resolveHost` — Chromium's own resolver, the same one `electron/fetch.ts`'s `net.fetch` call
 actually consults (both run under the default session). This closes F2's root cause: the guard and
 the real request are no longer answered by two independent resolvers/caches that can simply
-disagree. `electron-fetch.ts` additionally re-runs `net.resolveHost` and re-validates
+disagree. `electron/fetch.ts` additionally re-runs `net.resolveHost` and re-validates
 publicness immediately before every individual fetch (manifest and each asset), narrowing the
 window `F5` named — an up-to-`BUNDLE_TIMEOUT_MS` (10 minute) asset loop — from "the guard's
 resolution may be arbitrarily stale by the time this asset is fetched" to "this address was public
@@ -2665,7 +2666,7 @@ a moment before this specific request went out."
 **What this does NOT reach:** connect.ts's own guarantee (dial the literal address that was
 validated, so the hostname is never resolved again at all) is structurally unavailable to a fetch
 that must go through Chromium's network stack rather than a raw socket this codebase controls.  A
-sufficiently well-timed rebind — flipping between `electron-resolve.ts`'s check and `net.fetch`'s
+sufficiently well-timed rebind — flipping between `electron/resolve.ts`'s check and `net.fetch`'s
 own internal resolution a moment later, against the *same* resolver and cache — is not
 impossible, only far narrower than the original bug (which had two entirely different resolvers,
 and a window as wide as the whole install). This is a genuine platform limitation, not an
@@ -2676,7 +2677,7 @@ model, the fix would need to replace `net.fetch` with a fetch implementation thi
 control the socket layer for (e.g. Node's own `fetch`/`undici`, wired through a custom `Agent`
 whose `connect`/`lookup` can be pinned the way `dialTcp` already pins TCP) — at the cost of losing
 `net.fetch`'s session-awareness and Chromium network-stack integration (proxy config, cookie
-jars, etc.) that `electron-fetch.ts`'s own header names as the reason it exists. That trade was not
+jars, etc.) that `electron/fetch.ts`'s own header names as the reason it exists. That trade was not
 made here: it is a bigger architectural change than one guard fix, and belongs in front of the
 owner, not decided inside this lane.
 
@@ -3966,7 +3967,7 @@ since nothing today relies on `onHeadersReceived` firing for a `protocol.handle`
 
 **Acted on 2026-09-13, lane S4-6-csp:** built the substitution this entry names as the next
 probe's direction, rather than leaving it as a suggestion — `connect-src.ts`'s CSP is set directly
-on the `Response` `src/loader/serve.ts`'s `createAppRequestHandler` already builds and fully
+on the `Response` `src/loader/serve/serve.ts`'s `createAppRequestHandler` already builds and fully
 controls, never via `webRequest`. Not marked RESOLVED: the Electron defect this entry documents
 is still real and still open upstream: nothing here changes electron/electron#45865's status,
 only routes around it. See `src/broker/policy/README.md`'s `connect-src.ts` note for what the
@@ -4335,7 +4336,7 @@ it or correct the header — the two disagreeing is the actual defect, since a r
 
 #138 gates the favicon fetch behind the T12 address check. The guard resolves the host and then
 `net.fetch` resolves it again independently — **there is no pinning.**
-`src/loader/electron-fetch.ts` *does* pin (`electronFetch(url, pinnedAddresses, signal)`), so the
+`src/loader/electron/fetch.ts` *does* pin (`electronFetch(url, pinnedAddresses, signal)`), so the
 favicon path is deliberately weaker than the install path.
 
 Using Chromium's own `net.resolveHost` for the guard — the same resolver and cache `net.fetch`
@@ -4896,7 +4897,7 @@ all-or-nothing, and turning it into a per-row choice later is a change to the di
 > or wire `requestGrant` to pass a per-capability choice through -- that is real engineering
 > against a real dialog, left for whichever build-step-4 lane picks up the install prompt.
 >
-> **Update 2026-09-14, lane `F-granular`.** That lane landed: `src/loader/manifest.ts` now
+> **Update 2026-09-14, lane `F-granular`.** That lane landed: `src/loader/manifest/manifest.ts` now
 > parses `consentGranularity`, and `src/main/consent/install-consent.ts`'s `requestInstallConsent`
 > branches its staged Allow-all / Choose-individually / Deny-all dialog sequence on
 > `manifest.consentGranularity === 'per-capability'`. `'per-capability'` in a manifest is no
@@ -4935,14 +4936,14 @@ is for, so this is filed as the thing to look at there rather than as an open de
 2026-09-13 update block, above — this entry is the actionable defect that measurement found,
 not a duplicate of it.
 
-`fetch-bundle.ts`'s same-origin and canonical-path checks (`fetchBundle`'s manifest and
+`fetch/bundle.ts`'s same-origin and canonical-path checks (`fetchBundle`'s manifest and
 asset-loop checks alike) read `response.url` as their sole source of truth for where fetched
 bytes actually came from. Measured directly: `net.fetch`'s `Response.url` is `''` on every
 ordinary, non-redirected, 200 OK response — not sometimes wrong, not wrong only for a narrow
 input shape, unconditionally empty across 20 varied request shapes and both `http:`/`https:`,
-using `electron-fetch.ts`'s own fetch options. `originFromUrl('')` is `null` (`new URL('')`
+using `electron/fetch.ts`'s own fetch options. `originFromUrl('')` is `null` (`new URL('')`
 throws with no base, confirmed), so `manifestOrigin !== canonicalOrigin`
-(`src/loader/fetch-bundle.ts`'s manifest check) is always true, and `fetchBundle` rejects every
+(`src/loader/fetch/bundle.ts`'s manifest check) is always true, and `fetchBundle` rejects every
 manifest with "manifest was served from a different origin (invalid) than requested" before
 ever reaching the asset loop — which has the identical shape and would reject the same way.
 
@@ -4970,18 +4971,18 @@ content) merges — this is not a latent risk to plan around, it is a function t
 succeed today.
 
 > **Fixed 2026-09-13, lane S4-A141-fetch-url.** Took the AI recommendation above after
-> independently re-deriving it, rather than on authority: `fetch-bundle.ts`'s four `response.url`
+> independently re-deriving it, rather than on authority: `fetch/bundle.ts`'s four `response.url`
 > reads (manifest origin, manifest canonical path, asset origin, asset canonical path) now derive
 > from the REQUESTED url (`manifestUrl`/`assetUrl`) instead. The checks themselves were kept, not
 > deleted, even though the manifest pair is now provably tautological (`manifestUrl` is built by
 > string concatenation two lines above) and the asset pair duplicates a pre-fetch check already
-> present — both are documented as such in `fetch-bundle.ts` rather than silently left looking
-> load-bearing. `electron-fetch.ts`'s `redirect: 'error'` was extracted into a separately exported
+> present — both are documented as such in `fetch/bundle.ts` rather than silently left looking
+> load-bearing. `electron/fetch.ts`'s `redirect: 'error'` was extracted into a separately exported
 > `netFetch` function specifically so a test could exercise it without also having to pass
-> `electronFetch`'s own loopback-refusing address guard, and `fetch-budget.ts`'s `Fetch` type now
-> states as a REQUIREMENT (not only electron-fetch.ts's own choice) that any implementation must
-> refuse to follow a redirect — fetch-bundle.ts's origin confinement rests entirely on that now,
-> with no independent backstop left inside fetch-bundle.ts itself.
+> `electronFetch`'s own loopback-refusing address guard, and `fetch/budget.ts`'s `Fetch` type now
+> states as a REQUIREMENT (not only electron/fetch.ts's own choice) that any implementation must
+> refuse to follow a redirect — fetch/bundle.ts's origin confinement rests entirely on that now,
+> with no independent backstop left inside fetch/bundle.ts itself.
 >
 > **Three existing tests turned out to depend on the mechanism being removed** (all simulated a
 > redirect via the test stub's `response.url` diverging from the request) and were replaced rather
@@ -5010,7 +5011,7 @@ succeed today.
 > local test server could ever use, so `electronFetch` cannot reach a real `net.fetch` call at all
 > through this API without a genuinely public, routable HTTPS endpoint — which would make the test
 > non-hermetic and is correctly out of scope (`docs/development/testing.md`). The redirect and
-> content-draining proofs above call `netFetch` (electron-fetch.ts's own guard-free primitive,
+> content-draining proofs above call `netFetch` (electron/fetch.ts's own guard-free primitive,
 > extracted for exactly this reason) directly instead, through the real `fetchWithBudget`.
 >
 > **Verified:** `npm run typecheck`, `npm test` (3789 passed, 3 skipped, unchanged from before this
@@ -5028,11 +5029,11 @@ succeed today.
 **2026-09-22: same-origin redirects are now followed, each hop checked (`d-0059`).** Refusing
 every redirect also refused real static hosts, which answer `/index.html` with a redirect to `/`
 (Cloudflare Pages, Vercel) or `/app` with `/app/` (GitHub Pages). `netFetch`
-(`src/loader/electron-fetch.ts`) now fetches with `redirect: 'manual'` and shows every hop to
+(`src/loader/electron/fetch.ts`) now fetches with `redirect: 'manual'` and shows every hop to
 `redirectRefusal` before taking it: same scheme, host and port, at most `MAX_REDIRECTS` (5), or
 the request is aborted. The reasoning above still holds, with "never follows a redirect" narrowed
 to "never follows one off the origin being installed": the bytes of a followed hop come from that
-origin and are pinned under the path that was requested. `fetch-budget.ts`'s `Fetch` type states
+origin and are pinned under the path that was requested. `fetch/budget.ts`'s `Fetch` type states
 the narrowed requirement, and `test/e2e-loader-adapter.test.ts` exercises it against a real
 redirecting server.
 
@@ -5128,7 +5129,7 @@ prompt settling late -- e.g. a `app.grants()` change event -- instead.
 ### A143 -- a cross-origin request inside an app's own partition is denied, not proxied to the real network **[RESOLVED 2026-09-14 -- lane F-reach]**
 
 **Raised 2026-09-13**, lane S4-3-serve, build step 4's serve-from-cache item
-(`ADR-0007`'s other half: `src/loader/serve.ts`, `src/loader/electron-serve.ts`).
+(`ADR-0007`'s other half: `src/loader/serve/serve.ts`, `src/loader/electron/serve.ts`).
 
 `session.fromPartition(...).protocol.handle('https', handler)` intercepts the WHOLE `https`
 scheme for that session -- not merely requests addressed to the app's own host. Confirmed against
@@ -5163,12 +5164,12 @@ closed default is reversible; the reverse is not.
 partition -- not before, since nothing in this MVP's own fixture/flagship apps does today.
 
 **Resolved 2026-09-14, owner decision: let apps reach third-party hosts they were granted.**
-`src/loader/serve.ts`'s handler no longer denies a cross-origin request outright -- it now asks
+`src/loader/serve/serve.ts`'s handler no longer denies a cross-origin request outright -- it now asks
 `fetchThirdParty` (same file), which authorises the request against the app's LIVE `https.connect`
 grant via `checkConnectSecure` (`src/broker/policy/connect-secure.js`) -- the SAME function
 `orivon.net.connectSecure` itself calls, so this can never authorise a request that capability
-would refuse -- and, if allowed, performs the real fetch via `src/loader/serve-reach.ts`'s
-`nodeReachDial`, wired in by `src/loader/electron-serve.ts`.
+would refuse -- and, if allowed, performs the real fetch via `src/loader/reach/reach.ts`'s
+`nodeReachDial`, wired in by `src/loader/electron/serve.ts`.
 
 **What stops this being an open proxy, stated explicitly rather than left implicit:** (1) only
 requests already inside a SPECIFIC app's own partition ever reach this handler at all --
@@ -5187,8 +5188,8 @@ so a hostile response body served through this path cannot execute as script.
 `checkConnectSecure`'s trust model binds identity through the TLS handshake itself; a plain
 connection has none, and `nodeReachDial`'s Node-`https`-based transport (chosen over Electron's
 `net.fetch` specifically so this could be proven end to end over a real TLS handshake -- see
-`serve-reach.ts`'s own header) has no way to pin a request to an address already checked while
-keeping the real hostname for the connection, the same limitation `electron-fetch.ts`'s own A66
+`reach/reach.ts`'s own header) has no way to pin a request to an address already checked while
+keeping the real hostname for the connection, the same limitation `electron/fetch.ts`'s own A66
 already names for a different caller. Authorising a plain request would therefore check one
 address and could legitimately connect to another moments later (T12, DNS rebinding), for a
 general, attacker-URL-reachable surface -- a materially different risk than A66's own narrow,
@@ -5198,7 +5199,7 @@ silently narrowed.
 **CSP widened alongside the handler, from the SAME grant, not a second one.**
 `img-src`/`font-src`/`media-src` now widen to the origin's `https.connect` grant
 (`connect-src.ts`'s `reachSourcesFor`, reusing `connectSrcFor`'s own translation -- Rule 3;
-the header itself is assembled in `src/loader/serve-csp.ts`) -- without this, `default-src
+the header itself is assembled in `src/loader/serve/csp.ts`) -- without this, `default-src
 'self'`'s fallback would keep refusing the very image/font/media loads this decision exists to
 allow, before a request could ever reach the handler above. `connect-src` itself was left
 untouched here, still sourced from `tcp.connect` alone; since 2026-09-22 it also carries the
@@ -5672,7 +5673,7 @@ mechanism.
 is already the named lane for it as of this writing.
 
 > **Update 2026-09-15.** `stream/trust-02-pin-coverage` (PR #198) landed the measurement this
-> entry asked for: `src/loader/pin-coverage.ts` and `electron-serve.ts`'s `pinCoverageFor` now
+> entry asked for: `src/loader/serve/pin-coverage.ts` and `electron/serve.ts`'s `pinCoverageFor` now
 > track, per origin, how many requests and bytes came from the pin versus a granted third-party
 > host, and `src/trust/delivery-ladder.ts`'s `DeliveryHistoryInput`/`DeliveryEvidence` now carry
 > that as a `pinCoverage` field end to end.
@@ -5968,7 +5969,7 @@ building `pathname`, before `isValidCanonicalPath` ever runs. Measured: `new
 URL('https://probe.example/%2e%2e/evil.js').pathname === '/evil.js'`, and the same for a
 two-level `.../%2e%2e/%2e%2e/...` case.
 
-**Not an exploit, and the reviewer said so plainly.** `fetch-bundle.ts`'s asset loop is
+**Not an exploit, and the reviewer said so plainly.** `fetch/bundle.ts`'s asset loop is
 protected upstream -- `manifest.ts`'s `validateRelativePath` already rejects a dot segment (or
 its percent-encoded spelling) in a manifest-declared `entry`/`assets` string before it is ever
 joined into a URL, per-segment, for exactly this reason (see that function's own comment on why
@@ -6002,7 +6003,7 @@ elsewhere, 38/38 in the touched file, 1900/1900 across `src/broker/policy/` and 
 ### A155 -- nothing verified that `electronFetch` still delegates to a call carrying `redirect: 'error'` **[RESOLVED 2026-09-14 -- ADV-fix2]**
 
 **Raised 2026-09-14**, same adversarial review as A154, confirmed independently. A141's fix
-(above) made `redirect: 'error'` the ONLY thing keeping `fetch-bundle.ts`'s same-origin and
+(above) made `redirect: 'error'` the ONLY thing keeping `fetch/bundle.ts`'s same-origin and
 canonical-path checks honest -- that entry's own resolution block says the remaining checks are
 "provably tautological" -- and the requirement lives in a doc comment on `netFetch`, not in the
 type system. `test/e2e-loader-adapter.test.ts`'s "THE LOAD-BEARING PROOF" (its own words) drives
@@ -6026,7 +6027,7 @@ Design notes). No genuinely public, routable HTTPS endpoint exists for this repo
 target, so a real redirect through `electronFetch`'s own guard is not reachable hermetically.
 
 **Fixed 2026-09-14, ADV-fix2**, by closing the seam at the boundary that actually matters
-instead: a new `src/loader/tests/electron-fetch.test.ts`, mocking `electron`'s `net.fetch`/
+instead: a new `src/loader/electron/tests/fetch.test.ts`, mocking `electron`'s `net.fetch`/
 `net.resolveHost` (the same pattern `src/main/tests/favicon.test.ts` already uses for the same
 reason), asserting the EXACT arguments `net.fetch` receives -- both through `netFetch` directly
 and through `electronFetch` once its guard passes, on both of the guard's two branches (a public
@@ -6046,7 +6047,7 @@ tests with `TypeError: net.request is not a function`. Both times, the three gua
 kept passing, confirming they exercise a genuinely different code path rather than coincidentally
 passing alongside a broken one.
 
-**Not touched:** `src/loader/electron-fetch.ts` itself, `test/e2e-loader-adapter.test.ts`, and
+**Not touched:** `src/loader/electron/fetch.ts` itself, `test/e2e-loader-adapter.test.ts`, and
 `test/loader-adapter-entry.ts` -- this was a coverage gap, not a code defect, and the e2e suite's
 own real-Electron, real-redirecting-server proof of `redirect: 'error'` stays exactly as
 valuable as it already was for the one thing only a real process can prove (a real
@@ -6204,7 +6205,7 @@ first `registerApp` call for that origin (`grantsHydrated`'s own doc: re-validat
 grant needs a manifest), and `registerApp`'s only production callers run after a page has
 already loaded and reported its manifest hint -- which cannot happen before that first document
 is already served with whatever CSP `connectSrcFor` computes from an empty grant list.
-`src/loader/tests/electron-serve.test.ts`'s new "restorePinnedServing across a restart" suite
+`src/loader/electron/tests/serve.test.ts`'s new "restorePinnedServing across a restart" suite
 proves both halves against a real `createBroker`/`GrantLedger`/`LedgerStorage`: the first
 request truly is `'self'`-only despite a real persisted grant, and the SAME already-registered
 handler correctly reflects the grant on its very next request once `registerApp` runs -- so "a
@@ -6249,14 +6250,14 @@ already reads off disk for **display only**, never as live authority (`A137`), s
 nothing to what is actually served or authorised. It converts a silent degradation into a
 detectable one (a support session or a developer reading the log can see it happening); it does
 not tell the affected person anything, because no UI reads this signal yet. That is the honest
-extent of what this lane closed -- see `src/loader/electron-serve.ts`'s `hasUnhydratedPersistedGrant`.
+extent of what this lane closed -- see `src/loader/electron/serve.ts`'s `hasUnhydratedPersistedGrant`.
 
 **AI recommendation, not an owner decision:** resolve this alongside `A146`, since fixing one all
 but fixes the other, rather than building a second, narrower "reload this one tab" mechanism
 just for grants.
 
 **Update 2026-09-14, lane F-reach -- partially resolved, and the reasoning for why only partly is
-the more important part.** `A143`'s own resolution made `src/loader/serve.ts`'s `fetchThirdParty`
+the more important part.** `A143`'s own resolution made `src/loader/serve/serve.ts`'s `fetchThirdParty`
 a SECOND, independent, per-request LIVE gate for `https.connect` -- reading `broker.app.grants`
 fresh and deciding with `checkConnectSecure`, exactly the function `orivon.net.connectSecure`
 itself calls. That changes the answer to this entry's own framing question ("work out whether
@@ -6266,7 +6267,7 @@ permissive grants nothing by itself** -- it only decides whether the browser att
 the handler still, correctly, refuses if the grant was not real. So `img-src`/`font-src`/
 `media-src` (this same PR's own new CSP directives, sourced from `https.connect`) now widen from
 `persistedAppsSync`'s real, disk-persisted state during the narrow post-restart window, via
-`electron-serve.ts`'s `secureHeaderPatternsFor` -- the same-shaped fallback this entry's own
+`electron/serve.ts`'s `secureHeaderPatternsFor` -- the same-shaped fallback this entry's own
 "what this lane did instead" section already used for its diagnostic, now feeding the actual
 header rather than only a log line.
 
@@ -6280,9 +6281,9 @@ other live re-check at all. Widening `connect-src` from a persisted-but-not-yet-
 would therefore widen a REAL authorisation for that one request type, exactly the mistake `A137`
 forbids -- the reasoning that makes the `https.connect` fallback above safe (a live handler
 underneath re-checks every actual request) simply does not hold for `WebSocket`. See
-`src/loader/electron-serve.ts`'s `grantedConnectPatternsFor` and `secureHeaderPatternsFor`, whose
+`src/loader/electron/serve.ts`'s `grantedConnectPatternsFor` and `secureHeaderPatternsFor`, whose
 doc comments now cross-reference this distinction directly, and the two tests in
-`electron-serve.test.ts` proving each side (`'A158 STILL OPEN FOR connect-src'` /
+`electron/tests/serve.test.ts` proving each side (`'A158 STILL OPEN FOR connect-src'` /
 `'A158 RESOLVED FOR THE HEADER'`).
 
 **So, precisely, as of lane F-reach:** RESOLVED for `img-src`/`font-src`/`media-src` (the two new
@@ -6295,7 +6296,7 @@ directives that PR introduces). STILL OPEN for `connect-src` -- a restored app's
 > from, and the owner supplied the insight that makes an EARLIER read safe: *"changing the manifest
 > changes also the hash, so a change on manifest is enough to re-start the status of permissions,
 > the same a new added/modified file would."* The manifest lives at `/.well-known/orivon.json`
-> **inside the pinned bundle**, as a leaf of `ADR-0009`'s hash tree, and `serve-verify.ts`'s
+> **inside the pinned bundle**, as a leaf of `ADR-0009`'s hash tree, and `serve/verify.ts`'s
 > `verifyPinnedTree` recomputes that whole tree against `pin.bundleHash` before ANY byte of the
 > bundle is servable. So the manifest on disk is not "a saved value" in the sense `A137` ruled
 > out -- it is cryptographically tied to the exact bundle a person already consented to, and
@@ -6320,9 +6321,9 @@ directives that PR introduces). STILL OPEN for `connect-src` -- a restored app's
 > **The mechanism.** `GrantLedger.hydrateFromPinnedManifest` (`src/broker/grants/grant-ledger.ts`)
 > runs the SAME `hydrateGrants` re-validation `registerApp` itself performs, callable independently
 > of it, gated on the SAME `grantsHydrated` flag so it is a no-op once the real `registerApp` has
-> already spoken. `src/loader/serve.ts`'s `verifiedManifestFor` shares its whole-tree verification
+> already spoken. `src/loader/serve/serve.ts`'s `verifiedManifestFor` shares its whole-tree verification
 > with `createAppRequestHandler` (one `resolveVerifiedBundle` helper, not two copies) and answers
-> `undefined` for anything short of a fully re-verified pin. `electron-serve.ts`'s
+> `undefined` for anything short of a fully re-verified pin. `electron/serve.ts`'s
 > `registerServingFor` calls both, in that order, BEFORE `registerAppOrigin` ever wires a handler
 > onto the session -- so there is no window in which a request could reach a handler whose grants
 > are not already live. **The later, freshly fetched manifest stays fully authoritative**:
@@ -6333,14 +6334,14 @@ directives that PR introduces). STILL OPEN for `connect-src` -- a restored app's
 > covered by the manifest in force is refused entirely, not narrowed to the covered subset -- a
 > pre-existing rule, unchanged by this lane).
 >
-> **What this closes, concretely.** `liveGrantedPatternsFor` (`electron-serve.ts`, the function
+> **What this closes, concretely.** `liveGrantedPatternsFor` (`electron/serve.ts`, the function
 > `grantedConnectPatternsFor`/`secureHeaderPatternsFor` now both delegate to -- Rule 3, one
 > implementation) reads `broker.app.grants` directly, with no disk-fallback special case for
 > either header any more: by the time either can be called, the ledger already holds the truth.
 > `authoriseReachFor`'s live gate for a real third-party `https.connect` request, and any live
 > capability call an app's own page makes (`orivon.net.connect`/`connectSecure`, reading the SAME
 > `ledger.currentGrant`), see the identical, already-hydrated answer. Proven end to end in
-> `src/loader/tests/electron-serve.test.ts`'s "restorePinnedServing across a restart" suite,
+> `src/loader/electron/tests/serve.test.ts`'s "restorePinnedServing across a restart" suite,
 > against a real `GrantLedger`/`createBroker`/`LedgerStorage`, not a stub: a real, persisted
 > `tcp.connect` grant widens the FIRST served document's `connect-src` with no registerApp call
 > ("A158 RESOLVED FOR connect-src"); the equivalent `https.connect` case widens `img-src`/
@@ -6356,18 +6357,18 @@ directives that PR introduces). STILL OPEN for `connect-src` -- a restored app's
 > design but because it blocked verifying this fix honestly.** Building a REAL pinned manifest that
 > declares `https.connect` (needed so `hydrateFromPinnedManifest`'s re-validation has something
 > genuine to check against, rather than a manifest and a grant that merely happened to agree by
-> construction) hit `src/loader/manifest-capabilities.ts`'s `readNet`, which had never implemented
+> construction) hit `src/loader/manifest/capabilities.ts`'s `readNet`, which had never implemented
 > `net.https` at all -- `NET_KEYS` listed only `tcp`/`udp`/`concurrentSockets`, so ANY manifest
 > declaring `https.connect` was rejected outright by `parseManifest`, both at install
-> (`fetch-bundle.ts` calls the identical function) and every time a pinned bundle's manifest is
+> (`fetch/bundle.ts` calls the identical function) and every time a pinned bundle's manifest is
 > read back. Filed and fixed as **A164** below -- every existing test exercising `https.connect`
 > injected the grant as a raw callback, never through a real declared-and-parsed manifest, which
 > is exactly why this had no test that could have caught it.
 >
 > Verified: `src/broker/grants/tests/grant-ledger-pin-hydration.test.ts` (the `GrantLedger`
 > contract in isolation -- idempotence, the no-op-once-registered case, the fresh-GrantId rule, the
-> owner's own narrowing/dropping scenario), `src/loader/tests/serve.test.ts`'s `verifiedManifestFor`
-> suite, and the `electron-serve.test.ts` suite named above.
+> owner's own narrowing/dropping scenario), `src/loader/serve/tests/serve.test.ts`'s `verifiedManifestFor`
+> suite, and the `electron/tests/serve.test.ts` suite named above.
 
 ### A159 -- `scripts/smoke.mjs` leaked its temp profile on every run, and the file is now exactly at its line ceiling **[RESOLVED 2026-09-14 in part; the ceiling is STILL OPEN]**
 
@@ -6528,7 +6529,7 @@ landed -- exact output in this lane's final report / PR body.
 
 ### A163 -- third-party reach (A143) only proxies `https:`; a plain `http:` cross-origin request inside an app's own partition stays denied **[AI-REC -- not an owner decision]**
 
-**Raised 2026-09-14**, lane F-reach, while deciding how `fetchThirdParty` (`src/loader/serve.ts`)
+**Raised 2026-09-14**, lane F-reach, while deciding how `fetchThirdParty` (`src/loader/serve/serve.ts`)
 should authorise a cross-origin request `A143` newly lets through to the real network.
 
 `ADR-0017`'s own routed `fetch()` (`src/preload/routed/fetch.ts`) already splits on scheme:
@@ -6543,7 +6544,7 @@ what `tcp.connect` the app holds.
 dialling the EXACT resolved literal the check just validated, never re-resolving the hostname
 afterwards (`connect.ts`'s own header: "RESOLVE ONCE, check EVERY address that came back, and hand
 the caller the validated literals to dial"). `fetchThirdParty`'s actual network I/O
-(`serve-reach.ts`'s `nodeReachDial`) is Node's own `https` module, dialling by HOSTNAME -- there is
+(`reach/reach.ts`'s `nodeReachDial`) is Node's own `https` module, dialling by HOSTNAME -- there is
 no way to hand it a pre-validated literal address while keeping the real hostname for the
 connection and the `Host` header. Authorising a plain request here would therefore check one
 address (at grant-authorisation time) and could legitimately connect to a DIFFERENT one moments
@@ -6551,7 +6552,7 @@ later if the name's DNS answer changes in between (T12, DNS rebinding) -- the ch
 connection would be resolving independently, reopening exactly the gap `checkConnect`'s own design
 exists to close.
 
-**This is the SAME limitation `electron-fetch.ts`'s own A66 already names** ("neither `net.fetch`
+**This is the SAME limitation `electron/fetch.ts`'s own A66 already names** ("neither `net.fetch`
 nor `net.request` exposes a way to pin a request's underlying connection to a specific resolved
 address while keeping the real hostname for TLS SNI/the Host header") -- confirmed there against
 Electron's API surface, and true of Node's `https` module for the identical reason (neither
@@ -6578,7 +6579,7 @@ its own partition -- not before.
 **Raised 2026-09-14**, lane `F-granular` (`stream/shell-09-per-capability-consent`), closing
 A138's contracts-only landing (PR #192) with a real implementation.
 
-**Part 1, urgent and self-contained, landed first.** `src/loader/manifest.ts`'s `readManifest`
+**Part 1, urgent and self-contained, landed first.** `src/loader/manifest/manifest.ts`'s `readManifest`
 rejects any field its `MANIFEST_KEYS` allowlist does not name -- and that allowlist never learned
 `consentGranularity` when PR #192 added it to `Manifest`. Any app author who read the contract,
 added the field, and shipped it got refused at install with "manifest has an unrecognised field",
@@ -6629,7 +6630,7 @@ extend to it or use its own.
 **Needed by:** whenever the owner reviews this lane's PR, the natural moment to also settle
 whether the update-time widening path should match.
 
-### A164 -- `src/loader/manifest-capabilities.ts` never implemented `net.https`, so a manifest declaring `https.connect` was rejected outright, at install and at every serve **[RESOLVED 2026-09-14 -- lane G-hydrate]**
+### A164 -- `src/loader/manifest/capabilities.ts` never implemented `net.https`, so a manifest declaring `https.connect` was rejected outright, at install and at every serve **[RESOLVED 2026-09-14 -- lane G-hydrate]**
 
 **Raised and fixed 2026-09-14**, lane `G-hydrate`, closing `A158`. Not something this lane set out
 to find: `A158`'s own fix needed a test that pins a REAL bundle whose manifest actually declares
@@ -6643,22 +6644,22 @@ mechanism at all). Building that fixture hit the bug directly.
 (`src/broker/policy/request-grant.ts`'s `CONNECT_SHAPED_CAPABILITIES`, `manifest-patterns.ts`'s
 own `secureConnect` line, which even carries a comment about a PRIOR bug in the same neighbourhood:
 "ADDED https.connect went undetected by decideUpdate()'s subset check"). But
-`src/loader/manifest-capabilities.ts`'s `readNet` -- the LOADER's own, independent manifest
+`src/loader/manifest/capabilities.ts`'s `readNet` -- the LOADER's own, independent manifest
 parser -- never learned about it: `NET_KEYS` listed only `['tcp', 'udp', 'concurrentSockets']`, so
 `extraKey(raw, NET_KEYS)` rejected any manifest with a `net.https` field as an "unrecognised
 field", unconditionally. `parseManifest` is called from exactly two places, both load-bearing:
-`fetch-bundle.ts` (install time) and `serve.ts`'s `createAppRequestHandler` (every time a pinned
+`fetch/bundle.ts` (install time) and `serve.ts`'s `createAppRequestHandler` (every time a pinned
 bundle is served). So a manifest declaring `https.connect` could not be installed, and if somehow
 already pinned before this bug, could not be served either -- the entire capability was
 unreachable through any real app, only through a test that injects the grant as a raw callback and
 never parses a manifest at all, which is exactly what every existing test that exercises
-`https.connect` (`serve.test.ts`, `electron-serve.test.ts`, pre-this-lane) did. No manifest field
+`https.connect` (`serve.test.ts`, `electron/tests/serve.test.ts`, pre-this-lane) did. No manifest field
 introduced since `ADR-0017` had a test that actually round-tripped it through the real parser.
 
 **Fixed directly, not filed for later**, because it blocked verifying `A158`'s own fix honestly:
 `readNet` gained a `readHttps` (mirroring `readTcp`'s own `connect` field, reusing
 `validateConnectPattern`/`validateConnectHost` rather than a second grammar -- Rule 3), `NET_KEYS`
-now lists `https`. `src/loader/tests/manifest-capabilities.test.ts`'s new
+now lists `https`. `src/loader/manifest/tests/capabilities.test.ts`'s new
 `capabilities.net.https.connect (A164)` suite proves it parses (including `"*:*"`, ADR-0017's
 unlimited-HTTPS declaration), sits alongside `tcp`/`udp`/`concurrentSockets` without disturbing
 them, and still rejects the same malformed patterns and unrecognised sibling fields every other
@@ -6672,8 +6673,8 @@ field should know this file's allowlist does not grow itself.
 
 ### A165 -- an automatic check now fails CI when `src/contracts/manifest.ts` declares a field the loader will not accept, closing the failure mode behind A164 and the `consentGranularity` gap **[RESOLVED 2026-09-14 -- lane G-parity]**
 
-**The failure mode, named once rather than per incident.** `src/loader/manifest.ts` and
-`manifest-capabilities.ts` reject any manifest field they do not recognise, using hand-maintained
+**The failure mode, named once rather than per incident.** `src/loader/manifest/manifest.ts` and
+`manifest/capabilities.ts` reject any manifest field they do not recognise, using hand-maintained
 allowlists (`MANIFEST_KEYS`, `CAPABILITIES_KEYS`, `NET_KEYS` and their siblings). Twice in one day
 -- `Manifest.consentGranularity` (closed in a follow-up before this lane started) and `A164`'s
 `NetCapability.https` -- a field landed in the contract with no matching update to the loader's
@@ -6700,7 +6701,7 @@ interface currently declares is already accepted, following `A164`'s fix and the
 it adds a row there, with why, or this check fails on their branch -- which is the intended
 outcome, not a false positive.
 
-**Also landed: a round-trip regression test**, `src/loader/tests/manifest-contract-parity.test.ts`
+**Also landed: a round-trip regression test**, `src/loader/manifest/tests/contract-parity.test.ts`
 -- worth having independent of the check above, since it exercises the real `parseManifest` rather
 than a description of it. It types one "kitchen sink" manifest against `Required<Manifest>` (and
 `Required<>` on every nested capability interface), so a future field added anywhere in that chain
@@ -6909,7 +6910,7 @@ broker capability (item 3, `A107`).
 ### A192 -- an app granted unlimited HTTPS gets exactly the same CSP as an app granted nothing, so the reach it was granted is blocked before any code runs **[RESOLVED 2026-09-22 -- owner decision]**
 
 `reachSourcesFor` (`src/broker/policy/connect-src.ts`; the header is assembled in
-`src/loader/serve-csp.ts`) builds `img-src`/`font-src`/`media-src`
+`src/loader/serve/csp.ts`) builds `img-src`/`font-src`/`media-src`
 from the granted `https.connect` patterns by reusing `connectSrcFor`. That function deliberately
 OMITS a `*` host, classifying it `host-any-public-unicast`, and the reason is good: CSP's bare `*`
 would also permit loopback and the LAN, which a `*` grant explicitly does not (`A82`).
@@ -7132,7 +7133,7 @@ missingReadonly: [] }` unchanged.
 
 ### A179 -- a second hand-maintained duplicate of a shape, created two PRs after the guard (A165) against exactly this **[RESOLVED 2026-09-15 -- lane FIX-5]**
 
-**The shape.** `src/loader/pin-coverage.ts`'s `PinCoverageSnapshot` and
+**The shape.** `src/loader/serve/pin-coverage.ts`'s `PinCoverageSnapshot` and
 `src/trust/delivery-ladder.ts`'s `PinCoverageEvidence` are field-for-field identical
 (`pinnedRequests`, `thirdPartyRequests`, `deniedRequests`, `pinnedBytes`, `thirdPartyBytes`,
 `bytesIncomplete` -- same names, same types, in both). The duplication itself is deliberate and
@@ -7160,7 +7161,7 @@ typing already lets a type with an extra field satisfy `extends` against a narro
 field added to only one side is not guaranteed caught by both directions naively; the
 distributive-conditional form does not have that gap; it fails to reduce to `true` for any
 difference at all -- added, removed or retyped, on either side. Follows the precedent
-`src/loader/tests/manifest-contract-parity.test.ts` set for A164/A165: a type mismatch here is an
+`src/loader/manifest/tests/contract-parity.test.ts` set for A164/A165: a type mismatch here is an
 `npm run typecheck` failure, not a silent gap or a runtime-only assertion.
 
 **Proven to actually fail, not just written and trusted**, in this lane: a field
@@ -7171,7 +7172,7 @@ the constraint 'true'.` -- plus a second, expected error at the test's own runti
 (65,11) and an unrelated pre-existing error inside `pin-coverage.ts` itself from the now-missing
 field on its own tracker's return value (a side effect of the deliberately-broken fixture, not
 part of the binding). The field was then removed and `npm run typecheck` was re-run clean;
-`git diff --stat src/loader/pin-coverage.ts` showed no changes, confirming a clean revert.
+`git diff --stat src/loader/serve/pin-coverage.ts` showed no changes, confirming a clean revert.
 ### A181 -- pin coverage is measured but nothing reads it yet **[RESOLVED 2026-09-23]**
 
 **Resolution.** `src/main/browsing/site-trust.ts`'s `buildSiteTrust` is now the first production
@@ -7183,12 +7184,12 @@ popup's own Web3 Score page. Both claims below are now false; left in place for 
 tree.
 
 `stream/trust-02-pin-coverage` (PR #198) built the measurement `A166` asked for --
-`src/loader/pin-coverage.ts` tracks, per origin, how many requests and bytes came from the pin
+`src/loader/serve/pin-coverage.ts` tracks, per origin, how many requests and bytes came from the pin
 versus a granted third-party host -- but nothing in production reads it back out.
 
 **Verified by grep, both claims:**
-- `pinCoverageFor` (`src/loader/electron-serve.ts:49`) has no caller anywhere under `src/`
-  outside its own test file (`src/loader/tests/electron-serve.test.ts`).
+- `pinCoverageFor` (`src/loader/electron/serve.ts:49`) has no caller anywhere under `src/`
+  outside its own test file (`src/loader/electron/tests/serve.test.ts`).
 - `deliveryLadder` (`src/trust/delivery-ladder.ts`) has no call site anywhere under `src/`
   outside its own test file -- so `DeliveryHistoryInput.pinCoverage` is never supplied by
   production code either; nothing yet constructs the input that would carry a coverage snapshot
@@ -7265,11 +7266,11 @@ depending on which branch ran; and both other accept paths now retire the releva
 methods so no new broker primitive was needed, and `update-outcomes.ts`'s capability-prompt accept
 clears the whole record, justified because its `requestedPatterns` is the manifest's current
 declared set, the same shape as the all-or-nothing accept.
-### A173 -- `serve-reach.ts`'s outbound request body was buffered unbounded in the main process **[RESOLVED 2026-09-15]**
+### A173 -- `reach/reach.ts`'s outbound request body was buffered unbounded in the main process **[RESOLVED 2026-09-15]**
 
 **Raised and fixed 2026-09-15**, lane FIX-4 (`stream/loader-10-reach-hygiene`), an independent
 review finding re-verified by the fleet conductor reading the code before this lane started.
-`nodeReachDial` (`src/loader/serve-reach.ts`) read an app's own request body with
+`nodeReachDial` (`src/loader/reach/reach.ts`) read an app's own request body with
 `Buffer.from(await request.arrayBuffer())` -- the file's own header carefully argues the
 RESPONSE side needs no size cap (`Readable.toWeb` streams it) and says nothing about the
 request, which is the gap: a page `fetch()`-ing a large or effectively unbounded body to a
@@ -7293,16 +7294,16 @@ more permanently.
 
 **Verified (this lane):** a test sending a body one byte over the cap now rejects with a
 `REACH_MAX_REQUEST_BODY_BYTES`-naming `TypeError`, confirmed to resolve (not reject) against the
-pre-fix code first; a body exactly at the cap still succeeds. `src/loader/tests/serve-reach.test.ts`.
+pre-fix code first; a body exactly at the cap still succeeds. `src/loader/reach/tests/reach.test.ts`.
 
 **2026-09-22: the number it matched is gone.** The routed path no longer caps a response body:
 it streams, reading at most 512 KiB ahead of the app (`src/preload/README.md`, "The routed
 network path's numbers"; `d-0042`), so `ROUTED_FETCH_MAX_BODY_BYTES` and `readAllCapped` no
 longer exist. `REACH_MAX_REQUEST_BODY_BYTES` (16 MiB) stands on its own reason, an app's request
-body buffered in the privileged main process before dialling; `serve-reach.ts`'s comment on it
+body buffered in the privileged main process before dialling; `reach/reach.ts`'s comment on it
 still names the removed constant as its source and needs rewording to that reason.
 
-### A174 -- `serve-reach.ts` forwarded hop-by-hop response headers verbatim, including a `transfer-encoding` that was already false **[RESOLVED 2026-09-15]**
+### A174 -- `reach/reach.ts` forwarded hop-by-hop response headers verbatim, including a `transfer-encoding` that was already false **[RESOLVED 2026-09-15]**
 
 **Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173. `forwardedRequestHeaders`
 already stripped `host`/`connection`/`content-length` with an explicit
@@ -7326,12 +7327,12 @@ two or mis-describe why `transfer-encoding` matters on the response side specifi
 **Verified (this lane):** a test against a real chunked, `Connection: keep-alive`-declaring TLS
 response confirms all three headers are now absent from the `Response` while `content-type`
 still passes through untouched -- confirmed to fail against the pre-fix code first (transfer-
-encoding measured as `'chunked'`, not `null`). `src/loader/tests/serve-reach.test.ts`.
+encoding measured as `'chunked'`, not `null`). `src/loader/reach/tests/reach.test.ts`.
 
 ### A175 -- pin coverage counted the whole pinned asset's size even when a Range request served only a slice, or nothing at all **[RESOLVED 2026-09-15]**
 
 **Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173/A174.
-`createAppRequestHandler` (`src/loader/serve.ts`) called `recordCoverage?.('pinned',
+`createAppRequestHandler` (`src/loader/serve/serve.ts`) called `recordCoverage?.('pinned',
 content.length)` BEFORE `buildResponse` applied the request's `Range` header, so a 10 MB video
 fetched in many range requests recorded the full 10 MB every single time, and an unsatisfiable
 range (416, no body at all) recorded the full asset size for zero bytes actually sent. Third-
@@ -7354,11 +7355,11 @@ silent zero IS the correct, measured answer).
 **Verified (this lane):** three tests confirmed failing against the pre-fix code first (a single
 5-byte range recorded 300; fifty 10-byte range requests recorded 15000, not 500; a 416 recorded
 300, not 0), then passing after the fix; a fourth confirms a denied same-origin request still
-adds nothing. `src/loader/tests/pin-coverage.test.ts`.
+adds nothing. `src/loader/serve/tests/pin-coverage.test.ts`.
 
 ### A183 -- an app could smuggle a second request past the one host its grant names **[RESOLVED 2026-09-15 -- found by the review run's own security pass]**
 
-`nodeReachDial` (`src/loader/serve-reach.ts`) stripped only `host`, `connection` and
+`nodeReachDial` (`src/loader/reach/reach.ts`) stripped only `host`, `connection` and
 `content-length` from the OUTBOUND request. RFC 7230 SS6.1's remaining hop-by-hop headers --
 `transfer-encoding` above all -- were forwarded from whatever the app set, and nothing upstream of
 this file restricts an app's headers.
@@ -8360,7 +8361,7 @@ either vanished silently or the whole pattern was dropped, never rendered with p
 **And this render-layer robustness is redundant with validation that already exists upstream, at
 both real production entry points**, confirmed by reading rather than assumed: `isDeclarableConnectPattern`
 (the `app.requestGrant` gate, `src/broker/policy/request-grant.ts`) and `validateConnectPattern`
-(the manifest-parse gate, `src/loader/manifest-capabilities.ts`) both reject outright any pattern
+(the manifest-parse gate, `src/loader/manifest/capabilities.ts`) both reject outright any pattern
 where `pattern !== pattern.trim()` -- `validateConnectPattern`'s own comment says this check
 exists specifically "to catch the padding parseConnectPattern's own trim would otherwise hide
 from us." A padded pattern therefore never reaches a real dialog: the whole `app.requestGrant`
@@ -8377,7 +8378,7 @@ as such rather than having a fix manufactured for it.
 ### A199 -- revoking a grant did not stop a third-party reach request already in flight **[FIXED -- stream/loader-11-reach-limits]**
 
 **Raised and fixed 2026-09-17**, `/claude-security` scan finding, lane `stream/loader-11-reach-
-limits`. `fetchThirdParty` (`src/loader/serve.ts`) authorised an app's proxied third-party HTTPS
+limits`. `fetchThirdParty` (`src/loader/serve/serve.ts`) authorised an app's proxied third-party HTTPS
 request exactly once, before dialling (`AuthoriseReach`) -- after that the request ran to
 completion regardless of anything that happened to the grant. A person who revoked an
 `https.connect` grant, watched the row disappear from the permissions UI, and kept receiving
@@ -8386,7 +8387,7 @@ same shape this repo already closed twice for raw sockets (`GrantLedger.revokePe
 teardown cascade, and A84's unlink-teardown), now closed a third time for a resource that was
 never a `HandleTable` handle at all.
 
-**Fix:** `src/loader/serve-reach-guard.ts` (new file) wraps the streamed `Response` body a
+**Fix:** `src/loader/reach/guard.ts` (new file) wraps the streamed `Response` body a
 granted reach returns. While the body is still being read, it re-calls the SAME `authoriseReach`
 function `fetchThirdParty` already called once, on a bounded timer (`REACH_REVOCATION_POLL_MS`,
 200ms) -- a revoke it catches cancels the underlying reader and calls `controller.error()` on the
@@ -8396,7 +8397,7 @@ was the whole file". A broker fault while polling (the authorisation check itsel
 fails closed the same way, never leaves the app reading past a check that could not complete.
 
 **Where this hooks in, and why the other two options were worse:** the HANDLER
-(`fetchThirdParty`/`guardReachResponse`), not the dial (`serve-reach.ts`) or the grant ledger's
+(`fetchThirdParty`/`guardReachResponse`), not the dial (`reach/reach.ts`) or the grant ledger's
 own revocation cascade (`HandleTable.revoke`) -- full reasoning in `src/loader/README.md`'s Design
 notes ("Why A199's cancellation hooks in the handler..."), not repeated here. Short version: the
 dial file is deliberately broker-policy-free and network-I/O-only; teaching it about grants would
@@ -8417,8 +8418,8 @@ than silently chosen (CLAUDE.md Rule 2).
 the grant WHILE it is still open (never before the request starts), and asserts the next read
 actually rejects within a bounded real-time race -- proven to FAIL against the pre-fix code
 (`expect(raced.kind).not.toBe('timed-out')` failed: the read hung until the test's own timeout).
-See `src/loader/tests/serve.test.ts`'s `fetchThirdParty A199` suite and
-`src/loader/tests/serve-reach-guard.test.ts` for the direct unit-level proof (fake timers, no
+See `src/loader/serve/tests/serve.test.ts`'s `fetchThirdParty A199` suite and
+`src/loader/reach/tests/guard.test.ts` for the direct unit-level proof (fake timers, no
 handler indirection).
 
 ### A200 -- third-party reach requests never counted toward an app's declared socket allowance **[FIXED -- stream/loader-11-reach-limits]**
@@ -8436,13 +8437,13 @@ its own lifetime exactly like a socket does.
 `Broker.app.socketAllowanceSync` (new, `src/broker/broker-contracts.ts`/`index.ts`) is a one-line,
 synchronous, never-throwing delegate to `GrantLedger.socketAllowance` -- same category as
 `hasGrantsSync`/`isRegisteredSync`, and the same kind of loader-specific seam
-`hydrateFromPinnedManifest` already is (A158). `src/loader/electron-serve.ts`'s `reachSlotsFor`
+`hydrateFromPinnedManifest` already is (A158). `src/loader/electron/serve.ts`'s `reachSlotsFor`
 keeps the actual per-origin IN-FLIGHT COUNT (necessarily new state: a proxied reach request is
 never a `HandleTable` resource), checked-and-reserved as one synchronous step against that number
 -- the same "check and reserve must not straddle an `await`" discipline
-`GrantLedger.reserveFsBytes`'s own doc names. `src/loader/serve.ts`'s `fetchThirdParty` reserves a
+`GrantLedger.reserveFsBytes`'s own doc names. `src/loader/serve/serve.ts`'s `fetchThirdParty` reserves a
 slot AFTER authorisation (a request never granted must not consume one at all) and BEFORE
-dialling, and `src/loader/serve-reach-guard.ts`'s `guardReachResponse` -- the SAME wrapper A199
+dialling, and `src/loader/reach/guard.ts`'s `guardReachResponse` -- the SAME wrapper A199
 needed anyway -- releases it exactly once, on every path the request can end: a clean EOF, an
 upstream read error, the consumer cancelling its own read (navigation, an aborted `fetch()`), and
 a revoke the A199 poll catches.
@@ -8453,8 +8454,8 @@ against the pre-fix code (`expected 200 to be 404`: the third request dialled an
 test proves the slot is restored once the two held requests actually finish. A third and fourth
 prove release on the two failure-shaped paths this kind of fix usually gets wrong: a dial that
 throws, and the consumer cancelling its own read -- see
-`src/loader/tests/serve.test.ts`'s `fetchThirdParty A200` suite, `src/loader/tests/serve-reach-
-guard.test.ts`, and `src/loader/tests/electron-serve.test.ts`'s `registerServingFor -- A200 real
+`src/loader/serve/tests/serve.test.ts`'s `fetchThirdParty A200` suite, `src/loader/tests/serve-reach-
+guard.test.ts`, and `src/loader/electron/tests/serve.test.ts`'s `registerServingFor -- A200 real
 wiring` suite (a REAL `createBroker`, a manifest that actually declares `concurrentSockets`, and
 a real `Broker.app.socketAllowanceSync` reached end to end).
 
@@ -8732,7 +8733,7 @@ a response a `protocol.handle` handler returns. A cross-origin response with no
 `Access-Control-Allow-Origin` was readable, a `PUT` sent no preflight, and the handler's
 `Request` carries no `Origin` header at all. The reach path now adds CORS response headers for
 the app's origin and answers a browser preflight with a synthetic 204
-(`src/loader/serve-reach-cors.ts`), and `web-context-host.ts` wraps an isolated context's
+(`src/loader/reach/cors.ts`), and `web-context-host.ts` wraps an isolated context's
 responses the same way. Today none of it changes an outcome.
 
 **Why keep it:** if a later Electron starts enforcing CORS here, worker `fetch` and XHR on an
@@ -8743,9 +8744,9 @@ load-bearing and need tests that fail without them.
 ### A213 -- the reach path's queue, idle timeout and redirect cap are provisional **[AI-REC]**
 
 Filed 2026-09-22 (`d-0049`). A subresource request over the app's socket allowance now waits in
-a per-origin FIFO bounded at 256 waiters and 30 s (`serve-reach-slots.ts`); the dial's idle
+a per-origin FIFO bounded at 256 waiters and 30 s (`reach/slots.ts`); the dial's idle
 timeout is five minutes without a byte (`REACH_IDLE_TIMEOUT_MS`), so long-polls and event streams
-live. Both numbers were chosen, not measured. The redirect cap (20 hops, `serve-reach-redirects.ts`)
+live. Both numbers were chosen, not measured. The redirect cap (20 hops, `reach/redirects.ts`)
 is keyed by URL: a chain whose target URL the page's loader re-serialises differently restarts its
 count. Low risk, since each hop is still authorised and still costs the page a round trip.
 

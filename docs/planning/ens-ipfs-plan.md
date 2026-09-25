@@ -119,16 +119,16 @@ names, not a test of this design:
 
 | Piece | Where | State |
 |---|---|---|
-| Serving a pinned bundle at its own origin inside its partition | [`src/loader/electron-serve.ts`](../../src/loader/electron-serve.ts), [`serve.ts`](../../src/loader/serve.ts) | Built (ADR-0007). Serves an installed `.eth` app unchanged |
-| Loader fetch through an injected `Fetch` | [`fetch-bundle.ts`](../../src/loader/fetch-bundle.ts), `fetch-budget.ts:78` | Built. Every manifest and asset request goes through it, so `.eth` needs only a dispatching `Fetch` |
+| Serving a pinned bundle at its own origin inside its partition | [`src/loader/electron/serve.ts`](../../src/loader/electron/serve.ts), [`serve.ts`](../../src/loader/serve/serve.ts) | Built (ADR-0007). Serves an installed `.eth` app unchanged |
+| Loader fetch through an injected `Fetch` | [`fetch/bundle.ts`](../../src/loader/fetch/bundle.ts), `fetch/budget.ts:78` | Built. Every manifest and asset request goes through it, so `.eth` needs only a dispatching `Fetch` |
 | `https://name.eth` as a canonical, persistable origin | [`src/broker/policy/origin.ts`](../../src/broker/policy/origin.ts) | Works today: `originFromUrl` and `isPersistableOrigin` accept it, and partitions hash any origin |
 | The site-info popover's Web3 Score page | [`src/renderer/site-info/web3-view.ts`](../../src/renderer/site-info/web3-view.ts), [`site-trust.ts`](../../src/main/browsing/site-trust.ts) | Built. It shows delivery rungs and pin coverage, and no level; EI-10 adds the level |
 | The D-ladder, including content-addressed rungs | [`delivery-ladder.ts`](../../src/trust/delivery-ladder.ts) | Built; `site-trust.ts` hardcodes the content-addressed inputs `false`. It stays as evidence beneath the level |
-| Pin coverage: pinned versus third-party loads per page | [`src/loader/pin-coverage.ts`](../../src/loader/pin-coverage.ts) | Built. The evidence for third-party code on a Level 2 site |
+| Pin coverage: pinned versus third-party loads per page | [`src/loader/serve/pin-coverage.ts`](../../src/loader/serve/pin-coverage.ts) | Built. The evidence for third-party code on a Level 2 site |
 | The Settings page | [`src/renderer/settings/`](../../src/renderer/settings/), [`settings-ipc.ts`](../../src/main/ipc/settings-ipc.ts) | Built, with one section (Permissions). EI-11 adds the light-client section |
 | Mapping `.eth` hosts to loopback, honoured by the default session and every partition | [`src/main/dev/eth-resolver.ts`](../../src/main/dev/eth-resolver.ts) | Built for dev names, verified in Electron 44 |
 | A `.eth` tab proven to be a secure context | [`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts) | The pattern to reuse |
-| Content types, byte ranges | [`serve-content-type.ts`](../../src/loader/serve-content-type.ts), [`serve-range.ts`](../../src/loader/serve-range.ts) | Reuse: no second map (code-guidelines Rule 3) |
+| Content types, byte ranges | [`serve/content-type.ts`](../../src/loader/serve/content-type.ts), [`serve/range.ts`](../../src/loader/serve/range.ts) | Reuse: no second map (code-guidelines Rule 3) |
 | Address classification: public unicast, loopback, private | [`src/broker/policy/address.ts`](../../src/broker/policy/address.ts) | Reuse for every URL a resolver contract or a DNSLink names |
 | A hook on every session through `session-created` | [`src/main/sessions/permission-gate.ts`](../../src/main/sessions/permission-gate.ts) | The model for installing a certificate check everywhere |
 
@@ -202,7 +202,7 @@ headless:
 in `partitionForTarget`, amending ADR-0018), with one dispatching `protocol.handle('https')`
 handler: pinned cache first, then verified IPFS for the origin itself, then pass-through for other
 hosts. The cost sits in the pass-through. Electron 44 enforces no CORS on a handled response
-([`serve-reach-cors.ts`](../../src/loader/serve-reach-cors.ts)), so pass-through must reuse that
+([`reach/cors.ts`](../../src/loader/reach/cors.ts)), so pass-through must reuse that
 enforcement and the public-unicast guard, and it needs its own security review.
 
 **EI-1b, Helios in a utility process, started at launch.**
@@ -350,7 +350,7 @@ Built on the mechanism EI-1a settles. This describes the loopback design.
   applies today.
 - The loopback server, in the verifier host:
   - `GET` and `HEAD` for `*.eth` hosts only, resolved and gathered through the EI-2 registry.
-  - `Range` through the shared range logic, and the content type from `serve-content-type.ts`'s
+  - `Range` through the shared range logic, and the content type from `serve/content-type.ts`'s
     map.
   - The CSP from EI-1a on every response, and cache headers keyed on the CID.
   - Four error pages (cannot verify yet, cannot verify, not found, unsupported contenthash), each
@@ -388,7 +388,7 @@ tampering RPC proxy from EI-1b, resolution fails and the tab shows "cannot verif
   `open`, everything else to `electronFetch`. **One bundle, one CID:** the name is resolved once
   per `load()`, and every manifest and asset request of that load reads the same records, carried
   on `LoadContext`.
-- The `ensurePublicUnicastOrigin` call in `fetch-bundle.ts` gets a `.eth` branch with no DNS
+- The `ensurePublicUnicastOrigin` call in `fetch/bundle.ts` gets a `.eth` branch with no DNS
   lookup, since no request goes to that host.
 - `PinRecord` gains an optional content address: CID, contenthash kind, block, and whether every
   pointer was verified. `parsePinRecord` and `fromBundleTree` carry it. `schema` stays 1, because a
@@ -527,7 +527,7 @@ live chain.
 Files that serialise items:
 - `src/main/subsystems.ts` is touched by EI-5 and EI-7.
 - `site-trust.ts` is touched by EI-10 and EI-11.
-- `src/loader/index.ts` and `fetch-bundle.ts` belong to EI-9 alone, as `eth-resolver.ts` does to
+- `src/loader/index.ts` and `fetch/bundle.ts` belong to EI-9 alone, as `eth-resolver.ts` does to
   EI-7, and the Settings files to EI-11.
 - `src/broker/policy/pin.ts` belongs to the broker stream, so EI-9's PR names it.
 

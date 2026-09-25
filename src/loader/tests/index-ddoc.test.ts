@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ddocVerdict } from '../../trust/ddoc.js'
 import { DDOC_PATH } from '../ddoc-declaration.js'
-import { fetchBundle } from '../fetch-bundle.js'
+import { fetchBundle } from '../fetch/bundle.js'
 import { createLoader } from '../index.js'
 import type { LoadContext } from '../index.js'
 import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'

@@ -16,7 +16,7 @@
 import { app, BaseWindow, ipcMain, nativeTheme, WebContentsView, screen } from 'electron'
 import { join } from 'node:path'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron-serve.js'
+import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron/serve.js'
 import { ethNameEvidence } from '../verifier/verifier-subsystem.js'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from '../channels.js'

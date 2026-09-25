@@ -17,7 +17,7 @@ directory's `<name>.ts` / `<name>-subsystem.ts` convention ([`../README.md`](../
 messages it exchanges with the host, [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts) for this
 run's developer names, the broker's atomic file write and pin types
 ([`../../broker/policy/pin.ts`](../../broker/policy/pin.ts)), the loader's test for a `.eth` origin
-([`../../loader/eth-origin.ts`](../../loader/eth-origin.ts)), and the pointer-chain verdict and
+([`../../loader/fetch/eth-origin.ts`](../../loader/fetch/eth-origin.ts)), and the pointer-chain verdict and
 Website level types ([`../../resolution/`](../../resolution/), [`../../trust/`](../../trust/)).
 
 **What it must never import.** The verifier host's code, as opposed to its protocol types: it runs

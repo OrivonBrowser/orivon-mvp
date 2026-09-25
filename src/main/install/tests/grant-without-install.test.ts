@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { grantableWithoutInstall, grantWithoutInstall } from '../grant-without-install.js'
-import { MAX_MANIFEST_BYTES } from '../../../loader/manifest.js'
+import { MAX_MANIFEST_BYTES } from '../../../loader/manifest/manifest.js'
 import type { Broker } from '../../../broker/broker-contracts.js'
 
 const MANIFEST = {

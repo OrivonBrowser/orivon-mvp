@@ -12,7 +12,7 @@ export interface NameResolver {
   resolve: (name: string, signal?: AbortSignal) => Promise<NameRecord[]>
 }
 
-/** Inclusive offsets, as an HTTP Range and src/loader/serve-range.ts's ByteRange are. */
+/** Inclusive offsets, as an HTTP Range and src/loader/serve/range.ts's ByteRange are. */
 export interface GatherRange {
   readonly start: number
   readonly end: number

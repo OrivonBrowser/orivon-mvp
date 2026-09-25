@@ -1,7 +1,7 @@
 // End-to-end proof of ADR-0007's serve-from-cache half (build step 4,
-// lane S4-3-serve): src/loader/serve.ts + src/loader/electron-serve.ts.
+// lane S4-3-serve): src/loader/serve/serve.ts + src/loader/electron/serve.ts.
 //
-// WHY A REAL ELECTRON LAUNCH, NOT JUST src/loader/tests/serve.test.ts's
+// WHY A REAL ELECTRON LAUNCH, NOT JUST src/loader/serve/tests/serve.test.ts's
 // unit coverage. A unit test of the pinned-set predicate alone does not
 // prove the real `protocol.handle` REGISTRATION actually consults it, or
 // that it is genuinely scoped to the app's own partition rather than
@@ -15,7 +15,7 @@
 // for it; a file planted directly on disk outside the pinned manifest is
 // refused; and the handler never reaches the default session.
 //
-// WHY THIS DOES NOT DRIVE A REAL Loader.load() (fetch-bundle.ts).
+// WHY THIS DOES NOT DRIVE A REAL Loader.load() (fetch/bundle.ts).
 // install-origin.ts's ensurePublicUnicastOrigin refuses every non-https,
 // non-public-unicast install origin with NO exception (A46) -- so a
 // loopback fixture server, the only kind an e2e suite can stand up
@@ -45,8 +45,8 @@ import { DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
 import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { appRootDirectoryName } from '../src/loader/storage.js'
-import { nodeLoaderStorage } from '../src/loader/node-storage.js'
+import { appRootDirectoryName } from '../src/loader/cache/storage.js'
+import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
 import { partitionFor } from '../src/broker/grants/origin-hash.js'
 
 // `.test` is the IANA-reserved, never-resolvable TLD -- same convention as

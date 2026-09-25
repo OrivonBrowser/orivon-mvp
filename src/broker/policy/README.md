@@ -148,7 +148,7 @@ disagree about which host they mean. Patterns are not canonicalised: a manifest 
 a literal canonically, where a person reads it (`declarableConnectHostRejection`).
 
 **[`connect-src.ts`](connect-src.ts)'s CSP source derivation is pure, and the header is set on
-the served response directly** (`src/loader/serve-csp.ts` assembles it, `src/loader/serve.ts`'s
+the served response directly** (`src/loader/serve/csp.ts` assembles it, `src/loader/serve/serve.ts`'s
 `buildResponse` sets it), never via
 `session.webRequest.onHeadersReceived`: that listener never fires for a `protocol.handle`-served
 response in this Electron version (A110), so the header is set on the handler's own `Response`,
@@ -166,7 +166,7 @@ the alternative ADR-0007 names. Three properties follow:
 - **Two scope gaps remain, both filed.** CSP bounds *names*, `connect.ts`'s `checkConnect`
 bounds *resolved addresses*:
 for a hostname pattern the two diverge exactly on DNS rebinding, and no CSP construction closes
-that. `src/loader/serve-csp.ts` sets `default-src 'self'` and explicit `script-src`, `frame-src`
+that. `src/loader/serve/csp.ts` sets `default-src 'self'` and explicit `script-src`, `frame-src`
 and `worker-src`. `form-action` has no fallback to `default-src` and is deliberately left unset
 (`src/loader/README.md`, "What the served bundle's CSP admits"), so A42 covers what CSP cannot
 cover at all: top-level navigation (`<a href>`, `location.href`, which CSP never governs) and the
@@ -180,7 +180,7 @@ literal is the same story: CSP's host grammar has no `[`, `]` or `:`, confirmed 
 
 **`https.connect` feeds the reach directives: `connect-src`, `img-src`, `font-src` and
 `media-src`** (A143, A192). `reachSourcesFor` reuses `connectSrcFor`'s own translate/emit logic
-unchanged (Rule 3), fed from `https.connect`, the grant `src/loader/serve.ts`'s `fetchThirdParty`
+unchanged (Rule 3), fed from `https.connect`, the grant `src/loader/serve/serve.ts`'s `fetchThirdParty`
 authorises a third-party request against. Its sources are scheme-qualified, `https://host:port`,
 never `ws:`/`wss:`: a WebSocket never reaches that handler, so no reach source may admit one. A
 `*` host emits `https:`, the one source wider than the grant, because every request it admits
