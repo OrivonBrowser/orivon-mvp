@@ -325,8 +325,9 @@ export interface Broker {
      */
     udpBind(origin: string, opts: { port: number }): Promise<FailableUdpSocket>
     /**
-     * Opens a TCP listening socket on `port`, checked against `tcp.listen`.
-     * `port: 0` asks the OS to pick, same rule as `udpBind`'s (A88).
+     * Opens a TCP listening socket on `port`, checked against
+     * `tcp.listen.network` (ADR-0034). `port: 0` asks the OS to pick, same
+     * rule as `udpBind`'s (A88).
      *
      * Returns a `FailableTcpServer` -- a `TcpServer` plus the broker-internal
      * escape hatch every handle type gets, see handle-contracts.ts. Each

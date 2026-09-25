@@ -8454,7 +8454,7 @@ against the pre-fix code (`expected 200 to be 404`: the third request dialled an
 test proves the slot is restored once the two held requests actually finish. A third and fourth
 prove release on the two failure-shaped paths this kind of fix usually gets wrong: a dial that
 throws, and the consumer cancelling its own read -- see
-`src/loader/serve/tests/serve.test.ts`'s `fetchThirdParty A200` suite, `src/loader/tests/serve-reach-
+`src/loader/serve/tests/serve.test.ts`'s `fetchThirdParty A200` suite, `src/loader/reach/tests/
 guard.test.ts`, and `src/loader/electron/tests/serve.test.ts`'s `registerServingFor -- A200 real
 wiring` suite (a REAL `createBroker`, a manifest that actually declares `concurrentSockets`, and
 a real `Broker.app.socketAllowanceSync` reached end to end).
@@ -8906,6 +8906,12 @@ that needs a local-only port has no way to ask for one.
 every interface: a `src/contracts/` change. **Needed by:** an app with a local RPC port or an
 OAuth redirect catcher.
 
+**Resolved, 2026-09-25 (owner, `d-0119`).** Not a `host` parameter -- a separately declared and
+granted capability. `TcpCapability.listen`/`UdpCapability.bind` gain `BindScopes` (`local`/
+`network`); `orivon.net.listen`/`udpBind` gain a `scope` argument (`ADR-0034`). A ported app that
+asks for every interface under a `local`-only grant binds loopback instead of being refused,
+answering this entry's own "needs a local RPC port" case without widening what the grant reaches.
+
 ### A226 -- STARTTLS cannot work over broker-terminated TLS **[RESEARCH]**
 
 Filed 2026-09-22. `pg`, SMTP and IMAP clients open a plain connection, talk, and then upgrade it
@@ -9346,20 +9352,20 @@ remains is listed in `ADR-0030`'s 2026-09-25 amendment: chiefly what any browser
 partitioned cache keeps (a top-level window opened on a name, shared slots), and public gateways'
 own edge caches, which nothing on this machine can partition.
 
-### A257 -- should `src/main/` adopt `ADR-0034`'s naming rule too **[NEEDS OWNER]**
+### A257 -- should `src/main/` adopt `ADR-0035`'s naming rule too **[NEEDS OWNER]**
 
 Filed 2026-09-25, while reorganising `src/preload/`, `src/shim/`, `src/verifier-host/`,
-`src/loader/` and `src/broker/` (`ADR-0034`). That ADR's rule is that a moved file drops the
+`src/loader/` and `src/broker/` (`ADR-0035`). That ADR's rule is that a moved file drops the
 words its new folder already says: `src/loader/serve-csp.ts` became `serve/csp.ts`, not
 `serve/serve-csp.ts`. `src/main/` was organised into job folders earlier, by `ADR-0023`, on a
 different naming convention: `install/app-install.ts`, not `install/app.ts`; `consent/
 install-consent.ts`, not `consent/install.ts`. The two directories now read two different ways,
 and a reader moving between them has to notice which convention the one they are in uses.
 
-**Options:** rename `src/main/`'s files to match `ADR-0034`'s rule, at the same cost every prior
+**Options:** rename `src/main/`'s files to match `ADR-0035`'s rule, at the same cost every prior
 move of this kind has paid (every import specifier, comment and doc link rewritten again); leave
 `src/main/` as `ADR-0023` left it, on the reasoning that a directory reorganised once is not
-obliged to match a convention adopted after the fact; or write `ADR-0034`'s rule into `ADR-0023`
+obliged to match a convention adopted after the fact; or write `ADR-0035`'s rule into `ADR-0023`
 retroactively as the intended convention all along, without moving a single file, and apply it
 only forward from here.
 

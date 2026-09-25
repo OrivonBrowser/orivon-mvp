@@ -11,6 +11,7 @@
 // manifest.ts's header -- not repeated here).
 
 import type {
+  BindScopes,
   Capabilities,
   FsCapability,
   HttpsCapability,
@@ -48,6 +49,7 @@ const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'web', 'secrets', 'protocols']
 const NET_KEYS = ['tcp', 'udp', 'https', 'concurrentSockets']
 const TCP_KEYS = ['connect', 'listen']
 const UDP_KEYS = ['bind', 'send']
+const BIND_SCOPES_KEYS = ['local', 'network']
 const HTTPS_KEYS = ['connect']
 const FS_KEYS = ['quotaBytes']
 const ID_CAPABILITY_KEYS = ['curves']
@@ -87,7 +89,11 @@ function parsePortRange (spec: string): { readonly lo: number, readonly hi: numb
   return { lo, hi }
 }
 
-/** `tcp.listen` / `udp.bind`: capability-api.md's open item A9, point 1 -- declared range required, no privileged ports. */
+/**
+ * `tcp.listen.*` / `udp.bind.*`: capability-api.md's open item A9, point 1 --
+ * declared range required, no privileged ports. Applied per scope by
+ * `readBindScopes` below.
+ */
 function validatePortRangePattern (pattern: string, field: string): void {
   if (pattern === '*') {
     reject(`${field}: "*" is rejected -- a declared port range is required (capability-api.md's open item A9, point 1)`)
@@ -198,6 +204,34 @@ function validateCurveName (curve: string, field: string): void {
 
 // --- capability shapes -------------------------------------------------------
 
+/**
+ * `tcp.listen`/`udp.bind` (ADR-0034): a `local` list, a `network` list, or
+ * both -- at least one is required, the same "an optional list rejects
+ * empty presence" rule every other list in this file follows, applied here
+ * to the whole pair rather than to either list alone. Shared by `readTcp`
+ * and `readUdp`, since both fields carry the identical shape.
+ */
+function readBindScopes (raw: unknown, path: string): BindScopes {
+  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
+  const extra = extraKey(raw, BIND_SCOPES_KEYS)
+  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
+
+  const local = optionalStringArray(raw, path, 'local', MAX_PATTERNS, (pattern, i) => {
+    validatePortRangePattern(pattern, `${path}.local[${i}]`)
+  })
+  const network = optionalStringArray(raw, path, 'network', MAX_PATTERNS, (pattern, i) => {
+    validatePortRangePattern(pattern, `${path}.network[${i}]`)
+  })
+  if (local === undefined && network === undefined) {
+    reject(`${path} must declare "local", "network" or both`)
+  }
+
+  const result: { local?: readonly Pattern[], network?: readonly Pattern[] } = {}
+  if (local !== undefined) result.local = local
+  if (network !== undefined) result.network = network
+  return result
+}
+
 function readTcp (raw: unknown, path: string): TcpCapability {
   if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
   const extra = extraKey(raw, TCP_KEYS)
@@ -206,11 +240,10 @@ function readTcp (raw: unknown, path: string): TcpCapability {
   const connect = optionalStringArray(raw, path, 'connect', MAX_PATTERNS, (pattern, i) => {
     validateConnectPattern(pattern, `${path}.connect[${i}]`)
   })
-  const listen = optionalStringArray(raw, path, 'listen', MAX_PATTERNS, (pattern, i) => {
-    validatePortRangePattern(pattern, `${path}.listen[${i}]`)
-  })
+  const listenRaw = ownProperty(raw, 'listen', isAny)
+  const listen = listenRaw === undefined ? undefined : readBindScopes(listenRaw, `${path}.listen`)
 
-  const result: { connect?: readonly Pattern[], listen?: readonly Pattern[] } = {}
+  const result: { connect?: readonly Pattern[], listen?: BindScopes } = {}
   if (connect !== undefined) result.connect = connect
   if (listen !== undefined) result.listen = listen
   return result
@@ -221,14 +254,13 @@ function readUdp (raw: unknown, path: string): UdpCapability {
   const extra = extraKey(raw, UDP_KEYS)
   if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
 
-  const bind = optionalStringArray(raw, path, 'bind', MAX_PATTERNS, (pattern, i) => {
-    validatePortRangePattern(pattern, `${path}.bind[${i}]`)
-  })
+  const bindRaw = ownProperty(raw, 'bind', isAny)
+  const bind = bindRaw === undefined ? undefined : readBindScopes(bindRaw, `${path}.bind`)
   const send = optionalStringArray(raw, path, 'send', MAX_PATTERNS, (pattern, i) => {
     validateConnectPattern(pattern, `${path}.send[${i}]`)
   })
 
-  const result: { bind?: readonly Pattern[], send?: readonly Pattern[] } = {}
+  const result: { bind?: BindScopes, send?: readonly Pattern[] } = {}
   if (bind !== undefined) result.bind = bind
   if (send !== undefined) result.send = send
   return result

@@ -1,4 +1,4 @@
-# ADR-0034: `src/preload/`, `src/shim/`, `src/verifier-host/`, `src/loader/` and `src/broker/` are organised by job, on one naming rule
+# ADR-0035: `src/preload/`, `src/shim/`, `src/verifier-host/`, `src/loader/` and `src/broker/` are organised by job, on one naming rule
 
 - **Status:** accepted
 - **Date:** 2026-09-25
@@ -69,7 +69,7 @@ whole-repository move with every path reference rewritten again.
 streams' paths, landed on one branch rather than five. That is the carve-out
 [`open-questions.md`](../open-questions.md) A24 asks whether a repo-wide sweep should be exempt
 from the one-stream-per-branch rule; the owner chose it here, recorded as
-[`d-0119`](decision-log.md).
+[`d-0121`](decision-log.md).
 
 ## Alternatives considered
 

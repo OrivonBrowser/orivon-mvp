@@ -21,10 +21,17 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
 
   const connect = capabilities.net?.tcp?.connect
   if (connect !== undefined) set['tcp.connect'] = connect
-  const listen = capabilities.net?.tcp?.listen
-  if (listen !== undefined) set['tcp.listen'] = listen
-  const bind = capabilities.net?.udp?.bind
-  if (bind !== undefined) set['udp.bind'] = bind
+  // BindScopes (ADR-0034): a `local` list and a `network` list, one
+  // CapabilityKind each -- mapped only when the app actually declared that
+  // scope, same as every other field in this function.
+  const listenLocal = capabilities.net?.tcp?.listen?.local
+  if (listenLocal !== undefined) set['tcp.listen.local'] = listenLocal
+  const listenNetwork = capabilities.net?.tcp?.listen?.network
+  if (listenNetwork !== undefined) set['tcp.listen.network'] = listenNetwork
+  const bindLocal = capabilities.net?.udp?.bind?.local
+  if (bindLocal !== undefined) set['udp.bind.local'] = bindLocal
+  const bindNetwork = capabilities.net?.udp?.bind?.network
+  if (bindNetwork !== undefined) set['udp.bind.network'] = bindNetwork
   const send = capabilities.net?.udp?.send
   if (send !== undefined) set['udp.send'] = send
   // ADR-0017's TLS-terminated capability -- a SEPARATE grant from

@@ -13,7 +13,8 @@ import { isDeclarableConnectPattern } from './connect-patterns.js'
 import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js'
 
 const CAPABILITY_KINDS: readonly CapabilityKind[] = [
-  'tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'secrets'
+  'tcp.connect', 'tcp.listen.local', 'tcp.listen.network', 'udp.bind.local', 'udp.bind.network',
+  'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'secrets'
   // media.camera / media.microphone / clipboard.read (ADR-0032) are a
   // separate, stacked implementation PR (docs/planning/compatibility-
   // matrix.md); adding them here is that PR's own job, alongside its
@@ -22,14 +23,14 @@ const CAPABILITY_KINDS: readonly CapabilityKind[] = [
 
 /** The three `host:port` capability kinds -- the only ones
  * `isDeclarableConnectPattern` (`./connect-patterns.js`) knows how to judge.
- * `tcp.listen`/`udp.bind` are bare port ranges with a different grammar
+ * `tcp.listen.*`/`udp.bind.*` are bare port ranges with a different grammar
  * (no host, `"*"` rejected outright) and carry no equivalent gap: nothing
  * about R2-01 concerns a port-range pattern shape a manifest could not have
  * declared. */
 const CONNECT_SHAPED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set(['tcp.connect', 'https.connect', 'udp.send'])
 
 /**
- * True for exactly the eight `CapabilityKind` literals -- the guard an
+ * True for exactly the eleven `CapabilityKind` literals -- the guard an
  * UNTRUSTED string needs before it may be treated as one. Two independent
  * callers need it: `../../main/request-grant.ts`'s `request.capability` (an
  * app's raw IPC payload) and `../grants/grant-persistence.ts`'s hydration

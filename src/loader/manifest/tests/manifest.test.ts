@@ -12,9 +12,10 @@ import { MAX_MANIFEST_BYTES, parseManifest, type ManifestResult } from '../manif
 // run and reverted:
 //
 //   1. `pattern === '*' || parsePortRange(...)` accepting "*" for
-//      tcp.listen -> caught by 'rejects "*" for tcp.listen' below.
+//      tcp.listen -> caught by bind-scopes.test.ts's own
+//      'rejects "*" for tcp.listen'.
 //   2. `range.lo < MIN_UNPRIVILEGED_PORT` weakened to `< 1` (i.e. removed)
-//      -> caught by 'rejects a privileged port (below 1024)' below.
+//      -> caught by that same file's 'rejects a privileged port (below 1024)'.
 //   3. `orivonApiVersion !== 0` changed to `Number(orivonApiVersion) !== 0`,
 //      coercing the string "0" into the number 0 -> caught by
 //      'rejects the string "0" (coercion trap)' below.
@@ -37,8 +38,8 @@ function fullManifest (): Record<string, unknown> {
     assets: ['style.css', 'app.js'],
     capabilities: {
       net: {
-        tcp: { connect: ['*:*'], listen: ['6881-6889'] },
-        udp: { bind: ['6881-6889'], send: ['*:*'] }
+        tcp: { connect: ['*:*'], listen: { network: ['6881-6889'] } },
+        udp: { bind: { network: ['6881-6889'] }, send: ['*:*'] }
       },
       fs: { quotaBytes: 53687091200 },
       id: { curves: ['secp256k1'] },
@@ -83,8 +84,8 @@ describe('a fully valid manifest', () => {
       assets: ['style.css', 'app.js'],
       capabilities: {
         net: {
-          tcp: { connect: ['*:*'], listen: ['6881-6889'] },
-          udp: { bind: ['6881-6889'], send: ['*:*'] }
+          tcp: { connect: ['*:*'], listen: { network: ['6881-6889'] } },
+          udp: { bind: { network: ['6881-6889'] }, send: ['*:*'] }
         },
         fs: { quotaBytes: 53687091200 },
         id: { curves: ['secp256k1'] },
@@ -140,75 +141,7 @@ describe('orivonApiVersion', () => {
   })
 })
 
-describe('tcp.listen / udp.bind -- port ranges', () => {
-  const netWith = (listen: unknown): Record<string, unknown> =>
-    withCapabilities({ net: { tcp: { listen } } })
-
-  it('rejects "*" for tcp.listen', () => {
-    expect(reason(parseManifest(netWith(['*'])))).toMatch(/declared port range is required/)
-  })
-
-  it('rejects a privileged port (below 1024)', () => {
-    expect(reason(parseManifest(netWith(['80'])))).toMatch(/privileged ports below 1024/)
-  })
-
-  it('rejects the top of the privileged range, 1023', () => {
-    expect(reason(parseManifest(netWith(['1023'])))).toMatch(/privileged/)
-  })
-
-  it('accepts the first unprivileged port, 1024', () => {
-    expect(parseManifest(netWith(['1024'])).ok).toBe(true)
-  })
-
-  it('rejects a range that starts privileged even if it ends high', () => {
-    expect(reason(parseManifest(netWith(['1000-2000'])))).toMatch(/privileged/)
-  })
-
-  it('accepts a normal range', () => {
-    expect(parseManifest(netWith(['6881-6889'])).ok).toBe(true)
-  })
-
-  it.each([
-    ['non-numeric', 'abc'],
-    ['empty', ''],
-    ['trailing dash', '6881-'],
-    ['leading dash', '-6889'],
-    ['leading zero', '06881'],
-    ['above MAX_PORT', '70000'],
-    ['inverted range', '6889-6881'],
-    ['a host:port pattern, not a bare range', 'example.com:6881']
-  ])('rejects a malformed range (%s: %s)', (_label, spec) => {
-    expect(reason(parseManifest(netWith([spec])))).toMatch(/not a valid port|privileged|not a valid host/)
-  })
-
-  it('rejects an empty array -- omit the field instead', () => {
-    expect(reason(parseManifest(netWith([])))).toMatch(/must not be empty/)
-  })
-
-  it('rejects more than 256 entries', () => {
-    const many = Array.from({ length: 257 }, (_, i) => String(1024 + i))
-    expect(reason(parseManifest(netWith(many)))).toMatch(/more than the 256 allowed/)
-  })
-
-  it('rejects a non-array value', () => {
-    expect(reason(parseManifest(netWith('6881-6889')))).toMatch(/must be an array/)
-  })
-
-  it('rejects a non-string element', () => {
-    expect(reason(parseManifest(netWith([6881])))).toMatch(/must be a string/)
-  })
-
-  it('applies the identical rule to udp.bind', () => {
-    const raw = withCapabilities({ net: { udp: { bind: ['*'] } } })
-    expect(reason(parseManifest(raw))).toMatch(/declared port range is required/)
-
-    const privileged = withCapabilities({ net: { udp: { bind: ['22'] } } })
-    expect(reason(parseManifest(privileged))).toMatch(/privileged/)
-
-    const ok = withCapabilities({ net: { udp: { bind: ['6881-6889'] } } })
-    expect(parseManifest(ok).ok).toBe(true)
-  })
-})
+// tcp.listen/udp.bind -- port ranges (ADR-0034): bind-scopes.test.ts.
 
 describe('tcp.connect / udp.send -- host:port patterns', () => {
   const netWith = (connect: unknown): Record<string, unknown> =>

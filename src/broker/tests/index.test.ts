@@ -749,6 +749,6 @@ describe('revokePersisted tears down the handles the revoked grant authorised', 
 
   it('is a no-op, reported as one, for a capability the origin never held', async () => {
     const broker = await brokerWithConnectGrant()
-    await expect(broker.revokePersisted(APP, 'udp.bind')).resolves.toBe(false)
+    await expect(broker.revokePersisted(APP, 'udp.bind.network')).resolves.toBe(false)
   })
 })

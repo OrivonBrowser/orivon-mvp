@@ -65,8 +65,8 @@ const KITCHEN_SINK: FullManifest = {
     protocols: ['magnet'],
     net: {
       concurrentSockets: 64,
-      tcp: { connect: ['*:*'], listen: ['1024-65535'] },
-      udp: { bind: ['1024-65535'], send: ['*:*'] },
+      tcp: { connect: ['*:*'], listen: { network: ['1024-65535'] } },
+      udp: { bind: { network: ['1024-65535'] }, send: ['*:*'] },
       https: { connect: ['*:*'] }
     },
     fs: { quotaBytes: 104857600 },

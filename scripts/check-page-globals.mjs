@@ -14,7 +14,7 @@
  * SCOPE: the directories whose code can reach a page's global object. It
  * reads descriptors on `Object.defineProperty` and nothing else --
  * `Object.freeze` is left alone, being used legitimately throughout
- * main-world-socket.ts on capability objects beneath the allowlisted
+ * surface/main-world-socket.ts on capability objects beneath the allowlisted
  * `orivon`. Regex, not an AST, like the guards beside it: scripts/README.md
  * limits a guard to `node:*` builtins, and `typescript@7` here is the Go
  * port, whose `createSourceFile` does not exist.
@@ -30,7 +30,7 @@ export const SCANNED_DIRECTORIES = ['src/preload/', 'src/shim/', 'src/shim-elect
  * Names Orivon owns outright rather than borrowing from the platform. The
  * rule does not reach them: nothing tries to shadow `orivon`, the platform
  * sets no contract for its shape, and locking it costs an app nothing --
- * main-world-socket.ts states that reason at the install itself.
+ * surface/main-world-socket.ts states that reason at the install itself.
  */
 export const ORIVON_OWN_GLOBALS = new Set(['orivon', 'orivonShell', 'orivonNewTab', 'orivonSettings', 'orivonSiteInfo'])
 

@@ -111,10 +111,15 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
   "capabilities": {
     "net": {
       "tcp": {
-        "connect": ["*:*"],           // host:port patterns, "*" wildcard
-        "listen":  ["6881-6889"]      // port ranges
+        "connect": ["*:*"],                       // host:port patterns, "*" wildcard
+        "listen":  { "network": ["6881-6889"] }    // port ranges, split by who may reach them
+                                                    // (ADR-0034): "local" (this device only) or
+                                                    // "network" (the local network, and the
+                                                    // internet if forwarded); a "network" grant
+                                                    // also covers "local", so an app never needs
+                                                    // both to get the wider reach
       },
-      "udp": { "bind": ["6881-6889"], "send": ["*:*"] },
+      "udp": { "bind": { "network": ["6881-6889"] }, "send": ["*:*"] },
       "https": { "connect": ["*:*"] }   // TLS terminated by the broker (ADR-0017); "*:*" is
                                          // UNLIMITED HTTPS and must render as visibly wide as
                                          // tcp.connect's own "*:*" does (A100)
@@ -233,8 +238,9 @@ orivon.net.connectSecure({ host, port, ...tls }) // => Promise<SecureTcpSocket> 
                                           //   in the broker (ADR-0017) under the app's own
                                           //   Node TLS options; connect()'s handle plus the
                                           //   handshake; a SEPARATE grant (https.connect)
-orivon.net.listen({ port })          // => Promise<TcpServer>   // .connections: ReadableStream<TcpSocket>
-orivon.net.udpBind({ port })         // => Promise<UdpSocket>
+orivon.net.listen({ port, scope })   // => Promise<TcpServer>   // .connections: ReadableStream<TcpSocket>
+                                      //   scope: 'local' | 'network' (ADR-0034), default 'local'
+orivon.net.udpBind({ port, scope })  // => Promise<UdpSocket>   // same scope, same default
 
 // --- fs, rooted at the app's files directory ---
 orivon.fs.readFile(path)             // => Promise<Uint8Array>  byte-oriented, no encoding option (A12)

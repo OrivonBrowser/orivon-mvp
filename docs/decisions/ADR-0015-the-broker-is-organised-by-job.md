@@ -39,7 +39,7 @@ no single one of them. Tests live in a `tests/` folder **inside** the directory 
 > application.
 >
 > **Amendment, 2026-09-25.** Both predictions in this ADR's own §Reversibility fired.
-> [`ADR-0034`](ADR-0034-src-source-directories-are-organised-by-job.md) is the decision record;
+> [`ADR-0035`](ADR-0035-src-source-directories-are-organised-by-job.md) is the decision record;
 > the short version: `capabilities/` becomes this directory's sixth, holding what used to sit
 > loose at the top level as `net-capability.ts`, `fs-capability.ts`, `user-selected-capability.ts`,
 > `id-capability.ts`, `secrets-capability.ts` and `web-capability.ts` (each dropping the
