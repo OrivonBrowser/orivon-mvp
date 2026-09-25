@@ -16,7 +16,7 @@ import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
 
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
- * again in preload/fetch-route.ts rather than imported, for the reason
+ * again in preload/routed/fetch.ts rather than imported, for the reason
  * `appTabArgsFor` gives below; within this file it is one constant. */
 const APP_TAB_FLAG = '--orivon-app-tab'
 
@@ -76,7 +76,7 @@ export function partitionChanged (
 /** ADR-0017's `fetch()`-routing gate: a value fixed at `WebContentsView`
  * construction (via `webPreferences.additionalArguments`, read synchronously
  * off `process.argv` -- the same mechanism `newtab.ts` already uses for its
- * own dashboard-URL check) tells `src/preload/fetch-route.ts` whether to
+ * own dashboard-URL check) tells `src/preload/routed/fetch.ts` whether to
  * install its routed `fetch` override, with NO async round trip to race
  * against a page's own first script. `Broker.app.isRegisteredSync`
  * (`../broker/index.ts`) is what makes this possible without one: it reads
@@ -84,7 +84,7 @@ export function partitionChanged (
  * no IPC. Returns undefined (no flag) for anything with no derivable origin
  * or no broker to ask, same fallback shape as `partitionForTarget` -- an
  * ordinary tab must never carry this flag by accident. The literal
- * '--orivon-app-tab' is duplicated in fetch-route.ts rather than imported
+ * '--orivon-app-tab' is duplicated in routed/fetch.ts rather than imported
  * (src/preload/README.md forbids importing anything under src/main/ except
  * ./channels.ts, and this is not a channel) -- the same choice
  * '--orivon-newtab-url=' already made. */

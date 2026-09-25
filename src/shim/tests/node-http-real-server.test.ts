@@ -9,7 +9,7 @@
 // a real `node:net` socket to a real `node:http` server on loopback and
 // bridges it through `Duplex.toWeb` into the exact TcpSocket shape
 // (handles.ts) node-http-client.ts consumes -- the same bridge shape a real
-// preload's socket-port.ts wraps a real OS socket in, just built directly
+// preload's ports/socket.ts wraps a real OS socket in, just built directly
 // against Node here instead of through the broker/IPC layers this lane does
 // not own. This is the strongest verification available without the
 // Electron launch this lane was not given.

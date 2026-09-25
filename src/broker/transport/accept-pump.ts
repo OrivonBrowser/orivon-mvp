@@ -21,7 +21,7 @@ import { isOrivonErrorLike } from '../errors.js'
 // one RendererToBrokerMessage member that means "the renderer is ready for
 // more"; `bytesConsumed` is reinterpreted here as a COUNT of connections the
 // app's own `connections.getReader().read()` calls have asked for, always 1
-// per call (../../preload/server-port.ts's own `reportAccepted`). See A185
+// per call (../../preload/ports/server.ts's own `reportAccepted`). See A185
 // for the alternative this stopped short of (a purpose-built message member)
 // and why.
 

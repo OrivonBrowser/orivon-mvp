@@ -1332,7 +1332,7 @@ depends on. But this is this lane's read, not a verified fact, and the owner may
 >
 > - Broker read side: `src/broker/transport/port-pump.ts`'s `pumpLoop` stops at credit zero (already true
 >   when this was filed).
-> - **Renderer read side: `src/preload/socket-port.ts`'s `reportConsumed` flushes a
+> - **Renderer read side: `src/preload/ports/socket.ts`'s `reportConsumed` flushes a
 >   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces on a
 >   macrotask** -- deliberately `setTimeout`, NOT `requestAnimationFrame` as
 >   `handle-contracts.md` originally suggested, because rAF does not fire in a backgrounded tab
@@ -3130,7 +3130,7 @@ as closed by any future security review.
 > A64 left open: `measurePreamble` (now `findPreambleBlock`) treats an import line as neither a
 > comment nor the end of the opening region, so a header essay after the imports measures the
 > same as one at line one. Two real in-review PRs (`src/broker/transport/port-sink.ts`,
-> `src/preload/orivon-surface.ts`) exposed the gap by placing a 40+/46-line rationale block after
+> `src/preload/surface/orivon.ts`) exposed the gap by placing a 40+/46-line rationale block after
 > their imports; both are now correctly flagged. Restores the pre-PR#68 46-line reading for A64's
 > own file, `src/broker/policy/origin.ts`, rather than the 16-line one the bug produced. See A79
 > for what re-measuring correctly also surfaced.
@@ -3181,13 +3181,13 @@ more in that same shape, none previously flagged, none in `scripts/comment-budge
 Each was read in full (not just measured) to rule out a detection bug rather than a real
 violation: all five are genuine ALL-CAPS-section rationale blocks sitting between the last import
 and the first substantive declaration -- structurally identical to `port-sink.ts` and
-`orivon-surface.ts`'s own headers, right down to the "argues against a design not chosen" shape
-Rule 1's guard exists to catch. `src/preload/orivon-surface.ts` itself is also on this list in its
+`surface/orivon.ts`'s own headers, right down to the "argues against a design not chosen" shape
+Rule 1's guard exists to catch. `src/preload/surface/orivon.ts` itself is also on this list in its
 CURRENT `main` form (44 lines), independent of `broker-24`'s own larger version (47) -- that
 sibling PR grows an already-hidden violation rather than introducing a new one.
 
 **Why not fixed or baselined here.** Every one of these six files (five above plus
-`orivon-surface.ts`) is owned by a stream other than this one (`comment-budget-gap` owns
+`surface/orivon.ts`) is owned by a stream other than this one (`comment-budget-gap` owns
 `scripts/check-comments.mjs` and its test only), so rewriting any of them is the cross-stream edit
 `parallel-work.md` says to raise, not make. Baselining them is equally not this lane's call:
 `scripts/comment-budget-baseline.txt`'s own header says, in as many words, "Nothing may be ADDED
@@ -3215,7 +3215,7 @@ sequencing note the conductor asked this lane to surface rather than resolve uni
 
 **Resolution, 2026-09-06 (conductor).** Took the AI recommendation's first remedy: dispatched a
 dedicated branch (`stream/backlog-13-comment-budget-cleanup`, PR #85) to fix the five files this
-lane does not own -- the sixth, `orivon-surface.ts`, was already being fixed on
+lane does not own -- the sixth, `surface/orivon.ts`, was already being fixed on
 `stream/broker-24-preload-net-surface` (PR #81) for the same reason. All six now pass the
 corrected checker and merged to `main` before this branch (comment-gate itself), so `main`'s
 `check:comments` never actually goes red -- the sequencing problem this entry raised was avoided,
@@ -3362,7 +3362,7 @@ already applies to every other `denied`.
 
 **Needed by:** lands in the contracts PR (`stream/contracts-14-datagram-wire`, #95) that already
 carries this entry, since `refusals` is a contract addition, not an implementation detail; the
-sink (`datagram-sink.ts`) and preload (`datagram-port.ts`, `main-world-socket.ts`) changes that
+sink (`datagram-sink.ts`) and preload (`ports/datagram.ts`, `main-world-socket.ts`) changes that
 populate it follow in the PRs that already touch those files.
 
 ---
@@ -3845,7 +3845,7 @@ however it is spelled.
 **RESOLVED 2026-09-15, in the shape this entry asked for: broker authority, not a shim
 polyfill.** `d-0030` added `OrivonNet.lookup` to `src/contracts/capability-api.ts` (#199);
 `net-capability.ts`'s `lookup`, its control-channel dispatch (`dispatch-net.ts`'s `'net.lookup'`
-case) and its preload surface (`net-surface.ts`'s `netLookupBridge`) landed in #201;
+case) and its preload surface (`surface/net.ts`'s `netLookupBridge`) landed in #201;
 `src/shim/node-dns.ts`'s `dns.lookup`/`dns.promises.lookup` now call through to it for real,
 wired into `module-map.ts`'s `'dns'` entry, closing #205. **Verified against the tree, not
 assumed:** `net-capability.ts` exports `lookup` from `createNetCapability`'s returned object,
@@ -4110,14 +4110,14 @@ member carrying the accepted `TcpSocket`'s full synchronous shape plus its `port
 `src/contracts/ipc.ts` (#199) — see A167 item 1 for the judgment calls that shape carried
 (typing `port` as the renderer-side `MessagePort` rather than the broker-side
 `MessagePortMain`, matching how `PortLike` already differs per process). The implementation —
-`src/broker/transport/accept-pump.ts` constructing and sending it, `src/preload/server-port.ts`
-and `src/preload/main-world-socket.ts`'s `buildServer` receiving it and building a real
+`src/broker/transport/accept-pump.ts` constructing and sending it, `src/preload/ports/server.ts`
+and `src/preload/surface/main-world-socket.ts`'s `buildServer` receiving it and building a real
 `TcpServer.connections` `ReadableStream` — landed in #203. **Verified against the tree, not
 assumed:** `dispatch-net.ts` has a real `'net.listen'` control-channel case,
 `main-world-socket.ts`'s `buildServer` is exercised by `main-world-socket-listen.test.ts`
 against the real `installOrivon` wiring, and `highWaterMark: 0` (the property that keeps the
 broker from accepting a connection nobody asked for) is proven end to end across all three new
-layers by `accept-pump.test.ts`, `server-port.test.ts` and `main-world-socket-listen.test.ts`
+layers by `accept-pump.test.ts`, `ports/tests/server.test.ts` and `main-world-socket-listen.test.ts`
 (A185's own verification). `compatibility-matrix.md`'s `net.listen` row moves to ✅✅✅✅.
 
 **Half-open, tracked separately rather than reopening this entry:** A185 flags whether reusing
@@ -4170,7 +4170,7 @@ A142 is what would close that remaining gap.
 
 **Trigger fired, 2026-09-13.** `app.requestGrant` is now wired onto `window.orivon` (the control
 channel case in `src/broker/transport/ipc.ts`, the preload surface in
-`src/preload/orivon-surface.ts`) — a real page can reach the grant prompt today, even though no
+`src/preload/surface/orivon.ts`) — a real page can reach the grant prompt today, even though no
 production caller registers an app yet (a separate, still-unwired gap). The confusable this entry
 names is unfixed; it is simply no longer theoretical.
 
@@ -4193,7 +4193,7 @@ decision, which is why this is filed rather than fixed.
 **Needed by:** whenever a real app is ported. Most real HTTP APIs redirect somewhere.
 
 **Resolved 2026-09-22 (`d-0039`, AI).** The routed path (`fetch`, `XMLHttpRequest` and
-`EventSource` alike, `src/preload/routed-core.ts`) follows redirects as the Fetch spec does, up
+`EventSource` alike, `src/preload/routed/core.ts`) follows redirects as the Fetch spec does, up
 to 20 hops, with `redirect: 'manual'` and `'error'` honoured and `response.redirected` set. Each
 of the three policy questions above has an answer in the code:
 
@@ -4224,7 +4224,7 @@ Consequences section now names all three divergences together -- CORS, CSP and m
 with the mixed-content half precisely scoped: not "Orivon allows mixed content" in general, only
 that this one routed path skips an enforcement the renderer otherwise performs, for a host a
 person reviewed and granted at install. The recommendation above pointed at
-`src/preload/README.md`'s Design notes, which is where `fetch-route.ts`'s own header comment
+`src/preload/README.md`'s Design notes, which is where `routed/fetch.ts`'s own header comment
 sends a reader for this exact catalogue (body cap, unfollowed redirects, limited body types) --
 but that file is owned by the `broker` stream (`parallel-work.md`'s ownership map puts it beside
 `app.ts`), and this lane's own brief holds it to no file under `src/`. Left as a cross-reference
@@ -4367,7 +4367,7 @@ main-world installer is delivered.
 **CORRECTION, 2026-09-12.** The headline above was too strong and this entry misled as written.
 `installFetchRoute` itself genuinely cannot be split -- that part stands, and it is the real
 constraint -- but the FILE could be, and was: PR #157 moved `exposeFetchRoute`, the ordinary
-preload wiring, into `src/preload/expose-fetch-route.ts`, leaving `fetch-route.ts` at 491 lines
+preload wiring, into `src/preload/expose-fetch-route.ts`, leaving `routed/fetch.ts` at 491 lines
 with real headroom. The seam is the one the file's own header already named: a payload serialised
 into the main world that may reference no import, versus preload code that imports freely.
 
@@ -4376,7 +4376,7 @@ PR I twice wrote code that passed every unit test and would have broken in a rea
 extracting a helper into a module the serialised function cannot import, once by referencing the
 module-level `ROUTED_FETCH_MAX_BODY_BYTES`, which is only a MIRROR of a literal kept inside the
 function body. Having the two kinds of code adjacent in one file is what made both mistakes easy.
-`src/preload/tests/fetch-route.test.ts` now carries a guard that fails if `installFetchRoute`'s
+`src/preload/routed/tests/fetch.test.ts` now carries a guard that fails if `installFetchRoute`'s
 source text references any module-level identifier.
 
 **What is still open** is narrower than the original entry: the serialised function is ~440 lines
@@ -5102,7 +5102,7 @@ owner's fix needed neither.
 
 **Raised 2026-09-13**, while wiring `app.requestGrant` onto `window.orivon` for the first time
 (compatibility-matrix.md Table 4 row 1). `contracts/ipc.ts`'s rule 2 requires every control call
-to carry an explicit `timeoutMs`, and every existing budget in `orivon-surface.ts`'s `TIMEOUT_MS`
+to carry an explicit `timeoutMs`, and every existing budget in `surface/orivon.ts`'s `TIMEOUT_MS`
 table is sized against real I/O it bounds (a dial, a disk read). This call waits on a native
 `dialog.showMessageBox`, i.e. a person, which has no such bound -- 120 seconds is a guess, not a
 measurement.
@@ -5557,7 +5557,7 @@ author.
 correction, not just a confirmation.** `A143`'s own resolution note explains what this lane built:
 apps can now reach a granted third-party host, so "the remote-data scenario this entry is about"
 is real starting with this PR, exactly as predicted. **But the premise "it does not exist yet" was
-already stale before this lane touched anything.** `src/preload/fetch-route.ts`'s `installFetchRoute`
+already stale before this lane touched anything.** `src/preload/routed/fetch.ts`'s `installFetchRoute`
 (ADR-0017) routes an app tab's own `fetch()` to `orivon.net.connect`/`connectSecure` for a granted
 host, is already wired unconditionally in `preload/app.ts`'s production path, and
 `test/e2e-fetch-routing.test.ts` already proves it reaches a granted host and returns real bytes
@@ -5840,7 +5840,7 @@ on top of it) is expected to load successfully.
 > call's own real main-world `window`) via the exact `executeInMainWorld` mechanism this entry's
 > own AI recommendation named as "the natural fit."
 >
-> **Gated on the identical `--orivon-app-tab` flag `fetch-route.ts` already reads**
+> **Gated on the identical `--orivon-app-tab` flag `routed/fetch.ts` already reads**
 > (`src/main/shell/tab-view.ts`'s `appTabArgsFor`) -- CLAUDE.md's own instruction on this exact defect
 > is that shimmed Node globals must never reach an ordinary browsing tab. `window.orivon` itself
 > is exposed to every tab regardless (an ungranted caller only ever sees denials through it),
@@ -5907,7 +5907,7 @@ other failure through `require('net')`/`require('http')`/`require('https')`.
 
 > **Resolved 2026-09-13, S4-X-shimfix. Both layers this entry named, not one or the other.**
 >
-> **Producer (`src/preload/main-world-socket.ts`):** every `bridge.*` call `installOrivon`
+> **Producer (`src/preload/surface/main-world-socket.ts`):** every `bridge.*` call `installOrivon`
 > makes -- not only `netConnect`, every one that can reject with something the isolated world
 > built via `../orivon-error.ts`'s own plain-object `toOrivonError` -- is now wrapped in a new
 > local `callRevived`, which rebuilds a real `Error` from any rejection shaped like one of ours
@@ -5942,10 +5942,10 @@ other failure through `require('net')`/`require('http')`/`require('https')`.
 > change, not a silent behaviour shift), now pin `orivonCode === 'denied'` and pass against a
 > real Electron launch -- see this PR's own verification output for the actual before/after
 > values from that launch, not just the unit tests added alongside (`src/shim/tests/
-> node-http-errors.test.ts`, `src/preload/tests/main-world-socket.test.ts`).
+> node-http-errors.test.ts`, `src/preload/surface/tests/main-world-socket.test.ts`).
 >
 > **A113 (`docs/open-questions.md`), the same family, explicitly NOT touched by this fix, and
-> not narrowed by it either.** A113 is about `orivon-surface.ts`'s `exposeFallback()` path --
+> not narrowed by it either.** A113 is about `surface/orivon.ts`'s `exposeFallback()` path --
 > taken only when `contextBridge.executeInMainWorld` is absent or throws, so `installOrivon`
 > never runs at all on that path, and neither `callRevived` nor the local `toOrivonError` this
 > entry fixed ever sees anything on it. On that path a thrown `OrivonError` loses its `.code`
@@ -6531,7 +6531,7 @@ landed -- exact output in this lane's final report / PR body.
 **Raised 2026-09-14**, lane F-reach, while deciding how `fetchThirdParty` (`src/loader/serve.ts`)
 should authorise a cross-origin request `A143` newly lets through to the real network.
 
-`ADR-0017`'s own routed `fetch()` (`src/preload/fetch-route.ts`) already splits on scheme:
+`ADR-0017`'s own routed `fetch()` (`src/preload/routed/fetch.ts`) already splits on scheme:
 `https:` goes through `orivon.net.connectSecure` (`https.connect`, hostname-bound by the TLS
 handshake itself), `http:` goes through `orivon.net.connect` (`tcp.connect`, resolved-address-bound
 by `checkConnect`'s own "resolve once, check every answer" discipline). `fetchThirdParty` mirrors
@@ -6807,7 +6807,7 @@ the type a renderer genuinely holds once Electron completes the transfer. The **
 constructs this message holding a real `MessagePortMain` (Electron-main-process, a different
 class), and contracts cannot import `electron` to reference that type directly
 (`check:contracts`). This is the same reason `src/broker/transport/port-transport.ts` and
-`src/preload/socket-port.ts` already define two independently-shaped `PortLike` interfaces
+`src/preload/ports/socket.ts` already define two independently-shaped `PortLike` interfaces
 rather than sharing one -- the concrete port class genuinely differs per process. The
 implementing lane will hit a real type gap constructing this message on the broker side; the
 call made here is to let contracts describe what the **renderer** receives (matching the type's
@@ -6817,13 +6817,13 @@ is the only right answer.
 
 **Also needed by that lane, not built here (implementation, out of this PR's scope):** both
 `PortLike.postMessage` signatures (`port-transport.ts`'s `(message: BrokerToRendererMessage) =>
-void`, `socket-port.ts`'s `(message: unknown) => void`) will need a transfer-list parameter --
+void`, `ports/socket.ts`'s `(message: unknown) => void`) will need a transfer-list parameter --
 today neither accepts one, and a `MessagePort`/`MessagePortMain` cannot cross a structured clone
 without being named in one. Verified this lane's own change causes **no typecheck break** from
 adding `AcceptedMessage` to the union itself: `npm run typecheck` (2026-09-15, this branch)
 found none, and a direct grep for an exhaustiveness check over `BrokerToRendererMessage`/`.kind`
 (`assertNever`, `: never`, a `Record` keyed on every kind) found none anywhere in the tree --
-`src/preload/socket-port.ts` and `src/preload/datagram-port.ts` both `switch` on `message.kind`
+`src/preload/ports/socket.ts` and `src/preload/ports/datagram.ts` both `switch` on `message.kind`
 with no exhaustiveness assertion, so a new member is silently unhandled there today, not a
 compile error. The real work -- constructing, sending and receiving this message -- is entirely
 unbuilt, matching A114's own "still open" status for the implementation half; only the shape
@@ -7278,7 +7278,7 @@ not the sandboxed renderer.
 
 **Fixed by `readCappedBody`**, a streaming reader over `request.body` that rejects the instant
 the running total would exceed `REACH_MAX_REQUEST_BODY_BYTES` (16 MiB), never buffering past
-the cap first -- the same discipline `src/preload/fetch-route.ts`'s own `readAllCapped` already
+the cap first -- the same discipline `src/preload/routed/fetch.ts`'s own `readAllCapped` already
 uses for its response body. The cap VALUE matches that file's own `ROUTED_FETCH_MAX_BODY_BYTES`
 exactly (16 MiB is the number this repo already chose once for "an unbounded page-supplied body
 must not be buffered whole"), but it is a second literal, not an import: `src/loader/` and
@@ -7398,7 +7398,7 @@ untouched. The asymmetry was the tell. Reading it raised the question; a probe a
 `src/contracts/` change -- the shape was already complete -- so this lane built the broker
 capability (`src/broker/fs-capability.ts`, `src/broker/adapters/node-fs-adapter.ts`), the
 control-channel dispatch (`src/broker/transport/dispatch-fs.ts`) and the preload surface
-(`src/preload/orivon-surface.ts`, `src/preload/main-world-socket.ts`) in one PR.
+(`src/preload/surface/orivon.ts`, `src/preload/surface/main-world-socket.ts`) in one PR.
 
 **What is genuinely done, page-reachable, and tested against real I/O:** `open`, positional
 `read`/`write` (no implicit cursor, matching the contract's own explicit-position rule), `stat`,
@@ -7582,13 +7582,13 @@ page-reachable half of `orivon.net.listen` (A114/d-0028): `broker.net.listen`'s 
 `connections` stream, delivered to a real page as a real `TcpServer.connections` `ReadableStream`.
 This run resumed a predecessor cut off mid-work by a session-limit interruption (committed as
 `b61d9e8`); this entry covers the judgment call the predecessor's own code comments already
-pointed here for (`accept-pump.ts`, `server-port.ts`) but never wrote up, plus what this run found
+pointed here for (`accept-pump.ts`, `ports/server.ts`) but never wrote up, plus what this run found
 and fixed finishing the landing.
 
 **1. The judgment call: one accepted connection is ONE unit of demand, signalled by reusing
 `CreditMessage` (`{kind:'credit', handleId, bytesConsumed}`) rather than a new
 `RendererToBrokerMessage` member.** `src/broker/transport/accept-pump.ts`'s `handleDemand`
-interprets `bytesConsumed` as a COUNT of connections rather than bytes; `src/preload/server-port.ts`'s
+interprets `bytesConsumed` as a COUNT of connections rather than bytes; `src/preload/ports/server.ts`'s
 `reportAccepted` always sends `bytesConsumed: 1`, one call per app `connections.getReader().read()`.
 The alternative -- a purpose-built member, e.g. `{kind:'accept', handleId}` -- was not built: A167
 closed `src/contracts/` for this lane (its own scope rule: three shapes landed, no new
@@ -7603,7 +7603,7 @@ what it would look like?
 This is the property the brief named as the one most likely to be silently destroyed by a page-side
 wrapper that eagerly drains `connections` -- if it were, the broker would accept connections nobody
 asked for. Proven at each layer with an explicit "N reads accept exactly N connections, and an
-unread server accepts none" test: `accept-pump.test.ts` (the broker's own pump), `server-port.test.ts`
+unread server accepts none" test: `accept-pump.test.ts` (the broker's own pump), `ports/tests/server.test.ts`
 (the isolated-world preload state machine), and `main-world-socket-listen.test.ts` (the page's own
 `ReadableStream`, constructed with `CountQueuingStrategy({ highWaterMark: 0 })` in
 `main-world-socket.ts`'s `buildServer`, whose `pull()` is the ONLY caller of `reportAccepted` --
@@ -7620,8 +7620,8 @@ exactly the silent-gap shape the brief's first warning described for `message.ki
 Fixed by adding the case, and separately by adding a `never`-typed default case to BOTH `ipc.ts`'s
 `dispatch()` and `dispatch-net.ts`'s `dispatchNet()` switches, so a future `ControlMethod`/
 `NetControlMethod` member with no matching case is a compile error rather than a silent
-`undefined` -- neither switch had one before. `src/preload/socket-port.ts` and
-`src/preload/datagram-port.ts`'s own `message.kind` switches already had an equivalent
+`undefined` -- neither switch had one before. `src/preload/ports/socket.ts` and
+`src/preload/ports/datagram.ts`'s own `message.kind` switches already had an equivalent
 exhaustiveness guard (the predecessor's own work, before the interruption); this run did not find
 or need to change either.
 
@@ -7770,13 +7770,13 @@ told to build on ARE reachable at `origin/main @ f2bc8e0` (this lane's own cut c
 by reading the actual dispatch/preload wiring, not by trusting the brief: `net.listen` (PR #203)
 and `net.lookup` (PR #201) both have real broker dispatch cases and real preload/main-world
 bridges (`src/broker/transport/dispatch-net.ts`'s `'net.listen'`/`'net.lookup'` cases,
-`src/preload/net-surface.ts`'s `netListenBridge`/`netLookupBridge`,
-`src/preload/main-world-socket.ts`'s `buildServer`/`netLookup`). **The third is not.**
+`src/preload/surface/net.ts`'s `netListenBridge`/`netLookupBridge`,
+`src/preload/surface/main-world-socket.ts`'s `buildServer`/`netLookup`). **The third is not.**
 
 **`orivon.fs.open`'s broker half and preload wiring are NOT on `main` at this lane's cut point.**
 `src/broker/fs-capability.ts`'s own header says so directly ("`FileHandle` (orivon.fs.open) is
 NOT here -- see this lane's own PR body for why it was parked"), there is no `'fs.open'` dispatch
-case anywhere under `src/broker/transport/`, and `src/preload/orivon-surface.ts`'s `exposeOrivon`
+case anywhere under `src/broker/transport/`, and `src/preload/surface/orivon.ts`'s `exposeOrivon`
 wires `fs.readFile`/`writeFile`/`mkdir`/`readdir`/`stat`/`rm`/`rename` but no `fs.open`. The work
 lives on an unmerged branch, `stream/broker-15-fs-open` (confirmed via `git log`: `09e7b2b`
 "Merge remote-tracking branch 'origin/main' into stream/broker-15-fs-open", `fcbd525` "Restore
@@ -7983,8 +7983,8 @@ found by the compiler, not by reading, exactly what that guard is for). A picked
 (`registerFileHandle`, extracted so both callers share one registration mechanism rather than
 two copies of it, Rule 3) -- so a picked file's id is usable through the SAME
 `fs.read`/`write`/`fstat`/`truncate`/`sync`/`close` cases `fs.open` already wired, with zero new
-handle-scoped dispatch code. `src/preload/orivon-surface.ts` gained `fsUserSelected`, wired into
-both `exposeFallback` and the `executeInMainWorld` bridge; `src/preload/main-world-socket.ts`
+handle-scoped dispatch code. `src/preload/surface/orivon.ts` gained `fsUserSelected`, wired into
+both `exposeFallback` and the `executeInMainWorld` bridge; `src/preload/surface/main-world-socket.ts`
 gained the matching bridge field and reuses `buildFile` per returned handle (Rule 3 again -- no
 second wrapping implementation). The preload's own exposed type omits `directory` entirely
 rather than accept it and fail at runtime.
@@ -8011,7 +8011,7 @@ files) -- baseline after this lane's own merge of `origin/main` (which also reso
 conflict in `src/broker/fs-capability.ts`, PR #213's `truncate` quota/lock fix carried forward
 into `fs-handle-wrapper.ts` rather than dropped): 4584 passed, 3 skipped, 200 files; this lane
 added 26 net new passing tests (`picker-dialog-wording.test.ts`, `ipc-fs-user-selected.test.ts`,
-plus additions to `permissions.test.ts`, `orivon-surface.test.ts`,
+plus additions to `permissions.test.ts`, `surface/tests/orivon.test.ts`,
 `main-world-socket-fs.test.ts`). `npm run check:size`/`check:comments`/`check:contracts`/
 `check:natives`/`check:secrets`/`check:questions`/`check:manifest-parity` all pass.
 `npm run test:e2e` was deliberately **not run** -- this lane does not launch Electron.
@@ -8125,7 +8125,7 @@ none is queued soon enough that this drifts further from the implementation it d
 **Raised 2026-09-16**, lane `stream/broker-19-directory-handle-page` (A194-folder), closing A194's
 own "deliberately not built" gap: `DirectoryHandle`'s nine members (`contracts/handles.ts`) now
 have a full CONTROL_CHANNEL path, dispatched from `dispatch-fs.ts` and exposed through both preload
-worlds (`orivon-surface.ts`'s `exposeFallback`, `main-world-socket.ts`'s `installOrivon`).
+worlds (`surface/orivon.ts`'s `exposeFallback`, `main-world-socket.ts`'s `installOrivon`).
 
 **1. The gate A194 named was not cleared -- it was overridden by explicit instruction, and that
 distinction matters.** A194's own text is direct: building this surface needs `DirectoryHandle`'s
@@ -8181,9 +8181,9 @@ than claiming the broker did not implement `userSelected` -- that correction pre
 
 **Verified, this lane (2026-09-16, `5d144f9` base):** `npm run typecheck` clean. `npm test`: **4651
 passed, 3 skipped** (baseline before this lane: 4615 passed, 3 skipped -- one stale test removed
-from `ipc-fs-user-selected.test.ts`, two stale tests replaced in `orivon-surface.test.ts`, 39 net
+from `ipc-fs-user-selected.test.ts`, two stale tests replaced in `surface/tests/orivon.test.ts`, 39 net
 new added across `ipc-fs-user-selected-directory.test.ts` (31), `main-world-socket-fs.test.ts` (7),
-`orivon-surface.test.ts` (2)). `check:size`/`check:comments`/`check:contracts`/`check:questions`/
+`surface/tests/orivon.test.ts` (2)). `check:size`/`check:comments`/`check:contracts`/`check:questions`/
 `check:manifest-parity`/`check:natives`/`check:secrets` all pass. `src/broker/transport/tests/
 ipc.test-helpers.ts` was measured at 499/500 before this lane touched it; split into a new
 `stub-broker.ts` (pure move, own commit, `git log` shows it landed before any behavioural change)

@@ -14,7 +14,7 @@
 //    synthesised from the Orivon code (see synthesiseCode).
 // 3. `isOrivonError` is STRUCTURAL, never `instanceof Error` -- A152: a
 //    real denial crossing back from the main world
-//    (../preload/main-world-socket.ts) can carry every field correctly
+//    (../preload/surface/main-world-socket.ts) can carry every field correctly
 //    while never being `instanceof Error` here. Still fails closed:
 //    `code` must be one of the closed enum's own values, or toNodeError's
 //    'internal' fallback fires instead.

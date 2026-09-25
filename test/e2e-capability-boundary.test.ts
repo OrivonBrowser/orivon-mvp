@@ -45,7 +45,7 @@
 //   registered"), and orivon.app.grants() is always `[]`.
 //
 // WHAT CHANGED (stream/broker-24-preload-net-surface): `window.orivon.net`
-// is no longer absent. src/preload/orivon-surface.ts now wires net.connect
+// is no longer absent. src/preload/surface/orivon.ts now wires net.connect
 // onto window.orivon for real, via contextBridge.executeInMainWorld -- so a
 // real page in the real launched shell CAN now reach the full IPC/broker
 // pipe. What it still cannot do is complete a GRANTED round trip, because
@@ -288,7 +288,7 @@ it('Phase 1: the real shell launches, and a real net.connect through the full IP
           // than relying only on the fixture's own display text (which
           // stringifies a plain OrivonError-shaped rejection as "[object
           // Object]" -- test/apps/fixture/app.js's `error instanceof Error` check
-          // is false for it by design, see orivon-surface.ts's own header).
+          // is false for it by design, see surface/orivon.ts's own header).
           // This is what actually proves the full pipe: window.orivon.net.
           // connect -> the real preload/main-world wiring -> real Electron
           // IPC -> the real broker's real policy check -> a real denial,
@@ -351,7 +351,7 @@ it('Phase 1: the real shell launches, and a real net.connect through the full IP
             }
           })
           check(
-            "the ordinary contextBridge surface IS present (orivon-surface.ts's real wiring)",
+            "the ordinary contextBridge surface IS present (surface/orivon.ts's real wiring)",
             state.hasOrivon === 'object',
             JSON.stringify(state)
           )

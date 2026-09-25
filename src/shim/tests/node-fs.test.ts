@@ -193,7 +193,7 @@ describe('fs.* -- a throwing callback is invoked exactly once', () => {
     // The throw is expected to escape as an unhandled rejection now that it
     // is no longer swallowed by a `.catch()` -- matching real Node, where an
     // exception escaping an I/O completion callback is never re-delivered.
-    // Silenced here (socket-port.test.ts's P-F9 uses the same pattern) so
+    // Silenced here (ports/tests/socket.test.ts's P-F9 uses the same pattern) so
     // this test's own deliberate throw does not fail the run; the assertion
     // below is what actually proves the fix.
     const onUnhandled = (): void => {}

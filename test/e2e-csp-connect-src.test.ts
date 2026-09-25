@@ -9,7 +9,7 @@
 // Electron launch can prove and a unit test cannot.
 //
 // WHY XMLHttpRequest, NOT fetch(). ADR-0017's routed fetch()
-// (src/preload/fetch-route.ts) overrides `window.fetch` for a registered
+// (src/preload/routed/fetch.ts) overrides `window.fetch` for a registered
 // app's tab and answers a cross-origin request over a broker-checked raw
 // TCP socket instead of Chromium's own networking stack -- so a fetch()
 // failure there would prove the BROKER's own `tcp.connect` grant check, not
@@ -139,7 +139,7 @@ it(
 
         // ---- The header itself really is on the document's own response --
         // a same-origin fetch() is never intercepted by the routing shim
-        // (fetch-route.ts's own `crossOrigin` check), so this reads the
+        // (routed/fetch.ts's own `crossOrigin` check), so this reads the
         // REAL response Chromium itself received and is enforcing.
         const cspHeader = await evaluateRetrying(view, async () => (await fetch('/')).headers.get('content-security-policy'))
         check(
@@ -158,7 +158,7 @@ it(
         // outside this function's own body would reference an undefined
         // identifier once it runs there. The two literals below are
         // duplicated from this file's own consts on purpose, matching
-        // fetch-route.ts's identical constraint on `installFetchRoute`.
+        // routed/fetch.ts's identical constraint on `installFetchRoute`.
         const result = await evaluateRetrying(view, async () => {
           const grantedUrl = 'https://granted.csp-connect-src-e2e.orivon.test/'
           const ungrantedUrl = 'https://not-granted.csp-connect-src-e2e.orivon.test/'

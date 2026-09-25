@@ -70,7 +70,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0067` | 2026-09-22 | The fs quota counts disk usage: reconciled from disk once per session, `writeFile` charges growth, `rm`/overwrite/`rename` release what they free. AI | A216, `../../src/broker/fs-capability.ts` |
 | `d-0068` | 2026-09-22 | An operation on an ended handle answers `'closed'` with `EBADF`, or `'revoked'` when its grant, pick or session was withdrawn. AI | A220, `../../src/broker/handles/README.md` |
 | `d-0069` | 2026-09-22 | A socket closed cleanly in both directions frees its handle and its allowance slot. AI | `../../src/broker/transport/port-pump.ts` |
-| `d-0070` | 2026-09-22 | The file picker waits `TIMEOUT_MS.grant` (120 s), and a pick landing after its request timed out is closed. AI | `../../src/preload/orivon-surface.ts` |
+| `d-0070` | 2026-09-22 | The file picker waits `TIMEOUT_MS.grant` (120 s), and a pick landing after its request timed out is closed. AI | `../../src/preload/surface/orivon.ts` |
 | `d-0071` | 2026-09-22 | A malformed datagram send is answered `send-failed` with `'invalid'` instead of being dropped. AI | `../../src/broker/transport/` |
 | `d-0072` | 2026-09-22 | `WebContext.evaluate` takes an optional `{ timeoutMs }` that can only shorten the platform deadline (an additive contract change), and a pending `evaluate` settles when its context closes, as a contract property. AI | `../../src/contracts/handles.ts` |
 | `d-0073` | 2026-09-22 | Every Node-shaped path the shim presents (cwd, homedir, userData, `$HOME`, `$APPDATA`, `$TMPDIR`) is rooted at one virtual `/orivon/app`, tmpdir `/orivon/app/tmp`; the fs shim strips it and refuses a path outside it with `EACCES`. AI; provisional value | `../../src/shim/README.md` |

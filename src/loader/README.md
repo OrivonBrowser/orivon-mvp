@@ -318,7 +318,7 @@ why that file proves its own byte round trip over plain HTTP rather than HTTPS. 
 module takes a per-request `ca` override (`../broker/adapters/tls-adapter.ts`'s own established
 seam, same shape, same "testing only" rule), so this mechanism can be proven end to end over a real
 TLS handshake in a real Electron launch (`tests/serve-reach.test.ts`), a real advantage Electron's
-own `net.fetch` does not have. A hand-rolled client (the shape `src/preload/fetch-route.ts` is
+own `net.fetch` does not have. A hand-rolled client (the shape `src/preload/routed/fetch.ts` is
 forced into by its own `contextBridge` serialisation constraint) was rejected because nothing here
 needs that constraint: Rule 6 says prefer the mature, already-audited component once a hand-rolled
 one is not actually required, and Node's own client already handles chunked encoding and keep-alive

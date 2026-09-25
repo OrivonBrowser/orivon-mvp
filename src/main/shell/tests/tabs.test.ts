@@ -6,7 +6,7 @@ import type { SubsystemContext } from '../../registry.js'
 
 // tabs.ts imports WebContentsView directly from 'electron' at module scope --
 // outside a real Electron process this cannot even be imported without
-// mocking it first (same reasoning as src/preload/tests/orivon-surface.test.ts).
+// mocking it first (same reasoning as src/preload/surface/tests/orivon.test.ts).
 // The fake webContents is a REAL EventEmitter, not a bag of vi.fn() no-ops:
 // the swap-on-navigate behaviour below depends on which view's listeners act
 // for the tab (a swapped-out view's 'destroyed' must not reach forgetTab(),

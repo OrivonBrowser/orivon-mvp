@@ -308,7 +308,7 @@ it(
           'to the page, correctly shaped but never `instanceof Error`, and src/shim/node-http-errors.ts\'s ' +
           'isOrivonError() used to require exactly that. It is now structural (still validated against ' +
           'the closed OrivonErrorCode enum, so a malformed value still fails closed to `internal`), and ' +
-          'src/preload/main-world-socket.ts also revives the crossed value into a real Error before the ' +
+          'src/preload/surface/main-world-socket.ts also revives the crossed value into a real Error before the ' +
           'page ever sees it, restoring `OrivonError extends Error` for every consumer, not just this shim',
           isShimFailure(beforeGrant) && beforeGrant.orivonCode === 'denied',
           JSON.stringify(beforeGrant)

@@ -92,7 +92,7 @@ function forwardedRequestHeaders (request: Request, bodyLength: number): Record<
   return headers
 }
 
-/** A malformed header from the peer must not fail the whole response -- it is dropped, the same choice `src/preload/fetch-route.ts`'s own `readResponse` makes for the identical case. */
+/** A malformed header from the peer must not fail the whole response -- it is dropped, the same choice `src/preload/routed/fetch.ts`'s own `readResponse` makes for the identical case. */
 function forwardedResponseHeaders (res: IncomingMessage): Headers {
   const headers = new Headers()
   for (const [name, value] of Object.entries(res.headers)) {
@@ -181,7 +181,7 @@ export function nodeReachDial (options: ReachDialOptions = {}): ReachDial {
     })
 
     // The five HTTP statuses the Fetch spec calls a "null body status" --
-    // mirrors src/preload/fetch-route.ts's own isNullBodyStatus (Rule 3:
+    // mirrors src/preload/routed/fetch.ts's own isNullBodyStatus (Rule 3:
     // same idea, not extracted into a shared module -- that file is forced
     // to stay self-contained for contextBridge serialisation, so a second,
     // tiny copy here is the honest cost, not a missed extraction).

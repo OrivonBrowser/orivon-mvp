@@ -109,7 +109,7 @@ uninformative.
 > control-channel dispatch and real `MessageChannelMain` port, `src/broker/transport/port-pump.ts`'s
 > read-side credit pump and `port-sink.ts`'s write side. Reachable from a real page as
 > `window.orivon.net.connect`, whose `readable`/`writable` are built in the main world by
-> `src/preload/main-world-socket.ts`; e2e-verified. TCP only; `net.connectSecure` returns the same
+> `src/preload/surface/main-world-socket.ts`; e2e-verified. TCP only; `net.connectSecure` returns the same
 > shape over broker-terminated TLS (`ADR-0017`), plus what its handshake established
 > (`SecureTcpSocket`, below).
 
@@ -231,7 +231,7 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 >
 > - Broker read side: `src/broker/transport/port-pump.ts`'s `pumpLoop` stops reading the OS socket at
 >   credit zero.
-> - Renderer read side: `src/preload/socket-port.ts`'s `reportConsumed` flushes a
+> - Renderer read side: `src/preload/ports/socket.ts`'s `reportConsumed` flushes a
 >   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces.
 > - Broker write side: `src/broker/transport/port-sink.ts` coalesces `WriteAckMessage` against the same
 >   constant (see §Write direction below).
@@ -366,7 +366,7 @@ interface TcpServer extends Handle {
 > `udp.bind` policy: `src/broker/policy/bind.ts`. The `node:dgram` adapter: `src/broker/adapters/
 > udp-adapter.ts`. The relay pumping datagrams between the OS socket and the renderer's dedicated
 > port: `src/broker/transport/datagram-relay.ts`. Reachable from a real page as
-> `window.orivon.net.udpBind`, built in the main world by `src/preload/main-world-socket.ts`'s
+> `window.orivon.net.udpBind`, built in the main world by `src/preload/surface/main-world-socket.ts`'s
 > `buildUdpSocket` and wired through `src/broker/index.ts`'s `udpBind`. Reachable does not mean
 > granted: a page's call answers `'denied'` unless its origin holds a `udp.bind` grant.
 

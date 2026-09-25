@@ -210,7 +210,7 @@ it(
         // ---- THE ENFORCEMENT PROOF: a real XHR to the GRANTED host, and
         // one to an UNGRANTED host with an equally real server listening.
         // No reference to outer consts inside this callback -- see file
-        // header, same constraint fetch-route.ts's own installFetchRoute
+        // header, same constraint routed/fetch.ts's own installFetchRoute
         // and e2e-csp-connect-src.test.ts's own evaluate callback share.
         // AN <img> ELEMENT, NOT AN XHR: an app tab's XHR is routed through
         // the broker (src/preload/), so it would prove the broker's own
