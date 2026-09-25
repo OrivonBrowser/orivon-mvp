@@ -56,7 +56,8 @@ function installCertificateCheck (target: Session): void {
 /**
  * Stamps every page's `.eth` request with the partition its top-level page
  * owns, overwriting anything the page set. A request from no page (the
- * loader's, which names its own) passes as it came.
+ * loader's, which names its own) passes as it came. Installed on the
+ * default session only: see README.md's Design notes for why no other.
  */
 function installPartitionStamp (target: Session): void {
   target.webRequest.onBeforeSendHeaders({ urls: ['https://*.eth/*'] }, (details, callback) => {
@@ -74,11 +75,6 @@ function installPartitionStamp (target: Session): void {
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl })
     callback({ requestHeaders: withPartition(details.requestHeaders, PARTITION_HEADER, partition) })
   })
-}
-
-function installOnSession (target: Session): void {
-  installCertificateCheck(target)
-  installPartitionStamp(target)
 }
 
 const SHIPPED_CHECKPOINT = { root: shippedCheckpoint.root, timestamp: slotTimestamp(shippedCheckpoint.slot) }
@@ -185,10 +181,11 @@ export const verifierSubsystem: Subsystem = {
     const existing = app.commandLine.getSwitchValue('host-resolver-rules')
     app.commandLine.appendSwitch('host-resolver-rules', composeResolverRules({ devClauses: dev.rules, port: loopbackPort(), existing }))
     if (dev.secureOrigins !== '') app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', dev.secureOrigins)
-    app.on('session-created', installOnSession)
+    app.on('session-created', installCertificateCheck)
   },
   afterReady: () => {
-    installOnSession(session.defaultSession)
+    installCertificateCheck(session.defaultSession)
+    installPartitionStamp(session.defaultSession)
     const host = new HostSupervisor({
       fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon .eth verifier' }),
       config: hostConfig,

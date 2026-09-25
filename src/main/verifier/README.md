@@ -32,6 +32,15 @@ Why the code here has the shape it has. This is the destination
 source comment warns about a trap a maintainer would otherwise fall into, and the argument for
 a design belongs here instead.
 
+**The partition stamp is on the default session only** ([`verifier-subsystem.ts`](verifier-subsystem.ts)'s
+`installPartitionStamp`). Any `webRequest` listener sends every request of its session through
+Electron's proxy, and with it a redirect a `protocol.handle` handler returns reaches the page
+with the redirect's status on the final response (`test/e2e-served-csp.test.ts` measures it).
+Installed apps and web contexts serve `https` through such handlers, so a listener there would
+break every routed redirect. None of their pages reaches the verifier anyway: their handlers
+dial through Node's `https`, which cannot resolve a `.eth` name. Every page that can reach it, a
+`.eth` page included, runs in the default session.
+
 **One owner of `--host-resolver-rules`** ([`resolver-rules.ts`](resolver-rules.ts)). A second copy of
 the switch replaces the first, and the first matching `MAP` clause wins. So one value is built, in
 this order: developer-mode names, then `MAP *.eth 127.0.0.1:<port>`, then whatever the command line

@@ -133,8 +133,8 @@ provisional part proposed.
 **The verifier's caches are kept per site.** Mounted names, in-flight mounts and verified blocks
 are keyed by the top-level page origin a request belongs to, the way Chromium partitions its own
 HTTP cache, and the verifier host bypasses Electron's HTTP cache. The shell stamps every page's
-`.eth` request with that origin in a `webRequest` listener on every session, overwriting anything
-the page set; a top-level navigation belongs to the page it opens; a request the browser makes
+`.eth` request with that origin in a `webRequest` listener on the default session, where every
+page that can reach the verifier runs, overwriting anything the page set; a top-level navigation belongs to the page it opens; a request the browser makes
 itself (`Sec-Fetch-Site: none`, its favicon fetch) uses the name's own; anything else shares
 nothing. Two channels remain, both ones browsers with partitioned caches also have: a page that
 opens a name as a top-level window and times it probes that name's own partition, and the four
