@@ -7,7 +7,7 @@
 // connection outside its manifest patterns and is rejected.
 //
 // THE HIGHEST-VALUE ASSERTION, BUILT AND VERIFIED FIRST: the out-of-manifest
-// refusal below, run through the real shim (src/shim/node-net.ts), not the
+// refusal below, run through the real shim (src/shim/net/net.ts), not the
 // raw capability API test/e2e-capability-boundary.test.ts already covers.
 // Without it, nothing fails if capability enforcement degrades to allow-all.
 //
@@ -21,7 +21,7 @@
 // which calls the real, published installApp (src/main/app-install-subsystem.ts)
 // -- (3) the real capability check, over the real IPC pipe, denying and
 // allowing exactly as production code would; (4) require('net') through the
-// REAL, unmodified src/shim/node-net.ts (bundled by esbuild for this fixture,
+// REAL, unmodified src/shim/net/net.ts (bundled by esbuild for this fixture,
 // see ./app-loader-journey-shim-entry.ts's own header for exactly what that
 // substitutes for and why). What is NOT exercised: a real grant reaching that
 // pipe via a real, accepted install. src/loader/install-origin.ts's A46 (no
@@ -305,7 +305,7 @@ it(
           'A152 (docs/open-questions.md), CLOSED: the shim reports this refusal as `denied`, its real ' +
           'code -- previously the generic `internal` fallback, because the RAW window.orivon.net.connect() ' +
           'rejection is a plain {name, message, code} object once it has crossed back from the main world ' +
-          'to the page, correctly shaped but never `instanceof Error`, and src/shim/node-http-errors.ts\'s ' +
+          'to the page, correctly shaped but never `instanceof Error`, and src/shim/node-errors.ts\'s ' +
           'isOrivonError() used to require exactly that. It is now structural (still validated against ' +
           'the closed OrivonErrorCode enum, so a malformed value still fails closed to `internal`), and ' +
           'src/preload/surface/main-world-socket.ts also revives the crossed value into a real Error before the ' +

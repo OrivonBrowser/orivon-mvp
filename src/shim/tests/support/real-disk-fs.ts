@@ -27,7 +27,7 @@ import type { FileHandle, FileStat } from '../../../contracts/handles.js'
 // fake stands in for the broker's confinement policy, and the one thing
 // that must never drift between the two is which paths COUNT as the root
 // -- a test where the two disagreed about that would validate nothing.
-import { isRootPath } from '../../node-fs-root.js'
+import { isRootPath } from '../../fs/root.js'
 
 /** Mirrors io-errors.ts's ERRNO_TO_CODE -- see this file's own header for why it is re-derived, not imported. */
 const ERRNO_TO_CODE: Readonly<Record<string, string>> = {
@@ -81,8 +81,8 @@ function wrapHandle (real: Awaited<ReturnType<typeof open>>): FileHandle {
       const { bytesWritten } = await real.write(data, 0, data.length, position)
       return bytesWritten
     },
-    readable: () => { throw new Error('not used by nedb-storage.test.ts -- fs.createReadStream uses node-fs-handle.ts\'s own open/read, not this') },
-    writable: () => { throw new Error('not used by nedb-storage.test.ts -- fs.createWriteStream uses node-fs-handle.ts\'s own open/write, not this') },
+    readable: () => { throw new Error('not used by nedb-storage.test.ts -- fs.createReadStream uses fs/handle.ts\'s own open/read, not this') },
+    writable: () => { throw new Error('not used by nedb-storage.test.ts -- fs.createWriteStream uses fs/handle.ts\'s own open/write, not this') },
     stat: async () => toFileStat(await real.stat()),
     truncate: async (length) => { await real.truncate(length) },
     // A real fsync -- @seald-io/nedb's own flushToStorageAsync (open + sync

@@ -80,7 +80,7 @@ the lock it actually is.
 **Why `Buffer` reaches the page inlined into [`page-buffer.ts`](page-buffer.ts)'s installer.**
 `contextBridge.executeInMainWorld` serialises a function alone, so the installer cannot import
 the `buffer` package. `electron.vite.config.ts`'s `pageBufferPackage` plugin bundles the package
-(resolved from [`../shim/node-buffer.ts`](../shim/node-buffer.ts), so the one the shim wraps) and
+(resolved from [`../shim/polyfills/buffer.ts`](../shim/polyfills/buffer.ts), so the one the shim wraps) and
 writes it into the installer's body at build time, and fails the build if the placeholder it
 replaces is not there exactly once. Measured in a headless Electron 44 tab against five page CSPs (none; the served
 bundle's own; `script-src 'self' 'unsafe-inline'`; nonce-only; nonce plus Trusted Types), this
@@ -98,5 +98,5 @@ still assign over, shadow and delete it. Two other routes were measured beside i
 
 The bundler drops a nested `'use strict'`, so the package runs sloppy in the page, as
 `installGlobals` does; `tests/page-buffer.test.ts` and `test/e2e-page-buffer.test.ts` both run
-it that way. [`../shim/node-buffer.ts`](../shim/node-buffer.ts) adopts this global when it finds
+it that way. [`../shim/polyfills/buffer.ts`](../shim/polyfills/buffer.ts) adopts this global when it finds
 it, which is what keeps `require('buffer').Buffer` and `Buffer` one class.

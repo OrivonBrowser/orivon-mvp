@@ -13,7 +13,7 @@ const PAGE_BUFFER_SOURCE = normalizePath(resolve(root, 'src/preload/page-buffer.
 
 /** One expression evaluating to the `buffer` package's exports: the copy the shim's own `buffer` module imports, bundled whole. */
 async function bufferPackageExpression (): Promise<string> {
-  const entry = createRequire(resolve(root, 'src/shim/node-buffer.ts')).resolve('buffer/')
+  const entry = createRequire(resolve(root, 'src/shim/polyfills/buffer.ts')).resolve('buffer/')
   const result = await build({
     configFile: false,
     logLevel: 'warn',

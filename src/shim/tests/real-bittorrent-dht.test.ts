@@ -16,8 +16,8 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { Socket as ShimDgramSocket } from '../node-dgram-socket.js'
-import { isIP as shimIsIP } from '../node-net-isip.js'
+import { Socket as ShimDgramSocket } from '../net/dgram-socket.js'
+import { isIP as shimIsIP } from '../net/isip.js'
 import { bindViaRealUdp } from './support/real-udp-bridge.js'
 
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../..')
@@ -67,7 +67,7 @@ describe.skipIf(!vendored)('a real k-rpc-socket instance against this shim\'s dg
       })
       // A literal IP address on both sides: net.isIP() must return non-zero
       // here, or k-rpc-socket routes this through dns.lookup instead (this
-      // shim's node-dns.ts refuses that on purpose -- see its own header).
+      // shim's net/dns.ts refuses that on purpose -- see its own header).
       a.rpc.query({ host: '127.0.0.1', port: b.port }, { q: 'ping', a: { id: Buffer.from('node-a-id-000000000') } }, (error, message) => {
         if (error !== null) { reject(error); return }
         resolvePong(message as KRpcSocketMessage)

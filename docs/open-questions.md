@@ -3846,10 +3846,10 @@ however it is spelled.
 polyfill.** `d-0030` added `OrivonNet.lookup` to `src/contracts/capability-api.ts` (#199);
 `net-capability.ts`'s `lookup`, its control-channel dispatch (`dispatch-net.ts`'s `'net.lookup'`
 case) and its preload surface (`surface/net.ts`'s `netLookupBridge`) landed in #201;
-`src/shim/node-dns.ts`'s `dns.lookup`/`dns.promises.lookup` now call through to it for real,
+`src/shim/net/dns.ts`'s `dns.lookup`/`dns.promises.lookup` now call through to it for real,
 wired into `module-map.ts`'s `'dns'` entry, closing #205. **Verified against the tree, not
 assumed:** `net-capability.ts` exports `lookup` from `createNetCapability`'s returned object,
-`dispatch-net.ts` has a real case for it, and `node-dns.ts` no longer contains a refusal for
+`dispatch-net.ts` has a real case for it, and `net/dns.ts` no longer contains a refusal for
 `lookup` itself (only for every other `dns.*` member, unchanged and unrelated to this entry).
 
 **Half-open, tracked separately rather than reopening this entry:** the review above named the
@@ -4321,12 +4321,12 @@ question.** The app's own confined root is the obvious answer and probably the r
 should be chosen deliberately and written down, because every relative path an app resolves will
 key off it.
 
-### A123 — `IncomingMessage` never gets `.socket`, though `node-https.ts` is written as if it does **[STILL OPEN]**
+### A123 — `IncomingMessage` never gets `.socket`, though `http/https.ts` is written as if it does **[STILL OPEN]**
 
 **Raised 2026-09-10**, post-merge audit (`/code-review` over `src/shim`, PR #131).
 
-`src/shim/node-http-client.ts` builds an `IncomingMessage` with no `.socket`, so `res.socket.<anything>`
-throws. `node-https.ts`'s own header describes behaviour that assumes it is present. Either provide
+`src/shim/http/client.ts` builds an `IncomingMessage` with no `.socket`, so `res.socket.<anything>`
+throws. `http/https.ts`'s own header describes behaviour that assumes it is present. Either provide
 it or correct the header — the two disagreeing is the actual defect, since a reader trusts the header.
 
 ### A124 — the favicon address check does not pin the resolved address, unlike the loader's fetch **[STILL OPEN]**
@@ -4664,7 +4664,7 @@ each module target exports a default whose value is a Proxy -- which changes how
 owner's.
 
 > **Resolved 2026-09-14, `stream/shim-12-named-refusals`.** `refusingProxy` moved on the
-> default-export of `node-dns.ts`, `node-fs.ts`, `node-http.ts`/`node-https.ts` and `node-net.ts`
+> default-export of `net/dns.ts`, `fs/fs.ts`, `http/http.ts`/`http/https.ts` and `net/net.ts`
 > -- reused directly from `src/shim-electron/unimplemented.ts` rather than copied, after
 > generalising it so `classify` returns the `Error` to throw directly instead of a record
 > `shim-electron` converted via a hardcoded `refuse()` call. This package's own gaps get their
@@ -4680,7 +4680,7 @@ owner's.
 > line if called); it now throws `OrivonShimError { api: 'dns.resolve4', reason: 'not-built',
 > message: "orivon-node-shim: dns.resolve4 is not supported -- ... (D-0006, ...)" }` the instant
 > it is read. `fs.copyFile` the same way, reason `'unimplemented'`. Both proven in
-> `src/shim/tests/node-dns.test.ts` and `node-fs.test.ts`.
+> `src/shim/net/tests/dns.test.ts` and `fs/tests/fs.test.ts`.
 >
 > **`net.Socket`/`dgram.Socket` instances are deliberately NOT wrapped the same way** -- this
 > pass's one real design finding, beyond applying #151's own mechanism. `refusingProxy` throws on
@@ -4690,7 +4690,7 @@ owner's.
 > would have caused. `class` prototypes are also non-writable, so the wrap is not mechanically
 > available there the way it is for a plain exported object. Instead both classes gained the
 > specific real methods a porting app is likely to hit as present functions, in the same
-> "present, throws when called" shape `node-fs-unsupported.ts`/`node-http-unsupported.ts` already
+> "present, throws when called" shape `fs/unsupported.ts`/`http/unsupported.ts` already
 > use for their own decided gaps: `ref()`/`unref()` are safe no-ops (real Node's own contract for
 > them is "no meaning, return `this`", so a no-op is correct, not a shortcut), `setTimeout`
 > (net.Socket) and `setBroadcast`/`setMulticastTTL`/`setMulticastLoopback`/`addMembership`/
@@ -4732,7 +4732,7 @@ skip -- there is a passing guard case that asserts *"is skipped: spike/app/node_
 k-rpc-socket is not present in this checkout"* -- but a green run still reads as "verified".
 
 **Why this is filed rather than fixed.** The 2026-09-11 post-merge audit found three real
-defects in `node-dgram-socket.ts` (a second `bind()` orphaning the first handle, the documented
+defects in `net/dgram-socket.ts` (a second `bind()` orphaning the first handle, the documented
 array `send()` form throwing, `close()` emitting twice) that a real k-rpc-socket run would very
 likely have surfaced. They survived a whole unattended build run AND a verified
 `/claude-security` scan because the one test that exercises a real caller cannot execute. The
@@ -5792,9 +5792,9 @@ or needs to flag further.
 
 **Raised 2026-09-13**, `S4-7-e2e` lane, while building the end-to-end app-loader journey test
 (`test/e2e-app-loader-journey.test.ts`). The first test to bundle a real `src/shim/` module
-(`node-net.ts`) with esbuild and run it inside a real browser page, rather than injecting a fake
+(`net/net.ts`) with esbuild and run it inside a real browser page, rather than injecting a fake
 `orivon.net.connect` and calling shim internals directly (every existing `src/shim/tests/*`
-suite's own pattern) -- so this is the first place a real dependency of `node-net-socket.ts`'s
+suite's own pattern) -- so this is the first place a real dependency of `net/socket.ts`'s
 `Duplex` base class (`stream-browserify`, via `module-map.ts`'s own alias) actually ran end to
 end.
 
@@ -5871,12 +5871,12 @@ the main world (where `main-world-socket.ts`'s bridge runs, per `A113`'s own acc
 constructing a real `OrivonError`) to the page's own promise rejection -- never a real `Error`
 instance, despite carrying every field of one correctly as an own, enumerable property.
 
-**Where this actually breaks.** `src/shim/node-http-errors.ts`'s `isOrivonError` is `value
+**Where this actually breaks.** `src/shim/node-errors.ts`'s `isOrivonError` is `value
 instanceof Error && typeof value.code === 'string'` -- the `instanceof Error` half is false for
 EVERY real denial that crosses this specific boundary, so `toNodeError`'s fallback branch always
 fires instead: `code`/`orivonCode` become the generic `'internal'`, and the message becomes
 `String(value)` -- literally the string `"[object Object]"`, since a plain object has no useful
-`toString()`. `src/shim/node-net-socket.ts`'s `Socket` class calls `toNodeError` on every
+`toString()`. `src/shim/net/socket.ts`'s `Socket` class calls `toNodeError` on every
 `dial()` rejection, so this fires for every real net-shim denial in a real Electron launch, not a
 contrived case -- `test/e2e-app-loader-journey.test.ts`'s two refusal checks pin this exact,
 current value (`orivonCode === 'internal'`) rather than the intended `'denied'`, specifically so
@@ -5919,7 +5919,7 @@ other failure through `require('net')`/`require('http')`/`require('https')`.
 > a second crossing (everything it feeds is already past one), so nothing was lost by fixing it
 > alongside the entry that was actually measured.
 >
-> **Consumer (`src/shim/node-http-errors.ts`):** kept, as defence in depth, not dropped once the
+> **Consumer (`src/shim/node-errors.ts`):** kept, as defence in depth, not dropped once the
 > producer fix landed. `isOrivonError` is now structural (`name`/`message`/`code` all present and
 > typed right) rather than `instanceof Error`, exactly as this entry's own AI recommendation
 > said -- but with the closed-enum check this entry's recommendation did NOT include: `code`
@@ -5942,7 +5942,7 @@ other failure through `require('net')`/`require('http')`/`require('https')`.
 > change, not a silent behaviour shift), now pin `orivonCode === 'denied'` and pass against a
 > real Electron launch -- see this PR's own verification output for the actual before/after
 > values from that launch, not just the unit tests added alongside (`src/shim/tests/
-> node-http-errors.test.ts`, `src/preload/surface/tests/main-world-socket.test.ts`).
+> tests/node-errors.test.ts`, `src/preload/surface/tests/main-world-socket.test.ts`).
 >
 > **A113 (`docs/open-questions.md`), the same family, explicitly NOT touched by this fix, and
 > not narrowed by it either.** A113 is about `surface/orivon.ts`'s `exposeFallback()` path --
@@ -6901,7 +6901,7 @@ implementation-adjacent); the fix is one stub method and one signature update pe
 once this lane's shapes are confirmed.
 
 **Needed by:** the A114 implementation lane (item 1), the `fs.open`/`fs.userSelected` broker lane
-(item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
+(item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `net/dns.ts` to a real
 broker capability (item 3, `A107`).
 
 ---
@@ -7040,7 +7040,7 @@ very same modules the new mechanism covered for every other member. A porting de
 `catch (e) { if (e instanceof OrivonShimError) handleRefusal(e.reason) }` silently missed all three.
 The three now extend `OrivonShimError`, with `.message`/`.name`/`.code` verified unchanged.
 
-**`OrivonFsUnsupportedError` (`src/shim/node-fs-unsupported.ts`) is a fourth instance of the same
+**`OrivonFsUnsupportedError` (`src/shim/fs/unsupported.ts`) is a fourth instance of the same
 problem and is NOT fixed here** -- the lane's brief named three classes, and it reported the gap
 rather than silently widening its own scope. It should be folded in.
 
@@ -7490,7 +7490,7 @@ either one alone. Whichever of the two merges second will need to renumber.
 
 **What a ported app sees, 2026-09-22.** The gap above is still open and still narrow: the
 module-level `fs.createReadStream`/`fs.createWriteStream` a Node library calls work, built over
-the shim's own positional reads and writes (`src/shim/node-fs-streams.ts`, `src/shim/README.md`),
+the shim's own positional reads and writes (`src/shim/fs/streams.ts`, `src/shim/README.md`),
 and each destroys itself at end, finish or a failed write, releasing its handle. Only
 `FileHandle#createReadStream`/`createWriteStream`, the instance methods on a handle from
 `fs.promises.open()`, still refuse by name, pending `readable()`/`writable()` reaching a page.
@@ -7553,7 +7553,7 @@ an owner decision -- this lane built against it rather than waiting, per its own
 owner should confirm A167 (and the two judgment calls above, which only exist because that
 reading was taken as given) before `net.lookup` reaches a production grant path.
 
-**Needed by:** lane L6 (`src/shim/node-dns.ts`'s real `dns.lookup` shape, A107) -- this lane
+**Needed by:** lane L6 (`src/shim/net/dns.ts`'s real `dns.lookup` shape, A107) -- this lane
 deliberately left that file untouched, per its own scope.
 
 **Amended 2026-09-15 by the conductor, during the `src/broker/` hand-review, before merge.** The
@@ -7793,14 +7793,14 @@ gap while building `fs.open`'s broker half) and has simply not reached `main` ye
 reason its own branch has not. `npm run check:questions` only rejects a DUPLICATE `### A<n>`
 heading within one file; it does not require every A-number a branch cites in source actually
 resolve to a heading on that branch, so this lane's own `docs/open-questions.md A184` citations
-(`node-fs-handle.ts`, `node-fs.ts`, their tests, `README.md`) pass CI here regardless, and will
+(`fs/handle.ts`, `fs/fs.ts`, their tests, `README.md`) pass CI here regardless, and will
 resolve correctly once `stream/broker-15-fs-open` (or whatever carries A184's actual text) merges
 before or alongside this lane.
 
 **What this lane did about it, since the contract types (`src/contracts/handles.ts`'s
 `FileHandle`, `src/contracts/capability-api.ts`'s `OrivonFs.open`) ARE already stable on `main`
 regardless of the broker/preload wiring's merge status:** built and fully unit-tested
-`node-fs-handle.ts` (the local cursor, the callback family, the A184-citing
+`fs/handle.ts` (the local cursor, the callback family, the A184-citing
 `createReadStream`/`createWriteStream` refusal) entirely against that type contract, using a
 fake `orivon.fs.open` in every test -- never against a live broker, which this lane was told not
 to launch anyway. The code is correct against the contract and will start working the moment
@@ -8042,7 +8042,7 @@ own, a design one.
 > reason `checkLookup` (`src/broker/policy/lookup.ts`) declines -- `errors.ts`'s "denied never
 > varies by reason" rule is not relaxed for this case, and no new `OrivonErrorCode` was added.
 > The NAMED refusal this decision also asked for happens one layer up, in
-> `src/shim/node-dns.ts`'s `describeLookupDenial`: on a `'denied'` `net.lookup` rejection, it
+> `src/shim/net/dns.ts`'s `describeLookupDenial`: on a `'denied'` `net.lookup` rejection, it
 > reads the app's own `orivon.app.grants()` -- a standing, already-legitimate capability an app
 > has to introspect ITSELF, not the broker's reply saying anything new -- and, only when the held
 > set is exactly "https.connect, no tcp.connect, no udp.send", rewrites the Node-shaped error's
@@ -8858,7 +8858,7 @@ the descriptor's shape and breaks.
 
 Filed 2026-09-22. The broker's confinement refuses any path that resolves to the app's root
 itself (`deny('is-root')`). The shim answers `stat`, `access`, `mkdir -p` and `fsync` of the root
-locally (`src/shim/node-fs-root.ts`), but `readdir` needs a listing only the broker has, so it
+locally (`src/shim/fs/root.ts`), but `readdir` needs a listing only the broker has, so it
 fails `EACCES` with a message naming the gap. A subdirectory lists normally.
 
 **What would settle it:** a broker policy change allowing a read-only listing of the root.

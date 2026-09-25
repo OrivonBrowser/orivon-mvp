@@ -224,7 +224,7 @@ pre-resolve-gate argument above holds for both without qualification.
 one** (`errors.ts`): an app that is refused a lookup because it holds only `https.connect`
 sees exactly the same `'denied'`, with no `platformCode`, as any other reason `checkLookup`
 declines. Naming the reason for a ported app's benefit happens one layer up, in
-`src/shim/node-dns.ts`, which reads the app's OWN `orivon.app.grants()`, a standing,
+`src/shim/net/dns.ts`, which reads the app's OWN `orivon.app.grants()`, a standing,
 already-legitimate capability an app has over itself, to tell this specific refusal apart from
 an ordinary one, rather than the broker's reply carrying anything new. See that file's own
 `describeLookupDenial` for the mechanism and why it fails back to the ordinary generic message
