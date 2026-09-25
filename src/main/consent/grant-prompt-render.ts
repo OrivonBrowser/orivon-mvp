@@ -205,8 +205,8 @@ export function describeGrantRequest (
 }
 
 /**
- * `tcp.listen` and `udp.bind` together, as one row -- a real P2P app (the
- * flagship included) declares both for the SAME reason, one port range
+ * `tcp.listen` and `udp.bind` together, as one row -- a real P2P app (a
+ * torrent client, say) declares both for the SAME reason, one port range
  * doing peer connections over TCP and DHT/exchange over UDP, and rendering
  * them as two separately-warned rows says the same underlying fact
  * ("other computers can reach this device") twice in different words. Only
@@ -273,15 +273,15 @@ function mergeRowsWithIdenticalMessage (rows: readonly CapabilityGrantSummary[])
  * own line, not only through an icon a person may not consciously register.
  *
  * TWO MERGES RUN BEFORE RENDERING, both fixing REDUNDANT rows rather than
- * TRUE ones -- found against the flagship's own manifest (`connect: ["*:*"]`
- * + `listen` + `udp.bind` + `send: ["*:*"]` + `fs`), which rendered 4 of 5
- * rows warned and one headline twice. Neither merge silences a real
+ * TRUE ones -- found against the torrent example manifest (capability-api.md:
+ * `connect: ["*:*"]` + `listen` + `udp.bind` + `send: ["*:*"]` + `fs`),
+ * which rendered 4 of 5 rows warned and one headline twice. Neither merge silences a real
  * warning: `tcp.listen`+`udp.bind` become one row (`describeInboundAccess`)
  * because they are one fact stated twice, and any two rows that render the
  * identical headline collapse into one (`mergeRowsWithIdenticalMessage`)
  * for the same reason. What is left after both is exactly as many warned
  * rows as there are DISTINCT kinds of breadth the manifest actually
- * declares -- for the flagship, two: it can reach anywhere outbound, and it
+ * declares -- for that manifest, two: it can reach anywhere outbound, and it
  * can be reached from anywhere inbound. Considered and rejected: a second,
  * lower-severity marker for `tcp.listen`/`udp.bind` (README, Design notes)
  * -- the two facts are not degrees of the same risk, so grading one below

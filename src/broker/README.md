@@ -179,8 +179,8 @@ assert the opposite for TCP), so neither can be simplified away silently.
 ### `policy/reserved-ports.ts`: what a blanket grant does not reach
 
 A grant of `*:*` is
-legitimate, since the flagship declares one because DHT and peer exchange reach
-arbitrary hosts, but it made every granted origin a general outbound traffic
+legitimate, since a P2P app such as a torrent client declares one because DHT and peer
+exchange reach arbitrary hosts, but it made every granted origin a general outbound traffic
 generator from the user's own IP address, on any port. The ports with a real
 abuse history and no legitimate use from a page's network grant are excluded
 from any BLANKET grant, and reachable only when a pattern names the exact port.

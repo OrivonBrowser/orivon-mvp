@@ -136,10 +136,10 @@ export function portMatches (spec: string, port: number): boolean {
 export type HostSpecKind = 'any-public-unicast' | 'address-literal' | 'hostname' | 'authorises-nothing'
 
 export function hostSpecKind (spec: string): HostSpecKind {
-  // `*` means PUBLIC UNICAST ONLY -- specified, not inferred, because the
-  // flagship genuinely declares `*:*` and an app holding it must still not
-  // reach the user's router, NAS or 169.254.169.254 (security-model.md T12,
-  // capability-api.md).
+  // `*` means PUBLIC UNICAST ONLY -- specified, not inferred, because a P2P
+  // app such as a torrent client genuinely declares `*:*` and an app holding
+  // it must still not reach the user's router, NAS or 169.254.169.254
+  // (security-model.md T12, capability-api.md).
   if (spec === '*') return 'any-public-unicast'
 
   const host = normalizeHost(spec)

@@ -512,9 +512,9 @@ describe('describeInstallConsent', () => {
 
   // Coordinator review, 2026-09-14: the round above did not test what
   // happens when SEVERAL warned capabilities appear together, and the
-  // flagship's real manifest broke it -- 4 of 5 rows warned, one headline
-  // ("⚠ Unlimited network access") appearing twice from tcp.connect and
-  // udp.send. These pin the two merges that fix it.
+  // torrent example manifest (capability-api.md) broke it -- 4 of 5 rows
+  // warned, one headline ("⚠ Unlimited network access") appearing twice
+  // from tcp.connect and udp.send. These pin the two merges that fix it.
   it('merges tcp.connect and udp.send into ONE row when both are unlimited -- an identical headline never repeats', () => {
     const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] }, udp: { send: ['*:*'] } } })
 

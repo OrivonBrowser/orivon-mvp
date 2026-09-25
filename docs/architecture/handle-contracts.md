@@ -576,7 +576,7 @@ An app being closed, navigated away from, or
 restarted takes *all* its handles, including the `fs.userSelected` ones a grant revocation cannot
 reach, which is the other half of the §FileHandle exception, and what "does not survive a restart"
 means. But it is **graceful**: FIN rather than RST, buffered writes flushed rather than discarded.
-Nobody withdrew anything, and treating a user clicking a link away from the torrent app as a
+Nobody withdrew anything, and treating a user clicking a link away from a torrent app as a
 revocation would reset every peer connection and drop a half-written piece on the floor.
 
 Handles registered *after* a session teardown begins but before its teardowns complete are

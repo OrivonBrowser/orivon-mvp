@@ -673,8 +673,8 @@ describe('checkConnect -- reserved ports (open-questions.md A82)', () => {
   }
 
   it('a blanket *:* grant does not reach the mail submission port', async () => {
-    // The flagship genuinely declares `*:*`. Before this rule that made every
-    // granted origin an outbound mail relay from the user's own IP.
+    // A torrent client genuinely declares `*:*`. Without this rule, every
+    // origin granted it would be an outbound mail relay from the user's own IP.
     const decision = await checkConnect(['*:*'], 'mail.example', 25, resolverFor({ 'mail.example': [PUBLIC_A] }))
     expect(decision.allowed).toBe(false)
     expect(denialReason(decision)).toBe('reserved-port')

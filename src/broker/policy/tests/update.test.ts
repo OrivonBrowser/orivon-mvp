@@ -14,7 +14,7 @@ import type { Grant } from '../../../contracts/index.js'
 //
 //   1. kind comparison instead of a subset check (the ORIGINAL wrong design,
 //      corrected in capability-api.md A9 SS2)
-//        -> "one granted host widens to *:* -- the journey 1 grant"
+//        -> "one granted host widens to *:* -- a P2P app's grant"
 //        -> "an extra host is added to an already granted kind"
 //        -> "a listen range widens at the top end"
 //   2. the version floor check removed entirely (T19)
@@ -25,7 +25,7 @@ import type { Grant } from '../../../contracts/index.js'
 //        -> "patterns narrow to a single host" (fails: prompts when it must not)
 //        -> "one granted host widens to *:*" (fails: silent when it must prompt)
 //   4. the coverage relation itself reversed, requested must cover granted
-//        -> "one granted host widens to *:* -- the journey 1 grant"
+//        -> "one granted host widens to *:* -- a P2P app's grant"
 //        -> "a listen range narrows to a single port"
 //
 // A passing suite proves nothing until it has been watched to fail.
@@ -84,7 +84,7 @@ const TABLE: readonly Row[] = [
     // NO NEW CAPABILITY KIND IS REQUESTED HERE. Under a kind comparison this
     // installs silently and the user who granted "talk to one host" ends up
     // running an app that may "connect to any computer on the internet".
-    name: 'one granted host widens to *:* -- the journey 1 grant',
+    name: 'one granted host widens to *:* -- a P2P app\'s grant',
     input: update({ newHash: REBUILT, grantedPatterns: ONE_HOST, newPatterns: ANY_HOST }),
     decision: 'capability-prompt'
   },

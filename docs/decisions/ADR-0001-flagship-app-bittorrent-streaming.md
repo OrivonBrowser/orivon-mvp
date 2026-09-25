@@ -1,12 +1,18 @@
 # ADR-0001: BitTorrent streaming as the MVP flagship app
 
-- **Status:** **accepted**
+- **Status:** **withdrawn 2026-09-24**: there is no flagship app, and the torrent app is an
+  idea rather than a build step (see the Amendment at the end)
 - **Date:** 2026-08-18
 - **Type:** product
 - **Decided by:** AI recommendation, accepted by owner
 
 > The owner explicitly asked that the reasoning behind this choice be stored somewhere
 > easily recoverable, so it is not forgotten. **This file is that place.**
+
+> **Reversal recorded.** The owner withdrew this decision. Neither the torrent app nor the Nostr
+> fast-follow is a build step; both are ideas (`mvp-scope.md` §LATER). The text below is kept
+> unchanged as the case for a torrent app, which is what this file exists to preserve, and the
+> Amendment at the end says what replaced it.
 
 ## Decision
 Make **BitTorrent-with-instant-streaming** the flagship application of the Orivon MVP:
@@ -88,6 +94,25 @@ DDOC never required trustless resolution; see `ADR-0006`'s amendment of that dat
   (Brave) already ships the capability. The exposure is framing, not liability.
 - Grant exposure appears low and possibly positive: NLnet actively funds P2P and
   decentralisation tooling; Monero CCS is a natural fit.
+
+## Amendment, 2026-09-24: withdrawn; ported desktop apps test the platform instead
+
+Build step 5 ports existing Node.js and Electron desktop apps to run from a URL, as the
+platform's test cases (`build-plan.md` step 5). The ports live in `orivon-ports` (`ADR-0020`).
+No single app is the flagship. The torrent app and Nostr identity are ideas, not build steps, and
+`../planning/torrent-app.md` keeps what is known about building the torrent app.
+
+**What survives** is the platform the Consequences committed to: TCP and UDP sockets and a
+listening socket, built at build steps 2 and 3. Any P2P app needs them, and the ports run on the
+same surface. The content-addressed showcase for the trust indicator comes from IPFS delivery at
+build step 6 rather than from an infohash.
+
+**What goes** is the clip as the distribution asset, the media player surface, and the brand
+exposure of a browser that streams magnet links.
+
+**What this leaves open.** Reasoning 1 and 6 carried the success metric's daily-use argument and
+the distribution plan. The ported apps are test cases, and none of them is yet named as the
+daily-use driver or the distribution asset: `open-questions.md` A249.
 
 ## Reversibility
 - **Cost to reverse:** **cheap.** The flagship is an *application* on top of the capability

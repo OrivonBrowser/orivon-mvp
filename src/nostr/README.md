@@ -6,7 +6,8 @@
 
 **What it must never import.** [`src/broker/`](../broker/) internals.
 
-**Owner stream.** `nostr`, build step 7.
+**Owner stream.** `nostr`, parked: Nostr identity is an idea, not a build step
+([`mvp-scope.md`](../../docs/mvp-scope.md) §LATER).
 
 **Named identities, not app keys.** An npub must be the **same** across every client site, or
 follows, posts and identity fragment per client. App keys are per-origin and cannot support

@@ -653,7 +653,7 @@ describe('session teardown', () => {
     await t.dropOrigin(APP)
 
     // 'revoked' means RST with buffered data discarded. A user clicking a link
-    // away from the torrent app must not corrupt a half-written piece.
+    // away from a torrent app must not corrupt a half-written piece.
     expect(destroy).toHaveBeenCalledWith('sessionEnded')
   })
 

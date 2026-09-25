@@ -1,8 +1,8 @@
 // Decides whether a path an app asked for is safely inside that app's own
-// directory. T1 and T10 in security-model.md, and the flagship's happy path
-// rather than an edge case: a .torrent file declares its own file names, and
-// `../../../.ssh/authorized_keys` is an entire CVE class in BitTorrent
-// clients.
+// directory. T1 and T10 in security-model.md, and a torrent client's happy
+// path rather than an edge case: a .torrent file declares its own file
+// names, and `../../../.ssh/authorized_keys` is an entire CVE class in
+// BitTorrent clients.
 //
 // handle-contracts.md's "FileHandle" section: paths are resolved and
 // confined IN THE BROKER, never trusted from the renderer, and an escape is
@@ -232,9 +232,10 @@ export function confinePath (
   //
   // Walking up is required, not an optimisation: a torrent writing
   // `Show/Season 1/ep.mkv` has none of those directories yet, and a check
-  // that gave up at the first missing component would reject the flagship's
-  // own happy path. Indexing rather than repeated dirname() bounds the loop
-  // at the segment count, so no attacker-supplied string can make it spin.
+  // that gave up at the first missing component would reject a torrent
+  // client's own happy path. Indexing rather than repeated dirname() bounds
+  // the loop at the segment count, so no attacker-supplied string can make
+  // it spin.
   let canonical = canonicalRoot
   for (let depth = segments.length; depth >= 1; depth--) {
     try {

@@ -124,7 +124,7 @@ linux:
   # daily-driver hours (docs/mvp-scope.md). A bare AppImage cannot self-integrate:
   # electron-builder's own docs state plainly that since electron-builder 21, AppImages
   # do not automatically create desktop files, associate file types, or register with
-  # the application menu. AppImage remains the trial / launch-clip artefact; the
+  # the application menu. AppImage remains the trial artefact; the
   # first-run "install desktop entry" flow that closes its integration gap is a
   # separate, already-scoped piece of work -- this file only has to not make it
   # impossible, which an allowlisted `files` and a correct `linux.desktop` block do not.

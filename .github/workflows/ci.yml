@@ -40,7 +40,7 @@ jobs:
       # need webtorrent's dependency tree, which lives in spike/app and is
       # gitignored, so before this step they were SKIPPED on every runner and
       # in every fresh clone -- the only three skipped tests in the suite, and
-      # the ones covering the flagship's transport. Three real dgram defects
+      # the ones covering the P2P transport. Three real dgram defects
       # reached main in 2026-09 because nothing executing exercised that path
       # (docs/open-questions.md A136; owner decision: install here rather than
       # vendor the package into the tree).

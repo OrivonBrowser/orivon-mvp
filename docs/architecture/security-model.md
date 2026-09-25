@@ -71,7 +71,7 @@ arbitrary hosts) · identity seed and derived keys · other apps' data · attent
 T12 is the one most likely to be got wrong: a naive `net` implementation that matches on the
 hostname string lets an app declare `example.com` and then have DNS resolve it to `127.0.0.1`.
 Three precision requirements, since the general statement permits a wrong implementation:
-- **`*` means public unicast only.** The flagship declares `tcp.connect: ["*:*"]`, so this must
+- **`*` means public unicast only.** A P2P app declares `tcp.connect: ["*:*"]`, so this must
   be specified, not inferred: private ranges, loopback, link-local, broadcast and multicast are
   denied unless separately declared.
 - **Resolve once, validate every returned address, then connect to the IP literal.** Checking a

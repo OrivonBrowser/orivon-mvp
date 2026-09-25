@@ -12,10 +12,10 @@
 // docs/development/parallel-work.md.
 //
 // TWO PHASES, because Electron forces it: protocol.registerSchemesAsPrivileged
-// must be called BEFORE the app is ready, and build step 5's range-capable
-// custom media scheme needs it (build-plan.md's "Sequence" section, build
-// step 5). A single phase would make
-// that stream restructure index.ts -- exactly what this exists to prevent.
+// must be called BEFORE the app is ready, and a range-capable streaming
+// scheme, such as a torrent app's media path would use, needs it. A single
+// phase would make whichever stream adds one restructure index.ts --
+// exactly what this exists to prevent.
 //
 // This module imports nothing from electron at runtime: `App` is a type-only
 // import, erased by verbatimModuleSyntax. That erasure is what makes the two

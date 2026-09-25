@@ -213,7 +213,7 @@ async function main () {
         }))
       )
       check(
-        'the Torrent and Nostr app tiles are present and disabled -- neither is built yet',
+        'the Torrent and Nostr app tiles are present and disabled -- both are ideas, not in this build',
         tiles.some((t) => t.label === 'Torrent' && t.disabled) &&
           tiles.some((t) => t.label === 'Nostr' && t.disabled),
         JSON.stringify(tiles)

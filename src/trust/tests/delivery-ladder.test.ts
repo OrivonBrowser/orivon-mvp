@@ -155,7 +155,7 @@ describe('deliveryLadder -- pinCoverage is passed through, never scored', () => 
 
     // Same rungs met either way -- D2 asks "is the pin valid", not "how much
     // of the app does it cover". Coverage is evidence for whatever build
-    // step 6 renders alongside the rung, not an input to the rung itself.
+    // step 7 renders alongside the rung, not an input to the rung itself.
     expect(metRungs(thinResult)).toEqual(metRungs(wholeResult))
   })
 })

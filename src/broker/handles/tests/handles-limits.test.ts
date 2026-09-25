@@ -217,7 +217,7 @@ describe('close() is idempotent without qualification (SSCommon shape)', () => {
     const handle = acquireSocket(t)
     await t.release(APP, handle.id)
 
-    // Churn past CLOSED_ID_MEMORY. The torrent app does this in seconds, and
+    // Churn past CLOSED_ID_MEMORY. A torrent client does this in seconds, and
     // the shim must present Node's socket.destroy(), which never throws.
     for (let i = 0; i < LIMITS.concurrentSockets + LIMITS.concurrentFileHandles + 32; i += 1) {
       const churn = acquireSocket(t)

@@ -146,9 +146,9 @@ and every declared port range carries the same shape of risk, the same reasoning
 "can send this app data") rather than one shared string with the noun swapped, matching this
 file's existing rule that two capabilities must never share a rendered sentence
 (see the udp.send/tcp.connect distinctness test already in this suite).
-**Rows that render the same headline are merged.** Unmerged, the flagship's real manifest
-(`tcp.connect: ["*:*"]` + `tcp.listen` + `udp.bind` + `udp.send: ["*:*"]` + `fs`) renders 4 of 5
-rows warned, with `"⚠ Unlimited network access"` appearing
+**Rows that render the same headline are merged.** Unmerged, the torrent example manifest
+(capability-api.md: `tcp.connect: ["*:*"]` + `tcp.listen` + `udp.bind` + `udp.send: ["*:*"]`
++ `fs`) renders 4 of 5 rows warned, with `"⚠ Unlimited network access"` appearing
 TWICE (from `tcp.connect` and `udp.send`, each with its own explanation underneath). Read cold,
 a repeated headline looks like a rendering bug, and a wall of four identical markers stops
 telling the reader anything. A100's exit criterion is that unlimited looks unmistakably
@@ -164,8 +164,8 @@ DHT/exchange), and rendering them as two separately-scary rows states one fact (
 can reach this device") twice. Either capability alone still renders through
 `describeCapabilityGrant`'s own unmerged case, including in the settings
 permissions list ([`../permissions/permissions.ts`](../permissions/permissions.ts)), which needs
-each grant on its own revocable row and never calls the merged path. With both merges the
-flagship shows exactly two warned rows: one per DISTINCT kind of breadth it actually declares (it
+each grant on its own revocable row and never calls the merged path. With both merges that
+manifest shows exactly two warned rows: one per DISTINCT kind of breadth it actually declares (it
 can reach anywhere outbound, and it can be reached from anywhere inbound), never a third or
 fourth restating one of those two.
 

@@ -160,9 +160,9 @@ function deny (reason: ConnectDenialReason, checked?: readonly string[]): Connec
  * Pattern count is grant-controlled (bounded by what the manifest declared
  * and the user then granted); answer count is DNS-controlled.
  *
- * Both are far above anything real: the flagship declares one pattern, and a
- * round-robin CDN answers with a handful of addresses. Exceeding either
- * denies, which is the same direction everything else here fails.
+ * Both are far above anything real: a torrent client declares one pattern,
+ * and a round-robin CDN answers with a handful of addresses. Exceeding
+ * either denies, which is the same direction everything else here fails.
  */
 // Exported so a second consumer (../policy/connect-src.ts's CSP `connect-src`
 // derivation) enforces the same bound instead of a second copy of 256 that

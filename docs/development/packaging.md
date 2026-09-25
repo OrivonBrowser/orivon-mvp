@@ -25,12 +25,11 @@ file types, or register with the application menu.
 
 So:
 - **`deb`** is what makes "set Orivon as your default browser" reachable at all.
-- **`AppImage`** is for trying Orivon without installing anything, and for the audience of the
-  launch clip. It still carries the same `.desktop` metadata internally (electron-builder
-  generates one for every Linux target from the shared `linux:` config), but nothing copies it
-  into `~/.local/share/applications/` for you. A first-run "install desktop entry" flow that
-  does that from inside the running app is planned (`build-plan.md` "Packaging"), and nothing in
-  this config makes it impossible.
+- **`AppImage`** is for trying Orivon without installing anything. It still carries the same
+  `.desktop` metadata internally (electron-builder generates one for every Linux target from the
+  shared `linux:` config), but nothing copies it into `~/.local/share/applications/` for you. A
+  first-run "install desktop entry" flow that does that from inside the running app is planned
+  (`build-plan.md` "Packaging"), and nothing in this config makes it impossible.
 
 ## How to build
 

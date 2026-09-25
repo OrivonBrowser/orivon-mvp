@@ -153,8 +153,8 @@ bot-guard script, which needs somewhere to run untrusted code plus real HTTP. No
 repository offers that, and a `WASM`/sandbox route is out of scope by `mvp-scope.md`.
 
 **This wall is not Orivon's.** It refuses `curl` and a stock browser tab the same way. It does
-mean FreeTube cannot be a playback demo for the platform on its own, which is a scheduling fact
-worth knowing before build step 5's clip.
+mean FreeTube cannot be a playback demo for the platform on its own, which is worth knowing
+before choosing one.
 
 ## Running it
 

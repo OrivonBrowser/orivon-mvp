@@ -112,9 +112,12 @@ you disagree with one, the ADR is where the objections are already answered.
 
 **What gets built, and what outlasts it**
 
-- **BitTorrent streaming is the flagship.** Genuinely daily-use, impossible in Chrome, and it
-  demonstrates in a 30-second clip
-  ([`ADR-0001`](docs/decisions/ADR-0001-flagship-app-bittorrent-streaming.md)).
+- **There is no flagship app; real desktop apps are the test.** Existing Node.js and Electron
+  apps are ported to run from a URL without being forked, in a repository of their own
+  ([`ADR-0020`](docs/decisions/ADR-0020-ported-apps-live-in-a-separate-repository.md)), and a
+  gap one of them finds is fixed here for every app. The torrent flagship of
+  [`ADR-0001`](docs/decisions/ADR-0001-flagship-app-bittorrent-streaming.md) is withdrawn and
+  kept as an idea.
 - **The capability API is the durable asset.** A WASM runtime is deferred, not cancelled:
   containment for untrusted code and mobile portability are both real goals, and both post-MVP
   ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
@@ -136,8 +139,9 @@ you disagree with one, the ADR is where the objections are already answered.
 - **Telemetry is opt-out, but disclosed in full on first run.** The metric requires measurement;
   the disclosure shows the literal JSON, nothing preselected, nothing sent before you choose
   ([`ADR-0004`](docs/decisions/ADR-0004-telemetry.md)).
-- **Trust is shown as observed behaviour, never as a grade.** A letter grade invites trusting
-  the grade. Click-through shows the actual evidence
+- **Trust is shown as evidence, never as a bare grade.** A letter grade invites trusting the
+  grade. Click-through shows what the machine observed, and a judged level names the provider
+  that judged it, kept apart from the observed evidence
   ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
 
 **How the API behaves**
@@ -146,26 +150,23 @@ you disagree with one, the ADR is where the objections are already answered.
   backpressure. An `EventEmitter` has no way to say "not yet"
   ([`ADR-0008`](docs/decisions/ADR-0008-handles-are-whatwg-streams.md)).
 
-## Four things people keep re-proposing
+## Three things people keep re-proposing
 
 Each was considered and decided against, and each gets suggested again by someone who assumes it
 was simply overlooked.
 
 - **App signing, cut from v0.** With one publisher it is capability-identical to no signing,
-  nothing specified the mechanism, and it would have put a red UNSIGNED badge next to
-  *"connect to any computer on the internet"* in the launch clip. Integrity is hash-pinning,
+  nothing specified the mechanism, and it would have put a red UNSIGNED badge beside
+  *"connect to any computer on the internet"* in every first-party app's prompt. Integrity is hash-pinning,
   and a site can publish its bundle hash tree, which the Web3 Score page compares with the pin
   (DDOC, `ADR-0029`).
-- **MKV playback, cut.** There is no fallback path, only a remuxer, and that is post-launch
-  work. v0 plays MP4/H.264, and
-  [`README.md`](README.md#known-limitations-of-v0) carries the user-facing statement of it.
 - **Auto-install of updates, cut.** Unsigned `electron-updater` verifies a hash fetched from the
   same host that serves the binary, which is a standing remote-code-execution channel and weaker
   than what is demanded of third-party apps. v0 checks and notifies.
 - **`activeSec` rather than uptime**, in the success metric. Not a cut, but the same kind of
-  call: a torrent client seeds in the background, so measuring "app open" would let someone who
-  pasted one magnet and walked away hit the target on day one. This makes the target harder,
-  which is the point.
+  call: some apps do their work in the background, a node syncing or a client seeding, so
+  measuring "app open" would let someone who started one and walked away hit the target on day
+  one. This makes the target harder, which is the point.
 
 ## Two facts that are expensive to rediscover
 
@@ -184,8 +185,8 @@ measured, against the 1-5 MB/s that 1080p streaming needs.
 
 **2. A naive webtorrent renderer bundle is WebRTC-only.** Its `browser` field maps `net`,
 `bittorrent-dht`, `ut_pex` and `utp` to `false`. Left alone you get Brave parity, which is
-precisely what the flagship exists to beat. The fix is per-module resolution overrides in
-`electron.vite.config.ts`.
+precisely what running a torrent client in Orivon would exist to beat. The fix is per-module
+resolution overrides in `electron.vite.config.ts`.
 
 ## What to read next
 

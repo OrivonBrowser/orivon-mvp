@@ -23,12 +23,14 @@ tells you that it changed or who decided it: that is git, the decision log and t
 are the exception.** An ADR is itself a decision record, so it carries its amendments in place,
 and where one contradicts itself the amendment is the current text.
 
-## Status (2026-09-22)
+## Status (2026-09-24)
 
-Build steps 1-4 of 10 are done: shell, capability broker, Node shim, app loader. A person can open
-an app's URL, grant what its manifest declares in one consent dialog, and revoke grants later from
-a permissions panel. The permission engine is roughly 90% done, and the work now is building real
-apps on it. Build step 5, the torrent app, has not opened.
+Build steps 1-4 of 10 are done: shell, capability broker, Node shim, app loader (DDOC included). A
+person can open an app's URL, grant what its manifest declares in one consent dialog, and revoke
+grants later from a permissions panel. The permission engine is roughly 90% done, and the work now
+is building real apps on it: build step 5 ports Node.js desktop apps in `../orivon-ports` as the
+platform's test cases. Build step 6, ENS and IPFS, is being planned. The torrent app and Nostr
+identity are ideas, not build steps (`docs/mvp-scope.md` §LATER).
 
 **For what works today, read `docs/planning/compatibility-matrix.md`, not this section.**
 
@@ -55,8 +57,7 @@ build's scope. It does not bound the long-term vision.
 - **Ported third-party apps live in `../orivon-ports`**, with the harness that clones, builds and
   serves them, and the porting guide. A port consumes `orivon.*` and is never part of it, so
   nothing here may depend on that checkout being present. The apps this repository serves to its
-  own tests live under `test/apps/`. There is no top-level `apps/` directory, and the torrent
-  flagship gets no directory here until build step 5 opens.
+  own tests live under `test/apps/`. There is no top-level `apps/` directory.
 
 ## The load-bearing idea
 
@@ -222,7 +223,7 @@ at the step named here. **Check this table at the start of every build step.**
 | `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell commands | Thirteen rules. **Block (8):** native modules (in code and in `package.json`), insecure `webPreferences`, non-TypeScript sources, an Electron launch that bypasses `scripts/run-headless.mjs` or could take focus, in-place branch switches (`git pull`/`checkout`/`switch`, `gh pr checkout`) and tree-wide discards (`reset --hard`, `clean -f`, `stash drop`). **Warn (5):** hardcoded storage paths, out-of-scope features, file-header essays, comments that narrate the change instead of the code, and live pages that narrate their own history (Rule 2). When the owner corrects the same thing twice, add a rule with `/hookify`. Start its `file_path` pattern with `^(?:.*/)?` before the directory name, because a repo-root anchor never matches the absolute path an edit passes, and the rule dies silently. There is no `not_regex_match` operator, and an unknown operator kills the whole rule (A55) |
 | `superpowers` | Process, automatic via its session hook | `brainstorming` before new work, `writing-plans` for anything multi-step, `test-driven-development` for every broker or policy function, `systematic-debugging` on any failure, `verification-before-completion` before claiming done |
 | `context7` (MCP) | **Manual: before writing code against Electron or webtorrent APIs** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session` partitions, `safeStorage`; webtorrent 3.x internals. Training data is stale for this stack (Electron 44), so check a signature live before trusting the remembered one |
-| `playwright` (MCP) | **Manual: the localhost fixture app, and journey 3's pinned Nostr clients (step 7)** | Driving a real web page. The Electron e2e uses the `_electron` library, not this |
+| `playwright` (MCP) | **Manual: the localhost fixture app** | Driving a real web page. The Electron e2e uses the `_electron` library, not this |
 | `claude-security` | **Manual: before packaging (step 10)** | Whole-repo multi-agent vulnerability scan with verified findings. Expensive: run it at milestones, not continuously |
 | `claude-md-management` | **Manual: `/revise-claude-md` at the end of any session that changed an assumption in this file** | Keeps this file true as the code moves |
 | `orivon-electron` (project skill) | **Manual: before writing or debugging any Electron or webtorrent code** | The renderer-bundling alias recipe, the `app.windows()`-not-`app.firstWindow()` rule, `MessagePortMain`'s silent failures, and why to check `electron.d.ts` before trusting any claim about `BaseWindow` options. Exists nowhere else |

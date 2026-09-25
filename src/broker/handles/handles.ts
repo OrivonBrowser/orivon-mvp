@@ -416,7 +416,7 @@ export class HandleTable {
    *
    * The reason reported is 'sessionEnded', not 'revoked'. Nobody withdrew
    * anything, and 'revoked' means RST with buffered data discarded: a user
-   * clicking a link away from the torrent app would have reset every peer
+   * clicking a link away from a torrent app would have reset every peer
    * connection and dropped a half-written piece on the floor.
    *
    * This one DOES await its teardowns, unlike `revoke` -- no UI is blocked on

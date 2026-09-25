@@ -11,22 +11,27 @@ declares what it needs in a manifest, and you grant it, per app, in plain words.
 *"connect to any computer on the internet"*, not "orivon.example.com wants to use your network".
 No capability is implicit, and nothing an app didn't declare can ever be granted, even by you.
 
-The proof is a BitTorrent client that runs in a tab, with no client installed, no extension and
-no native helper. Paste a magnet link, approve one prompt, watch the video.
+The proof is ordinary desktop apps running from a URL. FreeTube and Element are Electron apps;
+in Orivon each one is an address. Open it, approve one prompt, and it runs in a tab with the
+network access its desktop version had: no client installed, no extension, no native helper, and
+no fork of the app.
 
 > ### Status: pre-alpha. Nothing is released.
 >
-> Build steps 1 to 3 of 10 are done: the browser shell, the capability broker, and the Node
-> shim. Orivon can hold per-app permissions and enforce them over network, TLS and filesystem
-> access, and it can run Node programs inside a tab.
+> Build steps 1 to 4 of 10 are done: the browser shell, the capability broker, the Node shim
+> and the app loader. Orivon can hold per-app permissions and enforce them over network, TLS and
+> filesystem access, and it can run Node programs inside a tab.
 >
-> Build step 4, the app loader, runs end to end. Visiting a page that declares itself an app
-> triggers discovery, fetch, hash-pinning and caching automatically; a person is asked once, in
-> plain words, what the app may do; accepting installs it, and later visits are served from
-> local cache with the network unplugged. A first visit can still see an early permission check
-> denied before that one-time dialog has been answered, which is bounded to the first visit only
-> and not yet closed. There is no packaged build, no installer, and no release, and the torrent
-> app itself has not been built yet. See
+> Visiting a page that declares itself an app triggers discovery, fetch, hash-pinning and
+> caching automatically; a person is asked once, in plain words, what the app may do; accepting
+> installs it, and later visits are served from local cache with the network unplugged. When the
+> site publishes its bundle's hash tree, the site-info popover shows whether the installed files
+> match it (DDOC). A first visit can still see an early permission check denied before that
+> one-time dialog has been answered, which is bounded to the first visit only and not yet closed.
+>
+> Build step 5 is under way: FreeTube, Element, AirGap Vault and ASGARDEX are ported in
+> [orivon-ports](https://github.com/OrivonBrowser/orivon-ports) and run from a local developer
+> origin. There is no packaged build, no installer, and no release. See
 > [`docs/planning/build-plan.md`](docs/planning/build-plan.md) for the order of work,
 > [`docs/planning/compatibility-matrix.md`](docs/planning/compatibility-matrix.md) for what
 > works cell by cell, and [`CHANGELOG.md`](CHANGELOG.md) for what has landed.
@@ -55,7 +60,7 @@ Full prerequisites and the one environment trap worth knowing about:
 | **Capabilities are per app, declared, and granted by you** | An app gets what its manifest declares *and* you approve. Absence from the manifest means absence, never default-allow |
 | **Apps come from a URL, not a store** | Visit the address; there is nothing else to choose. The code is fetched, cached and hash-pinned automatically, then you're asked once, up front, what it may do. No review process, no gatekeeper, no account |
 | **Your data stays on your machine** | Per-origin isolation, local-first storage. There is no Orivon server holding user data, because there is no Orivon server |
-| **One identity, every site** | A Nostr identity that works across every client with no extension and no seed phrase to write down |
+| **Names and content you can check** | A `.eth` name is resolved on your machine and proved against the Ethereum chain, and IPFS content is checked against its hash. The servers along the way supply data; none of them is trusted to be right |
 
 ## How this relates to Web3
 
@@ -71,24 +76,23 @@ capability, under a permission you granted, so a decentralised app can just be a
 
 Two things in this MVP demonstrate it:
 
-- BitTorrent in a tab. Real peers, real DHT, no gateway, no seedbox, nothing in the middle.
-- One identity across every site. A Nostr key held by the browser, so any Nostr client you visit
-  signs you in, with no extension, no seed phrase and no setup. Internally these are called
-  *Web3 Accounts*.
+- Desktop apps in a tab. Node.js and Electron apps that needed a desktop client to reach the
+  network run from a URL instead, under permissions you granted.
+- Names and content with no trusted server. `name.eth` is resolved by a light client on your
+  machine, and IPFS content is verified block by block, so no RPC provider or gateway is trusted
+  for correctness. It is trust-minimised rather than trustless: the root is a chain checkpoint,
+  and the servers can still withhold.
 
 **What is not in this MVP.** These are scope boundaries for *this month's build*, not statements
 about where Orivon is going. The difference matters, so it is spelled out:
 
-- **No funds movement.** The identity system here is what the project calls a Web3 Account:
-  keys, signing, and one identity across sites. It holds no funds, shows no seed phrase, and
-  cannot send or receive. The wallet is a long-term goal rather than a rejected idea: the design
+- **No funds movement.** An app can hold a signing key the browser derives for it
+  (`orivon.id`), which the project calls a Web3 Account. It holds no funds, shows no seed
+  phrase, and cannot send or receive. The wallet is a long-term goal rather than a rejected idea: the design
   has three layers (Accounts, Crypto, Address book), and this MVP ships only the first. The
   other two need a meaningfully different security model and come later.
-- **No ENS or IPFS yet, and DDOC only against the site's own host.** Both are real parts of the
-  plan. Trustless name resolution in particular is substantial work. DDOC ships in this build as
-  evidence on the Web3 Score page: a site publishes its bundle hash tree, and the page shows
-  whether the pinned bundle matches it. A record held off the host, which would catch a host
-  compromised well enough to rewrite both, is not built.
+- **No torrent client and no Nostr identity.** Both are ideas the project may come back to, and
+  neither is scheduled in this build.
 - **No token, chain, DAO or governance *in the product*.** Orivon does have a
   [DAO plan](https://github.com/OrivonBrowser/orivon-docs): treasury, merit-tracked
   contribution, the lot. It is organisational rather than a browser feature, so it lives outside
@@ -112,19 +116,21 @@ Strictly dependency-ordered; each step needs the one before it.
 | 1 | **Shell**: tabs, omnibox, back/forward, window chrome | **done** |
 | 2 | **Capability broker**: manifests, grants, per-origin enforcement | **done**, including per-app session partitions; `net.listen` now reaches a page too ([A114](docs/open-questions.md), resolved) |
 | 3 | **Node shim**: `net`, `dgram`, `fs` over `orivon.*` | **done**, plus `http`/`https`, the core polyfills, `net.createServer` and `dns.lookup` over real broker capabilities ([A114](docs/open-questions.md)/[A107](docs/open-questions.md), both resolved) |
-| 4 | **App loader**: manifest discovery, fetch, cache, hash-pinning | **done**: discovery, fetch, caching, hash-pinning, the update decision and the served bundle's CSP are all reachable from a real page behind a real, one-time consent dialog. The folder picker (`fs.userSelected`) is a separate, still-unbuilt capability; see the compatibility matrix |
-| 5 | **Torrent app**: the flagship, and the demo clip | |
-| 6 | **Trust indicator**: what an app actually did, not a grade | groundwork in [`src/trust/`](src/trust/) |
-| 7 | **Nostr identity**: `window.nostr` across every client | `id.publicKey`/`sign` built; `window.nostr` blocked on the identity prompt |
+| 4 | **App loader**: manifest discovery, fetch, cache, hash-pinning, DDOC | **done**: discovery, fetch, caching, hash-pinning, the update decision, DDOC and the served bundle's CSP are all reachable from a real page behind a real, one-time consent dialog. The folder picker (`fs.userSelected`) is a separate, still-unbuilt capability; see the compatibility matrix |
+| 5 | **Node.js apps**: real desktop apps, ported to run from a URL, as the platform's test cases | **under way** in [orivon-ports](https://github.com/OrivonBrowser/orivon-ports): FreeTube, Element, AirGap Vault, ASGARDEX |
+| 6 | **ENS and IPFS**: `.eth` names and IPFS content, verified on your machine rather than trusted to a server | being planned |
+| 7 | **Trust indicator**: what an app actually did, and what a score provider judged, never a bare grade | groundwork in [`src/trust/`](src/trust/) |
 | 8 | **Telemetry**: with the first-run disclosure | groundwork in [`src/telemetry/`](src/telemetry/) |
 | 9 | **Developer mode**: load an unpacked app | |
 | 10 | **Packaging**: AppImage and deb | |
 
 **Deliberately deferred.** These are choices, not oversights, and every one of them is still on
-the long-term plan ([`docs/mvp-scope.md`](docs/mvp-scope.md)): trustless name resolution (ENS
-and friends) · DDOC's off-host anchor · IPFS and Arweave as a second delivery path · an app store · the wallet's
-Crypto and Address-book layers · identity export and backup · `subprocess` and `hid`
-capabilities · signed Windows and macOS installers.
+the long-term plan ([`docs/mvp-scope.md`](docs/mvp-scope.md)): DDOC anchored in DNS · Arweave as
+a delivery path · an app store · the wallet's Crypto and Address-book layers · identity export
+and backup · `subprocess` and `hid` capabilities · signed Windows and macOS installers.
+
+**Ideas, not scheduled:** a BitTorrent streaming app · Nostr identity (`window.nostr` across
+every client).
 
 **Longer term, and not scheduled:** a WebAssembly runtime for containing untrusted apps ·
 mobile · Tor and proxy chains · cross-device sync. A browser-engine fork is a hypothesis about
@@ -172,12 +178,10 @@ This repository is deliberately narrower: it is the MVP, and
 
 Stated here rather than discovered later. All of these are real and none is a bug:
 
-- **MP4/H.264 video only.** MSE cannot demux Matroska and neither can Chromium's `<video>`, so
-  MKV has no path without a remuxer. Deferred, not forgotten.
-- **Swarm peers see your IP address.** There is no Tor integration. Protocol encryption defeats
-  ISP traffic shaping. It is *obfuscation, not privacy*, and it will never be described as
-  anything else.
-- **Seeding behind NAT is reduced.** No UPnP in v0, so no automatic port forwarding.
+- **Peers see your IP address.** There is no Tor integration, so a peer-to-peer app connects
+  from your real address.
+- **No automatic port forwarding.** There is no UPnP in v0, so behind NAT an app listening for
+  peers is reachable only through a port you forward yourself.
 - **Local peer discovery is unavailable.** The manifest grammar has no multicast bind.
 - **Text typed in the address bar that isn't an address goes to DuckDuckGo.** Your search text
   leaves your machine. A privacy-branded browser should say that out loud rather than bury it.

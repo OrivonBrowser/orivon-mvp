@@ -337,7 +337,7 @@ describe('host and port must come from the SAME pattern', () => {
     // reads identically, passed all 143 tests this suite had, and grants
     // a.example:8080 -- a combination the user granted for neither host.
     // The worst of the five, because a multi-pattern manifest is the normal
-    // case for any app that is not the flagship.
+    // case for any app that does not declare a blanket `*:*`.
     const decision = await checkConnect(
       ['a.example:443', 'b.example:8080'],
       'a.example',

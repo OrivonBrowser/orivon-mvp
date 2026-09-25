@@ -67,7 +67,7 @@ describe('patternSetFromCapabilities', () => {
     expect(result).toEqual({})
   })
 
-  it('the flagship torrent manifest (capability-api.md) maps every kind', () => {
+  it('the torrent example manifest (capability-api.md) maps every kind', () => {
     const capabilities: Capabilities = {
       net: {
         tcp: { connect: ['*:*'], listen: ['6881-6889'] },

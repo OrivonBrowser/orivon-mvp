@@ -16,9 +16,14 @@ one for free; apps that don't, don't.
 
 ## What this implies for the MVP
 
-**Nostr is tier 1 and costs ~1 day.** Orivon injects `window.nostr` (NIP-07) backed by
-`orivon.id`, and every existing Nostr web client works unmodified with no extension
-installed. Nothing is bundled and no frontend is written.
+**The MVP's apps are tier 2.** Build step 5 ports Node.js and Electron desktop apps (FreeTube,
+Element, AirGap Vault, ASGARDEX), each its own unmodified frontend plus one bridge file, in
+`orivon-ports`. Tier 2 is where the thesis is most literal: software that had to be a desktop app
+because a web page could not reach the network or the disk.
+
+**Nostr would be tier 1, at ~1 day.** Orivon would inject `window.nostr` (NIP-07) backed by
+`orivon.id`, and every existing Nostr web client would work unmodified with no extension
+installed. It is an idea, not a build step (`../mvp-scope.md` §LATER).
 
 **Mastodon was considered and rejected** (ADR-0001). Its *client* is tier 1, but the system
 is not trustless: identity is `@user@instance`, owned by the instance admin, and the feed
@@ -26,10 +31,10 @@ comes from a party you must trust. Running the Mastodon *server* in a URL, as `m
 in the public docs implies, is Rails + Postgres, i.e. tier 3, the hardest case. Nostr
 dominates it on both axes.
 
-**The torrent app is tier 4**, and it is the only tier-4 item in the MVP. That is exactly why
-it costs the most *and* why it is the differentiator: the most expensive thing to build is
-the thing nobody else has. Even there, reuse is available: `webtorrent-desktop` is
-MIT-licensed Electron with a working player UI whose components can be lifted.
+**A torrent app would be tier 4**: the most expensive thing to build, and the thing nobody else
+has. It is an idea, not a build step; `../planning/torrent-app.md` keeps what is known.
+Reuse is available even there: `webtorrent-desktop` is MIT-licensed Electron with a working
+player UI whose components can be lifted.
 
 **Bisq is tier 3** and is out of the MVP. Its UI is JavaFX, so nothing is reusable: it needs
 both a new frontend *and* a bundled JVM, for an app used episodically rather than daily.
@@ -43,8 +48,8 @@ both a new frontend *and* a bundled JVM, for an app used episodically rather tha
 
 **What tier 2 actually reaches in v0.** Ledger Live, Trezor Suite and Frame are
 **hardware-wallet applications requiring `hid`/USB**, which `capability-api.md` excludes from v0
-entirely, for every tier. IPFS Desktop is the honest v0 example; the wallet cluster waits on
-`hid`, a post-MVP capability.
+entirely, for every tier. The apps build step 5 ports are the v0 examples; the wallet cluster
+waits on `hid`, a post-MVP capability.
 
 **"Swap Node calls for the shim" understates the shim's real surface.** Running `webtorrent` in a
 sandboxed renderer needs `Buffer`, `stream`, `events`, `crypto`, `path`, `os` and `process`
