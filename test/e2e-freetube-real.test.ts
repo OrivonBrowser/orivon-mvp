@@ -10,7 +10,7 @@
 // because the shell is what has to load it, and the shell is here.
 //
 // Requires a prepared build in that checkout and an ORDINARY shell build;
-// skipped otherwise, for the same reason e2e-dev-origin-grant.test.ts is.
+// skipped otherwise, for the same reason e2e-loopback-grant.test.ts is.
 //
 // NO RESTART-PERSISTENCE CHECK: proving a settings change survives an app
 // restart needs a second launchElectron() call against the SAME
@@ -121,9 +121,7 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         server = await startOwnServer('freetube-real-server', join(PORTS_ROOT, 'src', 'cli.ts'), ['serve', 'freetube', '--port', String(PORT)])
         check(`a plain static server is serving the prepared upstream build (${ROOT})`, true)
 
-        // The opt-in `npm run dev` sets, so the loopback origin is granted
-        // without being installed rather than refused by the install path.
-        app = await launchElectron({ appPath: '.', env: { ORIVON_DEV_ORIGINS: '1' } })
+        app = await launchElectron({ appPath: '.' })
         await app.evaluate(({ dialog }) => {
           dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as unknown as typeof dialog.showMessageBox
         })

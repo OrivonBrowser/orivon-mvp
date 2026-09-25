@@ -19,15 +19,14 @@ import { publishInstallApp } from '../registry.js'
 import { installFromHint } from './app-install.js'
 import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from '../consent/install-consent-prompt.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from '../consent/update-outcomes-prompt.js'
-import { grantDevOrigin, isDevGrantableOrigin } from '../dev/dev-app-origin.js'
-import { installDevCsp } from '../dev/dev-csp.js'
+import { grantableWithoutInstall, grantWithoutInstall } from './grant-without-install.js'
+import { installGrantedOriginCsp } from './granted-origin-csp.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 
-const DEV_MANIFEST_TIMEOUT_MS = 5_000
+const GRANT_MANIFEST_TIMEOUT_MS = 5_000
 
-
-async function fetchDevManifest (url: string): Promise<{ ok: boolean, status: number, text: string }> {
-  const response = await net.fetch(url, { redirect: 'error', signal: AbortSignal.timeout(DEV_MANIFEST_TIMEOUT_MS) })
+async function fetchGrantManifest (url: string): Promise<{ ok: boolean, status: number, text: string }> {
+  const response = await net.fetch(url, { redirect: 'error', signal: AbortSignal.timeout(GRANT_MANIFEST_TIMEOUT_MS) })
   return { ok: response.ok, status: response.status, text: await response.text() }
 }
 
@@ -50,19 +49,19 @@ export const appInstallSubsystem: Subsystem = {
     publishInstallApp(ctx, async (hintingOrigin, hintedUrl) => {
       // A loopback origin can never reach installFromHint's own consent:
       // install-origin.ts refuses it for not being https and not being
-      // public unicast, before a manifest is ever read. In a dev build it
-      // takes the grant-without-install path instead (./dev-app-origin.ts).
-      if (isDevGrantableOrigin(hintingOrigin, devModeEnabled())) {
-        const outcome = await grantDevOrigin(
-          { broker, fetchManifest: fetchDevManifest, consent, perCapabilityConsent },
+      // public unicast, before a manifest is ever read. It is granted
+      // without being installed instead (./grant-without-install.ts).
+      if (grantableWithoutInstall(hintingOrigin, devModeEnabled())) {
+        const outcome = await grantWithoutInstall(
+          { broker, fetchManifest: fetchGrantManifest, consent, perCapabilityConsent },
           hintingOrigin
         )
         if (outcome.outcome === 'rejected') {
-          console.warn(`[app-install] developer-mode grant refused for ${hintingOrigin}: ${outcome.reason}`)
+          console.warn(`[app-install] grant without installing refused for ${hintingOrigin}: ${outcome.reason}`)
         } else {
           // Before returning: the caller reloads the tab, and that reload's
           // document must already carry the installed-path CSP.
-          installDevCsp(broker, outcome.canonicalOrigin)
+          installGrantedOriginCsp(broker, outcome.canonicalOrigin)
         }
         return outcome
       }

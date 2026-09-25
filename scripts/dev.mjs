@@ -2,9 +2,9 @@
  * `npm run dev`, with ORIVON_WINDOW_NO_FOCUS=1 set (docs/development/setup.md
  * "The no-focus switch") so a dev-server launch does not steal the owner's
  * keyboard focus while they are working on something else, and
- * ORIVON_DEV_ORIGINS=1, which lets a loopback-literal origin be granted
- * without installing it (src/main/dev-app-origin.ts). Only this script sets
- * it: `npm start` is what a run-from-source user runs, and it stays off there.
+ * ORIVON_DEV_ORIGINS=1, developer mode (src/main/dev/dev-mode.ts): orivon-ports'
+ * `.eth` names and Inspect Element. Only this script sets it: `npm start` is
+ * what a run-from-source user runs, and it stays off there.
  *
  * NO `--watch`, deliberately -- owner, 2026-09-15. Consequence, stated here
  * so nobody re-adds the flag to "fix" it: a main-process or preload edit

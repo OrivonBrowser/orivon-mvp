@@ -76,12 +76,13 @@ export function buildSiteTrust (
     ...(pinCoverage !== undefined ? { pinCoverage } : {})
   })
 
+  const ddoc = ddocVerdict(pin, published)
   return {
     connection,
-    level: websiteLevel(name?.content, pin?.bundleHash),
+    level: websiteLevel(name?.content, ddoc, pin?.bundleHash, servedFromCache),
     delivery,
     pin: pin === null ? undefined : { bundleHash: pin.bundleHash, version: pin.version, pinnedAt: pin.pinnedAt },
-    ddoc: ddocVerdict(pin, published),
+    ddoc,
     name: name === undefined ? undefined : { line: name.line, rows: name.rows }
   }
 }

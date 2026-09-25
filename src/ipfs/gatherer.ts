@@ -1,11 +1,10 @@
 // The IPFS DataGatherer: from a name's records to a mounted site whose every
-// served byte was verified, with the DDOC report of one navigation.
+// served byte was verified, with the DDOC report of its mount.
 
 import { ResolutionError } from '../resolution/records.js'
 import type { NameRecord, PointerStep } from '../resolution/records.js'
 import type { DataGatherer, DdocReport, MountedSite, Refusal } from '../resolution/providers.js'
-import { pointerChainVerdict } from '../resolution/pointer-chain.js'
-import { BlockSource } from './blockstore.js'
+import { BlockCache, BlockSource, NO_BLOCK_MEMORY } from './blockstore.js'
 import type { ResolveTxt } from './dnslink.js'
 import { GatewayPool } from './gateways.js'
 import type { Fetch } from './gateways.js'
@@ -33,17 +32,10 @@ function loadable (records: readonly NameRecord[]): NameRecord | undefined {
   return records.find((r) => LOADABLE.has(r.pointer.kind))
 }
 
-function unverifiedReason (step: PointerStep | undefined): string {
-  if (step === undefined) return 'no pointer to the content was proven'
-  if (step.step === 'dnslink') return `via DNS: ${step.domain}`
-  if (step.step === 'contenthash' && step.provenance.via === 'dns') return `name read from DNS: ${step.provenance.domain}`
-  return 'a pointer to the content was not proven'
-}
-
 export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer {
   const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...options.limits }
   const pool = new GatewayPool(options.gateways, limits.gatewayConcurrency)
-  const source = new BlockSource(options.fetch, pool, limits)
+  const cache = new BlockCache()
   const resolvers = {
     ipns: async (key: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void) =>
       await resolveIpnsKey(key, options.fetch, { pool, nameServices: options.ipnsNameServices ?? [] }, options.ipnsSequences, limits.blockTimeoutMs, signal, onRefusal),
@@ -54,7 +46,8 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
   return {
     id: 'ipfs',
     supports: (records) => loadable(records) !== undefined,
-    async mount (name, records, signal = new AbortController().signal): Promise<MountedSite> {
+    async mount (name, records, signal = new AbortController().signal, partition?: string): Promise<MountedSite> {
+      const source = partition === undefined ? new BlockSource(options.fetch, pool, limits, NO_BLOCK_MEMORY) : new BlockSource(options.fetch, pool, limits, cache, partition)
       const record = loadable(records)
       if (record === undefined) throw new ResolutionError('unsupported', `no record of ${name} names IPFS content`)
       const refusals: Refusal[] = []
@@ -66,7 +59,6 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
         throw new ResolutionError('unsupported', (error as Error).message)
       }
       const pointers: PointerStep[] = [{ step: 'contenthash', name, pointer: record.pointer, provenance: record.provenance }, ...steps]
-      const chain = pointerChainVerdict(pointers)
       let failedResource: string | undefined
 
       /** Only a lie or a broken limit fails DDOC; nobody answering, or a missing path, does not. */
@@ -102,7 +94,6 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
         ddoc (): DdocReport {
           const seen = [...refusals]
           if (failedResource !== undefined) return { status: 'failed', resource: failedResource, refusals: seen }
-          if (!chain.verified) return { status: 'not-met', reason: unverifiedReason(chain.unverified), refusals: seen }
           return { status: 'met', refusals: seen }
         }
       }

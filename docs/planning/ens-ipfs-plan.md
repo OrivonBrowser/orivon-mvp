@@ -1,9 +1,9 @@
 # ENS names and IPFS delivery: the plan
 
-> **In progress.** Written 2026-09-24 against `main` at `e218ca4`, after the owner's decisions of
-> the same day (§Decisions taken). EI-1 to EI-11 are built on `stream/ens-ipfs`;
-> [§Where it stands](#where-it-stands) says what is left, and where the build departed from the
-> text below.
+> **Done**, apart from one run from source on Windows and macOS with the light client in the
+> tree (EI-12). Written 2026-09-24 against `main` at `e218ca4`, after the owner's decisions of the
+> same day (§Decisions taken); the owner's answers of 2026-09-25 to A254 to A256 changed two
+> things below, which [§Where it stands](#where-it-stands) records with every other departure.
 
 **What this is.** The work queue for making `name.eth` load in this build as `https://name.eth`,
 with every byte checked locally against what the Ethereum chain says the name points to. External
@@ -171,7 +171,8 @@ Docs only, one PR, merged first.
   behind an egress allowlist, always given a checkpoint.
 - ADR-0005 amended in place (its "IPFS and ENS-addressed delivery later" line).
   `open-questions.md` C5 answered for ENS and IPFS. Decision-log rows for decisions 1-5 and both
-  consequences, from `d-0108` (`d-0101` to `d-0107` were taken by DDOC, `orivon.id` and secrets, and the roadmap).
+  consequences, from `d-0109` (`d-0101` to `d-0108` were taken by DDOC, `orivon.id`, secrets, the
+  roadmap and loopback grants).
 
 **Exit:** merged; an edit naming `ipfs` under `src/` raises no scope warning; ADR-0006 and
 `ARCHITECTURE.md` no longer contradict decision 1.
@@ -538,21 +539,29 @@ two PRs a day.
 
 ## Where it stands
 
-Updated 2026-09-24. Built on `stream/ens-ipfs`, each item to its exit criterion unless noted.
+Updated 2026-09-25. Each item is built to its exit criterion unless noted.
 
 | Item | State |
 |---|---|
-| EI-0 | **Partly.** `ADR-0030` and `ADR-0031` are written, and open questions A251 to A256 filed. The amendments (scope, `ADR-0005`, `ADR-0006`, `ADR-0029`, the hookify rule, the decision log) wait for the roadmap change, which edits the same lines and is not yet on `main` |
+| EI-0 | Done. The roadmap change put ENS, IPFS and the ENS anchor in scope and dropped `ipfs` and `ens` from the scope-creep rule; `ADR-0005`, `ADR-0006`, `ADR-0029` and `ADR-0030` are amended; decision-log rows `d-0108` to `d-0117`; B3 answered the canonical way and C5 for ENS and IPFS |
 | EI-1 | Done: [`spike-results/ens-ipfs.md`](spike-results/ens-ipfs.md). GO for the loopback design |
 | EI-2, EI-3, EI-4, EI-6 | Done, with unit tests |
 | EI-5, EI-7 | Done. `test/e2e-eth-verified.test.ts`: a fixture name loads verified, a tampered block is refused, and the Local Network Access canary holds |
 | EI-8 | Done. An opt-in live test resolves the five names through Helios and refuses a tampered proof; the real shell loads `vitalik.eth` from mainnet |
 | EI-9 | Done. `test/e2e-eth-install.test.ts` installs a `.eth` app through the real hint; its pin carries the CID and it opens from cache with the gateway gone |
-| EI-10 | Done. `test/e2e-eth-website-level.test.ts`: an `ipfs` fixture name is Level 2 with its CID, a DNSLink fixture is Level 1 naming the domain, an ordinary page is Level 1, and none shows Level 3 or above. A same-host hash tree stays Level 1 until A254 is settled |
+| EI-10 | Done. `test/e2e-eth-website-level.test.ts`: an `ipfs` fixture name is Level 2 with its CID, a DNSLink fixture is Level 2 naming the domain with D4 unmet, an ordinary page is Level 1, and none shows Level 3 or above. An installed site whose files match its published tree is Level 2 (unit-tested) |
 | EI-11 | Done. Settings section: `test/e2e-eth-light-client-status.test.ts`. The popover's `.eth` row is unit-tested (`src/main/verifier/tests/name-evidence.test.ts`) |
-| EI-12 | **Partly.** A README for each new directory. The rest edits the same pages as the roadmap change |
+| EI-12 | Done, but for the run from source on Windows and macOS, which needs those machines. `security-model.md` T27 to T38 and a T15 exception; `ARCHITECTURE.md`, the glossary, the compatibility matrix, `capability-api.md`, the README's launch endpoints, the stream row; two reviews, every finding addressed or acknowledged |
 
 **Where the build departed from the text above, and why:**
+
+- **A DNSLink name is Level 2, not Level 1, and so is an installed site whose files match its
+  published tree.** The owner answered A254: a site that meets DDOC is Level 2, the site's own
+  host counting as an anchor. IPFS content meets DDOC by design, so the §Decisions taken
+  consequence that a DNSLink name is Level 1 is replaced (`d-0115`, awaiting the owner's
+  confirmation); its DNS hop stays unproven evidence, and D4 unmet.
+- **The verifier's caches are per top-level site** (A256, `d-0117`), which the threat table below
+  did not foresee: see `security-model.md` T36.
 
 - **A name is proven at the newest block the light client has verified**, not the finalized one.
   Public RPCs serve storage proofs only for recent blocks, and finality lags by about 80 blocks.

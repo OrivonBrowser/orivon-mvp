@@ -5,7 +5,9 @@ send every `.eth` host to the verifier's loopback port, the certificate check ea
 starting and restarting the verifier host ([`../../verifier-host/`](../../verifier-host/)), choosing
 the light client's checkpoint, keeping what the host verified between runs, and saying in words
 what the light client is doing and how a `.eth` name led to the page a tab shows
-([`name-evidence.ts`](name-evidence.ts), for the site-info popover).
+([`name-evidence.ts`](name-evidence.ts), for the site-info popover). It also stamps every page's
+`.eth` request with the top-level page origin it belongs to ([`partition.ts`](partition.ts)), so
+the verifier keeps one cache per site.
 
 **Tied to Electron.** Disposable. [`verifier-subsystem.ts`](verifier-subsystem.ts) is the one file
 that imports `electron`; the rest are decisions, unit-tested under plain vitest, on this
@@ -29,6 +31,15 @@ Why the code here has the shape it has. This is the destination
 [`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
 source comment warns about a trap a maintainer would otherwise fall into, and the argument for
 a design belongs here instead.
+
+**The partition stamp is on the default session only** ([`verifier-subsystem.ts`](verifier-subsystem.ts)'s
+`installPartitionStamp`). Any `webRequest` listener sends every request of its session through
+Electron's proxy, and with it a redirect a `protocol.handle` handler returns reaches the page
+with the redirect's status on the final response (`test/e2e-served-csp.test.ts` measures it).
+Installed apps and web contexts serve `https` through such handlers, so a listener there would
+break every routed redirect. None of their pages reaches the verifier anyway: their handlers
+dial through Node's `https`, which cannot resolve a `.eth` name. Every page that can reach it, a
+`.eth` page included, runs in the default session.
 
 **One owner of `--host-resolver-rules`** ([`resolver-rules.ts`](resolver-rules.ts)). A second copy of
 the switch replaces the first, and the first matching `MAP` clause wins. So one value is built, in

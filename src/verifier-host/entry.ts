@@ -30,7 +30,8 @@ function main (): void {
     if (message.type === 'start') {
       if (host !== undefined) return
       host = startHost(message.config, {
-        fetch: async (url, init) => await net.fetch(url, init),
+        // No HTTP cache: one would answer a block another site's pages fetched faster, and so tell a page where the person has been (A256).
+        fetch: async (url, init) => await net.fetch(url, { ...init, cache: 'no-store' }),
         resolveHost: async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address),
         post,
         startLightClient: startHeliosLightClient,

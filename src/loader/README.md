@@ -22,10 +22,10 @@ website into (`capability-api.md` §How a URL becomes an app). The well-known pa
 **The install origin's hostname must resolve as public-unicast before that fetch, no exception**
 ([`install-origin.ts`](install-origin.ts), T12/A46). This is the shell itself, unsandboxed,
 making the very first request, with no grant and no manifest yet to gate it, so a hint pointing
-at a loopback, private, link-local or cloud-metadata address is refused outright, even the
-loopback case `docs/open-questions.md` A46 otherwise permits for a *user-typed* address: the only
-discovery trigger here is a page-supplied hint, which is exactly the provenance A46 says loopback
-must never be reachable from.
+at a loopback, private, link-local or cloud-metadata address is refused outright. A loopback
+origin's hint never reaches the loader: it is granted without being installed
+([`../main/install/grant-without-install.ts`](../main/install/grant-without-install.ts)), and
+nothing is fetched from it as a bundle.
 
 **The update decision is where a silent failure is a security failure.** Its failure mode is
 "no prompt appeared", which no manual checklist catches, and the capability at stake is

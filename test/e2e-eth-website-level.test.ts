@@ -1,8 +1,9 @@
 // The Website level on the Web3 Score page, read from the real popover: a
-// `.eth` name whose content is IPFS is Level 2 and names its CID, a `.eth`
-// name reached through a DNSLink is Level 1 and names the domain, and an
-// ordinary page is Level 1. None of them claims Level 3 or above. Driven
-// through the test seam, so no light client and no mainnet.
+// `.eth` name whose content is IPFS is Level 2 and names its CID; one
+// reached through a DNSLink is Level 2 as well, since IPFS content meets
+// DDOC by design, but names the domain and leaves D4 unmet; an ordinary
+// page is Level 1. None of them claims Level 3 or above. Driven through the
+// test seam, so no light client and no mainnet.
 import { afterAll, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -27,6 +28,7 @@ interface Web3Page {
   heading: string
   met: string[]
   unknown: string[]
+  rungs: string[]
   text: string
 }
 
@@ -45,6 +47,7 @@ async function readWeb3Page (app: ElectronApplication): Promise<Web3Page> {
     heading: document.querySelector('.section-heading')?.textContent ?? '',
     met: [...document.querySelectorAll('.level-list .rung.met .rung-badge')].map((b) => b.textContent ?? ''),
     unknown: [...document.querySelectorAll('.level-list .rung.unknown .rung-badge')].map((b) => b.textContent ?? ''),
+    rungs: [...document.querySelectorAll('.rung-list:not(.level-list) .rung.met .rung-badge')].map((b) => b.textContent ?? ''),
     text: document.body.innerText
   }))
   await chrome.click('#web3-score-btn')
@@ -54,7 +57,7 @@ async function readWeb3Page (app: ElectronApplication): Promise<Web3Page> {
   return page
 }
 
-it('shows Level 2 for a verified .eth name, Level 1 through a DNSLink and for an ordinary page, and never Level 3 or above', async () => {
+it('shows Level 2 for a .eth name, through a DNSLink too, Level 1 for an ordinary page, and never Level 3 or above', async () => {
   await runPhase('eth-website-level', async (check) => {
     const gateway = await startFixtureGateway(SITES, { dnslinks: { 'app.example': 'linked' } })
     const ordinary = createServer((_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><title>ordinary page</title><body>ordinary</body>') })
@@ -83,8 +86,8 @@ it('shows Level 2 for a verified .eth name, Level 1 through a DNSLink and for an
 
       await navigateToFixture(app, 'https://linked.eth/', 'linked fixture')
       const linked = await readWeb3Page(app)
-      check(`linked.eth, reached through a DNSLink, is Website level 1 (${linked.heading})`, linked.heading === 'Website level 1' && linked.met.join(',') === 'L1')
-      check('it names the DNSLink domain', linked.text.includes('Via DNS: app.example'))
+      check(`linked.eth, reached through a DNSLink, is Website level 2 (${linked.heading})`, linked.heading === 'Website level 2' && linked.met.join(',') === 'L1,L2')
+      check(`it names the DNSLink domain, and meets D3 but not D4 (${linked.rungs.join(',')})`, linked.text.includes('Via DNS: app.example') && linked.rungs.includes('D3') && !linked.rungs.includes('D4'))
       check('it still names the CID its files were checked against', linked.text.includes(`CID ${gateway.roots['linked']!}`))
 
       await navigateToFixture(app, ordinaryUrl, 'ordinary page')
@@ -96,7 +99,7 @@ it('shows Level 2 for a verified .eth name, Level 1 through a DNSLink and for an
         check(`${name} shows Levels 3 and 4 only as unknown`, page.unknown.join(',') === 'L3,L4' && !page.met.includes('L3') && !page.met.includes('L4'))
       }
 
-      expect([level.heading, linked.heading, plain.heading]).toEqual(['Website level 2', 'Website level 1', 'Website level 1'])
+      expect([level.heading, linked.heading, plain.heading]).toEqual(['Website level 2', 'Website level 2', 'Website level 1'])
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       await gateway.close()

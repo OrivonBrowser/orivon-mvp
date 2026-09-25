@@ -29,9 +29,9 @@ Build steps 1-4 of 10 are done: shell, capability broker, Node shim, app loader 
 person can open an app's URL, grant what its manifest declares in one consent dialog, and revoke
 grants later from a permissions panel. The permission engine is roughly 90% done, and the work now
 is building real apps on it: build step 5 ports Node.js desktop apps in `../orivon-ports` as the
-platform's test cases. Build step 6, ENS and IPFS, is under way: a `.eth` name loads from IPFS,
-every byte verified on this machine. The torrent app and Nostr identity are ideas, not build steps
-(`docs/mvp-scope.md` §LATER).
+platform's test cases. Build step 6, ENS and IPFS, is done: a `.eth` name loads from IPFS, its
+name proven by a light client and every byte verified on this machine. The torrent app and Nostr
+identity are ideas, not build steps (`docs/mvp-scope.md` §LATER).
 
 **For what works today, read `docs/planning/compatibility-matrix.md`, not this section.**
 

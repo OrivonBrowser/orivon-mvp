@@ -106,7 +106,7 @@ export async function readAppManifest (): Promise<Record<string, unknown>> {
  *
  * Issues what accepting the consent prompt would, without the prompt, for a
  * test that is about what a granted origin can do rather than how it is
- * granted. The prompt itself is exercised by e2e-dev-origin-grant.test.ts.
+ * granted. The prompt itself is exercised by e2e-loopback-grant.test.ts.
  */
 export async function grantOriginOnly (
   evaluate: <T, A>(fn: (electron: unknown, arg: A) => Promise<T>, arg: A) => Promise<T>,

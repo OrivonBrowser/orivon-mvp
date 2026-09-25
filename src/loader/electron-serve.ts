@@ -204,7 +204,7 @@ async function secureHeaderPatternsFor (broker: Broker, origin: string): Promise
   return await liveGrantedPatternsFor(broker, origin, 'https.connect')
 }
 
-/** The CSP a served response carries, from `origin`'s live grants -- shared with developer mode (src/main/dev/dev-csp.ts), so a dev origin runs under the same policy an installed one does. */
+/** The CSP a served response carries, from `origin`'s live grants -- shared with src/main/install/granted-origin-csp.ts, so an origin granted without installing runs under the same policy an installed one does. */
 export async function liveCspHeaderFor (broker: Broker, origin: string): Promise<string> {
   return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin))
 }

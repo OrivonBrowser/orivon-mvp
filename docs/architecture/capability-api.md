@@ -457,6 +457,12 @@ and kept with the pin as DDOC evidence; it decides nothing about the install (`A
 Consent is then asked once, before the app's own code runs, for the app's whole declared
 capability set (`ADR-0012`).
 
+**A `.eth` name delivers an app the same way.** `https://<name>.eth` is an origin like any other
+(`ADR-0030`): a light client proves what the name's contenthash points to, the verifier fetches
+that content from IPFS and hashes every block against its CID, and only then is anything served.
+The hint, the manifest, the one dialog and the pin are unchanged; the pin also records the CID,
+which anchors the site's DDOC off its host (`ADR-0029`).
+
 > **Never probe automatically.** Three independent audits flagged this: an unsolicited request
 > to every origin the user visits is an active, attributable *"this visitor runs Orivon"*
 > signal, sent from a privacy-branded browser to an audience that reads its own traffic. That
