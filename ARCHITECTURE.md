@@ -72,6 +72,10 @@ throw anything away.
 | [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the site's published hash tree, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
 | [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer, by design temporary |
 | [`src/renderer/`](src/renderer/) | Browser chrome UI | **Entirely** |
+| [`src/resolution/`](src/resolution/) | The name-resolver and data-gatherer interfaces, and the registry that orders them | **No.** Pure types and decisions |
+| [`src/ens/`](src/ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | **No** |
+| [`src/ipfs/`](src/ipfs/) | Loading IPFS content from trustless gateways, every block hashed against its CID | **No** |
+| [`src/verifier-host/`](src/verifier-host/) | The utility process that runs the light client and serves `.eth` names on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` |
 | [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
 | [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
 
@@ -99,6 +103,12 @@ is an active, attributable *"this visitor runs Orivon"* signal, sent from a priv
 browser to an audience that reads its own traffic. Discovery is a
 `<link rel="orivon-manifest">` hint in HTML already delivered; nothing is fetched from a page
 that never included it.
+
+**A `.eth` name is an origin like any other**, `https://<name>.eth`
+([`ADR-0030`](docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)). A light
+client proves what the name points to, the content comes from IPFS with every block hashed
+against its CID, and a verifier on loopback serves only bytes that passed. From there the page is
+an ordinary one: the same hint, the same one dialog, the same pin, which also records the CID.
 
 **The grant prompt is origin-first.** Any origin can serve a manifest, and the `name` in it is
 self-asserted, so the origin is the largest and primary element and the app's claimed name is
@@ -139,10 +149,11 @@ you disagree with one, the ADR is where the objections are already answered.
 - **Telemetry is opt-out, but disclosed in full on first run.** The metric requires measurement;
   the disclosure shows the literal JSON, nothing preselected, nothing sent before you choose
   ([`ADR-0004`](docs/decisions/ADR-0004-telemetry.md)).
-- **Trust is shown as evidence, never as a bare grade.** A letter grade invites trusting the
-  grade. Click-through shows what the machine observed, and a judged level names the provider
-  that judged it, kept apart from the observed evidence
-  ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
+- **Trust is shown as a level with its evidence, never as a bare grade.** The Web3 Score page
+  leads with the canonical Website level. Level 1 or 2 is what the machine observed: whether the
+  site meets DDOC. Level 3 and above are a named provider's judgement, shown grey `?` when no
+  provider has judged, and kept apart from what was observed. The evidence sits under the level,
+  never behind it ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
 
 **How the API behaves**
 

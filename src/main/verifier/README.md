@@ -5,7 +5,9 @@ send every `.eth` host to the verifier's loopback port, the certificate check ea
 starting and restarting the verifier host ([`../../verifier-host/`](../../verifier-host/)), choosing
 the light client's checkpoint, keeping what the host verified between runs, and saying in words
 what the light client is doing and how a `.eth` name led to the page a tab shows
-([`name-evidence.ts`](name-evidence.ts), for the site-info popover).
+([`name-evidence.ts`](name-evidence.ts), for the site-info popover). It also stamps every page's
+`.eth` request with the top-level page origin it belongs to ([`partition.ts`](partition.ts)), so
+the verifier keeps one cache per site.
 
 **Tied to Electron.** Disposable. [`verifier-subsystem.ts`](verifier-subsystem.ts) is the one file
 that imports `electron`; the rest are decisions, unit-tested under plain vitest, on this

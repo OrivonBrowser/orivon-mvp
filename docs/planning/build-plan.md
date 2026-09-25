@@ -197,20 +197,19 @@ named port, served from a public https origin, installs through the app loader a
 
 **6. ENS and IPFS, trust-minimised.** Load `name.eth` as `https://name.eth`, with every byte
 checked on this machine against what the Ethereum chain says the name points to. A light client
-proves the name's record at a recent finalized block, the contenthash is decoded locally, and
-every IPFS block is hashed against its CID before any of it is used. RPC servers and gateways
+proves the name's record at the newest block it has verified, the contenthash is decoded locally,
+and every IPFS block is hashed against its CID before any of it is used. RPC servers and gateways
 supply availability only, never correctness. The page keeps its own `.eth` origin and is
 consented and installed like any other app (`ADR-0007`, `ADR-0018`). This is journey 3.
 
-Two things arrive with it. **DDOC's off-host anchor:** a `.eth` name's ENS record carries the
-bundle root, so a host compromised well enough to rewrite both its files and its tree is caught
-(`ADR-0029`). **The delivery ladder's D3 and D4 rungs** become reachable
-(`src/trust/delivery-ladder.ts`). Rule 8 holds here as everywhere: a library that pulls in a
-native module is out, however standard it is.
+Three things arrive with it. **DDOC's off-host anchor:** a `.eth` name's contenthash commits to
+every file, so a host compromised well enough to rewrite both its files and its tree is caught
+(`ADR-0029`). **The Website level** leads the Web3 Score page on every site (`ADR-0006`). **The
+delivery ladder's D3 and D4 rungs** are reached (`src/trust/delivery-ladder.ts`). Rule 8 holds
+here as everywhere: a library that pulls in a native module is out, however standard it is.
 
-*Provisional:* the item-by-item plan for this step is not on `main`. Until it is, this paragraph
-is the scope, and the choice of light client, gateways and how a name whose record points back
-into DNS is shown are open.
+The work queue is [`ens-ipfs-plan.md`](ens-ipfs-plan.md); the mechanism is `ADR-0030` and the
+light client `ADR-0031`.
 
 **7. Trust indicator.** Delivery ladder, connection ladder from the broker's per-app
 connection log, operation scoring. Click-through shows the actual evidence, not a grade

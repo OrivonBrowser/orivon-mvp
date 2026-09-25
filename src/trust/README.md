@@ -108,11 +108,11 @@ the table. Its wording states what was compared, "files match the hash tree this
 and never that the domain's owner published them. The tree sits on the same host as the files
 (`ADR-0029`), and saying more would be the overclaim this component exists to prevent.
 
-**The Website level stops at 2, and 2 needs every hop and every byte verified**
-([`website-level.ts`](website-level.ts)). Levels 1 and 2 are observations: does DDOC hold. Level
-3 and above are judgements about the code itself, and only a Web3 Score provider may give them,
-so this file has no type for them. Level 2 needs each pointer from a `.eth` name to its content
-proven, and each file served checked against the CID it names. A DNSLink hop is a TXT record
-anyone on the DNS path can forge, so a name through one is Level 1 however well its bytes check.
-An ordinary site is Level 1 even with a matching same-host hash tree, since the tree is not
-anchored off the host (`open-questions.md` A254).
+**The Website level stops at 2, and 2 means DDOC holds** ([`website-level.ts`](website-level.ts)).
+Levels 1 and 2 are observations: does DDOC hold. Level 3 and above are judgements about the code
+itself, and only a Web3 Score provider may give them, so this file has no type for them. DDOC
+holds when a site's files match the hashes its owner published: IPFS content, by design, as long
+as no file failed its check, and an installed site whose files match the tree it publishes on its
+own host. How well that anchor is held, a name proven on Ethereum, a DNSLink or the site's own
+host, is not part of the level: it is evidence shown beside it, and the delivery ladder's D4
+already grades a proven name. Mixing the two would make one number answer two questions.

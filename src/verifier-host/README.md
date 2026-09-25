@@ -72,6 +72,15 @@ read one root without resolving the name for each. A mount gives up after 25 sec
 light client fed a lie it keeps rejecting retries for over a minute. A failure is remembered for
 five seconds, so a page's burst of requests fails once.
 
+**Every cache is kept per partition** ([`sites.ts`](sites.ts), [`server.ts`](server.ts)'s
+`partitionOf`). A partition is the top-level page origin a request belongs to, which the shell
+stamps on every page's request (`src/main/verifier/partition.ts`), the way Chromium partitions its
+own HTTP cache. Without it any page could request `https://<name>.eth/` and learn from the answer's
+speed whether the person had opened that name in the last two minutes. A request the browser
+itself made carries `Sec-Fetch-Site: none`, which no page can send, and uses the name's own
+partition, the one its tab uses; any other request that names none gets a partition of its own
+and shares nothing. For the same reason [`entry.ts`](entry.ts) bypasses Electron's HTTP cache.
+
 **An install pins its root** ([`server.ts`](server.ts)). The loader names the root CID it began
 with on every request of one install, and the server answers `409` once the name points elsewhere.
 An unchanged root answers a matching `If-None-Match` with `304` before any file is opened, so an

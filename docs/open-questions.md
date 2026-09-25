@@ -1710,7 +1710,7 @@ Three expansions across three documents, one of them public: *Domain Data Owners
 (`Posts/Technical Specifications`), ***Data Domain** Ownership Certification* (`Glossario`).
 Trivial to fix; needs one canonical form in `glossary.md`.
 
-### B3. Two different trustlessity ladders — RESOLVED, public docs need updating
+### B3. Two different trustlessity ladders — RESOLVED, in favour of the public page
 Public `web3-score.md` gives websites **4** levels; private `Web3 Verification levels` gives
 **5**, including *"full-stack runs entirely locally"* as L3 — a level that vanished publicly
 even though local-executability is central to the "installable Web3sites" argument.
@@ -1719,6 +1719,11 @@ even though local-executability is central to the "installable Web3sites" argume
 reinstated, and it is automatically decidable. **Action outstanding: correct the public docs**
 to reinstate that level and to mark which levels are automatic versus judged. The `+Privacy`
 placement (L4 publicly, L5 privately) still needs one canonical answer.
+
+**Reopened and answered the other way (owner, 2026-09-24, `d-0108`):** trust levels follow the
+canonical Web3 scores page. Levels 1 and 2 are automatic, Level 3 and above are judged, and "runs
+entirely locally" is evidence shown beneath the level, not a level
+(`ADR-0006`'s 2026-09-25 amendment). The public docs need no correction for it.
 
 ### B4. Zero-setup auto-connecting accounts — resolved, with a validation correction
 `La Piramide dei Pilastri` and `OrivonBook` both state that accounts are pre-installed with
@@ -1786,9 +1791,11 @@ Verify against two or three real clients before treating the estimate as settled
 also need checking per client — several are AGPL.
 
 ### C5. Reuse-vs-build not yet analysed **[RESEARCH]**
-Outstanding for: ENS resolution, IPFS (embedded vs. Kubo subprocess vs. gateway), the DDOC
-generator. Settled for: WASM host (deferred), Electron shell (build, do not fork), torrent
-engine (`webtorrent` library), Nostr (inject NIP-07, reuse third-party clients).
+Outstanding for: the DDOC generator. Settled for: WASM host (deferred), Electron shell (build, do
+not fork), torrent engine (`webtorrent` library), Nostr (inject NIP-07, reuse third-party
+clients), ENS resolution (viem's Universal Resolver client over the Helios light client,
+`ADR-0031`), and IPFS (trustless gateways, raw blocks verified with the `multiformats` and UnixFS
+libraries; Helia is refused for its native dependency, and no node runs, `ADR-0030`).
 
 ### C6. Playwright `_electron` fails to attach to one window — cause unknown **[RESEARCH]**
 Found during the week-0 spike (gate 3, video playback). A direct, non-Playwright launch of the
@@ -9267,7 +9274,7 @@ on the first `.eth` navigation (a few seconds' sync from a fresh checkpoint), an
 beacon API, or plain-HTTP Nimbus as a fallback, since the light client verifies what it receives.
 **Needed by:** packaging (build step 10).
 
-### A254 -- does a verified same-host DDOC tree make an HTTPS site Website Level 2? **[NEEDS OWNER]**
+### A254 -- does a verified same-host DDOC tree make an HTTPS site Website Level 2? **[RESOLVED 2026-09-25, owner]**
 
 Filed 2026-09-24. `ens-ipfs-plan.md` decision 1 makes Level 2 "DDOC met", and was written before
 `ADR-0029` shipped DDOC with a tree anchored on the site's own host. That tree cannot catch a host
@@ -9280,7 +9287,12 @@ forgeable too (C1).
 **What would settle it:** the owner choosing. **Needed by:** the Website level on the Web3 Score page
 (`ens-ipfs-plan.md` EI-10).
 
-### A255 -- DDOC's off-host anchor for a `.eth` name is its contenthash **[NEEDS OWNER CONFIRMATION]**
+**Resolved (owner, `d-0114`):** yes. As the canonical page says, a site that supports DDOC is Level
+2, and a same-host tree counts. By the same reading a DNSLink `.eth` name is Level 2 too
+(`d-0115`, an AI call awaiting the owner's confirmation): its IPFS content meets DDOC by design, and
+its unproven DNS hop is evidence. `ADR-0029` and `ADR-0030` carry the amendments.
+
+### A255 -- DDOC's off-host anchor for a `.eth` name is its contenthash **[RESOLVED 2026-09-25, owner]**
 
 Filed 2026-09-24 with `ADR-0030`. `ADR-0029`'s amendment puts the anchor in the name's ENS record
 and leaves which record to build step 6. `ADR-0030` takes the contenthash: its CID commits to every
@@ -9290,7 +9302,11 @@ HTTPS, which this build does not do.
 
 **Needs:** the owner's confirmation.
 
-### A256 -- any web page can learn which `.eth` names were opened recently, by timing **[NEEDS OWNER]**
+**Resolved (owner, `d-0116`):** confirmed. A `.eth` name carries the hash or hashes confirming the
+files a person receives: the contenthash for IPFS content, and, for an app hash-pinned over HTTPS
+under a `.eth` name, its bundle root, which this build does not load.
+
+### A256 -- any web page can learn which `.eth` names were opened recently, by timing **[RESOLVED 2026-09-25, owner]**
 
 Filed 2026-09-24 from the security review of `stream/ens-ipfs`. The verifier keeps a mounted name
 for two minutes and its blocks in a cache shared by every tab. A page on any site can request
@@ -9304,3 +9320,11 @@ to a `.eth` name that is not already open in a tab, which breaks embedding a `.e
 another site; or pad every answer to a fixed floor, which slows every `.eth` load.
 
 **Needs:** the owner's choice. `ADR-0030` names the channel meanwhile.
+
+**Resolved (owner, `d-0117`):** isolate the verifier's cache per site. Mounted names, in-flight
+mounts and verified blocks are keyed by the top-level page origin each request belongs to, which
+the shell stamps on every page's `.eth` request; the verifier host bypasses the HTTP cache.
+`test/e2e-eth-partition.test.ts` shows another site's first request finding a name cold. What
+remains is what any browser with a partitioned cache keeps: a page can open a name as a
+top-level window and time that, and shared concurrency slots can be contended
+(`ADR-0030`'s 2026-09-25 amendment).

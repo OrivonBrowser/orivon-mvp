@@ -1,6 +1,8 @@
 # ADR-0030: A `.eth` name is an origin, served by a verifier that checks every byte
 
-- **Status:** accepted. Two parts are *provisional*, named in the Decision.
+- **Status:** accepted, **amended 2026-09-25**: a DNSLink name is Website Level 2, the DDOC
+  anchor is confirmed, and the verifier's caches are kept per site (see the Amendment at the end).
+  One part is *provisional*, named in the Decision.
 - **Date:** 2026-09-24
 - **Type:** architecture / security
 - **Decided by:** owner, for what a `.eth` name loads as and how its trust is shown
@@ -38,9 +40,9 @@ and served from its pin exactly as an HTTPS app is (`ADR-0005`, `ADR-0007`, `ADR
   provider would assess.
 - **Website level.** A name whose every pointer and every byte was verified meets DDOC, Level 2. A
   DNSLink's last hop is a DNS TXT record, forgeable on ICANN domains, so a DNSLink name is Level 1
-  though its bytes are still checked.
+  though its bytes are still checked. *(Amended 2026-09-25, below: a DNSLink name is Level 2 too.)*
 
-Two parts are *provisional*:
+Two parts were *provisional*; the second is settled by the Amendment below:
 
 - **The block a name is proven at** is the newest the light client has verified, not the finalized
   one. Public RPCs serve storage proofs only for recent blocks, and finality lags the head by about
@@ -49,7 +51,7 @@ Two parts are *provisional*:
 - **DDOC's off-host anchor for a `.eth` name is its contenthash.** The CID commits to every file,
   the published hash tree at
   `/.well-known/orivon-ddoc.json` included, so the tree is anchored off the host with no second
-  record. The owner's confirmation would settle it.
+  record. The owner's confirmation would settle it. *(Confirmed 2026-09-25.)*
 
 ## Context
 
@@ -93,10 +95,12 @@ own content.
 - **A loopback socket, which `security-model.md` T15 otherwise forbids.** Every local process can
   reach it. It can fetch public content, time responses to learn what is cached, and use Orivon as
   a resolver. It cannot inject content, because the certificate is pinned by fingerprint. The
-  socket serves nothing user-specific. `security-model.md` carries its own row.
+  socket serves nothing user-specific (`security-model.md` T35).
 - **Any web page can time a request to a `.eth` URL.** A name opened in the last two minutes
   answers from the verifier's memory, in milliseconds; one that was not needs a proof, in seconds.
   So a page can learn which names were opened recently, across sites (`open-questions.md` A256).
+  *(Amended 2026-09-25, below: the verifier's caches are kept per site, which closes this for
+  requests a page makes.)*
 - **Any web page can make the verifier look names up**, as many as it likes. Each lookup is bounded:
   eight offchain queries per name, four names proven at once, 64 kept.
 - **Local Network Access is not enforced in Electron 44**, so any page, `.eth` or not, can reach
@@ -113,6 +117,28 @@ own content.
   ENSIP-15 are checked against each other.
 - **A developer-mode name from `orivon-ports`' names file** skips all of this and stays plain HTTP
   on loopback; its resolver clauses come first.
+
+## Amendment, 2026-09-25: DNSLink names are Level 2, the anchor is confirmed, caches are per site
+
+**A DNSLink name is Website Level 2.** The owner settled that a site meets DDOC, and so is Level 2,
+when its files match the hashes its owner published, whatever holds that anchor: a tree on the
+site's own host counts (`ADR-0029`). IPFS content meets DDOC by design, so a name whose last hop is
+a DNSLink is Level 2 as well. The DNS hop stays unproven: the evidence names it, and the delivery
+ladder leaves D4 unmet. The gatherer's DDOC report is therefore met or failed; whether the
+pointers were proven is read from the pointers themselves.
+
+**The DDOC anchor is confirmed**: a `.eth` name's contenthash, as the Decision's second
+provisional part proposed.
+
+**The verifier's caches are kept per site.** Mounted names, in-flight mounts and verified blocks
+are keyed by the top-level page origin a request belongs to, the way Chromium partitions its own
+HTTP cache, and the verifier host bypasses Electron's HTTP cache. The shell stamps every page's
+`.eth` request with that origin in a `webRequest` listener on every session, overwriting anything
+the page set; a top-level navigation belongs to the page it opens; a request the browser makes
+itself (`Sec-Fetch-Site: none`, its favicon fetch) uses the name's own; anything else shares
+nothing. Two channels remain, both ones browsers with partitioned caches also have: a page that
+opens a name as a top-level window and times it probes that name's own partition, and the four
+mount slots and eight gateway slots are shared, so one site's load can slow another's.
 
 ## Reversibility
 

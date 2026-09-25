@@ -21,6 +21,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   lose. The `electron` compatibility package's `safeStorage` now backs the same capability for
   ported apps. Also fixes a real gap: a consent-made `id` grant, the shape every real
   `app.requestGrant()` call produces, was refused for every curve in production until now.
+- **`.eth` names load, with every byte checked on this machine.** Typing `vitalik.eth` opens
+  `https://vitalik.eth`: a light client (Helios) proves what the name points to on Ethereum, the
+  content comes from IPFS gateways with every block hashed against its CID, and anything that
+  fails a check is an error page, never the content. A `.eth` app installs through the same one
+  dialog and runs from its pin. Settings gains a read-only "Ethereum light client" section naming
+  every server it asks. No page can time a `.eth` request to learn which names another site's
+  pages opened: the verifier keeps one cache per site (ADR-0030, ADR-0031).
+- **The Web3 Score page leads with the Website level**, on every site. Level 2 means the site
+  meets DDOC: a `.eth` name's IPFS content, or an installed site whose files match the tree it
+  publishes. Levels 3 and up show `?` until a Web3 Score provider judges them, and the page names
+  what a provider would assess, the CID or the bundle hash.
 
 - **A site can publish its bundle hash tree, and the Web3 Score page shows whether it matches
   (DDOC).** The site puts `/.well-known/orivon-ddoc.json` beside its manifest: the bundle hash and
