@@ -28,9 +28,9 @@ function deps (overrides: Partial<HostDeps> = {}): HostDeps & { posted: FromHost
   }
 }
 
-async function get (port: number, host: string, path = '/'): Promise<{ status: number, body: string }> {
+async function get (port: number, host: string, path = '/', partition = `https://${host}`): Promise<{ status: number, body: string }> {
   return await new Promise((resolve, reject) => {
-    request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host } }, (res) => {
+    request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host, 'x-orivon-partition': partition } }, (res) => {
       let body = ''
       res.on('data', (c: Buffer) => { body += c.toString() })
       res.on('end', () => { resolve({ status: res.statusCode ?? 0, body }) })
@@ -44,8 +44,17 @@ describe('startHost', () => {
     running.push(host)
     expect(host.fingerprint).toMatch(/^sha256\//)
     expect(await get(host.port, 'fixture.eth')).toEqual({ status: 200, body: '<h1>fixture</h1>' })
-    const provenance = await host.answer({ kind: 'provenance', host: 'fixture.eth' })
+    const provenance = await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://fixture.eth' })
     expect(provenance).toMatchObject({ host: 'fixture.eth', resolver: 'fixture', root: { kind: 'ipfs', cid: dag.root.toString() }, ddoc: { status: 'met' } })
+  })
+
+  it("keeps a name one site's pages opened out of every other site's partition", async () => {
+    const host = await startHost(config(), deps())
+    running.push(host)
+    expect((await get(host.port, 'fixture.eth', '/', 'https://news.example')).status).toBe(200)
+    expect(await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://news.example' })).not.toBeNull()
+    expect(await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://fixture.eth' })).toBeNull()
+    expect(await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://tracker.example' })).toBeNull()
   })
 
   it('refuses fixture names unless the build allows them, failing closed like any unverifiable name', async () => {
@@ -70,7 +79,7 @@ describe('startHost', () => {
   it('has no provenance for a name it has not mounted', async () => {
     const host = await startHost(config(), deps())
     running.push(host)
-    expect(await host.answer({ kind: 'provenance', host: 'other.eth' })).toBeNull()
+    expect(await host.answer({ kind: 'provenance', host: 'other.eth', partition: 'https://other.eth' })).toBeNull()
   })
 
   it('rejects when the port is taken', async () => {

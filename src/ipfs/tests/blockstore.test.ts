@@ -5,7 +5,7 @@ import { sha512 } from 'multiformats/hashes/sha2'
 import * as Digest from 'multiformats/hashes/digest'
 import * as dagPb from '@ipld/dag-pb'
 import type { Refusal } from '../../resolution/providers.js'
-import { BlockSource, blockstoreFor } from '../blockstore.js'
+import { BlockCache, BlockSource, blockstoreFor } from '../blockstore.js'
 import { GatewayPool } from '../gateways.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import type { IpfsLimits } from '../limits.js'
@@ -131,6 +131,19 @@ describe('BlockSource.get', () => {
 })
 
 describe('blockstoreFor', () => {
+  it('answers a block from the cache only within the partition that fetched it', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    const pool = new GatewayPool([A, B], 4)
+    const cache = new BlockCache()
+    const one = new BlockSource(gateways.fetch, pool, DEFAULT_LIMITS, cache, 'https://one.example')
+    const two = new BlockSource(gateways.fetch, pool, DEFAULT_LIMITS, cache, 'https://two.example')
+    await one.get(leaf, signal, () => {})
+    await one.get(leaf, signal, () => {})
+    expect(gateways.requests).toHaveLength(1)
+    await two.get(leaf, signal, () => {})
+    expect(gateways.requests).toHaveLength(2)
+  })
+
   it('counts every block against the open, cached or not', async () => {
     const { source: s } = source(undefined, { maxBlocksPerOpen: 2 })
     const store = blockstoreFor(s, { blocks: 0, bytes: 0 }, signal, () => {})

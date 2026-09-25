@@ -10,7 +10,7 @@ import { ResolutionError } from '../resolution/records.js'
 import type { GatheredFile } from '../resolution/providers.js'
 import { contentTypeFor } from '../loader/serve-content-type.js'
 import { parseRange } from '../loader/serve-range.js'
-import { CONTENT_ROOT_HEADER } from '../loader/content-root.js'
+import { CONTENT_ROOT_HEADER, PARTITION_HEADER } from '../loader/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { Sites } from './sites.js'
@@ -35,6 +35,23 @@ function hostOf (req: IncomingMessage): string | undefined {
   const servername = (req.socket as TLSSocket).servername
   if (typeof servername === 'string' && servername.toLowerCase() !== host) return undefined
   return host
+}
+
+/** An origin, as the shell names a request's top-level page; nothing else is taken as a partition. */
+const PARTITION = /^[a-z][a-z0-9+.-]*:\/\/[\x21-\x7e]{1,253}$/
+let unpartitioned = 0
+
+/**
+ * The cache this request may use: the one the shell named for its top-level
+ * page; the name's own, for a request the browser itself made (its favicon
+ * fetch), which Chromium marks `Sec-Fetch-Site: none` and no page can; and
+ * otherwise one of its own that nothing else shares.
+ */
+function partitionOf (req: IncomingMessage, host: string): string {
+  const named = req.headers[PARTITION_HEADER]
+  if (typeof named === 'string' && PARTITION.test(named)) return named
+  if (req.headers['sec-fetch-site'] === 'none') return `https://${host}`
+  return `unpartitioned:${String(unpartitioned++)}`
 }
 
 /** The path of an origin-form request target. `//x/y` would read as an authority, so it is refused, not reinterpreted. */
@@ -124,7 +141,7 @@ async function handle (sites: Sites, req: IncomingMessage, res: ServerResponse):
   let file: GatheredFile
   let root: string
   try {
-    const { site } = await sites.get(host)
+    const { site } = await sites.get(host, partitionOf(req, host))
     root = site.root.cid
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.

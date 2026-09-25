@@ -78,7 +78,7 @@ describe('HostSupervisor', () => {
     const { supervisor, hosts } = harness()
     await expect(supervisor.request({ kind: 'status' })).rejects.toThrow(/not running/)
     supervisor.start()
-    const reply = supervisor.request({ kind: 'provenance', host: 'a.eth' })
+    const reply = supervisor.request({ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth' })
     hosts[0]?.crash(9)
     await expect(reply).rejects.toThrow(/exited with code 9/)
   })

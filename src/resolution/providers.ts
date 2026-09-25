@@ -63,6 +63,10 @@ export interface MountedSite {
 export interface DataGatherer {
   readonly id: string
   supports: (records: readonly NameRecord[]) => boolean
-  /** Throws a ResolutionError. */
-  mount: (name: string, records: readonly NameRecord[], signal?: AbortSignal) => Promise<MountedSite>
+  /**
+   * Throws a ResolutionError. `partition` names the cache the mount may
+   * share with earlier ones; mounts in different partitions share nothing a
+   * page could time.
+   */
+  mount: (name: string, records: readonly NameRecord[], signal?: AbortSignal, partition?: string) => Promise<MountedSite>
 }

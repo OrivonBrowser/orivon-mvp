@@ -5,7 +5,7 @@ import { ResolutionError } from '../resolution/records.js'
 import type { NameRecord, PointerStep } from '../resolution/records.js'
 import type { DataGatherer, DdocReport, MountedSite, Refusal } from '../resolution/providers.js'
 import { pointerChainVerdict } from '../resolution/pointer-chain.js'
-import { BlockSource } from './blockstore.js'
+import { BlockCache, BlockSource } from './blockstore.js'
 import type { ResolveTxt } from './dnslink.js'
 import { GatewayPool } from './gateways.js'
 import type { Fetch } from './gateways.js'
@@ -43,7 +43,7 @@ function unverifiedReason (step: PointerStep | undefined): string {
 export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer {
   const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...options.limits }
   const pool = new GatewayPool(options.gateways, limits.gatewayConcurrency)
-  const source = new BlockSource(options.fetch, pool, limits)
+  const cache = new BlockCache()
   const resolvers = {
     ipns: async (key: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void) =>
       await resolveIpnsKey(key, options.fetch, { pool, nameServices: options.ipnsNameServices ?? [] }, options.ipnsSequences, limits.blockTimeoutMs, signal, onRefusal),
@@ -54,7 +54,8 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
   return {
     id: 'ipfs',
     supports: (records) => loadable(records) !== undefined,
-    async mount (name, records, signal = new AbortController().signal): Promise<MountedSite> {
+    async mount (name, records, signal = new AbortController().signal, partition = ''): Promise<MountedSite> {
+      const source = new BlockSource(options.fetch, pool, limits, cache, partition)
       const record = loadable(records)
       if (record === undefined) throw new ResolutionError('unsupported', `no record of ${name} names IPFS content`)
       const refusals: Refusal[] = []

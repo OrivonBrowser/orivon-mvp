@@ -6,13 +6,15 @@
 
 import { join } from 'node:path'
 import { app, session, utilityProcess } from 'electron'
-import type { Session } from 'electron'
+import type { Session, WebFrameMain } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames } from '../dev/eth-resolver.js'
 import type { HostConfig, LightClientState, SiteProvenance } from '../../verifier-host/protocol.js'
 import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/eth-origin.js'
+import { PARTITION_HEADER } from '../../loader/content-root.js'
 import { ethCertificateVerdict } from './certificate-check.js'
+import { requestPartition, withPartition } from './partition.js'
 import { contentAddressOf } from './content-address.js'
 import { chooseCheckpoint, slotTimestamp } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
@@ -49,6 +51,34 @@ function installCertificateCheck (target: Session): void {
   target.setCertificateVerifyProc((request, callback) => {
     callback(ethCertificateVerdict(request.hostname, request.certificate.fingerprint, fingerprint))
   })
+}
+
+/**
+ * Stamps every page's `.eth` request with the partition its top-level page
+ * owns, overwriting anything the page set. A request from no page (the
+ * loader's, which names its own) passes as it came.
+ */
+function installPartitionStamp (target: Session): void {
+  target.webRequest.onBeforeSendHeaders({ urls: ['https://*.eth/*'] }, (details, callback) => {
+    let frame: WebFrameMain | null | undefined
+    try {
+      frame = details.frame
+    } catch {
+      frame = undefined
+    }
+    if (frame == null && details.webContents === undefined) {
+      callback({})
+      return
+    }
+    const topUrl = frame?.top?.url ?? details.webContents?.getURL()
+    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl })
+    callback({ requestHeaders: withPartition(details.requestHeaders, PARTITION_HEADER, partition) })
+  })
+}
+
+function installOnSession (target: Session): void {
+  installCertificateCheck(target)
+  installPartitionStamp(target)
 }
 
 const SHIPPED_CHECKPOINT = { root: shippedCheckpoint.root, timestamp: slotTimestamp(shippedCheckpoint.slot) }
@@ -98,11 +128,15 @@ function startAfterFirstPage (start: () => void): void {
   setTimeout(once, START_FALLBACK_MS).unref()
 }
 
-/** Where a `.eth` site's content came from and whether DDOC holds, or null when it is not mounted or the host is down. */
-export async function siteProvenance (host: string): Promise<SiteProvenance | null> {
+/**
+ * Where a `.eth` origin's content came from and whether DDOC holds, as a tab
+ * showing that origin sees it; null when it is not mounted there or the host
+ * is down.
+ */
+export async function siteProvenance (origin: string): Promise<SiteProvenance | null> {
   if (supervisor === undefined) return null
   try {
-    return await supervisor.request({ kind: 'provenance', host })
+    return await supervisor.request({ kind: 'provenance', host: new URL(origin).hostname, partition: origin })
   } catch {
     return null
   }
@@ -111,7 +145,7 @@ export async function siteProvenance (host: string): Promise<SiteProvenance | nu
 /** How a `.eth` name led to the content this tab shows, for the site-info popover; undefined for any other origin. */
 export async function ethNameEvidence (origin: string, pin: PinRecord | null, servedFromCache: boolean): Promise<NameEvidence | undefined> {
   if (!servedByVerifier(origin)) return undefined
-  const live = await siteProvenance(new URL(origin).hostname)
+  const live = await siteProvenance(origin)
   return chooseNameEvidence(pin?.content, servedFromCache, live, verifierView().summary, Date.now())
 }
 
@@ -123,7 +157,8 @@ export async function ethNameEvidence (origin: string, pin: PinRecord | null, se
 export async function ethContentAddress (origin: string): Promise<ContentAddress | undefined> {
   if (!servedByVerifier(origin)) return undefined
   if (supervisor === undefined) throw new Error('the .eth verifier has not started')
-  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname }, MOUNT_TIMEOUT_MS))
+  // The origin's own partition: the one a tab opening it uses.
+  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: new URL(origin).origin }, MOUNT_TIMEOUT_MS))
 }
 
 /** The light client's state in words, for the Settings section and the site-info popover. */
@@ -150,10 +185,10 @@ export const verifierSubsystem: Subsystem = {
     const existing = app.commandLine.getSwitchValue('host-resolver-rules')
     app.commandLine.appendSwitch('host-resolver-rules', composeResolverRules({ devClauses: dev.rules, port: loopbackPort(), existing }))
     if (dev.secureOrigins !== '') app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', dev.secureOrigins)
-    app.on('session-created', installCertificateCheck)
+    app.on('session-created', installOnSession)
   },
   afterReady: () => {
-    installCertificateCheck(session.defaultSession)
+    installOnSession(session.defaultSession)
     const host = new HostSupervisor({
       fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon .eth verifier' }),
       config: hostConfig,
