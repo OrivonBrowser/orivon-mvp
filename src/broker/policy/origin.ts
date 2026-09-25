@@ -4,6 +4,7 @@
 // `URL` is a global -- no import needed for it.
 
 import { classifyAddress } from './address.js'
+import { normalizeHost } from './canonical-host.js'
 
 /**
  * Only these two schemes yield an origin.
@@ -115,13 +116,24 @@ export function originFromUrl (url: string): string | null {
  * name check is the only way to catch either; a resolver-based check would be
  * resolver-dependent where Chromium's own behaviour is not.
  *
+ * `normalizeHost` first: `URL.hostname` lowercases on its own, but keeps a
+ * trailing root-label dot (`new URL('https://localhost.').hostname` is
+ * `'localhost.'`, verified against a real URL parser), which neither
+ * equality check below would recognise as the `.localhost` namespace.
+ * Every current caller happens to pass an already-normalised or
+ * already-lowercase host, but this file's own `isPersistableOrigin` is the
+ * only one that also strips the trailing dot before calling here -- calling
+ * this defensively, rather than trusting every future caller to repeat that
+ * step, is what `normalizeHost` existing as a shared function is for.
+ *
  * Exported so a second caller checking name-based loopback outside this file
  * (`../../loader/install-origin.ts`'s T12 guard, which fetches through
  * Electron's `net.fetch` -- the same Chromium behaviour this comment
  * describes) reuses this rather than a second copy (Rule 3).
  */
 export function isLocalhostName (host: string): boolean {
-  return host === 'localhost' || host.endsWith('.localhost')
+  const normalized = normalizeHost(host)
+  return normalized === 'localhost' || normalized.endsWith('.localhost')
 }
 
 /** This machine: a loopback literal in any spelling `classifyAddress` accepts, or a `localhost` name, which Chromium resolves to loopback itself and never puts on the wire. */

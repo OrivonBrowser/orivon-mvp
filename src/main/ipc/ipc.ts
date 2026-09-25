@@ -70,13 +70,26 @@ export type ShellCommand =
    * straight to the Web3 Score page, the key to the main page). */
   | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
 
-function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents): boolean {
+/**
+ * BOTH object identity AND URL, matching `newtab-ipc.ts`'s own
+ * `isFromDashboard` for the second half: identity alone assumes
+ * `chromeWebContents.mainFrame` can never be attached to anything but the
+ * chrome document, which is exactly what `main/shell/lock-navigation.ts`'s
+ * `lockNavigation` (window.ts's own call) makes true today -- but a sender
+ * check that would still pass if that lock were ever removed or
+ * misconfigured is the weaker of the two, not a redundant one. `chromeUrl`
+ * is the same string `window.ts` passed the view at construction and the
+ * preload's own gate (`preload/shell.ts`) compares `location.href` against.
+ */
+function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents, chromeUrl: string): boolean {
   return event.senderFrame !== null &&
-    event.senderFrame === chromeWebContents.mainFrame
+    event.senderFrame === chromeWebContents.mainFrame &&
+    event.senderFrame.url === chromeUrl
 }
 
 export function registerShellIpc (
   chromeWebContents: WebContents,
+  chromeUrl: string,
   tabs: TabManager,
   bookmarks: BookmarkStore,
   siteInfo: SiteInfoController,
@@ -90,7 +103,7 @@ export function registerShellIpc (
   deliveryProvenance: (url: string) => Promise<DeliveryProvenance> = async () => ({ servedFromPinnedCache: false })
 ): void {
   ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | DeliveryProvenance | null> => {
-    if (!isFromChrome(event, chromeWebContents)) {
+    if (!isFromChrome(event, chromeWebContents, chromeUrl)) {
       // Not the chrome view's top frame -- refuse silently rather than
       // throwing a message back that confirms the channel exists.
       return

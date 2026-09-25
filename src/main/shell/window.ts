@@ -26,6 +26,7 @@ import { notificationDecisions } from '../sessions/permission-gate.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
 import { deliveryProvenanceFor } from '../browsing/delivery-provenance.js'
 import { rendererEntryUrl } from './renderer-entry.js'
+import { lockNavigation } from './lock-navigation.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from '../ipc/ipc.js'
@@ -136,23 +137,31 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   nativeTheme.on('updated', applyOverlayForTheme)
   win.on('closed', () => { nativeTheme.removeListener('updated', applyOverlayForTheme) })
 
+  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
+  // The chrome's own resolved URL -- computed before construction so both
+  // the preload's expected-URL argument and the load target name the exact
+  // same string, the pattern `--orivon-newtab-url` already establishes
+  // below for the dashboard.
+  const chromeUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/', '../renderer/index.html')
+
   const chrome = new WebContentsView({
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/shell.js'),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      webSecurity: true
+      webSecurity: true,
+      additionalArguments: [`--orivon-shell-url=${chromeUrl}`]
     }
   })
   win.contentView.addChildView(chrome)
-
-  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
-  if (devServerUrl !== undefined) {
-    void chrome.webContents.loadURL(devServerUrl)
-  } else {
-    void chrome.webContents.loadFile(join(import.meta.dirname, '../renderer/index.html'))
-  }
+  // The chrome preload is unconditionally privileged (src/preload/shell.ts
+  // gates on this same URL, ipc.ts's isFromChrome checks it a second time
+  // on every call) -- a view holding it must never end up attached to a
+  // document other than this one. No further navigation happens from here,
+  // so `chromeUrl` is also the one destination the lock still lets through.
+  lockNavigation(chrome.webContents, chromeUrl)
+  void chrome.webContents.loadURL(chromeUrl)
 
   // The dashboard's own resolved URL -- a genuinely fresh tab loads this
   // (src/main/tabs.ts's createTab()). Mirrors the branch immediately
@@ -368,7 +377,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   )
 
   registerShellIpc(
-    chrome.webContents, tabs, bookmarks, siteInfo,
+    chrome.webContents, chromeUrl, tabs, bookmarks, siteInfo,
     (anchor, url) => {
       // The chrome view sends the active TAB's url, not an origin -- same
       // `originFromUrl` tab-view.ts's own appTabArgsFor already uses for

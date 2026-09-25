@@ -17,6 +17,7 @@ import type { Session, WebContents } from 'electron'
 import { LIMITS } from '../../contracts/index.js'
 import { originHash } from '../../broker/grants/origin-hash.js'
 import { reachOnlyHandlerFor } from '../../loader/electron-serve.js'
+import { lockNavigation } from '../shell/lock-navigation.js'
 import type { Broker, WebContextHost } from '../../broker/broker-contracts.js'
 
 const EMPTY_DOCUMENT = 'data:text/html,<!DOCTYPE html><html><head><title></title></head><body></body></html>'
@@ -255,7 +256,6 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
       view.setBounds({ x: 0, y: 0, width: size.width, height: size.height })
       webContents = view.webContents
       webContents.setAudioMuted(true)
-      webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       // The other belt against A41 -- see WEBRTC_ESCAPE_PROXY's own comment
       // and README.md's Design notes. A context has no reason to use WebRTC
       // at all, so this is refused outright rather than merely constrained.
@@ -270,15 +270,14 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
 
       // ONLY AFTER THE FIRST LOAD -- webContents.loadURL's own programmatic
       // navigation does not fire will-navigate at all (Electron's own doc),
-      // so these listeners never see it; attaching them any earlier would
-      // only be defensive, never load-bearing, and attaching them here
-      // matches the spec's own ordering exactly.
+      // so lockNavigation's listeners never see it; attaching them any
+      // earlier would only be defensive, never load-bearing, and attaching
+      // them here matches the spec's own ordering exactly. No `allowedUrl`:
+      // a context never legitimately navigates anywhere, including back to
+      // its own EMPTY_DOCUMENT.
       const id = newHostId()
 
-      const preventTopFrameNavigation = (event: { preventDefault: () => void }): void => { event.preventDefault() }
-      webContents.on('will-navigate', preventTopFrameNavigation)
-      webContents.on('will-redirect', preventTopFrameNavigation)
-      webContents.on('will-frame-navigate', (event) => { if (event.isMainFrame) event.preventDefault() })
+      lockNavigation(webContents)
       // Finding 3: react to the renderer dying on its own (a crash, an OOM
       // kill) rather than learning about it only from the idle timer.
       // Registered here, alongside the navigation guards above, rather than

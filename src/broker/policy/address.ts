@@ -307,4 +307,17 @@ export function isPublicUnicast (addr: string): boolean {
   return classifyAddress(addr) === 'public'
 }
 
+/**
+ * True for a string that IS an address literal (so `classifyAddress` did
+ * not answer `'unparseable'`) and is not `'public'` -- private, link-local,
+ * loopback, unspecified, multicast, broadcast or reserved, every AddressClass
+ * `isPublicUnicast` alone would also refuse, made explicit for a caller that
+ * needs to name the "it's a literal, and not a public one" case rather than
+ * negate `isPublicUnicast`, which reads as "not public" even for an ordinary
+ * DNS name that is not a literal at all.
+ */
+export function isNonPublicAddressLiteral (addr: string): boolean {
+  return classifyAddress(addr) !== 'unparseable' && !isPublicUnicast(addr)
+}
+
 export type { AddressClass }

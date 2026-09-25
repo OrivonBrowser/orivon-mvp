@@ -94,6 +94,14 @@ describe('capabilities.web.contexts (ADR-0019)', () => {
     expect(rejection({ contexts: ['https://localhost'] })).toContain('localhost')
   })
 
+  // `new URL('https://localhost.')`'s hostname keeps the trailing root-label
+  // dot (`'localhost.'`) and its own `.origin` reproduces it too, so this
+  // passes the canonical-form check untouched -- only isLocalhostName's own
+  // trailing-dot handling (origin.ts) stands between this and 'null' (accepted).
+  it('rejects "localhost." -- a trailing root-label dot does not escape the namespace', () => {
+    expect(rejection({ contexts: ['https://localhost.'] })).toContain('localhost')
+  })
+
   it('rejects the whole .localhost namespace, not just the bare label', () => {
     expect(rejection({ contexts: ['https://app.localhost'] })).toContain('localhost')
   })

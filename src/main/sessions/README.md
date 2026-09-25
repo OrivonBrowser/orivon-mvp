@@ -17,8 +17,8 @@ the reach-only network path, and the CORS wrapper.
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
 `writeFileAtomic`, `policy/origin.ts`, `broker-contracts.ts` types), [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts),
 [`../shell/`](../shell/) (the two questions, `external-link-prompt.ts` and
-`notification-prompt.ts`; `showing-window.ts`; `exclusive-access-notice.ts`), the top-level
-`registry.ts`. Only `permission-gate.ts` and `web-context-host.ts` import `electron`: the
+`notification-prompt.ts`; `showing-window.ts`; `exclusive-access-notice.ts`; `lock-navigation.ts`),
+the top-level `registry.ts`. Only `permission-gate.ts` and `web-context-host.ts` import `electron`: the
 decision files are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in

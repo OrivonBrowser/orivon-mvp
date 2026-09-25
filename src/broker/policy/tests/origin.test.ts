@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isLoopbackHost, isPersistableOrigin, originFromSenderFrame, originFromUrl, type SenderFrameLike } from '../origin.js'
+import { isLocalhostName, isLoopbackHost, isPersistableOrigin, originFromSenderFrame, originFromUrl, type SenderFrameLike } from '../origin.js'
 
 // Origin derivation is the first of the six security-critical areas in
 // docs/development/testing.md, and it has the property that qualifies an area
@@ -497,5 +497,33 @@ describe('originFromSenderFrame', () => {
       expect(originFromSenderFrame({ url: 42 } as unknown as SenderFrameLike)).toBeNull()
       expect(originFromSenderFrame({ url: null } as unknown as SenderFrameLike)).toBeNull()
     })
+  })
+})
+
+describe('isLocalhostName', () => {
+  it('recognises the bare label and the whole .localhost namespace', () => {
+    expect(isLocalhostName('localhost')).toBe(true)
+    expect(isLocalhostName('app.localhost')).toBe(true)
+    expect(isLocalhostName('deep.sub.localhost')).toBe(true)
+    expect(isLocalhostName('example.com')).toBe(false)
+    expect(isLocalhostName('notlocalhost')).toBe(false)
+  })
+
+  // URL.hostname lowercases on its own, so this is defence in depth for any
+  // future caller that reaches isLocalhostName with something other than a
+  // real URL's hostname.
+  it('is case-insensitive', () => {
+    expect(isLocalhostName('LOCALHOST')).toBe(true)
+    expect(isLocalhostName('App.LocalHost')).toBe(true)
+  })
+
+  // A live gap until this fix: `new URL('https://localhost.').hostname` is
+  // `'localhost.'` (verified against a real URL parser, trailing dot kept),
+  // and neither `=== 'localhost'` nor `.endsWith('.localhost')` recognised
+  // it, so `webContextOriginRejection('https://localhost.')` accepted a
+  // loopback-namespace origin T12/RFC 6761 require refusing.
+  it('recognises a trailing root-label dot', () => {
+    expect(isLocalhostName('localhost.')).toBe(true)
+    expect(isLocalhostName('app.localhost.')).toBe(true)
   })
 })
