@@ -118,7 +118,7 @@ Strictly dependency-ordered; each step needs the one before it.
 | 3 | **Node shim**: `net`, `dgram`, `fs` over `orivon.*` | **done**, plus `http`/`https`, the core polyfills, `net.createServer` and `dns.lookup` over real broker capabilities ([A114](docs/open-questions.md)/[A107](docs/open-questions.md), both resolved) |
 | 4 | **App loader**: manifest discovery, fetch, cache, hash-pinning, DDOC | **done**: discovery, fetch, caching, hash-pinning, the update decision, DDOC and the served bundle's CSP are all reachable from a real page behind a real, one-time consent dialog. The folder picker (`fs.userSelected`) is a separate, still-unbuilt capability; see the compatibility matrix |
 | 5 | **Node.js apps**: real desktop apps, ported to run from a URL, as the platform's test cases | **under way** in [orivon-ports](https://github.com/OrivonBrowser/orivon-ports): FreeTube, Element, AirGap Vault, ASGARDEX |
-| 6 | **ENS and IPFS**: `.eth` names and IPFS content, verified on your machine rather than trusted to a server | being planned |
+| 6 | **ENS and IPFS**: `.eth` names and IPFS content, verified on your machine rather than trusted to a server | **under way**: a `.eth` name loads from IPFS, its name proven by a light client and every byte checked against its CID ([`ADR-0030`](docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)) |
 | 7 | **Trust indicator**: what an app actually did, and what a score provider judged, never a bare grade | groundwork in [`src/trust/`](src/trust/) |
 | 8 | **Telemetry**: with the first-run disclosure | groundwork in [`src/telemetry/`](src/telemetry/) |
 | 9 | **Developer mode**: load an unpacked app | |
