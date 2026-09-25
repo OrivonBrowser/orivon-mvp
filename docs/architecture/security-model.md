@@ -43,7 +43,7 @@ arbitrary hosts) · identity seed and derived keys · other apps' data · attent
 | T5 | Renderer escape into Node | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, no remote module. Non-negotiable |
 | T6 | Compromised host silently swaps app code that already holds grants | Bundle hash pinned at install; any change re-prompts before running (`ADR-0005`, `ADR-0006` D2). The hash tree a site publishes (DDOC, `ADR-0029`) is evidence, not a defence here: it sits on the same host, so a host that swaps the code can swap the tree too |
 | T7 | App escapes its manifest by rewriting its own code | Code cache is **read-only to the app**; only the broker writes it (`ADR-0003`) |
-| T8 | Identity key exfiltration | Seed in `safeStorage`, never exposed; apps receive **derived** keys only; raw export is not a capability at any tier. **Scope of that protection:** `safeStorage` defends against another OS user and against offline disk access, but not against same-user code (T24) |
+| T8 | Identity key exfiltration | Seed in `safeStorage`, never exposed; apps receive **derived** keys and secrets only (`orivon.id`, and `orivon.secrets` under a distinct salt, [`ADR-0033`](../decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)); raw export is not a capability at any tier. **Scope of that protection:** `safeStorage` defends against another OS user and against offline disk access, but not against same-user code (T24) |
 | T8b | A connected site silently signs destructive or authenticating events with a named identity | Named identities expose `signEvent(obj)`, **never raw-payload signing**. The broker screens `kind`: 1/6/7 silent; **0, 3, 5, 22242 and any delegation prompt**. Derive a separate secret per `(label, curve)` via length-prefixed HKDF, never one scalar across two schemes. `nip04`/`nip44` decrypt, if offered at all, is a **separate grant** from signing. A local append-only signing log (origin, identity, kind, time) with a viewer is the missing repudiation control |
 | T9 | Cross-app identity correlation | App keys derive per origin, so apps cannot link a user silently. **Named identities** (e.g. Nostr) are cross-origin *by explicit consent only*; the connect prompt is the boundary (`capability-api.md`) |
 | T10 | Hostile peer serves corrupt torrent data | Piece verification against the infohash, inherent to BitTorrent and not something Orivon adds |
@@ -165,11 +165,12 @@ attack surface. Adding either requires an ADR.
 
 ## Cross-platform note
 `safeStorage` is Keychain on macOS and DPAPI on Windows, but on Linux requires an available
-keyring; `isEncryptionAvailable()` returns false without one. Required behaviour: **do not
-silently fall back to plaintext.** Either refuse to persist the seed and operate with an
-ephemeral identity for the session, or tell the user plainly that the keyring is unavailable.
-Silent plaintext storage of an identity seed would be the worst outcome and the easiest
-mistake.
+keyring; `isAsyncEncryptionAvailable()` resolves false without one, and Electron's own
+`'basic_text'`/`'unknown'` `getSelectedStorageBackend()` values mean the same thing by a
+different route. **Never a silent plaintext fallback.** `src/main/keyring/seed-store.ts`
+([`ADR-0033`](../decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md))
+generates an ephemeral, session-only identity for that launch instead, and never writes it to
+disk; the choice is not shown to the person for now, only logged.
 
 ## Not defended against, stated plainly
 - A hostile app that a user deliberately installs in developer mode and grants capabilities to.

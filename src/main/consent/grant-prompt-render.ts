@@ -150,6 +150,21 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
       return { warning: false, message: 'Create a digital identity for you to use with this app' }
     case 'web.context':
       return describeWebContextGrant(patterns)
+    case 'secrets':
+      // ADR-0033: the app never sees the identity seed, only ciphertext its
+      // own key produced -- say what the grant actually gives, not "your
+      // identity" or "the keyring" itself, either of which would overstate
+      // what crosses the boundary.
+      return { warning: false, message: 'Encrypt its own data with a key your system keyring protects' }
+    case 'media.camera':
+    case 'media.microphone':
+    case 'clipboard.read':
+      // ADR-0032: contract-only so far -- the loader does not parse
+      // Capabilities.media/clipboard yet (check-manifest-parity.mjs's own
+      // DELIBERATELY_DEFERRED entries), so no live grant can reach this
+      // switch. Thrown, not rendered, until that implementation PR gives
+      // each its real copy.
+      throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0032)`)
     default: {
       // Exhaustiveness guard, matching app-install.ts's own pattern: a new
       // CapabilityKind added without a case here fails to compile.

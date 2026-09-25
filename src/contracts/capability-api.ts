@@ -49,6 +49,7 @@ export interface Orivon {
   readonly fs: OrivonFs
   readonly id: OrivonId
   readonly web: OrivonWeb
+  readonly secrets: OrivonSecrets
 }
 
 export interface OrivonApp {
@@ -350,4 +351,45 @@ export interface WebContextOptions {
   /** The viewport the document reports, in CSS pixels. Default 1920 x 1080; each clamped to 1..7680. */
   readonly width?: number
   readonly height?: number
+}
+
+/**
+ * ADR-0033. An origin-bound encrypt/decrypt pair, backed by the OS keyring
+ * through Electron `safeStorage` -- what lets an app hold a secret across
+ * restarts without ever holding, or being able to derive, the identity seed
+ * itself. `ADR-0003`'s "no app, ever" still governs the seed; this is a
+ * SEPARATE, derived secret, one per origin, the same relationship `id`'s app
+ * keys already have to the seed they come from.
+ *
+ * BYTES ONLY, like every other capability here (`OrivonFs`'s A12 precedent):
+ * an app decides its own encoding one layer up.
+ *
+ * `decrypt` rejects `'invalid'` for bytes this origin's key did not
+ * produce -- there is no cross-origin decrypt, by construction, not by a
+ * check that could be bypassed: the key itself is derived per origin.
+ */
+export interface OrivonSecrets {
+  /**
+   * Whether `encrypt` can succeed right now. `false` when the person holds
+   * no live `secrets` grant, OR when the seed this origin's key derives from
+   * is session-only (no OS keyring reachable) -- ciphertext made from a
+   * session-only seed cannot be decrypted after a restart, so an app that
+   * checks first can choose not to rely on it rather than lose data
+   * silently. Never throws for "no grant"; that is exactly the `false` case.
+   */
+  available(): Promise<boolean>
+  /**
+   * Encrypts `plaintext` with a key derived for this origin alone.
+   *
+   * Rejects `'denied'` with no live `secrets` grant; `'unavailable'` when
+   * the seed is session-only (see `available()`); `'limit'` past
+   * `LIMITS.secretBytes`.
+   */
+  encrypt(plaintext: Uint8Array): Promise<Uint8Array>
+  /**
+   * Reverses `encrypt`. Rejects `'denied'` with no live `secrets` grant;
+   * `'invalid'` for bytes this origin's key did not produce, including
+   * another origin's ciphertext or anything hand-edited.
+   */
+  decrypt(ciphertext: Uint8Array): Promise<Uint8Array>
 }

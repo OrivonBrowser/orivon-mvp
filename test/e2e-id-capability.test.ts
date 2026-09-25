@@ -12,12 +12,12 @@
 //
 // Phase 2 is what Phase 1 cannot show: a REAL grant. It builds its own
 // Broker directly (real WebCrypto derivation, a keychain stub standing in
-// for ADR-0003's safeStorage-backed one -- production's own keychain still
-// throws 'internal', see ../src/broker/transport/ipc.ts, but that is
-// unreachable in Phase 1 because the 'denied' grant check answers first),
-// grants 'id' for one curve, and proves publicKey/sign work under it, that a
-// different (ungranted) curve is still denied, and that revoking the grant
-// denies a subsequent call.
+// for ADR-0033's real safeStorage-backed one -- ../src/main/keyring/
+// electron-keychain.ts, wired into production by ../src/broker/transport/
+// ipc.ts -- so this test controls the seed rather than depending on this
+// machine's own keyring), grants 'id' for one curve, and proves
+// publicKey/sign work under it, that a different (ungranted) curve is still
+// denied, and that revoking the grant denies a subsequent call.
 //
 // UPDATED (.claude/unattended-build-queue.md item 0.3): the grant
 // itself now goes through src/main/dev-grant.ts's hook rather than this file

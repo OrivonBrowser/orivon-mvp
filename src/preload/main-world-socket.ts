@@ -451,6 +451,11 @@ export function installOrivon (
       publicKey: async (opts: { curve: string }) => await callRevived(bridge.idPublicKey(opts.curve)),
       sign: async (opts: { curve: string, payload: Uint8Array }) => await callRevived(bridge.idSign(opts.curve, opts.payload))
     }),
+    secrets: Object.freeze({
+      available: async () => await callRevived(bridge.secretsAvailable()),
+      encrypt: async (plaintext: Uint8Array) => await callRevived(bridge.secretsEncrypt(plaintext)),
+      decrypt: async (ciphertext: Uint8Array) => await callRevived(bridge.secretsDecrypt(ciphertext))
+    }),
     web: Object.freeze({
       openContext: async (origin: string, options?: { width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext({ origin, ...options })))
     }),

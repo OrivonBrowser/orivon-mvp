@@ -120,3 +120,54 @@ describe('orivon.id', () => {
     })
   })
 })
+
+// A real production `app.requestGrant` -> broker.grant() call always carries
+// EMPTY patterns for `id` (manifest-patterns.ts's patternSetFromCapabilities:
+// presence alone is the ask, `id` carries no pattern of its own). Every test
+// above grants NON-EMPTY patterns directly, bypassing that path entirely --
+// which is exactly how this bug shipped and stayed unnoticed: only the
+// dev-only grant hook and this file's own direct `broker.grant(..., [curve])`
+// calls ever exercised `id`, and both always named a curve. This block
+// grants the way `requestGrant`'s consent flow actually does.
+describe('orivon.id -- the ordinary consent-made grant (empty patterns, A153/manifest-patterns.ts)', () => {
+  it('publicKey succeeds for a curve the REGISTERED MANIFEST declares, under an empty-patterns grant', async () => {
+    const broker = createBroker(baseDeps({ keychain: { getSeed: async () => SEED } }))
+    broker.registerApp(APP, manifestWith({ id: { curves: ['P-256'] } }))
+    await broker.grant(APP, 'id', [])
+
+    const publicKey = await broker.id.publicKey(APP, { curve: 'P-256' })
+    const expected = await derivePublicKey({ seed: SEED, label: 'app', scope: APP, curve: 'P-256' })
+    expect(publicKey).toEqual(expected)
+  })
+
+  it('is denied for a curve the manifest never declared, under an empty-patterns grant', async () => {
+    const broker = createBroker(baseDeps({ keychain: { getSeed: async () => SEED } }))
+    broker.registerApp(APP, manifestWith({ id: { curves: ['P-256'] } }))
+    await broker.grant(APP, 'id', [])
+
+    await expect(broker.id.publicKey(APP, { curve: 'secp256k1' }))
+      .rejects.toMatchObject({ code: 'denied' })
+  })
+
+  it('is denied under an empty-patterns grant when the origin was never registered with a manifest at all', async () => {
+    const broker = createBroker(baseDeps({ keychain: { getSeed: async () => SEED } }))
+    await broker.grant(APP, 'id', [])
+
+    await expect(broker.id.publicKey(APP, { curve: 'P-256' }))
+      .rejects.toMatchObject({ code: 'denied' })
+  })
+
+  it('re-checks the CURRENTLY REGISTERED manifest live, not one frozen at grant time', async () => {
+    const broker = createBroker(baseDeps({ keychain: { getSeed: async () => SEED } }))
+    broker.registerApp(APP, manifestWith({ id: { curves: ['P-256'] } }))
+    await broker.grant(APP, 'id', [])
+    await expect(broker.id.publicKey(APP, { curve: 'secp256k1' })).rejects.toMatchObject({ code: 'denied' })
+
+    // The app re-registers (e.g. an update) declaring a second curve, with
+    // no new grant -- the SAME empty-patterns grant now covers it, because
+    // what it authorises is read from the live manifest, not the grant's
+    // own (still empty) patterns.
+    broker.registerApp(APP, manifestWith({ id: { curves: ['P-256', 'secp256k1'] } }))
+    await expect(broker.id.publicKey(APP, { curve: 'secp256k1' })).rejects.toMatchObject({ code: 'internal' }) // secp256k1 itself is unimplemented (see the test above) -- 'internal', not 'denied', proves the manifest check passed
+  })
+})

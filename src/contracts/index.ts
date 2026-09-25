@@ -46,6 +46,9 @@ export type {
   FsCapability,
   IdCapability,
   WebCapability,
+  MediaCapability,
+  ClipboardCapability,
+  SecretsCapability,
   Grant,
   GrantId,
   CapabilityKind,
@@ -61,6 +64,7 @@ export type {
   OrivonId,
   OrivonWeb,
   WebContextOptions,
+  OrivonSecrets,
   CapabilityRequest,
   SecureConnectOptions
 } from './capability-api.js'

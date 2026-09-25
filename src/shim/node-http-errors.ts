@@ -45,11 +45,15 @@ export interface ErrorContext {
  * Duplicated from src/broker/errors.ts's own identical set rather than
  * imported: that file is on the other side of the broker/shim trust
  * boundary (src/shim/README.md forbids importing src/broker/), and
- * contracts/errors.ts itself emits no runtime code to import instead.
+ * contracts/errors.ts itself emits no runtime code to import instead. Built
+ * from a `Record`, matching the broker-side copy, so a code
+ * contracts/errors.ts adds and this file forgets is a type error.
  */
-const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode>([
-  'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
-])
+const ORIVON_ERROR_CODE_RECORD: Readonly<Record<OrivonErrorCode, true>> = {
+  denied: true, revoked: true, unreachable: true, timeout: true, reset: true, closed: true,
+  limit: true, invalid: true, notFound: true, exists: true, internal: true, unavailable: true
+}
+const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set(Object.keys(ORIVON_ERROR_CODE_RECORD) as OrivonErrorCode[])
 
 /** Node's negative errno for each code, in Linux numbering (libuv's EAI_* for resolver codes). */
 const ERRNO: Readonly<Record<string, number>> = {

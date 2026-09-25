@@ -34,6 +34,7 @@ import { widensAuthority } from './policy/update.js'
 import { createNetCapability } from './net-capability.js'
 import { createIdCapability } from './id-capability.js'
 import { createWebCapability } from './web-capability.js'
+import { createSecretsCapability } from './secrets-capability.js'
 import { createFsCapability } from './fs-capability.js'
 import { createUserSelectedCapability } from './user-selected-capability.js'
 import { PickedPathLedger } from './grants/picked-path-ledger.js'
@@ -93,7 +94,10 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // orivon.id's two entry points (publicKey, sign) -- built alongside
   // net-capability.ts from the start rather than inlined here first, for
   // the same Rule 2 reason: this file was already 264 lines before `id`.
-  const id = createIdCapability({ deps, ledger, canonical })
+  // `registeredManifest` (this file's own `canonical`-keyed lookup, above)
+  // is what an id grant's EMPTY patterns check against -- see
+  // id-capability.ts's own doc on `requireGrantedCurve` for why.
+  const id = createIdCapability({ deps, ledger, canonical, manifestFor: registeredManifest })
 
   // orivon.web's three entry points (ADR-0019) -- built the same shape as
   // `id` above, over the SAME `handleTable`/`ledger`/`canonical` every other
@@ -102,6 +106,11 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // `grant`/`revoke`/`revokePersisted` below already cascade to every other
   // capability's live handles -- see ./web-capability.ts's own header.
   const web = createWebCapability({ deps, handleTable, ledger, canonical })
+
+  // orivon.secrets's three entry points (ADR-0033) -- built the same shape
+  // as `id` above, over the seed `deps.keychain` already provides for it,
+  // under a distinct derivation path (./policy/secret-seal.ts).
+  const secrets = createSecretsCapability({ deps, ledger, canonical })
 
   // orivon.fs's eight entry points -- readFile, writeFile, confineSync
   // (ADR-0016) plus queue item 2.1's mkdir/readdir/stat/rm/rename. Lifted to
@@ -451,6 +460,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     net,
     id,
     web,
+    secrets,
     fs,
     registerApp,
     versionFloorFor,

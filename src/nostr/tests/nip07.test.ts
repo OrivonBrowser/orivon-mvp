@@ -49,6 +49,11 @@ function fakeOrivon (requestIdentity: Orivon['id']['requestIdentity']): Orivon {
     },
     web: {
       openContext: notImplemented('web.openContext')
+    },
+    secrets: {
+      available: notImplemented('secrets.available'),
+      encrypt: notImplemented('secrets.encrypt'),
+      decrypt: notImplemented('secrets.decrypt')
     }
   }
 }

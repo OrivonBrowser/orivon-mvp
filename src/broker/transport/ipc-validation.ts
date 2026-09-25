@@ -11,6 +11,7 @@
 // the envelope carrying it.
 
 import type { CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
+import { LIMITS } from '../../contracts/index.js'
 import { MAX_PATTERNS } from '../policy/connect.js'
 
 /**
@@ -37,6 +38,7 @@ export type ControlMethod =
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
   | 'web.openContext' | 'web.evaluate' | 'web.close' | 'web.awaitClose'
+  | 'secrets.available' | 'secrets.encrypt' | 'secrets.decrypt'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' || method === 'app.requestGrant' ||
@@ -54,7 +56,8 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'net.udpBind' || method === 'net.listen' || method === 'net.close' ||
     method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
     method === 'net.lookup' ||
-    method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close' || method === 'web.awaitClose'
+    method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close' || method === 'web.awaitClose' ||
+    method === 'secrets.available' || method === 'secrets.encrypt' || method === 'secrets.decrypt'
 }
 
 export interface FsReadFileParams { readonly path: string }
@@ -97,6 +100,9 @@ export interface FsDirWriteFileParams { readonly id: string, readonly path: stri
 export interface FsDirOpenParams { readonly id: string, readonly path: string, readonly flags: string }
 export interface IdPublicKeyParams { readonly curve: string }
 export interface IdSignParams { readonly curve: string, readonly payload: Uint8Array }
+/** `secrets.available` takes no payload of its own -- the origin alone decides the answer. */
+export interface SecretsEncryptParams { readonly plaintext: Uint8Array }
+export interface SecretsDecryptParams { readonly ciphertext: Uint8Array }
 /** `web.openContext` (ADR-0019) -- `origin` is the CONTEXT's own origin, never this call's caller (that one is derived from the sender frame, T3, same as every other control method); `width`/`height` optional, `WebContextOptions`'s own default. */
 export interface WebOpenContextParams { readonly origin: string, readonly width?: number, readonly height?: number }
 export interface WebEvaluateParams { readonly id: string, readonly script: string, readonly timeoutMs?: number }
@@ -283,6 +289,26 @@ export function isIdSignParams (payload: unknown): payload is IdSignParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { curve?: unknown }).curve === 'string' &&
     (payload as { payload?: unknown }).payload instanceof Uint8Array
+}
+
+/** `LIMITS.secretBytes`-bounded here too, at the trust boundary, not only
+ * inside secrets-capability.ts -- T1/T10's own discipline (see this file's
+ * header): fail closed as early as the untrusted bytes are seen. */
+export function isSecretsEncryptParams (payload: unknown): payload is SecretsEncryptParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { plaintext } = payload as { plaintext?: unknown }
+  return plaintext instanceof Uint8Array && plaintext.byteLength <= LIMITS.secretBytes
+}
+
+/** The wire format's own fixed overhead (secret-seal.ts: 1 version byte,
+ * 12-byte nonce, 16-byte AES-GCM tag) -- an honestly-produced ciphertext
+ * never exceeds `LIMITS.secretBytes` plus exactly this much. */
+const SECRET_WIRE_OVERHEAD_BYTES = 1 + 12 + 16
+
+export function isSecretsDecryptParams (payload: unknown): payload is SecretsDecryptParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { ciphertext } = payload as { ciphertext?: unknown }
+  return ciphertext instanceof Uint8Array && ciphertext.byteLength <= LIMITS.secretBytes + SECRET_WIRE_OVERHEAD_BYTES
 }
 
 /** `width`/`height` bounded to a safe finite number when present -- broker/web-capability.ts clamps to 1..7680 regardless, so this is shape hygiene, not the real range check. */

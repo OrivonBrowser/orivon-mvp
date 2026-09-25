@@ -44,7 +44,15 @@ export const PARITY_MAP = [
   { interfaceName: 'HttpsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'HTTPS_KEYS' },
   { interfaceName: 'FsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'FS_KEYS' },
   { interfaceName: 'IdCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'ID_CAPABILITY_KEYS' },
-  { interfaceName: 'WebCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'WEB_CAPABILITY_KEYS' }
+  { interfaceName: 'WebCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'WEB_CAPABILITY_KEYS' },
+  { interfaceName: 'MediaCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'MEDIA_CAPABILITY_KEYS' },
+  { interfaceName: 'ClipboardCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'CLIPBOARD_CAPABILITY_KEYS' },
+  // SecretsCapability declares zero fields today (ADR-0033, "presence alone
+  // is the declaration"), so this row never finds a gap or a stale entry --
+  // but it stays here rather than being omitted, so the day a field IS
+  // added to either side, this check catches the drift immediately instead
+  // of needing to be remembered.
+  { interfaceName: 'SecretsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'SECRETS_CAPABILITY_KEYS' }
 ]
 
 /**
@@ -66,7 +74,42 @@ export const PARITY_MAP = [
  * whole-interface logic above stays, for the next capability that ships
  * contracts-first the same way.
  */
-export const DELIBERATELY_DEFERRED = []
+export const DELIBERATELY_DEFERRED = [
+  {
+    interfaceName: 'Capabilities',
+    field: 'media',
+    reason: 'ADR-0032: media (camera/microphone) is declared in this contracts-only PR. The ' +
+      'loader starts accepting `media` in the implementation PR that follows, which removes ' +
+      'this entry.'
+  },
+  {
+    interfaceName: 'Capabilities',
+    field: 'clipboard',
+    reason: 'ADR-0032: clipboard.read is declared in this contracts-only PR. The loader starts ' +
+      'accepting `clipboard` in the implementation PR that follows, which removes this entry.'
+  },
+  // Capabilities.secrets (ADR-0033) is no longer deferred: its own
+  // implementation PR added CAPABILITIES_KEYS' 'secrets' entry and
+  // readSecrets, so a real check now covers it.
+  {
+    interfaceName: 'MediaCapability',
+    field: 'camera',
+    reason: 'ADR-0032: MEDIA_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
+      'PR that follows this one, which removes this entry.'
+  },
+  {
+    interfaceName: 'MediaCapability',
+    field: 'microphone',
+    reason: 'ADR-0032: MEDIA_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
+      'PR that follows this one, which removes this entry.'
+  },
+  {
+    interfaceName: 'ClipboardCapability',
+    field: 'read',
+    reason: 'ADR-0032: CLIPBOARD_CAPABILITY_KEYS does not exist yet -- added by the ' +
+      'implementation PR that follows this one, which removes this entry.'
+  }
+]
 
 // Re-implemented rather than imported from check-contracts-pure.mjs -- see
 // cli.mjs's own header on why the check:* scripts duplicate small

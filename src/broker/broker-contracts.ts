@@ -11,6 +11,7 @@ import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
 import type { BrokerFs, BrokerFsMethods } from './fs-contracts.js'
 import type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
+import type { BrokerSecretsMethods, Keychain } from './secrets-contracts.js'
 import type { PickedPath } from './grants/picked-path-ledger.js'
 import type { DialSecure, FailableSecureTcpSocket } from './secure-dial-contracts.js'
 import type {
@@ -33,6 +34,7 @@ import type {
 // needs to change.
 export type { BrokerFs, BrokerFsMethods, OpenedFile, RawFileStat } from './fs-contracts.js'
 export type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
+export type { BrokerSecretsMethods, Keychain } from './secrets-contracts.js'
 export type { PickedPath } from './grants/picked-path-ledger.js'
 
 /**
@@ -197,16 +199,6 @@ export interface ListenedServer {
  */
 export type Listen = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<ListenedServer>
 
-/**
- * Backs `orivon.id` -- key derivation from a locked seed (ADR-0010,
- * policy/derive.ts). Not yet used: `createBroker` accepts it because
- * build-plan.md fixes the constructor's shape once, for every capability
- * that eventually needs a piece of it. Nothing below calls it yet.
- */
-export interface Keychain {
-  getSeed(): Promise<Uint8Array>
-}
-
 export interface CreateBrokerOptions {
   readonly dial: Dial
   readonly dialSecure: DialSecure
@@ -367,6 +359,8 @@ export interface Broker {
   }
   /** `BrokerWebMethods` -- ./web-context-contracts.js, alongside `WebContextHost`. */
   readonly web: BrokerWebMethods
+  /** `BrokerSecretsMethods` -- ./secrets-contracts.js, alongside `Keychain`. ADR-0033. */
+  readonly secrets: BrokerSecretsMethods
   /**
    * Registers -- or replaces -- an origin's manifest. Called once per app
    * session, before any capability call for that origin. Existing grants are

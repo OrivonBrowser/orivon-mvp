@@ -14,7 +14,11 @@
 // gets granted. The real prompt-to-app-tab path is e2e-dev-origin-grant.test.ts.
 //
 // NO HERMETIC_RESOLVER: the app has to reach real YouTube for this to mean
-// anything, so this is not hermetic and must not gate CI.
+// anything, so this is not hermetic and must not gate CI. SKIPPED UNDER CI
+// (`CI=true`, set by GitHub Actions) unless `ORIVON_E2E_LIVE=1`: YouTube
+// resolving a stream from a CI runner within the playback deadline is not
+// something this repository controls, and a timeout there says nothing
+// about the change under review. A local run still runs it by default.
 //
 // RUN THIS WITH:
 //   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-live-origin.test.ts
@@ -25,6 +29,8 @@ import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } 
 import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { PORT_APP_FREETUBE, startOwnServer, grantOriginOnly, readAppManifest } from './freetube-fixture.js'
+
+const LIVE = process.env['CI'] !== 'true' || process.env['ORIVON_E2E_LIVE'] === '1'
 
 const HOST = '127.0.0.1'
 const PORT = PORT_APP_FREETUBE
@@ -38,7 +44,7 @@ const TEST_TIMEOUT_MS =
   ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 +
   8_000 * 6 + 60_000 + APP_CLOSE_RACE_MS + 30_000
 
-it(
+it.skipIf(!LIVE)(
   'the app works from a plain static server at its own URL, granted per-origin, with nothing installed',
   async () => {
     await runPhase('freetube-live-origin', async (check) => {

@@ -29,7 +29,13 @@ import type {
 type Full<T> = Required<T>
 
 type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
-  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web'> & {
+  // ADR-0032/ADR-0033: 'media', 'clipboard' and 'secrets' excluded with the
+  // same deferred reasoning 'web' carried in the contracts-only PR that
+  // added it -- the real parser does not accept any of the three yet
+  // either (their PARITY_MAP loader arrays do not exist until the stacked
+  // implementation PR), so a kitchen-sink manifest naming them would fail
+  // the round-trip this file exists to prove.
+  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets'> & {
     readonly net: Omit<Full<NetCapability>, 'tcp' | 'udp' | 'https'> & {
       readonly tcp: Full<TcpCapability>
       readonly udp: Full<UdpCapability>

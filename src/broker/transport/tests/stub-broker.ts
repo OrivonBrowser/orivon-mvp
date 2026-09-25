@@ -77,6 +77,9 @@ export function stubBroker (
     webEvaluate: (origin: string, opts: { id: string, script: string }) => Promise<unknown>
     webClose: (origin: string, opts: { id: string }) => Promise<void>
     webAwaitClose: (origin: string, opts: { id: string }) => Promise<void>
+    secretsAvailable: (origin: string) => Promise<boolean>
+    secretsEncrypt: (origin: string, plaintext: Uint8Array) => Promise<Uint8Array>
+    secretsDecrypt: (origin: string, ciphertext: Uint8Array) => Promise<Uint8Array>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
     versionFloorFor: (origin: string) => Promise<string>
     rollbackAcknowledgedVersionFor: (origin: string) => Promise<string | undefined>
@@ -227,6 +230,20 @@ export function stubBroker (
       awaitClose: async (origin, opts) => {
         calls.push({ method: 'web.awaitClose', origin, args: opts })
         await (overrides.webAwaitClose?.(origin, opts) ?? notStubbed())
+      }
+    },
+    secrets: {
+      available: async (origin) => {
+        calls.push({ method: 'secrets.available', origin, args: undefined })
+        return await (overrides.secretsAvailable?.(origin) ?? notStubbed())
+      },
+      encrypt: async (origin, plaintext) => {
+        calls.push({ method: 'secrets.encrypt', origin, args: plaintext })
+        return await (overrides.secretsEncrypt?.(origin, plaintext) ?? notStubbed())
+      },
+      decrypt: async (origin, ciphertext) => {
+        calls.push({ method: 'secrets.decrypt', origin, args: ciphertext })
+        return await (overrides.secretsDecrypt?.(origin, ciphertext) ?? notStubbed())
       }
     },
     registerApp: async (origin, manifest) => {
