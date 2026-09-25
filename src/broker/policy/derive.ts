@@ -145,8 +145,14 @@ export function isSupportedCurve (curve: unknown): curve is DeriveCurve {
  * A seed shorter than this cannot carry 256 bits of entropy no matter what the
  * KDF does. Checked here rather than trusted from the caller, because the one
  * place a weak seed would be noticed is the one place nobody looks.
+ *
+ * Exported for ./secret-seal.ts (ADR-0033), which derives from the same
+ * seed under a different salt and needs the identical guard -- the check
+ * itself is a fact about what makes a seed usable at all, not about the
+ * frozen v1 construction below it, so sharing it is not a widening of what
+ * this file promises to keep frozen.
  */
-const MIN_SEED_BYTES = 32
+export const MIN_SEED_BYTES = 32
 
 /**
  * Every WebCrypto call goes through here so that no raw `DOMException` or
@@ -193,8 +199,12 @@ export function subtleCrypto (): SubtleCrypto {
  * an error. Accepting it would give every user it happened to THE SAME
  * identity, derived from an all-zero seed, permanently and with no export path
  * to recover from. Three lines to make that a loud failure instead.
+ *
+ * Exported for ./secret-seal.ts, which needs the identical guard -- see
+ * MIN_SEED_BYTES's own doc, just above, for why sharing this one check does
+ * not widen what this file's frozen construction promises.
  */
-function isDegenerateSeed (seed: Uint8Array): boolean {
+export function isDegenerateSeed (seed: Uint8Array): boolean {
   // Scans the whole buffer rather than returning on the first differing byte.
   // The early exit would be a data-dependent branch over the ROOT SECRET, and
   // although what it leaks is worthless (the length of a leading run of equal

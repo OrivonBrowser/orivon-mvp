@@ -84,6 +84,7 @@ regardless of the others.
 | **UDP sockets** (`net.udpBind`) | The flagship's DHT and peer exchange need real UDP, not just TCP. `ADR-0001`'s own Consequences section names this directly: choosing the flagship "commits the MVP to real TCP/UDP sockets and a listening socket in month 1" |
 | **Torrent app with streaming** | The flagship and the only tier-4 app. `ADR-0001` |
 | Nostr via injected NIP-07 over `orivon.id` | ~1 day, proves the identity model, zero frontend written |
+| Identity seed in the OS keyring; `orivon.secrets`, an app's own origin-bound encrypted secret | `orivon.id` cannot survive a restart without the first half. Owner-requested; needed by two ported apps' own hand-off items (Element's pickle key, AirGap Vault's non-keyring fallback). `ADR-0033` |
 | Per-app storage isolation + disk usage UI | Follows directly from the flagship. `ADR-0003` |
 | **Trust indicator: full spectrum from observed behaviour** | Delivery ladder (incl. hash-pinning/TOFU), connection ladder, and operations. Automatic; no judge, no DNS. Ships the attestation *hook*, not a judge. `ADR-0006` |
 | Per-site permissions popover | A Chrome-style popover off the address pill: the connection row (opening the trust indicator's own delivery evidence), one switch per capability or picked path a site has asked for, and its Cookies and site data. `d-0037` |

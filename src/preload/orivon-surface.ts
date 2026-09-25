@@ -210,6 +210,14 @@ async function idSign (curve: string, payload: Uint8Array): Promise<Uint8Array> 
   return await call('id.sign', { curve, payload }, TIMEOUT_MS.id)
 }
 
+async function secretsAvailable (): Promise<boolean> { return await call('secrets.available', undefined, TIMEOUT_MS.secrets) }
+async function secretsEncrypt (plaintext: Uint8Array): Promise<Uint8Array> {
+  return await call('secrets.encrypt', { plaintext }, TIMEOUT_MS.secrets)
+}
+async function secretsDecrypt (ciphertext: Uint8Array): Promise<Uint8Array> {
+  return await call('secrets.decrypt', { ciphertext }, TIMEOUT_MS.secrets)
+}
+
 /**
  * web.context: `OrivonWeb.openContext(origin, options?)` (capability-api.ts)
  * takes `origin` as its own argument -- unlike every other method on this
@@ -261,6 +269,11 @@ function exposeFallback (): void {
     id: {
       publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
       sign: async (opts: { curve: string, payload: Uint8Array }) => await idSign(opts.curve, opts.payload)
+    },
+    secrets: {
+      available: secretsAvailable,
+      encrypt: secretsEncrypt,
+      decrypt: secretsDecrypt
     },
     net: {
       lookup: async (opts: { hostname: string }) => await netLookupBridge(opts)
@@ -325,6 +338,9 @@ export function exposeOrivon (): void {
     fsUserSelectedDirectory,
     idPublicKey,
     idSign,
+    secretsAvailable,
+    secretsEncrypt,
+    secretsDecrypt,
     webOpenContext: webOpenContextBridge,
     netConnect: netConnectBridge,
     netConnectSecure: netConnectSecureBridge,

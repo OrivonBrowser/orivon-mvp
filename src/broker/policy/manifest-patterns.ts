@@ -40,11 +40,16 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   const secureConnect = capabilities.net?.https?.connect
   if (secureConnect !== undefined) set['https.connect'] = secureConnect
 
-  // Presence alone is the signal for fs/id -- neither carries a pattern of
-  // its own (manifest.ts's FsCapability/IdCapability), so an empty array is
-  // the correct "requested" value, not a placeholder for a missing field.
+  // Presence alone is the signal for fs/id/secrets -- none carries a pattern
+  // of its own (manifest.ts's FsCapability/IdCapability/SecretsCapability),
+  // so an empty array is the correct "requested" value, not a placeholder
+  // for a missing field. `secrets` (ADR-0033) follows `id`'s own precedent:
+  // requireGrantedCurve (../id-capability.js) re-checks the live manifest
+  // for what an empty-patterns `id` grant actually authorises, and
+  // secrets-capability.ts needs nothing narrower than presence either.
   if (capabilities.fs !== undefined) set.fs = []
   if (capabilities.id !== undefined) set.id = []
+  if (capabilities.secrets !== undefined) set.secrets = []
 
   // ADR-0019: web.contexts IS the pattern list for 'web.context' -- each
   // declared origin is compared exactly against a grant's own patterns

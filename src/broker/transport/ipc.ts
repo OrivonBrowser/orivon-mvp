@@ -27,6 +27,7 @@ import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createWebContextHost } from '../../main/sessions/web-context-host.js'
+import { createElectronKeychain } from '../../main/keyring/electron-keychain.js'
 import { createPortRegistry } from './port-registry.js'
 import type { RateLimiter } from './token-bucket.js'
 import { admitControlCall, createControlLimiter } from './control-limiter.js'
@@ -43,6 +44,7 @@ import type { FsTransport } from './dispatch-fs.js'
 import { dispatchId } from './dispatch-id.js'
 import { dispatchNet } from './dispatch-net.js'
 import { dispatchWeb } from './dispatch-web.js'
+import { dispatchSecrets } from './dispatch-secrets.js'
 import { envelopeId, isControlMethod, isRequestEnvelope, type RequestGrantCtx } from './ipc-validation.js'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from './port-transport.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
@@ -52,6 +54,7 @@ export type {
   AppRequestGrantParams, ControlMethod, FsPathWithRecursiveParams, FsReaddirParams, FsReadFileParams, FsRenameParams,
   FsStatParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
   NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx,
+  SecretsDecryptParams, SecretsEncryptParams,
   WebCloseParams, WebEvaluateParams, WebOpenContextParams
 } from './ipc-validation.js'
 export type {
@@ -128,6 +131,10 @@ async function dispatch (
     case 'web.close':
     case 'web.awaitClose':
       return await dispatchWeb(broker, origin, method, payload)
+    case 'secrets.available':
+    case 'secrets.encrypt':
+    case 'secrets.decrypt':
+      return await dispatchSecrets(broker, origin, method, payload)
     default: {
       // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever
       // gains a member no case above names, `method` is not assignable to
@@ -387,12 +394,11 @@ export const brokerIpcSubsystem: Subsystem = {
         const result = await dialog.showOpenDialog({ properties, title, buttonLabel, message })
         return result.canceled ? { canceled: true } : { canceled: false, paths: result.filePaths }
       },
-      // ADR-0010 key derivation is not implemented yet (broker/index.ts's
-      // own header: "nothing below calls it yet") -- none of the six wired
-      // control operations reach `orivon.id`.
-      keychain: {
-        getSeed: async () => { throw fail('internal', 'identity key derivation is not implemented yet (ADR-0010)') }
-      },
+      // ADR-0033: the identity seed, OS-keyring-backed (Electron
+      // `safeStorage`) or, absent a reachable keyring, generated fresh for
+      // this process alone -- see ../../main/keyring/seed-store.ts for the
+      // full "never falls back to plaintext" reasoning.
+      keychain: createElectronKeychain(ctx.app.getPath('userData')),
       // ADR-0019's Electron escape hatch. A LAZY GETTER, not `ctx.broker`
       // itself -- `deps` is built here to CONSTRUCT the broker a few lines
       // below, so `ctx.broker` is not published yet; `web-context-host.ts`'s

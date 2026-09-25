@@ -222,6 +222,10 @@ export interface MainWorldBridge {
   fsUserSelectedDirectory: () => Promise<MainWorldDirectoryBridge | null>
   idPublicKey: (curve: string) => Promise<Uint8Array>
   idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
+  /** ADR-0033: plain request/reply, exactly `idPublicKey`/`idSign`'s own shape -- no main-world stream wrapping needed. */
+  secretsAvailable: () => Promise<boolean>
+  secretsEncrypt: (plaintext: Uint8Array) => Promise<Uint8Array>
+  secretsDecrypt: (ciphertext: Uint8Array) => Promise<Uint8Array>
   /** ADR-0019 -- resolves a `MainWorldWebContextBridge`, `fsOpen`'s own shape of counterpart (a plain object of MORE proxied closures, no native stream). `./main-world-socket.ts`'s own `buildWebContext` wraps it the same way `buildFile` wraps `fsOpen`'s. Takes `origin` folded into `opts`, unlike the public `openContext(origin, options?)` two-argument shape `installOrivon` builds, which merges them back in before calling this. */
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>

@@ -142,6 +142,9 @@ export function fakeBridge (
   fsUserSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]>
   fsUserSelectedDirectory: () => Promise<MainWorldDirectoryBridge | null>
   idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
+  secretsAvailable: () => Promise<boolean>
+  secretsEncrypt: (plaintext: Uint8Array) => Promise<Uint8Array>
+  secretsDecrypt: (ciphertext: Uint8Array) => Promise<Uint8Array>
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
@@ -171,6 +174,11 @@ export function fakeBridge (
     fsUserSelectedDirectory: async () => fakeDirectoryBridgeResult(),
     idPublicKey: async () => new Uint8Array(),
     idSign: async () => new Uint8Array(),
+    // Present so this fake still satisfies installOrivon's bridge shape --
+    // no test in this file drives orivon.secrets.
+    secretsAvailable: async () => false,
+    secretsEncrypt: async () => new Uint8Array(),
+    secretsDecrypt: async () => new Uint8Array(),
     // Present so this fake still satisfies installOrivon's bridge shape --
     // no test in this file drives web.openContext (main-world-socket-web.
     // test.ts, this lane's own sibling, does).

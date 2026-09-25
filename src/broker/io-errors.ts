@@ -13,10 +13,18 @@
 import { errnoOf, fail } from './errors.js'
 import type { OrivonError, OrivonErrorCode } from '../contracts/index.js'
 
-/** Every value OrivonErrorCode actually has -- see contracts/errors.ts. Used to recognise an error this broker already produced, not one still raw from an injected dependency. */
-const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode>([
-  'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
-])
+/**
+ * Every value OrivonErrorCode actually has -- see contracts/errors.ts. Used
+ * to recognise an error this broker already produced, not one still raw
+ * from an injected dependency. Built from a `Record`, matching ./errors.ts's
+ * own copy of this list, so a code contracts/errors.ts adds and this file
+ * forgets is a type error rather than a silent misclassification.
+ */
+const ORIVON_ERROR_CODE_RECORD: Readonly<Record<OrivonErrorCode, true>> = {
+  denied: true, revoked: true, unreachable: true, timeout: true, reset: true, closed: true,
+  limit: true, invalid: true, notFound: true, exists: true, internal: true, unavailable: true
+}
+const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set(Object.keys(ORIVON_ERROR_CODE_RECORD) as OrivonErrorCode[])
 
 export function isOrivonError (error: unknown): error is OrivonError {
   return error instanceof Error && error.name === 'OrivonError' &&

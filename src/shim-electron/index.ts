@@ -14,6 +14,7 @@
 import { createApp } from './app.js'
 import { createDialog } from './dialog.js'
 import { createIpc } from './ipc.js'
+import { createSafeStorage } from './safe-storage.js'
 import { BrowserWindow, Menu, Tray } from './desktop-shell.js'
 import { unimplementedMember, withUnimplementedFallback } from './unimplemented.js'
 import type { Orivon } from '../contracts/capability-api.js'
@@ -23,6 +24,7 @@ export type { ElectronShimReason } from './errors.js'
 export type { ElectronApp } from './app.js'
 export type { ElectronDialog, OpenDialogOptions, OpenDialogReturnValue } from './dialog.js'
 export type { ElectronIpcMain, ElectronIpcRenderer, IpcEvent, IpcHandler, IpcListener } from './ipc.js'
+export type { DecryptStringAsyncReturnValue, ElectronSafeStorage } from './safe-storage.js'
 export { BrowserWindow, Menu, Tray } from './desktop-shell.js'
 
 /** Reads the real `orivon` global -- `window` and `globalThis` are the same object in a main-world script. */
@@ -41,6 +43,7 @@ const orivon = getOrivon()
 
 export const app = createApp(orivon)
 export const dialog = createDialog(orivon)
+export const safeStorage = createSafeStorage(orivon)
 
 const bus = createIpc()
 export const ipcRenderer = bus.ipcRenderer
@@ -83,7 +86,7 @@ export const desktopCapturer = unimplementedMember('desktopCapturer')
  * `electron`'s default export, instead of resolving to `undefined`.
  */
 export default withUnimplementedFallback({
-  app, dialog, ipcRenderer, ipcMain, BrowserWindow, Menu, Tray,
+  app, dialog, safeStorage, ipcRenderer, ipcMain, BrowserWindow, Menu, Tray,
   shell, clipboard, session, protocol, webContents, nativeImage, screen,
   contextBridge, crashReporter, powerMonitor, systemPreferences,
   globalShortcut, nativeTheme, webFrame, desktopCapturer

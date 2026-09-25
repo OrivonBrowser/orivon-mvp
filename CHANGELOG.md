@@ -12,6 +12,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **The identity seed survives a restart, and an app can hold its own encrypted secret.** The
+  seed behind `orivon.id` now lives in the OS keyring (Electron `safeStorage`), not a placeholder
+  that refused every call. A new `secrets` capability (`orivon.secrets.available`/`encrypt`/
+  `decrypt`) lets a granted app encrypt and decrypt its own data with a key derived from that
+  seed, never the seed itself; without a reachable keyring the identity is generated fresh each
+  launch and never written to disk, and `available()` says so before an app commits data it would
+  lose. The `electron` compatibility package's `safeStorage` now backs the same capability for
+  ported apps. Also fixes a real gap: a consent-made `id` grant, the shape every real
+  `app.requestGrant()` call produces, was refused for every curve in production until now.
+
 - **A site can publish its bundle hash tree, and the Web3 Score page shows whether it matches
   (DDOC).** The site puts `/.well-known/orivon-ddoc.json` beside its manifest: the bundle hash and
   every file's leaf. The loader fetches it with the bundle and stores it beside the pin. The site

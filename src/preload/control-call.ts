@@ -51,7 +51,16 @@ export const TIMEOUT_MS = {
    * idle timer itself so an idle-close is normally caught on the FIRST
    * iteration rather than always looping once.
    */
-  webAwaitClose: LIMITS.webContextIdleMs + 5_000
+  webAwaitClose: LIMITS.webContextIdleMs + 5_000,
+  /**
+   * secrets.available / secrets.encrypt / secrets.decrypt (ADR-0033): the
+   * FIRST call in a session can block on Electron's async `safeStorage`
+   * actually reaching the OS keyring -- a macOS Keychain prompt, or an
+   * unlock dialog on Linux -- which is a person's own reaction time, not
+   * I/O. Generous like `grant`'s own budget, but well short of it: this is
+   * a background unlock, not a decision a person is asked to make.
+   */
+  secrets: 60_000
 } as const
 
 /** Electron's structured-clone refusal: the ARGUMENT was bad, which is the app's to fix, not a broker fault. */

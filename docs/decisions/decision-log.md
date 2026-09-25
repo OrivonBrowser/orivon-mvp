@@ -103,6 +103,8 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0100` | 2026-09-23 | STARTTLS (`tls.connect({ socket })`) stays refused by name. AI | A226 |
 | `d-0101` | 2026-09-24 | A site publishes its bundle hash tree at `/.well-known/orivon-ddoc.json`, root and every leaf; the Web3 Score page shows DDOC as verified, failed (naming the files), not published or not checked; none of them blocks a load, since acting on a failure is the Web3 Score's job. Owner | ADR-0029, `../architecture/bundle-hash.md` |
 | `d-0102` | 2026-09-24 | DDOC does not depend on trustless resolution: it is the website axis, and trust in a DNS answer is the connection axis's question. DDOC's anchor in this build is the site's own host, *provisional*. Reverses A4b's premise. Owner | ADR-0029, ADR-0006, A4b, `../mvp-scope.md` |
+| `d-0103` | 2026-09-24 | An `id` grant with empty `patterns` (every consent-made grant: `manifest-patterns.ts` maps `id` presence-only) authorises whatever curves the origin's currently-registered manifest declares, re-checked live, not frozen at grant time; a non-empty `patterns` list (the dev-only grant hook) still narrows further. Fixes a real gap: every consent-made `id` grant was refused in production before this. AI | `../../src/broker/id-capability.ts` |
+| `d-0104` | 2026-09-24 | `LIMITS.secretBytes` (the largest `orivon.secrets.encrypt` plaintext) is 64 KiB. AI; provisional | ADR-0033, `../../src/contracts/limits.ts` |
 
 ## Directives
 
