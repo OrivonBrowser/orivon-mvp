@@ -29,7 +29,7 @@ import type {
 type Full<T> = Required<T>
 
 type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
-  // ADR-0030/ADR-0031: 'media', 'clipboard' and 'secrets' excluded with the
+  // ADR-0032/ADR-0033: 'media', 'clipboard' and 'secrets' excluded with the
   // same deferred reasoning 'web' carried in the contracts-only PR that
   // added it -- the real parser does not accept any of the three yet
   // either (their PARITY_MAP loader arrays do not exist until the stacked

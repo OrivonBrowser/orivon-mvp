@@ -47,7 +47,7 @@ export const PARITY_MAP = [
   { interfaceName: 'WebCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'WEB_CAPABILITY_KEYS' },
   { interfaceName: 'MediaCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'MEDIA_CAPABILITY_KEYS' },
   { interfaceName: 'ClipboardCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'CLIPBOARD_CAPABILITY_KEYS' }
-  // SecretsCapability has NO row here: it declares zero fields (ADR-0031,
+  // SecretsCapability has NO row here: it declares zero fields (ADR-0033,
   // "presence alone is the declaration"), and the entirely-deferred branch
   // below needs at least one field to defer -- see its own doc comment. Its
   // only field this check must track is Capabilities.secrets itself, in
@@ -77,38 +77,38 @@ export const DELIBERATELY_DEFERRED = [
   {
     interfaceName: 'Capabilities',
     field: 'media',
-    reason: 'ADR-0030: media (camera/microphone) is declared in this contracts-only PR. The ' +
+    reason: 'ADR-0032: media (camera/microphone) is declared in this contracts-only PR. The ' +
       'loader starts accepting `media` in the implementation PR that follows, which removes ' +
       'this entry.'
   },
   {
     interfaceName: 'Capabilities',
     field: 'clipboard',
-    reason: 'ADR-0030: clipboard.read is declared in this contracts-only PR. The loader starts ' +
+    reason: 'ADR-0032: clipboard.read is declared in this contracts-only PR. The loader starts ' +
       'accepting `clipboard` in the implementation PR that follows, which removes this entry.'
   },
   {
     interfaceName: 'Capabilities',
     field: 'secrets',
-    reason: 'ADR-0031: secrets is declared in this contracts-only PR. The loader starts ' +
+    reason: 'ADR-0033: secrets is declared in this contracts-only PR. The loader starts ' +
       'accepting `secrets` in the implementation PR that follows, which removes this entry.'
   },
   {
     interfaceName: 'MediaCapability',
     field: 'camera',
-    reason: 'ADR-0030: MEDIA_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
+    reason: 'ADR-0032: MEDIA_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
       'PR that follows this one, which removes this entry.'
   },
   {
     interfaceName: 'MediaCapability',
     field: 'microphone',
-    reason: 'ADR-0030: MEDIA_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
+    reason: 'ADR-0032: MEDIA_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
       'PR that follows this one, which removes this entry.'
   },
   {
     interfaceName: 'ClipboardCapability',
     field: 'read',
-    reason: 'ADR-0030: CLIPBOARD_CAPABILITY_KEYS does not exist yet -- added by the ' +
+    reason: 'ADR-0032: CLIPBOARD_CAPABILITY_KEYS does not exist yet -- added by the ' +
       'implementation PR that follows this one, which removes this entry.'
   }
 ]

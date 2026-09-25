@@ -137,7 +137,7 @@ export const LIMITS = {
   webContextResultBytes: 1024 * 1024,
   /**
    * The largest plaintext `orivon.secrets.encrypt` accepts, in bytes
-   * (ADR-0031). PROVISIONAL: AI-chosen, awaiting owner confirmation --
+   * (ADR-0033). PROVISIONAL: AI-chosen, awaiting owner confirmation --
    * `docs/decisions/decision-log.md`. Sized for a wallet's seed material,
    * session tokens or a small keystore file, not a bulk store: an app
    * holding real bulk data wants `orivon.fs`, whose quota is declared and

@@ -1,4 +1,4 @@
-# ADR-0031: An app may hold one origin-bound secret in the OS keyring; the identity seed itself still never leaves the broker
+# ADR-0033: An app may hold one origin-bound secret in the OS keyring; the identity seed itself still never leaves the broker
 
 - **Status:** proposed
 - **Date:** 2026-09-24

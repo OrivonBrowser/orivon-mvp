@@ -154,12 +154,12 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
     case 'media.microphone':
     case 'clipboard.read':
     case 'secrets':
-      // ADR-0030/ADR-0031: contract-only so far -- the loader does not parse
+      // ADR-0032/ADR-0033: contract-only so far -- the loader does not parse
       // Capabilities.media/clipboard/secrets yet (check-manifest-parity.mjs's
       // own DELIBERATELY_DEFERRED entries), so no live grant can reach this
       // switch. Thrown, not rendered, until the implementation PR gives each
       // its real copy.
-      throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0030/ADR-0031)`)
+      throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0032/ADR-0033)`)
     default: {
       // Exhaustiveness guard, matching app-install.ts's own pattern: a new
       // CapabilityKind added without a case here fails to compile.
