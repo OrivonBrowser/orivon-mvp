@@ -14,7 +14,10 @@ cursor", "Press and hold Esc to exit full screen"), and `exclusive-access-notice
 pointer- and keyboard-lock messages; `leave-page-prompt.ts` asks the question a `beforeunload`
 guard raises; `external-link-prompt.ts` and `notification-prompt.ts` ask the two questions the
 permission gate puts to the person; `showing-window.ts` finds the window a tab is on screen in;
-`context-menu.ts` is the right-click menu for tabs and the chrome.
+`context-menu.ts` is the right-click menu for tabs and the chrome. `lock-navigation.ts` refuses
+every navigation and popup on a `WebContentsView` whose privileged preload must never attach to
+a document other than the one it was created for -- the chrome view and its popups here, and
+[`../sessions/web-context-host.ts`](../sessions/web-context-host.ts)'s isolated context.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)

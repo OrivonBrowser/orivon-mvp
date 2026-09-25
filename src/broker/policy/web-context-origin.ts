@@ -8,7 +8,7 @@
 // declarableConnectHostRejection already uses for tcp.connect/https.connect's
 // host grammar.
 
-import { classifyAddress } from './address.js'
+import { isNonPublicAddressLiteral } from './address.js'
 import { isLocalhostName } from './origin.js'
 
 export type WebContextOriginRejection =
@@ -53,8 +53,7 @@ export function webContextOriginRejection (origin: string): WebContextOriginReje
   if (url.pathname !== '/') return 'path'
   if (url.origin !== origin) return 'not-canonical'
 
-  const cls = classifyAddress(url.hostname)
-  if (cls !== 'unparseable' && cls !== 'public') return 'address-not-public-unicast'
+  if (isNonPublicAddressLiteral(url.hostname)) return 'address-not-public-unicast'
   if (isLocalhostName(url.hostname)) return 'localhost-name'
 
   return null
