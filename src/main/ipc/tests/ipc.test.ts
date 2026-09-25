@@ -25,7 +25,8 @@ vi.mock('electron', () => ({
 const { registerShellIpc } = await import('../ipc.js')
 const { COMMAND_CHANNEL } = await import('../../channels.js')
 
-const CHROME_FRAME = {}
+const CHROME_URL = 'https://chrome.orivon.example/index.html'
+const CHROME_FRAME = { url: CHROME_URL }
 const chromeWebContents = { mainFrame: CHROME_FRAME } as unknown as import('electron').WebContents
 const OTHER_FRAME = {}
 
@@ -51,7 +52,7 @@ function dispatch (command: unknown, senderFrame: unknown = CHROME_FRAME): unkno
 describe('registerShellIpc -- siteSummaryFor', () => {
   it('forwards the tab URL to siteInfo.siteSummaryFor()', async () => {
     const siteInfo = fakeSiteInfo({ siteSummaryFor: vi.fn(async () => ({ asked: true, warning: false })) })
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn())
 
     const result = await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' })
 
@@ -61,18 +62,37 @@ describe('registerShellIpc -- siteSummaryFor', () => {
 
   it('refuses siteSummaryFor from a frame that is not the chrome view\'s own', async () => {
     const siteInfo = fakeSiteInfo()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn())
 
     await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' }, OTHER_FRAME)
 
     expect(siteInfo.siteSummaryFor).not.toHaveBeenCalled()
+  })
+
+  // The SAME frame object `chromeWebContents.mainFrame` already is -- object
+  // identity alone would pass this -- but with `.url` mutated to something
+  // else, the state the chrome view would be in if `lockNavigation`
+  // (main/shell/lock-navigation.ts) ever let a navigation through. Checks
+  // that the URL comparison is a second, independent layer, not a
+  // restatement of the identity check.
+  it('refuses siteSummaryFor when the chrome frame itself has navigated to a different URL', async () => {
+    const siteInfo = fakeSiteInfo()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn())
+
+    CHROME_FRAME.url = 'https://evil.example/'
+    try {
+      await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' })
+      expect(siteInfo.siteSummaryFor).not.toHaveBeenCalled()
+    } finally {
+      CHROME_FRAME.url = CHROME_URL
+    }
   })
 })
 
 describe('registerShellIpc -- openSettings', () => {
   it('toggles the all-sites popup, passing the tune icon\'s anchor and the tab url when given', async () => {
     const openSettings = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openSettings, vi.fn())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openSettings, vi.fn())
 
     // The anchor is the chrome view's measurement of its own tune icon --
     // main has no way to derive it, so it always rides the command.
@@ -86,7 +106,7 @@ describe('registerShellIpc -- openSettings', () => {
 
   it('refuses openSettings from a frame that is not the chrome view\'s own', async () => {
     const openSettings = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openSettings, vi.fn())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openSettings, vi.fn())
 
     await dispatch({ type: 'openSettings', anchor: { x: 900, y: 44, width: 32, height: 32 } }, OTHER_FRAME)
 
@@ -97,7 +117,7 @@ describe('registerShellIpc -- openSettings', () => {
 describe('registerShellIpc -- openSiteInfo', () => {
   it('toggles the site-info popup, passing the icon\'s anchor, the requested page and the tab url when given', async () => {
     const openSiteInfo = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), openSiteInfo)
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), openSiteInfo)
 
     const anchor = { x: 40, y: 44, width: 28, height: 28 }
     await dispatch({ type: 'openSiteInfo', anchor, page: 'web3' })
@@ -109,7 +129,7 @@ describe('registerShellIpc -- openSiteInfo', () => {
 
   it('refuses openSiteInfo from a frame that is not the chrome view\'s own', async () => {
     const openSiteInfo = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), openSiteInfo)
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), openSiteInfo)
 
     await dispatch({ type: 'openSiteInfo', anchor: { x: 40, y: 44, width: 28, height: 28 }, page: 'main' }, OTHER_FRAME)
 
@@ -123,7 +143,7 @@ describe('registerShellIpc -- starring a page keeps its icon', () => {
   it('stores the icon MAIN already captured for that tab, not one sent by the renderer', () => {
     const add = vi.fn()
     const tabs = { faviconFor: vi.fn(() => ICON) } as unknown as TabManager
-    registerShellIpc(chromeWebContents, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, CHROME_URL, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn())
 
     void dispatch({ type: 'addBookmark', url: 'https://a.example/', title: 'A', tabId: 'tab-7' })
 
@@ -134,7 +154,7 @@ describe('registerShellIpc -- starring a page keeps its icon', () => {
   it('saves the bookmark with no icon when that tab has not got one yet', () => {
     const add = vi.fn()
     const tabs = { faviconFor: vi.fn(() => null) } as unknown as TabManager
-    registerShellIpc(chromeWebContents, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, CHROME_URL, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn())
 
     void dispatch({ type: 'addBookmark', url: 'https://a.example/', title: 'A', tabId: 'tab-7' })
 
@@ -145,7 +165,7 @@ describe('registerShellIpc -- starring a page keeps its icon', () => {
 describe('registerShellIpc -- deliveryProvenanceFor (S4-6, ADR-0007)', () => {
   it('forwards the tab URL to the injected deliveryProvenance function', async () => {
     const deliveryProvenance = vi.fn(async () => ({ servedFromPinnedCache: true }))
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), deliveryProvenance)
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), deliveryProvenance)
 
     const result = await dispatch({ type: 'deliveryProvenanceFor', url: 'https://app.example/page' })
 
@@ -155,7 +175,7 @@ describe('registerShellIpc -- deliveryProvenanceFor (S4-6, ADR-0007)', () => {
 
   it('refuses deliveryProvenanceFor from a frame that is not the chrome view\'s own', async () => {
     const deliveryProvenance = vi.fn(async () => ({ servedFromPinnedCache: true }))
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), deliveryProvenance)
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), deliveryProvenance)
 
     await dispatch({ type: 'deliveryProvenanceFor', url: 'https://app.example/page' }, OTHER_FRAME)
 
@@ -163,7 +183,7 @@ describe('registerShellIpc -- deliveryProvenanceFor (S4-6, ADR-0007)', () => {
   })
 
   it('with no deliveryProvenance function injected, defaults to reporting false rather than throwing', async () => {
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn())
 
     const result = await dispatch({ type: 'deliveryProvenanceFor', url: 'https://app.example/page' })
 

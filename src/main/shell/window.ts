@@ -377,7 +377,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   )
 
   registerShellIpc(
-    chrome.webContents, tabs, bookmarks, siteInfo,
+    chrome.webContents, chromeUrl, tabs, bookmarks, siteInfo,
     (anchor, url) => {
       // The chrome view sends the active TAB's url, not an origin -- same
       // `originFromUrl` tab-view.ts's own appTabArgsFor already uses for

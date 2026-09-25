@@ -39,8 +39,9 @@ themselves), [`../../trust/`](../../trust/) (`delivery-ladder.ts` types, via `..
 [`../consent/request-grant.ts`](../consent/request-grant.ts) (`clearDeclinedCapability`/
 `addDeclinedCapability`), [`../browsing/site-trust.ts`](../browsing/site-trust.ts),
 [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts) (type only), and, inside
-`src/main/`, `../shell/renderer-entry.ts`, `../shell/tabs.ts` (type only), `../ipc/settings-ipc.ts`,
-`../ipc/site-info-ipc.ts`, the top-level `channels.ts`/`registry.ts`.
+`src/main/`, `../shell/renderer-entry.ts`, `../shell/lock-navigation.ts`, `../shell/tabs.ts`
+(type only), `../ipc/settings-ipc.ts`, `../ipc/site-info-ipc.ts`, the top-level
+`channels.ts`/`registry.ts`.
 
 **What it must never import.** Nothing bypasses either controller. Every renderer surface that
 shows grants or switches — `src/renderer/settings/permissions-view.ts` and
