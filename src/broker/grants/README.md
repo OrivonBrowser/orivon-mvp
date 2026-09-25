@@ -44,7 +44,7 @@ codebase's tests as effectively synchronous: dozens of call sites invoke `Broker
 without awaiting its `Promise<void>`, which only ever worked because nothing inside it actually
 yielded. Making persistence genuinely async would turn every one of those into a real race (the
 next line could run before the write landed): a correctness regression, not just a test-fixup
-exercise. A tiny per-origin JSON file is exactly the class of operation `node-storage.ts` already
+exercise. A tiny per-origin JSON file is exactly the class of operation `loader/cache/node-storage.ts` already
 chose sync `fs` APIs for (`codeRoot`'s `mkdirSync`, `resolveAssetPath`'s `realpathSync`), for the
 same reason.
 

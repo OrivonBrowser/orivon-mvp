@@ -37,7 +37,7 @@ change belongs in their stream.
 | `shell` | `src/main/index.ts`, `src/main/shell/window.ts`, `src/main/shell/tabs.ts`, `src/main/browsing/omnibox.ts`, `src/main/ipc/ipc.ts`, `src/renderer/`, `src/preload/shell.ts`, **`scripts/smoke.mjs`**, **`test/` except `test/apps/`** | 1 | **done**, maintenance only |
 | `contracts` | `src/contracts/` | n/a | **change-controlled**, see below |
 | `shared` | `src/shared/` | n/a | **change-controlled**, same rules as `contracts`. Empty by design; see its `README.md` |
-| `broker` | `src/broker/` and its five directories (`policy/`, `grants/`, `handles/`, `transport/`, `adapters/`), `src/preload/app.ts`, `src/preload/surface/orivon.ts`, `src/preload/ports/socket-bridge.ts`, `src/preload/ports/socket.ts`, `src/preload/surface/main-world-socket.ts` | 2 | critical path |
+| `broker` | `src/broker/` and its six directories (`policy/`, `grants/`, `handles/`, `capabilities/`, `transport/`, `adapters/`), `src/preload/app.ts`, `src/preload/surface/orivon.ts`, `src/preload/ports/socket-bridge.ts`, `src/preload/ports/socket.ts`, `src/preload/surface/main-world-socket.ts` | 2 | critical path |
 | `shim` | `src/shim/`, the `renderer.resolve.alias` map in `electron.vite.config.ts` | 3 | |
 | `loader` | `src/loader/` | 4 | **done** |
 | `ports` | nothing here: the ports and their harness live in `orivon-ports` (`ADR-0020`). A gap a port finds is fixed by the stream that owns the path | 5 | under way |
@@ -56,9 +56,10 @@ change belongs in their stream.
 > `.claude/skills/`, say so before starting.
 
 > **`src/preload/` outside `app.ts` is `broker`'s too, not unowned.** `surface/orivon.ts` is
-> `window.orivon`'s surface, and `socket-bridge.ts`, `ports/socket.ts` and `main-world-socket.ts`
-> are the main-world stream-building surface for its `net` capability (`ADR-0014`). All four
-> files are `broker`'s, as the table says; see `src/preload/README.md` for what each one does.
+> `window.orivon`'s surface, and `ports/socket-bridge.ts`, `ports/socket.ts` and
+> `surface/main-world-socket.ts` are the main-world stream-building surface for its `net`
+> capability (`ADR-0014`). All four files are `broker`'s, as the table says; see
+> `src/preload/README.md` for what each one does.
 
 Every directory above carries its own `README.md` stating what it depends on and **what it must
 never import**. Those are the real boundary; this table is the index.

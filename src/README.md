@@ -25,11 +25,16 @@ OS (sockets, filesystem, keychain)
 |---|---|---|---|
 | [`contracts/`](contracts/) | The `orivon.*` interface, types only. **The durable asset** | — | done |
 | [`main/`](main/) | Electron main process: window, tabs, omnibox, IPC, subsystem registry | 1 | done |
-| [`preload/`](preload/) | Preloads at three privilege levels | 1, 2 | in progress |
+| [`preload/`](preload/) | Five preload entry points at five privilege levels | 1, 2 | in progress |
 | [`renderer/`](renderer/) | The browser chrome UI (tab strip, toolbar, address bar) | 1 | done |
 | [`broker/`](broker/) | Manifest parsing, grants, per-origin enforcement. **This is the product** | 2 | done |
 | [`shim/`](shim/) | `net`, `dgram`, `fs` over `orivon.*`, so Node code runs in a renderer | 3 | done |
+| [`shim-electron/`](shim-electron/) | `electron` itself, reconstructed or refused on top of `orivon.*`, for a tier-2 app | 3 | in progress |
 | [`loader/`](loader/) | Manifest discovery, fetch, cache, hash-pinning, DDOC | 4 | done |
+| [`resolution/`](resolution/) | The `NameResolver`/`DataGatherer` provider interfaces a `.eth` name is proven and loaded through | 6 | in progress |
+| [`ens/`](ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | 6 | in progress |
+| [`ipfs/`](ipfs/) | Loading IPFS content from trustless gateways, every block hashed against its CID | 6 | in progress |
+| [`verifier-host/`](verifier-host/) | The Electron utility process that runs the light client and serves `.eth` names on loopback | 6 | in progress |
 | [`trust/`](trust/) | The trust indicator, from observed behaviour | 7 | in progress |
 | [`nostr/`](nostr/) | `window.nostr` (NIP-07) backed by `orivon.id` | — | parked: an idea, not a build step |
 | [`telemetry/`](telemetry/) | Collection, first-run disclosure, "what has been sent" | 8 | in progress |

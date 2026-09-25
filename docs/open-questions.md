@@ -9345,3 +9345,23 @@ the shell stamps on every page's `.eth` request; the verifier host bypasses the 
 remains is listed in `ADR-0030`'s 2026-09-25 amendment: chiefly what any browser with a
 partitioned cache keeps (a top-level window opened on a name, shared slots), and public gateways'
 own edge caches, which nothing on this machine can partition.
+
+### A257 -- should `src/main/` adopt `ADR-0034`'s naming rule too **[NEEDS OWNER]**
+
+Filed 2026-09-25, while reorganising `src/preload/`, `src/shim/`, `src/verifier-host/`,
+`src/loader/` and `src/broker/` (`ADR-0034`). That ADR's rule is that a moved file drops the
+words its new folder already says: `src/loader/serve-csp.ts` became `serve/csp.ts`, not
+`serve/serve-csp.ts`. `src/main/` was organised into job folders earlier, by `ADR-0023`, on a
+different naming convention: `install/app-install.ts`, not `install/app.ts`; `consent/
+install-consent.ts`, not `consent/install.ts`. The two directories now read two different ways,
+and a reader moving between them has to notice which convention the one they are in uses.
+
+**Options:** rename `src/main/`'s files to match `ADR-0034`'s rule, at the same cost every prior
+move of this kind has paid (every import specifier, comment and doc link rewritten again); leave
+`src/main/` as `ADR-0023` left it, on the reasoning that a directory reorganised once is not
+obliged to match a convention adopted after the fact; or write `ADR-0034`'s rule into `ADR-0023`
+retroactively as the intended convention all along, without moving a single file, and apply it
+only forward from here.
+
+**Needs:** the owner's choice. Nothing behaves differently under any of the three; this is
+purely about which name a reader learns to expect.
