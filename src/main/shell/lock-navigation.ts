@@ -13,26 +13,28 @@ import type { WebContents } from 'electron'
  * Refuses every navigation and every popup on `webContents`. `allowedUrl`,
  * when given, is the one destination `will-navigate`/`will-redirect` still
  * let through -- Vite's dev-server HMR client reloads the page at its own
- * URL, which is not an attack and must keep working; a popup or an
- * isolated context (this function's other caller) has no such exception
- * and passes nothing.
+ * URL, which is not an attack and must keep working. Omitted entirely
+ * refuses EVERY navigation, no exception: a popup or an isolated context
+ * (this function's other caller) never legitimately navigates at all, and
+ * `event.url` on a real navigation is never `undefined`, so comparing
+ * against an also-`undefined` `allowedUrl` must not read as a match.
  *
- * ONLY AFTER THE FIRST LOAD: a `loadURL`/`loadFile` call does not itself
- * fire `will-navigate` (Electron's own behaviour, confirmed empirically
- * before this file existed), so attaching these listeners before that call
- * would be no more effective than attaching them after -- and after is
- * simpler, since the destination the first load lands on is exactly what
- * `allowedUrl` names.
+ * `webContents.loadURL`/`loadFile` does not itself fire `will-navigate`
+ * (Electron's own behaviour, confirmed empirically) -- attaching these
+ * listeners is therefore safe at any point relative to a caller's own
+ * first `loadURL` call; neither ordering blocks that call.
  */
 export function lockNavigation (webContents: WebContents, allowedUrl?: string): void {
   webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   const preventNavigation = (event: { preventDefault: () => void, url: string }): void => {
-    if (event.url === allowedUrl) return
+    if (allowedUrl !== undefined && event.url === allowedUrl) return
     event.preventDefault()
   }
   webContents.on('will-navigate', preventNavigation)
   webContents.on('will-redirect', preventNavigation)
   webContents.on('will-frame-navigate', (event) => {
-    if (event.isMainFrame && event.url !== allowedUrl) event.preventDefault()
+    if (!event.isMainFrame) return
+    if (allowedUrl !== undefined && event.url === allowedUrl) return
+    event.preventDefault()
   })
 }
