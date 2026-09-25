@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ResolutionError } from '../../resolution/records.js'
+import { ResolutionError } from '../../../resolution/records.js'
 import { heliosError } from '../helios-errors.js'
 
 describe('heliosError', () => {

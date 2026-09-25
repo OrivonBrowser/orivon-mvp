@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { NameRecord } from '../../resolution/records.js'
-import type { DataGatherer, MountedSite, NameResolver } from '../../resolution/providers.js'
-import { ResolutionRegistry } from '../../resolution/registry.js'
+import type { NameRecord } from '../../../resolution/records.js'
+import type { DataGatherer, MountedSite, NameResolver } from '../../../resolution/providers.js'
+import { ResolutionRegistry } from '../../../resolution/registry.js'
 import { FAILURE_TTL_MS, MAX_CONCURRENT_MOUNTS, MAX_SITES, Sites, SITE_TTL_MS } from '../sites.js'
 
 const P = 'https://top.example'

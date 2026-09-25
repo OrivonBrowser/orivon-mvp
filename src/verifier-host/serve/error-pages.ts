@@ -3,7 +3,7 @@
 // line beneath it says the rest. Static text only: each is served with
 // `default-src 'none'`, so nothing on it can run or load.
 
-import type { ResolutionFailure } from '../resolution/records.js'
+import type { ResolutionFailure } from '../../resolution/records.js'
 
 export type ErrorPage = ResolutionFailure
 

@@ -4,10 +4,10 @@
 // site's pages opened is cold for every other site, so timing a request
 // tells a page nothing about where the person has been (A256).
 
-import { ResolutionError } from '../resolution/records.js'
-import type { MountedSite } from '../resolution/providers.js'
-import type { ResolutionRegistry } from '../resolution/registry.js'
-import { Slots } from '../resolution/slots.js'
+import { ResolutionError } from '../../resolution/records.js'
+import type { MountedSite } from '../../resolution/providers.js'
+import type { ResolutionRegistry } from '../../resolution/registry.js'
+import { Slots } from '../../resolution/slots.js'
 
 /** How long a proven name stays in use before it is proven again. */
 export const SITE_TTL_MS = 2 * 60_000

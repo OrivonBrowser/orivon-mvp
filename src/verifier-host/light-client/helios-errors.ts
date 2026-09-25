@@ -2,7 +2,7 @@
 // text is all there is to go on; the strings matched here are the ones the
 // light-client spike recorded from helios 0.11.1.
 
-import { ResolutionError } from '../resolution/records.js'
+import { ResolutionError } from '../../resolution/records.js'
 
 /** Anchored at both ends: Helios quotes RPC error text inside other messages, and that text must never read as revert data. */
 const REVERT = /^(?:Error: )?execution reverted:?\s*(?:0x)?([0-9a-f]*)\s*$/i

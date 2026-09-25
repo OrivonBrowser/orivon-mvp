@@ -2,13 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
-import { createEnsResolver } from '../../ens/resolver.js'
-import { DEFAULT_ENDPOINTS } from '../../main/verifier/endpoints.js'
-import { allowlisted, guardedCcipRequest } from '../egress.js'
+import { createEnsResolver } from '../../../ens/resolver.js'
+import { DEFAULT_ENDPOINTS } from '../../../main/verifier/endpoints.js'
+import { allowlisted, guardedCcipRequest } from '../../egress.js'
 import { startHeliosLightClient } from '../light-client.js'
-import type { LightClient } from '../service.js'
+import type { LightClient } from '../../service.js'
 
-// Opt-in, live: ORIVON_LIVE_ETH=1 npx vitest run src/verifier-host/tests/live-ens.test.ts
+// Opt-in, live: ORIVON_LIVE_ETH=1 npx vitest run src/verifier-host/light-client/tests/live-ens.test.ts
 // It contacts mainnet RPC and beacon endpoints, so no ordinary run does.
 
 const LIVE = process.env['ORIVON_LIVE_ETH'] === '1'

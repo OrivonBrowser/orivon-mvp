@@ -4,7 +4,7 @@
 // every answer against its proofs, and never sends eth_call, so an error is
 // never an execution revert worth keeping.
 
-import type { WebFetch } from './egress.js'
+import type { WebFetch } from '../egress.js'
 
 /** The body is re-sent decoded, so the headers that described how it travelled no longer apply. */
 const TRANSPORT_HEADERS = new Set(['content-encoding', 'content-length', 'transfer-encoding'])

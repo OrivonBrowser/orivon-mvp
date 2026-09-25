@@ -4,13 +4,13 @@
 // Helios reaches the network only through globals, and nothing else here
 // uses them. README.md's Design notes cover the four wrappers it needs.
 
-import { ResolutionError } from '../resolution/records.js'
-import type { WebFetch } from './egress.js'
+import { ResolutionError } from '../../resolution/records.js'
+import type { WebFetch } from '../egress.js'
 import { heliosError } from './helios-errors.js'
 import { failoverRpc } from './rpc-failover.js'
-import { BLOCK_ROOT_PATTERN } from './protocol.js'
-import type { FromHost, LightClientConfig, LightClientState } from './protocol.js'
-import type { LightClient } from './service.js'
+import { BLOCK_ROOT_PATTERN } from '../protocol.js'
+import type { FromHost, LightClientConfig, LightClientState } from '../protocol.js'
+import type { LightClient } from '../service.js'
 
 /** How long a `.eth` load waits for the first sync before "cannot verify yet". */
 export const SYNC_WAIT_MS = 8_000

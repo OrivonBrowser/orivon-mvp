@@ -181,7 +181,7 @@ Settings shows what it is doing.
 | Variable | What it does |
 |---|---|
 | `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
-| `ORIVON_LIVE_ETH=1` | Runs `src/verifier-host/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
+| `ORIVON_LIVE_ETH=1` | Runs `src/verifier-host/light-client/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
 | `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
 
 Each release ships a checkpoint for the light client, refreshed with
