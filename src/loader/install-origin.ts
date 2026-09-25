@@ -55,14 +55,11 @@ export type InstallOriginResult = InstallOriginOk | InstallOriginRejected
  * (Rule 3) -- see InstallOriginResult's own comment for why this function
  * hands the literals back rather than only a yes/no.
  *
- * NO LOOPBACK CARVE-OUT. `docs/open-questions.md` A46 (owner decision)
- * permits installing a user-TYPED loopback literal -- but the only discovery
- * trigger this loader is ever wired to is a page-supplied hint
- * (`README.md`), which is exactly the case A46 says loopback must NEVER be
- * reachable from. A user-initiated local-development path is deferred
- * (build step 9, developer mode); until it ships, every private, loopback,
- * link-local, CGNAT and cloud-metadata range is refused outright here, with
- * no exception -- stated plainly rather than silently routed around.
+ * NO LOOPBACK CARVE-OUT. A loopback origin is never installed: its hint is
+ * granted without installing before it reaches the loader
+ * (src/main/install/grant-without-install.ts), and nothing is fetched from it
+ * as a bundle. Every private, loopback, link-local, CGNAT and cloud-metadata
+ * range is refused outright here, with no exception.
  */
 export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolveFn: Resolver): Promise<InstallOriginResult> {
   const url = new URL(canonicalOrigin)

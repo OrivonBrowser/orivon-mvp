@@ -1,24 +1,18 @@
-// Developer mode's half of the discovery trigger: a loopback origin gets its
-// capabilities GRANTED without being INSTALLED.
+// An origin gets its capabilities GRANTED without being INSTALLED: its
+// manifest is read, the origin registered against it, and the person asked,
+// while the page keeps being served by whatever server hosts it. NO BUNDLE IS
+// FETCHED, HASHED, PINNED OR SERVED FROM CACHE, so that host stays a plain
+// static file server. Registration alone is what an app tab needs:
+// `tab-view.ts`'s `appTabArgsFor` reads `broker.app.isRegisteredSync(origin)`,
+// never a pin.
 //
-// Granting capabilities to a URL and installing an app are separate features
-// (owner, 2026-09-17). `tab-view.ts`'s `appTabArgsFor` already reads only
-// `broker.app.isRegisteredSync(origin)`, never a pin, so registration alone
-// is what an app tab needs. This file supplies that registration for the one
-// case `app-install.ts` structurally cannot serve: a developer's own
-// `http://127.0.0.1:PORT`, which `install-origin.ts` refuses before consent
-// is ever considered (it is not https, and not public unicast).
-//
-// NO BUNDLE IS FETCHED, HASHED, PINNED OR SERVED FROM CACHE. The page keeps
-// being served by whatever server actually hosts it, which is the whole point:
-// the app's host stays a plain static file server.
-//
-// A46 PERMITS THIS SHAPE AND BOUNDS IT. Its refusal is aimed at a
-// PAGE-SUPPLIED hint naming a loopback origin on an ordinary user's machine.
-// Here the eligible origin is the one the page was itself loaded from, the
-// shell was started by `npm run dev`, and a person still answers the same
-// consent prompt a real install shows. The provenance refinement A46
-// describes -- proving the navigation was user-typed -- is NOT enforced yet.
+// It serves the origins `app-install.ts` structurally cannot, since
+// `install-origin.ts` refuses them before consent (not https, not public
+// unicast): a loopback origin, in every build, and in developer mode an
+// orivon-ports `.eth` name. The manifest is read only from the origin the
+// page was itself loaded from, never one the page names, and nothing proves
+// the address was typed: a link to a loopback URL leads to the same prompt,
+// which the person still answers. Grants here are session-only (T13c).
 
 import { MAX_MANIFEST_BYTES, parseManifest } from '../../loader/manifest.js'
 import { requestInstallConsent } from '../consent/install-consent.js'
@@ -28,44 +22,34 @@ import { patternSetFromGrants, widensAuthority } from '../../broker/policy/updat
 import type { PatternSet } from '../../broker/policy/update.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
-
-/** Loopback literals only. A hostname that merely RESOLVES to loopback is not eligible: that is resolver-dependent, and the whole point of a literal is that it cannot be moved by DNS. */
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', '::1'])
+import { isLoopbackHost } from '../../broker/policy/origin.js'
 
 /**
  * orivon-ports' own convention for a fake name over one of its plain
  * loopback servers -- never real ENS, and this file grants no more trust to
- * it than it already grants a bare port number. Deliberately NOT the same
- * exception as `LOOPBACK_HOSTS` above, and worth being honest about the
- * difference: a `.eth` name is a STRING, and this function does not resolve
- * it, so unlike a literal it is NOT guaranteed to actually reach loopback --
- * that guarantee is what the PAC or `--host-resolver-rules` orivon-ports
- * generates is for, not this check. What makes it acceptable anyway, all
- * three required together: this whole path is already `ORIVON_DEV_ORIGINS=1`
- * only, set by nothing but `npm run dev`; `grantDevOrigin` still requires a
- * real, parseable manifest fetched from the exact typed origin; and a person
- * still answers the same consent prompt A46 already accepts residual risk
- * on for the loopback-literal case (this file's own header, "NOT enforced
- * yet"). `.eth` is not a name a real DNS root could ever hand back a
- * different registrant for -- there is no registrant -- so the one new risk
- * this adds is a developer's OWN machine having a resolver override that
- * misdirects an `.eth` name, and https:// is refused for it outright, since
- * no `.eth` name is ever going to present a certificate that could make that
- * attempt indistinguishable from a real one.
+ * it than it already grants a bare port number. Unlike a loopback host, a
+ * `.eth` name is a STRING this function does not resolve, so it is NOT
+ * guaranteed to reach loopback; that is what the `--host-resolver-rules`
+ * clauses from orivon-ports' names file are for. What makes it acceptable
+ * anyway, all three required together: the `.eth` half is developer-mode
+ * only (../dev/dev-mode.ts); `grantWithoutInstall` still requires a real,
+ * parseable manifest fetched from the exact origin; and a person still
+ * answers the same consent prompt. `.eth` is not a name a real DNS root could
+ * ever hand back a different registrant for -- there is no registrant -- so
+ * the one new risk this adds is a developer's OWN machine having a resolver
+ * override that misdirects an `.eth` name, and https:// is refused for it
+ * outright, since no `.eth` name is ever going to present a certificate that
+ * could make that attempt indistinguishable from a real one.
  */
 const ETH_NAME = /^[a-z0-9][a-z0-9-]*\.eth$/
 
-/** The loader's own cap, so a manifest an install would accept is never refused on this path. */
-export const MAX_DEV_MANIFEST_BYTES = MAX_MANIFEST_BYTES
-
 /**
- * Whether `origin` may take this path. `enabled` is the caller's developer-
- * mode decision -- production wiring passes whether `ORIVON_DEV_ORIGINS=1`,
- * which only `npm run dev` sets -- kept as a parameter so this stays a pure
+ * Whether `origin` may take this path: a loopback host over http or https,
+ * always, or a plain-http `.eth` name when `devMode` is on. `devMode` is
+ * ../dev/dev-mode.ts's answer, kept as a parameter so this stays a pure
  * function with no Electron import.
  */
-export function isDevGrantableOrigin (origin: string, enabled: boolean): boolean {
-  if (!enabled) return false
+export function grantableWithoutInstall (origin: string, devMode: boolean): boolean {
   let url: URL
   try {
     url = new URL(origin)
@@ -73,11 +57,11 @@ export function isDevGrantableOrigin (origin: string, enabled: boolean): boolean
     return false
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
-  if (LOOPBACK_HOSTS.has(url.hostname)) return true
-  return url.protocol === 'http:' && ETH_NAME.test(url.hostname)
+  if (isLoopbackHost(url.hostname)) return true
+  return devMode && url.protocol === 'http:' && ETH_NAME.test(url.hostname)
 }
 
-export interface DevGrantDeps {
+export interface GrantWithoutInstallDeps {
   readonly broker: Broker
   readonly fetchManifest: (url: string) => Promise<{ ok: boolean, status: number, text: string }>
   readonly consent?: InstallConsentPrompt
@@ -86,19 +70,19 @@ export interface DevGrantDeps {
 
 /**
  * A fourth `installApp` outcome, deliberately NOT one of `LoadResult`'s own
- * (`../loader/index.ts`): nothing was fetched, hashed or pinned, so there is
+ * (`../../loader/index.ts`): nothing was fetched, hashed or pinned, so there is
  * no `PinRecord` to report and calling this 'installed' would be a lie in the
  * one field that proves an install happened.
  */
-export interface DevGranted {
-  readonly outcome: 'dev-granted'
+export interface GrantedWithoutInstall {
+  readonly outcome: 'granted-without-install'
   readonly canonicalOrigin: string
   /** False when this origin was already registered, so a caller can skip a reload it does not need. */
   readonly newlyRegistered: boolean
 }
 
-export type DevGrantOutcome =
-  | DevGranted
+export type GrantWithoutInstallOutcome =
+  | GrantedWithoutInstall
   | { readonly outcome: 'rejected', readonly reason: string }
 
 /**
@@ -129,7 +113,7 @@ function widensHeldGrants (held: PatternSet, declared: PatternSet): boolean {
  * against the registered manifest, so an unregistered origin has nothing for
  * it to grant against.
  */
-export async function grantDevOrigin (deps: DevGrantDeps, origin: string): Promise<DevGrantOutcome> {
+export async function grantWithoutInstall (deps: GrantWithoutInstallDeps, origin: string): Promise<GrantWithoutInstallOutcome> {
   let response: { ok: boolean, status: number, text: string }
   try {
     response = await deps.fetchManifest(`${origin}/.well-known/orivon.json`)
@@ -137,8 +121,8 @@ export async function grantDevOrigin (deps: DevGrantDeps, origin: string): Promi
     return { outcome: 'rejected', reason: `manifest fetch failed: ${error instanceof Error ? error.message : String(error)}` }
   }
   if (!response.ok) return { outcome: 'rejected', reason: `manifest fetch returned HTTP ${String(response.status)}` }
-  if (new TextEncoder().encode(response.text).length > MAX_DEV_MANIFEST_BYTES) {
-    return { outcome: 'rejected', reason: `manifest exceeds ${String(MAX_DEV_MANIFEST_BYTES)} bytes` }
+  if (new TextEncoder().encode(response.text).length > MAX_MANIFEST_BYTES) {
+    return { outcome: 'rejected', reason: `manifest exceeds ${String(MAX_MANIFEST_BYTES)} bytes` }
   }
 
   let parsed: unknown
@@ -162,5 +146,5 @@ export async function grantDevOrigin (deps: DevGrantDeps, origin: string): Promi
   }
   await deps.broker.registerApp(origin, result.manifest)
   await requestInstallConsent(deps.broker, deps.consent, origin, result.manifest, deps.perCapabilityConsent)
-  return { outcome: 'dev-granted', canonicalOrigin: origin, newlyRegistered: !alreadyRegistered }
+  return { outcome: 'granted-without-install', canonicalOrigin: origin, newlyRegistered: !alreadyRegistered }
 }

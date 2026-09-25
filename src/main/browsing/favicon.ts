@@ -14,7 +14,7 @@
 
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import type { Resolver } from '../../broker/policy/connect.js'
-import { isLocalhostName } from '../../broker/policy/origin.js'
+import { isLoopbackHost } from '../../broker/policy/origin.js'
 import { electronResolveHost } from '../../loader/electron-resolve.js'
 
 export const MAX_FAVICON_BYTES = 32 * 1024
@@ -126,13 +126,6 @@ export function toDataUrl (bytes: Uint8Array, contentType: string | null): strin
   const type = contentType?.split(';')[0]?.trim().toLowerCase()
   if (type === undefined || !ALLOWED_FAVICON_TYPES.has(type)) return null
   return `data:${type};base64,${Buffer.from(bytes).toString('base64')}`
-}
-
-/** This machine: a loopback literal in any spelling classifyAddress
- * normalises, or a `localhost` name (which Chromium resolves to loopback
- * itself and never puts on the wire). */
-function isLoopbackHost (host: string): boolean {
-  return isLocalhostName(host) || classifyAddress(host) === 'loopback'
 }
 
 /** Whether the PAGE declaring a favicon is itself running on this machine.

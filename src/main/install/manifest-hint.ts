@@ -23,7 +23,7 @@ import { MANIFEST_HINT_CHANNEL } from '../channels.js'
 import { originFromSenderFrame } from '../../broker/policy/origin.js'
 import type { SenderFrameLike } from '../../broker/policy/origin.js'
 import type { LoadResult } from '../../loader/index.js'
-import type { DevGranted } from '../dev/dev-app-origin.js'
+import type { GrantedWithoutInstall } from './grant-without-install.js'
 import { createTokenBucketLimiter } from '../../broker/transport/token-bucket.js'
 import type { RateLimiter } from '../../broker/transport/token-bucket.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
@@ -41,7 +41,7 @@ export interface ManifestHintEvent {
 
 /** The one method this module needs from electron's real `IpcMain` for this channel -- structural, matching ../broker/transport/ipc.ts's own IpcMainLike/IpcMainOnLike, so a test double never needs the real type. */
 /** The published `ctx.installApp` (registry.ts) -- the ONE install entry point, already closing over the real consent prompt. */
-export type InstallApp = (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | DevGranted>
+export type InstallApp = (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>
 
 export interface IpcMainOnLike {
   on: (channel: string, listener: (event: ManifestHintEvent, hintedUrl: unknown) => void) => void
@@ -108,8 +108,8 @@ export function createManifestHintListener (
         // registered origin's tab already carries its flag, and reloading
         // it again would loop.
         const reloadable = event.sender !== undefined && !event.sender.isDestroyed()
-        if (result.outcome === 'dev-granted') {
-          console.log(`[orivon] developer mode: granted ${origin} without installing (newly registered: ${String(result.newlyRegistered)}, reloading: ${String(result.newlyRegistered && reloadable)})`)
+        if (result.outcome === 'granted-without-install') {
+          console.log(`[orivon] granted ${origin} without installing (newly registered: ${String(result.newlyRegistered)}, reloading: ${String(result.newlyRegistered && reloadable)})`)
           if (result.newlyRegistered && reloadable) event.sender?.reload()
           return
         }

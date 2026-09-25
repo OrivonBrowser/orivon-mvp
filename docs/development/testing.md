@@ -163,13 +163,14 @@ and the refusal goes through the real shim (`src/shim/node-net.ts`), not only th
 API. One link is substituted, and the file's header says exactly where: the fixture is served
 from loopback, and [`install-origin.ts`](../../src/loader/install-origin.ts) refuses a loopback
 origin outright (A46), so no install can succeed. The real `<link rel="orivon-manifest">` hint is
-proven to reach the real loader and be refused for being non-public; the granted round trip is
-enabled separately, through `src/main/dev/dev-grant.ts`'s developer-only hook, acting on the same
-broker the launched shell's IPC uses. The developer-mode grant-without-install path
-(`src/main/dev/dev-app-origin.ts`, behind `ORIVON_DEV_ORIGINS=1`) has its own test,
-[`test/e2e-dev-origin-grant.test.ts`](../../test/e2e-dev-origin-grant.test.ts). That same flag,
-paired with `ORIVON_ETH_NAMES_FILE`, also turns on the fake `.eth` names
-(`src/main/dev/eth-resolver.ts`) -- both halves are covered in
+proven to reach the real listener and take the grant-without-install path instead; the granted
+round trip is enabled separately, through `src/main/dev/dev-grant.ts`'s developer-only hook,
+acting on the same broker the launched shell's IPC uses. That path
+(`src/main/install/grant-without-install.ts`, loopback in every build) has its own test, on an
+ordinary build with no developer mode,
+[`test/e2e-loopback-grant.test.ts`](../../test/e2e-loopback-grant.test.ts). `ORIVON_DEV_ORIGINS=1`,
+paired with `ORIVON_ETH_NAMES_FILE`, turns on the fake `.eth` names
+(`src/main/dev/eth-resolver.ts`) and grants them the same way -- both halves are covered in
 [`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts), which asserts
 a `.eth` tab is a secure context and so keeps `crypto.subtle`, `crypto.randomUUID`, service
 workers and `navigator.clipboard`. See [setup.md](setup.md) for what the two variables do. Consent gating itself is proven separately, in

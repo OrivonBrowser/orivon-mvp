@@ -133,6 +133,30 @@ describe('createManifestHintListener', () => {
       expect(sender.reload).not.toHaveBeenCalled()
       logSpy.mockRestore()
     })
+
+    it('reloads once after a grant without installing that newly registered the origin', async () => {
+      const installApp = vi.fn<InstallApp>(async () => ({ outcome: 'granted-without-install', canonicalOrigin: APP, newlyRegistered: true }))
+      const sender = reportingTab()
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)
+      await flush()
+
+      expect(sender.reload).toHaveBeenCalledOnce()
+      logSpy.mockRestore()
+    })
+
+    it('does not reload after a grant without installing for an origin already registered, or the reload would hint again and loop', async () => {
+      const installApp = vi.fn<InstallApp>(async () => ({ outcome: 'granted-without-install', canonicalOrigin: APP, newlyRegistered: false }))
+      const sender = reportingTab()
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)
+      await flush()
+
+      expect(sender.reload).not.toHaveBeenCalled()
+      logSpy.mockRestore()
+    })
   })
 
   // installFromHint's own outcomes past 'installed' are S4-3/S4-4/S4-5's

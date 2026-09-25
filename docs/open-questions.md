@@ -51,7 +51,7 @@ drifting from its entries once already.
 
 | Was | Owner's decision |
 |---|---|
-| A46 Loader never checks the install origin's address class | **Loopback allowed only as a user-typed literal.** `127.0.0.1`, `[::1]` and `localhost` are installable ONLY when the URL came from a user action and is a literal — never from a page-supplied hint, never via a hostname that *resolved* to loopback. Every other private/link-local/metadata range is refused outright. Rebinding is structurally impossible against a literal, so this needs no dev flag |
+| A46 Loader never checks the install origin's address class | **Loopback allowed only as a user-typed literal.** `127.0.0.1`, `[::1]` and `localhost` are installable ONLY when the URL came from a user action and is a literal — never from a page-supplied hint, never via a hostname that *resolved* to loopback. Every other private/link-local/metadata range is refused outright. Rebinding is structurally impossible against a literal, so this needs no dev flag. **Relaxed by `d-0118`:** a loopback origin's page-supplied hint is granted without installing, in every build |
 | A36 Grant prompts scheduled in two different build steps | **Split; both documents become true.** The grant ledger and a headless grant-decision interface land in build step 2, so the allow path is testable end to end before any human sees it. The user-facing prompt lands in build step 4, once a real manifest exists to render and A20/A27 are settled |
 | A29 `quotaBytes` has no startup reconciliation | **The counter must survive restart, and hitting the limit prompts the user.** When an app fills its declared quota Orivon asks whether to grant more space, rather than failing silently or only notifying. This makes the persisted counter user-visible, so it must be honest across restarts |
 | A33 Bookmarks bar always visible | **Hide it until there is a bookmark.** A fresh profile shows no empty strip; it appears on first save. The single content shift is user-caused, which is why it was preferred over always-on |
@@ -1568,6 +1568,17 @@ Chromium-mediated fetch would answer the wrong question for one of the two calle
 also where this guard's real residual limitation — the validated address cannot be pinned for the
 actual Electron fetch — is recorded in full.
 
+**Relaxed 2026-09-25, owner (`d-0118`): a loopback origin asks for its permissions in every
+build.** Its page-supplied hint is granted without installing
+(`src/main/install/grant-without-install.ts`), with no check that the address was typed; the
+person answering the prompt is the gate. Installing a loopback origin stays refused, and this
+guard is unchanged. What still holds from the resolution above: the rule keys on the origin's own
+host being a loopback literal or a `localhost` name, never on what a name resolves to, so DNS
+rebinding gains nothing (a rebinding `evil.example` still takes the install path and this guard's
+resolve-and-refuse); and the manifest is read only from the origin the tab itself loaded, the
+sender frame's, so a third-party page cannot aim the shell's request at a local service that does
+not itself serve a hint. Grants stay session-only (T13c).
+
 ---
 
 ### A52 — two residual gaps a real `Fetch` must close, not `fetch-bundle.ts` **[AI-REC]**
@@ -2567,7 +2578,7 @@ rule.
 
 ---
 
-### A65 — no discovery-trigger path lets a developer install their own local Orivon app **[STILL OPEN]**
+### A65 — no discovery-trigger path lets a developer install their own local Orivon app **[RESOLVED 2026-09-25]**
 
 Found 2026-09-04, building the T12/A46 install-origin guard (`stream/loader-09-install-origin-
 guard`) that made this concrete rather than hypothetical.
@@ -2598,6 +2609,11 @@ the scope creep `CLAUDE.md` Rule 4 warns about.
 **Needed by:** before build step 9 ships, if a real developer workflow for testing a local app's
 manifest hint is expected to exist by then. Not blocking anything in build step 2/4 — the
 discovery trigger works correctly for every real, public origin without this.
+
+**Resolved 2026-09-25, owner (`d-0118`): a local app needs no install.** Its loopback origin's
+hint raises the consent prompt in every build, and the origin is granted without being installed
+(`src/main/install/grant-without-install.ts`). This replaces the per-address permission direction
+above: there is no allowlist, and the manifest is read before the person is asked.
 
 ---
 

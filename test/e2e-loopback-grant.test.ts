@@ -1,6 +1,6 @@
-// The developer-mode discovery path, on an ORDINARY build -- no
-// `scripts/build-e2e.mjs`, no `__orivonDevGrant`, no test-injected grant.
-// Exactly what `npm run dev` runs.
+// The loopback discovery path, on an ORDINARY build with developer mode
+// OFF -- no `scripts/build-e2e.mjs`, no `__orivonDevGrant`, no test-injected
+// grant, no `ORIVON_DEV_ORIGINS`. Exactly what `npm start` runs.
 //
 // Navigating to a loopback origin whose page carries a
 // `<link rel="orivon-manifest">` hint must fetch that manifest, prompt, and
@@ -26,7 +26,7 @@
 //
 // RUN THIS WITH:
 //   node scripts/build-ordinary.mjs
-//   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/e2e-dev-origin-grant.test.ts
+//   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/e2e-loopback-grant.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
@@ -52,17 +52,16 @@ const TEST_TIMEOUT_MS =
 it.skipIf(!ORDINARY_BUILD)(
   'visiting a loopback origin that advertises a manifest prompts, grants the URL, and turns the tab into an app tab -- on a plain build, with nothing installed',
   async () => {
-    await runPhase('dev-origin-grant', async (check) => {
+    await runPhase('loopback-grant', async (check) => {
       let app: Awaited<ReturnType<typeof launchElectron>> | undefined
       let server: ChildProcess | undefined
       try {
         server = await startOwnServer('freetube-server', join(process.cwd(), 'test', 'apps', 'freetube', 'serve.mjs'), ['--port', String(PORT)])
         check('a plain static file server is serving test/apps/freetube/, executing no logic of its own', true)
 
-        // The opt-in `npm run dev` sets. Without it this hint takes the
-        // install path and A46 refuses the loopback origin outright --
-        // e2e-app-loader-journey.test.ts asserts exactly that default.
-        app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_DEV_ORIGINS: '1' } })
+        // Developer mode forced off, whatever the calling shell exports: a
+        // loopback origin must prompt without it.
+        app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_DEV_ORIGINS: '0' } })
 
         const hooksAbsent = await app.evaluate(() => {
           const globals = globalThis as unknown as { __orivonDevGrant?: unknown, __orivonDevRegisterServing?: unknown }

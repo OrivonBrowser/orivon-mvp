@@ -26,11 +26,11 @@ to no single job, and `registry.ts`/`channels.ts` are the seam other packages
 | [`ipc/`](ipc/) | **Speak**: the chrome→main channels, one sender check each | no | yes, all three |
 | [`consent/`](consent/) | **Ask**: decide what to ask, say it in words, show the dialog | no | the `-prompt` files only |
 | [`permissions/`](permissions/) | **Review**: the grant list a person can revoke from | no | `permissions-panel.ts` only |
-| [`install/`](install/) | **Install**: a hinted manifest becomes a registered, consented app | per-origin queue | the `-subsystem` file only |
+| [`install/`](install/) | **Install**: a hinted manifest becomes a registered, consented app | per-origin queue | the `-subsystem` file, `manifest-hint.ts` and `granted-origin-csp.ts` |
 | [`sessions/`](sessions/) | **Confine**: what an Electron `Session` is allowed to do | yes, each site's notification answer on disk | `permission-gate.ts` and `web-context-host.ts` only |
 | [`keyring/`](keyring/) | **Persist**: the identity seed, OS-keyring-backed or session-only | yes, the encrypted seed file | `electron-keychain.ts` only |
 | [`self-update/`](self-update/) | **Update itself**: check, notify, never install | last-check timestamp | `-runner` only |
-| [`dev/`](dev/) | **Dev only**: inert or compiled out of an ordinary build | no | `dev-csp.ts` only |
+| [`dev/`](dev/) | **Dev only**: inert or compiled out of an ordinary build | no | no |
 | [`verifier/`](verifier/) | **Verify names**: start the `.eth` verifier, trust its certificate, choose its checkpoint | the host process, stored checkpoint and IPNS sequences | `verifier-subsystem.ts` only |
 
 Each directory carries its own `README.md` on this same template, plus its own `## Design notes`
