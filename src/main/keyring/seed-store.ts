@@ -1,5 +1,5 @@
 // Where Orivon's own identity seed lives, and how it survives a restart.
-// ADR-0031, security-model.md's cross-platform note: no keyring reachable
+// ADR-0033, security-model.md's cross-platform note: no keyring reachable
 // means the seed is generated fresh IN MEMORY every launch and NEVER
 // written to disk in plaintext -- there is no third option. Pure
 // (`SafeStorageLike` is injected), so this is tested against a real temp

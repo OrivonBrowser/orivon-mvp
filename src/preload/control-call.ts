@@ -53,7 +53,7 @@ export const TIMEOUT_MS = {
    */
   webAwaitClose: LIMITS.webContextIdleMs + 5_000,
   /**
-   * secrets.available / secrets.encrypt / secrets.decrypt (ADR-0031): the
+   * secrets.available / secrets.encrypt / secrets.decrypt (ADR-0033): the
    * FIRST call in a session can block on Electron's async `safeStorage`
    * actually reaching the OS keyring -- a macOS Keychain prompt, or an
    * unlock dialog on Linux -- which is a person's own reaction time, not

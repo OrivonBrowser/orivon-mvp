@@ -1,4 +1,4 @@
-// orivon.secrets's three entry points (../secrets-capability.ts, ADR-0031),
+// orivon.secrets's three entry points (../secrets-capability.ts, ADR-0033),
 // exercised through createBroker exactly the way ./id-capability.test.ts
 // exercises orivon.id -- same fixtures, same "grant, then call" shape.
 

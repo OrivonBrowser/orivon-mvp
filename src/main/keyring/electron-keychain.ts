@@ -1,4 +1,4 @@
-// The real, Electron-tied Keychain (ADR-0031) -- thin wiring over
+// The real, Electron-tied Keychain (ADR-0033) -- thin wiring over
 // ./seed-store.ts's pure logic and Electron's own `safeStorage`. This file
 // is the one piece of ../../broker/secrets-contracts.js's `Keychain` this
 // repository cannot test without a real Electron process; see

@@ -1,4 +1,4 @@
-// safeStorage (ADR-0031) -- the one member of this package backed by a
+// safeStorage (ADR-0033) -- the one member of this package backed by a
 // capability that did not exist until orivon.secrets. Real Electron's
 // safeStorage is a MAIN-process module; a ported app's original main-
 // process code reaches it the same way its renderer code reaches anything
@@ -80,7 +80,7 @@ export function createSafeStorage (orivon: Pick<Orivon, 'secrets'>): ElectronSaf
           'string-only; a ciphertext that started as arbitrary bytes was never encrypted through ' +
           'this method to begin with.')
       }
-      // orivon.secrets carries no key-rotation signal of its own (ADR-0031):
+      // orivon.secrets carries no key-rotation signal of its own (ADR-0033):
       // the broker re-derives the same key from the same seed every call,
       // so there is nothing here that would ever ask for a re-encrypt.
       return { shouldReEncrypt: false, result }

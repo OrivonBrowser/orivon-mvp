@@ -146,7 +146,7 @@ export function isSupportedCurve (curve: unknown): curve is DeriveCurve {
  * KDF does. Checked here rather than trusted from the caller, because the one
  * place a weak seed would be noticed is the one place nobody looks.
  *
- * Exported for ./secret-seal.ts (ADR-0031), which derives from the same
+ * Exported for ./secret-seal.ts (ADR-0033), which derives from the same
  * seed under a different salt and needs the identical guard -- the check
  * itself is a fact about what makes a seed usable at all, not about the
  * frozen v1 construction below it, so sharing it is not a widening of what

@@ -59,7 +59,7 @@ class OrivonError extends Error {
 | `notFound` | the named file or directory does not exist |
 | `exists` | the named file or directory already exists |
 | `internal` | a broker fault; should never be observed by an app, always logged |
-| `unavailable` | permitted, but not reachable right now -- `orivon.secrets` when the seed it derives from has no OS keyring to persist in (`ADR-0031`). Unlike `denied`, the same call may succeed later |
+| `unavailable` | permitted, but not reachable right now -- `orivon.secrets` when the seed it derives from has no OS keyring to persist in (`ADR-0033`). Unlike `denied`, the same call may succeed later |
 
 **Rules:**
 
@@ -609,7 +609,7 @@ sockets exercised cleanly) with headroom:
 | in-flight broker operations, **per origin** | 256 |
 | per-socket read window (§TcpSocket backpressure `WINDOW`) | 1 MiB |
 | per-socket write window (`LIMITS.writeWindowBytes`, §Backpressure: write direction) | 256 KiB |
-| `orivon.secrets.encrypt` plaintext (`LIMITS.secretBytes`, `ADR-0031`) | 64 KiB. **Provisional**, AI-chosen |
+| `orivon.secrets.encrypt` plaintext (`LIMITS.secretBytes`, `ADR-0033`) | 64 KiB. **Provisional**, AI-chosen |
 
 Exceeding any of these yields `limit`.
 

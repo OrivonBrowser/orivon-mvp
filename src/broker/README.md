@@ -57,7 +57,7 @@ Several files stay at the top level because they belong to no single directory:
   `net-capability.ts` from the start rather than inlined into `index.ts` first, same reason:
   `index.ts` was already 264 lines before `id`
 - [`secrets-capability.ts`](secrets-capability.ts): `orivon.secrets`'s three entry points
-  (`available`, `encrypt`, `decrypt`, [`ADR-0031`](../../docs/decisions/ADR-0031-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)),
+  (`available`, `encrypt`, `decrypt`, [`ADR-0033`](../../docs/decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)),
   built the same shape as `id-capability.ts` alongside it, over the same seed
   `deps.keychain` provides but a distinct derivation path
   ([`policy/secret-seal.ts`](policy/secret-seal.ts))

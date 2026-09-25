@@ -1,7 +1,7 @@
 # `src/main/`: the Electron main process
 
 **What lives here.** The browser shell: the window, tab management, the omnibox, shell IPC, and
-the subsystem registry every other stream plugs into. Ten directories, each named for the job
+the subsystem registry every other stream plugs into. Eleven directories, each named for the job
 it does; `## The directories` below is the index.
 
 **What it depends on.** `electron`, [`src/contracts/`](../contracts/).

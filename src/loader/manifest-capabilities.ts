@@ -52,7 +52,7 @@ const HTTPS_KEYS = ['connect']
 const FS_KEYS = ['quotaBytes']
 const ID_CAPABILITY_KEYS = ['curves']
 const WEB_CAPABILITY_KEYS = ['contexts']
-/** ADR-0031: `SecretsCapability` declares no fields in v0 -- presence alone is the ask. */
+/** ADR-0033: `SecretsCapability` declares no fields in v0 -- presence alone is the ask. */
 const SECRETS_CAPABILITY_KEYS: string[] = []
 
 const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*$/
@@ -394,7 +394,7 @@ function readIdCapability (raw: unknown, path: string): IdCapability {
   return curves === undefined ? {} : { curves }
 }
 
-/** ADR-0031: presence alone is the declaration -- no field to read, only the
+/** ADR-0033: presence alone is the declaration -- no field to read, only the
  * shape (an object, nothing unrecognised inside it) to check. */
 function readSecrets (raw: unknown, path: string): SecretsCapability {
   if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)

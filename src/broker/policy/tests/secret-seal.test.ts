@@ -25,7 +25,7 @@ const SEED = bytes(table.seed)
 // scripts/check-vectors.mjs recomputes the same table with node:crypto's
 // hkdfSync, independent of this WebCrypto implementation.
 // ===========================================================================
-describe('deriveSecretKeyBytes -- frozen golden vectors (ADR-0031)', () => {
+describe('deriveSecretKeyBytes -- frozen golden vectors (ADR-0033)', () => {
   it.each(table.vectors)('$origin', async ({ origin, key }) => {
     const derived = await deriveSecretKeyBytes(SEED, origin)
     expect(hex(derived)).toBe(key)

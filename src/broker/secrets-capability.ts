@@ -3,7 +3,7 @@
 // own, only the three functions, so createBroker (./index.ts) can call it
 // exactly the way it already calls createIdCapability.
 //
-// ADR-0031: an origin-bound secret derived from the SAME seed `id` already
+// ADR-0033: an origin-bound secret derived from the SAME seed `id` already
 // uses, under a DIFFERENT salt (./policy/secret-seal.ts's own header). The
 // seed itself never crosses this file's boundary any more than it crosses
 // id-capability.ts's.

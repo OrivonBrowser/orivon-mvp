@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url'
 
 const TABLE = new URL('../src/broker/policy/derive-vectors.json', import.meta.url)
 const DERIVE_TS = new URL('../src/broker/policy/derive.ts', import.meta.url)
-// ADR-0031's own frozen table -- a SECOND, independent construction over
+// ADR-0033's own frozen table -- a SECOND, independent construction over
 // the same seed (secret-seal.ts's HKDF, no scalar reduction), checked the
 // same way and by the same independence rules as the derive.ts table
 // above.
@@ -114,7 +114,7 @@ function derivePublicKey(request) {
   return createPublicKey(priv).export({ format: 'der', type: 'spki' }).subarray(-65).toString('hex')
 }
 
-/** ADR-0031's minimum floor: distinct origins, never lowered, same reasoning as MINIMUM above. */
+/** ADR-0033's minimum floor: distinct origins, never lowered, same reasoning as MINIMUM above. */
 const SECRETS_MINIMUM = { vectors: 4 }
 
 /** salt = "orivon-secrets-v1", the whole reason this is a SEPARATE table
@@ -304,7 +304,7 @@ function main() {
     console.error(
       'A mismatch means a frozen derivation changed, or this reference drifted from its ADR.\n' +
         'Do NOT edit either vector table to make this pass. See the header of\n' +
-        'derive.test.ts / secret-seal.test.ts and ADR-0010 / ADR-0031.'
+        'derive.test.ts / secret-seal.test.ts and ADR-0010 / ADR-0033.'
     )
     process.exit(1)
   }

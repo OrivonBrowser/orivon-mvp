@@ -135,17 +135,17 @@ export interface Capabilities {
    */
   readonly web?: WebCapability
   /**
-   * Camera and/or microphone (ADR-0030). Presence of a flag, not a boolean
+   * Camera and/or microphone (ADR-0032). Presence of a flag, not a boolean
    * VALUE on it, is the declaration -- the same shape `fs` and `id` already
    * use, because there is no narrower "how much camera" to ask for the way
    * `net`'s patterns narrow a host. `true` is the only value the loader
    * accepts for either flag; omit a flag to not ask for that device.
    */
   readonly media?: MediaCapability
-  /** `navigator.clipboard.readText()`/`read()` (ADR-0030). Same presence-only shape as `media`. */
+  /** `navigator.clipboard.readText()`/`read()` (ADR-0032). Same presence-only shape as `media`. */
   readonly clipboard?: ClipboardCapability
   /**
-   * An origin-bound encrypt/decrypt pair backed by the OS keyring (ADR-0031).
+   * An origin-bound encrypt/decrypt pair backed by the OS keyring (ADR-0033).
    * Presence-only, like `fs` and `id`: there is nothing narrower to ask for
    * than "an app-private secret", so this interface declares no fields of
    * its own in v0. See `capability-api.ts`'s `OrivonSecrets`.
@@ -294,7 +294,7 @@ export interface WebCapability {
 }
 
 /**
- * ADR-0030. `true` is the only accepted value for either flag -- `false` and
+ * ADR-0032. `true` is the only accepted value for either flag -- `false` and
  * an empty object are both rejected, the same "presence, not a value, is the
  * ask" rule `Capabilities.media` documents. A grant for `media.camera` or
  * `media.microphone` carries no patterns of its own (there is no narrower
@@ -305,13 +305,13 @@ export interface MediaCapability {
   readonly microphone?: true
 }
 
-/** ADR-0030. Same `true`-only shape as `MediaCapability`. */
+/** ADR-0032. Same `true`-only shape as `MediaCapability`. */
 export interface ClipboardCapability {
   readonly read?: true
 }
 
 /**
- * ADR-0031. No fields in v0 -- presence alone is the declaration, exactly as
+ * ADR-0033. No fields in v0 -- presence alone is the declaration, exactly as
  * `IdCapability` above carries no field for "which app keys": there is one
  * kind of secret this capability offers, an origin-bound encrypt/decrypt
  * pair, so there is nothing narrower for a manifest to ask for yet.

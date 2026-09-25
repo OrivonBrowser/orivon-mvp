@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { describeCapabilityGrant, describeGrantRequest } from '../grant-prompt-render.js'
 import { manifestWith } from '../../../broker/tests/index.test-helpers.js'
 
-// ADR-0031's own consent copy, split into its own sibling file rather than
+// ADR-0033's own consent copy, split into its own sibling file rather than
 // grown onto ./grant-prompt-render.test.ts (694/800 lines already) -- the
 // same reason grant-prompt-render-web-context.test.ts exists.
 
 const ORIGIN = 'https://app.example'
 
-describe('describeCapabilityGrant -- secrets (ADR-0031)', () => {
+describe('describeCapabilityGrant -- secrets (ADR-0033)', () => {
   it('is not a warning -- an app-private, origin-bound secret is the same risk level as fs/id', () => {
     const row = describeCapabilityGrant('secrets', [])
     expect(row.warning).toBe(false)

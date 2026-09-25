@@ -22,7 +22,7 @@ happen and must not (§What it must never import, below).
 | `app.getPath(anything else)` | nothing; ambient FS is excluded by design | refuses, named `'ambient-fs'` |
 | `dialog.showOpenDialog` | `orivon.fs.userSelected` | `dialog.ts`: **the broker does not implement this yet**; every call refuses, named `'not-built'` |
 | `dialog.showMessageBox` / `showSaveDialog` / `showErrorBox` / anything else on `dialog` | nothing, never considered | `dialog.ts`, refuses, named `'unimplemented'` |
-| `safeStorage.isAsyncEncryptionAvailable` / `encryptStringAsync` / `decryptStringAsync` | `orivon.secrets` (ADR-0031) | `safe-storage.ts` |
+| `safeStorage.isAsyncEncryptionAvailable` / `encryptStringAsync` / `decryptStringAsync` | `orivon.secrets` (ADR-0033) | `safe-storage.ts` |
 | `safeStorage.isEncryptionAvailable` (sync) | nothing; always `false`, so a ported app takes its own non-keyring fallback | `safe-storage.ts` |
 | `safeStorage.encryptString` / `decryptString` (sync) | nothing; `orivon.secrets` is async-only | `safe-storage.ts`, refuses, named `'not-built'` |
 | `safeStorage.getSelectedStorageBackend` / `setUsePlainTextEncryption` / anything else on `safeStorage` | nothing, never considered | `safe-storage.ts`, refuses, named `'unimplemented'` |
@@ -88,7 +88,7 @@ of both the broker and that decision; refusing now and revisiting when `fs.userS
 is the smaller, reversible choice.
 
 **Why `safeStorage` backs the async trio but the sync trio refuses.** `orivon.secrets`
-(ADR-0031) is async-only, the same design rule `net`/`fs` already follow
+(ADR-0033) is async-only, the same design rule `net`/`fs` already follow
 (`capability-api.ts`'s rule 2): every call crosses to the broker and back. Real Electron's
 `isEncryptionAvailable`/`encryptString`/`decryptString` are synchronous and this package has no
 mechanism to block the renderer on an IPC round trip the way `fs.readFileSync`'s own narrow

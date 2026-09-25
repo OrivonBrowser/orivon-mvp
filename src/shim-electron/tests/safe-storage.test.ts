@@ -14,7 +14,7 @@ function fakeSecrets (overrides: Partial<Orivon['secrets']> = {}): Pick<Orivon, 
   }
 }
 
-describe('createSafeStorage -- the async trio (ADR-0031)', () => {
+describe('createSafeStorage -- the async trio (ADR-0033)', () => {
   it('isAsyncEncryptionAvailable mirrors orivon.secrets.available()', async () => {
     const trueOrivon = fakeSecrets({ available: async () => true })
     expect(await createSafeStorage(trueOrivon).isAsyncEncryptionAvailable()).toBe(true)

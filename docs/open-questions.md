@@ -8532,7 +8532,7 @@ never import `src/main/`").
 
 Neither is true of `src/broker/transport/`. `ipc.ts` imports `publishBroker` and
 `SubsystemContext`/`Subsystem` (types) from `../../main/registry.js`, `createWebContextHost`
-from `../../main/sessions/web-context-host.js`, and (ADR-0031) `createElectronKeychain` from
+from `../../main/sessions/web-context-host.js`, and (ADR-0033) `createElectronKeychain` from
 `../../main/keyring/electron-keychain.js`, all as real values; `deliver-port.ts` imports
 `PORT_CHANNEL` from `../../main/channels.js`. The first three predate this ADR and were not
 introduced by the directory move -- the sweep only found them because it went looking;
@@ -8545,7 +8545,7 @@ matching that directory's own README) but false of `src/broker/transport/`, whos
 `registry.ts`/`channels.ts` are exactly the seam `src/main/README.md` says other packages import
 as values. `web-context-host.ts` and `electron-keychain.ts` share the same reason and the same
 looseness: ADR-0019 put the first in `src/main/` because it needs a real `WebContentsView`,
-ADR-0031 put the second there because it needs real `safeStorage`, but `transport/ipc.ts` only
+ADR-0033 put the second there because it needs real `safeStorage`, but `transport/ipc.ts` only
 needs either as a factory function, which does not obviously require crossing into `src/main/` to
 obtain versus either being handed in some other way.
 

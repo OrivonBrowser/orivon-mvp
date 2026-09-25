@@ -120,9 +120,9 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
     },
     "fs": { "quotaBytes": 53687091200 },
     "id": { "curves": ["secp256k1"] },
-    "media": { "camera": true, "microphone": true },  // ADR-0030; omit a flag to not ask for it
-    "clipboard": { "read": true },                    // ADR-0030
-    "secrets": {},                                    // ADR-0031; presence alone is the ask
+    "media": { "camera": true, "microphone": true },  // ADR-0032; omit a flag to not ask for it
+    "clipboard": { "read": true },                    // ADR-0032
+    "secrets": {},                                    // ADR-0033; presence alone is the ask
     "protocols": ["magnet"]            // shell routes magnet: links to this app
                                        // (first registrant is default; conflicts → user chooses)
   },
@@ -253,13 +253,13 @@ orivon.id.requestIdentity({ kind })  // => Promise<IdentityHandle | null> — co
 // IdentityHandle.signEvent(obj): STRUCTURED, never raw bytes — the broker serialises and
 //   screens `kind`. Kinds 1/6/7 sign silently; 0, 3, 5, 22242 and any delegation PROMPT.
 
-// --- secrets: one origin-bound, keyring-backed secret (ADR-0031) ---
+// --- secrets: one origin-bound, keyring-backed secret (ADR-0033) ---
 orivon.secrets.available()           // => Promise<boolean>  false if ungranted, or the seed is session-only
 orivon.secrets.encrypt(plaintext)    // => Promise<Uint8Array>  bytes in, bytes out, no encoding option
 orivon.secrets.decrypt(ciphertext)   // => Promise<Uint8Array>  'invalid' for bytes this origin's key did not produce
 ```
 
-> **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0030) have no `orivon.*` entry
+> **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0032) have no `orivon.*` entry
 > point of their own.** They are Chromium platform permissions (`getUserMedia`,
 > `navigator.clipboard.readText`/`read`), not broker calls: the manifest declares them and the
 > grant ledger governs them for an app exactly as it governs any other `CapabilityKind`, but the
@@ -437,7 +437,7 @@ justification, first becomes possible.
   the explicit connect prompt. In both modes the seed is never exposed and raw key export is
   not a capability at any tier.
 - `secrets` derives its own key from that same seed, per origin, with a distinct salt from `id`'s
-  (`ADR-0031`); an app never holds, and cannot derive, the seed itself.
+  (`ADR-0033`); an app never holds, and cannot derive, the seed itself.
 - The app's **code cache is read-only to the app** (ADR-0003). An app that could rewrite its
   own code would escape the manifest its grants were issued against.
 

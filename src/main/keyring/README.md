@@ -5,7 +5,7 @@ rotating Orivon's own identity seed under `<userData>/identity/seed.json` — no
 tested against a real temp directory the same way [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts)
 already is. `electron-keychain.ts`: the thin wiring that hands `SeedStore` Electron's real
 `safeStorage` and exposes the result as a [`Keychain`](../../broker/secrets-contracts.ts)
-([`ADR-0031`](../../../docs/decisions/ADR-0031-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)).
+([`ADR-0033`](../../../docs/decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)).
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types only),
 [`../../broker/secrets-contracts.ts`](../../broker/secrets-contracts.ts) (the `Keychain` type
@@ -17,7 +17,7 @@ already is. `electron-keychain.ts`: the thin wiring that hands `SeedStore` Elect
 `src/main/` directory follows. `seed-store.ts` specifically must stay `electron`-free — it is
 the half of this directory a plain vitest run actually exercises.
 
-**Owner stream.** `broker` ([`ADR-0031`](../../../docs/decisions/ADR-0031-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)),
+**Owner stream.** `broker` ([`ADR-0033`](../../../docs/decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)),
 alongside the rest of `orivon.secrets`. New as of this ADR.
 
 ## Design notes

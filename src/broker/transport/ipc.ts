@@ -394,7 +394,7 @@ export const brokerIpcSubsystem: Subsystem = {
         const result = await dialog.showOpenDialog({ properties, title, buttonLabel, message })
         return result.canceled ? { canceled: true } : { canceled: false, paths: result.filePaths }
       },
-      // ADR-0031: the identity seed, OS-keyring-backed (Electron
+      // ADR-0033: the identity seed, OS-keyring-backed (Electron
       // `safeStorage`) or, absent a reachable keyring, generated fresh for
       // this process alone -- see ../../main/keyring/seed-store.ts for the
       // full "never falls back to plaintext" reasoning.

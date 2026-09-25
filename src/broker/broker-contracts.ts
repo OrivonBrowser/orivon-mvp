@@ -359,7 +359,7 @@ export interface Broker {
   }
   /** `BrokerWebMethods` -- ./web-context-contracts.js, alongside `WebContextHost`. */
   readonly web: BrokerWebMethods
-  /** `BrokerSecretsMethods` -- ./secrets-contracts.js, alongside `Keychain`. ADR-0031. */
+  /** `BrokerSecretsMethods` -- ./secrets-contracts.js, alongside `Keychain`. ADR-0033. */
   readonly secrets: BrokerSecretsMethods
   /**
    * Registers -- or replaces -- an origin's manifest. Called once per app

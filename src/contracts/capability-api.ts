@@ -354,7 +354,7 @@ export interface WebContextOptions {
 }
 
 /**
- * ADR-0031. An origin-bound encrypt/decrypt pair, backed by the OS keyring
+ * ADR-0033. An origin-bound encrypt/decrypt pair, backed by the OS keyring
  * through Electron `safeStorage` -- what lets an app hold a secret across
  * restarts without ever holding, or being able to derive, the identity seed
  * itself. `ADR-0003`'s "no app, ever" still governs the seed; this is a

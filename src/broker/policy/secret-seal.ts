@@ -1,4 +1,4 @@
-// orivon.secrets (ADR-0031): one AES-256-GCM key per origin, derived from
+// orivon.secrets (ADR-0033): one AES-256-GCM key per origin, derived from
 // the SAME seed ./derive.ts's frozen v1 construction uses, under a
 // DIFFERENT, DEDICATED salt -- 'orivon-secrets-v1', never 'orivon-kdf-v1'.
 // A shared seed is safe to derive two unrelated secrets from; a SHARED

@@ -43,7 +43,7 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   // Presence alone is the signal for fs/id/secrets -- none carries a pattern
   // of its own (manifest.ts's FsCapability/IdCapability/SecretsCapability),
   // so an empty array is the correct "requested" value, not a placeholder
-  // for a missing field. `secrets` (ADR-0031) follows `id`'s own precedent:
+  // for a missing field. `secrets` (ADR-0033) follows `id`'s own precedent:
   // requireGrantedCurve (../id-capability.js) re-checks the live manifest
   // for what an empty-patterns `id` grant actually authorises, and
   // secrets-capability.ts needs nothing narrower than presence either.

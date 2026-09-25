@@ -12,7 +12,7 @@
 //
 // Phase 2 is what Phase 1 cannot show: a REAL grant. It builds its own
 // Broker directly (real WebCrypto derivation, a keychain stub standing in
-// for ADR-0031's real safeStorage-backed one -- ../src/main/keyring/
+// for ADR-0033's real safeStorage-backed one -- ../src/main/keyring/
 // electron-keychain.ts, wired into production by ../src/broker/transport/
 // ipc.ts -- so this test controls the seed rather than depending on this
 // machine's own keyring), grants 'id' for one curve, and proves

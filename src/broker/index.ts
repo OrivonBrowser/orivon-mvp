@@ -107,7 +107,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // capability's live handles -- see ./web-capability.ts's own header.
   const web = createWebCapability({ deps, handleTable, ledger, canonical })
 
-  // orivon.secrets's three entry points (ADR-0031) -- built the same shape
+  // orivon.secrets's three entry points (ADR-0033) -- built the same shape
   // as `id` above, over the seed `deps.keychain` already provides for it,
   // under a distinct derivation path (./policy/secret-seal.ts).
   const secrets = createSecretsCapability({ deps, ledger, canonical })

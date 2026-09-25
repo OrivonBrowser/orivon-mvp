@@ -222,7 +222,7 @@ export interface MainWorldBridge {
   fsUserSelectedDirectory: () => Promise<MainWorldDirectoryBridge | null>
   idPublicKey: (curve: string) => Promise<Uint8Array>
   idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
-  /** ADR-0031: plain request/reply, exactly `idPublicKey`/`idSign`'s own shape -- no main-world stream wrapping needed. */
+  /** ADR-0033: plain request/reply, exactly `idPublicKey`/`idSign`'s own shape -- no main-world stream wrapping needed. */
   secretsAvailable: () => Promise<boolean>
   secretsEncrypt: (plaintext: Uint8Array) => Promise<Uint8Array>
   secretsDecrypt: (ciphertext: Uint8Array) => Promise<Uint8Array>

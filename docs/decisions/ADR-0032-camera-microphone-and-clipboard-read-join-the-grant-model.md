@@ -1,4 +1,4 @@
-# ADR-0030: Camera, microphone and clipboard read join the grant model; a website gets the traditional per-site prompt instead
+# ADR-0032: Camera, microphone and clipboard read join the grant model; a website gets the traditional per-site prompt instead
 
 - **Status:** proposed
 - **Date:** 2026-09-24
