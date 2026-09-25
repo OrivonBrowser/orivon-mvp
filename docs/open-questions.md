@@ -8905,6 +8905,12 @@ that needs a local-only port has no way to ask for one.
 every interface: a `src/contracts/` change. **Needed by:** an app with a local RPC port or an
 OAuth redirect catcher.
 
+**Resolved, 2026-09-25 (owner, `d-0119`).** Not a `host` parameter -- a separately declared and
+granted capability. `TcpCapability.listen`/`UdpCapability.bind` gain `BindScopes` (`local`/
+`network`); `orivon.net.listen`/`udpBind` gain a `scope` argument (`ADR-0034`). A ported app that
+asks for every interface under a `local`-only grant binds loopback instead of being refused,
+answering this entry's own "needs a local RPC port" case without widening what the grant reaches.
+
 ### A226 -- STARTTLS cannot work over broker-terminated TLS **[RESEARCH]**
 
 Filed 2026-09-22. `pg`, SMTP and IMAP clients open a plain connection, talk, and then upgrade it

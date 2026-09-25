@@ -419,17 +419,17 @@ describe('the settings permissions list, for an app never opened this session', 
   it('keeps the app NAME when a revoke rewrites the file -- revoking one capability must not blank the list', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'orivon-perm-'))
     try {
-      const manifest: Manifest = { ...manifestWith('1.0.0'), name: 'Keeps Its Name', capabilities: { net: { tcp: { connect: ['a.example:443'], listen: ['*:8080'] } } } }
+      const manifest: Manifest = { ...manifestWith('1.0.0'), name: 'Keeps Its Name', capabilities: { net: { tcp: { connect: ['a.example:443'], listen: { network: ['*:8080'] } } } } }
       const first = freshBroker(dir)
       first.registerApp(APP, manifest)
       await first.grant(APP, 'tcp.connect', ['a.example:443'])
-      await first.grant(APP, 'tcp.listen', ['*:8080'])
+      await first.grant(APP, 'tcp.listen.network', ['*:8080'])
 
       const second = freshBroker(dir)
       await second.revokePersisted(APP, 'tcp.connect')
       const app = freshBroker(dir).app.persistedAppsSync()[0]
       expect(app?.appName).toBe('Keeps Its Name')
-      expect(Object.keys(app?.grants ?? {})).toEqual(['tcp.listen'])
+      expect(Object.keys(app?.grants ?? {})).toEqual(['tcp.listen.network'])
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

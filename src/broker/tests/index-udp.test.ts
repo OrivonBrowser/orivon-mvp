@@ -18,22 +18,22 @@ import type { Datagram } from '../../contracts/index.js'
 // the send check runs PER DATAGRAM against the live grant, because a UDP
 // socket has no fixed peer to check once at acquisition.
 
-const DECLARED = { net: { udp: { bind: ['6881-6889'], send: ['*:*'] } } }
+const DECLARED = { net: { udp: { bind: { network: ['6881-6889'] }, send: ['*:*'] } } }
 
 function datagram (overrides: Partial<Datagram> = {}): Datagram {
   return { data: new Uint8Array([1]), address: '93.184.216.34', port: 6881, family: 'IPv4', ...overrides }
 }
 
-/** A broker with `udp.bind` granted over 6881-6889 and nothing else. */
+/** A broker with `udp.bind.network` granted over 6881-6889 and nothing else. */
 async function boundBroker (deps = baseDeps()): Promise<Broker> {
   const broker = createBroker(deps)
   broker.registerApp(APP, manifestWith(DECLARED))
-  await broker.grant(APP, 'udp.bind', ['6881-6889'])
+  await broker.grant(APP, 'udp.bind.network', ['6881-6889'])
   return broker
 }
 
 describe('udpBind -- the grant ledger decides', () => {
-  it('denies when udp.bind was never granted, however broadly the manifest declares it', async () => {
+  it('denies when udp.bind.network was never granted, however broadly the manifest declares it', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith(DECLARED))
 

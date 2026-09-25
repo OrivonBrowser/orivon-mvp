@@ -86,7 +86,7 @@ describe('unknown fields inside capabilities stay a rejection', () => {
     ['capabilities', { shell: true }, 'shell'],
     ['capabilities.net', { net: { raw: true } }, 'raw'],
     ['capabilities.net.tcp', { net: { tcp: { connect: ['*:*'], backdoor: true } } }, 'backdoor'],
-    ['capabilities.net.udp', { net: { udp: { bind: ['6881'], multicast: true } } }, 'multicast'],
+    ['capabilities.net.udp', { net: { udp: { send: ['*:*'], multicast: true } } }, 'multicast'],
     ['capabilities.net.https', { net: { https: { connect: ['*:*'], insecure: true } } }, 'insecure'],
     ['capabilities.fs', { fs: { quotaBytes: 1024, root: '/' } }, 'root'],
     ['capabilities.id', { id: { curves: ['secp256k1'], export: true } }, 'export'],

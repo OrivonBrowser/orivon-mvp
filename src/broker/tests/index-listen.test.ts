@@ -19,13 +19,13 @@ import type { Broker, DialedSocket, Listen } from '../broker-contracts.js'
 // adapters/tests/node-adapters.test.ts, against the real `listenTcp` adapter
 // -- this file uses a stub `ListenedServer` throughout.
 
-const DECLARED = { net: { tcp: { listen: ['30000-30010'] } } }
+const DECLARED = { net: { tcp: { listen: { network: ['30000-30010'] } } } }
 
-/** A broker with `tcp.listen` granted over 30000-30010 and nothing else. */
+/** A broker with `tcp.listen.network` granted over 30000-30010 and nothing else. */
 async function listeningBroker (deps = baseDeps()): Promise<Broker> {
   const broker = createBroker(deps)
   broker.registerApp(APP, manifestWith(DECLARED))
-  await broker.grant(APP, 'tcp.listen', ['30000-30010'])
+  await broker.grant(APP, 'tcp.listen.network', ['30000-30010'])
   return broker
 }
 
@@ -46,7 +46,7 @@ function okAccepted (overrides: Partial<DialedSocket> = {}): DialedSocket {
 }
 
 describe('listen -- the grant ledger decides', () => {
-  it('denies when tcp.listen was never granted, however broadly the manifest declares it', async () => {
+  it('denies when tcp.listen.network was never granted, however broadly the manifest declares it', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith(DECLARED))
 

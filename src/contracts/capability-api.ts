@@ -113,6 +113,16 @@ export interface SecureConnectOptions {
   readonly alpnProtocols?: readonly string[]
 }
 
+/**
+ * Which programs may reach a listening TCP port or a bound UDP socket
+ * (ADR-0034, `manifest.js`'s `BindScopes`). `'local'` is reachable only by
+ * other programs on this same device; `'network'` is reachable from the
+ * local network, and the internet if the port is forwarded. Each is a
+ * separately declared and granted capability -- `'network'` covers
+ * `'local'`, never the reverse.
+ */
+export type BindScope = 'local' | 'network'
+
 export interface OrivonNet {
   /**
    * Opens an outbound TCP connection. `host` may be a hostname or an address
@@ -166,13 +176,24 @@ export interface OrivonNet {
   connectSecure(opts: SecureConnectOptions): Promise<SecureTcpSocket>
   /**
    * Opens a TCP listening socket on `port`, checked against the app's
-   * granted `tcp.listen` patterns. `port: 0` asks the OS to pick; the real
-   * port is on the returned `TcpServer.localPort` before this promise
-   * resolves (Handle rule 3, ./handles.js).
+   * granted `tcp.listen.local` or `tcp.listen.network` patterns depending
+   * on `scope` (ADR-0034). Omitted `scope` means `'local'`: reachable only
+   * by other programs on this device. `'network'` binds every interface,
+   * reachable from the local network and the internet if forwarded, and
+   * needs the `network` grant specifically -- a `local` grant does not
+   * cover it. `port: 0` asks the OS to pick; the real port is on the
+   * returned `TcpServer.localPort` before this promise resolves (Handle
+   * rule 3, ./handles.js). `TcpServer.localAddress` reports which
+   * interface was actually bound (`127.0.0.1` for `'local'`, `0.0.0.0` for
+   * `'network'`).
    */
-  listen(opts: { port: number }): Promise<TcpServer>
-  /** Binds a UDP socket on `port`, checked against `udp.bind`. Same `port: 0` behaviour as `listen`. */
-  udpBind(opts: { port: number }): Promise<UdpSocket>
+  listen(opts: { port: number, scope?: BindScope }): Promise<TcpServer>
+  /**
+   * Binds a UDP socket on `port`, checked against `udp.bind.local` or
+   * `udp.bind.network` depending on `scope` (ADR-0034). Same `scope`
+   * default, grant relationship and `port: 0` behaviour as `listen`.
+   */
+  udpBind(opts: { port: number, scope?: BindScope }): Promise<UdpSocket>
   /**
    * Resolves `hostname` on the app's behalf -- DNS resolution happens IN
    * THE BROKER (D-0006), because a sandboxed renderer has no resolver of
@@ -190,8 +211,9 @@ export interface OrivonNet {
    * app could never actually connect to. An unbounded resolver would hand
    * every network-capable app a covert channel to anywhere, so `hostname`
    * is checked against the HOST portion of the app's held outbound
-   * patterns -- the same patterns `connect`/`connectSecure`/`udpBind`
-   * already check their own resolved or requested addresses against. An
+   * patterns -- the same patterns `connect`, `connectSecure` and a
+   * `UdpSocket`'s own `writable` (./handles.js) already check their own
+   * resolved or requested addresses against. An
    * app holding a `"*:*"` pattern on any of those (unlimited network) gets
    * unlimited lookups, because it can already reach anywhere this opens
    * nothing new; an app holding only specific hosts may resolve only

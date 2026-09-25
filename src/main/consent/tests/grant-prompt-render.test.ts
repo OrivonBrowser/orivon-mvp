@@ -102,10 +102,10 @@ describe('describeGrantRequest', () => {
     expect(messages.size).toBe(4)
   })
 
-  it('A134: tcp.listen gets a distinct, more serious prompt, not a plain unwarned row', () => {
-    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
+  it('A134: tcp.listen.network gets a distinct, more serious prompt, not a plain unwarned row', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: { network: ['6881-6889'] } } } })
 
-    const content = describeGrantRequest(ORIGIN, manifest, 'tcp.listen', ['6881-6889'])
+    const content = describeGrantRequest(ORIGIN, manifest, 'tcp.listen.network', ['6881-6889'])
 
     expect(content.message).toBe('⚠ Accept incoming connections on port 6881-6889')
     expect(content.warning).toBe(true)
@@ -120,39 +120,6 @@ describe('describeGrantRequest', () => {
     expect(content.message).toBe('Connect to a.example and 1 other site')
   })
 
-  it('A134: udp.bind gets the same distinct listening warning, worded for "receive" not "connect"', () => {
-    const manifest = manifestWith({ net: { udp: { bind: ['6881-6889'] } } })
-
-    const content = describeGrantRequest(ORIGIN, manifest, 'udp.bind', ['6881-6889'])
-
-    expect(content.message).toBe('⚠ Receive data on port 6881-6889')
-    expect(content.warning).toBe(true)
-    expect(content.detail).toContain('any other computer that can reach this port')
-  })
-
-  it('A134: listening is worded differently from unlimited network access, not a copy-pasted sentence', () => {
-    const listenManifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
-    const netManifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
-
-    const listen = describeGrantRequest(ORIGIN, listenManifest, 'tcp.listen', ['6881-6889'])
-    const net = describeGrantRequest(ORIGIN, netManifest, 'https.connect', ['*:*'])
-
-    expect(listen.warning).toBe(true)
-    expect(net.warning).toBe(true)
-    expect(listen.message).not.toBe(net.message)
-    expect(listen.detail).not.toBe(net.detail)
-  })
-
-  it('A134: tcp.listen and udp.bind read differently from each other too (connect vs send)', () => {
-    const tcpManifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
-    const udpManifest = manifestWith({ net: { udp: { bind: ['6881-6889'] } } })
-
-    const tcp = describeGrantRequest(ORIGIN, tcpManifest, 'tcp.listen', ['6881-6889'])
-    const udp = describeGrantRequest(ORIGIN, udpManifest, 'udp.bind', ['6881-6889'])
-
-    expect(tcp.detail).not.toBe(udp.detail)
-  })
-
   it('puts the ORIGIN, never the self-asserted manifest.name, in the title', () => {
     const manifest = manifestWith({ fs: {} })
 
@@ -160,6 +127,37 @@ describe('describeGrantRequest', () => {
 
     expect(content.title).toBe(ORIGIN)
     expect(content.detail).toContain(manifest.name)
+  })
+})
+
+// ADR-0034: `tcp.listen.local`/`udp.bind.local` read differently from their
+// `.network` counterparts -- "another program on this computer" is a
+// materially narrower, less alarming claim than "any computer that can
+// reach this port" (the merge tests below pin the `.network` pair's own
+// distinct wording, restated from A134).
+describe('describeCapabilityGrant -- tcp.listen.local/udp.bind.local (ADR-0034)', () => {
+  it('tcp.listen.local names the narrower, this-device-only reach, and stays a warning', () => {
+    const content = describeCapabilityGrant('tcp.listen.local', ['8080'])
+
+    expect(content.message).toBe('⚠ Accept connections from other programs on this device on port 8080')
+    expect(content.warning).toBe(true)
+    expect(content.explanation).toContain('Not reachable from your network or the internet')
+  })
+
+  it('udp.bind.local reads differently from tcp.listen.local (connect vs send)', () => {
+    const tcp = describeCapabilityGrant('tcp.listen.local', ['8080'])
+    const udp = describeCapabilityGrant('udp.bind.local', ['8080'])
+
+    expect(udp.message).toBe('⚠ Receive data from other programs on this device on port 8080')
+    expect(udp.explanation).not.toBe(tcp.explanation)
+  })
+
+  it('a local grant reads differently from its own network counterpart, not a copy-pasted sentence', () => {
+    const local = describeCapabilityGrant('tcp.listen.local', ['8080'])
+    const network = describeCapabilityGrant('tcp.listen.network', ['8080'])
+
+    expect(local.message).not.toBe(network.message)
+    expect(local.explanation).not.toBe(network.explanation)
   })
 })
 
@@ -177,10 +175,12 @@ describe('describeGrantRequest -- the origin survives a dropped title (AR-01), n
     ['tcp.connect', ['*:*']],
     ['https.connect', ['a.example:443']],
     ['https.connect', ['*:*']],
+    ['tcp.listen.local', ['8080']],
+    ['tcp.listen.network', ['6881-6889']],
+    ['udp.bind.local', ['8080']],
+    ['udp.bind.network', ['6881-6889']],
     ['udp.send', ['a.example:443']],
     ['udp.send', ['*:*']],
-    ['tcp.listen', ['6881-6889']],
-    ['udp.bind', ['6881-6889']],
     ['fs', []],
     ['id', []]
   ]
@@ -495,9 +495,9 @@ describe('describeInstallConsent', () => {
   })
 
   it('A134: unlimited outbound and listening both stay visible as their own warned rows -- neither swallows the other', () => {
-    const manifest = manifestWith({ net: { https: { connect: ['*:*'] }, tcp: { listen: ['6881-6889'] } } })
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] }, tcp: { listen: { network: ['6881-6889'] } } } })
 
-    const content = describeInstallConsent(ORIGIN, manifest, ['https.connect', 'tcp.listen'])
+    const content = describeInstallConsent(ORIGIN, manifest, ['https.connect', 'tcp.listen.network'])
 
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
@@ -529,10 +529,10 @@ describe('describeInstallConsent', () => {
     )
   })
 
-  it('merges tcp.listen and udp.bind into ONE row on the same ports, not two "opens a door" rows', () => {
-    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] }, udp: { bind: ['6881-6889'] } } })
+  it('merges tcp.listen.network and udp.bind.network into ONE row on the same ports, not two "opens a door" rows', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: { network: ['6881-6889'] } }, udp: { bind: { network: ['6881-6889'] } } } })
 
-    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen', 'udp.bind'])
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen.network', 'udp.bind.network'])
 
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
@@ -544,32 +544,32 @@ describe('describeInstallConsent', () => {
   })
 
   it('a listen/bind merge on DIFFERENT port ranges still names both, not one range silently standing in for the other', () => {
-    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] }, udp: { bind: ['6969'] } } })
+    const manifest = manifestWith({ net: { tcp: { listen: { network: ['6881-6889'] } }, udp: { bind: { network: ['6969'] } } } })
 
-    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen', 'udp.bind'])
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen.network', 'udp.bind.network'])
 
     expect(content.detail).toContain('⚠ Accepts connections and data from other computers on port 6881-6889 (TCP) and port 6969 (UDP)')
   })
 
-  it('does NOT merge tcp.listen alone with anything -- the merge needs both capabilities present, not just one warned row', () => {
-    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
+  it('does NOT merge tcp.listen.network alone with anything -- the merge needs both capabilities present, not just one warned row', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: { network: ['6881-6889'] } } } })
 
-    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen'])
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen.network'])
 
     expect(content.detail).toContain('⚠ Accept incoming connections on port 6881-6889')
     expect(content.detail).not.toContain('Accepts connections and data from other computers')
   })
 
-  it('THE FLAGSHIP: connect *:*, listen, udp.bind and udp.send *:* together render exactly two warnings, not four, and no repeated headline', () => {
+  it('THE FLAGSHIP: connect *:*, listen, bind and udp.send *:* together render exactly two warnings, not four, and no repeated headline', () => {
     const manifest = manifestWith({
       net: {
-        tcp: { connect: ['*:*'], listen: ['6881-6889'] },
-        udp: { bind: ['6881-6889'], send: ['*:*'] }
+        tcp: { connect: ['*:*'], listen: { network: ['6881-6889'] } },
+        udp: { bind: { network: ['6881-6889'] }, send: ['*:*'] }
       },
       fs: { quotaBytes: 1024 * 1024 * 1024 }
     })
 
-    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'fs'])
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect', 'tcp.listen.network', 'udp.bind.network', 'udp.send', 'fs'])
 
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
@@ -619,13 +619,13 @@ describe('describeInstallConsent', () => {
     expect(content.detail).not.toContain('[Already allowed] Store files')
   })
 
-  it('A170: a merged inbound row (tcp.listen+udp.bind) is marked only once BOTH contributing capabilities are held', () => {
-    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] }, udp: { bind: ['6881-6889'] } } })
+  it('A170: a merged inbound row (tcp.listen.network+udp.bind.network) is marked only once BOTH contributing capabilities are held', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: { network: ['6881-6889'] } }, udp: { bind: { network: ['6881-6889'] } } } })
 
-    const onlyOneHeld = describeInstallConsent(ORIGIN, manifest, ['tcp.listen', 'udp.bind'], ['tcp.listen'])
+    const onlyOneHeld = describeInstallConsent(ORIGIN, manifest, ['tcp.listen.network', 'udp.bind.network'], ['tcp.listen.network'])
     expect(onlyOneHeld.detail).not.toContain('[Already allowed]')
 
-    const bothHeld = describeInstallConsent(ORIGIN, manifest, ['tcp.listen', 'udp.bind'], ['tcp.listen', 'udp.bind'])
+    const bothHeld = describeInstallConsent(ORIGIN, manifest, ['tcp.listen.network', 'udp.bind.network'], ['tcp.listen.network', 'udp.bind.network'])
     expect(bothHeld.detail).toContain('- [Already allowed] ⚠ Accepts connections and data from other computers on port 6881-6889')
   })
 

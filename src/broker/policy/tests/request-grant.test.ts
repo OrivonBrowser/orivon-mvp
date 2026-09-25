@@ -52,8 +52,8 @@ describe('decideGrantRequest', () => {
   })
 
   it('defaults to the full declared pattern set when the request carries none', () => {
-    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
-    const decision = decideGrantRequest(manifest, 'tcp.listen', undefined)
+    const manifest = manifestWith({ net: { tcp: { listen: { network: ['6881-6889'] } } } })
+    const decision = decideGrantRequest(manifest, 'tcp.listen.network', undefined)
     expect(decision).toEqual({ allowed: true, patterns: ['6881-6889'] })
   })
 
@@ -129,9 +129,9 @@ describe('decideGrantRequest -- a request may never declare a shape the manifest
     expect(decideGrantRequest(manifest, 'udp.send', ['*:53'])).toEqual({ allowed: false, patterns: [] })
   })
 
-  it('does not touch tcp.listen/udp.bind -- bare port ranges have no host and no equivalent gap', () => {
-    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
-    const decision = decideGrantRequest(manifest, 'tcp.listen', ['6881-6889'])
+  it('does not touch tcp.listen.*/udp.bind.* -- bare port ranges have no host and no equivalent gap', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: { network: ['6881-6889'] } } } })
+    const decision = decideGrantRequest(manifest, 'tcp.listen.network', ['6881-6889'])
     expect(decision).toEqual({ allowed: true, patterns: ['6881-6889'] })
   })
 
@@ -172,11 +172,14 @@ describe('decideGrantRequest -- a request may never declare a shape the manifest
 
 // Shared by main/request-grant.ts (an app's raw IPC payload) and
 // grants/grant-persistence.ts (a JSON property name read off disk) -- both
-// need the same "is this untrusted string one of the eight real
+// need the same "is this untrusted string one of the eleven real
 // CapabilityKind literals" check, moved here so a third copy is never
 // tempting.
 describe('isCapabilityKind', () => {
-  it.each(['tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id', 'web.context'])(
+  it.each([
+    'tcp.connect', 'tcp.listen.local', 'tcp.listen.network', 'udp.bind.local', 'udp.bind.network',
+    'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'secrets'
+  ])(
     'accepts %s',
     (kind) => { expect(isCapabilityKind(kind)).toBe(true) }
   )
