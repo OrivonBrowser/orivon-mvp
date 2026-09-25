@@ -51,10 +51,10 @@ export interface SiteProvenance {
 }
 
 export type HostRequest =
-  /** What is mounted for a host now, or null; never resolves anything. */
-  | { readonly kind: 'provenance', readonly host: string }
-  /** Resolves and mounts the host if it is not mounted, then answers as `provenance` does. */
-  | { readonly kind: 'mount', readonly host: string }
+  /** What is mounted for a host in a partition now, or null; never resolves anything. */
+  | { readonly kind: 'provenance', readonly host: string, readonly partition: string }
+  /** Resolves and mounts the host in the partition if it is not mounted there, then answers as `provenance` does. */
+  | { readonly kind: 'mount', readonly host: string, readonly partition: string }
   | { readonly kind: 'status' }
 
 export interface HostReplies {

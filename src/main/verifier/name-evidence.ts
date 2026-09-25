@@ -49,13 +49,9 @@ function stepRow (step: PointerStep): EvidenceRow {
   }
 }
 
-function contentOf (provenance: SiteProvenance): ContentEvidence {
-  const cid = provenance.root.cid
-  switch (provenance.ddoc.status) {
-    case 'met': return { source: 'live', cid, ddoc: 'met' }
-    case 'not-met': return { source: 'live', cid, ddoc: 'not-met', reason: provenance.ddoc.reason }
-    case 'failed': return { source: 'live', cid, ddoc: 'failed', reason: provenance.ddoc.resource }
-  }
+function contentOf (provenance: SiteProvenance, pointersVerified: boolean): ContentEvidence {
+  const evidence = { source: 'live' as const, cid: provenance.root.cid, pointersVerified }
+  return provenance.ddoc.status === 'failed' ? { ...evidence, failedResource: provenance.ddoc.resource } : evidence
 }
 
 function liveLine (provenance: SiteProvenance, now: number): string {
@@ -77,9 +73,10 @@ export function liveNameEvidence (provenance: SiteProvenance, now: number): Name
     const sources = [...new Set(refused.map((r) => r.source))].join(', ')
     rows.push({ term: 'Refused', value: `${String(refused.length)} response(s) from ${sources} failed their check and were not used` })
   }
+  const nameProven = pointerChainVerdict(provenance.pointers).verified
   return {
-    content: contentOf(provenance),
-    nameProven: pointerChainVerdict(provenance.pointers).verified,
+    content: contentOf(provenance, nameProven),
+    nameProven,
     line: liveLine(provenance, now),
     rows
   }

@@ -41,7 +41,7 @@ change belongs in their stream.
 | `shim` | `src/shim/`, the `renderer.resolve.alias` map in `electron.vite.config.ts` | 3 | |
 | `loader` | `src/loader/` | 4 | **done** |
 | `ports` | nothing here: the ports and their harness live in `orivon-ports` (`ADR-0020`). A gap a port finds is fixed by the stream that owns the path | 5 | under way |
-| `ens-ipfs` | `src/resolution/`, `src/ens/`, `src/ipfs/`, `src/verifier-host/`, `src/main/verifier/` | 6 | under way |
+| `ens-ipfs` | `src/resolution/`, `src/ens/`, `src/ipfs/`, `src/verifier-host/`, `src/main/verifier/` | 6 | **done**, maintenance only |
 | `fixture-app` | `test/apps/` | testing | the e2e fixture (also app #3 and the dev-mode example) and the Orivon-native demo |
 | `trust` | `src/trust/` | 7 | first to cut if the schedule slips |
 | `nostr` | `src/nostr/` | none | parked: Nostr identity is an idea, not a build step |

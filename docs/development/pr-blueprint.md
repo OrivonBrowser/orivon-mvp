@@ -284,7 +284,7 @@ exactly one `ux:`**, plus a flag if it applies.
 
 | Axis | Labels |
 |---|---|
-| `stream:` | `shell` · `contracts` · `shared` · `broker` · `shim` · `loader` · `torrent-app` · `fixture-app` · `trust` · `nostr` · `telemetry` · `packaging` · `docs` |
+| `stream:` | `shell` · `contracts` · `shared` · `broker` · `shim` · `loader` · `torrent-app` · `fixture-app` · `ens-ipfs` · `trust` · `nostr` · `telemetry` · `packaging` · `docs` |
 | `type:` | `feature` · `fix` · `docs` · `security` · `test` · `chore` |
 | `ux:` | `visible` · `dev` · `none` |
 | flags | `contracts-change` · `needs-owner-decision` |

@@ -104,12 +104,19 @@ describe('buildSiteTrust -- DDOC', () => {
 
 describe('buildSiteTrust -- the Website level and a .eth name', () => {
   const CID = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'
-  const proven: NameEvidence = { content: { source: 'live', cid: CID, ddoc: 'met' }, nameProven: true, line: 'Name verified', rows: [{ term: 'Name', value: 'Proven' }] }
+  const proven: NameEvidence = { content: { source: 'live', cid: CID, pointersVerified: true }, nameProven: true, line: 'Name verified', rows: [{ term: 'Name', value: 'Proven' }] }
 
   it('an ordinary site is Level 1, and names its bundle hash only when pinned', () => {
     expect(buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000).level).toMatchObject({ level: 1, assessable: undefined })
     expect(buildSiteTrust(ORIGIN, pin(), true, undefined, undefined, 2_000).level).toMatchObject({ level: 1, assessable: { kind: 'bundle-hash', value: 'a'.repeat(64) } })
     expect(buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000).name).toBeUndefined()
+  })
+
+  it('an installed site whose files match the hash tree it publishes is Level 2: it supports DDOC', () => {
+    const tree = { bundleHash: 'sha256:' + 'c'.repeat(64), assets: [{ path: '/.well-known/orivon.json', leaf: 'sha256:' + 'd'.repeat(64) }] }
+    const trust = buildSiteTrust(ORIGIN, pin(tree), true, undefined, { bundleHash: tree.bundleHash, leaves: tree.assets }, 2_000)
+    expect(trust.level).toMatchObject({ level: 2, assessable: { kind: 'bundle-hash', value: tree.bundleHash } })
+    expect(trust.delivery.rungs.filter((r) => r.met).map((r) => r.rung)).toEqual(['D2'])
   })
 
   it('a verified .eth page is Level 2, meets D3 and D4, and carries its name rows', () => {
@@ -119,10 +126,10 @@ describe('buildSiteTrust -- the Website level and a .eth name', () => {
     expect(trust.name).toEqual({ line: 'Name verified', rows: [{ term: 'Name', value: 'Proven' }] })
   })
 
-  it('a .eth name through DNSLink is content-addressed but not trustlessly named: D3 without D4, Level 1', () => {
-    const viaDns: NameEvidence = { ...proven, content: { source: 'live', cid: CID, ddoc: 'not-met', reason: 'via DNS: app.example' }, nameProven: false }
+  it('a .eth name through DNSLink meets DDOC but is not trustlessly named: Level 2, D3 without D4', () => {
+    const viaDns: NameEvidence = { ...proven, content: { source: 'live', cid: CID, pointersVerified: false }, nameProven: false }
     const trust = buildSiteTrust('https://site.eth', null, false, undefined, undefined, 2_000, viaDns)
-    expect(trust.level.level).toBe(1)
+    expect(trust.level.level).toBe(2)
     expect(trust.delivery.rungs.filter((r) => r.met).map((r) => r.rung)).toEqual(['D1', 'D3'])
   })
 

@@ -1,7 +1,8 @@
 # ADR-0029: Sites publish their bundle hash tree, and the browser shows whether it matches (DDOC)
 
 - **Status:** accepted, **amended 2026-09-24: the off-host anchor is in scope, as the name's ENS
-  record** (see the Amendment below)
+  record**, and **2026-09-25: that record is the contenthash, and a verified tree is Website Level
+  2** (see the Amendments below)
 - **Date:** 2026-09-24
 - **Type:** architecture
 - **Decided by:** owner
@@ -22,7 +23,8 @@ and shows **DDOC** in one of four states:
 **None of the four blocks a load.** Whether a failure warns or blocks is the Web3 Score's
 decision, not the loader's. In this build the tree is anchored on the site's own host. That
 anchor is *provisional*: a record held off the host would settle it. *(Amended 2026-09-24,
-below: for a `.eth` name, its ENS record is that record.)*
+below: for a `.eth` name, its ENS record is that record. Amended 2026-09-25: the same-host
+anchor stands for every other site, and a verified tree is Website Level 2.)*
 
 ## Context
 
@@ -124,7 +126,23 @@ The file format does not change, as the DNS alternative above already said of an
 record: the ENS record carries the same root, compared with the pin as the published tree is.
 Which ENS record carries it is build step 6's call, and stays *provisional* until that step's
 plan lands. A DNS record remains out of scope, and a site that is not a `.eth` name keeps the
-same-host anchor.
+same-host anchor. *(Settled 2026-09-25, below.)*
+
+## Amendment, 2026-09-25: the record is the contenthash, and a verified tree is Website Level 2
+
+**The ENS record is the contenthash.** A `.eth` name carries the hash or hashes that confirm the
+files a person receives. For content on IPFS that is the contenthash: its CID commits to every
+file, the published tree included, so the tree is anchored off the host with nothing new to
+publish (`ADR-0030`). An app hash-pinned over HTTPS under a `.eth` name would carry its bundle
+root in the name's record the same way; loading a `.eth` name from HTTPS is not part of this
+build, so that half is not built.
+
+**A verified tree is DDOC, and DDOC is Website Level 2** (`ADR-0006`). The canonical Web3 scores
+page defines Level 2 as a site that supports DDOC, and the canonical DDOC page accepts a site's
+own published hashes as well as content that meets it by design, as IPFS does. So an installed
+site whose files match the tree it publishes is Level 2, whatever holds the anchor. How well the
+anchor is held, the site's own host or a name proven on Ethereum, is evidence shown beside the
+level. A failed, unpublished or unchecked tree leaves the site at Level 1.
 
 ## Reversibility
 

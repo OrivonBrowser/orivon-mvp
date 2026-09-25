@@ -72,13 +72,23 @@ it('installs a .eth app from verified IPFS content, pins its CID, and opens it f
       const pin = JSON.parse(readFileSync(pinFile, 'utf8')) as { content?: { cid: string, via: string, pointersVerified: boolean }, assets: Array<{ path: string }> }
       check(`the pin records the CID every file was verified against (${JSON.stringify(pin.content)})`, pin.content?.cid === root && pin.content.via === 'ipfs' && pin.content.pointersVerified)
       check('the pin covers the manifest, the entry and its script', ['/.well-known/orivon.json', '/index.html', '/app.js'].every((path) => pin.assets.some((asset) => asset.path === path)))
+      // The loader's requests come from no page, so the verifier gives them the name's own partition,
+      // the one the tab used: installing asks the gateway for the root no second time.
+      const rootAsks = gateway.requests.filter((request) => request.includes(root)).length
+      check(`the install reused the tab's verified mount (${String(rootAsks)} request for the root)`, rootAsks === 1)
 
       await gateway.close()
       gatewayClosed = true
       await clickAddressBarRetrying(chrome, `${ORIGIN}/`)
       const reopened = await waitForTab(chrome, { address: `${ORIGIN}/`, title: 'eth app' })
-      const view = findViewShowing(running, chrome, `${ORIGIN}/`)
-      const ran = view === undefined ? null : await evaluateRetrying(view, () => document.body.dataset['app'] ?? null)
+      // The tab already showed this address and title before the reload, and installing swaps
+      // its view, so poll whichever view shows it until the script's mark is there.
+      let ran: string | null = null
+      await waitFor(async () => {
+        const view = findViewShowing(running, chrome, `${ORIGIN}/`)
+        ran = view === undefined ? null : await evaluateRetrying(view, () => document.body.dataset['app'] ?? null).catch(() => null)
+        return ran === 'ran'
+      }, 10_000)
       check(`with the gateway gone, it opens from its pin and its script runs (${String(ran)})`, reopened.ok && ran === 'ran')
 
       expect(pin.content).toEqual({ cid: root, via: 'ipfs', pointersVerified: true })

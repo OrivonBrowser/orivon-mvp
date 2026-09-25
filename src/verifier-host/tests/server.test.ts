@@ -60,6 +60,7 @@ function streamed (signal: AbortSignal | undefined): GatheredFile {
 }
 
 const opened: string[] = []
+const partitions: string[] = []
 const site: MountedSite = {
   gatherer: 'stub',
   root: { kind: 'ipfs', cid: ROOT },
@@ -76,11 +77,11 @@ const resolver: NameResolver = {
   topLevelDomains: ['eth'],
   resolve: async (name) => {
     if (name === 'syncing.eth') throw new ResolutionError('not-synced', 'light client syncing')
-    if (name === 'site.eth') return [record]
+    if (name === 'site.eth' || name === 'part.eth' || name === 'own.eth') return [record]
     throw new ResolutionError('not-found', 'no such name')
   }
 }
-const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
+const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async (_name, _records, _signal, partition) => { partitions.push(partition ?? ''); return site } }
 
 const certificate = createRunCertificate()
 let server: Server
@@ -165,6 +166,24 @@ describe('the .eth loopback server', () => {
   it('serves a name on its default port only, since each other port would be another origin', async () => {
     expect((await get('/', { host: 'site.eth:443', servername: 'site.eth' })).status).toBe(200)
     expect((await get('/', { host: 'site.eth:8443', servername: 'site.eth' })).status).toBe(421)
+  })
+
+  it('mounts per top-level page origin, and mounts a request with none afresh every time, keeping nothing', async () => {
+    partitions.length = 0
+    await get('/app.js', { host: 'part.eth', headers: { 'x-orivon-partition': 'https://news.example' } })
+    await get('/app.js', { host: 'part.eth', headers: { 'x-orivon-partition': 'https://news.example' } })
+    await get('/app.js', { host: 'part.eth', headers: { 'x-orivon-partition': 'https://tracker.example' } })
+    await get('/app.js', { host: 'part.eth', headers: { 'sec-fetch-site': 'cross-site' } })
+    await get('/app.js', { host: 'part.eth', headers: { 'sec-fetch-site': 'cross-site' } })
+    await get('/app.js', { host: 'part.eth', headers: { 'x-orivon-partition': 'not an origin' } })
+    expect(partitions).toEqual(['https://news.example', 'https://tracker.example', '', '', ''])
+  })
+
+  it("gives a request no page started, or the name's own worker made, the name's own partition", async () => {
+    partitions.length = 0
+    await get('/favicon.ico', { host: 'own.eth', headers: { 'sec-fetch-site': 'none' } })
+    await get('/sw.js', { host: 'own.eth', headers: { 'sec-fetch-site': 'same-origin' } })
+    expect(partitions).toEqual(['https://own.eth'])
   })
 
   it('refuses a request target that would read as an authority, and keeps serving', async () => {
