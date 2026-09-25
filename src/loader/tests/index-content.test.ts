@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ContentAddress } from '../../broker/policy/pin.js'
-import { CONTENT_ROOT_HEADER, PARTITION_HEADER } from '../content-root.js'
+import { CONTENT_ROOT_HEADER } from '../content-root.js'
 import type { Fetch } from '../fetch-bundle.js'
 import { createLoader } from '../index.js'
 import type { LoadContext } from '../index.js'
@@ -16,13 +16,13 @@ const CID = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'
 const NEXT_CID = 'bafybeifnx3u22ngv4ygpnj32qkwzrpgizw4i7e3swp4v6am5piiih3ude4'
 const CONTENT: ContentAddress = { cid: CID, via: 'ipfs', block: 20_000_000, pointersVerified: true }
 
-function recording (html: string): { fetch: Fetch, seen: Array<{ url: string, root: string | undefined, partition: string | undefined }> } {
+function recording (html: string): { fetch: Fetch, seen: Array<{ url: string, root: string | undefined }> } {
   const inner = stubFetch({ [MANIFEST_URL]: { body: utf8(manifestJson()) }, [`${ORIGIN}/index.html`]: { body: utf8(html) } })
-  const seen: Array<{ url: string, root: string | undefined, partition: string | undefined }> = []
+  const seen: Array<{ url: string, root: string | undefined }> = []
   return {
     seen,
     fetch: async (url, pinned, signal, headers) => {
-      seen.push({ url, root: headers?.[CONTENT_ROOT_HEADER], partition: headers?.[PARTITION_HEADER] })
+      seen.push({ url, root: headers?.[CONTENT_ROOT_HEADER] })
       return await inner(url, pinned, signal, headers)
     }
   }
@@ -40,8 +40,6 @@ describe('createLoader: a bundle from a content-addressed origin', () => {
     expect((await l.load(ORIGIN, NO_GRANTS)).outcome).toBe('installed')
     expect(seen.length).toBeGreaterThan(1)
     expect(seen.every((request) => request.root === CID)).toBe(true)
-    // The origin's own verifier cache: the one a tab showing it uses.
-    expect(seen.every((request) => request.partition === ORIGIN)).toBe(true)
     expect((await l.pinFor(ORIGIN))?.content).toEqual(CONTENT)
   })
 
@@ -88,7 +86,7 @@ describe('createLoader: a bundle from a content-addressed origin', () => {
     const storage = memoryStorage()
     const { fetch, seen } = recording('<!doctype html>v1')
     expect((await loader(storage, fetch, async () => undefined).load(ORIGIN, NO_GRANTS)).outcome).toBe('installed')
-    expect(seen.every((request) => request.root === undefined && request.partition === undefined)).toBe(true)
+    expect(seen.every((request) => request.root === undefined)).toBe(true)
     expect(await loader(storage, fetch, async () => undefined).pinFor(ORIGIN)).not.toHaveProperty('content')
   })
 })

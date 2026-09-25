@@ -43,8 +43,9 @@ export class Sites {
     private readonly timeoutMs = MOUNT_TIMEOUT_MS
   ) {}
 
-  /** Throws a ResolutionError. */
-  async get (host: string, partition: string): Promise<SiteRecord> {
+  /** Throws a ResolutionError. With no partition the mount is served once and never kept, nor are its blocks. */
+  async get (host: string, partition: string | undefined): Promise<SiteRecord> {
+    if (partition === undefined) return await this.mount(host, undefined)
     const key = `${partition} ${host}`
     const current = this.entries.get(key)
     if (current !== undefined && current.expires > this.now()) {
@@ -90,7 +91,7 @@ export class Sites {
     this.entries.clear()
   }
 
-  private async mount (host: string, partition: string): Promise<SiteRecord> {
+  private async mount (host: string, partition: string | undefined): Promise<SiteRecord> {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<never>((_resolve, reject) => {

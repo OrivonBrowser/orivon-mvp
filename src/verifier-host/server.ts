@@ -39,19 +39,21 @@ function hostOf (req: IncomingMessage): string | undefined {
 
 /** An origin, as the shell names a request's top-level page; nothing else is taken as a partition. */
 const PARTITION = /^[a-z][a-z0-9+.-]*:\/\/[\x21-\x7e]{1,253}$/
-let unpartitioned = 0
 
 /**
- * The cache this request may use: the one the shell named for its top-level
- * page; the name's own, for a request the browser itself made (its favicon
- * fetch), which Chromium marks `Sec-Fetch-Site: none` and no page can; and
- * otherwise one of its own that nothing else shares.
+ * The cache this request may use, or undefined for none at all:
+ * - the one the shell named for the request's top-level page;
+ * - the name's own, for a request no page started (the browser's favicon
+ *   fetch, the loader), which Chromium marks `Sec-Fetch-Site: none`, or one
+ *   the name's own worker made, marked `same-origin`: neither mark can be
+ *   forged, and the shell strips any partition a frameless request set;
+ * - otherwise none: the request is served, and nothing it fetched is kept.
  */
-function partitionOf (req: IncomingMessage, host: string): string {
+function partitionOf (req: IncomingMessage, host: string): string | undefined {
   const named = req.headers[PARTITION_HEADER]
   if (typeof named === 'string' && PARTITION.test(named)) return named
-  if (req.headers['sec-fetch-site'] === 'none') return `https://${host}`
-  return `unpartitioned:${String(unpartitioned++)}`
+  const site = req.headers['sec-fetch-site']
+  return site === 'none' || site === 'same-origin' ? `https://${host}` : undefined
 }
 
 /** The path of an origin-form request target. `//x/y` would read as an authority, so it is refused, not reinterpreted. */

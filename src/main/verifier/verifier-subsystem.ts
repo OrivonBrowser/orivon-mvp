@@ -55,9 +55,9 @@ function installCertificateCheck (target: Session): void {
 
 /**
  * Stamps every page's `.eth` request with the partition its top-level page
- * owns, overwriting anything the page set. A request from no page (the
- * loader's, which names its own) passes as it came. Installed on the
- * default session only: see README.md's Design notes for why no other.
+ * owns, and strips whatever a request set itself: a worker's request has no
+ * frame, and could otherwise name any partition. Installed on the default
+ * session only: see README.md's Design notes for why no other.
  */
 function installPartitionStamp (target: Session): void {
   target.webRequest.onBeforeSendHeaders({ urls: ['https://*.eth/*'] }, (details, callback) => {
@@ -67,12 +67,7 @@ function installPartitionStamp (target: Session): void {
     } catch {
       frame = undefined
     }
-    if (frame == null && details.webContents === undefined) {
-      callback({})
-      return
-    }
-    const topUrl = frame?.top?.url ?? details.webContents?.getURL()
-    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl })
+    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
     callback({ requestHeaders: withPartition(details.requestHeaders, PARTITION_HEADER, partition) })
   })
 }

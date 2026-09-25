@@ -120,10 +120,10 @@ own content.
 
 ## Amendment, 2026-09-25: DNSLink names are Level 2, the anchor is confirmed, caches are per site
 
-**A DNSLink name is Website Level 2.** The owner settled that a site meets DDOC, and so is Level 2,
-when its files match the hashes its owner published, whatever holds that anchor: a tree on the
-site's own host counts (`ADR-0029`). IPFS content meets DDOC by design, so a name whose last hop is
-a DNSLink is Level 2 as well. The DNS hop stays unproven: the evidence names it, and the delivery
+**A DNSLink name is Website Level 2**, *provisionally*, until the owner confirms it. The owner
+settled that a site meets DDOC, and so is Level 2, when its files match the hashes its owner
+published, whatever holds that anchor: a tree on the site's own host counts (`ADR-0029`). IPFS
+content meets DDOC by design, so a name whose last hop is a DNSLink follows as Level 2. The DNS hop stays unproven: the evidence names it, and the delivery
 ladder leaves D4 unmet. The gatherer's DDOC report is therefore met or failed; whether the
 pointers were proven is read from the pointers themselves.
 
@@ -134,11 +134,24 @@ provisional part proposed.
 are keyed by the top-level page origin a request belongs to, the way Chromium partitions its own
 HTTP cache, and the verifier host bypasses Electron's HTTP cache. The shell stamps every page's
 `.eth` request with that origin in a `webRequest` listener on the default session, where every
-page that can reach the verifier runs, overwriting anything the page set; a top-level navigation belongs to the page it opens; a request the browser makes
-itself (`Sec-Fetch-Site: none`, its favicon fetch) uses the name's own; anything else shares
-nothing. Two channels remain, both ones browsers with partitioned caches also have: a page that
-opens a name as a top-level window and times it probes that name's own partition, and the four
-mount slots and eight gateway slots are shared, so one site's load can slow another's.
+page that can reach the verifier runs, and strips whatever a request set itself; a top-level
+navigation belongs to the page it opens. A request with no frame gets the name's own partition
+only when Chromium marks it as started by no page (`Sec-Fetch-Site: none`: the favicon fetch, the
+loader) or as the name's own worker's (`same-origin`), marks no page can forge. Any other request
+is served and nothing it fetched is kept.
+
+What remains:
+- **As in any browser with partitioned caches:** a page that opens a name as a top-level window,
+  and times it, probes that name's own partition; the four mount slots and eight gateway slots are
+  shared, so one site's load can slow another's; and the verifier's caches are bounded (64 names,
+  64 MB of blocks), so a page that fills them can tell how much other `.eth` activity there was,
+  though not which names.
+- **A `.eth` site embedded on another site** can learn one bit about itself: its own worker's
+  requests use its own partition, warm if the person opened it as a top-level page.
+- **Outside the verifier:** fetching a rare CID warms a public gateway's edge cache near the
+  person, and any page can time a gateway itself. Nothing on this machine can partition that.
+  Whether the light client caches proofs between calls is not measured; if it does, the window
+  is about one block.
 
 ## Reversibility
 

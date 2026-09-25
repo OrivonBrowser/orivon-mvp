@@ -76,10 +76,13 @@ five seconds, so a page's burst of requests fails once.
 `partitionOf`). A partition is the top-level page origin a request belongs to, which the shell
 stamps on every page's request (`src/main/verifier/partition.ts`), the way Chromium partitions its
 own HTTP cache. Without it any page could request `https://<name>.eth/` and learn from the answer's
-speed whether the person had opened that name in the last two minutes. A request the browser
-itself made carries `Sec-Fetch-Site: none`, which no page can send, and uses the name's own
-partition, the one its tab uses; any other request that names none gets a partition of its own
-and shares nothing. For the same reason [`entry.ts`](entry.ts) bypasses Electron's HTTP cache.
+speed whether the person had opened that name in the last two minutes. The shell strips any
+partition a request set itself, because a worker's request has no frame to stamp from. Such a
+request uses the name's own partition, the one its tab uses, only when Chromium marks it as
+started by no page (`Sec-Fetch-Site: none`: the favicon fetch, the loader) or as the name's own
+worker's (`same-origin`); no page can forge either mark. Any other is served, and neither its
+mount nor its blocks are kept, so it cannot evict a partition's entries either. For the same
+reason [`entry.ts`](entry.ts) bypasses Electron's HTTP cache.
 
 **An install pins its root** ([`server.ts`](server.ts)). The loader names the root CID it began
 with on every request of one install, and the server answers `409` once the name points elsewhere.

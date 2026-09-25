@@ -29,7 +29,7 @@ export interface GatheredFile {
 
 /**
  * DDOC as the site's own bytes have shown it so far, for as long as it
- * stays mounted: every tab showing it, and the loader, add to one report.
+ * stays mounted: every request in its partition adds to one report.
  * `met`: every byte served was checked against the content's hashes, which
  * is how IPFS content meets DDOC by design. `failed`: a resource could not
  * be served verified from any source. Whether the name's pointers to the
@@ -66,7 +66,7 @@ export interface DataGatherer {
   /**
    * Throws a ResolutionError. `partition` names the cache the mount may
    * share with earlier ones; mounts in different partitions share nothing a
-   * page could time.
+   * page could time, and a mount with none keeps nothing it fetched.
    */
   mount: (name: string, records: readonly NameRecord[], signal?: AbortSignal, partition?: string) => Promise<MountedSite>
 }

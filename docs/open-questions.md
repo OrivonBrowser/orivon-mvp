@@ -9325,6 +9325,6 @@ another site; or pad every answer to a fixed floor, which slows every `.eth` loa
 mounts and verified blocks are keyed by the top-level page origin each request belongs to, which
 the shell stamps on every page's `.eth` request; the verifier host bypasses the HTTP cache.
 `test/e2e-eth-partition.test.ts` shows another site's first request finding a name cold. What
-remains is what any browser with a partitioned cache keeps: a page can open a name as a
-top-level window and time that, and shared concurrency slots can be contended
-(`ADR-0030`'s 2026-09-25 amendment).
+remains is listed in `ADR-0030`'s 2026-09-25 amendment: chiefly what any browser with a
+partitioned cache keeps (a top-level window opened on a name, shared slots), and public gateways'
+own edge caches, which nothing on this machine can partition.

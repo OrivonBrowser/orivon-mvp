@@ -12,12 +12,21 @@ import { BlockRefused, checkCidAccepted, inlineBlock, verifyBlock } from './veri
 
 const CACHE_BYTES = 64 * 1024 * 1024
 
+/** Where verified blocks are kept between requests, keyed by partition as well as CID. */
+export interface BlockMemory {
+  remember: (partition: string, key: string, block: Uint8Array) => void
+  recall: (partition: string, key: string) => Uint8Array | undefined
+}
+
+/** For a mount with no partition: it keeps nothing, so nothing it fetched can be timed later. */
+export const NO_BLOCK_MEMORY: BlockMemory = { remember: () => {}, recall: () => undefined }
+
 /**
  * Verified blocks, least recently used dropped first, keyed by partition as
  * well as CID: a block one site's pages fetched answers another site's
  * request no faster, so its timing tells that site nothing (A256).
  */
-export class BlockCache {
+export class BlockCache implements BlockMemory {
   private readonly blocks = new Map<string, Uint8Array>()
   private bytes = 0
 
@@ -47,7 +56,7 @@ export class BlockSource {
     private readonly fetch: Fetch,
     private readonly pool: GatewayPool,
     readonly limits: IpfsLimits,
-    private readonly cache: BlockCache = new BlockCache(),
+    private readonly cache: BlockMemory = new BlockCache(),
     private readonly partition = ''
   ) {}
 

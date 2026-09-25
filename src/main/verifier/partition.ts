@@ -21,8 +21,8 @@ function originOf (url: string): string | undefined {
 
 /**
  * A navigation of the top-level page belongs to the page it opens; anything
- * else to the page on top. Undefined when neither has an origin, so the
- * request gets a cache of its own.
+ * else to the page on top. Undefined when there is no frame to ask, or it
+ * has no origin: the verifier then decides from the request itself.
  */
 export function requestPartition (request: PageRequest): string | undefined {
   if (request.resourceType === 'mainFrame') return originOf(request.url)

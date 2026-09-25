@@ -79,7 +79,7 @@ export function buildSiteTrust (
   const ddoc = ddocVerdict(pin, published)
   return {
     connection,
-    level: websiteLevel(name?.content, ddoc, pin?.bundleHash),
+    level: websiteLevel(name?.content, ddoc, pin?.bundleHash, servedFromCache),
     delivery,
     pin: pin === null ? undefined : { bundleHash: pin.bundleHash, version: pin.version, pinnedAt: pin.pinnedAt },
     ddoc,

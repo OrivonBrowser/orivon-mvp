@@ -89,4 +89,13 @@ describe('Sites', () => {
     await sites.get('a.eth', 'https://one.example')
     expect(calls.n).toBe(2)
   })
+
+  it('mounts a request with no partition every time, and keeps none of those mounts', async () => {
+    const { registry: r, calls } = registry(async () => [record])
+    const sites = new Sites(r)
+    await sites.get('kept.eth', P)
+    for (let i = 0; i < MAX_SITES + 5; i++) await sites.get('loose.eth', undefined)
+    expect(calls.n).toBe(MAX_SITES + 6)
+    expect(await sites.current('kept.eth', P)).toBeDefined()
+  })
 })

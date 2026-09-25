@@ -349,7 +349,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
       await saveCheckRecord(options.storage, origin, checkRecord(options.now(), validators, previous?.manifestLeaf))
       return { outcome: 'up-to-date', canonicalOrigin: origin }
     }
-    const fetched = await fetchBundle(pinnedToRoot(options.fetch, content?.cid, origin), hintedUrl, options.resolve, options.storage, undefined, validators)
+    const fetched = await fetchBundle(pinnedToRoot(options.fetch, content?.cid), hintedUrl, options.resolve, options.storage, undefined, validators)
     if ('notModified' in fetched) {
       await saveCheckRecord(options.storage, origin, checkRecord(options.now(), validators, previous?.manifestLeaf))
       return { outcome: 'up-to-date', canonicalOrigin: origin }
@@ -366,10 +366,9 @@ export function createLoader (options: CreateLoaderOptions): Loader {
   }
 
   async function checkInFull (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
-    const origin = originFromUrl(hintedUrl)
-    const content = await contentOf(origin)
+    const content = await contentOf(originFromUrl(hintedUrl))
     if (content !== undefined && 'outcome' in content) return content
-    const fetched = await fetchBundle(pinnedToRoot(options.fetch, content?.cid, origin ?? hintedUrl), hintedUrl, options.resolve, options.storage)
+    const fetched = await fetchBundle(pinnedToRoot(options.fetch, content?.cid), hintedUrl, options.resolve, options.storage)
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
     return await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, content, context)
   }

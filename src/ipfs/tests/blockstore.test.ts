@@ -5,7 +5,7 @@ import { sha512 } from 'multiformats/hashes/sha2'
 import * as Digest from 'multiformats/hashes/digest'
 import * as dagPb from '@ipld/dag-pb'
 import type { Refusal } from '../../resolution/providers.js'
-import { BlockCache, BlockSource, blockstoreFor } from '../blockstore.js'
+import { BlockCache, BlockSource, NO_BLOCK_MEMORY, blockstoreFor } from '../blockstore.js'
 import { GatewayPool } from '../gateways.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import type { IpfsLimits } from '../limits.js'
@@ -141,6 +141,14 @@ describe('blockstoreFor', () => {
     await one.get(leaf, signal, () => {})
     expect(gateways.requests).toHaveLength(1)
     await two.get(leaf, signal, () => {})
+    expect(gateways.requests).toHaveLength(2)
+  })
+
+  it('keeps nothing for a source with no memory, so every get asks a gateway', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    const uncached = new BlockSource(gateways.fetch, new GatewayPool([A, B], 4), DEFAULT_LIMITS, NO_BLOCK_MEMORY)
+    await uncached.get(leaf, signal, () => {})
+    await uncached.get(leaf, signal, () => {})
     expect(gateways.requests).toHaveLength(2)
   })
 

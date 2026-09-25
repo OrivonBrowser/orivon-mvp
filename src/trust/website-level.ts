@@ -34,9 +34,11 @@ function contentLevel (content: ContentEvidence): { level: ObservedLevel, becaus
     : { level: 2, because: `${checked} against the content a DNSLink record names. That record is ordinary DNS, which the delivery rungs below show unproven.` }
 }
 
-function hostedLevel (ddoc: DdocVerdict): { level: ObservedLevel, because: string } {
+function hostedLevel (ddoc: DdocVerdict, servedFromPin: boolean): { level: ObservedLevel, because: string } {
   switch (ddoc.status) {
-    case 'verified': return { level: 2, because: 'Its installed files match the hash tree this site publishes, which is DDOC. The tree sits on the site\'s own host.' }
+    case 'verified': return servedFromPin
+      ? { level: 2, because: 'Its installed files match the hash tree this site publishes, which is DDOC. The tree sits on the site\'s own host.' }
+      : { level: 1, because: 'Its installed files match the hash tree this site publishes, but this page was not served from them.' }
     case 'failed': return { level: 1, because: 'Its installed files differ from the hash tree this site publishes. Someone may have altered them.' }
     case 'not-published': return { level: 1, because: 'This site publishes no hash tree, so nothing ties its files to what its owner published.' }
     case 'not-checked': return { level: 1, because: 'This site is not installed, so its files have not been checked against any hash tree.' }
@@ -50,9 +52,9 @@ function hostedLevel (ddoc: DdocVerdict): { level: ObservedLevel, because: strin
  * anchor is held, a name proven on Ethereum or a DNS record, is evidence
  * beside the level, never part of it.
  */
-export function websiteLevel (content: ContentEvidence | undefined, ddoc: DdocVerdict, bundleHash: string | undefined): WebsiteLevel {
+export function websiteLevel (content: ContentEvidence | undefined, ddoc: DdocVerdict, bundleHash: string | undefined, servedFromPin: boolean): WebsiteLevel {
   const assessable = content !== undefined
     ? { kind: 'cid' as const, value: content.cid }
     : bundleHash !== undefined ? { kind: 'bundle-hash' as const, value: bundleHash } : undefined
-  return { ...(content !== undefined ? contentLevel(content) : hostedLevel(ddoc)), assessable }
+  return { ...(content !== undefined ? contentLevel(content) : hostedLevel(ddoc, servedFromPin)), assessable }
 }
