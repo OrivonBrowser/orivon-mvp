@@ -45,11 +45,12 @@ describe('the IPFS gatherer', () => {
     expect(site.ddoc()).toEqual({ status: 'met', refusals: [] })
   })
 
-  it('does not meet DDOC through a DNSLink, naming the domain, though every byte is still verified', async () => {
+  it('meets DDOC through a DNSLink too, every byte verified, and records the DNS hop among its pointers', async () => {
     const txt = { '_dnslink.app.example': `/ipfs/${dag.root.toString()}` }
     const site = await gatherer(undefined, txt).mount('uniswap.eth', [onChain({ kind: 'dnslink', domain: 'app.example' })])
     expect(await read(site, '/app.js')).toBe('run()')
-    expect(site.ddoc()).toEqual({ status: 'not-met', reason: 'via DNS: app.example', refusals: [] })
+    expect(site.ddoc()).toEqual({ status: 'met', refusals: [] })
+    expect(site.pointers.at(-1)).toMatchObject({ step: 'dnslink', domain: 'app.example' })
   })
 
   it('still meets DDOC when a gateway lied and another served verified bytes, and names the refusal', async () => {

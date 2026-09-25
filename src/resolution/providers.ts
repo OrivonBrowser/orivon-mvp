@@ -28,16 +28,16 @@ export interface GatheredFile {
 }
 
 /**
- * What the site's own bytes have shown so far, for as long as it stays
- * mounted: every tab showing it, and the loader, add to one report. `met`: every
- * pointer from the name to the root was verified, and every byte served
- * was. `not-met`: a pointer could not be verified (DNSLink), though the
- * bytes still were, against the root that pointer named. `failed`: a
- * resource could not be served verified from any source.
+ * DDOC as the site's own bytes have shown it so far, for as long as it
+ * stays mounted: every tab showing it, and the loader, add to one report.
+ * `met`: every byte served was checked against the content's hashes, which
+ * is how IPFS content meets DDOC by design. `failed`: a resource could not
+ * be served verified from any source. Whether the name's pointers to the
+ * content were proven is a separate question, answered by the site's
+ * `pointers` (`pointer-chain.ts`).
  */
 export type DdocReport =
   | { readonly status: 'met', readonly refusals: readonly Refusal[] }
-  | { readonly status: 'not-met', readonly reason: string, readonly refusals: readonly Refusal[] }
   | { readonly status: 'failed', readonly resource: string, readonly refusals: readonly Refusal[] }
 
 /** A source that sent bytes which failed verification. Nothing it sent was used. */

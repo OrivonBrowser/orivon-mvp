@@ -1,10 +1,9 @@
 // The IPFS DataGatherer: from a name's records to a mounted site whose every
-// served byte was verified, with the DDOC report of one navigation.
+// served byte was verified, with the DDOC report of its mount.
 
 import { ResolutionError } from '../resolution/records.js'
 import type { NameRecord, PointerStep } from '../resolution/records.js'
 import type { DataGatherer, DdocReport, MountedSite, Refusal } from '../resolution/providers.js'
-import { pointerChainVerdict } from '../resolution/pointer-chain.js'
 import { BlockCache, BlockSource } from './blockstore.js'
 import type { ResolveTxt } from './dnslink.js'
 import { GatewayPool } from './gateways.js'
@@ -31,13 +30,6 @@ const LOADABLE = new Set(['ipfs', 'ipns-key', 'dnslink'])
 
 function loadable (records: readonly NameRecord[]): NameRecord | undefined {
   return records.find((r) => LOADABLE.has(r.pointer.kind))
-}
-
-function unverifiedReason (step: PointerStep | undefined): string {
-  if (step === undefined) return 'no pointer to the content was proven'
-  if (step.step === 'dnslink') return `via DNS: ${step.domain}`
-  if (step.step === 'contenthash' && step.provenance.via === 'dns') return `name read from DNS: ${step.provenance.domain}`
-  return 'a pointer to the content was not proven'
 }
 
 export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer {
@@ -67,7 +59,6 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
         throw new ResolutionError('unsupported', (error as Error).message)
       }
       const pointers: PointerStep[] = [{ step: 'contenthash', name, pointer: record.pointer, provenance: record.provenance }, ...steps]
-      const chain = pointerChainVerdict(pointers)
       let failedResource: string | undefined
 
       /** Only a lie or a broken limit fails DDOC; nobody answering, or a missing path, does not. */
@@ -103,7 +94,6 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
         ddoc (): DdocReport {
           const seen = [...refusals]
           if (failedResource !== undefined) return { status: 'failed', resource: failedResource, refusals: seen }
-          if (!chain.verified) return { status: 'not-met', reason: unverifiedReason(chain.unverified), refusals: seen }
           return { status: 'met', refusals: seen }
         }
       }
