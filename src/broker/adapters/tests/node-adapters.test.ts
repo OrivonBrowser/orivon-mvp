@@ -282,11 +282,11 @@ describe('net.listen end to end: a real accepted connection, a real denial, a re
     })
   }
 
-  it('denies net.listen outright when tcp.listen was never granted', async () => {
+  it('denies net.listen outright when tcp.listen.network was never granted', async () => {
     const broker = realBroker()
     broker.registerApp(APP, {
       orivonApiVersion: 0, id: 'org.orivon.test', name: 'Test', version: '1.0.0', entry: '/index.html',
-      capabilities: { net: { tcp: { listen: ['30030-30040'] } } }
+      capabilities: { net: { tcp: { listen: { network: ['30030-30040'] } } } }
     })
 
     await expect(broker.net.listen(APP, { port: 30030 })).rejects.toMatchObject({ code: 'denied' })
@@ -296,9 +296,9 @@ describe('net.listen end to end: a real accepted connection, a real denial, a re
     const broker = realBroker()
     broker.registerApp(APP, {
       orivonApiVersion: 0, id: 'org.orivon.test', name: 'Test', version: '1.0.0', entry: '/index.html',
-      capabilities: { net: { tcp: { listen: ['30030-30040'] } } }
+      capabilities: { net: { tcp: { listen: { network: ['30030-30040'] } } } }
     })
-    const grant = await broker.grant(APP, 'tcp.listen', ['30030-30040'])
+    const grant = await broker.grant(APP, 'tcp.listen.network', ['30030-30040'])
 
     const server = await broker.net.listen(APP, { port: 0 })
     expect(server.localPort).toBeGreaterThanOrEqual(30030)

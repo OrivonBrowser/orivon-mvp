@@ -108,6 +108,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0105` | 2026-09-24 | The roadmap: there is no flagship app. Build step 4 is the app loader with DDOC among its features; step 5 ports Node.js desktop apps as the platform's test cases; step 6 is ENS and IPFS, trust-minimised; the trust indicator is step 7. The torrent app and Nostr identity are ideas, not build steps. Journeys 1 and 3 become a ported desktop app from a URL and a verified `.eth` name. Owner | [`ADR-0001`](ADR-0001-flagship-app-bittorrent-streaming.md), `../mvp-scope.md`, `../planning/build-plan.md`, A249 |
 | `d-0106` | 2026-09-24 | Judged score levels are in scope; their provider need not be trustless, and may be local. Owner | [`ADR-0006`](ADR-0006-trust-indicator-from-observed-behaviour.md), `../mvp-scope.md`, A250 |
 | `d-0107` | 2026-09-24 | DDOC's off-host anchor is in scope, as the `.eth` name's ENS record read at build step 6; a DNS record stays out. Owner | [`ADR-0029`](ADR-0029-sites-publish-their-bundle-hash-tree.md), `../mvp-scope.md` |
+| `d-0108` | 2026-09-25 | `net.listen`/`udpBind` split into `local`/`network` scopes, nested under `BindScopes` in the manifest, applying to both TCP and UDP. A ported app asking for every interface under a local-only grant binds loopback instead of being refused. Owner | [`ADR-0034`](ADR-0034-listening-is-local-unless-the-app-declares-the-network.md), A225, `../architecture/security-model.md` T12 |
 
 ## Directives
 

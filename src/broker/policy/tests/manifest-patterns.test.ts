@@ -16,15 +16,30 @@ describe('patternSetFromCapabilities', () => {
   it('maps every tcp/udp field that is present, preserving its patterns', () => {
     const capabilities: Capabilities = {
       net: {
-        tcp: { connect: ['api.example.com:443'], listen: ['6881-6889'] },
-        udp: { bind: ['6881-6889'], send: ['*:*'] }
+        tcp: { connect: ['api.example.com:443'], listen: { network: ['6881-6889'] } },
+        udp: { bind: { network: ['6881-6889'] }, send: ['*:*'] }
       }
     }
     expect(patternSetFromCapabilities(capabilities)).toEqual({
       'tcp.connect': ['api.example.com:443'],
-      'tcp.listen': ['6881-6889'],
-      'udp.bind': ['6881-6889'],
+      'tcp.listen.network': ['6881-6889'],
+      'udp.bind.network': ['6881-6889'],
       'udp.send': ['*:*']
+    })
+  })
+
+  it('maps both bind scopes independently when a manifest declares both (ADR-0034)', () => {
+    const capabilities: Capabilities = {
+      net: {
+        tcp: { listen: { local: ['8080'], network: ['6881-6889'] } },
+        udp: { bind: { local: ['9000'], network: ['6881'] } }
+      }
+    }
+    expect(patternSetFromCapabilities(capabilities)).toEqual({
+      'tcp.listen.local': ['8080'],
+      'tcp.listen.network': ['6881-6889'],
+      'udp.bind.local': ['9000'],
+      'udp.bind.network': ['6881']
     })
   })
 
@@ -70,8 +85,8 @@ describe('patternSetFromCapabilities', () => {
   it('the torrent example manifest (capability-api.md) maps every kind', () => {
     const capabilities: Capabilities = {
       net: {
-        tcp: { connect: ['*:*'], listen: ['6881-6889'] },
-        udp: { bind: ['6881-6889'], send: ['*:*'] }
+        tcp: { connect: ['*:*'], listen: { network: ['6881-6889'] } },
+        udp: { bind: { network: ['6881-6889'] }, send: ['*:*'] }
       },
       fs: { quotaBytes: 53687091200 },
       id: { curves: ['secp256k1'] },
@@ -79,8 +94,8 @@ describe('patternSetFromCapabilities', () => {
     }
     expect(patternSetFromCapabilities(capabilities)).toEqual({
       'tcp.connect': ['*:*'],
-      'tcp.listen': ['6881-6889'],
-      'udp.bind': ['6881-6889'],
+      'tcp.listen.network': ['6881-6889'],
+      'udp.bind.network': ['6881-6889'],
       'udp.send': ['*:*'],
       fs: [],
       id: []

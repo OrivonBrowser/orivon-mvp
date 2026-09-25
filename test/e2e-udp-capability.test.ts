@@ -233,7 +233,7 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
       name: 'Orivon Fixture (udp)',
       version: '0.1.0',
       entry: 'index.html',
-      capabilities: { net: { udp: { bind: [BIND_RANGE], send: [`${HOST}:${String(UDP_ECHO_PORT)}`] } } }
+      capabilities: { net: { udp: { bind: { network: [BIND_RANGE] }, send: [`${HOST}:${String(UDP_ECHO_PORT)}`] } } }
     }
 
     // THE GRANT ITSELF, through src/main/dev-grant.ts's hook rather than
@@ -246,7 +246,7 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
     const grantUdp = async (capability: DevGrantRequest['capability'], patterns: DevGrantRequest['patterns']): Promise<void> => {
       await grant({ origin: FIXTURE_ORIGIN, manifest: fixtureManifest, capability, patterns })
     }
-    await grantUdp('udp.bind', [BIND_RANGE])
+    await grantUdp('udp.bind.network', [BIND_RANGE])
     await grantUdp('udp.send', [`${HOST}:${String(UDP_ECHO_PORT)}`])
 
     // ---- the bind lands inside what was granted
