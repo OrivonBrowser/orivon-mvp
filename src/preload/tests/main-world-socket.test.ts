@@ -541,10 +541,13 @@ function isStale (builtPath: string): boolean {
   const builtAt = statSync(builtPath).mtimeMs
   // Both directories, because the bundle inlines contracts/ as well as this
   // file's own sources -- a stale contracts constant would be just as wrong.
+  // Recursive: src/preload is split into job folders (surface/, ports/,
+  // routed/), and a non-recursive listing would stop seeing them. Tests are
+  // excluded -- editing a test should never force a rebuild.
   return ['src/preload', 'src/contracts'].some((dir) => {
     const full = resolve(process.cwd(), dir)
-    return readdirSync(full)
-      .filter((name) => name.endsWith('.ts'))
+    return readdirSync(full, { recursive: true, encoding: 'utf8' })
+      .filter((name) => name.endsWith('.ts') && !name.includes('tests/'))
       .some((name) => statSync(join(full, name)).mtimeMs > builtAt)
   })
 }
