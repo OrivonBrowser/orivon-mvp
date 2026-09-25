@@ -36,7 +36,7 @@
 // override) is exactly `createDialTls()` with no `ca` argument: it trusts
 // ONLY the runtime's real default certificate store. `createDialTls({ ca })`
 // is a TESTING SEAM that nothing between an app and that file can ever reach
-// -- not net-capability.ts, not a grant, not a manifest -- so there is no
+// -- not capabilities/net.ts, not a grant, not a manifest -- so there is no
 // hermetic way to hand a locally launched, unmodified production build a
 // certificate it will actually trust. Proving a granted byte round trip
 // would need either weakening that trust store for a real launch (the exact
@@ -181,7 +181,7 @@ it('Phase 1: a real net.connectSecure through the full IPC pipe is correctly den
         JSON.stringify(state)
       )
       check(
-        "the denial is SPECIFICALLY the grant check refusing this origin (net-capability.ts's " +
+        "the denial is SPECIFICALLY the grant check refusing this origin (capabilities/net.ts's " +
         'connectSecure(), for want of a grant), matched verbatim so a T3/T13b origin-derivation ' +
         'regression producing the SAME-SHAPED "no authenticated origin" denial does not slide through',
         state.netConnectSecureError?.message === GRANT_DENIAL_MESSAGE,

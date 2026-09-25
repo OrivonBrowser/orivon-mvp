@@ -1,6 +1,6 @@
 // WebContext.evaluate's own result grammar (contracts/handles.ts, ADR-0019):
 // null, boolean, finite number, string, and arrays or plain objects of
-// those -- nothing else. `../web-capability.ts`'s own evaluate() is the one
+// those -- nothing else. `../capabilities/web.ts`'s own evaluate() is the one
 // caller; it substitutes `null` for a bare top-level `undefined` BEFORE
 // calling this (contracts/handles.ts's own carve-out), then measures the
 // byte cap over whatever this accepts. See README.md's Design notes for why

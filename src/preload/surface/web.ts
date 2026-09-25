@@ -61,7 +61,7 @@ export async function webOpenContextBridge (
 ): Promise<MainWorldWebContextBridge> {
   // exactOptionalPropertyTypes: width/height included only when the caller
   // actually passed one, matching every other optional field this codebase
-  // sends over CONTROL_CHANNEL (dispatch-web.ts's own precedent).
+  // sends over CONTROL_CHANNEL (transport/dispatch/web.ts's own precedent).
   const payload: { origin: string, width?: number, height?: number } = { origin: opts.origin }
   if (opts.width !== undefined) payload.width = opts.width
   if (opts.height !== undefined) payload.height = opts.height

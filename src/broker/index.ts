@@ -31,12 +31,12 @@ import { GrantLedger } from './grants/grant-ledger.js'
 import { socketAllowance } from './grants/resource-limits.js'
 import { originFromUrl } from './policy/origin.js'
 import { widensAuthority } from './policy/update.js'
-import { createNetCapability } from './net-capability.js'
-import { createIdCapability } from './id-capability.js'
-import { createWebCapability } from './web-capability.js'
-import { createSecretsCapability } from './secrets-capability.js'
-import { createFsCapability } from './fs-capability.js'
-import { createUserSelectedCapability } from './user-selected-capability.js'
+import { createNetCapability } from './capabilities/net.js'
+import { createIdCapability } from './capabilities/id.js'
+import { createWebCapability } from './capabilities/web.js'
+import { createSecretsCapability } from './capabilities/secrets.js'
+import { createFsCapability } from './capabilities/fs.js'
+import { createUserSelectedCapability } from './capabilities/user-selected.js'
 import { PickedPathLedger } from './grants/picked-path-ledger.js'
 import type { PickedPath } from './grants/picked-path-ledger.js'
 import type {
@@ -86,17 +86,17 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return key
   }
 
-  // orivon.net's three entry points. Lifted to ./net-capability.ts once
+  // orivon.net's three entry points. Lifted to ./capabilities/net.ts once
   // `listen` pushed this file past Rule 2's 500 lines -- see that file's own
   // header, and README.md's design notes, for why the split lands here.
   const net = createNetCapability({ deps, handleTable, ledger, canonical, socketAllowance: socketAllowanceSync })
 
   // orivon.id's two entry points (publicKey, sign) -- built alongside
-  // net-capability.ts from the start rather than inlined here first, for
+  // capabilities/net.ts from the start rather than inlined here first, for
   // the same Rule 2 reason: this file was already 264 lines before `id`.
   // `registeredManifest` (this file's own `canonical`-keyed lookup, above)
   // is what an id grant's EMPTY patterns check against -- see
-  // id-capability.ts's own doc on `requireGrantedCurve` for why.
+  // capabilities/id.ts's own doc on `requireGrantedCurve` for why.
   const id = createIdCapability({ deps, ledger, canonical, manifestFor: registeredManifest })
 
   // orivon.web's three entry points (ADR-0019) -- built the same shape as
@@ -104,7 +104,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // capability shares, so a web.context grant's revocation reaches
   // `handleTable.revoke` the identical, already-wired way this file's own
   // `grant`/`revoke`/`revokePersisted` below already cascade to every other
-  // capability's live handles -- see ./web-capability.ts's own header.
+  // capability's live handles -- see ./capabilities/web.ts's own header.
   const web = createWebCapability({ deps, handleTable, ledger, canonical })
 
   // orivon.secrets's three entry points (ADR-0033) -- built the same shape
@@ -114,12 +114,12 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
   // orivon.fs's eight entry points -- readFile, writeFile, confineSync
   // (ADR-0016) plus queue item 2.1's mkdir/readdir/stat/rm/rename. Lifted to
-  // ./fs-capability.ts for the same Rule 2 reason net/id were: see that
+  // ./capabilities/fs.ts for the same Rule 2 reason net/id were: see that
   // file's own header for the confinement guarantee every one of them shares.
   //
   // userSelected joins the same `fs` object from a SEPARATE factory
-  // (./user-selected-capability.ts) rather than growing inside
-  // fs-capability.ts -- it is authorised by the picker choice, not by the
+  // (./capabilities/user-selected.ts) rather than growing inside
+  // capabilities/fs.ts -- it is authorised by the picker choice, not by the
   // `fs` grant every other method here checks, and that difference is
   // structural (handles.ts's "FileHandle" exception), not cosmetic.
   const fs = { ...createFsCapability({ deps, handleTable, ledger, canonical }), ...createUserSelectedCapability({ deps, handleTable, ledger, pickedPaths, canonical }) }
@@ -150,7 +150,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * `WebContentsView` construction so it can hand a fixed, preload-readable
    * flag over via `webPreferences.additionalArguments` (the same mechanism
    * `newtab.ts` already uses for its own dashboard-URL check). `confineSync`
-   * (`./fs-capability.ts`) is the precedent for a synchronous sibling of an
+   * (`./capabilities/fs.ts`) is the precedent for a synchronous sibling of an
    * already-async method answering the same in-memory ledger state.
    *
    * Reads `registeredManifest`, exactly what the async `manifest` above

@@ -164,7 +164,7 @@ describe('bindUdp -- the inbound window drops rather than grows', () => {
   // KERNEL drops before the window is ever reached, so the assertion would be
   // testing the receive buffer rather than this file. Two 512-byte datagrams
   // fill the window below, which no receive buffer will interfere with. Same
-  // reason ../../transport/port-pump.ts takes `initialCredit` as an option.
+  // reason ../../transport/relay/port-pump.ts takes `initialCredit` as an option.
   const TINY_WINDOW = 1024
   const PAYLOAD = new Uint8Array(512)
 

@@ -16,7 +16,7 @@ import { fail } from '../../errors.js'
 // net.udpBind's own are (the origin comes from the frame, the port goes only
 // to that frame, an abandoned delivery releases the handle) -- what is new
 // is that the server's OWN port later carries AcceptedMessage traffic, which
-// server-relay.test.ts covers; this file is only the control-channel half.
+// transport/relay/tests/server.test.ts covers; this file is only the control-channel half.
 
 async function listen (
   options: { event?: ControlEvent, port?: number, fake?: ReturnType<typeof fakeTcpServer> } = {}
@@ -79,7 +79,7 @@ describe('net.listen over the control channel', () => {
 
   // The out-of-grant / denied path: broker.net.listen itself refuses before
   // any FailableTcpServer ever exists -- this file's own transport plumbing
-  // never runs, matching net-capability.ts's own `listen()` (no grant, no
+  // never runs, matching capabilities/net.ts's own `listen()` (no grant, no
   // acquisition).
   it('propagates a denial from broker.net.listen without ever minting a port pair', async () => {
     const calls: BrokerCall[] = []

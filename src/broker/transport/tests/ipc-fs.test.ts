@@ -14,7 +14,7 @@ import { APP, type BrokerCall, envelope, frameFor, stubBroker } from './ipc.test
 // payload shape and calls the right `broker.fs.*` method with the right
 // arguments. Confinement itself (does the path actually stay inside the
 // app's root) is index-fs-extended.test.ts's job, against the real
-// createBroker/fs-capability.ts stack; a stubBroker here has no path
+// createBroker/capabilities/fs.ts stack; a stubBroker here has no path
 // confinement to get wrong.
 
 describe('the fs control operations', () => {

@@ -1,8 +1,8 @@
 // ADR-0019's Electron half: the real `WebContextHost` (broker/web-context-
-// contracts.ts) src/broker/web-capability.ts calls through `CreateBrokerOptions
+// contracts.ts) src/broker/capabilities/web.ts calls through `CreateBrokerOptions
 // .webContextHost`. Everything security-relevant about the isolated context
 // lives HERE, not in the broker (which stays Electron-free, ../broker/
-// web-capability.ts's own header) -- the partition, the sandboxed/isolated
+// capabilities/web.ts's own header) -- the partition, the sandboxed/isolated
 // WebContentsView, the reach-only network path, and the CORS wrapper the
 // spec's own item 5 asks to keep beside this file rather than in the loader.
 //
@@ -108,7 +108,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
         return slot
       }
     }
-    // broker/web-capability.ts's own HandleTable already enforces
+    // broker/capabilities/web.ts's own HandleTable already enforces
     // LIMITS.webContexts BEFORE this is ever called (assertCapacity, kind
     // 'webContext') -- reaching here means this file's own slot bookkeeping
     // has drifted from the broker's, a bug here, never a real over-budget
@@ -221,7 +221,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
    * learning late that its context is gone is still better than one that
    * never learns at all, so this only logs (`console.error`, this
    * codebase's own convention for a swallowed fault -- see e.g.
-   * ../broker/transport/socket-relay.ts) and still notifies every listener.
+   * ../broker/transport/relay/socket.ts) and still notifies every listener.
    */
   async function handleRenderProcessGone (id: string, platformCode: string): Promise<void> {
     const entry = contexts.get(id)

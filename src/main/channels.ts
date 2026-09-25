@@ -32,7 +32,7 @@ export const CONTROL_CHANNEL = 'orivon:control'
  * handle id CONTROL_CHANNEL's net.connect response also carries. Never a
  * request/reply pair like CONTROL_CHANNEL -- the port itself is the payload
  * that cannot travel over ipcMain.handle/ipcRenderer.invoke. See
- * ../broker/transport/ipc.ts and ../broker/transport/port-pump.ts. */
+ * ../broker/transport/ipc.ts and ../broker/transport/relay/port-pump.ts. */
 export const PORT_CHANNEL = 'orivon:port'
 
 /** Ordinary tab -> broker: orivon.fs.readFileSync (ADR-0016), over

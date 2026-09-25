@@ -616,7 +616,7 @@ describe('exposeOrivon -- fs.open and its handle-scoped siblings', () => {
   })
 })
 
-// A194, d-0032: the FILE shape only -- see dispatch-fs.ts's own comment on
+// A194, d-0032: the FILE shape only -- see transport/dispatch/fs.ts's own comment on
 // why the folder shape (DirectoryHandle) has no page delivery. The type
 // this closure exposes omits `directory` entirely (checked below), and
 // every returned handle reuses fs.open's own read/write/fstat/truncate/

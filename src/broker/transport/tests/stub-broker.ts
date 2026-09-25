@@ -66,7 +66,7 @@ export function stubBroker (
      * or false) AND the FOLDER-returning one (`{ directory: true }`,
      * A195). One override field for both, matching `Broker['fs']
      * .userSelected`'s own overloaded signature (fs-contracts.ts):
-     * ./dispatch-fs.ts's directory case is no longer a before-the-broker
+     * ../dispatch/fs.ts's directory case is no longer a before-the-broker
      * refusal, so a test exercising it needs this stub able to resolve
      * either return shape.
      */

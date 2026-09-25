@@ -9,7 +9,7 @@ decided in `external-links.ts`, and `notifications` (`ADR-0028`), decided in
 `site-notifications.ts` and remembered per site by `notification-decisions.ts`. `tab-prompts.ts` is what each tab remembers between those
 questions. `web-context-host.ts`: ADR-0019's
 Electron half of the isolated `WebContext` — the real `WebContextHost`
-[`../../broker/web-capability.ts`](../../broker/web-capability.ts) calls through
+[`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) calls through
 `CreateBrokerOptions.webContextHost`: the partition, the sandboxed/isolated `WebContentsView`,
 the reach-only network path, and the CORS wrapper.
 
@@ -22,7 +22,7 @@ the reach-only network path, and the CORS wrapper.
 decision files are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in
-[`../../broker/web-capability.ts`](../../broker/web-capability.ts) instead — that file stays
+[`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) instead — that file stays
 Electron-free by its own rule, which is exactly why this directory exists: the partition, the
 view construction and the network confinement have to live somewhere Electron-shaped, and this
 is it.

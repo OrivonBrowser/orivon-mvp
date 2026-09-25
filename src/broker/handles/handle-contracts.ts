@@ -275,7 +275,7 @@ export interface FailableTcpSocket extends TcpSocket {
    * tears the resource down unconditionally here corrupts a clean close:
    * `destroy` flushes for 'closed'/'sessionEnded' and destroys outright for
    * the rest, so acting immediately on a flushing reason discards whatever the
-   * app had queued. Measured, not theorised -- see socket-relay.ts's own note
+   * app had queued. Measured, not theorised -- see transport/relay/socket.ts's own note
    * and ../adapters/tests/socket-drain.test.ts's truncation case.
    */
   onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
@@ -363,7 +363,7 @@ export interface FailableDirectoryHandle extends Omit<DirectoryHandle, 'open'> {
    * the same broker-internal escape hatch its parent already has, or a
    * caller holding only the app-facing `FileHandle` this would otherwise
    * inherit could never register it with `fail`/`onUnlink` the way
-   * `dispatch-fs.ts`'s `fs.dirOpen` case does (A195) -- `../user-selected-
+   * `transport/dispatch/fs.ts`'s `fs.dirOpen` case does (A195) -- `../user-selected-
    * capability.ts`'s real `open` already returns exactly this shape, so
    * this only tightens the type to match, no behaviour change.
    */

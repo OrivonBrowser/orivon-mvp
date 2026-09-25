@@ -200,7 +200,7 @@ an app force today: `checkConnect`'s own pre-resolve gate (`couldAnyPatternMatch
 granted pattern's exact host, or `*`, or an address literal, through to the real resolver
 before any port or address is checked, so an app holding `example.com:22` can already make the
 broker resolve `example.com` by attempting a connection to it, whatever the outcome of that
-connection turns out to be; `authorisedSend` (`../net-capability.ts`) reuses `checkConnect`
+connection turns out to be; `authorisedSend` (`../capabilities/net.ts`) reuses `checkConnect`
 verbatim, so `udp.send` gets the identical argument. `lookup` authorised the same way hands back
 a name-to-address MAPPING the app did not have before; it never hands back the ability to force
 a NAME resolved that the app could not already force resolved by name through
@@ -216,7 +216,7 @@ hostname at all, and TLS certificate verification stands in for the address chec
 learn what a hostname resolves to. Folding it into `net.lookup`'s union would hand an app holding
 ONLY `https.connect: ["*:*"]` exactly that: a general DNS oracle over any hostname it can guess,
 behind a capability whose stated intent is "let this app fetch over TLS," never "let this app
-query DNS for arbitrary names" (A190). So `OUTBOUND_CAPABILITIES` (`../net-capability.ts`) is
+query DNS for arbitrary names" (A190). So `OUTBOUND_CAPABILITIES` (`../capabilities/net.ts`) is
 `tcp.connect` + `udp.send`, and an app must hold one of those to resolve a name at all. The
 pre-resolve-gate argument above holds for both without qualification.
 
@@ -251,12 +251,12 @@ throwaway main-process probe calling `executeJavaScript` on a real offscreen `Br
 that class; `NaN`/`Infinity`/`-Infinity` come back as real, live non-finite numbers; and an object
 or array with an `undefined`-valued property or element comes back with that key or slot genuinely
 present and genuinely `undefined`. Structured clone preserves all of this; only `JSON.stringify`
-(the old check this file replaces, in `../web-capability.ts`) silently turned the first group into
+(the old check this file replaces, in `../capabilities/web.ts`) silently turned the first group into
 strings-or-`{}` and the second into `null`, and returned the ORIGINAL value regardless -- so a
 script's `NaN` or a live `Date` object used to sail straight through to the app. A result that IS
 or CONTAINS a function, a symbol, a `bigint`, or a DOM object (`window`, `document`) never reaches
 this file at all: Electron's own structured-clone step refuses to clone those, so the whole
-`executeJavaScript` call rejects first, which `web-capability.ts`'s existing catch-all already
+`executeJavaScript` call rejects first, which `capabilities/web.ts`'s existing catch-all already
 turns into `'invalid'`.
 
 Cycle detection walks the CURRENT PATH only (a `Set` of ancestor objects, added on entry and

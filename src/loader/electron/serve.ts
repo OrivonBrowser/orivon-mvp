@@ -213,7 +213,7 @@ export async function liveCspHeaderFor (broker: Broker, origin: string): Promise
  * THE live authorisation gate for a third-party request (serve.ts's
  * `AuthoriseReach`). Reads `origin`'s `https.connect` grant fresh, straight
  * off the LIVE ledger (`broker.app.grants`, never disk), and decides with
- * `checkConnectSecure` -- the SAME function `net-capability.ts`'s own
+ * `checkConnectSecure` -- the SAME function `capabilities/net.ts`'s own
  * `connectSecure` calls, so this can never authorise a request
  * `orivon.net.connectSecure` itself would refuse.
  *

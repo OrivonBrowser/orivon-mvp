@@ -81,7 +81,7 @@ export type GrantedSecurePatterns = () => Promise<readonly Pattern[]>
  * by mistake, because this function returns a decision, not patterns. A
  * real implementation (electron/serve.ts) reads the origin's LIVE, hydrated
  * `https.connect` grant and calls `checkConnectSecure` against it -- the
- * SAME function `orivon.net.connectSecure` itself calls (net-capability.ts)
+ * SAME function `orivon.net.connectSecure` itself calls (capabilities/net.ts)
  * -- never anything read off disk (A137).
  */
 export type AuthoriseReach = (host: string, port: number) => Promise<ConnectSecureDecision>

@@ -8,7 +8,7 @@ import { toOrivonError } from '../orivon-error.js'
 
 // The isolated-world state machine for ONE UDP socket's dedicated port --
 // ./socket.ts's counterpart, and the preload-side end of
-// ../../broker/transport/datagram-pump.ts and datagram-sink.ts.
+// ../../broker/transport/relay/datagram-pump.ts and datagram-sink.ts.
 //
 // TWO THINGS ARE COUNTED HERE RATHER THAN THROWN, and both are A87:
 // a refused outbound datagram resolves its send and bumps droppedOutbound,

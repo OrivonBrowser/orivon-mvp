@@ -327,7 +327,7 @@ function readFs (raw: unknown, path: string): FsCapability {
  *
  * The GRAMMAR itself is `webContextOriginRejection`
  * (`../../broker/policy/web-context-origin.js`), shared with `../broker/
- * web-capability.ts`'s own runtime gate -- one implementation of the rule
+ * capabilities/web.ts`'s own runtime gate -- one implementation of the rule
  * (code-guidelines.md Rule 3, the same split `declarableConnectHostRejection`
  * already uses for tcp.connect/https.connect); this function owns only the
  * developer-facing MESSAGE per reason.

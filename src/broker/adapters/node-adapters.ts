@@ -145,7 +145,7 @@ export const DIAL_TIMEOUT_MS = 30_000
  * (`node:stream`'s `Duplex.toWeb`) so `DialedSocket`'s type is honestly
  * satisfied -- `broker.net.connect` cannot type-check otherwise -- even
  * though nothing on the control channel forwards them to a renderer
- * directly (../transport/port-pump.ts relays `readable`'s bytes over a
+ * directly (../transport/relay/port-pump.ts relays `readable`'s bytes over a
  * MessageChannelMain port instead; see ../transport/ipc.ts).
  */
 function dialOne (address: string, port: number, signal: AbortSignal): Promise<DialedSocket> {

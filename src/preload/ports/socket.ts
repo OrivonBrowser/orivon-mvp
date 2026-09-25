@@ -5,8 +5,8 @@ import { LIMITS } from '../../contracts/limits.js'
 import { toOrivonError } from '../orivon-error.js'
 
 // The isolated-world state machine for ONE socket's dedicated port -- the
-// preload-side counterpart of ../../broker/transport/port-pump.ts (read) and
-// ../../broker/transport/port-sink.ts (write), run from the renderer's end. Pure and
+// preload-side counterpart of ../../broker/transport/relay/port-pump.ts (read) and
+// ../../broker/transport/relay/port-sink.ts (write), run from the renderer's end. Pure and
 // Electron-free by construction (an injected PortLike, real timers): the
 // only Electron-specific piece, listening on ipcRenderer.on(PORT_CHANNEL)
 // to obtain a real port in the first place, lives in ./socket-bridge.ts.
@@ -195,7 +195,7 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
       }
       // Every datagram-domain kind, plus AcceptedMessage, never flows on a
       // per-connection TCP port: the first four belong to
-      // ../../broker/transport/datagram-relay.ts's own port, and AcceptedMessage
+      // ../../broker/transport/relay/datagram.ts's own port, and AcceptedMessage
       // only ever flows on a TcpServer's OWN dedicated port
       // (contracts/ipc.ts's own header on AcceptedMessage). Reachable here
       // only if something upstream is badly confused -- listed explicitly,

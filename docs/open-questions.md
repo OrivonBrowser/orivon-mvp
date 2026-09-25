@@ -834,7 +834,7 @@ by" columns are already correct as written and need no change.
 ### A37 — the byte pump's write direction has no wire protocol anywhere **[RESOLVED 2026-09-06]**
 
 Found while implementing the byte pump's broker side (build step 2, 2026-09-01) — specifically
-while designing `src/broker/transport/port-pump.ts`, which relays the READ direction only.
+while designing `src/broker/transport/relay/port-pump.ts`, which relays the READ direction only.
 
 `contracts/ipc.ts` specifies exactly three messages for a socket's dedicated
 `MessageChannelMain` port: `DataMessage` (broker -> renderer, bytes arriving), `CreditMessage`
@@ -1231,7 +1231,7 @@ Scope, item 6).
 
 **Corroborated 2026-09-10** (lane P2-5, PR #112, open at filing time — "Wire
 `orivon.id.publicKey/sign` to the broker, IPC and the page"): that PR wires the **app-keys**
-half of `orivon.id` end to end (`id-capability.ts`, real broker/IPC/preload callers of
+half of `orivon.id` end to end (`capabilities/id.ts`, real broker/IPC/preload callers of
 `derive-p256.ts`'s `derivePublicKey`/`signWithP256`) but its own commit message is explicit that
 `requestIdentity` — the **named-identity** half `nip07.ts`'s real signer actually needs — is
 "deliberately untouched," pending the connect-prompt UI. So this entry's gap is exactly as open
@@ -1300,7 +1300,7 @@ once, and no file anywhere in `src/` or `test/` actually reads or consumes the v
 stops reading the underlying OS socket once outstanding credit reaches zero, and the renderer
 coalesces its own credit acknowledgements ("at most one credit message per 64 KiB consumed, or
 once per animation frame") so a fast stream does not emit a broker message per chunk. The first
-half is real and tested — `src/broker/transport/port-pump.ts`'s `pumpLoop` loops `while (!stopped && credit
+half is real and tested — `src/broker/transport/relay/port-pump.ts`'s `pumpLoop` loops `while (!stopped && credit
 > 0)`, exercised by `port-pump.test.ts` and `port-pump-real-socket.test.ts`. The second half does
 not exist anywhere: nothing on the renderer/preload side sends a `CreditMessage` at all yet
 (`net.connect` itself is not wired past the broker/main-process IPC layer — see `capability-
@@ -1330,7 +1330,7 @@ depends on. But this is this lane's read, not a verified fact, and the owner may
 > **Resolved 2026-09-06.** Reading 1 was correct: the renderer half was still intended and had
 > simply not been reached. Both halves now exist and are tested.
 >
-> - Broker read side: `src/broker/transport/port-pump.ts`'s `pumpLoop` stops at credit zero (already true
+> - Broker read side: `src/broker/transport/relay/port-pump.ts`'s `pumpLoop` stops at credit zero (already true
 >   when this was filed).
 > - **Renderer read side: `src/preload/ports/socket.ts`'s `reportConsumed` flushes a
 >   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces on a
@@ -1339,7 +1339,7 @@ depends on. But this is this lane's read, not a verified fact, and the owner may
 >   and a torrent downloading in a background tab is the ordinary case here, not an edge one.
 >   That is a real (small) departure from the spec text, made knowingly and recorded in the
 >   source next to the line.
-> - Broker write side: `src/broker/transport/port-sink.ts` coalesces `WriteAckMessage` against the same
+> - Broker write side: `src/broker/transport/relay/port-sink.ts` coalesces `WriteAckMessage` against the same
 >   constant.
 >
 > `CREDIT_COALESCE_BYTES` therefore has three real consumers and is no longer dead code.
@@ -2808,7 +2808,7 @@ rather than assume it stayed flagged-but-unfixed by coincidence.
 
 Found 2026-09-06, adversarial-review pass on `stream/broker-23-write-pump` (PR #80).
 
-`src/broker/transport/socket-relay.ts`'s teardown path does `pump.stop()` (which `postMessage`s the
+`src/broker/transport/relay/socket.ts`'s teardown path does `pump.stop()` (which `postMessage`s the
 terminal `end` message) immediately followed by `cleanup()` -> `port.close()`, in the same
 synchronous tick. Every "clean" socket close in this stack's design depends on
 `MessagePortMain` actually delivering a message posted immediately before `close()` is called
@@ -2898,7 +2898,7 @@ queued outbound byte to actually drain into the peer's TCP receive window. **A p
 stops reading never lets that happen** — the callback never fires, `destroy()` never resolves,
 and the handle's own `closed` promise never settles.
 
-Everything that actually tears the socket down in `src/broker/transport/socket-relay.ts` (`pump.stop()`,
+Everything that actually tears the socket down in `src/broker/transport/relay/socket.ts` (`pump.stop()`,
 `sink.stop()`, `cleanup()` -- which frees the registry slot and closes the port) is gated on that
 same `closed` promise settling. So: the record is already gone from `handles`/`byGrant` (step 1,
 synchronous), but the underlying OS socket, the port, and the registry slot are all still fully
@@ -2922,7 +2922,7 @@ received bytes the peer had queued, after the app had already called `close()`.
 PR stack did not write. It is raised here, now, for two reasons specific to this stack rather
 than left as a someday-finding: (1) this is the first PR to expose `net.connect`/`close()` to
 page script at all -- before it, nothing reachable from a real page could trigger this path, so
-the bug was real but unreachable; (2) `socket-relay.ts` (new in this PR) is what makes the WRITE
+the bug was real but unreachable; (2) `transport/relay/socket.ts` (new in this PR) is what makes the WRITE
 direction also stay live inside the window, which is new exposure the pre-existing bug did not
 previously have to be evaluated against.
 
@@ -2937,7 +2937,7 @@ always-`denied`. The moment build step 4 ships real grants, this stops being lat
 through to `socket.destroy()` if the peer never drains, so `closed` always eventually settles;
 (b) the more thorough change: stop making relay teardown depend on `closed` settling at all --
 have `closeTree` fire a synchronous "unlinked" hook at the same point it removes the record,
-which `socket-relay.ts` uses to run its teardown immediately, leaving `closed` to report only
+which `transport/relay/socket.ts` uses to run its teardown immediately, leaving `closed` to report only
 the wire outcome afterward. (b) also closes the window that makes the already-known
 `socket.fail()`-throws-after-reap crash (assigned to `fix-80` as B-F9/NEW from `review-security`)
 reachable ON DEMAND rather than by race, since the record-already-gone state is exactly what
@@ -2966,7 +2966,7 @@ currently hold against an uncooperative remote peer.
 >
 > **(b), the thorough one.** `HandleRecord` gained an `unlink` hook that `closeTree()` fires
 > synchronously, in the same pass that removes the record from `handles`/`byGrant`, before any
-> destroy is awaited. `socket-relay.ts` subscribes to it via `FailableTcpSocket.onUnlink`. This
+> destroy is awaited. `transport/relay/socket.ts` subscribes to it via `FailableTcpSocket.onUnlink`. This
 > finishes a design that was already stated rather than adding a new one -- `closeTree`'s own doc
 > already promised "the unlink pass and the promise rejections are SYNCHRONOUS, before any
 > destroy callback runs. That ordering is what makes revocation immediate"; the relay simply was
@@ -3012,7 +3012,7 @@ currently hold against an uncooperative remote peer.
 >
 > **The coordination note in this entry still stands.** Fix (b) makes the record-already-gone
 > state reachable on demand rather than by race, which is what the `socket.fail()`-throws-after-
-> reap crash depended on -- that crash was already fixed on `main` (`socket-relay.ts`'s
+> reap crash depended on -- that crash was already fixed on `main` (`transport/relay/socket.ts`'s
 > `failSocket`/`abortSocket` guards), and those guards are what keep it closed under the new
 > path. Confirmed present, not assumed.
 
@@ -3130,7 +3130,7 @@ as closed by any future security review.
 > **Correction, 2026-09-06 (`stream/backlog-12-comment-budget-gap`).** Resolved in the direction
 > A64 left open: `measurePreamble` (now `findPreambleBlock`) treats an import line as neither a
 > comment nor the end of the opening region, so a header essay after the imports measures the
-> same as one at line one. Two real in-review PRs (`src/broker/transport/port-sink.ts`,
+> same as one at line one. Two real in-review PRs (`src/broker/transport/relay/port-sink.ts`,
 > `src/preload/surface/orivon.ts`) exposed the gap by placing a 40+/46-line rationale block after
 > their imports; both are now correctly flagged. Restores the pre-PR#68 46-line reading for A64's
 > own file, `src/broker/policy/origin.ts`, rather than the 16-line one the bug produced. See A79
@@ -3144,7 +3144,7 @@ as closed by any future security review.
 > A84 closed it structurally instead.
 >
 > The window this entry describes is bounded by "how fast `closed` settles", and A84's fix stops
-> teardown depending on `closed` at all: `socket-relay.ts` now runs `cleanup()` -- which calls
+> teardown depending on `closed` at all: `transport/relay/socket.ts` now runs `cleanup()` -- which calls
 > `registry.remove(origin, socket.id)` -- from the unlink hook, in the same synchronous pass that
 > removes the handle from `handles`/`byGrant`. So by the time revocation has returned, the
 > `PortRegistry` entry all three control methods look up is already gone, and all three degrade
@@ -3156,7 +3156,7 @@ as closed by any future security review.
 > changed is that the registry can no longer answer for a handle the tables have released, which
 > is what made the gap reachable. If a future change reintroduces a path that registers a socket
 > without unlinking it, this reopens -- so the assertion lives in a test
-> (`socket-relay.test.ts`, "releases the registry slot the moment the handle is unlinked"),
+> (`transport/relay/tests/socket.test.ts`, "releases the registry slot the moment the handle is unlinked"),
 > not only in this paragraph.
 
 ### A79 — fixing A64 correctly reveals FIVE more files already over the Rule 1 budget on `main`, not just the two known ones **[RESOLVED 2026-09-06]**
@@ -3176,7 +3176,7 @@ more in that same shape, none previously flagged, none in `scripts/comment-budge
 - `src/broker/policy/origin.ts` -- 30 lines (the exact file A64 was filed on; see the correction
   there -- this is its restored, accurate measurement)
 - `src/broker/policy/update.ts` -- 52 lines
-- `src/broker/transport/port-pump.ts` -- 45 lines
+- `src/broker/transport/relay/port-pump.ts` -- 45 lines
 - `src/main/index.ts` -- 40 lines
 
 Each was read in full (not just measured) to rule out a detection bug rather than a real
@@ -3845,12 +3845,12 @@ however it is spelled.
 
 **RESOLVED 2026-09-15, in the shape this entry asked for: broker authority, not a shim
 polyfill.** `d-0030` added `OrivonNet.lookup` to `src/contracts/capability-api.ts` (#199);
-`net-capability.ts`'s `lookup`, its control-channel dispatch (`dispatch-net.ts`'s `'net.lookup'`
+`capabilities/net.ts`'s `lookup`, its control-channel dispatch (`transport/dispatch/net.ts`'s `'net.lookup'`
 case) and its preload surface (`surface/net.ts`'s `netLookupBridge`) landed in #201;
 `src/shim/net/dns.ts`'s `dns.lookup`/`dns.promises.lookup` now call through to it for real,
 wired into `module-map.ts`'s `'dns'` entry, closing #205. **Verified against the tree, not
-assumed:** `net-capability.ts` exports `lookup` from `createNetCapability`'s returned object,
-`dispatch-net.ts` has a real case for it, and `net/dns.ts` no longer contains a refusal for
+assumed:** `capabilities/net.ts` exports `lookup` from `createNetCapability`'s returned object,
+`transport/dispatch/net.ts` has a real case for it, and `net/dns.ts` no longer contains a refusal for
 `lookup` itself (only for every other `dns.*` member, unchanged and unrelated to this entry).
 
 **Half-open, tracked separately rather than reopening this entry:** the review above named the
@@ -4111,10 +4111,10 @@ member carrying the accepted `TcpSocket`'s full synchronous shape plus its `port
 `src/contracts/ipc.ts` (#199) — see A167 item 1 for the judgment calls that shape carried
 (typing `port` as the renderer-side `MessagePort` rather than the broker-side
 `MessagePortMain`, matching how `PortLike` already differs per process). The implementation —
-`src/broker/transport/accept-pump.ts` constructing and sending it, `src/preload/ports/server.ts`
+`src/broker/transport/relay/accept-pump.ts` constructing and sending it, `src/preload/ports/server.ts`
 and `src/preload/surface/main-world-socket.ts`'s `buildServer` receiving it and building a real
 `TcpServer.connections` `ReadableStream` — landed in #203. **Verified against the tree, not
-assumed:** `dispatch-net.ts` has a real `'net.listen'` control-channel case,
+assumed:** `transport/dispatch/net.ts` has a real `'net.listen'` control-channel case,
 `main-world-socket.ts`'s `buildServer` is exercised by `main-world-socket-listen.test.ts`
 against the real `installOrivon` wiring, and `highWaterMark: 0` (the property that keeps the
 broker from accepting a connection nobody asked for) is proven end to end across all three new
@@ -5852,7 +5852,7 @@ on top of it) is expected to load successfully.
 > unit tests to begin with): `test/app-loader-journey-shim-entry.ts`'s own `installGlobals()`
 > workaround call is gone, and `test/e2e-app-loader-journey.test.ts` now registers its fixture's
 > origin (via `src/main/dev/dev-grant.ts`'s hook, with an empty pattern list -- "an empty grant
-> answers exactly like no grant at all," `src/broker/net-capability.ts`'s own `connect()`)
+> answers exactly like no grant at all," `src/broker/capabilities/net.ts`'s own `connect()`)
 > BEFORE navigating, so the fixture's tab is flagged for its very first load exactly like a real
 > registered app's tab would be, then asserts `window.process` is installed before exercising
 > the shim at all. See that test's own new checks for the real-launch evidence.
@@ -6807,7 +6807,7 @@ type this file already relies on for `ReadableStream`/`WritableStream` without a
 the type a renderer genuinely holds once Electron completes the transfer. The **broker** side
 constructs this message holding a real `MessagePortMain` (Electron-main-process, a different
 class), and contracts cannot import `electron` to reference that type directly
-(`check:contracts`). This is the same reason `src/broker/transport/port-transport.ts` and
+(`check:contracts`). This is the same reason `src/broker/transport/relay/port-transport.ts` and
 `src/preload/ports/socket.ts` already define two independently-shaped `PortLike` interfaces
 rather than sharing one -- the concrete port class genuinely differs per process. The
 implementing lane will hit a real type gap constructing this message on the broker side; the
@@ -7397,8 +7397,8 @@ untouched. The asymmetry was the tell. Reading it raised the question; a probe a
 **Raised 2026-09-15**, lane L2-fsopen (`stream/broker-15-fs-open`). `FileHandle`
 (`docs/architecture/handle-contracts.md` §FileHandle, `src/contracts/handles.ts`) needed no
 `src/contracts/` change -- the shape was already complete -- so this lane built the broker
-capability (`src/broker/fs-capability.ts`, `src/broker/adapters/node-fs-adapter.ts`), the
-control-channel dispatch (`src/broker/transport/dispatch-fs.ts`) and the preload surface
+capability (`src/broker/capabilities/fs.ts`, `src/broker/adapters/node-fs-adapter.ts`), the
+control-channel dispatch (`src/broker/transport/dispatch/fs.ts`) and the preload surface
 (`src/preload/surface/orivon.ts`, `src/preload/surface/main-world-socket.ts`) in one PR.
 
 **What is genuinely done, page-reachable, and tested against real I/O:** `open`, positional
@@ -7444,7 +7444,7 @@ note for this lane (search `A184`) with the full reasoning -- summarised here:**
    later, deterministic because a real fs write cannot complete before the test's own next
    synchronous statement runs.
 4. **`open`'s flags string is checked against Node's own documented flag set** (`'r'`, `'r+'`,
-   `'w'`, `'wx'`, ... -- `fs-capability.ts`'s `VALID_OPEN_FLAGS`) before the confined path or the
+   `'w'`, `'wx'`, ... -- `capabilities/fs.ts`'s `VALID_OPEN_FLAGS`) before the confined path or the
    grant are even consulted, so a malformed flags string is `'invalid'` (an app bug) rather than
    whatever the raw adapter call happens to throw for it. No numeric-mode variant is accepted --
    `capability-api.ts`'s `open` types `flags` as a `string`, never a number.
@@ -7524,7 +7524,7 @@ that `connect`/`connectSecure`/`udpBind` could not already force.
 **2. Which grant's revocation cancels an authorised lookup, when more than one held grant would
 authorise the same hostname.** Not specified anywhere -- this lane's answer: the first
 capability in the fixed check order above (`tcp.connect`, then `https.connect`, then
-`udp.send` -- `net-capability.ts`'s own `OUTBOUND_CAPABILITIES`) whose patterns actually
+`udp.send` -- `capabilities/net.ts`'s own `OUTBOUND_CAPABILITIES`) whose patterns actually
 authorise the hostname is what `handleTable.run`'s revocation scope binds to. A DIFFERENT held
 grant for the same origin being revoked must not cancel an in-flight lookup that a still-live
 grant authorised -- tested directly (`src/broker/tests/net-lookup.test.ts`, "is not cancelled by
@@ -7588,7 +7588,7 @@ and fixed finishing the landing.
 
 **1. The judgment call: one accepted connection is ONE unit of demand, signalled by reusing
 `CreditMessage` (`{kind:'credit', handleId, bytesConsumed}`) rather than a new
-`RendererToBrokerMessage` member.** `src/broker/transport/accept-pump.ts`'s `handleDemand`
+`RendererToBrokerMessage` member.** `src/broker/transport/relay/accept-pump.ts`'s `handleDemand`
 interprets `bytesConsumed` as a COUNT of connections rather than bytes; `src/preload/ports/server.ts`'s
 `reportAccepted` always sends `bytesConsumed: 1`, one call per app `connections.getReader().read()`.
 The alternative -- a purpose-built member, e.g. `{kind:'accept', handleId}` -- was not built: A167
@@ -7615,11 +7615,11 @@ holds a reference to it).
 declared reachable but was never actually dispatched on `main`.** `src/broker/transport/
 ipc-validation.ts`'s `ControlMethod`/`isControlMethod` already listed `'net.listen'` (landed by
 the contracts-adjacent split before this run resumed), but neither `ipc.ts`'s pre-split `dispatch()`
-switch nor `dispatch-net.ts`'s post-split one had a matching `case` -- a call would have fallen
+switch nor `transport/dispatch/net.ts`'s post-split one had a matching `case` -- a call would have fallen
 through to the end of the switch and resolved `undefined` instead of erroring or listening,
 exactly the silent-gap shape the brief's first warning described for `message.kind` switches.
 Fixed by adding the case, and separately by adding a `never`-typed default case to BOTH `ipc.ts`'s
-`dispatch()` and `dispatch-net.ts`'s `dispatchNet()` switches, so a future `ControlMethod`/
+`dispatch()` and `transport/dispatch/net.ts`'s `dispatchNet()` switches, so a future `ControlMethod`/
 `NetControlMethod` member with no matching case is a compile error rather than a silent
 `undefined` -- neither switch had one before. `src/preload/ports/socket.ts` and
 `src/preload/ports/datagram.ts`'s own `message.kind` switches already had an equivalent
@@ -7642,7 +7642,7 @@ stops at a real grant reaching a real page; nothing here issues one in productio
 **Raised 2026-09-15**, lane L5-userselected (`stream/main-10-user-selected`), built directly on
 top of `orivon.fs.open` (A184, merged same day). `DirectoryHandle`/`FileHandle` from the picker
 (`d-0029`, A167 item 2) needed no `src/contracts/` change -- the shape was already complete -- so
-this lane built the broker capability (`src/broker/user-selected-capability.ts`), the picked-path
+this lane built the broker capability (`src/broker/capabilities/user-selected.ts`), the picked-path
 state (`src/broker/grants/picked-path-ledger.ts`), the persistence slice sharing `GrantLedger`'s
 own on-disk file (`src/broker/grants/ledger-storage.ts`/`node-ledger-storage.ts`), the handle-
 table's own revocation index for a pick (`byPickedPath`, `HandleTable.revokeUserSelected`,
@@ -7651,7 +7651,7 @@ table's own revocation index for a pick (`byPickedPath`, `HandleTable.revokeUser
 
 **What is genuinely done, tested against both revocation-cascade halves and against a simulated
 restart:** `userSelected` for both the folder and file shapes, confined to the PICKED root (never
-the app's own files directory) through the same `confinePath` fs-capability.ts already uses,
+the app's own files directory) through the same `confinePath` capabilities/fs.ts already uses,
 under the same per-origin fs write quota, with the picker's cancel resolving `null`/`[]` rather
 than rejecting. Revoking the standing `fs` grant does not touch a picked handle; revoking the
 pick itself (`Broker.revokeUserSelectedPath`, addressed by a pickId minted once and shared
@@ -7770,12 +7770,12 @@ over `net.createServer`, `fs.open` and `dns.lookup`. Two of the three capabiliti
 told to build on ARE reachable at `origin/main @ f2bc8e0` (this lane's own cut commit), verified
 by reading the actual dispatch/preload wiring, not by trusting the brief: `net.listen` (PR #203)
 and `net.lookup` (PR #201) both have real broker dispatch cases and real preload/main-world
-bridges (`src/broker/transport/dispatch-net.ts`'s `'net.listen'`/`'net.lookup'` cases,
+bridges (`src/broker/transport/dispatch/net.ts`'s `'net.listen'`/`'net.lookup'` cases,
 `src/preload/surface/net.ts`'s `netListenBridge`/`netLookupBridge`,
 `src/preload/surface/main-world-socket.ts`'s `buildServer`/`netLookup`). **The third is not.**
 
 **`orivon.fs.open`'s broker half and preload wiring are NOT on `main` at this lane's cut point.**
-`src/broker/fs-capability.ts`'s own header says so directly ("`FileHandle` (orivon.fs.open) is
+`src/broker/capabilities/fs.ts`'s own header says so directly ("`FileHandle` (orivon.fs.open) is
 NOT here -- see this lane's own PR body for why it was parked"), there is no `'fs.open'` dispatch
 case anywhere under `src/broker/transport/`, and `src/preload/surface/orivon.ts`'s `exposeOrivon`
 wires `fs.readFile`/`writeFile`/`mkdir`/`readdir`/`stat`/`rm`/`rename` but no `fs.open`. The work
@@ -7837,13 +7837,13 @@ number, so a lane can verify the claim instead of taking it on faith.
 
 **Raised 2026-09-16**, lane ADV-fix (`stream/broker-17-adversarial-fixes`), fixing the sibling
 leak this same lane closed for `TcpServer` (see that fix's own commit and
-`src/broker/transport/server-relay.ts`'s new comment on `cleanup()`). Both bugs share one root
+`src/broker/transport/relay/server.ts`'s new comment on `cleanup()`). Both bugs share one root
 cause -- a resource whose only abandonment signal is a `MessagePort` closing, reacted to by
 tearing down the underlying handle -- but `FileHandle` is structurally missing the half that made
 the `TcpServer` fix possible.
 
 **The mechanism, or rather its absence.** `orivon.fs.open` (A184) returns a `FailableFileHandle`
-registered in `dispatch-fs.ts`'s own `FsTransport.registry` (`src/broker/transport/dispatch-fs.ts`,
+registered in `transport/dispatch/fs.ts`'s own `FsTransport.registry` (`src/broker/transport/dispatch/fs.ts`,
 the `'fs.open'` case), but that registry has no dedicated `MessagePort` per handle the way
 `net.connect`'s socket relay or `net.listen`'s server relay do -- A184's own scope cut left
 `readable()`/`writable()`, and with them any per-handle port, at the broker layer only (this
@@ -7856,7 +7856,7 @@ nothing hooked yet.
 
 **Consequence.** A page that calls `orivon.fs.open(...)` and lets the resulting object fall out of
 scope without ever calling `close()` -- ordinary JS garbage-collection behaviour, not misuse --
-leaks the real OS file descriptor and one of `dispatch-fs.ts`'s registry entries for the life of
+leaks the real OS file descriptor and one of `transport/dispatch/fs.ts`'s registry entries for the life of
 the broker process, exactly the same shape of leak this lane's `TcpServer` fix closes, but with no
 available fix of the same shape.
 
@@ -7893,7 +7893,7 @@ product decision, not a bug.
 **Restates and sharpens A167's own flagged gap** (`policy/README.md:161-182`'s own design note,
 cited there as "the union-of-three-capabilities reading as still unconfirmed") with a concrete
 asymmetry A167 did not spell out: `net.lookup` authorises a hostname if ANY of `tcp.connect`,
-`https.connect` or `udp.send` holds a pattern matching it (`net-capability.ts`'s
+`https.connect` or `udp.send` holds a pattern matching it (`capabilities/net.ts`'s
 `OUTBOUND_CAPABILITIES`, `:428-478`'s `lookup`). Folding the three together is justified,
 per that same design note, by the claim that a held pattern already lets an app force the broker
 to resolve any name it authorises, by attempting a real connection through it -- **true for
@@ -7977,7 +7977,7 @@ turns out not to fit the existing transport.
 
 **What was built, FILE shape only:** `fs.userSelected` joined `ControlMethod`
 (`ipc-validation.ts`), with a new `isFsUserSelectedParams` validator and a
-`dispatch-fs.ts` case satisfying the `never`-typed exhaustiveness guard PR #213 added (both the
+`transport/dispatch/fs.ts` case satisfying the `never`-typed exhaustiveness guard PR #213 added (both the
 per-file `dispatchFs` switch and `ipc.ts`'s own top-level routing switch needed the new case --
 found by the compiler, not by reading, exactly what that guard is for). A picked file's
 `FailableFileHandle` registers in the EXACT SAME `FsTransport.registry` `fs.open` already uses
@@ -7990,7 +7990,7 @@ gained the matching bridge field and reuses `buildFile` per returned handle (Rul
 second wrapping implementation). The preload's own exposed type omits `directory` entirely
 rather than accept it and fail at runtime.
 
-**What was deliberately NOT built, FOLDER shape:** `dispatch-fs.ts`'s `'fs.userSelected'` case
+**What was deliberately NOT built, FOLDER shape:** `transport/dispatch/fs.ts`'s `'fs.userSelected'` case
 refuses `directory: true` with `'internal'` before the broker is ever called, citing this entry.
 **Why this is a shape problem, not plumbing, per the brief's own test:** `FileHandle`'s
 handle-scoped siblings (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`) already existed
@@ -8009,7 +8009,7 @@ not a shortfall.
 
 **Verified, this lane:** `npm run typecheck` clean; `npm test` 4610 passed, 3 skipped (202 test
 files) -- baseline after this lane's own merge of `origin/main` (which also resolved a real
-conflict in `src/broker/fs-capability.ts`, PR #213's `truncate` quota/lock fix carried forward
+conflict in `src/broker/capabilities/fs.ts`, PR #213's `truncate` quota/lock fix carried forward
 into `fs-handle-wrapper.ts` rather than dropped): 4584 passed, 3 skipped, 200 files; this lane
 added 26 net new passing tests (`picker-dialog-wording.test.ts`, `ipc-fs-user-selected.test.ts`,
 plus additions to `permissions.test.ts`, `surface/tests/orivon.test.ts`,
@@ -8030,7 +8030,7 @@ gate cleared it.
 which is the actual precondition for building its delivery mechanism -- not a wiring task on its
 own, a design one.
 > **Resolved 2026-09-16, `d-0031`, lane `stream/broker-18-narrow-lookup-union` (A193). Option
-> (a).** `https.connect` is dropped from `net-capability.ts`'s `OUTBOUND_CAPABILITIES`, which now
+> (a).** `https.connect` is dropped from `capabilities/net.ts`'s `OUTBOUND_CAPABILITIES`, which now
 > reads `['tcp.connect', 'udp.send']`. An app holding only `https.connect` loses the DNS-lookup
 > convenience this entry describes; it must hold `tcp.connect` or `udp.send` to resolve a
 > hostname through `orivon.net.lookup` at all. `tcp.connect` and `udp.send` are both kept, per
@@ -8094,7 +8094,7 @@ resolution (d-0031: `net.lookup` no longer reads a bound from `https.connect`, o
 `src/contracts/capability-api.ts`'s `OrivonNet.lookup` doc comment reads, unchanged by this lane:
 "this rides whatever `tcp.connect`, `https.connect` and `udp.send` patterns (manifest.js) the
 app already holds." That sentence is no longer true of the implementation this lane shipped
-(`src/broker/net-capability.ts`'s `OUTBOUND_CAPABILITIES`, now `['tcp.connect', 'udp.send']`) or
+(`src/broker/capabilities/net.ts`'s `OUTBOUND_CAPABILITIES`, now `['tcp.connect', 'udp.send']`) or
 of `src/broker/policy/README.md`'s design note, which this lane did update.
 
 **Why left stale rather than fixed here.** This lane's own scope, set by the dispatch that
@@ -8125,7 +8125,7 @@ none is queued soon enough that this drifts further from the implementation it d
 
 **Raised 2026-09-16**, lane `stream/broker-19-directory-handle-page` (A194-folder), closing A194's
 own "deliberately not built" gap: `DirectoryHandle`'s nine members (`contracts/handles.ts`) now
-have a full CONTROL_CHANNEL path, dispatched from `dispatch-fs.ts` and exposed through both preload
+have a full CONTROL_CHANNEL path, dispatched from `transport/dispatch/fs.ts` and exposed through both preload
 worlds (`surface/orivon.ts`'s `exposeFallback`, `main-world-socket.ts`'s `installOrivon`).
 
 **1. The gate A194 named was not cleared -- it was overridden by explicit instruction, and that
@@ -8147,7 +8147,7 @@ over whatever the contract says.
 CONTROL_CHANNEL methods (`fs.dirReaddir`/`dirStat`/`dirMkdir`/`dirRm`/`dirRename`/`dirReadFile`/
 `dirWriteFile`/`dirOpen`), one per `DirectoryHandle` member, each carrying the folder handle's `id`
 the same way `fs.read`/`fs.write`/... already carry a file's. `fs.dirOpen` is the load-bearing
-case: `DirectoryHandle.open()` resolves a real `FileHandle` (`../user-selected-capability.ts`'s
+case: `DirectoryHandle.open()` resolves a real `FileHandle` (`../broker/capabilities/user-selected.ts`'s
 own `toFailableDirectoryHandle.open`, unchanged by this lane), registered through the EXACT SAME
 `registerFileHandle` `fs.open`/`fs.userSelected`'s file shape already use -- so every subsequent
 call against a folder-opened file (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`) needed ZERO
@@ -8162,7 +8162,7 @@ new dispatch code. No second file-handle mechanism was built, matching this lane
   to `Promise<FailableFileHandle>`** (`src/broker/handles/handle-contracts.ts`) -- precedented by
   `FailableTcpServer.connections: ReadableStream<FailableTcpSocket>` (that file's own doc: a
   nested handle a `Failable*` type PRODUCES needs the same broker-internal escape hatch its parent
-  has). Tightens a type to match what `user-selected-capability.ts` already returned at runtime;
+  has). Tightens a type to match what `capabilities/user-selected.ts` already returned at runtime;
   no behaviour change, confirmed by `npm run typecheck` before and after.
 - **`fs.close` closes either kind** (checks `FsTransport.registry` then `dirRegistry`) rather than
   adding a `fs.dirClose` method -- a page never knows which kind an id names, and ids are drawn

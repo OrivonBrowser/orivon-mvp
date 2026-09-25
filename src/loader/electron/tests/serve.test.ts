@@ -462,7 +462,7 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     const { restorePinnedServing } = await import('../serve.js')
     await restorePinnedServing(storage, broker)
 
-    // This is the SAME read `net-capability.ts`'s real orivon.net.connect/
+    // This is the SAME read `capabilities/net.ts`'s real orivon.net.connect/
     // connectSecure check performs (ledger.currentGrant) -- not merely a
     // header computation. registerApp was never called on this broker.
     const grants = await broker.app.grants(ORIGIN)

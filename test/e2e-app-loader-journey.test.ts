@@ -227,7 +227,7 @@ it(
         // gates shim-globals installation and fetch routing on, by
         // reading Broker.app.isRegisteredSync -- true the moment a
         // manifest is registered, independent of any grant
-        // (net-capability.ts's own connect(): "an empty grant answers
+        // (capabilities/net.ts's own connect(): "an empty grant answers
         // exactly like no grant at all"). Registering here, with an EMPTY
         // pattern list, gets this fixture's tab flagged for its very
         // first navigation while keeping tcp.connect denied -- the same

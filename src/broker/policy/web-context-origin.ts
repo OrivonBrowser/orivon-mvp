@@ -1,6 +1,6 @@
 // ADR-0019's `web.context` origin grammar -- shared by the loader's manifest
 // validator (src/loader/manifest/capabilities.ts's readWeb, rich per-reason
-// messages) and the broker's own runtime gate (../web-capability.ts's
+// messages) and the broker's own runtime gate (../capabilities/web.ts's
 // openContext, which checks a CALLER-SUPPLIED origin a manifest declaration
 // never protects against). One implementation of the rule
 // (docs/development/code-guidelines.md Rule 3), the same "reason enum in

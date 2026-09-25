@@ -70,7 +70,7 @@ export interface MainWorldWebContextBridge {
  * request/reply round trip, so this needs no main-world stream machinery
  * either. `open` resolves the SAME raw shape `MainWorldFileBridge` is --
  * `DirectoryHandle.open()` returns a real `FileHandle`, routed through
- * fs.open's existing wire methods (dispatch-fs.ts's own `fs.dirOpen` case),
+ * fs.open's existing wire methods (transport/dispatch/fs.ts's own `fs.dirOpen` case),
  * not a second file-handle mechanism.
  */
 export interface MainWorldDirectoryBridge {

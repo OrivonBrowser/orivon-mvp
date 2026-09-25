@@ -101,7 +101,7 @@ describe("orivon.net.lookup is bounded by the app's own held network grant (d-00
   // for the address check checkConnect performs -- so unlike tcp.connect
   // and udp.send below, an https.connect-only app never had a broker-
   // exposed way to force a name resolved before net.lookup existed.
-  // OUTBOUND_CAPABILITIES (../net-capability.ts) excludes it for exactly
+  // OUTBOUND_CAPABILITIES (../capabilities/net.ts) excludes it for exactly
   // that reason. THIS is the test that would have failed before that fix:
   // the union used to include https.connect and this call used to resolve.
   it('denies a lookup under an https.connect-only grant -- https.connect is not a raw-connection capability (d-0031)', async () => {
@@ -207,7 +207,7 @@ describe("orivon.net.lookup is bounded by the app's own held network grant (d-00
     await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
     const udpGrant = await broker.grant(APP, 'udp.send', ['other.example.com:6881'])
 
-    // Authorised via tcp.connect (checked first -- net-capability.ts's own
+    // Authorised via tcp.connect (checked first -- capabilities/net.ts's own
     // OUTBOUND_CAPABILITIES order); revoking the UNRELATED udp.send grant
     // this origin also holds must not touch it, even though udp.send is
     // still part of the same union.

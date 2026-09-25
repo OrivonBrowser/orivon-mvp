@@ -1,7 +1,7 @@
 // orivon.net.connectSecure -- the https.connect sibling of ./index.test.ts's
 // tcp.connect suite. Everything already proven generically for `connect`
 // (denial shape, revocation cascade, the abort/reset close table) is NOT
-// re-proven here wholesale -- `toFailableSocket` in ../net-capability.ts is
+// re-proven here wholesale -- `toFailableSocket` in ../capabilities/net.ts is
 // the same wrapper for both, so duplicating that coverage would test the
 // shared code twice and the NEW code (the https.connect grant lookup, the
 // hostname-based policy check, dialSecure, mapTlsError) not at all. What

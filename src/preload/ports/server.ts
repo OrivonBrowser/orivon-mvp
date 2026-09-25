@@ -11,7 +11,7 @@ import { toOrivonError } from '../orivon-error.js'
 //
 // REPORTACCEPTED REUSES CreditMessage, NOT A NEW WIRE MESSAGE -- a flagged
 // AI judgment call (open-questions.md A185), matching
-// ../../broker/transport/accept-pump.ts's own header, which this file is the
+// ../../broker/transport/relay/accept-pump.ts's own header, which this file is the
 // renderer-side counterpart of. `bytesConsumed` below is always 1: one unit
 // of demand per app `connections.getReader().read()` call, the exact
 // highWaterMark: 0 semantics handle-contracts.md's "TcpServer" section

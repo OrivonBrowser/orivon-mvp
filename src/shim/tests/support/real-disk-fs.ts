@@ -6,7 +6,7 @@
 // an in-memory stand-in agrees with itself.
 //
 // EVERY PATH IS JOINED AGAINST `root`, NEVER TRUSTED AS ABSOLUTE -- the same
-// shape the real broker's own confineForOrigin gives (fs-capability.ts,
+// shape the real broker's own confineForOrigin gives (capabilities/fs.ts,
 // src/broker/, not imported here: this file is test-only and stays on the
 // shim side of that boundary), so a relative path like nedb's own
 // 'settings.db' lands inside `root` exactly like it would against a real
@@ -46,7 +46,7 @@ function mapError (error: unknown): never {
 
 /**
  * The real broker's own `confineForOrigin` denial, verbatim
- * (`src/broker/fs-capability.ts`: `fail(CONFINEMENT_ERROR_CODE, "the path
+ * (`src/broker/capabilities/fs.ts`: `fail(CONFINEMENT_ERROR_CODE, "the path
  * is outside this app's files directory")`) -- this fake throws the EXACT
  * same shape for a root-resolving path (`paths.ts`'s `deny('is-root')` is
  * one of several reasons that message covers; the app-facing shape never

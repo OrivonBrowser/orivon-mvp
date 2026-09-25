@@ -18,7 +18,7 @@ export interface Keychain {
    * OPTIONAL: every fake `Keychain` in this codebase's tests predates
    * `orivon.secrets` and keeps compiling unchanged, landing on the safe
    * side of the question this answers -- an ABSENT method reads as "never
-   * persistent", which is what `secrets-capability.ts`'s `available()`
+   * persistent", which is what `capabilities/secrets.ts`'s `available()`
    * needs when nothing has told it otherwise: sealing a secret behind a
    * seed that will not survive a restart is exactly the silent-data-loss
    * shape `ADR-0033` exists to let an app avoid, so the fail-closed

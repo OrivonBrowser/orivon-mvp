@@ -6,7 +6,7 @@
 // gap open-questions.md A38 records. This is that second, independent
 // bound, bounding call FREQUENCY.
 //
-// Pure and Electron-free, the same way ./port-registry.ts is: time is read
+// Pure and Electron-free, the same way ./relay/port-registry.ts is: time is read
 // once per `tryConsume` call via an injected clock rather than
 // `Date.now()`, mirroring `CreateBrokerOptions.now` (../index.ts), so tests
 // drive refill deterministically instead of waiting on real timers.

@@ -203,10 +203,10 @@ export function installOrivon (
    * ../ports/server.ts built in the isolated world.
    *
    * `highWaterMark: 0`, MATCHING THE BROKER'S OWN `entry.connections`
-   * EXACTLY (handle-contracts.md's "TcpServer" section, net-capability.ts's
+   * EXACTLY (handle-contracts.md's "TcpServer" section, capabilities/net.ts's
    * own `listen`): `pull()` below fires once per app `read()` that finds the
    * queue empty, and each firing is EXACTLY one unit of accept demand
-   * (../ports/server.ts's `reportAccepted`, ../../broker/transport/accept-pump.ts's
+   * (../ports/server.ts's `reportAccepted`, ../../broker/transport/relay/accept-pump.ts's
    * own `handleDemand` one layer down). THIS IS THE PROPERTY THIS WHOLE LANE
    * EXISTS TO PRESERVE: `reportAccepted` must never be called from anywhere
    * but here, or the broker accepts connections nobody asked for

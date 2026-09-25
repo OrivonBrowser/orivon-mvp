@@ -128,7 +128,7 @@ async function fsUserSelected (opts?: { multiple?: boolean }): Promise<readonly 
 /**
  * `buildFileBridge`'s own `DirectoryHandle` counterpart (A195, closing
  * A194) -- every member is a plain request/reply round trip over the
- * `fs.dir*` control methods dispatch-fs.ts now wires, so this needs no
+ * `fs.dir*` control methods transport/dispatch/fs.ts now wires, so this needs no
  * main-world stream wrapping, exactly like `buildFileBridge` above. `open`
  * resolves through `fs.dirOpen`, then reuses `buildFileBridge` on the id it
  * returns -- the SAME file-handle mechanism `fs.open`/`fs.userSelected`'s

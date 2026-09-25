@@ -24,7 +24,7 @@ Patterns are checked against **resolved addresses**, always.
 
 ## The layout
 
-Five directories, one per job. The name of the directory is the question it answers.
+Six directories, one per job. The name of the directory is the question it answers.
 
 | Directory | Job | Holds state? | Touches I/O? |
 |---|---|---|---|
@@ -33,11 +33,13 @@ Five directories, one per job. The name of the directory is the question it answ
 | [`handles/`](handles/) | **Hold**: what is this origin holding, and can I take it back? | yes, per origin | **never**, `destroy` is injected |
 | [`adapters/`](adapters/) | **Do**: dial the address, open the file | no | **this is the only place** |
 | [`transport/`](transport/) | **Speak**: reach the page, move the bytes | connection registry | Electron IPC and ports |
+| [`capabilities/`](capabilities/) | **Expose**: `index.ts`'s own job (the `orivon.*` entry points), split out purely for line count -- not a seventh job, see its own README | no | via the other five |
 
-Several files stay at the top level because they belong to no single directory:
+The eight files that stay at the top level belong to no single directory:
 
-- [`index.ts`](index.ts): `createBroker` and the capability entry points that consult all five
-- [`broker-contracts.ts`](broker-contracts.ts): the `Broker` interface and its fixed dependency shape
+- [`index.ts`](index.ts): `createBroker` and the capability entry points that consult all six
+- [`broker-contracts.ts`](broker-contracts.ts): the `Broker` interface and its fixed dependency
+  shape, and the hub the other four `*-contracts.ts` files below re-export from
 - [`errors.ts`](errors.ts): `OrivonError` construction, used by every directory above
 - [`io-errors.ts`](io-errors.ts): the other half of that, translating a raw errno from an
   injected dependency into the closed enum. Split out of `index.ts` on 2026-09-07 when
@@ -47,41 +49,22 @@ Several files stay at the top level because they belong to no single directory:
   because that file *constructs* and this one *translates*, and because merging them would
   quietly settle [`A39`](../../docs/open-questions.md), which is a behavioural question nobody
   has answered yet
-- [`net-capability.ts`](net-capability.ts): `orivon.net`'s three entry points (`connect`,
-  `udpBind`, `listen`), lifted out of `index.ts` on 2026-09-09 when `net.listen` pushed it past
-  500 lines. This file's own design note below says why it stayed at the top level rather than
-  moving into a directory of its own
-- [`id-capability.ts`](id-capability.ts): `orivon.id`'s two entry points (`publicKey` and `sign`,
-  the APP KEYS half of "two kinds of identity"; `requestIdentity`, the NAMED IDENTITIES half,
-  has no `Broker` entry point yet, see the file's own header), built alongside
-  `net-capability.ts` from the start rather than inlined into `index.ts` first, same reason:
-  `index.ts` was already 264 lines before `id`
-- [`secrets-capability.ts`](secrets-capability.ts): `orivon.secrets`'s three entry points
-  (`available`, `encrypt`, `decrypt`, [`ADR-0033`](../../docs/decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)),
-  built the same shape as `id-capability.ts` alongside it, over the same seed
-  `deps.keychain` provides but a distinct derivation path
-  ([`policy/secret-seal.ts`](policy/secret-seal.ts))
-- [`secrets-contracts.ts`](secrets-contracts.ts): the extended `Keychain` (`getSeed` plus the new
-  optional `isPersistent`) and `BrokerSecretsMethods`, split out of `broker-contracts.ts` and
-  re-exported from there, as `fs-contracts.ts` and `web-context-contracts.ts` already are
-- [`fs-capability.ts`](fs-capability.ts): `orivon.fs`'s nine entry points (`readFile`,
-  `writeFile`, `confineSync` plus queue item 2.1's `mkdir`/`readdir`/`stat`/`rm`/`rename`, plus
-  `open`, A184), lifted out of `index.ts` on 2026-09-10 under the same Rule 2 seam
-  `net-capability.ts` and `id-capability.ts` already established, and every method routes through
-  this file's own `confineForOrigin`, the one call into `policy/paths.ts`'s `confinePath`.
-  `open` confines once, at open time; see the file's own doc on `open` for why a handle that
-  outlives the call is still safe under that
 - [`fs-contracts.ts`](fs-contracts.ts): `RawFileStat`, `OpenedFile`, `BrokerFs` and
   `BrokerFsMethods`, split out of `broker-contracts.ts` on 2026-09-15 (A184) when `open`'s own
   types pushed that file past 500 lines, re-exported from there, so no existing import site
-  had to change. The `net`/`fs` split here mirrors `net-capability.ts`'s own move out of
-  `index.ts`: by SUBSYSTEM, not by "is this a type or a function"
-- [`net-connect-secure.ts`](net-connect-secure.ts): `orivon.net.connectSecure`, split out of
-  `net-capability.ts` by the same Rule 2 seam and built from that file's state and socket
-  wrapper. Its design note below says when it adds the address check
+  had to change
+- [`secrets-contracts.ts`](secrets-contracts.ts): the extended `Keychain` (`getSeed` plus the new
+  optional `isPersistent`) and `BrokerSecretsMethods`, split out of `broker-contracts.ts` and
+  re-exported from there, as `fs-contracts.ts` and `web-context-contracts.ts` already are
 - [`secure-dial-contracts.ts`](secure-dial-contracts.ts): `DialSecure` and the rest of
   `connectSecure`'s vocabulary, split out of `broker-contracts.ts` and re-exported from there,
   as `fs-contracts.ts` is
+- [`web-context-contracts.ts`](web-context-contracts.ts): `WebContextHost` and the rest of
+  `orivon.web`'s vocabulary, re-exported from `broker-contracts.ts` the same way
+
+See [`capabilities/README.md`](capabilities/README.md) for `net.ts`, `fs.ts`, `id.ts`,
+`secrets.ts`, `web.ts`, `net-connect-secure.ts`, `fs-handle-wrapper.ts` and `socket-room.ts`, and
+[`transport/README.md`](transport/README.md) for `dispatch/` and `relay/`.
 
 The decomposition and the import boundaries are recorded in
 [`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md), including the two
@@ -103,86 +86,6 @@ about here, then [`index.ts`](index.ts)'s `connect()` for one call end to end.
 Rationale that explains why a file has the shape it has. It lives here rather than in source
 headers ([`code-guidelines.md`](../../docs/development/code-guidelines.md)'s destination test),
 so the 25-line comment budget measures a file's traps, not its history.
-
-### The unlink hook: why teardown does not wait for `closed`
-
-`HandleTable.onUnlink` (`handles.ts`), the `unlink` field on a record
-(`handle-store.ts`) and `socket.onUnlink(...)` (`socket-relay.ts`) are one
-mechanism (A84). The rationale lives here rather than in three source headers.
-
-**The failure it prevents.** `closeTree()` removes a handle from `handles` and
-`byGrant` synchronously, then awaits `record.destroy(reason)`. For a clean
-close that destroy is `socket.end(cb)`, a HALF-close whose callback fires
-only once every queued byte has drained into the peer's receive window. A peer
-that stops reading never lets that happen, so without the hook `destroy` never
-settles, the handle's `closed` never settles, and everything gated on `closed`
-(the pump, the sink, the port, the `PortRegistry` slot) stays live. The record
-is already out of both tables by then, so neither `revoke()` (which walks
-`byGrant`) nor `dropOrigin()` (which walks `handles`) can find it, and nothing
-is left able to close that socket. Measured against Node v24.11.1: ~3 MB queued, `writableLength` still over 1 MB three seconds later,
-`end()`'s callback never fired.
-
-**Why a hook rather than a shorter timeout.** `closeTree`'s own doc already
-promised this ordering: "the unlink pass and the promise rejections are
-SYNCHRONOUS, before any destroy callback runs. That ordering is what makes
-revocation immediate". The relay simply was not subscribed to it; it only had
-`closed`. The hook finishes the design rather than adding a second one.
-
-**Both halves, not one.** A84 named two fix shapes and the owner took both.
-The hook makes teardown immediate; `destroySocket`'s `CLOSE_DRAIN_TIMEOUT_MS`
-(`node-adapters.ts`) additionally guarantees the destroy itself always settles,
-so `closed` and the handle count are released even in the pathological case.
-Either alone leaves a real gap: without the deadline `closed` still never
-settles, and without the hook the registry slot still waits on it.
-
-**The hook fires for every reason, but the relay acts on only some of them, and
-this is not a detail.** Tearing down unconditionally loses data. `stop()` cancels the read stream, and cancelling the readable
-half of a `Duplex.toWeb` DESTROYS the whole socket, dropping everything still
-in its write queue. Measured against a real paused peer: 8 MiB queued, 8 MiB
-lost, where a path with no teardown delivered all of it. So:
-
-- `'closed'` and `'sessionEnded'` FLUSH (`destroySocket` calls `socket.end()`).
-  The relay must not touch the socket at unlink; these settle through `closed`,
-  which the drain deadline now guarantees always happens. Later than unlink, but
-  the app's final bytes actually arrive.
-- `'revoked'`, `'aborted'` and `'failed'` DESTROY the socket regardless
-  (`resetAndDestroy()`/`destroy()`). Nothing to preserve, so immediate teardown
-  is correct and is the entire point of the fix.
-
-The listener therefore receives the `CloseReason`, not only the error code --
-because the code cannot tell these apart: `'sessionEnded'` and `'revoked'` both
-carry code `'revoked'` and sit on opposite sides of the branch. Both cases are
-pinned by tests (`socket-relay.test.ts`, and the real-socket truncation pair in
-`socket-drain.test.ts`) so the branch cannot be simplified away silently.
-
-**It also shuts A70's window.** `net.close`/`setNoDelay`/`setKeepAlive`
-dispatch through `PortRegistry`, which has no concept of a grant, so they could
-still reach a socket whose grant had just been revoked. The registry slot is
-now released in the same synchronous pass that unlinks the handle, so the
-lookup those three share simply stops answering. No extra check was needed.
-
-**`code` is undefined for an app-initiated close.** Deliberate, and it matches
-what `socket.closed` already did: it resolves for `'closed'` and rejects
-otherwise, so the relay sent a bare `end` for a clean close and a coded one
-for everything else. Passing the reason through the hook keeps the wire
-identical; only the timing changed, never the message.
-### `transport/datagram-relay.ts`: why its unlink teardown is NOT conditional
-
-`socket-relay.ts` branches on the close reason at unlink, and the section above explains at length
-why that branch is load-bearing: `stop()` cancels the read stream, cancelling the readable half of
-a `Duplex.toWeb` destroys the socket, and destroying it drops everything still in its write queue
-(8 MiB queued, 8 MiB lost, measured). So a flushing reason must be left to settle through `closed`.
-
-`datagram-relay.ts` tears down on **every** reason, and the asymmetry is deliberate rather than an
-oversight in either file. A UDP socket has no write queue to lose: `send` hands a datagram to the
-OS or refuses it, and nothing is ever buffered for later delivery. There is therefore nothing a
-teardown here can truncate, and waiting would only hold the registry slot and the port open longer
-than the grant that authorised them.
-
-Anyone tempted to "fix" the inconsistency in either direction should read this paragraph and the
-one above it as a pair. Both branches are pinned by tests (`datagram-relay.test.ts` asserts
-teardown for all five reasons; `socket-relay.test.ts` and `adapters/tests/socket-drain.test.ts`
-assert the opposite for TCP), so neither can be simplified away silently.
 
 ### `policy/reserved-ports.ts`: what a blanket grant does not reach
 
@@ -244,140 +147,15 @@ know an origin's declaration must not be able to hand it a budget SMALLER than
 it is entitled to. Only `index.ts`'s `connect` knows the ledger, and only it
 passes the real number.
 
-### `transport/port-pump.ts`: the read-side byte pump
-
-Relays bytes from an already-real WHATWG `ReadableStream` (`Duplex.toWeb`, [`ipc.ts`](transport/ipc.ts)'s
-`dialOne`) to the renderer over a socket's dedicated `MessagePortMain`. Deliberately pure and
-Electron-free, the same reason `policy/` is, so it runs under plain Node/vitest with no
-`MessagePortMain` at all; `ipc.ts` (via `socket-relay.ts`) is where a real port's
-`postMessage`/`on('message')` get wired to `send`/`handleCredit`. The write direction is
-`port-sink.ts`, below; this file is the read half only.
-
-**Credit is bounded by the window, never trusted as reported.** `handleCredit` clamps the running
-budget to `initialCredit`: `contracts/ipc.ts` specifies "the broker sends at most
-`LIMITS.readWindowBytes` ahead of what has been acknowledged", and credit is a remaining-budget
-counter, so `sent - acknowledged <= window` is the same statement as `credit <= initialCredit`.
-This file once trusted the renderer's reported figure outright, on the reasoning that an
-over-reporting renderer only inflates its own queue in its own process, which is wrong in one direction: a
-`CreditMessage` carrying `Infinity` made `credit > 0` permanently true, so the pump never stopped
-reading the OS socket, defeating the backpressure (and the TCP backpressure to the remote peer)
-that is the whole point. Non-finite and negative figures are rejected rather than applied for the
-same reason: `NaN` poisons the counter permanently, and a negative value drives it below zero with
-no way back.
-
-### `transport/port-sink.ts`: the write-side byte pump
-
-Runs the credit-window relay backwards from `port-pump.ts`'s read side: the BROKER grants the
-RENDERER a byte window to post outbound bytes into, because a `MessagePortMain` has no
-`pause()`/drain of its own (`electron.d.ts`'s `MessagePortMain` has exactly `postMessage`,
-`start`, `close`, `on('message')`, `on('close')`), so nothing at the transport layer stops a
-hostile renderer posting faster than the OS socket drains (T11b).
-
-**No sequence number, no pending-write queue.** A `WritableStreamDefaultWriter` serialises its
-own sink calls, and `write()` is never re-entered before the previous call settles, so tracking one
-scalar `unacked` count and one scalar `pendingCount` is sufficient; there is nothing to reorder.
-See `contracts/ipc.ts`'s own header for why write-end/write-abort travel on this port rather than
-over `CONTROL_CHANNEL`.
-
-**Acks are flushed either once `CREDIT_COALESCE_BYTES` has accepted, or once nothing else is
-outstanding** (`pendingCount === 0`), so a lone slow write is never held hostage by coalescing,
-and a burst of same-tick writes naturally merges into one ack, the same way a burst of same-tick
-reads merges into one credit consumption on the read side.
-
-**The heartbeat (`WRITE_HEARTBEAT_MS`) exists** because `contracts/ipc.ts`'s rule 2, that every
-reply-carrying message needs a timeout because this transport fails by silence, cannot be a
-flat deadline here: a choked BitTorrent peer legitimately stalls a write for real, sometimes for
-minutes. A zero-byte `WriteAckMessage` lets the renderer's own silence timer distinguish "the peer
-is just slow" from "the transport died" without either side inventing a new message kind.
-
-**`writer.close()` is never awaited** (the source keeps this as a trap next to the call itself,
-not only here). Measured directly against `Duplex.toWeb` (Node 24.11.1): its `close()` promise
-does not settle until the whole duplex is destroyed, after the readable side also ends, not
-when the FIN this call sends is itself flushed. Awaiting it would deadlock any peer that
-(correctly, per half-close) keeps reading after our FIN and waits for our reply before sending
-its own.
-
-### `transport/socket-relay.ts`: wiring one socket's pump and sink to its port
-
-Split out of `ipc.ts`'s `net.connect` case so that file keeps only what is security-relevant: the
-transport check, the origin re-derivation, and the port delivery. This file owns none of that; it
-is handed an already-delivered `PortLike` and just wires it to a pump and a sink.
-
-**Registration lives here too, not split back out to the caller**, because registering and
-releasing a socket are one lifecycle, not two: whichever path ends the socket (a clean close, a
-revoke, a write-window violation the sink itself detects, the renderer's own port closing) must
-free the SAME registry slot, and keeping both ends in one file is what makes that easy to see.
-
-**A clean end in both directions is one of those paths.** Once the app's own write-end has been
-issued (the sink's `onEnded`) and the peer's FIN has ended the readable (the pump's
-`onStreamEnded`), the relay calls `socket.close()`, which releases the handle and its socket slot
-the same way a failure does. Either half alone is a half-close and stays open: a peer that has
-stopped sending may still be reading. Without this, a connection both sides had finished stayed
-counted against the origin's socket allowance until the app remembered to call `close()`.
-
-### `transport/port-messages.ts`: validating messages on a socket's port
-
-Split out of `ipc.ts`'s inline credit-message check once a second and third message kind joined
-it: one job, shape validation at this trust boundary, the same way `ipc-validation.ts` owns it
-for `CONTROL_CHANNEL`.
-
 ### `index.ts` and the files split from it
 
 `index.ts` is split by concern, to stay under Rule 2's 500-line limit: `grants/grant-ledger.ts`
 (the per-origin state), `io-errors.ts` (translating an injected dependency's raw error), and
-`net-capability.ts` (`connect`/`authorisedSend`/`udpBind`/`listen`, the whole of `orivon.net`).
-What stays in `index.ts` is the dependency shape `createBroker` fixes, the origin-normalising
-`canonical()` every capability shares, and the `fs`/`app`/grant-ledger entry points that do not
-warrant a file of their own.
-
-**`net-capability.ts` stayed at the top level rather than becoming a `net/` directory**, unlike
-`grants/grant-ledger.ts`'s own move. The five directories are organised by JOB (`ADR-0015`:
-decide / remember / hold / do / speak), and `net-capability.ts` is not a sixth job: it is
-`index.ts`'s own job (the capability entry points) split purely for line count, the same test
-`io-errors.ts` and `broker-contracts.ts` already pass as top-level files. It takes `HandleTable`
-and `GrantLedger` as constructed dependencies rather than building its own, so nothing about
-`createBroker`'s fixed dependency shape or its stub-testability changed in the move: a pure
-extraction, not a redesign.
-
-**There is headroom left for now.** `fs` is still missing everything below `readFile`/
-`writeFile` and `id` has nothing at all; whoever builds either should check this file's line
-count before adding inline rather than assuming there is room, the same way `net.listen`'s
-author had to.
-
-### `net-connect-secure.ts`: an option that unbinds the name adds the address check
-
-`connectSecure` matches the grant against the hostname the app named, never a resolved address
-(`policy/connect-secure.ts`), because default verification of a certificate for that name
-against the runtime's built-in roots is what binds the name to whoever answered. Three of the
-app's TLS options remove that binding: `rejectUnauthorized: false` (nothing is verified), its
-own `ca` (a root the app chose can vouch for any name), and a `servername` other than the host
-(the certificate answers for a different name). Each is honoured, as Node honours it, and each
-sends the call through `checkConnect` as well: resolve once, require every answer to pass the
-same `https.connect` grant under `connect()`'s rule, and dial only the checked literal, with
-SNI and certificate verification still on the name (`secure-dial-contracts.ts`'s
-`SecureDialTarget.addresses`). Without it, `rejectUnauthorized: false` under a `*:443` grant
-would turn a name the app controls, rebound to `127.0.0.1` or `192.168.1.1`, into a full
-unauthenticated session with a loopback or LAN service, where default verification refuses the
-handshake. Both checks apply, so an option only ever narrows what a grant reaches. The cost: a
-LAN node with a self-signed certificate is reached through a grant naming its address (or
-`localhost:<port>`), never through a hostname that resolves privately, exactly as for plain TCP.
-A replacement grant re-checks such a socket by the address it reached
-(`connectStillAuthorised`), as it does a plain one.
-
-### `net-capability.ts`: the accept-queue bound is not the specification's backpressure
-
-`handle-contracts.md`'s conformance item 7 for `TcpServer` wants the OS listen backlog itself to
-apply pressure once an app stops reading `connections`, but vanilla Node `net` accepts a
-connection and fires `'connection'` unconditionally the instant the OS hands one over; there is
-no public API to defer the `accept()` syscall independent of app readiness (`pauseOnConnect`
-pauses an accepted SOCKET's data flow, not the listener's accept loop). `../adapters/
-node-adapters.ts`'s `listenTcp` is honest about this gap rather than claiming to have closed it:
-`LISTEN_ACCEPT_QUEUE_LIMIT` bounds how many accepted-but-unclaimed connections one listener holds
-before it starts resetting new ones outright, which keeps an unread `connections` stream from
-pinning unbounded memory in the main process (T11b) without pretending to be OS-level
-backpressure. Provisional, flagged for the same reason the write
-heartbeat and dial timeout are (`transport/port-sink.ts`, `adapters/node-adapters.ts`'s own
-`DIAL_TIMEOUT_MS`): nothing in `contracts/` or `handle-contracts.md` specifies this number.
+every file under [`capabilities/`](capabilities/) (see that folder's own README for why it is a
+folder rather than a sixth top-level file: `net.ts`'s `connect`/`authorisedSend`/`udpBind`/`listen`
+alone is the whole of `orivon.net`). What stays in `index.ts` is the dependency shape
+`createBroker` fixes, the origin-normalising `canonical()` every capability shares, and the
+`fs`/`app`/grant-ledger entry points that do not warrant a file of their own.
 
 ### `policy/manifest-patterns.ts`: one conversion from manifest to pattern set
 
@@ -409,128 +187,7 @@ the full mechanism, including why hydration runs from `registerApp` rather than 
 own earlier-touch hook (it needs a manifest to re-validate against), and the T13c exclusion for
 loopback/plain-http origins.
 
-### `fs-capability.ts`'s `open`: confining once, no `abort`, and why a stream errors on quota (A184)
-
-**Confinement runs exactly once, at open, never again for `read`/`write`/`stat`/`truncate`/
-`sync`/`readable`/`writable`.** Every other `fs` method re-derives a fresh `confineForOrigin`
-call per invocation because each one carries a fresh path; `open`'s own operations carry no path
-at all past acquisition; they address the real OS file descriptor `deps.fs.open` already
-returned. A symlink swapped in on disk after `open()` returns cannot retarget an already-open fd
-the way it could a second path lookup, so there is nothing left for a second confinement check to
-catch. This mirrors `net.connect` exactly: the policy check runs once, at acquisition, and every
-operation after it re-checks only OWNERSHIP of the handle (T11c, via `runFileIo`'s
-`{on:'handle'}` scope), never the grant a second time.
-
-**`FailableFileHandle` has no `abort`, unlike `FailableTcpSocket`.** A `TcpSocket` is one fixed
-duplex, so "abort the socket" is unambiguous: tear the whole handle down with an RST. A
-`FileHandle`'s `readable()`/`writable()` are FACTORIES, so an app may hold several live streams
-over one handle at once, at different offsets, exactly matching this handle's own no-implicit-
-cursor rule, so "abort the file" has no single stream to mean. Aborting one `writable()`
-stream discards that stream's own buffered bytes through the real underlying `WritableStream`'s
-own `abort()`, entirely below this interface; it never reaches into the handle table the way a
-TcpSocket's `abort()` does, and the other streams the app may be holding are untouched.
-
-**`writable()`'s quota check ERRORS the stream on the chunk that exceeds it, and does not
-silently drop the chunk the way `udp.send`'s A87 counted loss does.** The two failures are not
-the same shape (code-guidelines.md Rule 3's counterweight: extract or diverge on the REASON, not
-the shape): a DHT peer list routinely names addresses outside a grant, so treating the first
-excluded peer as fatal would kill a working swarm, and UDP has no delivery guarantee to violate
-by dropping one packet. A torrent write that silently dropped bytes past quota would instead
-corrupt the file actually landing on disk, and there is no "the app expected some loss here" for a
-positional byte stream the way there is for a P2P transport. Positional `write()` gets the same
-treatment via `reserveFsBytes`/`releaseFsBytes`; both paths share the SAME running per-origin
-counter, so an app cannot bypass its declared quota by switching from one call shape to the
-other.
-
-**`destroy()`'s teardown (`../adapters/node-fs-adapter.ts`) is conditional on the close reason,
-mirroring `destroySocket`'s A84 fix, but deliberately does NOT reuse its `CLOSE_DRAIN_TIMEOUT_MS`.**
-'closed'/'sessionEnded' let a still-queued `writable()` stream finish before the fd is released;
-'revoked'/'aborted'/'failed' discard it outright: same two-way split, same reason (a flushing
-reason must not truncate the app's own final bytes; an abrupt one has nothing worth preserving).
-The socket version needs a deadline because `socket.end()`'s callback can wait forever on a REMOTE
-PEER that has simply stopped reading. A local `fs.WriteStream` has no such adversary: it drains to
-the OS's own `write()` syscall, bounded by real disk I/O, never by another party's willingness to
-read anything. Proven directly, not assumed: `node-fs-adapter-open.test.ts`'s teardown tests fire a
-write without awaiting it and call `destroy()` a line later, deterministic because JS is single-
-threaded and a real fs write cannot complete before the test's own next synchronous statement runs,
-the same trick that makes the test immune to disk speed.
-
-**That same abrupt-teardown path has a SECOND escape past the file's own `nodeStream.on('error',
-() => {})` guard, found while restoring a fix a usage-limit interruption had left reverted --
-`Writable.toWeb` also settles `writer.closed`, `writer.ready`, and each individual
-`writer.write(chunk)` call's own promise when it detects the premature close, none of which that
-raw-stream 'error' listener ever sees. `writable()`'s `getWriter()` is wrapped (not called
-eagerly, since acquiring and holding a writer before the caller does would lock the stream out from
-under them) so that whichever writer the caller ends up creating gets a silent `.catch(() => {})`
-attached to all three, alongside whatever handler the caller attaches itself, the instant it is
-acquired. A `writer.abort()` at the WHATWG layer is not a substitute: it avoids the escape too,
-but waits for an in-flight write to finish rather than interrupting it, which silently turns a
-'revoked' close into a flush, confirmed by a probe where the full chunk landed.**
-
-**`readable()`/`writable()` stop at the broker layer in this landing (2026-09-15, A184) --
-still open, not forgotten.** They are real, adapter-level WHATWG streams, proven directly against
-a real fd (`node-fs-adapter-open.test.ts`), and `port-pump.ts`/`port-sink.ts` are already generic
-enough to relay either one over a socket's dedicated port the same way `net.connect`'s byte pump
-does; nothing about them is TCP-specific. What is missing is the wiring itself: a control-
-channel case that mints a port pair for a `FileHandle` the way `net.connect`'s `deliverTcpSocket`
-does for a `TcpSocket`, and the main-world stream construction on the preload side
-(`main-world-socket.ts`'s `buildSocket` is the pattern to follow). It is deferred as a scope
-decision, not a blocker (`docs/open-questions.md` A184). What that means a page cannot do yet: `window.orivon.fs.open(...)`'s returned object is deliberately
-narrower than `FileHandle`, with no `readable`/`writable`, and its `closed` is not live-pushed
-(revocation surfaces on the next operation attempted against the handle, not proactively).
-
-### `fs-capability.ts`: the quota counts what the files occupy
-
-`fs.quotaBytes` is checked against the bytes the origin's files take up, which is what
-`capability-api.md` A9 SS3 specifies, not against every byte ever written. A running count of
-writes never went down: a database that rewrites its file on every load (nedb, as FreeTube uses
-it, writes a temporary file and renames it over the original) reached any quota within one
-session, however small the data.
-
-- **Measured, not persisted.** The first operation that can change an origin's usage in a session
-  (`writeFile`, `rm`, `rename`, `open`) first adds `BrokerFs.diskUsage(root)` to the count
-  (`ensureMeasured`), so nothing has to survive a restart and nothing can drift across one.
-- **`writeFile` charges growth.** The file's current size is read first; only the difference is
-  reserved, and a smaller rewrite gives the rest back.
-- **`rm` and `rename` give bytes back.** `rm` frees what `diskUsage` measured under the path just
-  before removing it; a `rename` onto an existing file frees the replaced file.
-- **What still over-counts, on purpose.** Writes through a `FileHandle` (positional `write`, and
-  `writable()` streams) charge every byte they write, so rewriting a region of a file in place is
-  charged again; `truncate` still charges growth and frees what it cuts. Concurrent `writeFile`s
-  to one path each charge their own growth. Each of these errs towards `'limit'`, never past it.
-- **What can under-count, and its bound.** A file removed or replaced while a handle to it is still
-  open keeps its bytes on disk until that handle closes, but its bytes are given back at once.
-  That is bounded by `LIMITS.concurrentFileHandles` open files and ends when they close or the
-  session does. Files picked with `fs.userSelected` live outside the root: their writes charge the
-  same count, but they are not part of the measurement.
-
-### `web-capability.ts` -- why a timed-out `evaluate` makes `closed` REJECT, not resolve
-
-ADR-0019's own contract only names two `WebContext.closed` outcomes: reject `'revoked'` on
-revocation, resolve on an *idle* close (`LIMITS.webContextIdleMs` with nothing running). A timed-
-out `evaluate` is neither -- it is the broker force-closing a context that was doing something,
-because a running script cannot be interrupted any other way. Two readings were possible, and
-the resolving one was rejected:
-
-- **Resolve, like the idle case.** Reads as "the platform's routine housekeeping recycled this,
-  nothing is wrong" -- true for idle, false here. The app's own script overran its budget and got
-  killed mid-flight; folding that into the same outcome as ordinary resource recycling would hide
-  the one signal that tells an app it needs to write a faster or more defensive script.
-- **Reject 'timeout' (chosen).** Matches what `evaluate` itself already rejects with, so an app
-  awaiting `closed` learns the same thing an app awaiting `evaluate` learns, with no separate
-  polling needed to tell "idle" from "killed" apart. It also reuses the exact mechanism this
-  codebase already has for "a handle died rather than closed cleanly" --
-  `HandleTable.fail(origin, handleId, code)`, the same call `net-capability.ts`'s socket wrapper
-  makes on a real I/O fault (a peer RST) -- rather than inventing a second one. `fail`'s own
-  `CloseReason` is `'failed'`, which `handle-store.ts`'s `closeTree` already routes to a REJECTING
-  `closed` (only `'closed'` resolves it); nothing new had to be taught to that file.
-
-The deadline is `LIMITS.webContextEvaluateMs` unless the caller passes a shorter `timeoutMs`
-(`evaluateDeadline`, clamped to the platform's, never extending it), and a caller-chosen deadline
-closes the context exactly as the platform's does: it is the same interrupted-script problem.
-
-Guarded against a narrow race: if a concurrent revoke already closed the same handle through its
-own cascade by the time the timeout branch runs, `handleTable.fail` throws (the id is no longer
-registered) rather than silently doing nothing -- caught and discarded here, because the timeout
-error is still the right thing for `evaluate` to reject with regardless of which path actually
-tore the context down.
+See [`capabilities/README.md`](capabilities/README.md)'s Design notes for `net-connect-secure.ts`,
+`net.ts`'s accept-queue bound, `fs.ts`'s `open`/quota behaviour and `web.ts`'s `evaluate` timeout,
+and [`transport/README.md`](transport/README.md)'s for the unlink hook, the byte pumps
+(`relay/port-pump.ts`/`port-sink.ts`), `relay/socket.ts` and `relay/port-messages.ts`.
