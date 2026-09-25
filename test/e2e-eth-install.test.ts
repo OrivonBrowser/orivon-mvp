@@ -81,8 +81,14 @@ it('installs a .eth app from verified IPFS content, pins its CID, and opens it f
       gatewayClosed = true
       await clickAddressBarRetrying(chrome, `${ORIGIN}/`)
       const reopened = await waitForTab(chrome, { address: `${ORIGIN}/`, title: 'eth app' })
-      const view = findViewShowing(running, chrome, `${ORIGIN}/`)
-      const ran = view === undefined ? null : await evaluateRetrying(view, () => document.body.dataset['app'] ?? null)
+      // The tab already showed this address and title before the reload, and installing swaps
+      // its view, so poll whichever view shows it until the script's mark is there.
+      let ran: string | null = null
+      await waitFor(async () => {
+        const view = findViewShowing(running, chrome, `${ORIGIN}/`)
+        ran = view === undefined ? null : await evaluateRetrying(view, () => document.body.dataset['app'] ?? null).catch(() => null)
+        return ran === 'ran'
+      }, 10_000)
       check(`with the gateway gone, it opens from its pin and its script runs (${String(ran)})`, reopened.ok && ran === 'ran')
 
       expect(pin.content).toEqual({ cid: root, via: 'ipfs', pointersVerified: true })
