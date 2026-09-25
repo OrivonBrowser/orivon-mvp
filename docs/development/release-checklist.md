@@ -133,9 +133,9 @@ forgotten.
 
 | Item | Added at | What it needs first, and why |
 |---|---|---|
-| **Journey 2: the app from a URL** | build step 4 | The app loader, plus the torrent app served from a **second origin**. Journey 1 runs a pre-cached app and journey 4 loads a local directory, so without this **no journey demonstrates URL delivery**, which is the thesis |
-| **Journey 1: the clip** | build step 5 | A **named, pinned, well-seeded MP4/H.264 torrent**, recorded here by name. Not "a magnet link": with an unpinned torrent, pass/fail tracks that day's swarm health rather than the code. Assertion: video playing in **under 30 seconds** from a cold start, with the grant prompt shown |
-| **Journey 3: the identity** | build step 7 | **Three Nostr clients, pinned at a version**, named here. Assertion: the displayed npub is **byte-identical across two of them**. That is the check which would have caught the per-origin-key contradiction ([`open-questions.md`](../open-questions.md) B4) |
+| **Journey 2: the app from a URL** | build step 4 | The app loader, and an app served from a **public https origin**, so the run goes through discovery, fetch, pinning and the one consent dialog rather than a developer-mode shortcut. Assertion: after accepting, the app's granted call succeeds, and a reload with the network unplugged is served from cache |
+| **Journey 1: a desktop app, from a URL** | build step 5 | **One named port from `orivon-ports`, pinned at its recipe commit**, recorded here by name, and served from a public https origin: a developer-mode origin is never installed (`ADR-0029`). Not "a ported app": with an unpinned upstream, pass/fail tracks that day's commit rather than the code. Assertion: the app's main screen loads and one action that needs its granted network access succeeds, with the consent dialog shown |
+| **Journey 3: a name on Ethereum** | build step 6 | **A named `.eth` name whose record is an `ipfs://` contenthash**, recorded here. Assertion: the page renders and the site-info popover shows the name proved and the content verified. Then a second run through a gateway that alters one block: it **must fail rather than render** |
 
 ---
 
@@ -148,9 +148,8 @@ forgotten.
 - [ ] `npm run typecheck && npm test && npm run check:natives && npm run check:contracts` green.
 - [ ] CI green on `main`.
 - [ ] [`CHANGELOG.md`](../../CHANGELOG.md) updated.
-- [ ] Known limitations stated **in-product**, not only in the README: MP4/H.264 only; swarm
-      peers see the user's IP; reduced seeding behind NAT; address-bar search text goes to
-      DuckDuckGo.
+- [ ] Known limitations stated **in-product**, not only in the README: peers see the user's IP;
+      no automatic port forwarding behind NAT; address-bar search text goes to DuckDuckGo.
 - [ ] **Telemetry pre-announced.** Launch-blocking ([`readiness.md`](../planning/readiness.md)
       risk 5): telemetry discovered rather than announced is cheap to avoid and expensive to
       mishandle.

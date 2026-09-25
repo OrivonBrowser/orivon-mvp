@@ -12,7 +12,7 @@ Click-through shows the level and, beneath it, **the actual evidence it rests on
 
 **What it must never import.** [`src/broker/`](../broker/) internals.
 
-**Owner stream.** `trust`, build step 6. First to be cut if the shell or broker overruns.
+**Owner stream.** `trust`, build step 7. First to be cut if the shell or broker overruns.
 
 **What this component exists to prevent.** Overclaiming. It must never present something as
 safer than it is; the honesty note about MSE being *obfuscation, not privacy* is the worked
@@ -78,7 +78,7 @@ per bucket, but byte totals are the one that answers "how much of the running ap
 enormous remote script and forty tiny pinned icons are not well described by a request count:
 by that measure the pinned side would dominate 40:1 while the app's actual weight ran almost
 entirely unpinned. Bytes read that correctly. Both counts are kept anyway, at no extra cost,
-so build step 6 can weigh by whichever it renders.
+so build step 7 can weigh by whichever it renders.
 
 **Byte totals are a floor, never a guess, when a size could not be read.**
 [`src/loader/pin-coverage.ts`](../loader/pin-coverage.ts) reads a pinned asset's exact size (the

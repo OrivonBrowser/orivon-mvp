@@ -59,14 +59,15 @@ export interface ConnectSrcPolicy {
    * returns a closed `ConnectDenialReason` union instead of a bare boolean.
    * The grant prompt / trust indicator (later build steps) need to be able
    * to say "`fetch` to this host is not covered by CSP even though
-   * `orivon.net.connect` is" -- and, for an app like the flagship, "CSP
-   * cannot cover this grant at all". Non-empty `omitted` means the emitted
-   * `sources` are STRICTER than the grant; nothing further reports how much.
+   * `orivon.net.connect` is" -- and, for a P2P app such as a torrent client,
+   * "CSP cannot cover this grant at all". Non-empty `omitted` means the
+   * emitted `sources` are STRICTER than the grant; nothing further reports
+   * how much.
    */
   readonly omitted: readonly OmittedPattern[]
 }
 
-// AI-RECOMMENDED, NOT AN OWNER DECISION. Sized against: the flagship's
+// AI-RECOMMENDED, NOT AN OWNER DECISION. Sized against: a torrent client's
 // realistic range is 6881-6889 (nine ports); MAX_PATTERNS is 256, so an
 // unbounded enumeration is 256 x 65535 tokens. Neither number is specified
 // anywhere in the corpus.

@@ -1,12 +1,12 @@
-// Split out of grant-prompt-render.ts (Rule 2: that file crossed 500 lines
-// once the coordinator's flagship review added two merge functions) along
-// its own real seam: everything about turning a HOST:PORT PATTERN LIST into
-// a sentence -- the wildcard check, port breadth, the large-host-set
-// warning (A133) -- versus that file's own concern, which is turning a
-// whole CAPABILITY SET into one dialog. `describeCapabilityGrant`'s switch
-// (grant-prompt-render.ts) calls `describeConnectCapability` for the three
-// pattern-shaped capabilities and handles `tcp.listen`/`udp.bind`/`fs`/`id`
-// itself, which have no patterns to parse this way.
+// Split out of grant-prompt-render.ts (Rule 2: with its two row-merge
+// functions, that file would cross 500 lines) along its own real seam:
+// everything about turning a HOST:PORT PATTERN LIST into a sentence -- the
+// wildcard check, port breadth, the large-host-set warning (A133) -- versus
+// that file's own concern, which is turning a whole CAPABILITY SET into one
+// dialog. `describeCapabilityGrant`'s switch (grant-prompt-render.ts) calls
+// `describeConnectCapability` for the three pattern-shaped capabilities and
+// handles `tcp.listen`/`udp.bind`/`fs`/`id` itself, which have no patterns
+// to parse this way.
 //
 // EVERY PATTERN IS RENDERED FROM THE PARSED FORM (../broker/policy/connect-
 // patterns.js), NEVER A SECOND GUESS AT THE RAW STRING -- see this

@@ -71,7 +71,7 @@ one shared storage domain and one grant ledger entry, with nothing throwing and 
 wrong (security-model.md T13b); (2) `new URL('blob:https://x.example/u').origin` is the real,
 legitimate-looking `https://x.example`, for a scheme T13b requires be rejected outright; `ws:`,
 `wss:` and `ftp:` do the same. IPFS CIDs and ENS names key on something other than
-scheme+host+port and are deferred until trustless resolution exists (capability-api.md); an
+scheme+host+port and wait for trustless resolution (build step 6; capability-api.md); an
 unrecognised scheme denies for now, which is the failure direction wanted. `http:` stays in the
 allowlist on purpose: T13c forbids *persisting* a grant for a loopback or plain-http origin, not
 *deriving* one: the developer-mode and localhost-fixture paths both need a real origin to scope a
@@ -82,9 +82,9 @@ a comparison of capability kinds** (capability-api.md open item A9 §2; security
 ADR-0005). An update changing
 `connect: ["api.example.com:443"]` to `connect: ["*:*"]` requests no new capability *kind* at all, so
 under a kind comparison it installs silently, and a user who granted "talk to one host" ends up
-running an app that may connect to any computer on the internet, the exact grant journey 1 puts on
-camera. Its failure mode is "no prompt appeared", which no manual checklist catches (testing.md
-§5), so `update.test.ts` mutation-tests itself against three deliberately-wrong implementations for
+running an app that may connect to any computer on the internet (the `*:*` grant). Its failure
+mode is "no prompt appeared", which no manual checklist catches (testing.md §5), so
+`update.test.ts` mutation-tests itself against three deliberately-wrong implementations for
 exactly that reason.
 
 *Why `rollback-notice` can never be a shortcut past `capability-prompt`/`reconsent`.*
@@ -172,7 +172,7 @@ and `worker-src`. `form-action` has no fallback to `default-src` and is delibera
 cover at all: top-level navigation (`<a href>`, `location.href`, which CSP never governs) and the
 DNS-rebinding gap above. And the emitted list is the
 app's *entire* `connect-src` allowlist, so an omitted pattern is not "uncovered", it is blocked:
-the flagship's `tcp.connect: ["*:*"]` has no CSP equivalent at all and is reported via `omitted`
+a torrent client's `tcp.connect: ["*:*"]` has no CSP equivalent at all and is reported via `omitted`
 rather than widened to CSP's bare `*` (A43: widening is the bigger bug). An IPv6
 literal is the same story: CSP's host grammar has no `[`, `]` or `:`, confirmed in Electron
 44.0.0/Chrome 152 that Chromium drops such a source outright, and `host-ipv6-literal` exists so

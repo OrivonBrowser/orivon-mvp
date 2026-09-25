@@ -83,8 +83,9 @@ ledger entry, and its derived identity key (ADR-0003, ADR-0005).
 
 - HTTPS-delivered apps use the **standard web origin**: scheme + host + port. Deliberately
   the web's definition, not a new one.
-- IPFS- and ENS-delivered apps will key on CID / ENS name. Deferred until trustless
-  resolution exists
+- IPFS- and ENS-delivered apps arrive with build step 6, which settles what they key on
+  (CID, ENS name, or a web origin for the name) before the first such grant is persisted.
+  *Provisional* until then
 
 > **This definition must be settled before the first grant is persisted.** Changing it later
 > invalidates every stored grant and orphans every app's data.
@@ -204,7 +205,7 @@ ever rises, and it is what decides whether an update counts as a rollback at all
 case above lands on the same restrictive path: a choice or a notice, never a silent
 installation.
 
-**Honesty note on P2P apps.** The torrent app genuinely needs `tcp.connect: ["*:*"]` and
+**Honesty note on P2P apps.** A torrent app genuinely needs `tcp.connect: ["*:*"]` and
 `udp.send: ["*:*"]`, because DHT and peer exchange reach arbitrary hosts. That is close to
 unrestricted network access, and the grant prompt must say so in plain words
 (*"connect to any computer on the internet"*), not hide it behind a pattern string. This is a
@@ -419,10 +420,10 @@ on a publisher signature. **Both are cut for month 1.** Three reasons, from the 
    detached-signature location, no key generation, no tooling, and no build step. As written,
    `publisherKey` was a self-asserted string inside the very document it was meant to
    authenticate, fetched from the host it was meant to defend against.
-3. **It would have sabotaged the clip.** With no signing pipeline the flagship is unsigned, and
-   `ADR-0002` mandates unsigned apps be marked in the tab *and in every grant prompt*, so the
-   distribution asset would show a red UNSIGNED badge beside "connect to any computer on the
-   internet."
+3. **It would have marked every first-party app UNSIGNED.** With no signing pipeline every
+   first-party app is unsigned, and `ADR-0002` mandates unsigned apps be marked in the tab *and in
+   every grant prompt*, so each would show a red UNSIGNED badge beside "connect to any computer
+   on the internet."
 
 **What v0 actually ships:** hash-pinning (TOFU on the bundle) as the integrity mechanism, with
 **no UNSIGNED badge anywhere**, because "unsigned" is not a distinction when everything is.
@@ -485,7 +486,7 @@ collision with an installed app is surfaced explicitly (`security-model.md` T18)
 one grant set, one storage domain, one derived key. First-party apps need a dedicated hostname
 that serves nothing else.
 
-Protocol routing (`"protocols": ["magnet"]`) is what lets a magnet link reach the torrent app.
+Protocol routing (`"protocols": ["magnet"]`) is what lets a magnet link reach a torrent app.
 It requires its own user prompt (manifest declaration alone never wins the default), and the
 URI is validated against a strict grammar before it touches any other code
 (`security-model.md` T23).
@@ -504,7 +505,7 @@ IPC channel. Control operations (open, close, options) use normal IPC; bulk byte
 > measurement has to go *through this wrapper***, since that is the path the product ships.
 
 **Throughput is not the constraint.** The wrapper moves ~310 MB/s main to renderer (measured
-below) against the 1-5 MB/s 1080p needs. What decides the flagship is whether a renderer bundle
+below) against the 1-5 MB/s 1080p needs. What decides a torrent app is whether a renderer bundle
 fetches *ordinary* (non-WebRTC) torrents at all, and whether the tree stays free of native
 modules; see `build-plan.md` §Week 0. If renderer-side networking cannot carry it, the fallback
 is an Electron **`utilityProcess`**, not the main process.
@@ -599,7 +600,7 @@ conflated:
 > **Keying on the capability *kind* alone would leave a hole.** An update changing
 > `"connect": ["api.example.com:443"]` to `"connect": ["*:*"]` requests no new capability kind,
 > so it would install **silently**. The user granted "talk to one host"; the app would hold
-> "connect to any computer on the internet", the exact grant journey 1 puts on camera.
+> "connect to any computer on the internet", the broadest grant a P2P app asks for.
 >
 > **The re-consent trigger is therefore a subset check over the granted pattern set**, not a
 > kind comparison: silent only if the new manifest's patterns are a subset of what was granted.

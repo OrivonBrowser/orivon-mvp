@@ -4,7 +4,7 @@
 
 1. Node's `net`, `dgram` and `fs` APIs, reconstructed on top of `orivon.*`, so that ordinary
    Node libraries run unmodified inside a renderer. Load-bearing, not a developer nicety:
-   without it the flagship cannot be a URL-delivered app
+   without it no Node.js app can be a URL-delivered app
    ([`ADR-0005`](../../docs/decisions/ADR-0005-apps-are-url-addressed-not-bundled.md)).
 2. **Core polyfills** (queue item 3.1): the environment-shape modules a dependency graph
    needs just to *evaluate*, independent of any capability: `Buffer`, `stream`, `events`,

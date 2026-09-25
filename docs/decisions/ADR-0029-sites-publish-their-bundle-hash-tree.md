@@ -1,6 +1,7 @@
 # ADR-0029: Sites publish their bundle hash tree, and the browser shows whether it matches (DDOC)
 
-- **Status:** accepted
+- **Status:** accepted, **amended 2026-09-24: the off-host anchor is in scope, as the name's ENS
+  record** (see the Amendment below)
 - **Date:** 2026-09-24
 - **Type:** architecture
 - **Decided by:** owner
@@ -20,7 +21,8 @@ and shows **DDOC** in one of four states:
 
 **None of the four blocks a load.** Whether a failure warns or blocks is the Web3 Score's
 decision, not the loader's. In this build the tree is anchored on the site's own host. That
-anchor is *provisional*: a record held off the host would settle it.
+anchor is *provisional*: a record held off the host would settle it. *(Amended 2026-09-24,
+below: for a `.eth` name, its ENS record is that record.)*
 
 ## Context
 
@@ -109,6 +111,20 @@ The delivery ladder is unchanged: D2 still grades how the bundle was pinned (`AD
 - **Nothing acts on a failure yet.** The Web3 Score doing so is separate work.
 - `ADR-0005`'s "hash-pinning as the sole integrity mechanism" and `ADR-0006`'s deferral of DDOC
   are amended in place.
+
+## Amendment, 2026-09-24: the off-host anchor is the name's ENS record, and it is in scope
+
+The owner put DDOC's off-host anchor in scope, through ENS rather than DNS. A `.eth` name's ENS
+record carries the bundle root, read through build step 6's trust-minimised resolver
+(`build-plan.md`), so the anchor sits where a compromised host cannot rewrite it. That catches the
+case the Reasoning above leaves open: a host compromised well enough to rewrite both the files
+and the tree. For `.eth` names it settles the Decision's *provisional* anchor.
+
+The file format does not change, as the DNS alternative above already said of any off-host
+record: the ENS record carries the same root, compared with the pin as the published tree is.
+Which ENS record carries it is build step 6's call, and stays *provisional* until that step's
+plan lands. A DNS record remains out of scope, and a site that is not a `.eth` name keeps the
+same-host anchor.
 
 ## Reversibility
 

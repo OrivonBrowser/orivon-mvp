@@ -25,7 +25,7 @@ export type DeliveryMethod = 'fetched-each-load' | 'served-from-pinned-cache'
  * costs trust score, and no rung below said by how much). Passed through
  * into `DeliveryEvidence.pinCoverage` verbatim -- no rung here reads it, the
  * same "evidence, not a verdict" stance connection-ladder.ts already takes
- * for its own pattern heuristic (this scores nothing; see build step 6 for
+ * for its own pattern heuristic (this scores nothing; see build step 7 for
  * how it renders). Structurally identical to src/loader/pin-coverage.ts's
  * `PinCoverageSnapshot`, defined separately rather than imported from it --
  * this directory's README: never reach into another stream's internals.

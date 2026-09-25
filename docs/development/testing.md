@@ -98,7 +98,7 @@ Table: `..`, absolute paths, symlink escape, NUL bytes, sibling-prefix, Windows 
 drive letters, `\\?\` UNC, reserved names, macOS case-insensitivity. One `fast-check` property:
 for random segment arrays, the resolved path is always inside root.
 
-**This is also the flagship's happy path.** A `.torrent` file declares its own file paths, and
+**This is also a torrent client's happy path.** A `.torrent` file declares its own file paths, and
 `../../../.ssh/authorized_keys` is a real BitTorrent CVE class. T1 and T10 combine here.
 
 ### 3. Origin derivation, split in two

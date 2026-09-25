@@ -51,7 +51,7 @@ export const subsystems: Subsystem[] = [
   // it is the production caller of the install path, so ctx.installApp has
   // to be published before its first hint can arrive.
   manifestHintSubsystem,
-  // build step 6: trust     -> src/trust/
-  // build step 7: nostr     -> src/nostr/
+  // build step 7: trust     -> src/trust/
+  // nostr -> src/nostr/, parked: an idea, not a build step
   telemetrySubsystem // build step 8: telemetry -> src/telemetry/
 ]

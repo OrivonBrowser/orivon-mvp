@@ -52,7 +52,7 @@ describe('the grant ledger is consulted, never the manifest (open-questions.md A
     // would deny for an unrelated reason (empty-resolution) and prove
     // nothing about which set was consulted.
     const broker = createBroker(baseDeps({ resolve: stubResolve({ 'evil.example': ['93.184.216.34'] }) }))
-    // The flagship's own shape: declares "*:*", but the user granted one host.
+    // A torrent client's shape: declares "*:*", but the user granted one host.
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
     await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
 

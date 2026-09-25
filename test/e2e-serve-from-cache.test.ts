@@ -162,7 +162,7 @@ it(
           String(appJsFetch.contentType)
         )
 
-        // ---- Range requests work (ADR-0007's own probe tested this because the flagship streams video) --
+        // ---- Range requests work (ADR-0007's own probe tested this because a torrent client streams video) --
         const rangedFetch = await evaluateRetrying(view, async () => {
           const response = await fetch('/app.js', { headers: { range: 'bytes=0-4' } })
           return { status: response.status, contentRange: response.headers.get('content-range'), body: await response.text() }

@@ -25,7 +25,7 @@ import { MAX_MANIFEST_BYTES, parseManifest, type ManifestResult } from '../manif
 // All four failed loudly when tried. A passing suite proves nothing until it
 // has been watched to fail (docs/development/pr-blueprint.md).
 
-// The capability-api.md SSManifest example, verbatim -- the flagship's own
+// The capability-api.md SSManifest example, verbatim -- a torrent client's
 // declaration, and the shape every other test in this file starts from.
 function fullManifest (): Record<string, unknown> {
   return {

@@ -66,10 +66,10 @@ never arrives**. Silent total loss at every size. Consequences are recorded in
 *every reply-carrying protocol over `MessagePortMain` needs a timeout, because this transport
 fails by silence.*
 
-- **Pass** → the torrent app is a genuine URL-delivered app; proceed as planned (`ADR-0005`).
+- **Pass** → a torrent client runs as a genuine URL-delivered app (`ADR-0005`).
 - **Fail** → run `webtorrent` in an Electron **`utilityProcess`**, *not* the main process. It
   has full Node, no ambient main-process authority, and the cheapest measured IPC path, so the
-  recorded debt is far smaller than the original "privileged in main" fallback. The flagship
+  recorded debt is far smaller than the original "privileged in main" fallback. The app
   still ships; only its status as "an ordinary app" is reduced.
 
 Failing here costs 2 days. Discovering it in week 4 costs the month.
@@ -104,8 +104,8 @@ Two constraints follow, and they are not optional:
    `@thaunknown/simple-peer → webrtc-polyfill`, requiring **CMake and a C++ toolchain** when a
    prebuild is missing. Also present: `bufferutil`, `utf-8-validate`, `fs-native-extensions`
    (optional, but npm installs optionals by default).
-   **Therefore: webtorrent is shipped as a pre-built app asset, not a shell dependency**, so
-   the shell's `npm install` never resolves it. Enforce with a `postinstall` check that fails
+   **Therefore: webtorrent, and any app dependency like it, ships as a pre-built app asset,
+   not a shell dependency**, so the shell's `npm install` never resolves it. Enforce with a `postinstall` check that fails
    the build on any `binding.gyp` or `prebuilds/` under `node_modules`.
 2. **No platform-specific paths.** All storage goes through `app.getPath('userData')`, never a
    hardcoded XDG path, so data persists correctly on all three platforms (`ADR-0003`).
@@ -120,11 +120,11 @@ contributor, which is precisely the population the MVP is meant to attract.
 ## Critical path
 
 ```
-spike → shell → broker → shim → app loader → torrent app → THE CLIP
+spike → shell → broker → shim → app loader → Node.js apps → ENS and IPFS
 ```
 
-Everything not on this line is deferrable within the month. The clip is what unblocks
-distribution, so it is reached as early as possible rather than last.
+Everything not on this line is deferrable. Real apps running from a URL are what show the
+thesis, so they come as early as possible rather than last.
 
 ## Sequence
 
@@ -142,16 +142,17 @@ and changing it after the first grant is persisted orphans every app (`ADR-0003`
 >
 > **`net.listen` is built here**, meaning accepted-socket handles, teardown and the revocation
 > cascade. It is fully specified, including the unsigned-app port-range rules
-> (`capability-api.md` §1), and it is what lets the flagship seed as well as download rather
-> than receive only. See `docs/open-questions.md` A97.
+> (`capability-api.md` §1), and it is what lets a P2P app serve peers as well as download
+> rather than receive only. See `docs/open-questions.md` A97.
 
 **3. `orivon-node-shim`.** `net`, `dgram`, `fs` over `orivon.*`. Depends on the broker.
-Load-bearing for the flagship, not a developer nicety (`ADR-0005`).
+Load-bearing for every Node.js app, not a developer nicety (`ADR-0005`).
 
 **4. App loader.** Discover the manifest at `/.well-known/orivon.json`
 (`capability-api.md`), fetch + cache assets, compute and pin the **bundle hash**
-(`ADR-0009`, `bundle-hash.md`) and drive `decideUpdate()` (`src/broker/policy/update.ts`) on
-every re-fetch. **Also where the user-facing grant prompt is built**: the dialog a person actually reads, built once a real manifest exists to
+(`ADR-0009`, `bundle-hash.md`), drive `decideUpdate()` (`src/broker/policy/update.ts`) on
+every re-fetch, and fetch the site's published hash tree for **DDOC** (`ADR-0029`), kept beside
+the pin and compared with it on the Web3 Score page. **Also where the user-facing grant prompt is built**: the dialog a person actually reads, built once a real manifest exists to
 render in it and `A20`/`A27` are settled. Depends on broker storage. The pinning here is also
 what `ADR-0006` and the future attestation model rest on.
 
@@ -173,7 +174,7 @@ the corpus and needs a live `context7` check before writing the wiring.
 > be reinstalled. See `src/loader/README.md` and `src/broker/policy/connect-src.ts`.
 >
 > Every deliverable this step names is built and reachable from a real page: discovery, fetch,
-> hash-pinning, cache, the update decision, the consent dialog, and the CSP wiring above. The
+> hash-pinning, cache, the update decision, DDOC, the consent dialog, and the CSP wiring above. The
 > consent dialog fires once, before the app's own code runs, for its whole declared capability
 > set (`ADR-0012`). See `docs/planning/compatibility-matrix.md` for the cell-by-cell detail.
 
@@ -181,83 +182,46 @@ the corpus and needs a live `context7` check before writing the wiring.
 > What v0 ships is hash-pinning, fully specified by `ADR-0009` and `bundle-hash.md`, and the
 > site's own published hash tree shown as DDOC evidence (`ADR-0029`).
 
-**5. Torrent app.** `webtorrent` via the shim, player UI, magnet input, file list, resume.
-Ships as a pre-built app asset (see Platform policy).
+**5. Node.js apps.** Port ordinary Node.js and Electron desktop apps to run from a URL over
+`orivon.*`, as the platform's test cases. A port is a recipe, a manifest and one bridge file: the
+app's own source is cloned at a pinned commit, built by its own toolchain, and never forked
+(`ADR-0020`). The ports, and the harness that builds and serves them, live in `orivon-ports`;
+nothing in this repository depends on that checkout. A gap a port finds is fixed here, for every
+app (`mvp-scope.md` §The genericity test), and `compatibility-matrix.md` tracks what works cell by
+cell.
 
-Media path: **serve pieces to `<video>` over a range-capable custom
-scheme**, not MSE and not a localhost HTTP server. MSE would require fMP4 you do not have and
-forces hand-implemented seeking; a localhost socket is `security-model.md` T15. A
-`protocol.handle()` streaming response, or webtorrent's Service-Worker
-`createServer({ controller })`, which is renderer-local and origin-scoped, gives seeking and
-track selection to Chromium for free and is **unreachable by other local processes**, which is
-strictly stronger than T15's token mitigation.
+`orivon-ports` has recipes for FreeTube, Element, AirGap Vault and ASGARDEX. They run as
+developer-mode origins, which are never installed (`ADR-0029`), so the step ends at journey 1: a
+named port, served from a public https origin, installs through the app loader and works
+(`release-checklist.md` §Scheduled additions).
 
-**`createServer` takes a second parameter, confirmed 2026-08-25 and not documented anywhere
-else in this corpus:** `client.createServer(opts, force)`, where `force: 'browser' | 'node'`
-exists specifically for environments that run both Node and a browser context, and Electron is
-named explicitly in webtorrent's own docs as the intended use case. Without it, webtorrent may
-select its Node implementation in the renderer and attempt to open a real listening socket
-rather than using the Service-Worker path. Call it as
-`client.createServer({ controller }, 'browser')`.
+**6. ENS and IPFS, trust-minimised.** Load `name.eth` as `https://name.eth`, with every byte
+checked on this machine against what the Ethereum chain says the name points to. A light client
+proves the name's record at a recent finalized block, the contenthash is decoded locally, and
+every IPFS block is hashed against its CID before any of it is used. RPC servers and gateways
+supply availability only, never correctness. The page keeps its own `.eth` origin and is
+consented and installed like any other app (`ADR-0007`, `ADR-0018`). This is journey 3.
 
-Separately confirmed by the spike (`week-0-spike-plan.md` §Gate 3): Electron treats a `file://`
-origin loaded via `loadFile()` as a secure context, so service worker registration for this
-path needs no fallback: `navigator.serviceWorker.register(...)`
-succeeds without any extra scheme registration. The `protocol.handle()` custom-scheme path
-described above remains the documented fallback if that ever changes.
+Two things arrive with it. **DDOC's off-host anchor:** a `.eth` name's ENS record carries the
+bundle root, so a host compromised well enough to rewrite both its files and its tree is caught
+(`ADR-0029`). **The delivery ladder's D3 and D4 rungs** become reachable
+(`src/trust/delivery-ladder.ts`). Rule 8 holds here as everywhere: a library that pulls in a
+native module is out, however standard it is.
 
-**Format support in v0 is MP4/H.264 only.** MSE cannot demux Matroska and
-neither can Chromium's `<video>`, so MKV has no path without a remuxer, and is deferred to
-post-launch (`libav-wasm`, pure-WASM). Stock Electron does ship H.264/AAC
-(`proprietary_codecs = true`), so this needs no extra work; HEVC is hardware-decode-only and
-therefore out.
+*Provisional:* the item-by-item plan for this step is not on `main`. Until it is, this paragraph
+is the scope, and the choice of light client, gateways and how a name whose record points back
+into DNS is shown are open.
 
-Lift **presentation only** from `webtorrent-desktop`: control layout, keyboard shortcuts,
-subtitle rendering, file-list UI. Its playback plumbing is stale (last release 2020, pinned to
-Electron 27 and webtorrent 1.9.7) and points at the localhost-server + VLC-handoff design that
-v0 rejects. Same status as `orivon-browser-v2`: **visual reference only.**
-
-Known limitations, stated in-product rather than hidden: **MP4/H.264 only in v0**; swarm peers
-see the user's IP (no Tor in the MVP); seeding behind NAT is reduced without port forwarding
-(no UPnP in v0); local peer discovery is unavailable (no multicast bind in the manifest
-grammar); UDP binds are IPv4-only in v0, so the DHT does not work at all on an IPv6-only
-network and a peer reachable only over IPv6 is unreachable (`A89`); **non-address input
-typed into the address bar is sent to DuckDuckGo** (`mvp-scope.md` IN table): search text leaves the
-machine, which a privacy-branded browser states rather than buries.
-
-> **Protocol encryption (MSE): available, and it should be ON** (gate 1a).
->
-> WebCrypto does not usefully provide Diffie-Hellman, a synchronous SHA-1 or RC4, and none of
-> that stops MSE working in the renderer. Measured:
-> - `mse.js` already ships a **complete pure-JS RC4 fallback**, selected whenever
->   `nativeRC4` is false. RC4 was never a problem.
-> - The only genuinely missing pieces were `createHash('sha1')` and `createDiffieHellman`,
->   and **`crypto-browserify` supplies both**, in pure JS, so Rule 8 is unaffected.
-> - Aliasing `crypto` → `crypto-browserify` and restoring the real `mse.js` produced a
->   **successful encrypted handshake at `secure: 2`** (RC4 required, *no plaintext fallback*)
->   against a Node seeder using native crypto. A piece verified in 479 ms.
->
-> **Cost:** the renderer bundle grows from 427 KB to 1.70 MB (95 KB → 336 KB gzipped).
-> Irrelevant against Electron's ~150-200 MB floor (`ADR-0005`), and it buys reachability with
-> peers that require encryption plus resistance to ISP shaping of plaintext BitTorrent.
->
-> **Recommendation: ship `secure: 1`** (encrypt, fall back to plaintext) for maximum swarm
-> reach. `secure: 2` also works but refuses plaintext-only peers.
->
-> **Honesty note for the UI:** MSE is *obfuscation, not privacy*. Its DH exchange is
-> unauthenticated and RC4 is broken; it exists to defeat traffic shaping, not eavesdroppers.
-> It must never be presented as making torrenting private. The IP-visibility limitation above
-> is the one that actually governs, and `ADR-0006` exists to prevent exactly this kind of
-> overclaim.
-
-**End of this step = the clip exists. Begin distribution now, not at the end of the month.**
-
-**6. Trust indicator.** Delivery ladder, connection ladder from the broker's per-app
+**7. Trust indicator.** Delivery ladder, connection ladder from the broker's per-app
 connection log, operation scoring. Click-through shows the actual evidence, not a grade
 (`ADR-0006`).
 
-**7. Nostr.** Inject `window.nostr` (NIP-07) backed by `orivon.id`. Verify against two or
-three real clients before trusting the ~1 day estimate (`open-questions.md` C4).
+**Judged score levels are part of this step:** site L4's "open source" half, site L5 and
+operation depth, read from a Web3 Score provider's attestation over the bundle hash. The
+provider need not be trustless in this build, and may run locally. Each judged level names the
+provider that issued it, is shown apart from the observed evidence, and falls back to grey `?`
+when no attestation matches the current hash. Which provider ships is open
+(`open-questions.md` A250).
 
 **8. Telemetry.** Collection, first-run disclosure showing the literal JSON with
 [Keep on] / [Turn off] buttons and no preselected default, in-product "what has been sent"
@@ -265,7 +229,7 @@ page. The disclosure UI is not optional (`ADR-0004`). **[Keep on] is the primary
 activates one.
 
 **9. Developer mode.** Unpacked loader, plainly-worded opt-in, unsigned marking, developer
-docs. This is journey 3.
+docs. This is journey 4.
 
 **10. Packaging.** `electron-builder`, AppImage + deb. Plus a documented, tested
 run-from-source path in the README for Windows and macOS.
@@ -282,7 +246,7 @@ Two packaging facts that shape the choice, verified 2026-08-25:
 - **Only deb can register as the default browser.** `xdg-settings set default-web-browser`
   needs an installed `.desktop` file with the right `MimeType=` entries, and a bare AppImage
   does not self-integrate. For a metric measured in daily-driver hours that is not cosmetic:
-  **deb is the primary artefact**, AppImage is for trial and clip audiences, and AppImage users
+  **deb is the primary artefact**, AppImage is for people trying it out, and AppImage users
   get a first-run "install desktop entry" flow.
 - AppImage caveats to document: needs `libfuse2` on Ubuntu 22.10+; `chrome-sandbox` SUID error
   because AppImages mount read-only; build on the oldest LTS you intend to support.
@@ -292,8 +256,8 @@ Two packaging facts that shape the choice, verified 2026-08-25:
 | | |
 |---|---|
 | End week 1 | Spike resolved · shell running · broker skeleton enforcing one capability |
-| End week 2 | Shim + app loader + torrent app → **the clip exists; distribution starts** |
-| End week 3 | Trust indicator · Nostr · telemetry |
+| End week 2 | Shim + app loader → **an app runs from a URL** |
+| End week 3 | Node.js apps · ENS and IPFS · trust indicator · telemetry |
 | End week 4 | Developer mode + docs · packaging · polish · **pre-announce telemetry, then ship** |
 
 ## Testing
@@ -316,7 +280,7 @@ pure function against stubs, 30 min to 3 h):
    `path.resolve` does not follow symlinks.* Table must cover `..`, absolute paths, symlink
    escape, NUL bytes, sibling-prefix, Windows separators / drive letters / `\\?\` UNC /
    reserved names, and macOS case-insensitivity. One `fast-check` property: for random segment
-   arrays, the resolved path is always inside root. **This is also the flagship's happy path:
+   arrays, the resolved path is always inside root. **This is also a torrent client's happy path:
    a `.torrent` declares its own file paths, and `../../../.ssh/authorized_keys` is a real
    BitTorrent CVE class, so T1 and T10 combine here.**
 3. **Origin derivation, split into two**: (i) URL → origin normalisation (default ports,
@@ -351,21 +315,20 @@ patterns and is rejected.**
 > regression that skipped the check entirely would pass every test while the product appeared
 > to work perfectly. It costs ~30 lines to close.
 
-The fixture app is also **app #3** for the genericity test and the developer-mode example
-(`mvp-scope.md`).
+The fixture app is also the smallest consumer in the genericity test and the developer-mode
+example (`mvp-scope.md`).
 
 **Manual checklist:** the journeys in `mvp-scope.md`, before each release,
 **run-from-source on Windows and macOS included**, since that is a supported path and it
 is the one most likely to break silently.
 
-They need writing up as an executable checklist (`docs/development/release-checklist.md`,
-**written 2026-08-26**, for the items decidable before build steps 4/5/7 exist) with a
-precondition, a fixed input and a falsifiable assertion each, because as prose in a scope document
-they cannot be run identically twice. Specifically: journey 1 needs a **named, pinned,
-well-seeded MP4 torrent**, not "a magnet link", or pass/fail tracks swarm health that day;
-journey 3 must name **three Nostr clients pinned at a version** and assert the displayed npub
-is **byte-identical across two of them**, the check that would have caught the per-origin-key
-contradiction (`open-questions.md` B4). Two items belong on the list regardless of journey:
+They need writing up as an executable checklist (`docs/development/release-checklist.md`)
+with a precondition, a fixed input and a falsifiable assertion each, because as prose in a scope
+document they cannot be run identically twice. Specifically: journey 1 needs a **named port,
+pinned at its recipe commit and served from a public https origin**, not "a ported app", or
+pass/fail tracks whichever upstream commit was current that day; journey 3 needs a **named
+`.eth` name whose record is an `ipfs://` contenthash**, plus a second run through a gateway that
+alters one block, which must fail rather than render. Two items belong on the list regardless of journey:
 the **telemetry first-run screen** (literal JSON, two buttons, no preselected default,
 nothing sent before the choice) and **launch with no keyring available**
 (`--password-store=basic`), confirming the seed is never silently written in plaintext.
@@ -378,13 +341,13 @@ unit-tested areas above are where a silent bug is a security bug, so they are no
 | Risk | Handling |
 |---|---|
 | Spike fails | Documented fallback, decided in week 0 rather than discovered later |
-| Shell or broker overruns | They are the critical path; cut the trust indicator first, Nostr second |
+| Shell or broker overruns | They are the critical path; cut the trust indicator first |
 | A dependency pulls in native modules | Audit at install time; it silently breaks Windows/macOS run-from-source |
-| NIP-07 injection non-conformance | Verify early (C4); only ~1 day, so it can slip to week 4 |
 | Electron CVEs | Track releases; a browser is a high-value target and this is not optional maintenance |
-| Torrent disk exhaustion | `fs.quotaBytes` enforcement + the disk-usage UI (`ADR-0003`) |
+| An app fills the disk | `fs.quotaBytes` enforcement + the disk-usage UI (`ADR-0003`) |
 | Scope creep from the vision docs | `mvp-scope.md` non-goals; anything absent from IN is out by default |
 
 ## Not in this plan
-Rust, Wasmtime, Chromium, mobile, DDOC, ENS, IPFS, app store, dashboard, wallet, and signed
-Windows/macOS installers. See `mvp-scope.md`.
+Rust, Wasmtime, Chromium, mobile, app store, the dashboard widget platform, wallet, signed
+Windows/macOS installers, and the two ideas in `mvp-scope.md` §LATER: a torrent app
+([`torrent-app.md`](torrent-app.md)) and Nostr identity. See `mvp-scope.md`.

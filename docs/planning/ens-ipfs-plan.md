@@ -171,7 +171,7 @@ Docs only, one PR, merged first.
   behind an egress allowlist, always given a checkpoint.
 - ADR-0005 amended in place (its "IPFS and ENS-addressed delivery later" line).
   `open-questions.md` C5 answered for ENS and IPFS. Decision-log rows for decisions 1-5 and both
-  consequences, from `d-0106` (`d-0101` to `d-0105` were taken by DDOC and the roadmap).
+  consequences, from `d-0108` (`d-0101` to `d-0107` were taken by DDOC, `orivon.id` and secrets, and the roadmap).
 
 **Exit:** merged; an edit naming `ipfs` under `src/` raises no scope warning; ADR-0006 and
 `ARCHITECTURE.md` no longer contradict decision 1.

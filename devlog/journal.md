@@ -49,5 +49,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Built the harness but not the bridge generator: with one port done it is tooling for a sample of one.
 - Corrected: DDOC never needed trustless resolution; that belongs to the connection axis. Its same-host anchor stays provisional.
 - Any web page can time a `.eth` request and learn which names were opened recently (A256); no fix is free.
+- Dropped the torrent flagship and the Nostr step: ported Node.js apps are now step 5, trust-minimised ENS and IPFS step 6.
+- Judged Web3 Score levels are in, even from a non-trustless or local provider; DDOC's off-host anchor moves in via ENS.
 
 ### Non-repo

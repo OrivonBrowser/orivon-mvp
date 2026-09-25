@@ -13,7 +13,7 @@ you nothing.
 [`build-plan.md`](../planning/build-plan.md) is dependency-ordered:
 
 ```
-spike -> shell -> broker -> shim -> app loader -> torrent app -> THE CLIP
+spike -> shell -> broker -> shim -> app loader -> Node.js apps -> ENS and IPFS
 ```
 
 Step 3 cannot begin before step 2 exists. So parallelism here is not *discovered* by finding
@@ -39,11 +39,12 @@ change belongs in their stream.
 | `shared` | `src/shared/` | n/a | **change-controlled**, same rules as `contracts`. Empty by design; see its `README.md` |
 | `broker` | `src/broker/` and its five directories (`policy/`, `grants/`, `handles/`, `transport/`, `adapters/`), `src/preload/app.ts`, `src/preload/orivon-surface.ts`, `src/preload/socket-bridge.ts`, `src/preload/socket-port.ts`, `src/preload/main-world-socket.ts` | 2 | critical path |
 | `shim` | `src/shim/`, the `renderer.resolve.alias` map in `electron.vite.config.ts` | 3 | |
-| `loader` | `src/loader/` | 4 | |
-| `torrent-app` | n/a until build step 5 opens | 5 | ships as a pre-built app asset |
+| `loader` | `src/loader/` | 4 | **done** |
+| `ports` | nothing here: the ports and their harness live in `orivon-ports` (`ADR-0020`). A gap a port finds is fixed by the stream that owns the path | 5 | under way |
+| `ens-ipfs` | `src/resolution/`, `src/ens/`, `src/ipfs/`, `src/verifier-host/`, `src/main/verifier/` | 6 | under way |
 | `fixture-app` | `test/apps/` | testing | the e2e fixture (also app #3 and the dev-mode example) and the Orivon-native demo |
-| `trust` | `src/trust/` | 6 | first to cut if the schedule slips |
-| `nostr` | `src/nostr/` | 7 | second to cut |
+| `trust` | `src/trust/` | 7 | first to cut if the schedule slips |
+| `nostr` | `src/nostr/` | none | parked: Nostr identity is an idea, not a build step |
 | `telemetry` | `src/telemetry/` | 8 | independent of the critical path |
 | `packaging` | `electron-builder` config, `scripts/` **except `smoke.mjs`** | 10 | independent of everything |
 | `docs` | `docs/`, root markdown, **`.github/`**, **`.claude/`** | n/a | always available |

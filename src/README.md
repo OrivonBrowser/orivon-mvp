@@ -27,11 +27,11 @@ OS (sockets, filesystem, keychain)
 | [`main/`](main/) | Electron main process: window, tabs, omnibox, IPC, subsystem registry | 1 | done |
 | [`preload/`](preload/) | Preloads at three privilege levels | 1, 2 | in progress |
 | [`renderer/`](renderer/) | The browser chrome UI (tab strip, toolbar, address bar) | 1 | done |
-| [`broker/`](broker/) | Manifest parsing, grants, per-origin enforcement. **This is the product** | 2 | in progress |
-| [`shim/`](shim/) | `net`, `dgram`, `fs` over `orivon.*`, so Node code runs in a renderer | 3 | in progress |
-| [`loader/`](loader/) | Manifest discovery, fetch, cache, hash-pinning | 4 | in progress |
-| [`trust/`](trust/) | The trust indicator, from observed behaviour | 6 | in progress |
-| [`nostr/`](nostr/) | `window.nostr` (NIP-07) backed by `orivon.id` | 7 | in progress |
+| [`broker/`](broker/) | Manifest parsing, grants, per-origin enforcement. **This is the product** | 2 | done |
+| [`shim/`](shim/) | `net`, `dgram`, `fs` over `orivon.*`, so Node code runs in a renderer | 3 | done |
+| [`loader/`](loader/) | Manifest discovery, fetch, cache, hash-pinning, DDOC | 4 | done |
+| [`trust/`](trust/) | The trust indicator, from observed behaviour | 7 | in progress |
+| [`nostr/`](nostr/) | `window.nostr` (NIP-07) backed by `orivon.id` | — | parked: an idea, not a build step |
 | [`telemetry/`](telemetry/) | Collection, first-run disclosure, "what has been sent" | 8 | in progress |
 | [`shared/`](shared/) | Helpers needed on both sides of a trust boundary | — | empty by design |
 

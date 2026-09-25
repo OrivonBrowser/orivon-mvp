@@ -80,7 +80,7 @@ describe('confinePath', () => {
     })
 
     it('accepts a path whose directories do not exist yet', () => {
-      // The flagship's own happy path: a torrent declares Show/Season 1/ep.mkv
+      // A torrent client's happy path: a torrent declares Show/Season 1/ep.mkv
       // and none of those directories have been created. A check that gave up
       // at the first missing component would reject every new download.
       const realpath = realpathStub({}, ['/apps/foo/Show'])

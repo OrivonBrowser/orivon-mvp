@@ -30,7 +30,7 @@
     2. Second-order -- nothing visible yet, but something is faster, cheaper, more
                        reliable, or harder to get wrong. Say which, and for whom.
     3. Enabling     -- a step toward something a person will feel. Name the thing
-                       and WHEN. "From step 5 the loader refuses a changed bundle"
+                       and WHEN. "From step 4 the loader refuses a changed bundle"
                        is an answer; "groundwork" is not.
 
   Rung 3 is the floor. Where an audience genuinely has nothing today, write

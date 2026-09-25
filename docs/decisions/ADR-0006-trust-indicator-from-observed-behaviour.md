@@ -1,7 +1,8 @@
 # ADR-0006: The trust indicator is built from observed behaviour, not claims
 
 - **Status:** accepted, **amended 2026-09-15** (see the Amendment section below: a gap in the
-  D-ladder, not a reversal of anything above)
+  D-ladder, not a reversal of anything above), and **twice on 2026-09-24**: DDOC ships as
+  evidence, and judged levels ship, from a provider that need not be trustless
 - **Date:** 2026-08-18
 - **Type:** product / architecture
 - **Decided by:** owner (insisted the full spectrum matters, and proposed the attestation
@@ -17,7 +18,8 @@ from two sources that are **automatic and require no judge and no DNS**:
 Defer only what genuinely cannot be decided automatically: **source-code honesty** (needs a
 judge) and **DDOC** (needs trustless DNS). Build the **hook** that lets judged scores attach
 later, via bundle-hash pinning, without building a judge. *(Amended 2026-09-24, below: DDOC
-does not need trustless DNS, and ships as evidence.)*
+does not need trustless DNS, and ships as evidence; judged levels ship too, from a provider that
+need not be trustless.)*
 
 ## Context
 An earlier draft of `mvp-scope.md` cut the indicator down to content-addressing only. The
@@ -115,7 +117,8 @@ shapes), never a claim the broker cannot actually verify.
 
 **Operation**: a specific action the user takes.
 
-In the MVP the concrete instance is **Nostr signing via `orivon.id`**: the key never leaves the
+*(Amended 2026-09-24, below: Nostr signing is an idea, not a build step.)* In the MVP the
+concrete instance is **Nostr signing via `orivon.id`**: the key never leaves the
 machine, no server participates, the operation is fully local. That is honestly a top-level
 operation score, and it gives "the user clicks and sees that this operation is fully trustless"
 a real thing to point at on day one.
@@ -156,8 +159,8 @@ No provider exists yet, so no judged level is ever displayed in month 1.
   ships as evidence, below)*
 - **Site L3** ("full stack runs entirely locally"): automatic ✅ *(reinstated)*
 - **Site L4**. The *"executes no external code without consent"* half is automatic via the
-  broker ✅; the *"open source"* half needs a judge ❌
-- **Site L5 / operation depth**. Needs a judge ❌
+  broker ✅; the *"open source"* half needs a judge ❌ *(amended 2026-09-24: judged, and shipped)*
+- **Site L5 / operation depth**. Needs a judge ❌ *(amended 2026-09-24: judged, and shipped)*
 - **Connection ladder**. Automatic in full ✅
 
 ## Alternatives considered
@@ -221,6 +224,26 @@ matches it (verified, failed with the differing files named, not published, or n
 is shown as evidence and never as a grade, and it blocks nothing. Its anchor in this build is
 the site's own host; a record held off the host is left out for scope, not for any dependency on
 trustless resolution. The D-ladder is unchanged, and trustless resolution landing adds D4 only.
+
+## Amendment, 2026-09-24: judged levels ship, from a provider that need not be trustless
+
+The owner put judged score levels in scope for this build: site L4's "open source" half, site L5
+and operation depth. They attach exactly as §How judged scores attach later describes, as a
+provider's attestation over the bundle hash, so nothing above changes shape. What changes is who
+may issue them: in this build the provider need not be trustless, and it may run locally, on the
+user's own machine. Three passages above are withdrawn: the Decision's deferral of source-code
+honesty, the closing "no judged level is ever displayed in month 1" of §How judged scores attach
+later, and the rejection of shipping judged levels under Alternatives considered.
+
+That rejection's reason still binds how the levels are shown. A judged level is its provider's
+claim, never the machine's. The indicator names the provider behind each one, keeps it apart
+from the observed evidence, and shows grey `?` when no attestation matches the current hash. A
+centralised or local provider is shown as what it is, because trusting the level means trusting
+that provider. Which provider this build ships with is `open-questions.md` A250.
+
+Nostr signing, the Operation ladder's concrete instance, is an idea rather than a build step
+(`mvp-scope.md` §LATER), so the operation ladder has no scheduled instance; `orivon.id` signing
+remains the candidate.
 
 ## Reversibility
 - **Cost to reverse:** cheap to extend, expensive to retract. Levels shown once become claims

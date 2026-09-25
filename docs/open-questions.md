@@ -9201,6 +9201,29 @@ or as `localhost:<port>`, not by a hostname that resolves privately.
 
 **Needs:** the owner's confirmation of that cost (`src/broker/README.md` has the argument).
 
+### A249 -- with no flagship, nothing is named as the daily-use driver or the distribution asset **[OWNER]**
+
+Filed 2026-09-24 with `d-0105`. The success metric is 25 h/month of `activeSec`, daily-driver use,
+and `ADR-0001` argued the torrent app met it (people torrent daily) and doubled as the
+distribution asset (a 15-second clip). With the torrent app an idea, build step 5's ported apps
+are test cases, and none of them is named as the app a person opens every day, or as what gets
+shown to the communities the distribution plan targets. `mvp-scope.md`'s failure criterion on
+organic traction cannot fire until one is.
+
+**What would settle it:** the owner naming the app or journey that carries daily use and
+distribution (a port, the `.eth` journey, or something else), or restating the metric.
+**Needed by:** packaging (build step 10), and before any distribution starts.
+
+### A250 -- which Web3 Score provider issues this build's judged levels **[OWNER]**
+
+Filed 2026-09-24 with `d-0106`. Judged levels ship in build step 7, and the provider need not be
+trustless and may run locally (`ADR-0006`'s second 2026-09-24 amendment). Nothing says who that
+provider is: an Orivon-run feed, a third party, or a judge on the user's own machine, and if
+local, whether a person or a model does the judging and how its attestation is keyed.
+
+**What would settle it:** the owner choosing the provider for this build, and the attestation
+format it signs, if it signs one. **Needed by:** build step 7.
+
 ### A251 -- a resolver that answers wrongly for gateway names leaves `.eth` loads to the gateways it spares **[AI-REC]**
 
 Filed 2026-09-24 with `ADR-0030`. The ENS and IPFS spike ran on a line whose ISP resolver answers

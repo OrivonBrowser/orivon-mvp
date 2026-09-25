@@ -137,8 +137,8 @@ describe('connectSrcFor -- host: \'*\' has no safe CSP representation', () => {
     // whole LAN -- reach a `*` grant explicitly does NOT authorise
     // (connect-patterns.ts's own hostMatches: '*' means PUBLIC UNICAST ONLY).
     // This is decision 1 (2026-09-02, A43): the header stays this strict
-    // even though it means the flagship's *:* grant gets no CSP coverage at
-    // all -- see connect-src.ts's own header for why widening is worse.
+    // even though it means a torrent client's *:* grant gets no CSP coverage
+    // at all -- see connect-src.ts's own header for why widening is worse.
     const result = connectSrcFor(['*:*'])
     expect(result.sources).toEqual(["'self'"])
     expect(result.sources).not.toContain('*')

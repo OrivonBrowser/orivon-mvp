@@ -131,7 +131,7 @@ audiences, both named:
 2. **Second-order.** Nothing is visible yet, but something is now faster, cheaper, more
    reliable, or harder to get wrong. Say which, and for whom.
 3. **Enabling.** This is a step toward something a person will feel. Name that thing and when
-   it arrives. *"From step 5 the loader refuses an app whose files changed"* is an answer;
+   it arrives. *"From step 4 the loader refuses an app whose files changed"* is an answer;
    *"groundwork"* is not.
 
 **Rung 3 is the floor.** A change that cannot reach even rung 3 for either audience is a change
@@ -146,7 +146,7 @@ worth questioning.
 | Instead of | Write |
 |---|---|
 | "Improves security around app filesystem access" | **User:** an app can no longer read files outside its own folder, even if it asks for `../../`. Nothing an honest app does changes. **Dev:** a path outside your app root now fails with `OrivonError`; ask for access deliberately via `fs.userSelected`. |
-| "None — this is broker-internal" (the bundle hash) | **User:** nothing today. From build step 5 an app whose files changed without its version changing stops loading, so a tampered update fails instead of running silently. **Dev:** bump your version with any file change, or the loader rejects the bundle. |
+| "None — this is broker-internal" (the bundle hash) | **User:** nothing today. From build step 4 an app whose files changed without its version changing stops loading, so a tampered update fails instead of running silently. **Dev:** bump your version with any file change, or the loader rejects the bundle. |
 | "Documentation only" | **User:** nothing today, and nothing later, since this records a rule the code already enforces. **Dev:** the rule your app already had to follow is now written where you will find it, instead of only in the code. |
 
 The section pairs with the `ux:` label, so the answer is also filterable.

@@ -21,9 +21,10 @@ Canonical everywhere. Three expansions are still in circulation:
 honest word: *Certification* implies an authority issuing a certificate, which is not what the
 mechanism does. It verifies that received data matches what the domain owner published, on the
 owner's own say-so. That distinction matters here specifically: in this build the published tree
-sits on the site's own host (`ADR-0029`), and `open-questions.md` C1 records that the vision's DNS
-trust root is forgeable on ICANN domains without DNSSEC, so *Certification* would oversell
-precisely the weakest link.
+sits on the site's own host, with a `.eth` name's ENS record as the off-host anchor once build
+step 6 lands (`ADR-0029`), and `open-questions.md` C1 records that the vision's DNS trust root is
+forgeable on ICANN domains without DNSSEC, so *Certification* would oversell precisely the
+weakest link.
 
 **Action outstanding:** correct the other two documents (`Posts/Technical Specifications`,
 `Old-Private-Plan/Glossario`) to match. Not blocking the MVP.
@@ -88,7 +89,7 @@ hash-pinned. The manifest is a hashed leaf, not served or pinned separately, so 
 change alone changes the bundle hash (`ADR-0009`, `architecture/bundle-hash.md`).
 
 **`orivon-node-shim`**: implements Node's `net`, `dgram` and `fs` over `orivon.*`, so existing
-Electron apps port mechanically. Load-bearing for the flagship (`ADR-0005`).
+Electron apps port mechanically. Load-bearing for every Node.js app (`ADR-0005`).
 
 **`orivon-runtime`**: the deferred Wasmtime host. Purpose: containment for untrusted code, and
 mobile portability. Not cancelled (`ADR-0002`).
@@ -110,7 +111,8 @@ much trust it requires. Levels remain unspecified (`web3-score.md`: "Work in pro
 **Web3 Score**: the umbrella for Trustlessity plus Security.
 
 **Web3 Score provider**: an entity issuing judged scores. The user may choose several. Never
-required for the automatic ladders.
+required for the automatic ladders. In this build a provider need not be trustless, and may run
+locally (`ADR-0006`).
 
 **Attestation**: a provider's signed statement over a bundle hash ("hash X is Level 4").
 Verified locally and offline, so a provider cannot track users (`ADR-0006`).

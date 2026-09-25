@@ -2,7 +2,7 @@
 // this is the one truthful signal build step 4 owes the address bar: is the
 // active tab's document actually being answered by Orivon's own pinned
 // local cache (electron-serve.ts's protocol.handle registration), not a
-// live network response. NOT the trust indicator (build step 6,
+// live network response. NOT the trust indicator (build step 7,
 // mvp-scope.md Rule 4) -- one boolean, no grade, no score. See
 // src/renderer/README.md's Design notes for the literal string this drives
 // and why it is a separate query from the address-bar permissions badge.

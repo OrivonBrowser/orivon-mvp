@@ -295,10 +295,10 @@ export function canonicalAddress (addr: string): string | null {
  *     if (isPrivateAddress(addr) && !manifestDeclaresPrivate) deny
  *
  * which fails OPEN on unparseable input for any app that declares private
- * ranges -- and the flagship torrent app declares exactly that. Asking "is
- * this a normal internet address" instead puts the unparseable case on the
- * denying side of every natural call site, so the fail-closed property
- * survives being used rather than only being documented.
+ * ranges -- and a P2P app such as a torrent client declares exactly that.
+ * Asking "is this a normal internet address" instead puts the unparseable
+ * case on the denying side of every natural call site, so the fail-closed
+ * property survives being used rather than only being documented.
  *
  * Still an ADDRESS, never a hostname: see `classifyAddress`. Resolve first,
  * check every resolved address, connect to the literal that was checked.

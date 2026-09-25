@@ -1,7 +1,8 @@
 # ADR-0020: Ported third-party apps live in a separate repository
 
 - **Status:** accepted; **amended 2026-09-22: the apps this repository's own tests serve moved
-  to `test/apps/`, and there is no top-level `apps/` directory**, chosen by the owner
+  to `test/apps/`, and there is no top-level `apps/` directory**, chosen by the owner;
+  **amended 2026-09-24: the torrent app is an idea, and its design lives in a planning page**
 - **Date:** 2026-09-21
 - **Type:** process
 - **Decided by:** owner
@@ -21,7 +22,8 @@ builds, prepares and serves them, and the porting guide. This repository keeps t
 capability broker, the contracts, and only the apps its own test suite needs — the fixture and
 the Orivon-native demo — which live under `test/apps/`, beside the suites that serve them.
 There is no top-level `apps/` directory. The torrent flagship has no directory here;
-`ADR-0001` and `build-plan.md` step 5 hold its design until it is built.
+`ADR-0001` and `build-plan.md` step 5 hold its design until it is built. *(Amended 2026-09-24,
+below: the torrent app is an idea, held by `../planning/torrent-app.md`.)*
 
 ## Context
 
@@ -91,6 +93,12 @@ require touching the browser.
   validator check does not sit behind an Electron build. No runner selects it; whether
   `test/apps/**/*.test.ts` should join `vitest.config.ts`'s include is **provisional**, and
   adding it there would settle it.
+
+## Amendment, 2026-09-24: the torrent app is an idea
+
+`ADR-0001` is withdrawn, and build step 5 is porting Node.js desktop apps, the work this
+decision gave a home to. The torrent app still has no directory here. What is known about
+building it is held by `../planning/torrent-app.md`, not by `build-plan.md`.
 
 ## Reversibility
 
