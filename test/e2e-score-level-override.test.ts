@@ -67,6 +67,21 @@ function findPopup (app: ElectronApplication, path: string): Page | undefined {
 
 interface DialogCall { type: string, message: string, detail: string }
 
+/** Waits for the toolbar shield's own async web3ScoreFor round trip to
+ * resolve (it paints the empty "no level yet" state synchronously on
+ * navigation first), then reads its level and label -- reading immediately
+ * risks catching it mid-flight, the same race readWeb3Page in
+ * e2e-eth-website-level.test.ts guards against. */
+async function readShield (chrome: Page): Promise<{ level: string | null, text: string }> {
+  if (!await waitFor(async () => await chrome.evaluate(() => document.querySelector('#web3-score-btn .web3-shield-fill') !== null), 8_000)) {
+    throw new Error('the toolbar shield never painted a level')
+  }
+  return await chrome.evaluate(() => ({
+    level: document.querySelector('#web3-score-btn .web3-shield-fill')?.getAttribute('data-level') ?? null,
+    text: document.querySelector('#web3-score-btn .web3-shield-label')?.textContent ?? ''
+  }))
+}
+
 it(
   'an L4-overridden origin\'s dialog, shield, popup and settings row all read without warning; an identical, un-overridden origin still warns throughout',
   async () => {
@@ -114,10 +129,7 @@ it(
         check(`origin A's dialog is "question", not "warning" (${JSON.stringify(dialogA)})`, dialogA?.type === 'question')
         check('origin A\'s dialog carries the plain "Unlimited network access" line, no ⚠', dialogA?.detail?.includes('Unlimited network access') === true && !(dialogA?.detail?.includes('⚠') ?? true))
 
-        const shieldA = await chrome.evaluate(() => ({
-          level: document.querySelector('#web3-score-btn .web3-shield-fill')?.getAttribute('data-level') ?? null,
-          text: document.querySelector('#web3-score-btn .web3-shield-label')?.textContent ?? ''
-        }))
+        const shieldA = await readShield(chrome)
         check(`origin A's shield paints Level 4, "Web3" (${JSON.stringify(shieldA)})`, shieldA.level === '4' && shieldA.text === 'Web3')
 
         await chrome.click('#site-permissions-btn')
@@ -164,10 +176,7 @@ it(
         const dialogB = callsAfterB[1]
         check(`origin B's dialog is still "warning", with ⚠ (${JSON.stringify(dialogB)})`, dialogB?.type === 'warning' && (dialogB?.detail?.includes('⚠') ?? false))
 
-        const shieldB = await chrome.evaluate(() => ({
-          level: document.querySelector('#web3-score-btn .web3-shield-fill')?.getAttribute('data-level') ?? null,
-          text: document.querySelector('#web3-score-btn .web3-shield-label')?.textContent ?? ''
-        }))
+        const shieldB = await readShield(chrome)
         check(`origin B's shield paints Level 1, "Web2" -- an un-overridden loopback origin observes DDOC not-checked (${JSON.stringify(shieldB)})`, shieldB.level === '1' && shieldB.text === 'Web2')
 
         await chrome.click('#site-permissions-btn')

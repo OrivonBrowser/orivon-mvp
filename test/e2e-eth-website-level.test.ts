@@ -50,6 +50,12 @@ function findPopup (app: ElectronApplication): Page | undefined {
  * shield's own painted state) and closes it again. */
 async function readWeb3Page (app: ElectronApplication): Promise<Web3Page> {
   const chrome = findChrome(app)
+  // updateWeb3ScoreShield paints the empty "no level yet" state synchronously
+  // on navigation, then replaces it once the async web3ScoreFor round trip
+  // resolves -- wait for that resolution rather than reading mid-flight.
+  if (!await waitFor(async () => await chrome.evaluate(() => document.querySelector('#web3-score-btn .web3-shield-fill') !== null), 8_000)) {
+    throw new Error('the toolbar shield never painted a level')
+  }
   const shield = await chrome.evaluate(() => ({
     shieldLevel: document.querySelector('#web3-score-btn .web3-shield-fill')?.getAttribute('data-level') ?? null,
     shieldText: document.querySelector('#web3-score-btn .web3-shield-label')?.textContent ?? ''
