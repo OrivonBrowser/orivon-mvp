@@ -52,10 +52,10 @@
 .tab .fav svg { width: 14px; height: 14px; }
 .tab .fav img { width: 14px; height: 14px; border-radius: 2px; object-fit: contain; }
 
-/* Loading: a spinner ring, not the globe -- v0 has no real favicons
-   (src/renderer/README.md), so this is the one state worth animating.
-   30% of the current text colour stands in for the fixed light/dark
-   rgba values the reference hardcodes, so one rule covers both themes. */
+/* Loading: a spinner ring, replacing whatever favicon or globe would
+   otherwise sit there -- the one state worth animating. 30% of the current
+   text colour stands in for the fixed light/dark rgba values the reference
+   hardcodes, so one rule covers both themes. */
 .tab .fav.loading {
   border: 2px solid color-mix(in srgb, var(--wink) 30%, transparent);
   border-top-color: transparent;
