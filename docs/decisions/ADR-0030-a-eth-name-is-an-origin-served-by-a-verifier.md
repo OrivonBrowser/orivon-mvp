@@ -1,8 +1,12 @@
 # ADR-0030: A `.eth` name is an origin, served by a verifier that checks every byte
 
 - **Status:** accepted, **amended 2026-09-25**: a DNSLink name is Website Level 2, the DDOC
-  anchor is confirmed, and the verifier's caches are kept per site (see the Amendment at the end).
-  One part is *provisional*, named in the Decision.
+  anchor is confirmed, and the verifier's caches are kept per site. **Amended 2026-09-26**: a
+  gateway is scheduled by its own recent health rather than tried in a fixed order, a name a
+  re-prove fails keeps serving its last proven root for a while, one bad light-client refresh no
+  longer un-syncs the client, and a gateway a resolver appears to be lying about may be reached
+  directly at an address confirmed over DNS-over-HTTPS (both amendments are at the end). One
+  part is *provisional*, named in the Decision.
 - **Date:** 2026-09-24
 - **Type:** architecture / security
 - **Decided by:** owner, for what a `.eth` name loads as and how its trust is shown
@@ -110,7 +114,9 @@ own content.
   chooses; a name's resolver contract may send its offchain lookup to a server of its own.
 - **A resolver that answers wrongly about DNS for gateway names** (one consumer ISP does, for two of
   the three defaults) leaves `.eth` loads on that line to the gateways it spares, and fails them
-  closed if it spares none (`open-questions.md` A251).
+  closed if it spares none (`open-questions.md` A251). *(Amended 2026-09-26, below: a gateway the
+  system resolver appears to be lying about may be reached directly at an address DNS-over-HTTPS
+  confirms, resolving A251.)*
 - **ENS's Universal Resolver is an upgradable proxy**, so ENS's proxy admin is part of what a
   resolution trusts.
 - **Internationalised `.eth` names do not resolve**: a punycode host is refused until IDNA and
@@ -142,16 +148,89 @@ is served and nothing it fetched is kept.
 
 What remains:
 - **As in any browser with partitioned caches:** a page that opens a name as a top-level window,
-  and times it, probes that name's own partition; the four mount slots and eight gateway slots are
-  shared, so one site's load can slow another's; and the verifier's caches are bounded (64 names,
-  64 MB of blocks), so a page that fills them can tell how much other `.eth` activity there was,
-  though not which names.
+  and times it, probes that name's own partition; the four mount slots and each gateway's own
+  concurrency limit are shared across every site, so one site's load can slow another's (the
+  2026-09-26 amendment below narrows this from a single shared pool to per-gateway ones, but does
+  not remove it); and the verifier's caches are bounded (64 names, 64 MB of blocks), so a page
+  that fills them can tell how much other `.eth` activity there was, though not which names.
 - **A `.eth` site embedded on another site** can learn one bit about itself: its own worker's
   requests use its own partition, warm if the person opened it as a top-level page.
 - **Outside the verifier:** fetching a rare CID warms a public gateway's edge cache near the
   person, and any page can time a gateway itself. Nothing on this machine can partition that.
   Whether the light client caches proofs between calls is not measured; if it does, the window
   is about one block.
+
+## Amendment, 2026-09-26: gateway scheduling, a stale-name grace period, and a direct fallback for a lying resolver
+
+Filed against reports that `.eth` pages sometimes rendered unstyled or missing parts, and that a
+tab's loading spinner sometimes ran long after the page had visibly finished -- both traced to a
+line whose ISP resolver answers two of the three default gateways with a block page (`A251`) and
+whose remaining gateway rate-limits under the burst one page's assets create, and separately to a
+light client that treated one bad refresh as fully unsynced.
+
+**Gateways are scheduled by recent health, not a fixed order shared globally.** Each gateway keeps
+its own concurrency limit (`src/ipfs/limits.ts`'s `perGatewayConcurrency`, 4) rather than one
+limit shared by all of them (`gatewayConcurrency`, 8, before this amendment) -- a hung or
+rate-limited gateway no longer holds back requests to the others. A 429 (honouring `Retry-After`
+when given) or a transport failure cools that one gateway down for a while, doubling on repeat;
+two timeouts in a row without a success in between count the same way, one alone does not, since
+a gateway can hang on a block it does not have while answering everything else fine
+(`src/ipfs/gateway-health.ts`). A block fetch tries the least-loaded non-cooling gateway first,
+and hedges with a second after `hedgeDelayMs` (2 s) if nothing has verified yet -- the first
+verified answer wins, the loser is abandoned (`src/ipfs/block-fetch.ts`). In-flight fetches for
+the same block are shared per partition, the same way verified blocks already were, so two
+concurrent requests for one asset cost one fetch (`src/ipfs/blockstore.ts`'s `SharedFetch`). IPNS
+lookups go through the same per-gateway scheduling, sequentially, with no hedging.
+
+**A name past its two-minute freshness window keeps serving its last proven root, stale, for up
+to ten minutes (`STALE_SERVE_MS`, `src/verifier-host/serve/sites.ts`) while a single background
+re-prove runs**, rather than blocking every request on a fresh proof or failing the site outright
+on one re-prove's transient failure. A burst of requests past the window triggers one re-prove,
+not one each; a successful re-prove replaces the served root and resets the freshness window; a
+failed one is retried after a short pace (`FAILURE_TTL_MS`) without ever touching the last good
+root. Past ten minutes with nothing but failed re-proves, a request waits on a fresh one instead
+of serving a root that old.
+
+**The light client tolerates one failed refresh.** A refresh that fails to read the chain's head
+no longer un-syncs the client while the last proven head is under two minutes old
+(`HEAD_GRACE_MS`, `src/verifier-host/light-client/light-client.ts`); past that window, or on a
+second failure with no success between, the client drops to syncing and the next request waits up
+to `SYNC_WAIT_MS` for a real answer, as before. A checkpoint read (a separate, non-essential RPC
+call) failing never affects sync state at all, and retries follow sooner (5 s) after a failure
+than the ordinary 60 s cadence.
+
+**A gateway the system resolver appears to be lying about may be reached directly, resolving
+A251.** Only once Electron's own `net.fetch` has failed a gateway with a transport error (never an
+HTTP status), and only for a gateway main found to have no proxy configured
+(`src/main/verifier/proxy-check.ts`, checked once per host start via `app.resolveProxy` -- the
+call Electron's own typing says "is used when attempting to make requests using Net in the
+utility process"), the verifier host compares the system resolver's addresses for that host
+against a DNS-over-HTTPS answer from the same resolvers already trusted for DNSLink
+(`src/verifier-host/doh.ts`'s `dohAddressResolver`, public-unicast answers only). Disjoint
+addresses switch that gateway to a direct connection at the DoH address for ten minutes
+(`src/verifier-host/dns-fallback.ts`), reached over `node:https` with a pinned DNS lookup but TLS
+still verified against the real hostname -- neither of Electron's `net.fetch`/`net.request` can
+pin a connection to a chosen address while keeping the real hostname for SNI (confirmed against
+`electron.d.ts`, Electron 44, the same gap `loader/electron/fetch.ts` names for the install path)
+-- GET/HEAD only, no redirect ever followed, `accept-encoding: identity` only (a compressed body
+would fail its own hash check and wrongly frame an honest gateway as a liar). A direct attempt
+that itself fails resets that gateway to the ordinary path. Agreeing addresses, or no proxy-free
+gateway to try at all, leave every request exactly as before this amendment.
+
+What remains:
+- **Stale serving extends how out of date a proven root can be**, from two minutes to up to ten
+  under sustained re-prove failure. An installed app stays protected regardless by the existing
+  409 content-root check.
+- **Gateway cooldown state is process-wide**, so one site's burst against a gateway can still slow
+  another site's fetches through it -- narrower than the single shared concurrency limit before
+  this amendment, not removed by it.
+- **The direct path trusts Node's bundled CA roots, not the OS certificate store.** A machine with
+  a TLS-inspecting local proxy but no configured system proxy would fail the direct connection,
+  leaving that gateway simply cooling down -- no worse than before this amendment.
+- **The proxy check is a snapshot taken at each verifier host start**, not live; a proxy toggled
+  mid-run is not noticed until the next restart.
+- **If the same resolver that lies about a gateway's address also lies about the DNS-over-HTTPS
+  endpoints themselves**, this amendment has nothing left to fall back to.
 
 ## Reversibility
 

@@ -20,7 +20,10 @@ export interface SupervisorEvents {
 
 export interface SupervisorDeps {
   readonly fork: () => HostProcess
-  readonly config: () => HostConfig
+  /** A promise so a restart can re-check things that answer asynchronously
+   * (unproxiedGateways.ts's proxy check, at minimum) on every start, not
+   * only the first. */
+  readonly config: () => HostConfig | Promise<HostConfig>
   readonly events: SupervisorEvents
   readonly setTimer?: (callback: () => void, ms: number) => unknown
   readonly now?: () => number
@@ -39,6 +42,12 @@ interface Pending {
 
 export class HostSupervisor {
   private child: HostProcess | undefined
+  /** Resolves once the (possibly async) config for the CURRENT `child` has
+   * either posted or failed to -- `request()` awaits this first, so a
+   * request made right after `start()` cannot race ahead of the 'start'
+   * message it depends on and reach the host, or this class's own
+   * bookkeeping, before the host even knows it is starting. */
+  private starting: Promise<void> | undefined
   private nextId = 1
   private readonly pending = new Map<number, Pending>()
   private backoff = FIRST_BACKOFF_MS
@@ -61,7 +70,32 @@ export class HostSupervisor {
     this.startedAt = this.now()
     child.on('message', (message) => { this.receive(message as FromHost) })
     child.on('exit', (code) => { this.exited(child, `the verifier host exited with code ${String(code)}`) })
-    child.postMessage({ type: 'start', config: this.deps.config() })
+
+    const result = this.deps.config()
+    // A config answered synchronously (every real config today except the
+    // proxy check) posts in the same tick, exactly as before this class had
+    // to support an async one at all -- no artificial delay, and `request()`
+    // right after `start()` needs no await either (`this.starting` stays
+    // undefined). Only a genuine Promise takes the deferred path below.
+    if (!(result instanceof Promise)) {
+      this.starting = undefined // clears whatever a PREVIOUS start() left, on a restart
+      child.postMessage({ type: 'start', config: result })
+      return
+    }
+    // Only if `child` is still THE running child once config resolves: a
+    // config that takes a moment (an async proxy check) must not post a
+    // stale start message to a host that has since been stopped or
+    // replaced by a later start().
+    this.starting = result.then(
+      (config) => { if (this.child === child) child.postMessage({ type: 'start', config }) },
+      (error: unknown) => {
+        if (this.child !== child) return
+        this.failure = `the verifier host's configuration could not be prepared: ${error instanceof Error ? error.message : String(error)}`
+        this.deps.events.down(this.failure)
+        this.child = undefined
+        child.kill()
+      }
+    )
   }
 
   stop (): void {
@@ -71,6 +105,7 @@ export class HostSupervisor {
 
   /** Rejects when the host is down, exits first, or does not answer in time: a reply that never comes is the failure to expect. */
   async request<K extends HostRequest['kind']> (request: Extract<HostRequest, { kind: K }>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<HostReplies[K]> {
+    if (this.starting !== undefined) await this.starting
     const child = this.child
     if (child === undefined) throw new Error('the verifier host is not running')
     const id = this.nextId++

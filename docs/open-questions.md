@@ -9254,21 +9254,21 @@ local, whether a person or a model does the judging and how its attestation is k
 **What would settle it:** the owner choosing the provider for this build, and the attestation
 format it signs, if it signs one. **Needed by:** build step 7.
 
-### A251 -- a resolver that answers wrongly for gateway names leaves `.eth` loads to the gateways it spares **[AI-REC]**
+### A251 -- a resolver that answers wrongly for gateway names leaves `.eth` loads to the gateways it spares **[RESOLVED 2026-09-26, owner]**
 
 Filed 2026-09-24 with `ADR-0030`. The ENS and IPFS spike ran on a line whose ISP resolver answers
-`ipfs.io`, `trustless-gateway.link` and the orbitor gateways with block or landing pages; their real
-addresses, looked up elsewhere, connect fine. Nothing unverified is ever used, since every block is
-hashed against its CID, but where no configured gateway resolves honestly every `.eth` page shows
-"cannot verify". Measured in the shell on the same line, with the default gateways: during a live
-`vitalik.eth` load, `trustless-gateway.link` failed TLS with a certificate for another name and
-`ipfs.orbitor.dev` reset the connection, and the page loaded through `ipfs.filebase.io` in 2 s. One
-spared gateway is enough; a line that spares none gets no `.eth` page at all.
+`trustless-gateway.link` and the orbitor gateway with a block page; their real addresses, looked up
+over DNS-over-HTTPS, connect fine. Nothing unverified is ever used, since every block is hashed
+against its CID, but where too few configured gateways resolve honestly, the one left (measured
+here: `ipfs.filebase.io`) rate-limits under the burst a real page's assets create, and pages loaded
+unstyled or with missing parts.
 
-**What would settle it:** measuring the shell on a line that blocks gateways, and if it bites,
-resolving gateway names over DNS-over-HTTPS in the verifier host, or asking Chromium to use secure
-DNS for the whole browser. **Needed by:** the first report of a `.eth` name that loads elsewhere and
-not here.
+**Resolved: reach a gateway directly at its DoH-resolved address, once `net.fetch` has failed it
+and only when main found no proxy configured for it.** TLS still verifies the real hostname; DNS
+for ordinary browsing is untouched, and no new third party is introduced (the same
+DNS-over-HTTPS resolvers already trusted for DNSLink answer this too). `ADR-0030`'s 2026-09-26
+amendment has the full mechanism, alongside the gateway-scheduling and stale-name-serving changes
+that came from the same investigation. `docs/decisions/decision-log.md` has the row.
 
 ### A252 -- Electron 44 does not enforce Local Network Access, so any web page reaches loopback services **[NEEDS OWNER]**
 
@@ -9371,3 +9371,23 @@ only forward from here.
 
 **Needs:** the owner's choice. Nothing behaves differently under any of the three; this is
 purely about which name a reader learns to expect.
+
+### A258 -- `createRunCertificate` rarely produces a certificate Node's own TLS stack refuses to parse **[NEEDS OWNER]**
+
+Filed 2026-09-26, found while adding a real-TLS-handshake test against this generator
+(`verifier-host/tests/direct-fetch.test.ts`, unrelated to this certificate itself). Vitest's own
+test run hit `error:068000DD:asn1 encoding routines::illegal padding` once inside
+`createEthServer` (`serve/server.ts`), from a certificate `createRunCertificate` (`serve/
+certificate.ts`) had just generated moments earlier with a fresh random key and serial. Five
+immediate re-runs did not reproduce it -- a fresh keypair and a random serial (`randomBytes(16)`)
+are drawn every call, so this is intermittent by construction, not deterministic.
+
+**What would settle it:** a loop generating some thousands of certificates and parsing each with
+`new X509Certificate(...)` to catch the exact byte pattern that trips this, most likely in the
+signature's own DER encoding (an ECDSA signature's `r`/`s` values occasionally need the same
+leading-zero handling `positiveInteger` already gives the serial number, and the hand-rolled
+`der()` wrapper around `sign()`'s own output may not be applying it). This run's own certificate
+is never checked by a standard TLS client in production (only by fingerprint,
+`certificate-check.ts`), so a certificate of this rare shape would still work for every real
+`.eth` page; it would only ever surface as a random handshake failure if it happened against a
+real gateway/direct-fetch connection rather than a test's own loopback server.

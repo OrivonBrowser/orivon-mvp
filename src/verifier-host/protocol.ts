@@ -24,6 +24,14 @@ export interface HostConfig {
   /** Why it does not run, in words for the error page. */
   readonly lightClientOff?: string
   readonly gateways: readonly string[]
+  /** Which of `gateways` main found to have no proxy configured, as of this
+   * host's start (`main/verifier/proxy-check.ts`) -- the DNS-tamper
+   * fallback (`dns-fallback.ts`) reaches one of these directly only after
+   * Electron's own `net.fetch` fails it AND the system resolver disagrees
+   * with a DoH one; every other gateway, and every other kind of failure,
+   * still goes through `net.fetch` alone. Empty turns the fallback off
+   * entirely. */
+  readonly unproxiedGateways: readonly string[]
   /** w3name-style services asked for an IPNS record after the gateways. */
   readonly ipnsNameServices: readonly string[]
   readonly dnsOverHttps: readonly string[]

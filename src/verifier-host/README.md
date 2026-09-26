@@ -24,7 +24,7 @@ is its other side.
 
 | Folder | Holds |
 |---|---|
-| (top level) | `entry.ts` (the utility-process entry, a build input), `service.ts`, `protocol.ts`, `egress.ts`, `doh.ts`, `fixture-resolver.ts` |
+| (top level) | `entry.ts` (the utility-process entry, a build input), `service.ts`, `protocol.ts`, `egress.ts`, `doh.ts`, `direct-fetch.ts`, `dns-fallback.ts`, `fixture-resolver.ts` |
 | [`light-client/`](light-client/) | Proving a `.eth` name: Helios and its wrappers |
 | [`serve/`](serve/) | The loopback TLS server, its certificate and per-name mount cache |
 
@@ -40,14 +40,22 @@ a design belongs here instead.
 what belongs to each and why it is shaped the way it is; this file covers only what is common to
 the whole directory, or belongs to a top-level file.
 
-**Every request leaves through [`egress.ts`](egress.ts), and through Electron's `net`.** Fixed
-endpoints (the light client's RPCs and beacon API, the gateways, the DNS-over-HTTPS resolvers) each
-get an origin allowlist that follows no redirect. A CCIP-Read URL is chosen by a name's resolver
-contract, so it gets the guard the loader's install fetch has: https only, every address the name
-resolves to public unicast, redirects only within the origin, and a size and time cap. Electron's
-`net` cannot pin a request to the address that was checked, so a name that re-resolves between the
-check and the request is a residual window, the same one `open-questions.md` A66 names for the
-loader. Going through `net` rather than Node's own `fetch` is what makes a configured proxy apply.
+**Every request leaves through [`egress.ts`](egress.ts), and through Electron's `net` --
+with one narrow, gated exception.** Fixed endpoints (the light client's RPCs and beacon API, the
+gateways, the DNS-over-HTTPS resolvers) each get an origin allowlist that follows no redirect. A
+CCIP-Read URL is chosen by a name's resolver contract, so it gets the guard the loader's install
+fetch has: https only, every address the name resolves to public unicast, redirects only within
+the origin, and a size and time cap. Electron's `net` cannot pin a request to the address that was
+checked, so a name that re-resolves between the check and the request is a residual window, the
+same one `open-questions.md` A66 names for the loader. Going through `net` rather than Node's own
+`fetch` is what makes a configured proxy apply -- which is exactly why [`dns-fallback.ts`](dns-fallback.ts)
+never reaches [`direct-fetch.ts`](direct-fetch.ts) for a gateway with a proxy configured: bypassing
+`net` there would silently bypass that proxy too. The exception exists only for a gateway `net`
+has just failed with a transport error and a DNS-over-HTTPS answer disagrees with the system
+resolver's (`open-questions.md` A251, `ADR-0030`) -- `direct-fetch.ts`
+connects to a pinned address over `node:https` with TLS still checked against the real hostname,
+since neither of Electron's `net.fetch`/`net.request` can pin a connection while keeping the real
+hostname for SNI.
 
 **Fixture names exist only in a test build** ([`fixture-resolver.ts`](fixture-resolver.ts)). The
 shell sends them only when the dev-grant flag is compiled in, and [`entry.ts`](entry.ts) refuses

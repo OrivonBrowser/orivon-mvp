@@ -75,7 +75,7 @@ throw anything away.
 | [`src/resolution/`](src/resolution/) | The name-resolver and data-gatherer interfaces, and the registry that orders them | **No.** Pure types and decisions |
 | [`src/ens/`](src/ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | **No** |
 | [`src/ipfs/`](src/ipfs/) | Loading IPFS content from trustless gateways, every block hashed against its CID | **No** |
-| [`src/verifier-host/`](src/verifier-host/) | The utility process that runs the light client and serves `.eth` names on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` |
+| [`src/verifier-host/`](src/verifier-host/) | The utility process that runs the light client and serves `.eth` names on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` (one narrow, gated exception: `dns-fallback.ts`'s direct connection to a gateway a resolver appears to be lying about) |
 | [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
 | [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
 

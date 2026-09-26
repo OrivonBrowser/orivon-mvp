@@ -35,10 +35,15 @@ leave half a page on screen; buffered, it becomes the error page instead. A file
 buffer is streamed with its `Content-Length`, and the connection is cut on a failure, so Chromium
 sees the response as incomplete.
 
-**A name is mounted once and kept two minutes** ([`sites.ts`](sites.ts)). A page's many requests
-read one root without resolving the name for each. A mount gives up after 25 seconds, because a
-light client fed a lie it keeps rejecting retries for over a minute. A failure is remembered for
-five seconds, so a page's burst of requests fails once.
+**A name is mounted once and kept two minutes fresh, ten minutes stale** ([`sites.ts`](sites.ts)).
+A page's many requests read one root without resolving the name for each. Past two minutes, the
+last proven root keeps being served -- a single background re-prove refreshes it, never blocking
+the request that triggered it -- for up to ten minutes, so one re-prove hitting a transient RPC
+blip does not fail the whole site the moment its TTL passes. A mount gives up after 25 seconds,
+because a light client fed a lie it keeps rejecting retries for over a minute. A failed re-prove is
+retried after five seconds, so a burst of requests past the TTL paces to one re-prove, not one
+each; past ten minutes with nothing but failures, a request waits on a fresh mount instead of the
+stale one.
 
 **Every cache is kept per partition** ([`sites.ts`](sites.ts), [`server.ts`](server.ts)'s
 `partitionOf`). A partition is the top-level page origin a request belongs to, which the shell

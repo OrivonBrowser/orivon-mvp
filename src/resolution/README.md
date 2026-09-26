@@ -7,7 +7,8 @@ Apps, as internal TypeScript: a `NameResolver` returns a name's records for the 
 it declares, and a `DataGatherer` loads a site from those records and reports DDOC. Plus the
 registry that orders them, the one rule both an open page and an installed app use to judge a
 chain of pointers, and two helpers the providers and the verifier host share: DNS-name validation
-([`dns-name.ts`](dns-name.ts)) and a concurrency limit ([`slots.ts`](slots.ts)).
+([`dns-name.ts`](dns-name.ts)) and a concurrency limit, abortable per waiter
+([`slots.ts`](slots.ts)).
 
 In this build each list has one built-in entry: the ENS resolver ([`src/ens/`](../ens/)) for
 `.eth`, and the IPFS gatherer ([`src/ipfs/`](../ipfs/)). Ordinary ICANN names never pass through

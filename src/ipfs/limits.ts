@@ -11,7 +11,13 @@ export interface IpfsLimits {
   readonly maxDagDepth: number
   readonly maxBytesPerOpen: number
   readonly blockTimeoutMs: number
-  readonly gatewayConcurrency: number
+  /** Per gateway, not a total shared across all of them -- a hung gateway
+   * must not be able to starve the others of their own slots. */
+  readonly perGatewayConcurrency: number
+  /** How long to wait for the first attempt before starting a second,
+   * different gateway for the same block -- a hedge, not a replacement:
+   * the first attempt keeps running, and whichever verifies first wins. */
+  readonly hedgeDelayMs: number
   /** IPNS and DNSLink hops from a name to its root. */
   readonly maxPointerHops: number
 }
@@ -23,6 +29,7 @@ export const DEFAULT_LIMITS: IpfsLimits = {
   maxDagDepth: 64,
   maxBytesPerOpen: 1024 * 1024 * 1024,
   blockTimeoutMs: 30_000,
-  gatewayConcurrency: 8,
+  perGatewayConcurrency: 4,
+  hedgeDelayMs: 2_000,
   maxPointerHops: 4
 }

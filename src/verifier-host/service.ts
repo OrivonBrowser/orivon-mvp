@@ -12,9 +12,11 @@ import type { Eip1193Provider } from '../ens/resolver.js'
 import { createIpfsGatherer } from '../ipfs/gatherer.js'
 import type { SequenceStore } from '../ipfs/ipns.js'
 import { createRunCertificate } from './serve/certificate.js'
-import { dohTxtResolver } from './doh.js'
+import { dohAddressResolver, dohTxtResolver } from './doh.js'
 import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.js'
 import type { WebFetch } from './egress.js'
+import { withDnsFallback } from './dns-fallback.js'
+import type { DirectFetch } from './direct-fetch.js'
 import { createFixtureResolver } from './fixture-resolver.js'
 import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
 import { createEthServer } from './serve/server.js'
@@ -34,6 +36,11 @@ export interface HostDeps {
   readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void) => LightClient
   /** True only in a test build; fixture names are refused otherwise, whatever the config says. */
   readonly fixturesAllowed: boolean
+  /** The DNS-tamper fallback's own egress (dns-fallback.ts), reached only
+   * for a gateway in `config.unproxiedGateways` once `fetch` has failed it
+   * transport-wise and a DNS-over-HTTPS answer disagreed with the system
+   * resolver's. */
+  readonly directFetch: DirectFetch
 }
 
 export interface RunningHost {
@@ -68,12 +75,24 @@ function offResolver (reason: string): NameResolver {
 }
 
 export async function startHost (config: HostConfig, deps: HostDeps): Promise<RunningHost> {
-  const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], deps.fetch, 'the IPFS gatherer')
+  const dohFetch = allowlisted(config.dnsOverHttps, deps.fetch, 'DNS-over-HTTPS')
+  // A251 (docs/open-questions.md): only for a gateway main found to have no
+  // proxy in front of it, and only once net.fetch has already failed it
+  // transport-wise, this reaches it directly instead -- everything else
+  // (name services, a proxied gateway, an ordinary HTTP failure) is
+  // unaffected and still goes through `deps.fetch` alone.
+  const reach = withDnsFallback(config.unproxiedGateways, {
+    fetch: deps.fetch,
+    direct: deps.directFetch,
+    systemAddresses: deps.resolveHost,
+    dohAddresses: dohAddressResolver(config.dnsOverHttps, dohFetch)
+  })
+  const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], reach, 'the IPFS gatherer')
   const gatherer = createIpfsGatherer({
     fetch: async (url, init) => await gatewayFetch(url, init),
     gateways: config.gateways,
     ipnsNameServices: config.ipnsNameServices,
-    resolveTxt: dohTxtResolver(config.dnsOverHttps, allowlisted(config.dnsOverHttps, deps.fetch, 'DNSLink')),
+    resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch),
     ipnsSequences: sequenceStore(config.ipnsSequences, deps.post)
   })
 

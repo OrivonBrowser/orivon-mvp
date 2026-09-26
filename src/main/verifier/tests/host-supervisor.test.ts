@@ -4,7 +4,7 @@ import type { HostConfig } from '../../../verifier-host/protocol.js'
 import { HostSupervisor } from '../host-supervisor.js'
 import type { HostProcess, SupervisorEvents } from '../host-supervisor.js'
 
-const CONFIG: HostConfig = { port: 1, lightClient: undefined, gateways: ['https://g.example'], ipnsNameServices: [], dnsOverHttps: [], ipnsSequences: {} }
+const CONFIG: HostConfig = { port: 1, lightClient: undefined, gateways: ['https://g.example'], unproxiedGateways: [], ipnsNameServices: [], dnsOverHttps: [], ipnsSequences: {} }
 
 class FakeHost extends EventEmitter implements HostProcess {
   readonly sent: unknown[] = []
@@ -117,5 +117,45 @@ describe('HostSupervisor', () => {
     expect(hosts[0]?.killed).toBe(true)
     hosts[0]?.crash()
     expect(timers).toHaveLength(0)
+  })
+
+  it('an async config posts once it resolves, and request() waits for it rather than racing ahead', async () => {
+    const hosts: FakeHost[] = []
+    let resolveConfig!: (config: HostConfig) => void
+    const supervisor = new HostSupervisor({
+      fork: () => { const h = new FakeHost(); hosts.push(h); return h },
+      config: async () => await new Promise<HostConfig>((resolve) => { resolveConfig = resolve }),
+      events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {} }
+    })
+    supervisor.start()
+    expect(hosts[0]?.sent).toEqual([]) // nothing posted yet -- the config hasn't resolved
+    const reply = supervisor.request({ kind: 'status' })
+    resolveConfig(CONFIG)
+    // A few microtask turns: the config promise resolving, its own async
+    // wrapper unwrapping that, and this class's .then() running in turn.
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(hosts[0]?.sent).toEqual([{ type: 'start', config: CONFIG }, { type: 'request', id: expect.any(Number), request: { kind: 'status' } }])
+    const sent = hosts[0]?.sent[1] as { id: number }
+    hosts[0]?.answer({ type: 'reply', id: sent.id, ok: true, value: { state: 'off' } })
+    expect(await reply).toEqual({ state: 'off' })
+  })
+
+  it('an async config that rejects marks the host down and kills it, without ever posting start', async () => {
+    const hosts: FakeHost[] = []
+    const log: string[] = []
+    const supervisor = new HostSupervisor({
+      fork: () => { const h = new FakeHost(); hosts.push(h); return h },
+      config: async () => { throw new Error('the proxy check hung') },
+      events: { listening: () => {}, down: (r) => log.push(r), status: () => {}, checkpoint: () => {}, ipnsSequence: () => {} }
+    })
+    supervisor.start()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(hosts[0]?.sent).toEqual([])
+    expect(hosts[0]?.killed).toBe(true)
+    expect(log.at(-1)).toMatch(/could not be prepared.*the proxy check hung/)
+    await expect(supervisor.request({ kind: 'status' })).rejects.toThrow(/not running/)
   })
 })

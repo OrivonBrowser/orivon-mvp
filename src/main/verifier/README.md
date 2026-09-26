@@ -7,7 +7,8 @@ the light client's checkpoint, keeping what the host verified between runs, and 
 what the light client is doing and how a `.eth` name led to the page a tab shows
 ([`name-evidence.ts`](name-evidence.ts), for the site-info popover). It also stamps every page's
 `.eth` request with the top-level page origin it belongs to ([`partition.ts`](partition.ts)), so
-the verifier keeps one cache per site.
+the verifier keeps one cache per site, and checks which configured gateway has no proxy in front
+of it ([`proxy-check.ts`](proxy-check.ts)), for the DNS-tamper fallback the host itself runs.
 
 **Tied to Electron.** Disposable. [`verifier-subsystem.ts`](verifier-subsystem.ts) is the one file
 that imports `electron`; the rest are decisions, unit-tested under plain vitest, on this
@@ -74,3 +75,18 @@ the release's from two beacon APIs that must agree.
 
 **A dead verifier outranks everything in the status** ([`status-view.ts`](status-view.ts)). With it
 down no `.eth` page loads at all, fixture names included, so "not running" wins over "switched off".
+
+**Which gateway has no proxy in front of it is checked here, not in the verifier host**
+([`proxy-check.ts`](proxy-check.ts)). The question is answered by `app.resolveProxy`, whose own
+typing says it is "used when attempting to make requests using Net in the utility process" -- the
+verifier host's own `net.fetch` never has a `session` to ask the equivalent question of, since
+`utilityProcess.fork` gives it none. `hostConfig()` is therefore async, checking every configured
+gateway once per host start (a PAC script can answer differently per URL, so one check does not
+stand in for all of them) and folding the result into `unproxiedGateways`
+([`../../verifier-host/protocol.ts`](../../verifier-host/protocol.ts)); the fallback that reaches
+one of them directly lives in the host itself
+([`../../verifier-host/dns-fallback.ts`](../../verifier-host/dns-fallback.ts)).
+[`host-supervisor.ts`](host-supervisor.ts)'s `start()` posts a synchronous config in the same
+tick as before, and only awaits when `config()` genuinely returns a promise -- a request made
+right after `start()` awaits that same resolution first, so it can never reach a host that has
+not been told to start yet.

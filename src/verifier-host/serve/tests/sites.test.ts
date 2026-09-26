@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { NameRecord } from '../../../resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver } from '../../../resolution/providers.js'
 import { ResolutionRegistry } from '../../../resolution/registry.js'
-import { FAILURE_TTL_MS, MAX_CONCURRENT_MOUNTS, MAX_SITES, Sites, SITE_TTL_MS } from '../sites.js'
+import { FAILURE_TTL_MS, MAX_CONCURRENT_MOUNTS, MAX_SITES, Sites, SITE_TTL_MS, STALE_SERVE_MS } from '../sites.js'
 
 const P = 'https://top.example'
 const record: NameRecord = { type: 'contenthash', pointer: { kind: 'ipfs', cid: 'bafkqaaa' }, provenance: { via: 'fixture' } }
@@ -97,5 +97,108 @@ describe('Sites', () => {
     for (let i = 0; i < MAX_SITES + 5; i++) await sites.get('loose.eth', undefined)
     expect(calls.n).toBe(MAX_SITES + 6)
     expect(await sites.current('kept.eth', P)).toBeDefined()
+  })
+})
+
+/** A registry whose resolve behaviour can be swapped mid-test, for the
+ * stale-while-revalidate scenarios below (success, then failure, then
+ * success again, all against the SAME name). */
+function switchableRegistry (): { registry: ResolutionRegistry, resolve: { current: () => Promise<NameRecord[]> }, calls: { n: number } } {
+  const calls = { n: 0 }
+  const resolve = { current: async () => [record] }
+  const resolver: NameResolver = { id: 'stub', topLevelDomains: ['eth'], resolve: async () => { calls.n++; return await resolve.current() } }
+  const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
+  return { registry: new ResolutionRegistry([resolver], [gatherer]), resolve, calls }
+}
+
+describe('Sites -- stale-while-revalidate', () => {
+  it('serves the last good record past SITE_TTL_MS, without waiting on a re-prove', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+    expect(calls.n).toBe(1)
+
+    clock.now = SITE_TTL_MS + 1
+    resolve.current = async () => await new Promise(() => {}) // a re-prove that never settles during this test
+    const record2 = await sites.get('a.eth', P)
+    expect(record2).toBeDefined() // returned immediately, not hung waiting on the never-settling re-prove
+    expect(calls.n).toBe(2) // the re-prove was still started, just not waited on
+  })
+
+  it('a successful revalidation replaces the served record and resets the TTL', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+
+    clock.now = SITE_TTL_MS + 1
+    let resolveRevalidation!: () => void
+    resolve.current = async () => await new Promise<NameRecord[]>((resolve) => { resolveRevalidation = () => { resolve([record]) } })
+    await sites.get('a.eth', P) // starts the revalidation, serves stale
+    resolveRevalidation()
+    await new Promise((resolve) => setTimeout(resolve, 0)) // let the revalidation's own .then() run
+
+    clock.now = SITE_TTL_MS + 1 // still within a FRESH window relative to the just-completed revalidation
+    resolve.current = async () => { throw new Error('must not be called -- should be fresh again') }
+    await sites.get('a.eth', P)
+    expect(calls.n).toBe(2) // no third resolve: the revalidated mount is fresh
+  })
+
+  it('a burst of stale requests starts exactly one revalidation, not one each', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+
+    clock.now = SITE_TTL_MS + 1
+    resolve.current = async () => await new Promise(() => {})
+    await Promise.all(Array.from({ length: 5 }, async () => await sites.get('a.eth', P)))
+    expect(calls.n).toBe(2) // the first mount, plus exactly one revalidation
+  })
+
+  it('a failed revalidation keeps the old good record, and paces the next attempt', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    const first = await sites.get('a.eth', P)
+
+    clock.now = SITE_TTL_MS + 1
+    resolve.current = async () => { throw new Error('down') }
+    const stale = await sites.get('a.eth', P)
+    expect(stale).toEqual(first) // the old good record, not a throw
+    await new Promise((resolve) => setTimeout(resolve, 0)) // let the failed revalidation's own .then() run
+    expect(calls.n).toBe(2)
+
+    // Immediately after: still paced, no second revalidation attempt yet.
+    await sites.get('a.eth', P)
+    expect(calls.n).toBe(2)
+
+    clock.now = SITE_TTL_MS + 1 + FAILURE_TTL_MS + 1
+    resolve.current = async () => [record]
+    await sites.get('a.eth', P)
+    expect(calls.n).toBe(3)
+  })
+
+  it('current() also serves a stale-but-servable record without resolving anything', async () => {
+    const clock = { now: 0 }
+    const { registry: r, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+    clock.now = SITE_TTL_MS + 1
+    expect(await sites.current('a.eth', P)).toBeDefined()
+    expect(calls.n).toBe(1) // current() never itself triggers a re-prove
+  })
+
+  it('past STALE_SERVE_MS, a request waits on a fresh mount instead of serving the old one', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+
+    clock.now = STALE_SERVE_MS + 1
+    resolve.current = async () => [record]
+    await sites.get('a.eth', P)
+    expect(calls.n).toBe(2) // waited on this mount, not the (now too old) stale one
   })
 })

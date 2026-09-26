@@ -34,12 +34,29 @@ but `dag-pb` and `raw`, and every hash function but `sha2-256` and identity, bef
 even though the exporter could decode more. A CID this build cannot verify is `unsupported`, never
 skipped.
 
-**A refusal and an outage are different failures.** A gateway that sends bytes which fail their
-hash has lied. It is dropped for the rest of the session, and the refusal goes into the DDOC
-report, which the site-info popover names. A gateway that is down, answers 404 or times out has
-only failed to help, so it stays in the pool. When every gateway has lied the failure is
-`unverifiable`; when none answered it is `unavailable`. A block that hashed correctly but breaks a
-limit is the site's own content, so no gateway is blamed for it.
+**A refusal, a rate limit, an outage and a miss are four different outcomes**
+([`gateway-health.ts`](gateway-health.ts)). A gateway that sends bytes which fail their hash has
+lied. It is dropped for the rest of the session, and the refusal goes into the DDOC report, which
+the site-info popover names. Everything else is a question of scheduling, never of trust: a 429 (or
+a 503 naming a retry time) cools that one gateway down for a while, honouring `Retry-After` when
+given; a transport failure (refused, reset, timed out connecting) cools it down starting sooner; two
+timeouts in a row with no success between them count the same way, one alone does not, since a
+gateway can hang on a block it does not have while answering everything else fine; a 404 or a body
+over the size limit changes nothing, since the gateway answered, it just doesn't have this one. When
+every gateway has lied the failure is `unverifiable`; when none answered it is `unavailable`. A
+block that hashed correctly but breaks a limit is the site's own content, so no gateway is blamed
+for it.
+
+**A block fetch tries the least-loaded non-cooling gateway first, and hedges a slow leader**
+([`block-fetch.ts`](block-fetch.ts)). Each gateway keeps its own concurrency limit
+([`limits.ts`](limits.ts)'s `perGatewayConcurrency`), not one shared by all of them, so a hung or
+rate-limited gateway cannot hold back requests to the others. If nothing has verified within
+`hedgeDelayMs`, a second gateway starts too -- a hedge, not a replacement: the first attempt keeps
+running, and whichever verifies first wins, with every other attempt abandoned. A pass across every
+usable gateway is retried, up to a small limit, only after a rate-limited or unreachable outcome,
+never after a lie or a plain miss. Concurrent requests for the same block within one partition
+share one fetch ([`blockstore.ts`](blockstore.ts)'s `SharedFetch`) -- refusals reach every joiner,
+and the underlying fetch is aborted only once the last joiner has left.
 
 **DDOC fails only when a resource could not be served verified from any source.** A refusal
 followed by a verified copy from another gateway still meets DDOC, since nothing unverified was
