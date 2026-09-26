@@ -53,7 +53,7 @@ interfaces to *read and write* Web1 (`OrivonBook/Web3 Potential.md`).
 
 **WASM Orivon Execution Layer**: current name for what earlier documents called "Advanced
 WASM" or "programs on-fly". In the MVP this capability is delivered by the broker, not by
-WASM (`ADR-0002`).
+a WASM runtime (`ADR-0002`).
 
 **Web3 Accounts**: the no-setup identity system. Silent per-origin app keys, plus
 named identities (e.g. the Nostr identity) that are cross-origin by explicit consent
@@ -166,4 +166,4 @@ and serves `.eth` names on loopback (`src/verifier-host/`).
 - **"Special extensions"** (`orivon.mdx`) → say **apps**.
 - **"Wallet"** for the no-setup identity → say **Web3 Account**; reserve *wallet* for
   funds-bearing, setup-requiring accounts.
-- **"Advanced WASM"** → say **execution layer**; in the MVP it is not WASM.
+- **"Advanced WASM"** → say **execution layer**; in the MVP it is the broker, not a WASM runtime.

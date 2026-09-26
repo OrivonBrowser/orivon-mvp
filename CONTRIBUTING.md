@@ -50,14 +50,18 @@ interface. Do not reinvent without a written reason.
 
 **7. Don't over-document trivia**, and don't create abstractions for elegance alone. Prefer self explanatory code over long comment sections.
 
-**8. Pure-JS dependencies only.** No native modules requiring compilation. Windows and macOS
-are supported by running from source, and an `npm install` that needs `node-gyp` is a worse
-wall than the code-signing certificate it was meant to avoid. Enforced by `npm run
-check:natives`, which runs automatically on every install.
+**8. No native modules in Orivon's own dependencies.** No native modules requiring
+compilation; JavaScript and WebAssembly both pass. Windows and macOS are supported by running
+from source, and an `npm install` that needs `node-gyp` is a worse wall than the code-signing
+certificate it was meant to avoid. Enforced by `npm run check:natives`, which runs
+automatically on every install. This bounds this repository's dependencies, not the apps
+Orivon runs: an app qualifies by running in the Node environment, WebAssembly included
+([`ADR-0036`](docs/decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)).
 
 Two more that are less philosophical and more immediate:
 
-**TypeScript only.** No Rust, no C++ ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
+**This repository's code is TypeScript only.** No Rust, no C++
+([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
 
 **`src/contracts/` references nothing outside itself.** Not `electron`, not `node:*`, not any
 package. It is the interface every part of the system agrees on, and tying it to the engine

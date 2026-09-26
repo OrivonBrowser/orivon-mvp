@@ -96,7 +96,8 @@ metric and their telemetry must work identically.
 
 Two constraints follow, and they are not optional:
 
-1. **Pure-JS dependencies only.** No native modules requiring compilation. If `npm install`
+1. **No native modules in the shell's dependencies.** Nothing may compile at install time;
+   JavaScript and WebAssembly both pass (`ADR-0031`). If `npm install`
    needs node-gyp and Visual Studio Build Tools, run-from-source is a worse wall than the
    certificate it was meant to avoid.
    The real blocker is **`node-datachannel`** (`utp-native` is optional), a *hard* transitive

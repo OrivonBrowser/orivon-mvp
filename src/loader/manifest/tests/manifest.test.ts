@@ -8,7 +8,7 @@ import { MAX_MANIFEST_BYTES, parseManifest, type ManifestResult } from '../manif
 //
 // MUTATION-TESTED by hand against four deliberately-wrong edits to
 // manifest.ts (no mutation-testing tool is a dependency here, per CLAUDE.md
-// Rule 8 -- pure-JS only), each the specific trap this task's brief named,
+// Rule 8 -- no native modules), each the specific trap this task's brief named,
 // run and reverted:
 //
 //   1. `pattern === '*' || parsePortRange(...)` accepting "*" for

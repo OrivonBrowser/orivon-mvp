@@ -99,7 +99,7 @@ and AirGap Vault's own documented non-keyring fallbacks already check for, so a 
 calls it before reaching for the async trio still ends up somewhere that works.
 
 **Why `ipcRenderer`/`ipcMain` share one bus with no broker call anywhere in `ipc.ts`.**
-`ADR-0005` dissolved the app backend: all app code is renderer JavaScript, so a ported app's
+`ADR-0005` dissolved the app backend: all app code runs in the renderer, so a ported app's
 "main process" and "renderer process" halves run in the exact same realm here. There is nothing
 to cross and nothing to authorise: `ipc.ts` is a same-realm `Map`-backed request/response and
 event registry, not IPC in the OS sense. Building broker plumbing for it would add a capability

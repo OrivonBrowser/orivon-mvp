@@ -15,7 +15,7 @@ Legend: **[OWNER]** product/philosophy/irreversible — never decided by an AI �
 | A1 What is the MVP for? | **Owner:** the funding plan in `roadmap.mdx` is **outdated**. MVP target is **100 active users in EU/USA, active = 25 h/month**, to attract A+ contributors, validate the product with real data, and support funding. The MVP must have real-world use |
 | A2 Which capability is the thesis? | **Owner:** **A** (run any Web3 program from a URL) is primary; **B** (Web3 Scores) also important; **C** (wallet) simplified and deferred, keep architecture ready; **D** (pluggable domains) a long-term note |
 | A3 Is "bitcoind in WASM" in scope? | **Owner:** it is a *future* goal for the execution layer, not an MVP claim → `ADR-0001` (flagship is BitTorrent streaming) |
-| A5 Who writes the code? | **Owner:** solo; no Rust, C++ basics; Claude Max; Electron MVP, Chromium fork long-term → `ADR-0002` (TypeScript only, WASM deferred) |
+| A5 Who writes the code? | **Owner:** solo; no Rust, C++ basics; Claude Max; Electron MVP, Chromium fork long-term → `ADR-0002` (TypeScript only, WASM runtime deferred) |
 | B1 Four incompatible architectures | → `ADR-0002`. Capability API is the durable asset; broker in Electron main; `orivon-runtime` deferred, not cancelled. Answers the unanswered heading in `technical/orivon-core` |
 | B5 Same bytecode, two capability environments | → `ADR-0002`. Two named environments: *frontend* (renderer, ordinary web powers) and *app backend* (broker-side, capability-gated) |
 | B6 "Web4 era starter" vs roadmap ordering | Dissolved: the funding plan is outdated. The product creates the movement |
@@ -1650,11 +1650,11 @@ says nothing about, and cannot say anything about, what a later `electron-builde
 does. The gate that currently passes and the gap that currently exists are simply about two
 different moments; the automated check was never going to catch this one.
 
-**The open question for the owner:** does Rule 8 ("pure-JS dependencies only... native modules
-break run-from-source on Windows and macOS") mean *nothing compiles at `npm install`* — true
-today, and all `check:natives` verifies — or the stronger *no native build tooling exists
-anywhere in the tree*, which is now false? Both readings were indistinguishable before this PR,
-because nothing in the tree depended on `node-gyp` at all. They diverge starting now.
+**The open question for the owner:** does Rule 8 ("no native modules in Orivon's own dependencies.
+Native modules break run-from-source") mean *nothing compiles at `npm install`* — true today, and
+all `check:natives` verifies — or the stronger *no native build tooling exists anywhere in the
+tree*, which is now false? Both readings were indistinguishable before this PR, because nothing in
+the tree depended on `node-gyp` at all. They diverge starting now.
 
 **AI leaning, not a decision:** if the owner wants the stronger property enforced, a guard would
 need to check something `check:natives` does not today — e.g. that no installed package's own
@@ -5052,10 +5052,10 @@ compute correctly. `example.co.uk`'s registrable domain is `example.co.uk`, not 
 "last two labels" guess gets this backwards, in the direction that hides the real registrant, so
 it is worse than not computing it at all. This repo has no such dependency, and adding one is a
 stop condition for the current run (`.claude/unattended-build-queue.md` stop condition 4:
-license, provenance and pure-JS status reviewed by the owner first) -- so it is parked here
+license, provenance and native-module status reviewed by the owner first) -- so it is parked here
 rather than added.
 
-**Two candidates, checked against Rule 8 (pure-JS, no native modules) so the owner can decide
+**Two candidates, checked against Rule 8 (no native modules) so the owner can decide
 cheaply:**
 
 - **`psl`** (`lupomontero/psl`) -- MIT license, latest `1.15.0`. One dependency, `punycode@^2.3.1`
@@ -5226,7 +5226,7 @@ That test bundles a small Electron main-process entry with `esbuild`, imported d
 transitively, so the import works and CI passes.
 
 **Why this is filed rather than fixed.** Declaring it is a change to the dependency manifest,
-which this run treats as an owner gate (license, provenance and pure-JS status reviewed first,
+which this run treats as an owner gate (license, provenance and native-module status reviewed first,
 `CLAUDE.md` Rules 6 and 8). The lane could not safely run `npm install` either: every fleet
 worktree symlinks one shared `node_modules`, so an install mid-run would mutate the tree other
 lanes are building against.

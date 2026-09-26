@@ -34,7 +34,7 @@ is where dates and decision IDs live.
 | | |
 |---|---|
 | [`ADR-0001`](decisions/ADR-0001-flagship-app-bittorrent-streaming.md) | BitTorrent streaming as the flagship. **Withdrawn**: kept as the case for a torrent app, which is an idea |
-| [`ADR-0002`](decisions/ADR-0002-capability-api-is-the-durable-asset.md) | The capability API is the durable asset; WASM deferred, not cancelled |
+| [`ADR-0002`](decisions/ADR-0002-capability-api-is-the-durable-asset.md) | The capability API is the durable asset; the WASM runtime deferred, not cancelled |
 | [`ADR-0003`](decisions/ADR-0003-local-first-storage.md) | Local-first storage, per-origin isolation, no Orivon server for user data |
 | [`ADR-0004`](decisions/ADR-0004-telemetry.md) | Telemetry: opt-out, disclosed, self-hosted, inspectable |
 | [`ADR-0005`](decisions/ADR-0005-apps-are-url-addressed-not-bundled.md) | Apps are URL-addressed and cached, never bundled |

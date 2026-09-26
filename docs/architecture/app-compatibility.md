@@ -14,6 +14,15 @@ one for free; apps that don't, don't.
 | **3** | Native / JVM / Qt desktop app | **must rewrite** | bundle a supervised helper process | Bisq, Monero GUI, Electrum, Sparrow, Wasabi |
 | **4** | Does not exist yet | **must write** | **must write** | torrent streaming in a browser |
 
+**What qualifies an app is the environment its code runs in, not the language it was written
+in** ([`ADR-0036`](../decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)).
+In this build that environment is Node's, as the shim reproduces it. Node runs WebAssembly
+natively, and so does an Orivon app's renderer, so a component compiled to WebAssembly from
+Rust, C or Go qualifies on the same terms as JavaScript. A native addon does not carry over, and
+is replaced per library (§Where WASM fits). Where Orivon's Node environment falls short of real
+Node, [`compatibility-matrix.md`](../planning/compatibility-matrix.md) lists the gap, and each
+gap is taken case by case.
+
 ## What this implies for the MVP
 
 **The MVP's apps are tier 2.** Build step 5 ports Node.js and Electron desktop apps (FreeTube,
@@ -104,11 +113,20 @@ the design has failed.
 
 ## Where WASM fits
 
-Tier 3 is out of reach of the `orivon-node-shim` *and* out of reach of WASM: those apps would
-need full recompilation plus threads plus a GUI toolkit. So WASM is not the answer to tier 3.
+**Inside an app, today.** WebAssembly an app calls from its own JavaScript runs in its renderer,
+with no host of Orivon's: the served CSP allows it, and `test/e2e-served-csp.test.ts` proves it.
+It reaches the network and disk the way the app's JavaScript does, through `orivon.*` and the
+grants the app holds. AirGap Vault signs in it, Element's encryption is bundled as it, and most of
+ASGARDEX's largest chunk is WebAssembly. A library that exists only as a native addon often has a
+WebAssembly build (`sql.js` for `better-sqlite3`), which is the usual substitute.
 
-`orivon-runtime`'s real jobs are narrower and both post-MVP (ADR-0002): containment for
-untrusted third-party code, and portability to mobile.
+**Not as a way to reach tier 3.** Those apps would need full recompilation plus threads plus a
+GUI toolkit, so WebAssembly does not turn a Qt or JVM app into a tier-2 app.
+
+**Not as a host, in this build.** `orivon-runtime`, a WASI host that would run WebAssembly with no
+JavaScript around it, is post-MVP (ADR-0002). Its real jobs are narrower: containment for
+untrusted third-party code, and portability to mobile. A standalone WASI program has nothing to
+host it today (`compatibility-matrix.md` Table 4).
 
 ## Licensing caution
 

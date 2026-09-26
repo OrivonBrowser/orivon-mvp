@@ -97,8 +97,11 @@ Other pages cite these by number, so a new rule goes at the end and none is ever
 6. **Prefer mature components.** For each subsystem, decide: build, use a library, fork, embed,
    or define an interface. Do not reinvent without a written reason.
 7. **Don't over-document trivia**, and don't create abstractions for elegance alone.
-8. **Pure-JS dependencies only.** Native modules break run-from-source, which is how Windows
-   and macOS are supported (`docs/planning/build-plan.md` §Platform policy).
+8. **No native modules in Orivon's own dependencies.** Native modules break run-from-source,
+   which is how Windows and macOS are supported (`docs/planning/build-plan.md` §Platform
+   policy). JavaScript and WebAssembly both pass. This bounds this repository's `npm install`,
+   never the apps Orivon runs: an app qualifies by running in the Node environment,
+   WebAssembly included (ADR-0036).
 9. **Say which scope a sentence bounds**: this build, this repository, or the project. Never
    state an MVP boundary as a permanent property of Orivon, and never state a long-term
    aspiration as a plan for this repository. A reader cannot recover which you meant from
@@ -249,5 +252,5 @@ section: **Done / results** for outcomes, **In my head** for thinking. Skip rout
   on `main`. Two branches can take the same next number and merge without a git conflict, since
   the filenames differ, and no check catches it: the branch that merges later renumbers its own.
   A superseded ADR is rewritten in place with the reversal recorded (see ADR-0004).
-- The MVP is **TypeScript only**. No Rust, no C++ (ADR-0002).
+- This repository's code is **TypeScript only**. No Rust, no C++ (ADR-0002).
 - Prior material is quoted in English; the private planning docs are partly Italian.

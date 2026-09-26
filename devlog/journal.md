@@ -55,5 +55,6 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Any web page can time a `.eth` request and learn which names were opened recently (A256); no fix is free.
 - Dropped the torrent flagship and the Nostr step: ported Node.js apps are now step 5, trust-minimised ENS and IPFS step 6.
 - Judged Web3 Score levels are in, even from a non-trustless or local provider; DDOC's off-host anchor moves in via ENS.
+- Made it official: an app qualifies by running in the Node environment, WebAssembly included, not by being pure JavaScript (ADR-0036).
 
 ### Non-repo

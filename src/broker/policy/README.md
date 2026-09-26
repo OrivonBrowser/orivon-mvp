@@ -49,19 +49,19 @@ addresses` uses: a caller physically cannot proceed without destructuring what w
 comment somebody has to remember. Recommendation, not yet owner-confirmed;
 `docs/open-questions.md` A88.
 
-**[`derive-p256.ts`](derive-p256.ts): why secp256k1 isn't served here.** WebCrypto has no
-secp256k1 at all, so serving it would mean either hand-rolling scalar multiplication (variable-
-time, over a secret scalar, in the file that holds every user's identity) or reaching for a curve
-library from the layer ADR-0002 says must outlive the engine beneath it. The first is unacceptable
-outright. The second is a real option, just not one to take here: `src/nostr/` needs a secp256k1
-implementation regardless (WebCrypto cannot produce a BIP-340 Schnorr signature either), so the
-point multiplication costs nothing extra there and buys nothing extra here. The project rule is
-CLAUDE.md Rule 8 ("pure-JS dependencies only") and Rule 6 ("do not reinvent without a written
-reason"). There is no blanket "add no dependency" rule, and a pure-JS audited curve library would
-satisfy both. The argument for staying on WebCrypto is engine-independence, not dependency count.
-Revisit in the `nostr` stream (ADR-0010 §Rejected). What this file owns
-for secp256k1, the scalar frozen by golden vectors, is the part that must never change; the
-point is a deterministic function of it, so the identity is pinned either way.
+**[`derive-p256.ts`](derive-p256.ts): why secp256k1 isn't served here.** WebCrypto has no secp256k1
+at all, so serving it would mean either hand-rolling scalar multiplication (variable-time, over a
+secret scalar, in the file that holds every user's identity) or reaching for a curve library from
+the layer ADR-0002 says must outlive the engine beneath it. The first is unacceptable outright. The
+second is a real option, just not one to take here: `src/nostr/` needs a secp256k1 implementation
+regardless (WebCrypto cannot produce a BIP-340 Schnorr signature either), so the point
+multiplication costs nothing extra there and buys nothing extra here. The project rule is CLAUDE.md
+Rule 8 ("no native modules in Orivon's own dependencies") and Rule 6 ("do not reinvent without a
+written reason"). There is no blanket "add no dependency" rule, and a pure-JS audited curve library
+would satisfy both. The argument for staying on WebCrypto is engine-independence, not dependency
+count. Revisit in the `nostr` stream (ADR-0010 §Rejected). What this file owns for secp256k1, the
+scalar frozen by golden vectors, is the part that must never change; the point is a deterministic
+function of it, so the identity is pinned either way.
 
 **[`origin.ts`](origin.ts)'s `ORIGIN_BEARING_SCHEMES` is an allowlist, never a denylist.**
 `URL.origin` has two distinct silent failure modes a denylist of `file:`/`data:` misses both of:

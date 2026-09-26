@@ -117,7 +117,7 @@ Web3site is not a category a user converts a website into, it is the URL.
 
 ## The design choices
 
-All eight below are settled. The line given here is the sharpest reason, not the whole case; if
+All nine below are settled. The line given here is the sharpest reason, not the whole case; if
 you disagree with one, the ADR is where the objections are already answered.
 
 **What gets built, and what outlasts it**
@@ -128,6 +128,10 @@ you disagree with one, the ADR is where the objections are already answered.
   gap one of them finds is fixed here for every app. The torrent flagship of
   [`ADR-0001`](docs/decisions/ADR-0001-flagship-app-bittorrent-streaming.md) is withdrawn and
   kept as an idea.
+- **An app qualifies by the environment its code runs in, not its language.** WebAssembly runs
+  in an app as it runs in Node, so a component compiled to it qualifies like JavaScript; a native
+  addon does not carry over
+  ([`ADR-0036`](docs/decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)).
 - **The capability API is the durable asset.** A WASM runtime is deferred, not cancelled:
   containment for untrusted code and mobile portability are both real goals, and both post-MVP
   ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).

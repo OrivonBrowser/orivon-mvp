@@ -13,6 +13,7 @@ Any dependency needing node-gyp, CMake or a C++ toolchain breaks that path silen
 
 - `webtorrent` and its native transitive deps (`node-datachannel` via `webrtc-polyfill`) are
   shipped as a **pre-built app asset**, never as a shell dependency.
-- If a pure-JS alternative exists, use it. If not, stop and raise it with the owner.
+- If a JavaScript or WebAssembly alternative exists, use it. If not, stop and raise it with the
+  owner.
 - After any install, the `postinstall` check must find zero `binding.gyp` / `prebuilds/` under
   `node_modules`.

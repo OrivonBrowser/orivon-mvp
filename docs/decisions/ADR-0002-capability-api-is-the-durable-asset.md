@@ -1,4 +1,4 @@
-# ADR-0002: The capability API is the durable asset; WASM is deferred
+# ADR-0002: The capability API is the durable asset; the WASM runtime is deferred
 
 - **Status:** accepted
 - **Date:** 2026-08-18
@@ -55,11 +55,11 @@ containment justification needs re-argument.** Contradiction B5 was resolved her
 environments, *frontend* (renderer) and *app backend* (broker-side, capability-gated), with
 `orivon-runtime` given the job of containing the latter. `ADR-0005` then concluded that
 URL-delivered app code cannot run in the main process, moving it to the renderer, after which
-**all app code is renderer JS and the broker is a pure syscall proxy.**
+**all app code runs in the renderer and the broker is a pure syscall proxy.**
 
 Two consequences, stated rather than smoothed over:
 - The migration ladder is, as now designed, **Node → Mojo**. Wasmtime would be a *different app
-  model* (apps ship WASM modules), not a swap beneath a stable API.
+  model* (apps ship standalone WASI modules), not a swap beneath a stable API.
 - The containment argument is probably wrong. Hostile app code already runs inside a V8
   renderer sandbox; what makes it dangerous is **the grants it holds**, which is an
   authorisation problem WASM does not solve. The likelier real fix is finer-grained, revocable
@@ -68,6 +68,16 @@ Two consequences, stated rather than smoothed over:
 `orivon-runtime`'s **mobile portability** justification is untouched. Its containment
 justification is now open, and `mvp-scope.md` states it publicly, so this matters beyond the
 repository.
+
+## Amendment recorded 2026-09-26
+
+**5. Amendment 4's "all app code is renderer JS" now reads "all app code runs in the renderer".** It
+named where app code runs, never its language. An app's code may be JavaScript or WebAssembly, and
+both run in the renderer (`ADR-0036`). WebAssembly there reaches the network and disk as the app's
+JavaScript does, through `orivon.*`. The Wasmtime "different app model" above is WebAssembly with no
+JavaScript around it, calling a WASI host, and remains deferred. The "capability-bearing WASM inside
+the renderer's own V8" alternative below is impossible only in the sense it states, raw sockets from
+inside the sandbox; nothing needs that.
 
 ## Context
 The public technical design (`orivon-runtime.mdx`, `orivon-core.mdx`,

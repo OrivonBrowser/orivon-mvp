@@ -2,8 +2,8 @@
 // capability that did not exist until orivon.secrets. Real Electron's
 // safeStorage is a MAIN-process module; a ported app's original main-
 // process code reaches it the same way its renderer code reaches anything
-// else here, because ADR-0005 dissolved the app backend -- all app code is
-// renderer JS under this shim.
+// else here, because ADR-0005 dissolved the app backend -- all app code runs
+// in the renderer under this shim.
 //
 // ONLY THE ASYNC TRIO IS BACKED. orivon.secrets is async-only by
 // construction (capability-api.ts's design rule 2: network -- and this

@@ -11,7 +11,8 @@ That is not an accident, and it is worth understanding before you add a dependen
 macOS are supported from day one via *run from source* rather than signed installers, which
 sidesteps SmartScreen and Gatekeeper without buying certificates. If `npm install` ever needs
 `node-gyp`, run-from-source becomes a worse wall than the certificate it was meant to avoid. So
-**pure-JS dependencies only** ([`CLAUDE.md`](../../CLAUDE.md) Rule 8), enforced automatically;
+**no native modules in Orivon's own dependencies** ([`CLAUDE.md`](../../CLAUDE.md) Rule 8), enforced
+automatically;
 see `check:natives` below.
 
 ## Install and run
@@ -202,7 +203,7 @@ measured in daily-driver hours.
 the metric and their telemetry must work identically. Two constraints follow, and neither is
 optional:
 
-1. Pure-JS dependencies only (above).
+1. No native modules in Orivon's own dependencies (above).
 2. **No platform-specific paths.** All storage goes through `app.getPath('userData')`, never a
    hardcoded XDG path ([`ADR-0003`](../decisions/ADR-0003-local-first-storage.md)). A hookify
    rule warns on hardcoded storage paths.

@@ -8,6 +8,11 @@ this one is stale.
 **Every live capability is complete Spec'd → Broker → Page, except `id.requestIdentity` and
 `protocols`**, the two unbuilt entries. `hid` and `subprocess` are excluded from v0.
 
+**An app qualifies by running in the Node environment, not by being JavaScript**
+([`ADR-0036`](../decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)):
+WebAssembly runs in an app exactly as it runs in Node. Every gap below is a limit of this build,
+taken case by case as a real app reaches it, never a rule about which apps may exist.
+
 Two axes, and they fail in completely different ways:
 
 - **Table 1 is authority**: what is an app *allowed* to do. Missing it, the app runs and every
@@ -178,7 +183,7 @@ open blockers are listed; a resolved one is deleted, not struck through.
 | 9 | `hid`/USB, the wallet cluster | `orivon.hid.*` + device chooser | Contracts + prompt UX + security argument |
 | 10 | Native addons in dep trees | Substitute per library, Table 5 | Per-app, not per-platform |
 | 11 | Tier 3, no HTML frontend | Container + xpra ([doc](container-apps-opportunity.md)) | Parked; reopens `subprocess` in a narrow shape |
-| 12 | App logic is not JavaScript | Nothing works today, WASM included | Blocked upstream: Go has no wasip2, wasi-sdk has no target with threads AND sockets |
+| 12 | A standalone WASI program: WebAssembly that imports WASI instead of calling JavaScript. The shim maps no `node:wasi` and nothing implements WASI over `orivon.*`. WebAssembly an app calls from its own JavaScript already runs (Table 3) | Build the component with JavaScript bindings (wasm-bindgen, Emscripten, Go's `js/wasm`), which needs nothing new here; a `node:wasi` shape only once an app needs one | A WASI program that needs sockets is also blocked upstream: Go has no wasip2, and wasi-sdk has no target with threads AND sockets |
 
 Rows 1 to 3 are the top of the list: none needs anything but the work itself or one
 confirmation. Row 6 sits behind them despite touching the metric, because it needs
@@ -206,7 +211,7 @@ wrong, not on the build toolchain.
 
 **What the question is really pointing at is a real gap:** the missing thing is not permission
 to compile C++, it is **a place to run non-renderer code**. `ADR-0005` dissolved the "app
-backend", so all app code is renderer JS. Preinstalled natives only pay off once something can
+backend", so all app code runs in the renderer. Preinstalled natives only pay off once something can
 load them on an app's behalf: `subprocess`, or the container path. Both post-MVP.
 
 ## Table 6: how to update this

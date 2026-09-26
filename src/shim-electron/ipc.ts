@@ -1,6 +1,6 @@
 // ipcRenderer/ipcMain, backed by a local in-sandbox message bus rather than
-// the broker. ADR-0005 dissolved the app backend: all app code is renderer
-// JavaScript, so "main" and "renderer" are the SAME realm here, and no
+// the broker. ADR-0005 dissolved the app backend: all app code runs in the
+// renderer, so "main" and "renderer" are the SAME realm here, and no
 // capability or grant is involved at all -- this is a same-realm event and
 // request registry, not IPC in the OS sense. Do not add a broker call to
 // anything in this file; that is the mistake this design exists to prevent.
