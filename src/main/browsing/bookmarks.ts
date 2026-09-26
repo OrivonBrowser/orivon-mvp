@@ -10,6 +10,8 @@
 // secret.
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { decodeDataUrl, sniffImageType } from './favicon-format.js'
+import { MAX_FAVICON_BYTES } from './favicon.js'
 import { sanitizeDirectUrl } from './omnibox.js'
 
 export interface Bookmark {
@@ -34,9 +36,10 @@ export interface BookmarkInput {
   favicon?: string | null
 }
 
-/** A stored favicon is only ever a `data:` image, capped near the same size
- * favicon.ts enforces on the wire (`MAX_FAVICON_BYTES`, plus base64's ~4/3
- * expansion and a little slack for the media-type prefix).
+/** A stored favicon is only ever a `data:` image, capped at the same size
+ * favicon.ts enforces on the wire (`MAX_FAVICON_BYTES`), derived rather than
+ * a second literal (code-guidelines.md Rule 3) -- base64's ~4/3 expansion
+ * plus a little slack for the media-type prefix.
  *
  * This runs on LOAD, not just on write, for the same reason `sanitizeDirectUrl`
  * does: `bookmarks.json` is a plain user-writable file, so anything in it is
@@ -44,13 +47,21 @@ export interface BookmarkInput {
  * execute -- the chrome view's CSP is `img-src 'self' data:` and this only
  * ever becomes an `<img>` -- but persisting unbounded attacker-chosen bytes
  * into a file the shell reads at startup is not a thing to allow on the
- * grounds that the next layer would probably catch it. */
-export const MAX_STORED_FAVICON_CHARS = 48 * 1024
+ * grounds that the next layer would probably catch it. The prefix and size
+ * checks alone would accept anything merely LABELLED `image/*`, so the
+ * payload is decoded and sniffed too (favicon-format.ts's own byte check,
+ * the same one a fetched candidate goes through) -- a stored favicon is
+ * exactly as untrusted as a page's own `<link rel=icon>`, and gets exactly
+ * the same guarantee: what it renders as is decided by its bytes, not by
+ * a label anything wrote into the file. */
+export const MAX_STORED_FAVICON_CHARS = Math.ceil(MAX_FAVICON_BYTES * 4 / 3) + 64
 
 export function sanitizeStoredFavicon (value: unknown): string | null {
   if (typeof value !== 'string') return null
   if (!value.startsWith('data:image/')) return null
   if (value.length > MAX_STORED_FAVICON_CHARS) return null
+  const bytes = decodeDataUrl(value, MAX_FAVICON_BYTES)
+  if (bytes === null || sniffImageType(bytes) === null) return null
   return value
 }
 
