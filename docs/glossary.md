@@ -110,13 +110,15 @@ much trust it requires. Levels remain unspecified (`web3-score.md`: "Work in pro
 **Web3 Score**: the umbrella for Trustlessity plus Security.
 
 **Website level**: a site's place on the canonical Web3 scores page's site ladder. Level 1 is a
-standard site; Level 2 a site that meets DDOC, which the browser detects itself; Level 3 and above
-are judged, and only a Web3 Score provider gives them. The Web3 Score page leads with it
-(`ADR-0006`).
+standard site ("Web2"); Level 2 a site that meets DDOC, which the browser detects itself; Level 3
+and above are judged, and only a Web3 Score provider gives them, or, in this build, a
+developer-only override previewing one (`src/main/dev/score-levels.ts`). The address bar's Web3
+Score shield leads with it, coloured red/orange/yellow/green, Level 1/4 labelled "Web2"/"Web3",
+and the Web3 Score page it opens leads with it too (`ADR-0006`).
 
 **Web3 Score provider**: an entity issuing judged scores. The user may choose several. Never
 required for the automatic ladders. In this build a provider need not be trustless, and may run
-locally (`ADR-0006`).
+locally (`ADR-0006`); which provider ships is open (`open-questions.md` A250).
 
 **Attestation**: a provider's signed statement over a content identifier, a bundle hash or a CID
 ("hash X is Level 4").
@@ -126,7 +128,7 @@ Verified locally and offline, so a provider cannot track users (`ADR-0006`).
 indicator. Always reported as *observed*, never *guaranteed*.
 
 **TOFU**: trust on first use. The delivery host is trusted once at install; the bundle is then
-pinned, so later host compromise cannot silently swap code (`ADR-0006` D2).
+pinned, so later host compromise cannot silently swap code (`ADR-0006`).
 
 ## Names and content
 

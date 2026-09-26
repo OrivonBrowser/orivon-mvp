@@ -606,7 +606,7 @@ conflated:
 
 | Event | Response | Comes from |
 |---|---|---|
-| Bundle hash changes | **Security re-consent**: "this app's code changed" | `ADR-0005`, `ADR-0006` D2 (pinning). The hash itself is `ADR-0009`/`bundle-hash.md`, which includes the manifest, so a manifest-only change also lands here |
+| Bundle hash changes | **Security re-consent**: "this app's code changed" | `ADR-0005`, `ADR-0006` (hash-pinning, TOFU on the bundle). The hash itself is `ADR-0009`/`bundle-hash.md`, which includes the manifest, so a manifest-only change also lands here |
 | Manifest requests a capability not yet granted | **Capability prompt** for that capability only | this spec |
 
 > **Keying on the capability *kind* alone would leave a hole.** An update changing

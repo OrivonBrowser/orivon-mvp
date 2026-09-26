@@ -2,8 +2,10 @@
 
 - **Status:** accepted, **amended 2026-09-15** (see the Amendment section below: a gap in the
   D-ladder, not a reversal of anything above), **twice on 2026-09-24**: DDOC ships as
-  evidence, and judged levels ship, from a provider that need not be trustless, and **on
-  2026-09-25**: Website levels follow the canonical Web3 scores page
+  evidence, and judged levels ship, from a provider that need not be trustless, **on
+  2026-09-25**: Website levels follow the canonical Web3 scores page, and **on 2026-09-26**: the
+  shield and panel show the displayed level with its own colour, the D-ladder collapses to the
+  canonical Connection-to-network scale, and a developer-only override can preview a judged level
 - **Date:** 2026-08-18
 - **Type:** product / architecture
 - **Decided by:** owner (insisted the full spectrum matters, and proposed the attestation
@@ -88,7 +90,9 @@ the dishonesty the indicator exists to prevent.
 
 ## The three ladders, as shipped
 
-**Delivery**: how the code arrived, and how much trust that costs.
+**Delivery**: how the code arrived, and how much trust that costs. *(Amended 2026-09-26, below:
+the D1-D4 rungs below are superseded by three canonical levels; kept here only as the shape
+originally shipped.)*
 
 | | | trust cost |
 |---|---|---|
@@ -268,6 +272,49 @@ evidence this ADR builds sits beneath it:
 - **Third-party code does not lower Level 2.** Level 2 asks whether the site's own files are what
   it published; code fetched from elsewhere costs score in the judged levels and shows as pin
   coverage, as the 2026-09-15 amendment says.
+
+## Amendment, 2026-09-26: the shield shows the level, the D-ladder becomes three canonical
+Connection levels, and a developer override can preview a judged level
+
+**The Web3 Score shield (the toolbar icon, and the site-info popup's connection row that draws
+the identical element) shows the displayed Website level, not the address scheme.** Level 1 is
+red, Level 2 orange, Level 3 yellow, Level 4 green; Level 1 and Level 4 carry a white "Web2"/
+"Web3" label, matching the canonical page's own naming of the ends of the scale. With no level
+yet (a new tab, or a query still in flight) the shield stays a plain grey outline. The Web3 Score
+page colours each met rung by its own level, and Level 1's row reads "Standard website (Web2)".
+
+**This narrows what ADR-0007 asked the shield to carry.** ADR-0007's "the padlock is now
+misleading unless the UI corrects it" required the shield to show whether a page's bytes came
+from Orivon's own pinned cache. The shield no longer does — it shows the Website level only. That
+signal returns with a future "store this Web3site locally" affordance, not here; see ADR-0007's
+own amendment.
+
+**The delivery ladder (D1-D4 above) is replaced by three levels, matching the canonical page's
+Connection-to-network scale exactly, red/yellow/green:**
+
+| Level | Met when | |
+|---|---|---|
+| D1 | everything short of D2 — an ordinary fetch, a TOFU-pinned installed app, or a CID reached through an unproven DNSLink | red |
+| D2 | a `.eth` name proven trustlessly, its content itself content-addressed (the old D4's exact condition) | yellow |
+| D3 | trustless for data availability — nothing in this build fetches peer-to-peer, so no automatic path reaches it | green |
+
+The old D1/D2 distinction (network fetch versus TOFU-pinned cache) and D3 alone (content-addressed
+without a proven name) are no longer levels of their own: neither evidence is lost, since the pin
+block and the `.eth` name's own evidence rows already show them independently, beside the level
+rather than folded into it — the same "evidence beside the level, not part of it" shape this
+ADR's 2026-09-25 amendment already uses for the Website level. **This section keeps the name
+"Delivery"** rather than "Connection", which `src/trust/connection-ladder.ts` already owns for a
+different, still-unwired per-app axis (the popup's own "Connections: Not observed yet" row) — the
+two must never be confused with each other.
+
+**A developer-only override (`src/main/dev/score-levels.ts`) can force the displayed level on
+either scale, per origin, gated behind `ORIVON_DEV_ORIGINS=1` plus a named env file
+(`ORIVON_SCORE_LEVELS_FILE`), the same way `eth-resolver.ts` gates fake `.eth` names — for
+previewing Website Level 3/4 and Delivery Level 3 before a real provider or peer-to-peer fetching
+exist.** It is always named as an override, on the shield's tooltip and on the Web3 Score page,
+never presented as observed or judged (this ADR's own standing rule). `ADR-0037` records the
+further consequence: at Website Level 4, a site's own grants read without warnings, on every
+consent surface.
 
 ## Reversibility
 - **Cost to reverse:** cheap to extend, expensive to retract. Levels shown once become claims

@@ -152,13 +152,14 @@ name) needs neither variable below: in every build, `npm start` and a packaged o
 `<link rel="orivon-manifest">` hint raises the consent prompt, and the origin is granted without
 being installed (`src/main/install/grant-without-install.ts`). The grants last the session.
 
-Two environment variables, both off unless you set them. `npm run dev` sets the first; nothing
-sets the second for you.
+Three environment variables, all off unless you set them. `npm run dev` sets the first; nothing
+sets the other two for you.
 
 | Variable | What it turns on |
 |---|---|
-| `ORIVON_DEV_ORIGINS=1` | Developer mode (`src/main/dev/dev-mode.ts`): a `.eth` name from the file below may be granted capabilities **without being installed**, over `http:` only, and Inspect Element appears in the context menu. It is also the master switch for the row below |
+| `ORIVON_DEV_ORIGINS=1` | Developer mode (`src/main/dev/dev-mode.ts`): a `.eth` name from the file below may be granted capabilities **without being installed**, over `http:` only, and Inspect Element appears in the context menu. It is also the master switch for the two rows below |
 | `ORIVON_ETH_NAMES_FILE=<path>` | A JSON file of `{"name.eth": port}` that `src/main/dev/eth-resolver.ts` reads and `src/main/verifier/` turns into Chromium DNS overrides, ahead of every other `.eth` name, so `http://name.eth` reaches `127.0.0.1:<port>`; typing such a name in the address bar opens it over `http:`. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set. `orivon-ports`' `orivon-port names` writes this file, and its `serve` and `run` rewrite it from every recipe on each start; nothing points the shell at it for you, and the shell reads it once, at its own startup |
+| `ORIVON_SCORE_LEVELS_FILE=<path>` | A JSON file of `{"https://origin": {"website": 1-4, "delivery": 1-3}}` that `src/main/dev/score-levels.ts` reads: forces the Web3 Score shield's displayed Website level and/or Delivery level for that origin, for previewing Level 3/4 before a real Web3 Score provider or peer-to-peer fetching exist (`ADR-0006`, `ADR-0037`). Either field may be omitted. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set; a bad entry is dropped and logged, never thrown. Every accepted override is logged loudly on startup, the same way the names file above is |
 
 A name in that file is also declared a **secure context**, which is not cosmetic. Its origin is
 plain `http:` on a non-loopback host, and Chromium judges trustworthiness by the origin, not by
