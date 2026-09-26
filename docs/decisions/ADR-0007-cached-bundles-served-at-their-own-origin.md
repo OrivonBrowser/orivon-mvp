@@ -1,6 +1,7 @@
 # ADR-0007: A cached app bundle is served at its own origin, inside the app's partition
 
-- **Status:** accepted
+- **Status:** accepted, **amended 2026-09-26**: the shield no longer carries the cache-provenance
+  signal this ADR asks for; see the Amendment below
 - **Date:** 2026-08-25
 - **Type:** architecture
 - **Decided by:** owner (options and recommendation prepared by AI)
@@ -135,3 +136,12 @@ that *some* TLS connection succeeded.
   a single partition while keeping the origin a secure context, the assumption flagged above.
   That is a mechanism failure, not a change of mind, and it must be settled in build step 2,
   before any grant is written to disk.
+
+## Amendment, 2026-09-26: the shield no longer signals cache provenance
+
+`ADR-0006`'s 2026-09-26 amendment moves the Web3 Score shield to showing the site's Website
+level (red/orange/yellow/green) instead of the secure/insecure/cached read this ADR asked for.
+The shield no longer carries the "running from local cache, pinned" signal at all — that returns
+with a future "store this Web3site locally" affordance, owner decision, not built here. Until
+then, this ADR's own "the padlock is now misleading unless the UI corrects it" argument stands
+unaddressed by the shield: the correction it asks for currently has no home in the UI.

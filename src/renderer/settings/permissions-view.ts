@@ -1,5 +1,6 @@
 import type { AppPermissions, PermissionRow, PickedPathRow, SiteNotificationRow } from '../../main/permissions/permissions.js'
 import type { GrantId } from '../../contracts/index.js'
+import { grantIcon } from '../grant-icons.js'
 
 // Renders the settings window's whole list of app cards -- one card per
 // `AppPermissions`, one row per `PermissionRow`. Mirrors bookmarks-view.ts's
@@ -88,8 +89,12 @@ function renderCard (
   return card
 }
 
-/** Shared by every row below -- one `.permission-row` markup: a message and one button, differing only in the button's word and what it addresses. */
-function renderRowElement (message: string, warning: boolean, onRevoke: () => void, action = 'Revoke'): HTMLElement {
+/** Shared by every row below -- one `.permission-row` markup: an icon, a
+ * message and one button, differing only in the icon's kind, the button's
+ * word and what it addresses. The icon is a SIBLING placed BEFORE
+ * `.permission-message`, never inside it: `test/e2e-site-permissions.test.ts`
+ * reads that span's exact textContent, which an icon must never add to. */
+function renderRowElement (kind: Parameters<typeof grantIcon>[0], message: string, warning: boolean, onRevoke: () => void, action = 'Revoke'): HTMLElement {
   const li = document.createElement('li')
   li.className = 'permission-row'
   li.classList.toggle('warning', warning)
@@ -105,7 +110,7 @@ function renderRowElement (message: string, warning: boolean, onRevoke: () => vo
   revoke.setAttribute('aria-label', `${action}: ${message}`)
   revoke.addEventListener('click', onRevoke)
 
-  li.append(messageEl, revoke)
+  li.append(grantIcon(kind), messageEl, revoke)
   return li
 }
 
@@ -113,11 +118,11 @@ function renderRow (origin: string, row: PermissionRow, onRevoke: (origin: strin
   // The whole row, not just an id: a row for an app that is not loaded has
   // no live grant id, and choosing between the two revoke paths is the
   // caller's job rather than this view's.
-  return renderRowElement(row.message, row.warning, () => { onRevoke(origin, row) })
+  return renderRowElement(row.capability, row.message, row.warning, () => { onRevoke(origin, row) })
 }
 
 function renderPickedPathRow (origin: string, row: PickedPathRow, onRevokePickedPath?: (origin: string, row: PickedPathRow) => void): HTMLElement {
-  return renderRowElement(row.message, row.warning, () => { onRevokePickedPath?.(origin, row) })
+  return renderRowElement(row.kind, row.message, row.warning, () => { onRevokePickedPath?.(origin, row) })
 }
 
 /** A website's card: its origin and its notification answer, with Reset. A
@@ -137,7 +142,7 @@ function renderSiteCard (site: SiteNotificationRow, onReset?: (row: SiteNotifica
 
   const rows = document.createElement('ul')
   rows.className = 'permission-rows'
-  rows.append(renderRowElement(site.message, false, () => { onReset?.(site) }, 'Reset'))
+  rows.append(renderRowElement('notifications', site.message, false, () => { onReset?.(site) }, 'Reset'))
 
   card.append(heading, rows)
   return card

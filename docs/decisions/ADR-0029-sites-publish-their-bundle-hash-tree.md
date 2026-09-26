@@ -94,7 +94,10 @@ The verdict is computed against the current pin, every time the popover opens. A
 an earlier bundle can therefore only fail, never verify. A verified root beside a wrong leaf
 table still fails, because a provider reading the table would be misled.
 
-The delivery ladder is unchanged: D2 still grades how the bundle was pinned (`ADR-0006`).
+The delivery ladder is unchanged by this ADR. *(`ADR-0006`'s 2026-09-26 amendment replaced the
+D-ladder's rungs with three levels on the canonical Connection-to-network scale; a same-host
+hash-pinned bundle, DDOC or not, is Delivery Level 1 under that scale, since the pin is trusted on
+first use rather than proven.)*
 
 ## Consequences
 

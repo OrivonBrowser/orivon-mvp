@@ -3,7 +3,7 @@ import { COMMAND_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
 import type { ShellCommand } from '../main/ipc/ipc.js'
 import type { ShellState } from '../main/shell/tabs.js'
 import type { SiteSummary } from '../main/permissions/site-info-controller.js'
-import type { DeliveryProvenance } from '../main/browsing/delivery-provenance.js'
+import type { Web3Score } from '../main/browsing/site-trust.js'
 import type { PanelAnchor } from '../main/permissions/permissions-panel.js'
 import type { SiteInfoPage } from '../main/permissions/site-info-panel.js'
 
@@ -44,13 +44,12 @@ contextBridge.exposeInMainWorld('orivonShell', {
   // opening the all-sites and site-info popups (fire-and-forget, like
   // every other command above).
   siteSummaryFor: async (url: string) => await request<SiteSummary>({ type: 'siteSummaryFor', url }),
-  // S4-6, ADR-0007: the address-bar shield's own truthful
-  // delivery-provenance query -- same round-trip shape as siteSummaryFor
-  // above, deliberately a separate command (see ShellCommand's own doc on
-  // 'deliveryProvenanceFor') rather than folded into the permissions
-  // payload, which answers a different question (what can this app do,
-  // not where did its bytes come from).
-  deliveryProvenanceFor: async (url: string) => await request<DeliveryProvenance>({ type: 'deliveryProvenanceFor', url }),
+  // The address-bar shield's own displayed Website and Delivery level --
+  // same round-trip shape as siteSummaryFor above, deliberately a separate
+  // command (see ShellCommand's own doc on 'web3ScoreFor') rather than
+  // folded into the permissions payload, which answers a different question
+  // (what can this app do, not how trustless its delivery is).
+  web3ScoreFor: async (url: string) => await request<Web3Score | null>({ type: 'web3ScoreFor', url }),
   // `anchor` is the tune icon's own rect, read by the chrome view -- main
   // has no way to know where the toolbar put that button. Passed through
   // verbatim; permissions-panel.ts clamps it to the window rather than

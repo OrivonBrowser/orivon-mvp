@@ -142,31 +142,38 @@ describe('registerShellIpc -- starring a page keeps its icon', () => {
   })
 })
 
-describe('registerShellIpc -- deliveryProvenanceFor (S4-6, ADR-0007)', () => {
-  it('forwards the tab URL to the injected deliveryProvenance function', async () => {
-    const deliveryProvenance = vi.fn(async () => ({ servedFromPinnedCache: true }))
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), deliveryProvenance)
+describe('registerShellIpc -- web3ScoreFor', () => {
+  it('forwards the tab URL to siteInfo.siteTrustFor and maps the result through web3Score', async () => {
+    const siteInfo = fakeSiteInfo({
+      siteTrustFor: vi.fn(async () => ({
+        connection: 'secure', ddoc: { status: 'not-checked' }, pin: undefined, name: undefined,
+        level: { level: 1, because: 'x', assessable: undefined },
+        delivery: { level: 1, evidence: {} as never },
+        levelOverride: 4, displayedLevel: 4, deliveryOverride: undefined, displayedDelivery: 1
+      } as never))
+    })
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn())
 
-    const result = await dispatch({ type: 'deliveryProvenanceFor', url: 'https://app.example/page' })
+    const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
-    expect(deliveryProvenance).toHaveBeenCalledWith('https://app.example/page')
-    expect(result).toEqual({ servedFromPinnedCache: true })
+    expect(siteInfo.siteTrustFor).toHaveBeenCalledWith('https://app.example/page')
+    expect(result).toEqual({ level: 4, overridden: true, delivery: 1, deliveryOverridden: false })
   })
 
-  it('refuses deliveryProvenanceFor from a frame that is not the chrome view\'s own', async () => {
-    const deliveryProvenance = vi.fn(async () => ({ servedFromPinnedCache: true }))
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), deliveryProvenance)
-
-    await dispatch({ type: 'deliveryProvenanceFor', url: 'https://app.example/page' }, OTHER_FRAME)
-
-    expect(deliveryProvenance).not.toHaveBeenCalled()
-  })
-
-  it('with no deliveryProvenance function injected, defaults to reporting false rather than throwing', async () => {
+  it('is null when siteTrustFor has nothing to report', async () => {
     registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn())
 
-    const result = await dispatch({ type: 'deliveryProvenanceFor', url: 'https://app.example/page' })
+    const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
-    expect(result).toEqual({ servedFromPinnedCache: false })
+    expect(result).toBeNull()
+  })
+
+  it('refuses web3ScoreFor from a frame that is not the chrome view\'s own', async () => {
+    const siteInfo = fakeSiteInfo()
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn())
+
+    await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' }, OTHER_FRAME)
+
+    expect(siteInfo.siteTrustFor).not.toHaveBeenCalled()
   })
 })

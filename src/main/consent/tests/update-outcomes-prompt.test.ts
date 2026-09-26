@@ -108,6 +108,14 @@ describe('createCapabilityPrompt', () => {
       detail: expect.stringContaining('Store files in a private folder')
     }))
   })
+
+  it('ADR-0037: an injected levelOverrideFor returning 4 keeps "question" even for an unlimited request -- this is the widening prompt, and the override still applies to it', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+
+    await createCapabilityPrompt((origin) => origin === ORIGIN ? 4 : undefined)(ORIGIN, MANIFEST, { 'https.connect': ['*:*'] })
+
+    expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' }))
+  })
 })
 
 describe('createRollbackChoicePrompt', () => {
@@ -139,6 +147,10 @@ describe('createRollbackChoicePrompt', () => {
     }))
   })
 
+  // ADR-0037 deliberately never reaches this prompt: the rollback warning
+  // is not about a grant's breadth, so createRollbackChoicePrompt takes no
+  // level parameter at all -- enforced at compile time, not by a runtime
+  // check, since there is no code path here for one to change.
   it('always uses the "warning" dialog type -- every below-floor offering is the same shape of risk (describeRollbackChoice\'s own doc)', async () => {
     showMessageBox.mockResolvedValueOnce({ response: 1 })
 

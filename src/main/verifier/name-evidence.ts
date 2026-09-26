@@ -18,7 +18,7 @@ export interface EvidenceRow {
 export interface NameEvidence {
   /** Undefined when nothing says what content this name points to. */
   readonly content: ContentEvidence | undefined
-  /** Whether every hop from the name to the content was verified: the delivery ladder's D4. */
+  /** Whether every hop from the name to the content was verified: the Delivery level's D2, when the content is also content-addressed. */
   readonly nameProven: boolean
   /** The popover's one line about the name. */
   readonly line: string

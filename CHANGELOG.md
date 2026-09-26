@@ -32,6 +32,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   meets DDOC: a `.eth` name's IPFS content, or an installed site whose files match the tree it
   publishes. Levels 3 and up show `?` until a Web3 Score provider judges them, and the page names
   what a provider would assess, the CID or the bundle hash.
+- **The address bar's Web3 Score shield now shows the site's Website level directly**, coloured
+  red (Level 1, "Web2") / orange / yellow / green (Level 4, "Web3"), instead of the plain
+  secure/insecure/cached read it carried before; a plain grey outline until a level resolves. The
+  Web3 Score page colours each level the same way. The Delivery ladder collapses from four D1-D4
+  rungs to three levels matching the canonical Web3 Score page's own Connection-to-network scale
+  (red/yellow/green): D2 is met only by a `.eth` name proven trustlessly whose content is itself
+  content-addressed, and nothing in this build reaches D3 automatically. A developer-only file
+  (`ORIVON_SCORE_LEVELS_FILE`, gated behind `ORIVON_DEV_ORIGINS=1`) can override either level per
+  origin, for previewing Level 3/4 and Delivery Level 3 before a real provider or peer-to-peer
+  fetching exist, always named as an override rather than shown as observed.
+- **A site shown at Website Level 4 has its grants presented without warnings**, on every consent
+  surface: the install-consent dialog, the `app.requestGrant` prompt, the update-widening prompt,
+  the site-info popup's switches and the all-sites settings panel. The words a grant carries never
+  change, only the `⚠` marker, the warning background and the native dialog's icon.
+- **Every permission row now carries an icon for what it grants** — one glyph per capability kind,
+  picked-file/folder kind, or site notification — in the site-info popup and the all-sites panel.
 
 - **A site can publish its bundle hash tree, and the Web3 Score page shows whether it matches
   (DDOC).** The site puts `/.well-known/orivon-ddoc.json` beside its manifest: the bundle hash and
@@ -156,6 +172,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **The toolbar no longer probes a fresh session partition for every ordinary website visited.**
+  The Web3 Score shield's own query used to ask Electron's protocol-handler registry directly,
+  which creates the partition it asks about; it now reads the same trust data the site-info popup
+  already computes.
 - **A sign-in that sends an app's tab to a provider and back can complete.** The app finds its
   `sessionStorage` where it left it, and its own back history, so an OIDC login no longer loses
   its state on the way back.

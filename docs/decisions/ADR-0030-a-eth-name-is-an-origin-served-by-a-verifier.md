@@ -123,9 +123,10 @@ own content.
 **A DNSLink name is Website Level 2**, *provisionally*, until the owner confirms it. The owner
 settled that a site meets DDOC, and so is Level 2, when its files match the hashes its owner
 published, whatever holds that anchor: a tree on the site's own host counts (`ADR-0029`). IPFS
-content meets DDOC by design, so a name whose last hop is a DNSLink follows as Level 2. The DNS hop stays unproven: the evidence names it, and the delivery
-ladder leaves D4 unmet. The gatherer's DDOC report is therefore met or failed; whether the
-pointers were proven is read from the pointers themselves.
+content meets DDOC by design, so a name whose last hop is a DNSLink follows as Level 2. The DNS hop stays unproven: the evidence names it, and the Delivery
+level (`ADR-0006`'s 2026-09-26 amendment: three levels on the canonical Connection-to-network
+scale) stays at Level 1, not the proven-name Level 2. The gatherer's DDOC report is therefore met
+or failed; whether the pointers were proven is read from the pointers themselves.
 
 **The DDOC anchor is confirmed**: a `.eth` name's contenthash, as the Decision's second
 provisional part proposed.

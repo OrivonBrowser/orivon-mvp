@@ -692,3 +692,59 @@ describe('describeRollbackChoice -- the claim and both notices come first, the a
     )
   })
 })
+
+describe('ADR-0037 -- Level 4 carries no warning, on every dialog level threads through', () => {
+  it('describeGrantRequest: no ⚠, no explanation line, warning: false, at level 4', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+
+    const content = describeGrantRequest(ORIGIN, manifest, 'https.connect', ['*:*'], 4)
+
+    expect(content.warning).toBe(false)
+    expect(content.message).toBe('Unlimited network access')
+    expect(content.detail).not.toContain('⚠')
+    expect(content.detail).not.toContain('This app can connect to any website')
+  })
+
+  it('describeGrantRequest: unchanged at level 3, or with no level given', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+    const atLevel3 = describeGrantRequest(ORIGIN, manifest, 'https.connect', ['*:*'], 3)
+    const noLevel = describeGrantRequest(ORIGIN, manifest, 'https.connect', ['*:*'])
+
+    expect(atLevel3.warning).toBe(true)
+    expect(atLevel3.message).toBe('⚠ Unlimited network access')
+    expect(atLevel3).toEqual(noLevel)
+  })
+
+  it('describeInstallConsent: strips every warned row\'s ⚠ and explanation, keeps a narrow row\'s wording exactly', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } }, fs: {} })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['https.connect', 'fs'], [], 4)
+
+    expect(content.warning).toBe(false)
+    expect(content.detail).toBe(
+      'Claims to be "Test app".\n' +
+      '- Unlimited network access\n' +
+      '- Store files in a private folder for this app on this device\n' +
+      'https://app.example'
+    )
+  })
+
+  it('describeInstallConsent: the merged inbound row also loses its warning at level 4', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: { network: ['4001-4001'] } }, udp: { bind: { network: ['4001-4001'] } } } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen.network', 'udp.bind.network'], [], 4)
+
+    expect(content.warning).toBe(false)
+    expect(content.detail).toContain('Accepts connections and data from other computers on port 4001')
+    expect(content.detail).not.toContain('⚠')
+  })
+
+  it('describeCapabilityPrompt: also strips at level 4, same as describeInstallConsent', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+
+    const content = describeCapabilityPrompt(ORIGIN, manifest, { 'https.connect': ['*:*'] }, 4)
+
+    expect(content.warning).toBe(false)
+    expect(content.detail).not.toContain('⚠')
+  })
+})

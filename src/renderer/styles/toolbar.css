@@ -80,19 +80,12 @@
   flex: none;
 }
 
-/* The Web3 Score shield: the trust dot's successor, so it keeps that
-   dot's own colour transition and state names -- .secure/.insecure/
-   .cached mean exactly what .address-dot's did. */
-#web3-score-btn svg { transition: color 500ms ease; }
-#web3-score-btn.secure { color: var(--wok); }
-#web3-score-btn.insecure { color: var(--winsecure); }
-/* S4-6, ADR-0007: distinct from both -- pinned-cache delivery is neither a
-   live TLS pass (--wok) nor a plaintext warning (--winsecure), so it gets
-   its own colour rather than borrowing one that would overclaim or
-   under-claim. --waccent is already the app's own theme-invariant accent
-   (style.css), which is exactly the "this is Orivon's own doing" register
-   this state wants. */
-#web3-score-btn.cached { color: var(--waccent); }
+/* The Web3 Score shield's own sizing -- web3-level.css (imported by
+   style.css) carries its colours and shape rules, shared with the
+   site-info popup's connection row so the two can never draw it
+   differently. Grey outline until a level is known keeps the .pillbtn
+   default 16px box; `.leveled` widens it once one is painted. */
+#web3-score-btn .web3-shield { flex: none; }
 
 /* The site-info popup's other entry point -- an unlimited grant among its
    rows tints the key the same warning colour the all-sites list's own

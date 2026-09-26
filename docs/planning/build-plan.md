@@ -206,7 +206,7 @@ consented and installed like any other app (`ADR-0007`, `ADR-0018`). This is jou
 Three things arrive with it. **DDOC's off-host anchor:** a `.eth` name's contenthash commits to
 every file, so a host compromised well enough to rewrite both its files and its tree is caught
 (`ADR-0029`). **The Website level** leads the Web3 Score page on every site (`ADR-0006`). **The
-delivery ladder's D3 and D4 rungs** are reached (`src/trust/delivery-ladder.ts`). Rule 8 holds
+Delivery level's proven-name rung** is reached (`src/trust/delivery-ladder.ts`). Rule 8 holds
 here as everywhere: a library that pulls in a native module is out, however standard it is.
 
 The work queue is [`ens-ipfs-plan.md`](ens-ipfs-plan.md); the mechanism is `ADR-0030` and the

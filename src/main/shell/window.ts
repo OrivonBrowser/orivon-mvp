@@ -24,7 +24,7 @@ import { registerNewTabIpc } from '../ipc/newtab-ipc.js'
 import { createPermissionsController, createSiteNotificationsController } from '../permissions/permissions.js'
 import { notificationDecisions } from '../sessions/permission-gate.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
-import { deliveryProvenanceFor } from '../browsing/delivery-provenance.js'
+import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { rendererEntryUrl } from './renderer-entry.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabManager, type Bounds } from './tabs.js'
@@ -238,8 +238,9 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one
   // controller, closing over `ctx` so it always sees whichever broker is
-  // currently published (permissions.ts's own doc).
-  const permissions = createPermissionsController(ctx)
+  // currently published (permissions.ts's own doc). `scoreLevelOverrideFor`
+  // is the developer-only preview path (ADR-0037, ../dev/score-levels.ts).
+  const permissions = createPermissionsController(ctx, scoreLevelOverrideFor)
 
   // The site-info popup's own door, sibling to `permissions` above
   // (site-info-controller.ts's own header on why it is not folded into
@@ -247,7 +248,9 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // are the real implementations `SiteTrustSources` asks for -- injected here
   // rather than imported by the controller itself, so it stays testable
   // against a fake session (that file's own doc).
-  const siteInfo = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: ethNameEvidence })
+  // `scoreLevelOverrideFor`/`deliveryLevelOverrideFor` are the developer-only
+  // preview path (`../dev/score-levels.ts`): a no-op outside developer mode.
+  const siteInfo = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: ethNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor })
 
   /** Previous push's active tab, so pushState() can tell a genuine tab
    * SWITCH from the many other reasons state is pushed (a title, a favicon,
@@ -386,8 +389,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
       lastSiteInfoOrigin = origin
       permissionsPanel.close() // only one popup open at a time
       siteInfoPanel.toggle(anchor, origin, page)
-    },
-    deliveryProvenanceFor
+    }
   )
   registerNewTabIpc(dashboardUrl, tabs, bookmarks)
   // A16 makes createShellWindow() re-run routinely now (close the last

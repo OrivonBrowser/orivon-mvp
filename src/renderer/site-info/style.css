@@ -3,8 +3,14 @@
    style.css's palette rather than a cross-entry import
    (../settings/style.css's own header explains why that is the
    established pattern here, not a Rule 3 violation: design DATA, not
-   logic). Connection colours match the toolbar's own dot/shield exactly
-   -- --wok/--winsecure/--waccent are the SAME values style.css defines. */
+   logic). --waccent is the SAME value style.css defines.
+   --wlevel1..4 (Web3 Score shield colours) and the .web3-shield* rules
+   below are the SAME literal copy of ../styles/web3-level.css, for the
+   identical reason -- see that file's own header. The shield no longer
+   varies by connection state (`connectionRow`'s secure/insecure/cached
+   class stays, for the text label only -- see main-view.ts's
+   connectionLabel), so --wok/--winsecure are gone from here; the toolbar's
+   own style.css still defines them for its OTHER uses. */
 
 :root {
   --wbg: #e5e5ec;
@@ -16,9 +22,27 @@
   --wdanger: #dc2626;
   --wwarn: #f97316;
   --wwarn-bg: color-mix(in srgb, var(--wwarn) 12%, transparent);
-  --wok: #00c950;
-  --winsecure: #f97316;
+  --wlevel1: #b91c1c;
+  --wlevel2: #ea580c;
+  --wlevel3: #ca8a04;
+  --wlevel4: #15803d;
   color-scheme: light dark;
+}
+
+.web3-shield { transition: color 500ms ease; }
+.web3-shield.leveled { width: 28px; height: 20px; }
+.web3-shield-fill { stroke: none; }
+.web3-shield-fill[data-level='1'] { fill: var(--wlevel1); }
+.web3-shield-fill[data-level='2'] { fill: var(--wlevel2); }
+.web3-shield-fill[data-level='3'] { fill: var(--wlevel3); }
+.web3-shield-fill[data-level='4'] { fill: var(--wlevel4); }
+.web3-shield-label {
+  fill: #fff;
+  font-weight: 700;
+  font-size: 8px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-family: inherit;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -102,11 +126,7 @@ hr {
   text-align: left;
   width: 100%;
 }
-.connection-row .icon-shield { width: 20px; height: 20px; flex: none; }
-.connection-row.secure .icon-shield { color: var(--wok); }
-.connection-row.insecure .icon-shield { color: var(--winsecure); }
-.connection-row.cached .icon-shield { color: var(--waccent); }
-.connection-row.unknown .icon-shield { color: var(--wink-dim); }
+.connection-row .web3-shield { flex: none; }
 .connection-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
 .connection-label { font-weight: 500; }
 .connection-glance { color: var(--wink-dim); font-size: 11px; }
@@ -126,6 +146,8 @@ hr {
   flex-wrap: wrap;
 }
 .row.warning { background: var(--wwarn-bg); border: 1px solid color-mix(in srgb, var(--wwarn) 40%, transparent); }
+/* The permission this row grants, at a glance -- ../grant-icons.ts. */
+.grant-icon { width: 16px; height: 16px; flex: none; color: var(--wink-dim); }
 .row-message { flex: 1; min-width: 0; }
 .row-note { flex-basis: 100%; color: var(--wwarn); font-size: 11px; }
 
@@ -219,8 +241,17 @@ hr {
   font-size: 11px;
   font-weight: 700;
 }
-.rung.met { background: color-mix(in srgb, var(--wok) 10%, transparent); }
-.rung.met .rung-badge { background: var(--wok); color: white; }
+/* Level colours (Website L1-L4, Delivery D1-D3): each met rung takes its
+   OWN level's colour, never a single uniform "met" green -- these are the
+   same --wlevel1..4 tokens the shield paints itself with (copied above). */
+.rung.met.level-1 { background: color-mix(in srgb, var(--wlevel1) 10%, transparent); }
+.rung.met.level-1 .rung-badge { background: var(--wlevel1); color: white; }
+.rung.met.level-2 { background: color-mix(in srgb, var(--wlevel2) 10%, transparent); }
+.rung.met.level-2 .rung-badge { background: var(--wlevel2); color: white; }
+.rung.met.level-3 { background: color-mix(in srgb, var(--wlevel3) 10%, transparent); }
+.rung.met.level-3 .rung-badge { background: var(--wlevel3); color: white; }
+.rung.met.level-4 { background: color-mix(in srgb, var(--wlevel4) 10%, transparent); }
+.rung.met.level-4 .rung-badge { background: var(--wlevel4); color: white; }
 .rung.unmet .rung-badge { background: var(--wborder); color: var(--wink-dim); }
 .rung.unmet .rung-label { color: var(--wink-dim); }
 .rung.unknown .rung-badge { background: var(--wborder); color: var(--wink-dim); }

@@ -20,12 +20,17 @@ import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js
 import type { PatternSet } from '../../broker/policy/update.js'
 import type { GrantPromptContent } from './grant-prompt-render.js'
 import { describeCapabilityGrant, formatOriginForDisplay } from './grant-prompt-render.js'
+import { summaryAtLevel } from './grant-level.js'
+import type { ScoreLevel } from '../../trust/website-level.js'
 
 /**
  * `capabilities[index]` is the one this screen asks about; the rest are
  * shown as context only. `decided` carries what EARLIER screens in this
  * same sequence already chose (never capabilities beyond `index` -- the
- * caller has not asked about those yet), keyed by capability.
+ * caller has not asked about those yet), keyed by capability. `level`
+ * (ADR-0037) goes through `summaryAtLevel` for EVERY row on this screen,
+ * not only `currentRow` -- the context lines are built from the same
+ * `describeCapabilityGrant` summaries and must read the same way.
  */
 export function describeCapabilityChoice (
   origin: string,
@@ -33,15 +38,16 @@ export function describeCapabilityChoice (
   declared: PatternSet,
   capabilities: readonly CapabilityKind[],
   index: number,
-  decided: ReadonlyMap<CapabilityKind, boolean>
+  decided: ReadonlyMap<CapabilityKind, boolean>,
+  level?: ScoreLevel
 ): GrantPromptContent {
   const current = capabilities[index]
   if (current === undefined) throw new Error(`describeCapabilityChoice: index ${index} is out of range for ${capabilities.length} capabilities`)
   const patternsFor = (capability: CapabilityKind): readonly Pattern[] => declared[capability] ?? []
-  const currentRow = describeCapabilityGrant(current, patternsFor(current))
+  const currentRow = summaryAtLevel(describeCapabilityGrant(current, patternsFor(current)), level)
 
   const lines = capabilities.map((capability, i) => {
-    const { message } = describeCapabilityGrant(capability, patternsFor(capability))
+    const { message } = summaryAtLevel(describeCapabilityGrant(capability, patternsFor(capability)), level)
     if (i === index) return `> ${message}`
     const decision = decided.get(capability)
     if (decision === true) return `  [Allowed] ${message}`

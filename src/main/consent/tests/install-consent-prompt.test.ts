@@ -69,4 +69,25 @@ describe('createInstallConsentPrompt', () => {
       detail: expect.stringContaining('Store files in a private folder')
     }))
   })
+
+  it('ADR-0037: an injected levelOverrideFor returning 4 for this origin drops the warning dialog type and the ⚠ text', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+
+    await createInstallConsentPrompt((origin) => origin === ORIGIN ? 4 : undefined)(ORIGIN, manifest, ['https.connect'], [])
+
+    expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'question',
+      detail: expect.not.stringContaining('⚠')
+    }))
+  })
+
+  it('with no levelOverrideFor injected, defaults to never overriding -- an unlimited grant still warns', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+
+    await createInstallConsentPrompt()(ORIGIN, manifest, ['https.connect'], [])
+
+    expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning' }))
+  })
 })

@@ -19,12 +19,14 @@ permission gate puts to the person; `showing-window.ts` finds the window a tab i
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts)
 (type only); and, inside `src/main/`, [`../browsing/`](../browsing/) (bookmarks, favicon,
-omnibox, delivery-provenance), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+omnibox), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
 `permission-gate.ts`'s notification store, handed to the permissions panel),
-[`../dev/dev-mode.ts`](../dev/dev-mode.ts) (the developer-mode flag, for Inspect Element), plus
-the top-level `channels.ts` and `registry.ts`.
+[`../dev/dev-mode.ts`](../dev/dev-mode.ts) (the developer-mode flag, for Inspect Element) and
+[`../dev/score-levels.ts`](../dev/score-levels.ts) (the developer-only Website/Delivery level
+override, wired into the site-info and permissions controllers), plus the top-level `channels.ts`
+and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).
 Locally: [`tab-view.ts`](tab-view.ts) and [`tab-types.ts`](tab-types.ts) must never import

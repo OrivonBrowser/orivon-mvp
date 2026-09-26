@@ -20,11 +20,19 @@ import { describeCapabilityChoice } from './grant-prompt-choice.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from './install-consent.js'
 import type { CapabilityKind } from '../../contracts/index.js'
+import type { ScoreLevel } from '../../trust/website-level.js'
+
+/** `levelOverrideFor` defaults to never overriding, so an unwired caller
+ * (and every existing test) keeps warning exactly as before -- the real
+ * `../dev/score-levels.js` function is wired in at
+ * `../install/app-install-subsystem.ts` (ADR-0037). */
+type LevelOverrideFor = (origin: string) => ScoreLevel | undefined
+const NO_OVERRIDE: LevelOverrideFor = () => undefined
 
 /** Builds the real InstallConsentPrompt ./app-install-subsystem.ts wires in. */
-export function createInstallConsentPrompt (): InstallConsentPrompt {
+export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE): InstallConsentPrompt {
   return async (origin, manifest, capabilities, held = []) => {
-    const content = describeInstallConsent(origin, manifest, capabilities, held)
+    const content = describeInstallConsent(origin, manifest, capabilities, held, levelOverrideFor(origin))
     const options: MessageBoxOptions = {
       type: content.warning ? 'warning' : 'question',
       buttons: ['Allow', 'Deny'],
@@ -63,9 +71,10 @@ const DENY_ALL = 2
  * capability being decided this round, marks the one on screen, and marks
  * whatever this SAME sequence already decided for the others.
  */
-export function createPerCapabilityConsentPrompt (): PerCapabilityConsentPrompt {
+export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE): PerCapabilityConsentPrompt {
   return async (origin, manifest, capabilities) => {
-    const overviewContent = describeInstallConsent(origin, manifest, capabilities)
+    const level = levelOverrideFor(origin)
+    const overviewContent = describeInstallConsent(origin, manifest, capabilities, [], level)
     const overview = await dialog.showMessageBox({
       type: overviewContent.warning ? 'warning' : 'question',
       buttons: OVERVIEW_BUTTONS,
@@ -83,7 +92,7 @@ export function createPerCapabilityConsentPrompt (): PerCapabilityConsentPrompt 
     for (let index = 0; index < capabilities.length; index += 1) {
       const capability = capabilities[index]
       if (capability === undefined) continue // unreachable: index stays within capabilities.length
-      const screen = describeCapabilityChoice(origin, manifest, declared, capabilities, index, decided)
+      const screen = describeCapabilityChoice(origin, manifest, declared, capabilities, index, decided, level)
       const choice = await dialog.showMessageBox({
         type: screen.warning ? 'warning' : 'question',
         buttons: ['Allow', 'Deny'],

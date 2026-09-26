@@ -153,11 +153,16 @@ you disagree with one, the ADR is where the objections are already answered.
 - **Telemetry is opt-out, but disclosed in full on first run.** The metric requires measurement;
   the disclosure shows the literal JSON, nothing preselected, nothing sent before you choose
   ([`ADR-0004`](docs/decisions/ADR-0004-telemetry.md)).
-- **Trust is shown as a level with its evidence, never as a bare grade.** The Web3 Score page
-  leads with the canonical Website level. Level 1 or 2 is what the machine observed: whether the
-  site meets DDOC. Level 3 and above are a named provider's judgement, shown grey `?` when no
-  provider has judged, and kept apart from what was observed. The evidence sits under the level,
-  never behind it ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
+- **Trust is shown as a level with its evidence, never as a bare grade.** The address bar's Web3
+  Score shield and the Web3 Score page it opens lead with the canonical Website level, coloured
+  red/orange/yellow/green (Level 1/4 labelled "Web2"/"Web3"). Level 1 or 2 is what the machine
+  observed: whether the site meets DDOC. Level 3 and above are a named provider's judgement,
+  shown grey `?` when no provider has judged, and kept apart from what was observed; a
+  developer-only override can preview one before a provider exists, always named as an override.
+  At Level 4, a site's own grants read without warnings, on every consent surface. The evidence
+  sits under the level, never behind it
+  ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md),
+  [`ADR-0037`](docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md)).
 
 **How the API behaves**
 

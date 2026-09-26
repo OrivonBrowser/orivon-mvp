@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DdocVerdict } from '../ddoc.js'
-import { websiteLevel } from '../website-level.js'
+import { displayedLevel, websiteLevel } from '../website-level.js'
 
 const CID = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'
 const HASH = 'sha256:' + 'a'.repeat(64)
@@ -43,5 +43,19 @@ describe('websiteLevel', () => {
       expect(websiteLevel(undefined, ddoc, HASH, true).level).toBe(1)
     }
     expect(websiteLevel(undefined, NOT_CHECKED, undefined, true)).toEqual({ level: 1, because: expect.any(String), assessable: undefined })
+  })
+})
+
+describe('displayedLevel', () => {
+  it('is the observed level when there is no override', () => {
+    expect(displayedLevel(1, undefined)).toBe(1)
+    expect(displayedLevel(2, undefined)).toBe(2)
+  })
+
+  it('is the override when one is given, whatever the observed level is', () => {
+    expect(displayedLevel(1, 4)).toBe(4)
+    expect(displayedLevel(2, 3)).toBe(3)
+    // An override may also just restate the observed level.
+    expect(displayedLevel(1, 1)).toBe(1)
   })
 })

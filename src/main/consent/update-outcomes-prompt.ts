@@ -8,6 +8,7 @@ import { dialog } from 'electron'
 import type { MessageBoxOptions } from 'electron'
 import { describeCapabilityPrompt, describeReconsent, describeRollbackChoice } from './grant-prompt-render.js'
 import type { CapabilityPromptPrompt, ReconsentPrompt, RollbackChoicePrompt } from './update-outcomes.js'
+import type { ScoreLevel } from '../../trust/website-level.js'
 
 /** `defaultId`/`cancelId` both point at "keep the current version" -- an
  * update is never the safer default to fall into on a dismissed or
@@ -34,10 +35,14 @@ export function createReconsentPrompt (): ReconsentPrompt {
   }
 }
 
-/** Builds the real CapabilityPromptPrompt ./app-install-subsystem.ts wires in. */
-export function createCapabilityPrompt (): CapabilityPromptPrompt {
+/** Builds the real CapabilityPromptPrompt ./app-install-subsystem.ts wires
+ * in. `levelOverrideFor` defaults to never overriding (ADR-0037); this is
+ * the update-widening prompt, where breadth matters most, and the override
+ * still applies to it -- silencing the warning here is exactly what an L4
+ * site earns, not an exception carved out of it. */
+export function createCapabilityPrompt (levelOverrideFor: (origin: string) => ScoreLevel | undefined = () => undefined): CapabilityPromptPrompt {
   return async (origin, manifest, requestedPatterns) => {
-    const content = describeCapabilityPrompt(origin, manifest, requestedPatterns)
+    const content = describeCapabilityPrompt(origin, manifest, requestedPatterns, levelOverrideFor(origin))
     const options: MessageBoxOptions = {
       type: content.warning ? 'warning' : 'question',
       buttons: ['Allow', 'Keep the current version'],

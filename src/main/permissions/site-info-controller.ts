@@ -14,7 +14,8 @@ import { turnOffCapability, turnOnCapability } from './site-switches.js'
 import type { TurnOnResult } from './site-switches.js'
 import { buildSiteTrust } from '../browsing/site-trust.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
-import type { PinCoverageEvidence } from '../../trust/delivery-ladder.js'
+import type { DeliveryLevel, PinCoverageEvidence } from '../../trust/delivery-ladder.js'
+import type { ScoreLevel } from '../../trust/website-level.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 import type { NameEvidence } from '../verifier/name-evidence.js'
 
@@ -40,6 +41,10 @@ export interface SiteTrustSources {
   readonly pinCoverageFor: (origin: string) => PinCoverageEvidence | undefined
   /** How a `.eth` name led to this origin's content; undefined for any other origin. */
   readonly nameEvidenceFor: (origin: string, pin: PinRecord | null, servedFromCache: boolean) => Promise<NameEvidence | undefined>
+  /** A developer-only Website level override for this origin, or `undefined` (`../dev/score-levels.ts`). */
+  readonly levelOverrideFor: (origin: string) => ScoreLevel | undefined
+  /** The same, for the Delivery level. */
+  readonly deliveryOverrideFor: (origin: string) => DeliveryLevel | undefined
 }
 
 export interface StorageDeclaration {
@@ -75,7 +80,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
         broker.app.grants(origin),
         broker.app.pickedPaths(origin)
       ])
-      return buildSiteInfo(origin, manifest, grants, pickedPaths, true)
+      return buildSiteInfo(origin, manifest, grants, pickedPaths, true, trustSources.levelOverrideFor(origin))
     } catch {
       // A registered origin whose manifest read transiently fails -- the
       // same "drop the row rather than throw into a renderer" stance
@@ -99,7 +104,10 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       const [pin, published] = await Promise.all([loader.pinFor(origin), loader.ddocFor(origin)])
       const servedFromCache = trustSources.isOriginServedFromCacheSync(origin)
       const name = await trustSources.nameEvidenceFor(origin, pin, servedFromCache)
-      return buildSiteTrust(origin, pin, servedFromCache, trustSources.pinCoverageFor(origin), published, Date.now(), name)
+      return buildSiteTrust(
+        origin, pin, servedFromCache, trustSources.pinCoverageFor(origin), published, Date.now(), name,
+        trustSources.levelOverrideFor(origin), trustSources.deliveryOverrideFor(origin)
+      )
     },
 
     async storageDeclarationFor (url) {

@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { deliveryLadder } from '../delivery-ladder.js'
 import type { DeliveryHistoryInput, PinCoverageEvidence } from '../delivery-ladder.js'
 
-// THE INVARIANT UNDER TEST, throughout: the result always carries `rungs`
-// (every D1-D4 rung, each independently evaluated) alongside `evidence` (the
-// raw checkable facts) -- never a bare rung label. ADR-0006 exists because a
-// trust indicator that shows a grade instead of evidence is worse than none.
+// THE INVARIANT UNDER TEST, throughout: the result always carries `level`
+// (the canonical Connection-trustlessity level this delivery earns) alongside
+// `evidence` (the raw checkable facts) -- never a bare label with nothing
+// under it. ADR-0006 exists because a trust indicator that shows a grade
+// instead of evidence is worse than none.
 
 function input (overrides: Partial<DeliveryHistoryInput> = {}): DeliveryHistoryInput {
   return {
@@ -21,33 +22,53 @@ function input (overrides: Partial<DeliveryHistoryInput> = {}): DeliveryHistoryI
   }
 }
 
-function metRungs (result: ReturnType<typeof deliveryLadder>): readonly string[] {
-  return result.rungs.filter((r) => r.met).map((r) => r.rung)
-}
-
-describe('deliveryLadder -- D1, an ordinary fetched-every-load site', () => {
-  it('never pinned, fetched every load: only D1 is met', () => {
-    const result = deliveryLadder(input())
-    expect(metRungs(result)).toEqual(['D1'])
+describe('deliveryLadder -- Level 1, everything short of a proven .eth name', () => {
+  it('an ordinary fetched-every-load site is Level 1', () => {
+    expect(deliveryLadder(input()).level).toBe(1)
   })
 
-  it('every rung is present in the result, met or not -- enumerable, never a scalar', () => {
-    const result = deliveryLadder(input())
-    expect(result.rungs.map((r) => r.rung)).toEqual(['D1', 'D2', 'D3', 'D4'])
-  })
-})
-
-describe('deliveryLadder -- D2, TOFU-pinned', () => {
-  it('pinned and the current fetch matches: D2 is met, D1 is not', () => {
+  it('a TOFU-pinned installed app, current fetch matching, is still Level 1 -- the pin is trusted on first use, not proven trustless', () => {
     const result = deliveryLadder(input({
       everPinned: true,
       pinnedAt: 1_699_000_000_000,
       deliveryMethod: 'served-from-pinned-cache',
       currentFetchMatchesPin: true
     }))
-    expect(metRungs(result)).toEqual(['D2'])
+    expect(result.level).toBe(1)
   })
 
+  it('content-addressed through an unproven DNSLink name is still Level 1 -- the CID itself is unproven', () => {
+    const result = deliveryLadder(input({ addressIsContentAddressed: true, nameResolvedTrustlessly: false }))
+    expect(result.level).toBe(1)
+  })
+
+  it('a trustlessly-resolved name alone, without content-addressing, is still Level 1', () => {
+    expect(deliveryLadder(input({ nameResolvedTrustlessly: true })).level).toBe(1)
+  })
+})
+
+describe('deliveryLadder -- Level 2, a proven .eth name', () => {
+  it('is met only when nameResolvedTrustlessly AND addressIsContentAddressed are both true', () => {
+    const result = deliveryLadder(input({ addressIsContentAddressed: true, nameResolvedTrustlessly: true }))
+    expect(result.level).toBe(2)
+  })
+})
+
+describe('deliveryLadder -- Level 3 is never reached automatically in this build', () => {
+  it('every input this module can be given still tops out at Level 2', () => {
+    const result = deliveryLadder(input({
+      addressIsContentAddressed: true,
+      nameResolvedTrustlessly: true,
+      everPinned: true,
+      pinnedAt: 1_699_000_000_000,
+      deliveryMethod: 'served-from-pinned-cache',
+      currentFetchMatchesPin: true
+    }))
+    expect(result.level).toBe(2)
+  })
+})
+
+describe('deliveryLadder -- pin evidence is kept, even though it no longer decides the level', () => {
   it('reports the pin age in the evidence, computed from now - pinnedAt', () => {
     const result = deliveryLadder(input({
       everPinned: true,
@@ -60,8 +81,7 @@ describe('deliveryLadder -- D2, TOFU-pinned', () => {
   })
 
   it('pinAgeMs is null when never pinned', () => {
-    const result = deliveryLadder(input())
-    expect(result.evidence.pinAgeMs).toBeNull()
+    expect(deliveryLadder(input()).evidence.pinAgeMs).toBeNull()
   })
 
   it('pinHasChanged is carried through into evidence as a plain fact, never judged', () => {
@@ -73,11 +93,9 @@ describe('deliveryLadder -- D2, TOFU-pinned', () => {
       pinHasChanged: true
     }))
     expect(result.evidence.pinHasChanged).toBe(true)
-    // D2 is still met -- an app that has legitimately updated once is still TOFU-pinned.
-    expect(metRungs(result)).toContain('D2')
   })
 
-  it('a pin that no longer matches the current fetch is flagged as a mismatch, and D2 is NOT met', () => {
+  it('a pin that no longer matches the current fetch is flagged as a mismatch', () => {
     const result = deliveryLadder(input({
       everPinned: true,
       pinnedAt: 1_699_000_000_000,
@@ -85,52 +103,16 @@ describe('deliveryLadder -- D2, TOFU-pinned', () => {
       currentFetchMatchesPin: false
     }))
     expect(result.evidence.pinMismatch).toBe(true)
-    expect(metRungs(result)).not.toContain('D2')
   })
 
   it('pinMismatch is false when there is no pin to mismatch against', () => {
-    const result = deliveryLadder(input())
-    expect(result.evidence.pinMismatch).toBe(false)
-  })
-})
-
-describe('deliveryLadder -- D3, content-addressed', () => {
-  it('a content-addressed app meets D3, and not D1/D2', () => {
-    const result = deliveryLadder(input({
-      addressIsContentAddressed: true,
-      deliveryMethod: 'served-from-pinned-cache',
-      everPinned: true,
-      pinnedAt: 1_699_000_000_000,
-      currentFetchMatchesPin: true
-    }))
-    expect(metRungs(result)).toContain('D3')
-  })
-})
-
-describe('deliveryLadder -- D4', () => {
-  it('D4 is met only when nameResolvedTrustlessly AND addressIsContentAddressed are both true', () => {
-    const result = deliveryLadder(input({
-      addressIsContentAddressed: true,
-      nameResolvedTrustlessly: true
-    }))
-    expect(metRungs(result)).toContain('D4')
-  })
-
-  it('nameResolvedTrustlessly alone, without content-addressing, does not meet D4', () => {
-    const result = deliveryLadder(input({ nameResolvedTrustlessly: true }))
-    expect(metRungs(result)).not.toContain('D4')
-  })
-
-  it('D4 is not met by an ordinary origin, which arrives with neither input set', () => {
-    const result = deliveryLadder(input())
-    expect(result.rungs.find((r) => r.rung === 'D4')?.met).toBe(false)
+    expect(deliveryLadder(input()).evidence.pinMismatch).toBe(false)
   })
 })
 
 describe('deliveryLadder -- pinCoverage is passed through, never scored', () => {
   it('is undefined in evidence when the caller has none to report', () => {
-    const result = deliveryLadder(input())
-    expect(result.evidence.pinCoverage).toBeUndefined()
+    expect(deliveryLadder(input()).evidence.pinCoverage).toBeUndefined()
   })
 
   it('flows straight from input to evidence, unchanged', () => {
@@ -141,7 +123,7 @@ describe('deliveryLadder -- pinCoverage is passed through, never scored', () => 
     expect(result.evidence.pinCoverage).toEqual(pinCoverage)
   })
 
-  it('does not change which rungs are met -- a thin, mostly-remote app still meets D2 on its own pin, exactly as a fully-shipped one does', () => {
+  it('does not change the level -- a thin, mostly-remote app is graded the same as a fully-shipped one', () => {
     const thin: PinCoverageEvidence = {
       pinnedRequests: 1, thirdPartyRequests: 1, deniedRequests: 0, pinnedBytes: 200, thirdPartyBytes: 50_000, bytesIncomplete: false
     }
@@ -153,15 +135,12 @@ describe('deliveryLadder -- pinCoverage is passed through, never scored', () => 
     const thinResult = deliveryLadder(input({ ...base, pinCoverage: thin }))
     const wholeResult = deliveryLadder(input({ ...base, pinCoverage: whole }))
 
-    // Same rungs met either way -- D2 asks "is the pin valid", not "how much
-    // of the app does it cover". Coverage is evidence for whatever build
-    // step 7 renders alongside the rung, not an input to the rung itself.
-    expect(metRungs(thinResult)).toEqual(metRungs(wholeResult))
+    expect(thinResult.level).toBe(wholeResult.level)
   })
 })
 
 describe('deliveryLadder -- evidence is always traceable, never a bare label', () => {
-  it('evidence carries every input fact the rungs were computed from', () => {
+  it('evidence carries every input fact the level was computed from', () => {
     const src = input({
       everPinned: true,
       pinnedAt: 1_699_000_000_000,
