@@ -3,6 +3,7 @@ import { createShellWindow } from './shell/window.js'
 import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { BookmarkStore } from './browsing/bookmarks.js'
+import { devOnlySwitches } from './shell/dev-switches.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
@@ -31,6 +32,11 @@ process.on('unhandledRejection', (reason) => { exitOnUncaught('unhandled promise
 // it is set ahead of the first session. Its own default carries `Electron/`
 // and `orivon/` tokens, which is-electron checks and sign-in pages refuse.
 app.userAgentFallback = chromeUserAgent(process.versions.chrome, process.platform)
+
+// Command-line switches apply only if set before app.whenReady(), same as
+// verifierSubsystem's own beforeReady -- this one is not `.eth`-specific
+// (dev-switches.ts), so it lives here rather than there.
+for (const flag of devOnlySwitches()) app.commandLine.appendSwitch(flag)
 
 // Subsystems register in subsystems.ts (the append point), never here.
 function report (failures: SubsystemFailure[]): void {

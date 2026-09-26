@@ -121,6 +121,20 @@ describe('sanitizeStoredFavicon -- bookmarks.json is a user-writable file', () =
     expect(sanitizeStoredFavicon(42)).toBeNull()
     expect(sanitizeStoredFavicon({ toString: () => tiny })).toBeNull()
   })
+
+  // bookmarks.json is untrusted input (this function's own doc comment):
+  // the prefix and length checks alone would accept anything merely
+  // LABELLED image/*, so a stored favicon goes through the same byte sniff
+  // a network-fetched one does.
+  it('rejects a data:image/* URL whose bytes are not actually a recognised image', () => {
+    const notAnImage = `data:image/png;base64,${Buffer.from('just some text, not a png').toString('base64')}`
+    expect(sanitizeStoredFavicon(notAnImage)).toBeNull()
+  })
+
+  it('accepts a real SVG stored under the image/svg+xml label', () => {
+    const svg = `data:image/svg+xml;base64,${Buffer.from('<svg></svg>').toString('base64')}`
+    expect(sanitizeStoredFavicon(svg)).toBe(svg)
+  })
 })
 
 describe('parseBookmarksFile -- the favicon field', () => {

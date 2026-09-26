@@ -157,7 +157,7 @@ sets the second for you.
 
 | Variable | What it turns on |
 |---|---|
-| `ORIVON_DEV_ORIGINS=1` | Developer mode (`src/main/dev/dev-mode.ts`): a `.eth` name from the file below may be granted capabilities **without being installed**, over `http:` only, and Inspect Element appears in the context menu. It is also the master switch for the row below |
+| `ORIVON_DEV_ORIGINS=1` | Developer mode (`src/main/dev/dev-mode.ts`): a `.eth` name from the file below may be granted capabilities **without being installed**, over `http:` only, and Inspect Element appears in the context menu. It is also the master switch for the row below. `src/main/index.ts` additionally turns off Chromium's HTTP cache for the whole session (`src/main/shell/dev-switches.ts`), so a code change to how a `.eth` response is served is never masked by a stale disk-cached response across a restart -- `npm start` keeps a real browser's caching |
 | `ORIVON_ETH_NAMES_FILE=<path>` | A JSON file of `{"name.eth": port}` that `src/main/dev/eth-resolver.ts` reads and `src/main/verifier/` turns into Chromium DNS overrides, ahead of every other `.eth` name, so `http://name.eth` reaches `127.0.0.1:<port>`; typing such a name in the address bar opens it over `http:`. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set. `orivon-ports`' `orivon-port names` writes this file, and its `serve` and `run` rewrite it from every recipe on each start; nothing points the shell at it for you, and the shell reads it once, at its own startup |
 
 A name in that file is also declared a **secure context**, which is not cosmetic. Its origin is
