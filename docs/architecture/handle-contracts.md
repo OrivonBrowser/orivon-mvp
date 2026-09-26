@@ -105,11 +105,11 @@ uninformative.
 
 ## §TcpSocket
 
-> **Implemented end to end**: `src/broker/net-capability.ts`'s `connect`, `src/broker/transport/ipc.ts`'s
-> control-channel dispatch and real `MessageChannelMain` port, `src/broker/transport/port-pump.ts`'s
+> **Implemented end to end**: `src/broker/capabilities/net.ts`'s `connect`, `src/broker/transport/ipc.ts`'s
+> control-channel dispatch and real `MessageChannelMain` port, `src/broker/transport/relay/port-pump.ts`'s
 > read-side credit pump and `port-sink.ts`'s write side. Reachable from a real page as
 > `window.orivon.net.connect`, whose `readable`/`writable` are built in the main world by
-> `src/preload/main-world-socket.ts`; e2e-verified. TCP only; `net.connectSecure` returns the same
+> `src/preload/surface/main-world-socket.ts`; e2e-verified. TCP only; `net.connectSecure` returns the same
 > shape over broker-terminated TLS (`ADR-0017`), plus what its handshake established
 > (`SecureTcpSocket`, below).
 
@@ -229,11 +229,11 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 
 > **Where each half lives.**
 >
-> - Broker read side: `src/broker/transport/port-pump.ts`'s `pumpLoop` stops reading the OS socket at
+> - Broker read side: `src/broker/transport/relay/port-pump.ts`'s `pumpLoop` stops reading the OS socket at
 >   credit zero.
-> - Renderer read side: `src/preload/socket-port.ts`'s `reportConsumed` flushes a
+> - Renderer read side: `src/preload/ports/socket.ts`'s `reportConsumed` flushes a
 >   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces.
-> - Broker write side: `src/broker/transport/port-sink.ts` coalesces `WriteAckMessage` against the same
+> - Broker write side: `src/broker/transport/relay/port-sink.ts` coalesces `WriteAckMessage` against the same
 >   constant (see §Write direction below).
 >
 > **One deliberate departure from the text below, made knowingly.** This section specifies
@@ -309,7 +309,7 @@ particular broker or preload implements them.
 ## §TcpServer
 
 > **Built at the broker layer, correcting the "not implemented" banner this replaced.** That
-> version described the state before 2026-09-09. `listen()` is `src/broker/net-capability.ts`;
+> version described the state before 2026-09-09. `listen()` is `src/broker/capabilities/net.ts`;
 > the real `node:net` server adapter is `listenTcp` in `src/broker/adapters/node-adapters.ts`;
 > bind policy is `src/broker/policy/bind.ts`. Accepted connections arrive as derived handles and
 > the revocation cascade below is exercised against **real sockets**: revoking the grant makes the
@@ -365,8 +365,8 @@ interface TcpServer extends Handle {
 > the contract-only landing of 2026-09-07's first hours; the implementation landed the same day.
 > `udp.bind` policy: `src/broker/policy/bind.ts`. The `node:dgram` adapter: `src/broker/adapters/
 > udp-adapter.ts`. The relay pumping datagrams between the OS socket and the renderer's dedicated
-> port: `src/broker/transport/datagram-relay.ts`. Reachable from a real page as
-> `window.orivon.net.udpBind`, built in the main world by `src/preload/main-world-socket.ts`'s
+> port: `src/broker/transport/relay/datagram.ts`. Reachable from a real page as
+> `window.orivon.net.udpBind`, built in the main world by `src/preload/surface/main-world-socket.ts`'s
 > `buildUdpSocket` and wired through `src/broker/index.ts`'s `udpBind`. Reachable does not mean
 > granted: a page's call answers `'denied'` unless its origin holds a `udp.bind` grant.
 
@@ -424,11 +424,11 @@ interface UdpSocket extends Handle {
 ## §FileHandle
 
 > **Where this shape stops today.** `orivon.fs.open` and `orivon.fs.userSelected`'s FILE shape
-> both produce the `FileHandle` below (`src/broker/fs-capability.ts`,
+> both produce the `FileHandle` below (`src/broker/capabilities/fs.ts`,
 > `src/broker/adapters/node-fs-adapter.ts`): positional `read`/`write` (no implicit cursor,
 > confined once at open time), `stat`, `truncate`, `sync`, and real WHATWG `readable()`/
 > `writable()` streams over the same fd, sharing one `FailableFileHandle` shape and one set of
-> handle-scoped control cases in `src/broker/transport/dispatch-fs.ts`. **`readable()`/
+> handle-scoped control cases in `src/broker/transport/dispatch/fs.ts`. **`readable()`/
 > `writable()` stop at the broker layer**: they are real, tested streams, but nothing delivers one
 > to a page over a port the way `net.connect`'s byte pump does for `TcpSocket` (A184).
 >
@@ -489,7 +489,7 @@ interface FileHandle extends Handle {
 > **No `IdentityHandle` is ever constructed**: `orivon.id.requestIdentity`, the only thing that
 > returns one, is unbuilt (A111), so `publicKey()`/`signEvent()` on this handle exist only as the
 > contract type. The per-origin identity is a different surface and is wired: `orivon.id.publicKey`
-> and `orivon.id.sign` reach the broker through `src/broker/transport/dispatch-id.ts`, over the
+> and `orivon.id.sign` reach the broker through `src/broker/transport/dispatch/id.ts`, over the
 > P-256 key math in `src/broker/policy/derive.ts` and `derive-p256.ts` (exercised by
 > `derive.test.ts`'s frozen golden vectors). secp256k1, Nostr's curve, has no point derivation or
 > signing code at all: `derivePublicKey` throws `'internal'` for any curve but `'P-256'`. `src/nostr/kind-

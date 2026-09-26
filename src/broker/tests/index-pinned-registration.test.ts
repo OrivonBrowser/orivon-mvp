@@ -1,5 +1,5 @@
 // A restored app is a registered app from startup. The app loader's
-// restore pass (src/loader/electron-serve.ts) hands the broker each pinned,
+// restore pass (src/loader/electron/serve.ts) hands the broker each pinned,
 // hash-verified manifest through `hydrateFromPinnedManifest`; without that
 // manifest also counting as registered, a restored app's tab is built
 // without the app-tab flag (no routed fetch, no process shim) and

@@ -1,0 +1,42 @@
+// One error for the http/https members this shim does not build, shared by
+// http/http.ts and http/https.ts so both name the same reason the same way
+// rather than drifting into two slightly different messages for one gap.
+
+import { OrivonShimError, refuseShim } from '../errors.js'
+
+// A177: extends OrivonShimError so `catch (e) { if (e instanceof
+// OrivonShimError) ... }` also catches this one -- message/name/code
+// unchanged from before.
+export class OrivonHttpUnsupportedError extends OrivonShimError {
+  readonly code = 'ERR_ORIVON_HTTP_UNSUPPORTED'
+
+  constructor (api: string, reason: string) {
+    super(api, 'not-built', `${api} is not supported -- ${reason}`)
+    this.name = 'OrivonHttpUnsupportedError'
+  }
+}
+
+/** `http.createServer`/`https.createServer`: the TCP listener exists (net.createServer), the HTTP server on top of it does not. */
+export function createServer (): never {
+  throw new OrivonHttpUnsupportedError(
+    'createServer',
+    'net.createServer is built over orivon.net.listen, but this shim has no HTTP request parser or ' +
+    'ServerResponse on top of it yet. Serve HTTP from a net.createServer connection handler instead.'
+  )
+}
+
+/**
+ * A135: every OTHER http/https member (`Server`, `validateHeaderName`, ...)
+ * names the gap on the default export -- the shape a bundled CJS
+ * `require('http'|'https')` resolves to -- instead of reading `undefined`.
+ * Shared by http/http.ts and http/https.ts so both name it the same way;
+ * `createServer` above has its own reason and is not reclassified by this.
+ */
+export function otherHttpMember (moduleName: 'http' | 'https') {
+  return (prop: string): OrivonShimError => refuseShim(
+    `${moduleName}.${prop}`, 'unimplemented',
+    `${moduleName}.${prop} is real Node ${moduleName} surface this shim has not implemented -- ` +
+    `this module builds the client (request()/get(), Agent, globalAgent) only ` +
+    `(docs/planning/compatibility-matrix.md Table 3).`
+  )
+}

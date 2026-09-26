@@ -5,7 +5,7 @@
 // src/main/verifier/.
 
 import { net } from 'electron'
-import { startHeliosLightClient } from './light-client.js'
+import { startHeliosLightClient } from './light-client/light-client.js'
 import type { FromHost, ToHost } from './protocol.js'
 import { startHost } from './service.js'
 import type { RunningHost } from './service.js'

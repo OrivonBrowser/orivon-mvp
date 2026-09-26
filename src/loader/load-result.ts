@@ -7,7 +7,7 @@ import type { BundleTree } from '../broker/policy/bundle-hash.js'
 import type { ContentAddress, PinRecord } from '../broker/policy/pin.js'
 import type { PatternSet } from '../broker/policy/update.js'
 import type { DdocDeclaration } from './ddoc-declaration.js'
-import type { StagedAsset } from './fetch-bundle.js'
+import type { StagedAsset } from './fetch/bundle.js'
 
 export interface LoadInstalled {
   readonly outcome: 'installed'
@@ -99,11 +99,11 @@ export interface LoadNeedsRollbackChoice {
 export interface LoadRejected {
   readonly outcome: 'rejected'
   /**
-   * Developer-facing, same stance as fetch-bundle.ts's FetchBundleRejected --
+   * Developer-facing, same stance as fetch/bundle.ts's FetchBundleRejected --
    * and, additionally, never a host filesystem path. Every other rejection
    * here is a string this module wrote about the fetch or the manifest; the
    * storage one is the only place a raw node:fs message could reach this
-   * field, and installAndNotify (./install.ts) logs that message rather
+   * field, and installAndNotify (./cache/install.ts) logs that message rather
    * than returning it.
    */
   readonly reason: string

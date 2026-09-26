@@ -1,8 +1,8 @@
 // Reuses src/shim-electron/unimplemented.ts's `refusingProxy` rather than a
 // second copy (A135 -- PR #151's own "refuse by name, not absence" fix,
 // extended here from the `electron` compatibility package to the Node-
-// stdlib one). See node-dns.ts, node-fs.ts, node-http.ts, node-https.ts and
-// node-net.ts for the module namespaces this wraps.
+// stdlib one). See net/dns.ts, fs/fs.ts, http/http.ts, http/https.ts and
+// net/net.ts for the module namespaces this wraps.
 //
 // WHY A DIRECT IMPORT, NOT src/shared/. That directory exists specifically
 // for a helper needed on the src/broker/ <-> src/shim/ trust boundary

@@ -21,14 +21,14 @@
 // MUST BE LISTED AFTER brokerIpcSubsystem in subsystems.ts (that file's own
 // header says so): S4-6 made this load-bearing rather than merely prudent --
 // ctx.broker now reads the live grant ledger for the served bundle's CSP
-// (electron-serve.ts's registerServingFor), so an undefined ctx.broker here
+// (electron/serve.ts's registerServingFor), so an undefined ctx.broker here
 // would mean every app's connect-src silently narrows to 'self' only.
 
-import { electronFetch } from './electron-fetch.js'
-import { electronResolveHost } from './electron-resolve.js'
-import { registerServingFor, restorePinnedServing } from './electron-serve.js'
+import { electronFetch } from './electron/fetch.js'
+import { electronResolveHost } from './electron/resolve.js'
+import { registerServingFor, restorePinnedServing } from './electron/serve.js'
 import { maybeInstallDevServeHook } from './dev-serve.js'
-import { nodeLoaderStorage } from './node-storage.js'
+import { nodeLoaderStorage } from './cache/node-storage.js'
 import { UPDATE_CHECK_INTERVAL_MS, createLoader } from './index.js'
 import { publishLoader, type Subsystem } from '../main/registry.js'
 import { ethContentAddress } from '../main/verifier/verifier-subsystem.js'
@@ -46,7 +46,7 @@ export const loaderSubsystem: Subsystem = {
       // node-adapters.ts's node:dns-based resolveHost (the broker's own
       // outbound tcp.connect uses that one correctly, because it dials with
       // real node:net sockets; this loader dials nothing of the kind). See
-      // electron-resolve.ts's own header for why these are two
+      // electron/resolve.ts's own header for why these are two
       // implementations of two different things, not a Rule 3 violation.
       resolve: electronResolveHost,
       // ADR-0007's serve-from-cache half: whatever eventually calls
@@ -65,7 +65,7 @@ export const loaderSubsystem: Subsystem = {
     publishLoader(ctx, loader)
     maybeInstallDevServeHook(async (origin) => { await registerServingFor(storage, origin, ctx.broker) })
 
-    // ADR-0007's serve-from-cache half (electron-serve.ts): restores
+    // ADR-0007's serve-from-cache half (electron/serve.ts): restores
     // protocol.handle serving for every app this machine already has a
     // pin for, before anything navigates -- so a previously-installed app
     // keeps working offline across a restart, with no dependency on the

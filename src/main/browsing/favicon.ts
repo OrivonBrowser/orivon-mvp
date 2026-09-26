@@ -15,7 +15,7 @@
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import type { Resolver } from '../../broker/policy/connect.js'
 import { isLoopbackHost } from '../../broker/policy/origin.js'
-import { electronResolveHost } from '../../loader/electron-resolve.js'
+import { electronResolveHost } from '../../loader/electron/resolve.js'
 
 export const MAX_FAVICON_BYTES = 32 * 1024
 export const FAVICON_TIMEOUT_MS = 5_000
@@ -147,10 +147,10 @@ function isLoopbackPage (pageUrl: string): boolean {
  * process to fetch unprompted -- no manifest, no grant, no app involved,
  * so a favicon candidate is held to the same "public unicast only" bar
  * as every other unprompted main-process reach. Reuses the exact
- * classification loader/install-origin.ts and loader/electron-fetch.ts
+ * classification loader/fetch/install-origin.ts and loader/electron/fetch.ts
  * already apply (classifyAddress/isPublicUnicast/isLocalhostName) and
  * the same resolver they use for a live Electron net.fetch
- * (loader/electron-resolve.ts's electronResolveHost, Chromium's own --
+ * (loader/electron/resolve.ts's electronResolveHost, Chromium's own --
  * the one net.fetch itself will consult) rather than a second
  * implementation of either (code-guidelines.md Rule 3).
  *

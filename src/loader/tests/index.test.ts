@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { appRootDirectoryName, createLoader } from '../index.js'
 import type { LoadContext, LoadResult, LoaderStorage } from '../index.js'
-import { nodeLoaderStorage } from '../node-storage.js'
+import { nodeLoaderStorage } from '../cache/node-storage.js'
 import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
 
@@ -540,9 +540,9 @@ describe('createLoader: against the real node:fs storage', () => {
   })
 })
 
-// src/loader/electron-serve.ts's onInstalled hook: fires exactly on the
+// src/loader/electron/serve.ts's onInstalled hook: fires exactly on the
 // outcomes that actually persist a bundle, never on one that only returns a
-// prompt to the caller. This is the seam electron-serve.ts's
+// prompt to the caller. This is the seam electron/serve.ts's
 // registerServingFor plugs into so an app already works from cache within
 // the SAME run it was installed in.
 describe('createLoader: onInstalled', () => {

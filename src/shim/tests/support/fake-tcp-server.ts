@@ -1,11 +1,11 @@
 // A fake TcpServer (src/contracts/handles.ts) for exercising
-// node-net-server.ts without a broker, a preload or an Electron launch --
+// net/server.ts without a broker, a preload or an Electron launch --
 // the accept-side counterpart of fake-tcp-socket.ts. `connections` is a REAL
 // ReadableStream run at highWaterMark: 0, matching the broker's own
 // TcpServer.connections exactly (handle-contracts.md's "TcpServer" section),
 // so `pullCount()` is a faithful count of how many accept-demand signals
-// node-net-server.ts's Server actually issued -- the property
-// node-net-server.test.ts exists to prove. Under tests/support/, not
+// net/server.ts's Server actually issued -- the property
+// net/tests/server.test.ts exists to prove. Under tests/support/, not
 // tests/, for the same reason fake-tcp-socket.ts is: vitest.config.ts's
 // `include` only matches `*.test.ts`.
 

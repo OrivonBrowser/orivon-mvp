@@ -13,7 +13,7 @@ const PAGE_BUFFER_SOURCE = normalizePath(resolve(root, 'src/preload/page-buffer.
 
 /** One expression evaluating to the `buffer` package's exports: the copy the shim's own `buffer` module imports, bundled whole. */
 async function bufferPackageExpression (): Promise<string> {
-  const entry = createRequire(resolve(root, 'src/shim/node-buffer.ts')).resolve('buffer/')
+  const entry = createRequire(resolve(root, 'src/shim/polyfills/buffer.ts')).resolve('buffer/')
   const result = await build({
     configFile: false,
     logLevel: 'warn',
@@ -149,7 +149,7 @@ export default defineConfig({
       // `newtab.ts` both import from `./channels.js` -- the first time two
       // preload entries had shared a local import. (No longer the sole
       // example: build step 2's IPC task has `app.ts` share `./channels.js`
-      // too, plus `./orivon-surface.js` with `newtab.ts`. isolatedEntries
+      // too, plus `./surface/orivon.js` with `newtab.ts`. isolatedEntries
       // already covers both cases the same way.) Without isolatedEntries,
       // Rollup's default multi-entry
       // behaviour extracts that shared import into `chunks/channels-

@@ -155,7 +155,7 @@ function portsListPhrase (specs: readonly string[]): string {
 // by any sensible reading, not a breadth risk. Re-anchored on something a
 // count of hosts can actually be compared against: `MAX_PATTERNS`, the real,
 // already-enforced ceiling on how many patterns ONE capability's array may
-// declare at all (loader/manifest-capabilities.ts). This fires only once a
+// declare at all (loader/manifest/capabilities.ts). This fires only once a
 // manifest names at least HALF of the hosts the format permits it to name
 // -- comfortably above any curated, human-reviewable list (a feed reader,
 // a CDN allowlist), and close enough to the format's own maximum that

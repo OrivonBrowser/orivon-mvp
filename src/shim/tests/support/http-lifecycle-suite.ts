@@ -1,11 +1,11 @@
 // ClientRequest/IncomingMessage lifecycle checks, defined once and run
-// under node:stream (node-http-client-features.test.ts) and readable-stream
-// 3 (node-http-client-rs3.test.ts), for the same reason as
+// under node:stream (http/tests/client-features.test.ts) and readable-stream
+// 3 (http/tests/client-rs3.test.ts), for the same reason as
 // socket-lifecycle-suite.ts: the renderer's stream defaults differ.
 
 import { describe, expect, it, vi } from 'vitest'
-import { createHttpModule, type ClientRequest } from '../../node-http-client.js'
-import type { IncomingMessage } from '../../node-http-message.js'
+import { createHttpModule, type ClientRequest } from '../../http/client.js'
+import type { IncomingMessage } from '../../http/message.js'
 import { createFakeTcpSocket, type FakeTcpSocket } from './fake-tcp-socket.js'
 
 const enc = new TextEncoder()

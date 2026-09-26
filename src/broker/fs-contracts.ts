@@ -2,7 +2,7 @@
 // ./broker-contracts.ts (code-guidelines.md Rule 2) once `open`'s types
 // pushed that file past 500 lines. Concern-based, matching that file's own
 // precedent (net's types stayed there; the split here is by SUBSYSTEM, the
-// same test net-capability.ts's own move out of ./index.ts applied one
+// same test capabilities/net.ts's own move out of ./index.ts applied one
 // layer up). Re-exported from broker-contracts.ts, so no import site
 // elsewhere needed to change.
 
@@ -48,7 +48,7 @@ export interface OpenedFile {
  * pure; this is the one seam where confinement's decision touches disk.
  *
  * Every method below receives an ALREADY-CONFINED absolute path (or two, for
- * `rename`) -- `./fs-capability.ts` is the only caller, and it never hands
+ * `rename`) -- `./capabilities/fs.ts` is the only caller, and it never hands
  * this interface anything that has not already passed `confinePath`. This
  * layer's job is raw I/O, nothing else.
  */
@@ -103,19 +103,19 @@ export interface BrokerFsMethods {
   writeFile(origin: string, path: string, data: Uint8Array): Promise<void>
   /**
    * ADR-0016's synchronous entry point: the SAME grant check and path
-   * confinement `readFile`/`writeFile` use (`./fs-capability.ts`'s
+   * confinement `readFile`/`writeFile` use (`./capabilities/fs.ts`'s
    * `confineForOrigin`), exposed synchronously for `orivon.fs.
    * readFileSync`'s main-process handler (`./transport/sync-fs.ts`),
    * which cannot await a Promise on this path. Returns the confined
    * absolute path; throws an OrivonError ('denied') on refusal. Does NOT
    * run under the per-origin in-flight budget `readFile`/`writeFile` do
-   * -- see `./fs-capability.ts`'s own doc on `confineSync` for why that
+   * -- see `./capabilities/fs.ts`'s own doc on `confineSync` for why that
    * budget is `async`-shaped and this call, by ADR-0016's own design, is
    * not.
    */
   confineSync(origin: string, path: string): string
   /**
-   * Confined the same way `readFile`/`writeFile` are (`./fs-capability.ts`'s
+   * Confined the same way `readFile`/`writeFile` are (`./capabilities/fs.ts`'s
    * `confineForOrigin`) and run under the same per-origin in-flight budget
    * (`runFsIo`). `recursive: true` matches `node:fs/promises.mkdir`'s own
    * flag; omitted or `false`, a missing parent yields `notFound` (mapped
@@ -135,7 +135,7 @@ export interface BrokerFsMethods {
   rm(origin: string, path: string, opts?: { recursive?: boolean }): Promise<void>
   /**
    * BOTH `from` AND `to` are independently confined before anything on
-   * disk moves -- see `./fs-capability.ts`'s own doc for why a check on
+   * disk moves -- see `./capabilities/fs.ts`'s own doc for why a check on
    * `from` alone would turn this into an arbitrary-write primitive. Runs
    * under `from`'s in-flight budget slot (the same grant authorises both
    * paths, so either would do).
@@ -143,13 +143,13 @@ export interface BrokerFsMethods {
   rename(origin: string, from: string, to: string): Promise<void>
   /**
    * Confined once, at open, exactly like every other `fs` method --
-   * `./fs-capability.ts`'s own header explains why a positional `read`/
+   * `./capabilities/fs.ts`'s own header explains why a positional `read`/
    * `write` against the handle this returns needs no SECOND confinement
    * check: both go through the real OS file descriptor this call opens,
    * never through the path again, so there is nothing left to re-resolve.
    * Runs under the same per-origin in-flight budget `readFile`/`writeFile`
    * do while OPENING; each operation against the handle it returns runs
-   * under its own handle-scoped budget instead (`./fs-capability.ts`'s
+   * under its own handle-scoped budget instead (`./capabilities/fs.ts`'s
    * `runFileIo`), the same distinction `net.connect` (acquisition) draws
    * against reads/writes on the socket it returns.
    */

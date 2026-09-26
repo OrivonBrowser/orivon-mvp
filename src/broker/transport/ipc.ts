@@ -1,7 +1,7 @@
 // Wires createBroker (../index.ts) to a real renderer over Electron IPC:
 // validates the envelope, derives the origin, rate-limits, times out, and
-// routes to the per-capability dispatcher (./dispatch-app.ts, ./dispatch-fs.ts,
-// ./dispatch-id.ts, ./dispatch-net.ts -- see ./README.md's Design notes for
+// routes to the per-capability dispatcher (./dispatch/app.ts, ./dispatch/fs.ts,
+// ./dispatch/id.ts, ./dispatch/net.ts -- see ./README.md's Design notes for
 // why dispatch lives there and wiring stays here). See ./README.md for the
 // two rules every method enforces (origin attribution off the sending
 // frame, bytes never over request/response IPC) and ../../contracts/ipc.ts
@@ -28,7 +28,7 @@ import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createWebContextHost } from '../../main/sessions/web-context-host.js'
 import { createElectronKeychain } from '../../main/keyring/electron-keychain.js'
-import { createPortRegistry } from './port-registry.js'
+import { createPortRegistry } from './relay/port-registry.js'
 import type { RateLimiter } from './token-bucket.js'
 import { admitControlCall, createControlLimiter } from './control-limiter.js'
 import type { ControlLimiter } from './control-limiter.js'
@@ -38,15 +38,15 @@ import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
 import { originFromSenderFrame } from '../policy/origin.js'
 import { fail } from '../errors.js'
 import { toFailureResponse } from './response-envelope.js'
-import { dispatchApp } from './dispatch-app.js'
-import { dispatchFs } from './dispatch-fs.js'
-import type { FsTransport } from './dispatch-fs.js'
-import { dispatchId } from './dispatch-id.js'
-import { dispatchNet } from './dispatch-net.js'
-import { dispatchWeb } from './dispatch-web.js'
-import { dispatchSecrets } from './dispatch-secrets.js'
+import { dispatchApp } from './dispatch/app.js'
+import { dispatchFs } from './dispatch/fs.js'
+import type { FsTransport } from './dispatch/fs.js'
+import { dispatchId } from './dispatch/id.js'
+import { dispatchNet } from './dispatch/net.js'
+import { dispatchWeb } from './dispatch/web.js'
+import { dispatchSecrets } from './dispatch/secrets.js'
 import { envelopeId, isControlMethod, isRequestEnvelope, type RequestGrantCtx } from './ipc-validation.js'
-import type { ControlEvent, PortLike, PortPair, PortTransport } from './port-transport.js'
+import type { ControlEvent, PortLike, PortPair, PortTransport } from './relay/port-transport.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
@@ -60,14 +60,14 @@ export type {
 export type {
   ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor,
   UdpSocketDescriptor
-} from './port-transport.js'
-export type { FsControlMethod, FsHandleDescriptor, FsTransport } from './dispatch-fs.js'
-export type { WebControlMethod } from './dispatch-web.js'
+} from './relay/port-transport.js'
+export type { FsControlMethod, FsHandleDescriptor, FsTransport } from './dispatch/fs.js'
+export type { WebControlMethod } from './dispatch/web.js'
 
 /**
  * One request, dispatched to `broker` with the origin THIS FUNCTION derived
  * -- never one from `payload`. Routes by capability prefix to
- * ./dispatch-app.ts, ./dispatch-fs.ts, ./dispatch-id.ts and ./dispatch-net.ts
+ * ./dispatch/app.ts, ./dispatch/fs.ts, ./dispatch/id.ts and ./dispatch/net.ts
  * -- each case group below narrows `method` to that module's own slice of
  * `ControlMethod`, so the call is exactly as type-checked as the single
  * switch this replaced.
@@ -156,7 +156,7 @@ async function dispatch (
  * its own and its result is discarded. What matters is that the CALLER is
  * never left waiting past its own stated budget. `abandoned` fires when the
  * timer wins, so a call that produces a resource the caller will now never
- * hear about can release it (dispatch-fs.ts's `fs.userSelected`).
+ * hear about can release it (transport/dispatch/fs.ts's `fs.userSelected`).
  */
 async function withTimeout<T> (work: (abandoned: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   const abandoned = new AbortController()
@@ -281,10 +281,10 @@ function realPortPair (): PortPair {
   const { port1, port2 } = new MessageChannelMain()
   const wrapped: PortLike = {
     // `transfer` is `readonly unknown[]` at this structural boundary
-    // (./port-transport.ts's own PortPair.port2, `unknown` for the same
+    // (./relay/port-transport.ts's own PortPair.port2, `unknown` for the same
     // reason) but is ALWAYS, in production, an array of this module's own
     // freshly-minted MessagePortMain values -- the only thing anything in
-    // this file ever puts in one (server-relay.ts's AcceptedMessage.port,
+    // this file ever puts in one (transport/relay/server.ts's AcceptedMessage.port,
     // the sole BrokerToRendererMessage member that carries a transferable
     // -- contracts/ipc.ts's own header rule 1). Cast at this one real-
     // Electron call site rather than widening MessagePortMain's own

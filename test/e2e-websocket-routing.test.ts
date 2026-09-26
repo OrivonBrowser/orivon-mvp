@@ -4,7 +4,7 @@
 // ungranted host takes the native WebSocket and meets the page's CSP.
 //
 // The page is served by this file's own server with the CSP an origin granted
-// without installing is given (src/loader/serve-csp.ts, the builder
+// without installing is given (src/loader/serve/csp.ts, the builder
 // src/main/install/granted-origin-csp.ts appends), so it also MEASURES what
 // that policy's connect-src 'self' does to a dev server's own hot-reload
 // socket on the page's host and port.
@@ -27,7 +27,7 @@ import type { Duplex } from 'node:stream'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
-import { cspHeaderValue } from '../src/loader/serve-csp.js'
+import { cspHeaderValue } from '../src/loader/serve/csp.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 

@@ -81,16 +81,16 @@ entirely unpinned. Bytes read that correctly. Both counts are kept anyway, at no
 so build step 7 can weigh by whichever it renders.
 
 **Byte totals are a floor, never a guess, when a size could not be read.**
-[`src/loader/pin-coverage.ts`](../loader/pin-coverage.ts) reads a pinned asset's exact size (the
+[`src/loader/serve/pin-coverage.ts`](../loader/serve/pin-coverage.ts) reads a pinned asset's exact size (the
 bytes are already in hand to serve it) but a third-party response's size only from its own
 `content-length` header, never by buffering the body to measure it, which would defeat the
-streaming `serve-reach.ts` exists for. A chunked or compressed response carries no such header;
+streaming `reach/reach.ts` exists for. A chunked or compressed response carries no such header;
 its request is still counted, but `bytesIncomplete` is set rather than treating it as zero bytes,
 the same "undefined, not zero" discipline `connection-log.ts`'s own `bytesSent`/`bytesReceived`
 already use, for the identical reason: an unmeasured byte count is not evidence of a small one.
 
 **`PinCoverageEvidence` is defined once in each direction, not imported across.**
-`delivery-ladder.ts`'s copy and `src/loader/pin-coverage.ts`'s `PinCoverageSnapshot` are
+`delivery-ladder.ts`'s copy and `src/loader/serve/pin-coverage.ts`'s `PinCoverageSnapshot` are
 structurally identical on purpose: this directory's own README says never reach into another
 stream's internals, and `src/loader/README.md` does not list this directory as something it may
 import either. The two modules agree on a shape rather than sharing a type, the same relationship

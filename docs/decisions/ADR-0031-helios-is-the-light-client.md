@@ -69,12 +69,12 @@ shell restarts the host with backoff.
   client has a single point of failure on the consensus side (`open-questions.md` A253). The
   execution side fails over across three RPCs, per request.
 - **Every bump is a review**: the four wrappers above rest on strings and behaviours of `0.11.1`,
-  and `src/verifier-host/tests/live-ens.test.ts` (opt-in, live) is the check that they still hold.
+  and `src/verifier-host/light-client/tests/live-ens.test.ts` (opt-in, live) is the check that they still hold.
 
 ## Reversibility
 
 - **Cost to reverse:** cheap to moderate. The light client sits behind one EIP-1193 provider in
-  `src/verifier-host/light-client.ts`; the ENS resolver, the checkpoint handling and everything
+  `src/verifier-host/light-client/light-client.ts`; the ENS resolver, the checkpoint handling and everything
   above them would not change.
 - **What would make us revisit:** a Helios release that breaks one of the wrappers; a supply-chain
   concern about the package; or a pure-TypeScript light client that passes `check:natives` and the

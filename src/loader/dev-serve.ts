@@ -9,7 +9,7 @@
 // non-https, non-public-unicast install origin with NO exception (A46) --
 // so a loopback fixture server, the only kind an e2e suite can stand up
 // hermetically, can NEVER complete a real load(). That check belongs to
-// the FETCH half of this directory (fetch-bundle.ts) and has nothing to do
+// the FETCH half of this directory (fetch/bundle.ts) and has nothing to do
 // with the SERVE half this lane builds -- serving reads back whatever is
 // already validly pinned on disk, regardless of how it got there. This
 // hook exposes exactly that seam: given an origin the test has already

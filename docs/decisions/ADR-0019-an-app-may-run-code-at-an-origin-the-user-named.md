@@ -18,7 +18,7 @@ The context:
 - **has no `orivon.*`, no preload and no cookies**, and is never displayed;
 - **has no network of its own.** Every request it makes is authorised against the *opening app's*
   own `https.connect` grant, and travels the path the loader already uses for an installed app's
-  third-party reach: `fetchThirdParty` in `src/loader/serve.ts`, which uses Node's `https` with no
+  third-party reach: `fetchThirdParty` in `src/loader/serve/serve.ts`, which uses Node's `https` with no
   cookie jar, follows no redirects, and carries the A199 revocation guard and the A200 socket
   allowance. A host the app may not reach, the context may not reach either.
 - **cannot navigate its top frame, open windows, download, or be granted any web permission.**

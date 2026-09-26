@@ -46,6 +46,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Owner answered A254-A256: every DDOC site is Level 2, the contenthash anchors DDOC, and the `.eth` verifier's cache is now per site.
 - Build step 6 is done: ENS and IPFS docs, threats T27-T38 and the roadmap reshape all in review; only a Windows/macOS run remains.
 - Localhost apps now ask for permissions in every build, `npm start` included; before, only developer mode prompted, and `npm start` silently granted nothing.
+- Reorganised broker, loader, preload, shim and verifier-host into job folders across six commits; capabilities/ and transport/dispatch+relay join ADR-0015's pattern.
 
 ### In my head
 

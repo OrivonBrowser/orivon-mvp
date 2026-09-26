@@ -79,7 +79,7 @@ straight to `orivon.fs` instead, it is refused: the broker rejects every absolut
 **Why `dialog.showOpenDialog` always refuses, rather than calling through when
 `orivon.fs.userSelected` happens to exist.** It never does today: `compatibility-matrix.md`
 Table 1 marks the broker's implementation ❌, and the preload does not expose it on
-`window.orivon` either (`src/preload/orivon-surface.ts` exposes only `app.manifest`/`grants` and
+`window.orivon` either (`src/preload/surface/orivon.ts` exposes only `app.manifest`/`grants` and
 `fs.readFile`/`writeFile`). Even a built broker would not close this cleanly: `userSelected`
 resolves to a `FileHandle`, not a host OS path, so `OpenDialogReturnValue.filePaths` (a
 `string[]` in real Electron) cannot be filled in without a further design decision about what a

@@ -246,7 +246,7 @@ describe('requestGrant (real broker) -- proves a real, persisted grant', () => {
   // case does, and not the dev-only grant hook. `manifest-patterns.ts` maps
   // a declared `id` capability to `patterns: []` (presence alone is the
   // ask), so this is the exact call `decideGrantRequest` produces for a real
-  // consent-made grant. Regression coverage for the id-capability.ts fix:
+  // consent-made grant. Regression coverage for the capabilities/id.ts fix:
   // before it, this exact sequence left every real `orivon.id` call denied.
   it('an accepted id grant carries empty patterns, and the origin can still use every curve its manifest declared', async () => {
     const seed = Uint8Array.from({ length: 32 }, (_, i) => i)

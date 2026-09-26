@@ -31,7 +31,7 @@ dashboard. `configurable: true` alone does not help; non-writability alone block
 
 **The lock was never a boundary.** Grant enforcement runs in the main process, keyed on
 `event.senderFrame` and the grant ledger ([`../../src/broker/transport/ipc.ts`](../../src/broker/transport/ipc.ts),
-[`net-capability.ts`](../../src/broker/net-capability.ts)); it cannot observe a renderer global.
+[`capabilities/net.ts`](../../src/broker/capabilities/net.ts)); it cannot observe a renderer global.
 `window.orivon` — hence the uncapped `orivon.net.connect` the routed `fetch` is itself built on
 — reaches every ordinary tab regardless. And a same-origin subframe gets no preload, so an
 unrouted `fetch` was always one line away.

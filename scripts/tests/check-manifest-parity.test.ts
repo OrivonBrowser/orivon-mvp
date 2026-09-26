@@ -334,7 +334,7 @@ describe('checkManifestParity', () => {
     // mutating the tracked source (that demonstration is run separately,
     // directly against the tracked files, and pasted into the PR body).
     const contractSource = readRealFile(CONTRACT_FILE)
-    const loaderSource = readRealFile('src/loader/manifest-capabilities.ts')
+    const loaderSource = readRealFile('src/loader/manifest/capabilities.ts')
     const withoutHttps = loaderSource.replace(
       "const NET_KEYS = ['tcp', 'udp', 'https', 'concurrentSockets']",
       "const NET_KEYS = ['tcp', 'udp', 'concurrentSockets']"

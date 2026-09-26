@@ -1,14 +1,14 @@
 // ADR-0007's "the padlock is now misleading unless the UI corrects it" --
 // this is the one truthful signal build step 4 owes the address bar: is the
 // active tab's document actually being answered by Orivon's own pinned
-// local cache (electron-serve.ts's protocol.handle registration), not a
+// local cache (electron/serve.ts's protocol.handle registration), not a
 // live network response. NOT the trust indicator (build step 7,
 // mvp-scope.md Rule 4) -- one boolean, no grade, no score. See
 // src/renderer/README.md's Design notes for the literal string this drives
 // and why it is a separate query from the address-bar permissions badge.
 
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { isOriginServedFromCache } from '../../loader/electron-serve.js'
+import { isOriginServedFromCache } from '../../loader/electron/serve.js'
 
 export interface DeliveryProvenance {
   readonly servedFromPinnedCache: boolean

@@ -1,5 +1,5 @@
 // A141 (docs/open-questions.md): no test anywhere exercised the real
-// electron-fetch.ts adapter -- every loader test injects a stub `Fetch`,
+// electron/fetch.ts adapter -- every loader test injects a stub `Fetch`,
 // and the stub's `response.url` disagreed with what real Electron's
 // net.fetch actually reports (always '', A59/A141), with nothing to notice
 // the disagreement. This file is what closes that: it drives the REAL
@@ -15,12 +15,12 @@
 // `electronFetch` without a genuinely public, routable HTTPS endpoint. What
 // this file proves instead: (1) `electronFetch`'s guard really refuses a
 // real local server, for real; (2) `netFetch`'s response (over a real
-// `net.request`) has exactly the contract fetch-budget.ts's real, unmodified
+// `net.request`) has exactly the contract fetch/budget.ts's real, unmodified
 // `fetchWithBudget` needs, proven by draining real content through it;
 // (3) its `url` is the requested url, never the '' net.fetch reports
 // (A59/A141); (4) against a real redirecting server, a same-origin hop is
-// followed and a cross-origin one refused -- the guarantee electron-fetch.ts's
-// own comment and fetch-budget.ts's `Fetch` doc comment both say this file
+// followed and a cross-origin one refused -- the guarantee electron/fetch.ts's
+// own comment and fetch/budget.ts's `Fetch` doc comment both say this file
 // proves.
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createServer } from 'node:http'
@@ -100,7 +100,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('the real electron-fetch.ts adapter, against a real local server, inside a real Electron process', async () => {
+it('the real electron/fetch.ts adapter, against a real local server, inside a real Electron process', async () => {
   const app = await launchElectron({ appPath: bundlePath })
   try {
     // app.whenReady() inside loader-adapter-entry.ts races independently of
@@ -138,8 +138,8 @@ it('the real electron-fetch.ts adapter, against a real local server, inside a re
     expect(plainResult.url).toBe(plainUrl)
 
     // (2continued): the same real Response, fed through the REAL
-    // fetchWithBudget (fetch-budget.ts, unmodified) -- proves the actual
-    // byte-cap/streaming pipeline fetch-bundle.ts relies on drains a real
+    // fetchWithBudget (fetch/budget.ts, unmodified) -- proves the actual
+    // byte-cap/streaming pipeline fetch/bundle.ts relies on drains a real
     // net.fetch body correctly, byte for byte.
     const budgetResult = await app.evaluate(
       async (_electron, args: { url: string, cap: number }) =>
@@ -153,7 +153,7 @@ it('the real electron-fetch.ts adapter, against a real local server, inside a re
     // server: a same-origin hop is followed and its bytes arrive, and a hop
     // to another origin is refused before anything from there is read.
     // If netFetch's per-hop check (redirectRefusal) is ever removed, the
-    // second assertion fails -- see fetch-budget.ts's `Fetch` doc comment.
+    // second assertion fails -- see fetch/budget.ts's `Fetch` doc comment.
     const redirectResult = await app.evaluate(
       async (_electron, args: { url: string, cap: number }) =>
         await globalThis.__orivonLoaderAdapterProbe!.callNetFetchThroughBudget(args.url, args.cap),
@@ -177,7 +177,7 @@ it('the real electron-fetch.ts adapter, against a real local server, inside a re
 // Finding 2 (adversarial review, 2026-09-13): electronResolveHost had zero
 // real-execution coverage -- every existing test injects a fake `Resolver`,
 // so nothing ever proved `net.resolveHost`'s real `endpoints[].address`
-// shape actually maps the way electron-resolve.ts assumes, in the same
+// shape actually maps the way electron/resolve.ts assumes, in the same
 // codebase already bitten once by a real Electron behaviour only a live
 // probe caught (response.url === '', A59/A141 above). `--host-resolver-
 // rules` (Chromium's own DNS-faking switch, already relied on by
@@ -189,7 +189,7 @@ const MAPPED_ADDRESS = '93.184.216.34'
 const RESOLVE_HOST_RULES =
   `--host-resolver-rules=MAP ${MAPPED_HOST} ${MAPPED_ADDRESS}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`
 
-it('the real electron-resolve.ts adapter, against Chromium\'s own resolver, hermetically', async () => {
+it('the real electron/resolve.ts adapter, against Chromium\'s own resolver, hermetically', async () => {
   const app = await launchElectron({ appPath: bundlePath, args: [RESOLVE_HOST_RULES] })
   try {
     const hookInstalled = await waitFor(async () =>
@@ -197,7 +197,7 @@ it('the real electron-resolve.ts adapter, against Chromium\'s own resolver, herm
     expect(hookInstalled).toBe(true)
 
     // (1) A hostname Chromium's own resolver actually answers -- the real
-    // `endpoints[].address` -> `string[]` mapping electron-resolve.ts's
+    // `endpoints[].address` -> `string[]` mapping electron/resolve.ts's
     // own `map()` does, which install-origin.ts's whole guard depends on
     // reading correctly.
     const mapped = await app.evaluate(

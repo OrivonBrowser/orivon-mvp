@@ -43,7 +43,7 @@ The fix gated isolation on `isRegisteredSync`. That gate was wrong in two direct
 
 1. **Too narrow.** A cached app registers its protocol handler through
    `registerAppOrigin`, which does not touch the broker's app registry. Both
-   [`electron-serve.ts`](../../src/loader/electron-serve.ts) and
+   [`electron/serve.ts`](../../src/loader/electron/serve.ts) and
    [`delivery-provenance.ts`](../../src/main/browsing/delivery-provenance.ts) already say in comments that
    these are two separate registries. A pin served from cache but absent from the broker's
    registry got no partition, so its tab landed on the default session where its handler does not
@@ -59,7 +59,7 @@ The fix gated isolation on `isRegisteredSync`. That gate was wrong in two direct
 - `Broker.app` gains `hasGrantsSync(origin)`, synchronous for the same reason `isRegisteredSync`
   is: a tab's partition is fixed when its `WebContentsView` is constructed, with no round trip to
   await. It reads the same in-memory ledger `grants()` does.
-- `electron-serve.ts` gains `isOriginServedFromCacheSync`, backed by a module-level set that
+- `electron/serve.ts` gains `isOriginServedFromCacheSync`, backed by a module-level set that
   `registerAppOrigin` itself maintains. **The set exists so routing and interception cannot
   drift**: the one call that installs a handler is the one call that records it. That is the
   defect above, fixed structurally rather than by keeping two registries in sync by hand.

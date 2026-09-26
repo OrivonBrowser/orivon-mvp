@@ -1,5 +1,5 @@
 // Verifies test/apps/fixture/.well-known/orivon.json against the real validator
-// (src/loader/manifest.ts's parseManifest) rather than hand-rolling a second
+// (src/loader/manifest/manifest.ts's parseManifest) rather than hand-rolling a second
 // check of the same rules (code-guidelines.md Rule 3). Also checks that the
 // manifest's one declared net.connect pattern matches config.mjs's
 // ECHO_PORT/HOST exactly, since a static JSON file cannot import the
@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { parseManifest } from '../../../src/loader/manifest.js'
+import { parseManifest } from '../../../src/loader/manifest/manifest.js'
 import { ECHO_PORT, HOST } from './config.mjs'
 
 const MANIFEST_PATH = fileURLToPath(new URL('./.well-known/orivon.json', import.meta.url))

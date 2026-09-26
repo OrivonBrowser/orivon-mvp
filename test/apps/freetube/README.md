@@ -113,7 +113,7 @@ subdomain on the next request. A literal pattern cannot name that host:
   explicitly. `*.googlevideo.com:443` is a rejected pattern, deliberately -- "a wildcard that
   silently spans a registry boundary" is the reason given, and it is a good one.
 - The one pattern that covers it is `*:443` under `https.connect`: unlimited HTTPS. For that
-  grant the served CSP ([`src/loader/serve-csp.ts`](../../../src/loader/serve-csp.ts)) emits the
+  grant the served CSP ([`src/loader/serve/csp.ts`](../../../src/loader/serve/csp.ts)) emits the
   `https:` scheme source in `media-src`, `img-src`, `font-src` and `connect-src`, and every
   request it admits is re-authorised by the app's own request handler, which still refuses
   loopback and private addresses.

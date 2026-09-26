@@ -1,16 +1,16 @@
 // A143 (docs/open-questions.md), owner decision 2026-09-14: an app may now
 // reach a third-party host it holds a live `https.connect` grant for, from
-// inside its own partition -- src/loader/serve.ts's `fetchThirdParty`,
-// wired to the real network via src/loader/serve-reach.ts's `nodeReachDial`.
+// inside its own partition -- src/loader/serve/serve.ts's `fetchThirdParty`,
+// wired to the real network via src/loader/reach/reach.ts's `nodeReachDial`.
 //
 // WHY THIS CANNOT PROVE A COMPLETED BYTE ROUND TRIP OVER TLS, AND WHY THAT
 // IS NOT A GAP HERE EITHER. `test/e2e-connect-secure-capability.test.ts`'s
 // own header already establishes this for `orivon.net.connectSecure`:
 // "there is no hermetic way to hand a locally launched, unmodified
 // production build a certificate it will actually trust" -- `nodeReachDial`
-// has the identical property on purpose (`serve-reach.ts`'s own header:
+// has the identical property on purpose (`reach/reach.ts`'s own header:
 // production wiring supplies no `ca`, trusting only the runtime's real root
-// store). `src/loader/tests/serve-reach.test.ts` already proves a REAL byte
+// store). `src/loader/reach/tests/reach.test.ts` already proves a REAL byte
 // round trip over a REAL TLS handshake, using the SAME testing-only `ca`
 // seam `tls-adapter.ts` established -- that is the layer where trust can be
 // legitimately overridden for a test. What THIS file proves instead, and it
@@ -27,7 +27,7 @@
 // WHAT THE UNGRANTED-HOST CHECK ACTUALLY PROVES, MEASURED RATHER THAN
 // ASSUMED. `img-src`/`font-src`/`media-src` are derived from the SAME live
 // `https.connect` grant `fetchThirdParty`'s own `authoriseReach` checks
-// (`connect-src.ts`'s `reachSourcesFor`, `electron-serve.ts`'s
+// (`connect-src.ts`'s `reachSourcesFor`, `electron/serve.ts`'s
 // `secureHeaderPatternsFor`) -- so in ordinary operation an ungranted host
 // is refused TWICE, by CSP first (the browser never even attempts the
 // request) and by `fetchThirdParty` second, and this file's own real-server
@@ -63,7 +63,7 @@ import { closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from '
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
 import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/node-storage.js'
+import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
 import { generateTlsFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
@@ -210,7 +210,7 @@ it(
         // ---- THE ENFORCEMENT PROOF: a real XHR to the GRANTED host, and
         // one to an UNGRANTED host with an equally real server listening.
         // No reference to outer consts inside this callback -- see file
-        // header, same constraint fetch-route.ts's own installFetchRoute
+        // header, same constraint routed/fetch.ts's own installFetchRoute
         // and e2e-csp-connect-src.test.ts's own evaluate callback share.
         // AN <img> ELEMENT, NOT AN XHR: an app tab's XHR is routed through
         // the broker (src/preload/), so it would prove the broker's own

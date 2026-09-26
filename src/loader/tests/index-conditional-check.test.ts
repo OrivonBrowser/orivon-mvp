@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createLoader, UPDATE_CHECK_INTERVAL_MS } from '../index.js'
 import type { Fetch, FetchResponse, LoadContext } from '../index.js'
-import { checkedRecently, conditionalHeaders, parseUpdateCheckRecord, validatorsFrom } from '../update-check.js'
+import { checkedRecently, conditionalHeaders, parseUpdateCheckRecord, validatorsFrom } from '../fetch/update-check.js'
 import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, utf8 } from './test-helpers.js'
 
 // An installed app is checked at most once an interval, and the interval

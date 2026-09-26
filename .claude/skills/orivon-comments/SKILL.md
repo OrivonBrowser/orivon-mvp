@@ -120,11 +120,11 @@ way any other change is verified:
 - `npm run check:vectors` for anything under `src/broker/policy/` — it re-reads `derive.ts` as
   raw text, so a comment mentioning the `CURVE_ORDER` hex values a second time fails it exactly
   as a code change would.
-- Editing `src/preload/*.ts` can silently trigger a real `npm run build` inside the next
+- Editing `src/preload/**/*.ts` can silently trigger a real `npm run build` inside the next
   `npm test`, because the preload test suite rebuilds the bundle whenever a source file is newer
   than the built output — a slow `npm test` after a preload comment edit is that rebuild, not a
   hang. Run `xvfb-run -a npm run test:e2e` afterward if anything besides a comment changed.
-- `src/preload/tests/main-world-socket.test.ts` extracts `installOrivon`'s source out of the
+- `src/preload/surface/tests/main-world-socket.test.ts` extracts `installOrivon`'s source out of the
   *built* bundle and evals it with a restricted global scope. Renaming that function breaks the
   test; an unbalanced `{`/`}` inside a comment *inside* its body corrupts the slice the test
   extracts. Extracting a helper to module scope (outside the function) also breaks it — only

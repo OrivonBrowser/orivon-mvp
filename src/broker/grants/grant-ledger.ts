@@ -45,7 +45,7 @@ interface OriginRecord {
    * Bytes this origin's files occupy, charged against
    * `manifest.capabilities.fs.quotaBytes`. In memory, and reconciled against
    * the directory the first time the origin touches its files each session
-   * (../fs-capability.ts's `ensureMeasured`), so it never needs persisting.
+   * (../capabilities/fs.ts's `ensureMeasured`), so it never needs persisting.
    */
   fsBytesUsed: number
   /**

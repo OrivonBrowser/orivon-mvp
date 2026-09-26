@@ -32,7 +32,7 @@ const EMPTY_SITE_INFO = (origin: string): SiteInfo => ({
 /** The loader-adjacent facts `../browsing/site-trust.js` needs but does not
  * read itself (its own header: pure, no `electron-serve.js` import) --
  * `isOriginServedFromCacheSync`/`pinCoverageFor` real implementations live
- * in `../../loader/electron-serve.js`; injected here, defaulted at the
+ * in `../../loader/electron/serve.js`; injected here, defaulted at the
  * real construction site (`../shell/window.ts`), so this controller stays
  * testable against a fake rather than a live Electron session. */
 export interface SiteTrustSources {

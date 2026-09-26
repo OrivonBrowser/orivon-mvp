@@ -103,7 +103,7 @@ None of these block starting the week-0 spike.
 | A12 | **RESOLVED 2026-09-09 (owner): `orivon.fs` stays byte-oriented, no encoding option at the capability layer.** Confirms the provisional reading already in `src/contracts/capability-api.ts`; text decoding belongs to `orivon-node-shim`. See `.claude/unattended-build-queue.md` decision 1 | Phase 1 contracts PR removes the PROVISIONAL markers; see below |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
-| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch-bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated. **RESOLVED 2026-09-22 for the two byte caps (owner):** calibrated against ASGARDEX's real build (a 31 MB wasm-heavy chunk, a 37 MB bundle), `MAX_ASSET_BYTES` is 64 MiB and `MAX_BUNDLE_BYTES` 512 MiB. They bound download and disk, not memory: the loader now streams each asset to staging and hashes it incrementally (`src/loader/leaf-hash.ts`), so no asset is held whole. **Still AI-recommended:** `MAX_PATH_BYTES`, `MAX_BUNDLE_ENTRIES` (no real bundle has come near either), `MAX_DDOC_BYTES` (656,384, sized like `MAX_MANIFEST_BYTES` for a full leaf table, `src/loader/ddoc-declaration.ts`, 2026-09-24), and the fetch time bounds that cite this entry (`FETCH_IDLE_TIMEOUT_MS` 20 s idle, `BUNDLE_TIMEOUT_MS` 30 min, `src/loader/fetch-budget.ts`) | The two byte caps: settled. The rest: when a real bundle or a slow real host hits one |
+| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch/bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated. **RESOLVED 2026-09-22 for the two byte caps (owner):** calibrated against ASGARDEX's real build (a 31 MB wasm-heavy chunk, a 37 MB bundle), `MAX_ASSET_BYTES` is 64 MiB and `MAX_BUNDLE_BYTES` 512 MiB. They bound download and disk, not memory: the loader now streams each asset to staging and hashes it incrementally (`src/loader/leaf-hash.ts`), so no asset is held whole. **Still AI-recommended:** `MAX_PATH_BYTES`, `MAX_BUNDLE_ENTRIES` (no real bundle has come near either), `MAX_DDOC_BYTES` (656,384, sized like `MAX_MANIFEST_BYTES` for a full leaf table, `src/loader/ddoc-declaration.ts`, 2026-09-24), and the fetch time bounds that cite this entry (`FETCH_IDLE_TIMEOUT_MS` 20 s idle, `BUNDLE_TIMEOUT_MS` 30 min, `src/loader/fetch/budget.ts`) | The two byte caps: settled. The rest: when a real bundle or a slow real host hits one |
 | A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/shell/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/shell/window.ts`. See below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
@@ -129,7 +129,7 @@ None of these block starting the week-0 spike.
 | A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/transport/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/transport/token-bucket.ts` and wired in `src/broker/transport/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
 | A45 | **RESOLVED 2026-09-03, `ADR-0011`.** `Manifest` gains `assets: readonly string[]`, publisher-declared alongside `entry` — a manifest field, not a crawl heuristic. See below | — |
 | A46 | **The loader never checks the install origin against private/loopback address ranges (T12).** `originFromUrl` validates only scheme and hostname syntax, never address class, and never calls `isPublicUnicast`/`classifyAddress` from `src/broker/policy/address.ts` — which already implements the correct "resolve once, validate every address" discipline for exactly this threat. `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/` (cloud metadata), or a low-TTL host that DNS-rebinds to either, all pass every check the loader runs today. **RESOLVED 2026-09-03 (owner): loopback is installable only as a user-supplied literal** — `127.0.0.1`, `[::1]` or `localhost`, and only when the URL came from a user action, never from a page-supplied hint and never via a hostname that *resolved* to loopback. Every other private, link-local and metadata range is refused outright | **NOW LIVE, trigger re-dated 2026-09-03** — the entry's own "ships inert" premise expired when `loaderSubsystem` was wired to a real `Loader` and a real Electron `Fetch` (`98c4871`, `stream/loader-05-node-storage`). See below |
-| A48 | **Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot be closed from this file alone, and now carry an explicit contract requirement on the real `Fetch` implementation.** (1) A `Fetch` (or its body stream's `read()`) that ignores its `AbortSignal` leaves the original promise permanently pending with its closures on every timeout — `BUNDLE_TIMEOUT_MS` (added this pass) bounds how many such abandoned attempts one `fetchBundle()` call can accumulate, but cannot force a foreign, non-cooperating promise to release whatever it holds (a socket, a timer). (2) The incremental byte cap can only refuse a chunk after `reader.read()` already returned it fully allocated — the real bound is "one chunk", not "the cap"; a BYOB reader would close this but requires the stream to declare `type: 'bytes'`, which this file's minimal structural `FetchResponse` type does not guarantee | **Before a real `Fetch`/stream implementation is wired in.** It must itself observe `AbortSignal` and promptly abort/release the underlying request, and should bound its own chunk sizes. See below |
+| A48 | **Two residual gaps in `fetch/bundle.ts`'s byte/time budget cannot be closed from this file alone, and now carry an explicit contract requirement on the real `Fetch` implementation.** (1) A `Fetch` (or its body stream's `read()`) that ignores its `AbortSignal` leaves the original promise permanently pending with its closures on every timeout — `BUNDLE_TIMEOUT_MS` (added this pass) bounds how many such abandoned attempts one `fetchBundle()` call can accumulate, but cannot force a foreign, non-cooperating promise to release whatever it holds (a socket, a timer). (2) The incremental byte cap can only refuse a chunk after `reader.read()` already returned it fully allocated — the real bound is "one chunk", not "the cap"; a BYOB reader would close this but requires the stream to declare `type: 'bytes'`, which this file's minimal structural `FetchResponse` type does not guarantee | **Before a real `Fetch`/stream implementation is wired in.** It must itself observe `AbortSignal` and promptly abort/release the underlying request, and should bound its own chunk sizes. See below |
 
 ---
 
@@ -834,7 +834,7 @@ by" columns are already correct as written and need no change.
 ### A37 — the byte pump's write direction has no wire protocol anywhere **[RESOLVED 2026-09-06]**
 
 Found while implementing the byte pump's broker side (build step 2, 2026-09-01) — specifically
-while designing `src/broker/transport/port-pump.ts`, which relays the READ direction only.
+while designing `src/broker/transport/relay/port-pump.ts`, which relays the READ direction only.
 
 `contracts/ipc.ts` specifies exactly three messages for a socket's dedicated
 `MessageChannelMain` port: `DataMessage` (broker -> renderer, bytes arriving), `CreditMessage`
@@ -1119,10 +1119,10 @@ for the fuller accounting.
 
 **Corrected 2026-09-22.** The paragraph above previously listed `form-action` among the
 directives `default-src` closed; the CSP spec lists no fallback for it, and it is now left unset
-on purpose (`src/loader/serve-csp.ts`, `src/loader/README.md` §What the served bundle's CSP
+on purpose (`src/loader/serve/csp.ts`, `src/loader/README.md` §What the served bundle's CSP
 admits): restricting it would refuse the redirects a form-post sign-in follows, and would bound
 nothing that navigation does not already leave open. The header today is built in
-`src/loader/serve-csp.ts`, not `serve.ts`, and admits more than it did: `'unsafe-eval'`,
+`src/loader/serve/csp.ts`, not `serve.ts`, and admits more than it did: `'unsafe-eval'`,
 `'wasm-unsafe-eval'`, `data:`/`blob:` in the subresource directives, `worker-src 'self' blob:`,
 `frame-src 'self' data: blob:`, and `https.connect`'s sources in `connect-src` (`d-0046` to
 `d-0048`). And `connect-src` is no longer the only gate an app tab's WebSocket meets: the page's
@@ -1231,7 +1231,7 @@ Scope, item 6).
 
 **Corroborated 2026-09-10** (lane P2-5, PR #112, open at filing time — "Wire
 `orivon.id.publicKey/sign` to the broker, IPC and the page"): that PR wires the **app-keys**
-half of `orivon.id` end to end (`id-capability.ts`, real broker/IPC/preload callers of
+half of `orivon.id` end to end (`capabilities/id.ts`, real broker/IPC/preload callers of
 `derive-p256.ts`'s `derivePublicKey`/`signWithP256`) but its own commit message is explicit that
 `requestIdentity` — the **named-identity** half `nip07.ts`'s real signer actually needs — is
 "deliberately untouched," pending the connect-prompt UI. So this entry's gap is exactly as open
@@ -1300,7 +1300,7 @@ once, and no file anywhere in `src/` or `test/` actually reads or consumes the v
 stops reading the underlying OS socket once outstanding credit reaches zero, and the renderer
 coalesces its own credit acknowledgements ("at most one credit message per 64 KiB consumed, or
 once per animation frame") so a fast stream does not emit a broker message per chunk. The first
-half is real and tested — `src/broker/transport/port-pump.ts`'s `pumpLoop` loops `while (!stopped && credit
+half is real and tested — `src/broker/transport/relay/port-pump.ts`'s `pumpLoop` loops `while (!stopped && credit
 > 0)`, exercised by `port-pump.test.ts` and `port-pump-real-socket.test.ts`. The second half does
 not exist anywhere: nothing on the renderer/preload side sends a `CreditMessage` at all yet
 (`net.connect` itself is not wired past the broker/main-process IPC layer — see `capability-
@@ -1330,16 +1330,16 @@ depends on. But this is this lane's read, not a verified fact, and the owner may
 > **Resolved 2026-09-06.** Reading 1 was correct: the renderer half was still intended and had
 > simply not been reached. Both halves now exist and are tested.
 >
-> - Broker read side: `src/broker/transport/port-pump.ts`'s `pumpLoop` stops at credit zero (already true
+> - Broker read side: `src/broker/transport/relay/port-pump.ts`'s `pumpLoop` stops at credit zero (already true
 >   when this was filed).
-> - **Renderer read side: `src/preload/socket-port.ts`'s `reportConsumed` flushes a
+> - **Renderer read side: `src/preload/ports/socket.ts`'s `reportConsumed` flushes a
 >   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces on a
 >   macrotask** -- deliberately `setTimeout`, NOT `requestAnimationFrame` as
 >   `handle-contracts.md` originally suggested, because rAF does not fire in a backgrounded tab
 >   and a torrent downloading in a background tab is the ordinary case here, not an edge one.
 >   That is a real (small) departure from the spec text, made knowingly and recorded in the
 >   source next to the line.
-> - Broker write side: `src/broker/transport/port-sink.ts` coalesces `WriteAckMessage` against the same
+> - Broker write side: `src/broker/transport/relay/port-sink.ts` coalesces `WriteAckMessage` against the same
 >   constant.
 >
 > `CREDIT_COALESCE_BYTES` therefore has three real consumers and is no longer dead code.
@@ -1440,7 +1440,7 @@ and is fully testable against an injected one.
 gains `assets: readonly string[]`, alongside `entry` — see the ADR for the full reasoning,
 including why the "publisher must keep it in sync" cost is deliberately not compensated for in
 this field's design: an app that loads more than it declared is the trust/Web3-Score system's
-concern (`ADR-0006`), not something the manifest format tries to predict. `src/loader/manifest.ts`
+concern (`ADR-0006`), not something the manifest format tries to predict. `src/loader/manifest/manifest.ts`
 validates it the same way `entry` is validated (`stream/contracts-11-manifest-assets`).
 `createLoader.load()`'s own `assetPaths` parameter is unchanged by this — a caller now reads it
 off `manifest.assets` rather than inventing or discovering it.
@@ -1457,7 +1457,7 @@ for the full account.
 
 ### A46 — the loader never checks the install origin against private/loopback address ranges (T12) **[RESOLVED 2026-09-03]**
 
-Found 2026-09-03 reviewing `stream/loader-02-fetch-cache` (build step 4). `fetch-bundle.ts`
+Found 2026-09-03 reviewing `stream/loader-02-fetch-cache` (build step 4). `fetch/bundle.ts`
 resolves `hintedUrl` through `originFromUrl` (`src/broker/policy/origin.ts`), which validates
 scheme and hostname syntax and nothing else — it never checks what address class the hostname
 resolves to, and never calls `isPublicUnicast`/`classifyAddress` from
@@ -1468,7 +1468,7 @@ discipline required to use it correctly: *resolve once, validate every returned 
 connect to the IP literal that was validated* — because a hostname is not an address, and a
 low-TTL DNS answer can change between a check and a connect. `src/broker/policy/connect.ts`
 already follows this discipline for outbound `tcp.connect`. The loader's install path does not
-follow it at all: nothing in `fetch-bundle.ts` or `origin.ts` resolves the install origin's
+follow it at all: nothing in `fetch/bundle.ts` or `origin.ts` resolves the install origin's
 hostname before treating it as fetchable.
 
 **Concretely:** `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/`
@@ -1547,10 +1547,10 @@ Re-resolving the name after the check reopens the window the check exists to clo
 
 **Implemented 2026-09-04 (`stream/loader-09-install-origin-guard`).** Found still genuinely
 unbuilt while scoping the discovery-trigger wiring — the resolution above recorded the owner's
-decision but nothing in `fetch-bundle.ts` yet acted on it. `fetchBundle()` now takes a `resolveFn:
+decision but nothing in `fetch/bundle.ts` yet acted on it. `fetchBundle()` now takes a `resolveFn:
 Resolver` (the same type `policy/connect.ts` defines) and rejects before its first network request
 if the install origin's hostname resolves — or, for a literal, classifies — as anything but
-public-unicast (`install-origin.ts`, split out once adding this pushed `fetch-bundle.ts` over the
+public-unicast (`install-origin.ts`, split out once adding this pushed `fetch/bundle.ts` over the
 500-line limit). No loopback carve-out is implemented: the only discovery trigger is the
 page-supplied hint, which is exactly the case this entry's own resolution says loopback must never
 be reachable from, so the carve-out has no live path to attach to. That leaves a real,
@@ -1581,7 +1581,7 @@ not itself serve a hint. Grants stay session-only (T13c).
 
 ---
 
-### A52 — two residual gaps a real `Fetch` must close, not `fetch-bundle.ts` **[AI-REC]**
+### A52 — two residual gaps a real `Fetch` must close, not `fetch/bundle.ts` **[AI-REC]**
 
 Found 2026-09-03, fixing an adversarial review's findings against `stream/loader-02-fetch-cache`
 (build step 4) before merge. Two of the three findings (an uncaught `new URL()` and the
@@ -1621,7 +1621,7 @@ naive real implementation is unlikely to provide.
 observe the `AbortSignal` it is given and promptly abort/release the underlying request on it —
 not merely tolerate the caller giving up on waiting — and (b) either use a BYOB reader with a
 bounded view size, or otherwise avoid handing back single chunks larger than a few times
-`MAX_ASSET_BYTES`'s neighbourhood. Neither is enforceable from `fetch-bundle.ts` as written.
+`MAX_ASSET_BYTES`'s neighbourhood. Neither is enforceable from `fetch/bundle.ts` as written.
 
 **Needed by:** whoever builds the real `Fetch` (wiring this loader to actual Node/Electron I/O
 is itself still open — see this file's own header and `CLAUDE.md`'s "Still open" note). Not
@@ -2064,11 +2064,11 @@ Found 2026-09-03, resolving PR #55's merge against `main` — checking that this
 renumbered `A48`→`A54`/`A49`→`A55` (see `A54`) did not collide with anything in the `## A.
 Awaiting owner decision` summary table near the top of this file.
 
-The table's `A48` row reads "Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot
+The table's `A48` row reads "Two residual gaps in `fetch/bundle.ts`'s byte/time budget cannot
 be closed from this file alone..." — but the entry actually titled `### A48` further down is
 "the credit-window backpressure design is half-built", a different topic entirely. The
 byte/time-budget text the table describes now matches `### A52` ("two residual gaps a real
-`Fetch` must close, not `fetch-bundle.ts`"). At some point `A48` was renumbered to `A52` and the
+`Fetch` must close, not `fetch/bundle.ts`"). At some point `A48` was renumbered to `A52` and the
 summary row was not updated to match — predates this branch and predates `A52`/`A53`'s own
 recent additions; not caused by, or a consequence of, this merge.
 
@@ -2153,10 +2153,10 @@ reversal, since it was the document making the now-superseded claim.
 ### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[RESOLVED 2026-09-04]**
 
 Filed 2026-09-03, `fix-62` (`stream/loader-05-node-storage`), while fixing `readPin`'s
-corrupt-pin handling and `electron-fetch.ts`'s redirect trust. (A57 taken by a parallel fix
+corrupt-pin handling and `electron/fetch.ts`'s redirect trust. (A57 taken by a parallel fix
 lane for a different gap, filed the same day — see that lane's own record.)
 
-`fetch-bundle.ts` already bounds ONE bundle install: `MAX_BUNDLE_BYTES` (64 MiB) and
+`fetch/bundle.ts` already bounds ONE bundle install: `MAX_BUNDLE_BYTES` (64 MiB) and
 `MAX_ASSET_BYTES` (16 MiB) cap a single `fetchBundle()` call. Nothing bounds total disk usage
 beyond that single call's own budget. Two distinct gaps, both real:
 
@@ -2229,11 +2229,11 @@ per-origin bound gap 1 relies on is now `MAX_BUNDLE_BYTES` 512 MiB (A15).
 
 ### A59 — whether `net.fetch`'s `Response.url` can be wrong on an ordinary, non-redirected fetch is unresearched **[RESOLVED 2026-09-13 — measured, then fixed via A141]**
 
-Found 2026-09-03, a review-pass follow-up to `electron-fetch.ts`'s `redirect: 'error'` fix.
+Found 2026-09-03, a review-pass follow-up to `electron/fetch.ts`'s `redirect: 'error'` fix.
 
 `node_modules/electron/electron.d.ts` documents the `.type` and `.url` values of `net.fetch`'s
 returned `Response` as incorrect — as an UNCONDITIONAL bullet under `net.fetch`'s own
-"Limitations", not one scoped to redirected responses. `fetch-bundle.ts`'s same-origin and
+"Limitations", not one scoped to redirected responses. `fetch/bundle.ts`'s same-origin and
 canonical-path checks (`fetchBundle`'s manifest and asset-loop checks alike) read
 `response.url` as their SOLE source of truth for where fetched bytes actually came from, on
 EVERY fetch — not only a would-be-redirected one.
@@ -2250,7 +2250,7 @@ than the response, mangled for some URL shapes, or something else) — is not st
 docs and was not resolved by a context7 query against live Electron documentation either; both
 are silent past the one-line "incorrect" warning. If `.url` on a successful, non-redirected
 `net.fetch` can name a different origin or path than where the bytes actually came from,
-`fetch-bundle.ts`'s origin and canonical-path checks would be trusting exactly the field that is
+`fetch/bundle.ts`'s origin and canonical-path checks would be trusting exactly the field that is
 wrong, on every single fetch they perform — not a narrow gap.
 
 **AI recommendation:** before the loader's discovery trigger (PR #63's `<link
@@ -2262,7 +2262,7 @@ nor available tooling explain the concrete failure mode well enough to reason ab
 first principles.
 
 **Needed by:** before the loader's discovery trigger is wired to anything live. See
-`electron-fetch.ts`'s `redirect: 'error'` comment, which cites this entry.
+`electron/fetch.ts`'s `redirect: 'error'` comment, which cites this entry.
 
 **Measured 2026-09-13 (lane S4-A59-probe, `spike/a59-response-url/`, throwaway, Electron 44.0.0,
 Chrome 152.0.7977.54; real launch confirmed via `app.getVersion()`/`MessageChannelMain`).** The
@@ -2272,7 +2272,7 @@ against two real local servers (`node:http`, and `node:https` with a throwaway, 
 self-signed cert, trusted narrowly by its exact SPKI hash via Chromium's own
 `--ignore-certificate-errors-spki-list` rather than by disabling certificate verification
 outright), called from a real Electron main process with
-`electron-fetch.ts`'s own options (`credentials: 'omit', redirect: 'error'`), across 20 distinct
+`electron/fetch.ts`'s own options (`credentials: 'omit', redirect: 'error'`), across 20 distinct
 request shapes: plain path, trailing slash, no trailing slash, a query string, a percent-encoded
 path segment (`/a%2Fb/c%20d`), a duplicate slash (`/a//b//c`), a fragment (correctly stripped
 before the network request — standard Fetch-spec behaviour, not an Electron quirk), combined
@@ -2288,7 +2288,7 @@ own harness with a second, minimal, options-free isolation script
 against a fresh `node:http` server, still returned `url: ''`. `response.type` is also confirmed
 wrong exactly as `electron.d.ts` warns — always `'default'`, never `'basic'`.
 
-**What this means for `fetch-bundle.ts`.** `originFromUrl('')` is `null` (`new URL('')` throws
+**What this means for `fetch/bundle.ts`.** `originFromUrl('')` is `null` (`new URL('')` throws
 with no base — confirmed), so `manifestOrigin !== canonicalOrigin` (`null !== canonicalOrigin`)
 is true on every call, and `fetchBundle` rejects **every** manifest fetch with "manifest was
 served from a different origin (invalid) than requested" — before ever reaching the asset loop,
@@ -2296,7 +2296,7 @@ which has the identical shape and would reject the same way. This is fail-closed
 hole: nothing is tricked into passing the check. But it means `fetchBundle` cannot succeed
 against a real `net.fetch` call as currently written, at all, regardless of which origin is being
 fetched — a correctness defect, not a narrow edge case. **Filed as A141, not fixed here**
-(`fetch-bundle.ts`/`electron-fetch.ts` are another lane's paths; the fix needs its own branch and
+(`fetch/bundle.ts`/`electron/fetch.ts` are another lane's paths; the fix needs its own branch and
 review).
 
 **Residual, not measured:** a real (CA-signed) HTTPS certificate chain — the SPKI allowlist
@@ -2314,7 +2314,7 @@ which is worse than what this entry originally worried about (a silently wrong o
 simpler to act on (the field is unusable outright, not subtly misleading).
 
 > **Closed 2026-09-13, lane S4-A141-fetch-url.** A141 (below) is fixed:
-> `fetch-bundle.ts` no longer reads `response.url` at all, so this question is moot rather than
+> `fetch/bundle.ts` no longer reads `response.url` at all, so this question is moot rather than
 > merely answered. See A141's own resolution block for what changed and how it was verified.
 
 ---
@@ -2394,7 +2394,8 @@ caller anywhere in `src/` that builds it via
 `patternSetFromGrants(await broker.app.grants(origin))` or any equivalent. Confirmed:
 `grep -rn "grantedPatterns" src/` finds only `update.ts`'s own field definition, `index.ts`'s
 `LoadContext.grantedPatterns` declaration and its one pass-through into `decideUpdate()`, a
-comment in `update-patterns.ts` explicitly disclaiming it ("this file produces `newPatterns`,
+comment in the loader's former `update-patterns.ts` (since removed; the import now goes straight
+to `manifest-patterns.ts`) explicitly disclaiming it ("this file produces `newPatterns`,
 never `grantedPatterns`" — a different, unrelated mapping from manifest capabilities to
 patterns, not from grants to patterns), and test-only construction in `update.test.ts` and
 `index.test.ts`. No production code path builds the value.
@@ -2426,7 +2427,7 @@ whatever the real `Broker`-facing accessor turns out to be named), not invent a 
 
 Found 2026-09-03, a review-pass follow-up.
 
-`nodeLoaderStorage` (`src/loader/node-storage.ts`) writes both the pinned asset bytes
+`nodeLoaderStorage` (`src/loader/cache/node-storage.ts`) writes both the pinned asset bytes
 (`writeAsset`) and the pin record (`writePin`) via a direct `writeFile` call each — no
 temp-file-then-rename, no `fsync`, nothing that makes either write atomic. `Loader.load()`
 (`src/loader/index.ts`) has no per-origin lock or serialization of any kind: nothing prevents
@@ -2622,7 +2623,7 @@ above: there is no allowlist, and the manifest is read before the person is aske
 Found 2026-09-05, `stream/loader-09-install-origin-guard`, fixing the DNS-rebinding/TOCTOU hole
 two independent review passes found in the T12/A46 install-origin guard (F2 in that lane's brief):
 `ensurePublicUnicastOrigin` resolved, validated, and then discarded the addresses, so
-`fetch-bundle.ts` named the install origin's host a SECOND time for every request — a fresh,
+`fetch/bundle.ts` named the install origin's host a SECOND time for every request — a fresh,
 independent resolution free to disagree with the guard's.
 
 `src/broker/policy/connect.ts`'s own discipline for the same problem, one layer down, is "resolve
@@ -2644,7 +2645,7 @@ Chromium-mediated fetch.** Confirmed directly against `node_modules/electron/ele
   either.
 - Rewriting the fetch URL itself to the validated IP literal was considered and rejected: it breaks
   TLS/SNI-based certificate validation for every real `https:` host (the certificate is issued for
-  the hostname, not the IP), and it breaks `fetch-bundle.ts`'s own same-origin check
+  the hostname, not the IP), and it breaks `fetch/bundle.ts`'s own same-origin check
   (`originFromUrl(response.url) === canonicalOrigin`), which can never hold once `response.url`'s
   host is an IP literal instead of the app's real hostname — trading a real, closed hole for a
   worse one (either every legitimate install starts failing, or that origin check gets loosened to
@@ -2652,11 +2653,11 @@ Chromium-mediated fetch.** Confirmed directly against `node_modules/electron/ele
 
 **What shipped instead, in this fix:** the install-origin guard's resolver was switched from
 `node-adapters.ts`'s node:dns-based `resolveHost` (correct for the broker's own raw-socket
-`tcp.connect`, wrong here) to `electron-resolve.ts`'s `electronResolveHost`, over Electron's
-`net.resolveHost` — Chromium's own resolver, the same one `electron-fetch.ts`'s `net.fetch` call
+`tcp.connect`, wrong here) to `electron/resolve.ts`'s `electronResolveHost`, over Electron's
+`net.resolveHost` — Chromium's own resolver, the same one `electron/fetch.ts`'s `net.fetch` call
 actually consults (both run under the default session). This closes F2's root cause: the guard and
 the real request are no longer answered by two independent resolvers/caches that can simply
-disagree. `electron-fetch.ts` additionally re-runs `net.resolveHost` and re-validates
+disagree. `electron/fetch.ts` additionally re-runs `net.resolveHost` and re-validates
 publicness immediately before every individual fetch (manifest and each asset), narrowing the
 window `F5` named — an up-to-`BUNDLE_TIMEOUT_MS` (10 minute) asset loop — from "the guard's
 resolution may be arbitrarily stale by the time this asset is fetched" to "this address was public
@@ -2665,7 +2666,7 @@ a moment before this specific request went out."
 **What this does NOT reach:** connect.ts's own guarantee (dial the literal address that was
 validated, so the hostname is never resolved again at all) is structurally unavailable to a fetch
 that must go through Chromium's network stack rather than a raw socket this codebase controls.  A
-sufficiently well-timed rebind — flipping between `electron-resolve.ts`'s check and `net.fetch`'s
+sufficiently well-timed rebind — flipping between `electron/resolve.ts`'s check and `net.fetch`'s
 own internal resolution a moment later, against the *same* resolver and cache — is not
 impossible, only far narrower than the original bug (which had two entirely different resolvers,
 and a window as wide as the whole install). This is a genuine platform limitation, not an
@@ -2676,7 +2677,7 @@ model, the fix would need to replace `net.fetch` with a fetch implementation thi
 control the socket layer for (e.g. Node's own `fetch`/`undici`, wired through a custom `Agent`
 whose `connect`/`lookup` can be pinned the way `dialTcp` already pins TCP) — at the cost of losing
 `net.fetch`'s session-awareness and Chromium network-stack integration (proxy config, cookie
-jars, etc.) that `electron-fetch.ts`'s own header names as the reason it exists. That trade was not
+jars, etc.) that `electron/fetch.ts`'s own header names as the reason it exists. That trade was not
 made here: it is a bigger architectural change than one guard fix, and belongs in front of the
 owner, not decided inside this lane.
 
@@ -2807,7 +2808,7 @@ rather than assume it stayed flagged-but-unfixed by coincidence.
 
 Found 2026-09-06, adversarial-review pass on `stream/broker-23-write-pump` (PR #80).
 
-`src/broker/transport/socket-relay.ts`'s teardown path does `pump.stop()` (which `postMessage`s the
+`src/broker/transport/relay/socket.ts`'s teardown path does `pump.stop()` (which `postMessage`s the
 terminal `end` message) immediately followed by `cleanup()` -> `port.close()`, in the same
 synchronous tick. Every "clean" socket close in this stack's design depends on
 `MessagePortMain` actually delivering a message posted immediately before `close()` is called
@@ -2897,7 +2898,7 @@ queued outbound byte to actually drain into the peer's TCP receive window. **A p
 stops reading never lets that happen** — the callback never fires, `destroy()` never resolves,
 and the handle's own `closed` promise never settles.
 
-Everything that actually tears the socket down in `src/broker/transport/socket-relay.ts` (`pump.stop()`,
+Everything that actually tears the socket down in `src/broker/transport/relay/socket.ts` (`pump.stop()`,
 `sink.stop()`, `cleanup()` -- which frees the registry slot and closes the port) is gated on that
 same `closed` promise settling. So: the record is already gone from `handles`/`byGrant` (step 1,
 synchronous), but the underlying OS socket, the port, and the registry slot are all still fully
@@ -2921,7 +2922,7 @@ received bytes the peer had queued, after the app had already called `close()`.
 PR stack did not write. It is raised here, now, for two reasons specific to this stack rather
 than left as a someday-finding: (1) this is the first PR to expose `net.connect`/`close()` to
 page script at all -- before it, nothing reachable from a real page could trigger this path, so
-the bug was real but unreachable; (2) `socket-relay.ts` (new in this PR) is what makes the WRITE
+the bug was real but unreachable; (2) `transport/relay/socket.ts` (new in this PR) is what makes the WRITE
 direction also stay live inside the window, which is new exposure the pre-existing bug did not
 previously have to be evaluated against.
 
@@ -2936,7 +2937,7 @@ always-`denied`. The moment build step 4 ships real grants, this stops being lat
 through to `socket.destroy()` if the peer never drains, so `closed` always eventually settles;
 (b) the more thorough change: stop making relay teardown depend on `closed` settling at all --
 have `closeTree` fire a synchronous "unlinked" hook at the same point it removes the record,
-which `socket-relay.ts` uses to run its teardown immediately, leaving `closed` to report only
+which `transport/relay/socket.ts` uses to run its teardown immediately, leaving `closed` to report only
 the wire outcome afterward. (b) also closes the window that makes the already-known
 `socket.fail()`-throws-after-reap crash (assigned to `fix-80` as B-F9/NEW from `review-security`)
 reachable ON DEMAND rather than by race, since the record-already-gone state is exactly what
@@ -2965,7 +2966,7 @@ currently hold against an uncooperative remote peer.
 >
 > **(b), the thorough one.** `HandleRecord` gained an `unlink` hook that `closeTree()` fires
 > synchronously, in the same pass that removes the record from `handles`/`byGrant`, before any
-> destroy is awaited. `socket-relay.ts` subscribes to it via `FailableTcpSocket.onUnlink`. This
+> destroy is awaited. `transport/relay/socket.ts` subscribes to it via `FailableTcpSocket.onUnlink`. This
 > finishes a design that was already stated rather than adding a new one -- `closeTree`'s own doc
 > already promised "the unlink pass and the promise rejections are SYNCHRONOUS, before any
 > destroy callback runs. That ordering is what makes revocation immediate"; the relay simply was
@@ -3011,7 +3012,7 @@ currently hold against an uncooperative remote peer.
 >
 > **The coordination note in this entry still stands.** Fix (b) makes the record-already-gone
 > state reachable on demand rather than by race, which is what the `socket.fail()`-throws-after-
-> reap crash depended on -- that crash was already fixed on `main` (`socket-relay.ts`'s
+> reap crash depended on -- that crash was already fixed on `main` (`transport/relay/socket.ts`'s
 > `failSocket`/`abortSocket` guards), and those guards are what keep it closed under the new
 > path. Confirmed present, not assumed.
 
@@ -3129,8 +3130,8 @@ as closed by any future security review.
 > **Correction, 2026-09-06 (`stream/backlog-12-comment-budget-gap`).** Resolved in the direction
 > A64 left open: `measurePreamble` (now `findPreambleBlock`) treats an import line as neither a
 > comment nor the end of the opening region, so a header essay after the imports measures the
-> same as one at line one. Two real in-review PRs (`src/broker/transport/port-sink.ts`,
-> `src/preload/orivon-surface.ts`) exposed the gap by placing a 40+/46-line rationale block after
+> same as one at line one. Two real in-review PRs (`src/broker/transport/relay/port-sink.ts`,
+> `src/preload/surface/orivon.ts`) exposed the gap by placing a 40+/46-line rationale block after
 > their imports; both are now correctly flagged. Restores the pre-PR#68 46-line reading for A64's
 > own file, `src/broker/policy/origin.ts`, rather than the 16-line one the bug produced. See A79
 > for what re-measuring correctly also surfaced.
@@ -3143,7 +3144,7 @@ as closed by any future security review.
 > A84 closed it structurally instead.
 >
 > The window this entry describes is bounded by "how fast `closed` settles", and A84's fix stops
-> teardown depending on `closed` at all: `socket-relay.ts` now runs `cleanup()` -- which calls
+> teardown depending on `closed` at all: `transport/relay/socket.ts` now runs `cleanup()` -- which calls
 > `registry.remove(origin, socket.id)` -- from the unlink hook, in the same synchronous pass that
 > removes the handle from `handles`/`byGrant`. So by the time revocation has returned, the
 > `PortRegistry` entry all three control methods look up is already gone, and all three degrade
@@ -3155,7 +3156,7 @@ as closed by any future security review.
 > changed is that the registry can no longer answer for a handle the tables have released, which
 > is what made the gap reachable. If a future change reintroduces a path that registers a socket
 > without unlinking it, this reopens -- so the assertion lives in a test
-> (`socket-relay.test.ts`, "releases the registry slot the moment the handle is unlinked"),
+> (`transport/relay/tests/socket.test.ts`, "releases the registry slot the moment the handle is unlinked"),
 > not only in this paragraph.
 
 ### A79 — fixing A64 correctly reveals FIVE more files already over the Rule 1 budget on `main`, not just the two known ones **[RESOLVED 2026-09-06]**
@@ -3175,19 +3176,19 @@ more in that same shape, none previously flagged, none in `scripts/comment-budge
 - `src/broker/policy/origin.ts` -- 30 lines (the exact file A64 was filed on; see the correction
   there -- this is its restored, accurate measurement)
 - `src/broker/policy/update.ts` -- 52 lines
-- `src/broker/transport/port-pump.ts` -- 45 lines
+- `src/broker/transport/relay/port-pump.ts` -- 45 lines
 - `src/main/index.ts` -- 40 lines
 
 Each was read in full (not just measured) to rule out a detection bug rather than a real
 violation: all five are genuine ALL-CAPS-section rationale blocks sitting between the last import
 and the first substantive declaration -- structurally identical to `port-sink.ts` and
-`orivon-surface.ts`'s own headers, right down to the "argues against a design not chosen" shape
-Rule 1's guard exists to catch. `src/preload/orivon-surface.ts` itself is also on this list in its
+`surface/orivon.ts`'s own headers, right down to the "argues against a design not chosen" shape
+Rule 1's guard exists to catch. `src/preload/surface/orivon.ts` itself is also on this list in its
 CURRENT `main` form (44 lines), independent of `broker-24`'s own larger version (47) -- that
 sibling PR grows an already-hidden violation rather than introducing a new one.
 
 **Why not fixed or baselined here.** Every one of these six files (five above plus
-`orivon-surface.ts`) is owned by a stream other than this one (`comment-budget-gap` owns
+`surface/orivon.ts`) is owned by a stream other than this one (`comment-budget-gap` owns
 `scripts/check-comments.mjs` and its test only), so rewriting any of them is the cross-stream edit
 `parallel-work.md` says to raise, not make. Baselining them is equally not this lane's call:
 `scripts/comment-budget-baseline.txt`'s own header says, in as many words, "Nothing may be ADDED
@@ -3215,7 +3216,7 @@ sequencing note the conductor asked this lane to surface rather than resolve uni
 
 **Resolution, 2026-09-06 (conductor).** Took the AI recommendation's first remedy: dispatched a
 dedicated branch (`stream/backlog-13-comment-budget-cleanup`, PR #85) to fix the five files this
-lane does not own -- the sixth, `orivon-surface.ts`, was already being fixed on
+lane does not own -- the sixth, `surface/orivon.ts`, was already being fixed on
 `stream/broker-24-preload-net-surface` (PR #81) for the same reason. All six now pass the
 corrected checker and merged to `main` before this branch (comment-gate itself), so `main`'s
 `check:comments` never actually goes red -- the sequencing problem this entry raised was avoided,
@@ -3362,7 +3363,7 @@ already applies to every other `denied`.
 
 **Needed by:** lands in the contracts PR (`stream/contracts-14-datagram-wire`, #95) that already
 carries this entry, since `refusals` is a contract addition, not an implementation detail; the
-sink (`datagram-sink.ts`) and preload (`datagram-port.ts`, `main-world-socket.ts`) changes that
+sink (`datagram-sink.ts`) and preload (`ports/datagram.ts`, `main-world-socket.ts`) changes that
 populate it follow in the PRs that already touch those files.
 
 ---
@@ -3844,12 +3845,12 @@ however it is spelled.
 
 **RESOLVED 2026-09-15, in the shape this entry asked for: broker authority, not a shim
 polyfill.** `d-0030` added `OrivonNet.lookup` to `src/contracts/capability-api.ts` (#199);
-`net-capability.ts`'s `lookup`, its control-channel dispatch (`dispatch-net.ts`'s `'net.lookup'`
-case) and its preload surface (`net-surface.ts`'s `netLookupBridge`) landed in #201;
-`src/shim/node-dns.ts`'s `dns.lookup`/`dns.promises.lookup` now call through to it for real,
+`capabilities/net.ts`'s `lookup`, its control-channel dispatch (`transport/dispatch/net.ts`'s `'net.lookup'`
+case) and its preload surface (`surface/net.ts`'s `netLookupBridge`) landed in #201;
+`src/shim/net/dns.ts`'s `dns.lookup`/`dns.promises.lookup` now call through to it for real,
 wired into `module-map.ts`'s `'dns'` entry, closing #205. **Verified against the tree, not
-assumed:** `net-capability.ts` exports `lookup` from `createNetCapability`'s returned object,
-`dispatch-net.ts` has a real case for it, and `node-dns.ts` no longer contains a refusal for
+assumed:** `capabilities/net.ts` exports `lookup` from `createNetCapability`'s returned object,
+`transport/dispatch/net.ts` has a real case for it, and `net/dns.ts` no longer contains a refusal for
 `lookup` itself (only for every other `dns.*` member, unchanged and unrelated to this entry).
 
 **Half-open, tracked separately rather than reopening this entry:** the review above named the
@@ -3966,7 +3967,7 @@ since nothing today relies on `onHeadersReceived` firing for a `protocol.handle`
 
 **Acted on 2026-09-13, lane S4-6-csp:** built the substitution this entry names as the next
 probe's direction, rather than leaving it as a suggestion — `connect-src.ts`'s CSP is set directly
-on the `Response` `src/loader/serve.ts`'s `createAppRequestHandler` already builds and fully
+on the `Response` `src/loader/serve/serve.ts`'s `createAppRequestHandler` already builds and fully
 controls, never via `webRequest`. Not marked RESOLVED: the Electron defect this entry documents
 is still real and still open upstream: nothing here changes electron/electron#45865's status,
 only routes around it. See `src/broker/policy/README.md`'s `connect-src.ts` note for what the
@@ -4110,14 +4111,14 @@ member carrying the accepted `TcpSocket`'s full synchronous shape plus its `port
 `src/contracts/ipc.ts` (#199) — see A167 item 1 for the judgment calls that shape carried
 (typing `port` as the renderer-side `MessagePort` rather than the broker-side
 `MessagePortMain`, matching how `PortLike` already differs per process). The implementation —
-`src/broker/transport/accept-pump.ts` constructing and sending it, `src/preload/server-port.ts`
-and `src/preload/main-world-socket.ts`'s `buildServer` receiving it and building a real
+`src/broker/transport/relay/accept-pump.ts` constructing and sending it, `src/preload/ports/server.ts`
+and `src/preload/surface/main-world-socket.ts`'s `buildServer` receiving it and building a real
 `TcpServer.connections` `ReadableStream` — landed in #203. **Verified against the tree, not
-assumed:** `dispatch-net.ts` has a real `'net.listen'` control-channel case,
+assumed:** `transport/dispatch/net.ts` has a real `'net.listen'` control-channel case,
 `main-world-socket.ts`'s `buildServer` is exercised by `main-world-socket-listen.test.ts`
 against the real `installOrivon` wiring, and `highWaterMark: 0` (the property that keeps the
 broker from accepting a connection nobody asked for) is proven end to end across all three new
-layers by `accept-pump.test.ts`, `server-port.test.ts` and `main-world-socket-listen.test.ts`
+layers by `accept-pump.test.ts`, `ports/tests/server.test.ts` and `main-world-socket-listen.test.ts`
 (A185's own verification). `compatibility-matrix.md`'s `net.listen` row moves to ✅✅✅✅.
 
 **Half-open, tracked separately rather than reopening this entry:** A185 flags whether reusing
@@ -4170,7 +4171,7 @@ A142 is what would close that remaining gap.
 
 **Trigger fired, 2026-09-13.** `app.requestGrant` is now wired onto `window.orivon` (the control
 channel case in `src/broker/transport/ipc.ts`, the preload surface in
-`src/preload/orivon-surface.ts`) — a real page can reach the grant prompt today, even though no
+`src/preload/surface/orivon.ts`) — a real page can reach the grant prompt today, even though no
 production caller registers an app yet (a separate, still-unwired gap). The confusable this entry
 names is unfixed; it is simply no longer theoretical.
 
@@ -4193,7 +4194,7 @@ decision, which is why this is filed rather than fixed.
 **Needed by:** whenever a real app is ported. Most real HTTP APIs redirect somewhere.
 
 **Resolved 2026-09-22 (`d-0039`, AI).** The routed path (`fetch`, `XMLHttpRequest` and
-`EventSource` alike, `src/preload/routed-core.ts`) follows redirects as the Fetch spec does, up
+`EventSource` alike, `src/preload/routed/core.ts`) follows redirects as the Fetch spec does, up
 to 20 hops, with `redirect: 'manual'` and `'error'` honoured and `response.redirected` set. Each
 of the three policy questions above has an answer in the code:
 
@@ -4224,7 +4225,7 @@ Consequences section now names all three divergences together -- CORS, CSP and m
 with the mixed-content half precisely scoped: not "Orivon allows mixed content" in general, only
 that this one routed path skips an enforcement the renderer otherwise performs, for a host a
 person reviewed and granted at install. The recommendation above pointed at
-`src/preload/README.md`'s Design notes, which is where `fetch-route.ts`'s own header comment
+`src/preload/README.md`'s Design notes, which is where `routed/fetch.ts`'s own header comment
 sends a reader for this exact catalogue (body cap, unfollowed redirects, limited body types) --
 but that file is owned by the `broker` stream (`parallel-work.md`'s ownership map puts it beside
 `app.ts`), and this lane's own brief holds it to no file under `src/`. Left as a cross-reference
@@ -4321,12 +4322,12 @@ question.** The app's own confined root is the obvious answer and probably the r
 should be chosen deliberately and written down, because every relative path an app resolves will
 key off it.
 
-### A123 — `IncomingMessage` never gets `.socket`, though `node-https.ts` is written as if it does **[STILL OPEN]**
+### A123 — `IncomingMessage` never gets `.socket`, though `http/https.ts` is written as if it does **[STILL OPEN]**
 
 **Raised 2026-09-10**, post-merge audit (`/code-review` over `src/shim`, PR #131).
 
-`src/shim/node-http-client.ts` builds an `IncomingMessage` with no `.socket`, so `res.socket.<anything>`
-throws. `node-https.ts`'s own header describes behaviour that assumes it is present. Either provide
+`src/shim/http/client.ts` builds an `IncomingMessage` with no `.socket`, so `res.socket.<anything>`
+throws. `http/https.ts`'s own header describes behaviour that assumes it is present. Either provide
 it or correct the header — the two disagreeing is the actual defect, since a reader trusts the header.
 
 ### A124 — the favicon address check does not pin the resolved address, unlike the loader's fetch **[STILL OPEN]**
@@ -4335,7 +4336,7 @@ it or correct the header — the two disagreeing is the actual defect, since a r
 
 #138 gates the favicon fetch behind the T12 address check. The guard resolves the host and then
 `net.fetch` resolves it again independently — **there is no pinning.**
-`src/loader/electron-fetch.ts` *does* pin (`electronFetch(url, pinnedAddresses, signal)`), so the
+`src/loader/electron/fetch.ts` *does* pin (`electronFetch(url, pinnedAddresses, signal)`), so the
 favicon path is deliberately weaker than the install path.
 
 Using Chromium's own `net.resolveHost` for the guard — the same resolver and cache `net.fetch`
@@ -4367,7 +4368,7 @@ main-world installer is delivered.
 **CORRECTION, 2026-09-12.** The headline above was too strong and this entry misled as written.
 `installFetchRoute` itself genuinely cannot be split -- that part stands, and it is the real
 constraint -- but the FILE could be, and was: PR #157 moved `exposeFetchRoute`, the ordinary
-preload wiring, into `src/preload/expose-fetch-route.ts`, leaving `fetch-route.ts` at 491 lines
+preload wiring, into `src/preload/expose-fetch-route.ts`, leaving `routed/fetch.ts` at 491 lines
 with real headroom. The seam is the one the file's own header already named: a payload serialised
 into the main world that may reference no import, versus preload code that imports freely.
 
@@ -4376,7 +4377,7 @@ PR I twice wrote code that passed every unit test and would have broken in a rea
 extracting a helper into a module the serialised function cannot import, once by referencing the
 module-level `ROUTED_FETCH_MAX_BODY_BYTES`, which is only a MIRROR of a literal kept inside the
 function body. Having the two kinds of code adjacent in one file is what made both mistakes easy.
-`src/preload/tests/fetch-route.test.ts` now carries a guard that fails if `installFetchRoute`'s
+`src/preload/routed/tests/fetch.test.ts` now carries a guard that fails if `installFetchRoute`'s
 source text references any module-level identifier.
 
 **What is still open** is narrower than the original entry: the serialised function is ~440 lines
@@ -4664,7 +4665,7 @@ each module target exports a default whose value is a Proxy -- which changes how
 owner's.
 
 > **Resolved 2026-09-14, `stream/shim-12-named-refusals`.** `refusingProxy` moved on the
-> default-export of `node-dns.ts`, `node-fs.ts`, `node-http.ts`/`node-https.ts` and `node-net.ts`
+> default-export of `net/dns.ts`, `fs/fs.ts`, `http/http.ts`/`http/https.ts` and `net/net.ts`
 > -- reused directly from `src/shim-electron/unimplemented.ts` rather than copied, after
 > generalising it so `classify` returns the `Error` to throw directly instead of a record
 > `shim-electron` converted via a hardcoded `refuse()` call. This package's own gaps get their
@@ -4680,7 +4681,7 @@ owner's.
 > line if called); it now throws `OrivonShimError { api: 'dns.resolve4', reason: 'not-built',
 > message: "orivon-node-shim: dns.resolve4 is not supported -- ... (D-0006, ...)" }` the instant
 > it is read. `fs.copyFile` the same way, reason `'unimplemented'`. Both proven in
-> `src/shim/tests/node-dns.test.ts` and `node-fs.test.ts`.
+> `src/shim/net/tests/dns.test.ts` and `fs/tests/fs.test.ts`.
 >
 > **`net.Socket`/`dgram.Socket` instances are deliberately NOT wrapped the same way** -- this
 > pass's one real design finding, beyond applying #151's own mechanism. `refusingProxy` throws on
@@ -4690,7 +4691,7 @@ owner's.
 > would have caused. `class` prototypes are also non-writable, so the wrap is not mechanically
 > available there the way it is for a plain exported object. Instead both classes gained the
 > specific real methods a porting app is likely to hit as present functions, in the same
-> "present, throws when called" shape `node-fs-unsupported.ts`/`node-http-unsupported.ts` already
+> "present, throws when called" shape `fs/unsupported.ts`/`http/unsupported.ts` already
 > use for their own decided gaps: `ref()`/`unref()` are safe no-ops (real Node's own contract for
 > them is "no meaning, return `this`", so a no-op is correct, not a shortcut), `setTimeout`
 > (net.Socket) and `setBroadcast`/`setMulticastTTL`/`setMulticastLoopback`/`addMembership`/
@@ -4732,7 +4733,7 @@ skip -- there is a passing guard case that asserts *"is skipped: spike/app/node_
 k-rpc-socket is not present in this checkout"* -- but a green run still reads as "verified".
 
 **Why this is filed rather than fixed.** The 2026-09-11 post-merge audit found three real
-defects in `node-dgram-socket.ts` (a second `bind()` orphaning the first handle, the documented
+defects in `net/dgram-socket.ts` (a second `bind()` orphaning the first handle, the documented
 array `send()` form throwing, `close()` emitting twice) that a real k-rpc-socket run would very
 likely have surfaced. They survived a whole unattended build run AND a verified
 `/claude-security` scan because the one test that exercises a real caller cannot execute. The
@@ -4896,7 +4897,7 @@ all-or-nothing, and turning it into a per-row choice later is a change to the di
 > or wire `requestGrant` to pass a per-capability choice through -- that is real engineering
 > against a real dialog, left for whichever build-step-4 lane picks up the install prompt.
 >
-> **Update 2026-09-14, lane `F-granular`.** That lane landed: `src/loader/manifest.ts` now
+> **Update 2026-09-14, lane `F-granular`.** That lane landed: `src/loader/manifest/manifest.ts` now
 > parses `consentGranularity`, and `src/main/consent/install-consent.ts`'s `requestInstallConsent`
 > branches its staged Allow-all / Choose-individually / Deny-all dialog sequence on
 > `manifest.consentGranularity === 'per-capability'`. `'per-capability'` in a manifest is no
@@ -4935,14 +4936,14 @@ is for, so this is filed as the thing to look at there rather than as an open de
 2026-09-13 update block, above — this entry is the actionable defect that measurement found,
 not a duplicate of it.
 
-`fetch-bundle.ts`'s same-origin and canonical-path checks (`fetchBundle`'s manifest and
+`fetch/bundle.ts`'s same-origin and canonical-path checks (`fetchBundle`'s manifest and
 asset-loop checks alike) read `response.url` as their sole source of truth for where fetched
 bytes actually came from. Measured directly: `net.fetch`'s `Response.url` is `''` on every
 ordinary, non-redirected, 200 OK response — not sometimes wrong, not wrong only for a narrow
 input shape, unconditionally empty across 20 varied request shapes and both `http:`/`https:`,
-using `electron-fetch.ts`'s own fetch options. `originFromUrl('')` is `null` (`new URL('')`
+using `electron/fetch.ts`'s own fetch options. `originFromUrl('')` is `null` (`new URL('')`
 throws with no base, confirmed), so `manifestOrigin !== canonicalOrigin`
-(`src/loader/fetch-bundle.ts`'s manifest check) is always true, and `fetchBundle` rejects every
+(`src/loader/fetch/bundle.ts`'s manifest check) is always true, and `fetchBundle` rejects every
 manifest with "manifest was served from a different origin (invalid) than requested" before
 ever reaching the asset loop — which has the identical shape and would reject the same way.
 
@@ -4970,18 +4971,18 @@ content) merges — this is not a latent risk to plan around, it is a function t
 succeed today.
 
 > **Fixed 2026-09-13, lane S4-A141-fetch-url.** Took the AI recommendation above after
-> independently re-deriving it, rather than on authority: `fetch-bundle.ts`'s four `response.url`
+> independently re-deriving it, rather than on authority: `fetch/bundle.ts`'s four `response.url`
 > reads (manifest origin, manifest canonical path, asset origin, asset canonical path) now derive
 > from the REQUESTED url (`manifestUrl`/`assetUrl`) instead. The checks themselves were kept, not
 > deleted, even though the manifest pair is now provably tautological (`manifestUrl` is built by
 > string concatenation two lines above) and the asset pair duplicates a pre-fetch check already
-> present — both are documented as such in `fetch-bundle.ts` rather than silently left looking
-> load-bearing. `electron-fetch.ts`'s `redirect: 'error'` was extracted into a separately exported
+> present — both are documented as such in `fetch/bundle.ts` rather than silently left looking
+> load-bearing. `electron/fetch.ts`'s `redirect: 'error'` was extracted into a separately exported
 > `netFetch` function specifically so a test could exercise it without also having to pass
-> `electronFetch`'s own loopback-refusing address guard, and `fetch-budget.ts`'s `Fetch` type now
-> states as a REQUIREMENT (not only electron-fetch.ts's own choice) that any implementation must
-> refuse to follow a redirect — fetch-bundle.ts's origin confinement rests entirely on that now,
-> with no independent backstop left inside fetch-bundle.ts itself.
+> `electronFetch`'s own loopback-refusing address guard, and `fetch/budget.ts`'s `Fetch` type now
+> states as a REQUIREMENT (not only electron/fetch.ts's own choice) that any implementation must
+> refuse to follow a redirect — fetch/bundle.ts's origin confinement rests entirely on that now,
+> with no independent backstop left inside fetch/bundle.ts itself.
 >
 > **Three existing tests turned out to depend on the mechanism being removed** (all simulated a
 > redirect via the test stub's `response.url` diverging from the request) and were replaced rather
@@ -5010,7 +5011,7 @@ succeed today.
 > local test server could ever use, so `electronFetch` cannot reach a real `net.fetch` call at all
 > through this API without a genuinely public, routable HTTPS endpoint — which would make the test
 > non-hermetic and is correctly out of scope (`docs/development/testing.md`). The redirect and
-> content-draining proofs above call `netFetch` (electron-fetch.ts's own guard-free primitive,
+> content-draining proofs above call `netFetch` (electron/fetch.ts's own guard-free primitive,
 > extracted for exactly this reason) directly instead, through the real `fetchWithBudget`.
 >
 > **Verified:** `npm run typecheck`, `npm test` (3789 passed, 3 skipped, unchanged from before this
@@ -5028,11 +5029,11 @@ succeed today.
 **2026-09-22: same-origin redirects are now followed, each hop checked (`d-0059`).** Refusing
 every redirect also refused real static hosts, which answer `/index.html` with a redirect to `/`
 (Cloudflare Pages, Vercel) or `/app` with `/app/` (GitHub Pages). `netFetch`
-(`src/loader/electron-fetch.ts`) now fetches with `redirect: 'manual'` and shows every hop to
+(`src/loader/electron/fetch.ts`) now fetches with `redirect: 'manual'` and shows every hop to
 `redirectRefusal` before taking it: same scheme, host and port, at most `MAX_REDIRECTS` (5), or
 the request is aborted. The reasoning above still holds, with "never follows a redirect" narrowed
 to "never follows one off the origin being installed": the bytes of a followed hop come from that
-origin and are pinned under the path that was requested. `fetch-budget.ts`'s `Fetch` type states
+origin and are pinned under the path that was requested. `fetch/budget.ts`'s `Fetch` type states
 the narrowed requirement, and `test/e2e-loader-adapter.test.ts` exercises it against a real
 redirecting server.
 
@@ -5102,7 +5103,7 @@ owner's fix needed neither.
 
 **Raised 2026-09-13**, while wiring `app.requestGrant` onto `window.orivon` for the first time
 (compatibility-matrix.md Table 4 row 1). `contracts/ipc.ts`'s rule 2 requires every control call
-to carry an explicit `timeoutMs`, and every existing budget in `orivon-surface.ts`'s `TIMEOUT_MS`
+to carry an explicit `timeoutMs`, and every existing budget in `surface/orivon.ts`'s `TIMEOUT_MS`
 table is sized against real I/O it bounds (a dial, a disk read). This call waits on a native
 `dialog.showMessageBox`, i.e. a person, which has no such bound -- 120 seconds is a guess, not a
 measurement.
@@ -5128,7 +5129,7 @@ prompt settling late -- e.g. a `app.grants()` change event -- instead.
 ### A143 -- a cross-origin request inside an app's own partition is denied, not proxied to the real network **[RESOLVED 2026-09-14 -- lane F-reach]**
 
 **Raised 2026-09-13**, lane S4-3-serve, build step 4's serve-from-cache item
-(`ADR-0007`'s other half: `src/loader/serve.ts`, `src/loader/electron-serve.ts`).
+(`ADR-0007`'s other half: `src/loader/serve/serve.ts`, `src/loader/electron/serve.ts`).
 
 `session.fromPartition(...).protocol.handle('https', handler)` intercepts the WHOLE `https`
 scheme for that session -- not merely requests addressed to the app's own host. Confirmed against
@@ -5163,12 +5164,12 @@ closed default is reversible; the reverse is not.
 partition -- not before, since nothing in this MVP's own fixture/flagship apps does today.
 
 **Resolved 2026-09-14, owner decision: let apps reach third-party hosts they were granted.**
-`src/loader/serve.ts`'s handler no longer denies a cross-origin request outright -- it now asks
+`src/loader/serve/serve.ts`'s handler no longer denies a cross-origin request outright -- it now asks
 `fetchThirdParty` (same file), which authorises the request against the app's LIVE `https.connect`
 grant via `checkConnectSecure` (`src/broker/policy/connect-secure.js`) -- the SAME function
 `orivon.net.connectSecure` itself calls, so this can never authorise a request that capability
-would refuse -- and, if allowed, performs the real fetch via `src/loader/serve-reach.ts`'s
-`nodeReachDial`, wired in by `src/loader/electron-serve.ts`.
+would refuse -- and, if allowed, performs the real fetch via `src/loader/reach/reach.ts`'s
+`nodeReachDial`, wired in by `src/loader/electron/serve.ts`.
 
 **What stops this being an open proxy, stated explicitly rather than left implicit:** (1) only
 requests already inside a SPECIFIC app's own partition ever reach this handler at all --
@@ -5187,8 +5188,8 @@ so a hostile response body served through this path cannot execute as script.
 `checkConnectSecure`'s trust model binds identity through the TLS handshake itself; a plain
 connection has none, and `nodeReachDial`'s Node-`https`-based transport (chosen over Electron's
 `net.fetch` specifically so this could be proven end to end over a real TLS handshake -- see
-`serve-reach.ts`'s own header) has no way to pin a request to an address already checked while
-keeping the real hostname for the connection, the same limitation `electron-fetch.ts`'s own A66
+`reach/reach.ts`'s own header) has no way to pin a request to an address already checked while
+keeping the real hostname for the connection, the same limitation `electron/fetch.ts`'s own A66
 already names for a different caller. Authorising a plain request would therefore check one
 address and could legitimately connect to another moments later (T12, DNS rebinding), for a
 general, attacker-URL-reachable surface -- a materially different risk than A66's own narrow,
@@ -5198,7 +5199,7 @@ silently narrowed.
 **CSP widened alongside the handler, from the SAME grant, not a second one.**
 `img-src`/`font-src`/`media-src` now widen to the origin's `https.connect` grant
 (`connect-src.ts`'s `reachSourcesFor`, reusing `connectSrcFor`'s own translation -- Rule 3;
-the header itself is assembled in `src/loader/serve-csp.ts`) -- without this, `default-src
+the header itself is assembled in `src/loader/serve/csp.ts`) -- without this, `default-src
 'self'`'s fallback would keep refusing the very image/font/media loads this decision exists to
 allow, before a request could ever reach the handler above. `connect-src` itself was left
 untouched here, still sourced from `tcp.connect` alone; since 2026-09-22 it also carries the
@@ -5557,7 +5558,7 @@ author.
 correction, not just a confirmation.** `A143`'s own resolution note explains what this lane built:
 apps can now reach a granted third-party host, so "the remote-data scenario this entry is about"
 is real starting with this PR, exactly as predicted. **But the premise "it does not exist yet" was
-already stale before this lane touched anything.** `src/preload/fetch-route.ts`'s `installFetchRoute`
+already stale before this lane touched anything.** `src/preload/routed/fetch.ts`'s `installFetchRoute`
 (ADR-0017) routes an app tab's own `fetch()` to `orivon.net.connect`/`connectSecure` for a granted
 host, is already wired unconditionally in `preload/app.ts`'s production path, and
 `test/e2e-fetch-routing.test.ts` already proves it reaches a granted host and returns real bytes
@@ -5672,7 +5673,7 @@ mechanism.
 is already the named lane for it as of this writing.
 
 > **Update 2026-09-15.** `stream/trust-02-pin-coverage` (PR #198) landed the measurement this
-> entry asked for: `src/loader/pin-coverage.ts` and `electron-serve.ts`'s `pinCoverageFor` now
+> entry asked for: `src/loader/serve/pin-coverage.ts` and `electron/serve.ts`'s `pinCoverageFor` now
 > track, per origin, how many requests and bytes came from the pin versus a granted third-party
 > host, and `src/trust/delivery-ladder.ts`'s `DeliveryHistoryInput`/`DeliveryEvidence` now carry
 > that as a `pinCoverage` field end to end.
@@ -5792,9 +5793,9 @@ or needs to flag further.
 
 **Raised 2026-09-13**, `S4-7-e2e` lane, while building the end-to-end app-loader journey test
 (`test/e2e-app-loader-journey.test.ts`). The first test to bundle a real `src/shim/` module
-(`node-net.ts`) with esbuild and run it inside a real browser page, rather than injecting a fake
+(`net/net.ts`) with esbuild and run it inside a real browser page, rather than injecting a fake
 `orivon.net.connect` and calling shim internals directly (every existing `src/shim/tests/*`
-suite's own pattern) -- so this is the first place a real dependency of `node-net-socket.ts`'s
+suite's own pattern) -- so this is the first place a real dependency of `net/socket.ts`'s
 `Duplex` base class (`stream-browserify`, via `module-map.ts`'s own alias) actually ran end to
 end.
 
@@ -5840,7 +5841,7 @@ on top of it) is expected to load successfully.
 > call's own real main-world `window`) via the exact `executeInMainWorld` mechanism this entry's
 > own AI recommendation named as "the natural fit."
 >
-> **Gated on the identical `--orivon-app-tab` flag `fetch-route.ts` already reads**
+> **Gated on the identical `--orivon-app-tab` flag `routed/fetch.ts` already reads**
 > (`src/main/shell/tab-view.ts`'s `appTabArgsFor`) -- CLAUDE.md's own instruction on this exact defect
 > is that shimmed Node globals must never reach an ordinary browsing tab. `window.orivon` itself
 > is exposed to every tab regardless (an ungranted caller only ever sees denials through it),
@@ -5851,7 +5852,7 @@ on top of it) is expected to load successfully.
 > unit tests to begin with): `test/app-loader-journey-shim-entry.ts`'s own `installGlobals()`
 > workaround call is gone, and `test/e2e-app-loader-journey.test.ts` now registers its fixture's
 > origin (via `src/main/dev/dev-grant.ts`'s hook, with an empty pattern list -- "an empty grant
-> answers exactly like no grant at all," `src/broker/net-capability.ts`'s own `connect()`)
+> answers exactly like no grant at all," `src/broker/capabilities/net.ts`'s own `connect()`)
 > BEFORE navigating, so the fixture's tab is flagged for its very first load exactly like a real
 > registered app's tab would be, then asserts `window.process` is installed before exercising
 > the shim at all. See that test's own new checks for the real-launch evidence.
@@ -5871,12 +5872,12 @@ the main world (where `main-world-socket.ts`'s bridge runs, per `A113`'s own acc
 constructing a real `OrivonError`) to the page's own promise rejection -- never a real `Error`
 instance, despite carrying every field of one correctly as an own, enumerable property.
 
-**Where this actually breaks.** `src/shim/node-http-errors.ts`'s `isOrivonError` is `value
+**Where this actually breaks.** `src/shim/node-errors.ts`'s `isOrivonError` is `value
 instanceof Error && typeof value.code === 'string'` -- the `instanceof Error` half is false for
 EVERY real denial that crosses this specific boundary, so `toNodeError`'s fallback branch always
 fires instead: `code`/`orivonCode` become the generic `'internal'`, and the message becomes
 `String(value)` -- literally the string `"[object Object]"`, since a plain object has no useful
-`toString()`. `src/shim/node-net-socket.ts`'s `Socket` class calls `toNodeError` on every
+`toString()`. `src/shim/net/socket.ts`'s `Socket` class calls `toNodeError` on every
 `dial()` rejection, so this fires for every real net-shim denial in a real Electron launch, not a
 contrived case -- `test/e2e-app-loader-journey.test.ts`'s two refusal checks pin this exact,
 current value (`orivonCode === 'internal'`) rather than the intended `'denied'`, specifically so
@@ -5907,7 +5908,7 @@ other failure through `require('net')`/`require('http')`/`require('https')`.
 
 > **Resolved 2026-09-13, S4-X-shimfix. Both layers this entry named, not one or the other.**
 >
-> **Producer (`src/preload/main-world-socket.ts`):** every `bridge.*` call `installOrivon`
+> **Producer (`src/preload/surface/main-world-socket.ts`):** every `bridge.*` call `installOrivon`
 > makes -- not only `netConnect`, every one that can reject with something the isolated world
 > built via `../orivon-error.ts`'s own plain-object `toOrivonError` -- is now wrapped in a new
 > local `callRevived`, which rebuilds a real `Error` from any rejection shaped like one of ours
@@ -5919,7 +5920,7 @@ other failure through `require('net')`/`require('http')`/`require('https')`.
 > a second crossing (everything it feeds is already past one), so nothing was lost by fixing it
 > alongside the entry that was actually measured.
 >
-> **Consumer (`src/shim/node-http-errors.ts`):** kept, as defence in depth, not dropped once the
+> **Consumer (`src/shim/node-errors.ts`):** kept, as defence in depth, not dropped once the
 > producer fix landed. `isOrivonError` is now structural (`name`/`message`/`code` all present and
 > typed right) rather than `instanceof Error`, exactly as this entry's own AI recommendation
 > said -- but with the closed-enum check this entry's recommendation did NOT include: `code`
@@ -5942,10 +5943,10 @@ other failure through `require('net')`/`require('http')`/`require('https')`.
 > change, not a silent behaviour shift), now pin `orivonCode === 'denied'` and pass against a
 > real Electron launch -- see this PR's own verification output for the actual before/after
 > values from that launch, not just the unit tests added alongside (`src/shim/tests/
-> node-http-errors.test.ts`, `src/preload/tests/main-world-socket.test.ts`).
+> tests/node-errors.test.ts`, `src/preload/surface/tests/main-world-socket.test.ts`).
 >
 > **A113 (`docs/open-questions.md`), the same family, explicitly NOT touched by this fix, and
-> not narrowed by it either.** A113 is about `orivon-surface.ts`'s `exposeFallback()` path --
+> not narrowed by it either.** A113 is about `surface/orivon.ts`'s `exposeFallback()` path --
 > taken only when `contextBridge.executeInMainWorld` is absent or throws, so `installOrivon`
 > never runs at all on that path, and neither `callRevived` nor the local `toOrivonError` this
 > entry fixed ever sees anything on it. On that path a thrown `OrivonError` loses its `.code`
@@ -5968,7 +5969,7 @@ building `pathname`, before `isValidCanonicalPath` ever runs. Measured: `new
 URL('https://probe.example/%2e%2e/evil.js').pathname === '/evil.js'`, and the same for a
 two-level `.../%2e%2e/%2e%2e/...` case.
 
-**Not an exploit, and the reviewer said so plainly.** `fetch-bundle.ts`'s asset loop is
+**Not an exploit, and the reviewer said so plainly.** `fetch/bundle.ts`'s asset loop is
 protected upstream -- `manifest.ts`'s `validateRelativePath` already rejects a dot segment (or
 its percent-encoded spelling) in a manifest-declared `entry`/`assets` string before it is ever
 joined into a URL, per-segment, for exactly this reason (see that function's own comment on why
@@ -6002,7 +6003,7 @@ elsewhere, 38/38 in the touched file, 1900/1900 across `src/broker/policy/` and 
 ### A155 -- nothing verified that `electronFetch` still delegates to a call carrying `redirect: 'error'` **[RESOLVED 2026-09-14 -- ADV-fix2]**
 
 **Raised 2026-09-14**, same adversarial review as A154, confirmed independently. A141's fix
-(above) made `redirect: 'error'` the ONLY thing keeping `fetch-bundle.ts`'s same-origin and
+(above) made `redirect: 'error'` the ONLY thing keeping `fetch/bundle.ts`'s same-origin and
 canonical-path checks honest -- that entry's own resolution block says the remaining checks are
 "provably tautological" -- and the requirement lives in a doc comment on `netFetch`, not in the
 type system. `test/e2e-loader-adapter.test.ts`'s "THE LOAD-BEARING PROOF" (its own words) drives
@@ -6026,7 +6027,7 @@ Design notes). No genuinely public, routable HTTPS endpoint exists for this repo
 target, so a real redirect through `electronFetch`'s own guard is not reachable hermetically.
 
 **Fixed 2026-09-14, ADV-fix2**, by closing the seam at the boundary that actually matters
-instead: a new `src/loader/tests/electron-fetch.test.ts`, mocking `electron`'s `net.fetch`/
+instead: a new `src/loader/electron/tests/fetch.test.ts`, mocking `electron`'s `net.fetch`/
 `net.resolveHost` (the same pattern `src/main/tests/favicon.test.ts` already uses for the same
 reason), asserting the EXACT arguments `net.fetch` receives -- both through `netFetch` directly
 and through `electronFetch` once its guard passes, on both of the guard's two branches (a public
@@ -6046,7 +6047,7 @@ tests with `TypeError: net.request is not a function`. Both times, the three gua
 kept passing, confirming they exercise a genuinely different code path rather than coincidentally
 passing alongside a broken one.
 
-**Not touched:** `src/loader/electron-fetch.ts` itself, `test/e2e-loader-adapter.test.ts`, and
+**Not touched:** `src/loader/electron/fetch.ts` itself, `test/e2e-loader-adapter.test.ts`, and
 `test/loader-adapter-entry.ts` -- this was a coverage gap, not a code defect, and the e2e suite's
 own real-Electron, real-redirecting-server proof of `redirect: 'error'` stays exactly as
 valuable as it already was for the one thing only a real process can prove (a real
@@ -6204,7 +6205,7 @@ first `registerApp` call for that origin (`grantsHydrated`'s own doc: re-validat
 grant needs a manifest), and `registerApp`'s only production callers run after a page has
 already loaded and reported its manifest hint -- which cannot happen before that first document
 is already served with whatever CSP `connectSrcFor` computes from an empty grant list.
-`src/loader/tests/electron-serve.test.ts`'s new "restorePinnedServing across a restart" suite
+`src/loader/electron/tests/serve.test.ts`'s new "restorePinnedServing across a restart" suite
 proves both halves against a real `createBroker`/`GrantLedger`/`LedgerStorage`: the first
 request truly is `'self'`-only despite a real persisted grant, and the SAME already-registered
 handler correctly reflects the grant on its very next request once `registerApp` runs -- so "a
@@ -6249,14 +6250,14 @@ already reads off disk for **display only**, never as live authority (`A137`), s
 nothing to what is actually served or authorised. It converts a silent degradation into a
 detectable one (a support session or a developer reading the log can see it happening); it does
 not tell the affected person anything, because no UI reads this signal yet. That is the honest
-extent of what this lane closed -- see `src/loader/electron-serve.ts`'s `hasUnhydratedPersistedGrant`.
+extent of what this lane closed -- see `src/loader/electron/serve.ts`'s `hasUnhydratedPersistedGrant`.
 
 **AI recommendation, not an owner decision:** resolve this alongside `A146`, since fixing one all
 but fixes the other, rather than building a second, narrower "reload this one tab" mechanism
 just for grants.
 
 **Update 2026-09-14, lane F-reach -- partially resolved, and the reasoning for why only partly is
-the more important part.** `A143`'s own resolution made `src/loader/serve.ts`'s `fetchThirdParty`
+the more important part.** `A143`'s own resolution made `src/loader/serve/serve.ts`'s `fetchThirdParty`
 a SECOND, independent, per-request LIVE gate for `https.connect` -- reading `broker.app.grants`
 fresh and deciding with `checkConnectSecure`, exactly the function `orivon.net.connectSecure`
 itself calls. That changes the answer to this entry's own framing question ("work out whether
@@ -6266,7 +6267,7 @@ permissive grants nothing by itself** -- it only decides whether the browser att
 the handler still, correctly, refuses if the grant was not real. So `img-src`/`font-src`/
 `media-src` (this same PR's own new CSP directives, sourced from `https.connect`) now widen from
 `persistedAppsSync`'s real, disk-persisted state during the narrow post-restart window, via
-`electron-serve.ts`'s `secureHeaderPatternsFor` -- the same-shaped fallback this entry's own
+`electron/serve.ts`'s `secureHeaderPatternsFor` -- the same-shaped fallback this entry's own
 "what this lane did instead" section already used for its diagnostic, now feeding the actual
 header rather than only a log line.
 
@@ -6280,9 +6281,9 @@ other live re-check at all. Widening `connect-src` from a persisted-but-not-yet-
 would therefore widen a REAL authorisation for that one request type, exactly the mistake `A137`
 forbids -- the reasoning that makes the `https.connect` fallback above safe (a live handler
 underneath re-checks every actual request) simply does not hold for `WebSocket`. See
-`src/loader/electron-serve.ts`'s `grantedConnectPatternsFor` and `secureHeaderPatternsFor`, whose
+`src/loader/electron/serve.ts`'s `grantedConnectPatternsFor` and `secureHeaderPatternsFor`, whose
 doc comments now cross-reference this distinction directly, and the two tests in
-`electron-serve.test.ts` proving each side (`'A158 STILL OPEN FOR connect-src'` /
+`electron/tests/serve.test.ts` proving each side (`'A158 STILL OPEN FOR connect-src'` /
 `'A158 RESOLVED FOR THE HEADER'`).
 
 **So, precisely, as of lane F-reach:** RESOLVED for `img-src`/`font-src`/`media-src` (the two new
@@ -6295,7 +6296,7 @@ directives that PR introduces). STILL OPEN for `connect-src` -- a restored app's
 > from, and the owner supplied the insight that makes an EARLIER read safe: *"changing the manifest
 > changes also the hash, so a change on manifest is enough to re-start the status of permissions,
 > the same a new added/modified file would."* The manifest lives at `/.well-known/orivon.json`
-> **inside the pinned bundle**, as a leaf of `ADR-0009`'s hash tree, and `serve-verify.ts`'s
+> **inside the pinned bundle**, as a leaf of `ADR-0009`'s hash tree, and `serve/verify.ts`'s
 > `verifyPinnedTree` recomputes that whole tree against `pin.bundleHash` before ANY byte of the
 > bundle is servable. So the manifest on disk is not "a saved value" in the sense `A137` ruled
 > out -- it is cryptographically tied to the exact bundle a person already consented to, and
@@ -6320,9 +6321,9 @@ directives that PR introduces). STILL OPEN for `connect-src` -- a restored app's
 > **The mechanism.** `GrantLedger.hydrateFromPinnedManifest` (`src/broker/grants/grant-ledger.ts`)
 > runs the SAME `hydrateGrants` re-validation `registerApp` itself performs, callable independently
 > of it, gated on the SAME `grantsHydrated` flag so it is a no-op once the real `registerApp` has
-> already spoken. `src/loader/serve.ts`'s `verifiedManifestFor` shares its whole-tree verification
+> already spoken. `src/loader/serve/serve.ts`'s `verifiedManifestFor` shares its whole-tree verification
 > with `createAppRequestHandler` (one `resolveVerifiedBundle` helper, not two copies) and answers
-> `undefined` for anything short of a fully re-verified pin. `electron-serve.ts`'s
+> `undefined` for anything short of a fully re-verified pin. `electron/serve.ts`'s
 > `registerServingFor` calls both, in that order, BEFORE `registerAppOrigin` ever wires a handler
 > onto the session -- so there is no window in which a request could reach a handler whose grants
 > are not already live. **The later, freshly fetched manifest stays fully authoritative**:
@@ -6333,14 +6334,14 @@ directives that PR introduces). STILL OPEN for `connect-src` -- a restored app's
 > covered by the manifest in force is refused entirely, not narrowed to the covered subset -- a
 > pre-existing rule, unchanged by this lane).
 >
-> **What this closes, concretely.** `liveGrantedPatternsFor` (`electron-serve.ts`, the function
+> **What this closes, concretely.** `liveGrantedPatternsFor` (`electron/serve.ts`, the function
 > `grantedConnectPatternsFor`/`secureHeaderPatternsFor` now both delegate to -- Rule 3, one
 > implementation) reads `broker.app.grants` directly, with no disk-fallback special case for
 > either header any more: by the time either can be called, the ledger already holds the truth.
 > `authoriseReachFor`'s live gate for a real third-party `https.connect` request, and any live
 > capability call an app's own page makes (`orivon.net.connect`/`connectSecure`, reading the SAME
 > `ledger.currentGrant`), see the identical, already-hydrated answer. Proven end to end in
-> `src/loader/tests/electron-serve.test.ts`'s "restorePinnedServing across a restart" suite,
+> `src/loader/electron/tests/serve.test.ts`'s "restorePinnedServing across a restart" suite,
 > against a real `GrantLedger`/`createBroker`/`LedgerStorage`, not a stub: a real, persisted
 > `tcp.connect` grant widens the FIRST served document's `connect-src` with no registerApp call
 > ("A158 RESOLVED FOR connect-src"); the equivalent `https.connect` case widens `img-src`/
@@ -6356,18 +6357,18 @@ directives that PR introduces). STILL OPEN for `connect-src` -- a restored app's
 > design but because it blocked verifying this fix honestly.** Building a REAL pinned manifest that
 > declares `https.connect` (needed so `hydrateFromPinnedManifest`'s re-validation has something
 > genuine to check against, rather than a manifest and a grant that merely happened to agree by
-> construction) hit `src/loader/manifest-capabilities.ts`'s `readNet`, which had never implemented
+> construction) hit `src/loader/manifest/capabilities.ts`'s `readNet`, which had never implemented
 > `net.https` at all -- `NET_KEYS` listed only `tcp`/`udp`/`concurrentSockets`, so ANY manifest
 > declaring `https.connect` was rejected outright by `parseManifest`, both at install
-> (`fetch-bundle.ts` calls the identical function) and every time a pinned bundle's manifest is
+> (`fetch/bundle.ts` calls the identical function) and every time a pinned bundle's manifest is
 > read back. Filed and fixed as **A164** below -- every existing test exercising `https.connect`
 > injected the grant as a raw callback, never through a real declared-and-parsed manifest, which
 > is exactly why this had no test that could have caught it.
 >
 > Verified: `src/broker/grants/tests/grant-ledger-pin-hydration.test.ts` (the `GrantLedger`
 > contract in isolation -- idempotence, the no-op-once-registered case, the fresh-GrantId rule, the
-> owner's own narrowing/dropping scenario), `src/loader/tests/serve.test.ts`'s `verifiedManifestFor`
-> suite, and the `electron-serve.test.ts` suite named above.
+> owner's own narrowing/dropping scenario), `src/loader/serve/tests/serve.test.ts`'s `verifiedManifestFor`
+> suite, and the `electron/tests/serve.test.ts` suite named above.
 
 ### A159 -- `scripts/smoke.mjs` leaked its temp profile on every run, and the file is now exactly at its line ceiling **[RESOLVED 2026-09-14 in part; the ceiling is STILL OPEN]**
 
@@ -6528,10 +6529,10 @@ landed -- exact output in this lane's final report / PR body.
 
 ### A163 -- third-party reach (A143) only proxies `https:`; a plain `http:` cross-origin request inside an app's own partition stays denied **[AI-REC -- not an owner decision]**
 
-**Raised 2026-09-14**, lane F-reach, while deciding how `fetchThirdParty` (`src/loader/serve.ts`)
+**Raised 2026-09-14**, lane F-reach, while deciding how `fetchThirdParty` (`src/loader/serve/serve.ts`)
 should authorise a cross-origin request `A143` newly lets through to the real network.
 
-`ADR-0017`'s own routed `fetch()` (`src/preload/fetch-route.ts`) already splits on scheme:
+`ADR-0017`'s own routed `fetch()` (`src/preload/routed/fetch.ts`) already splits on scheme:
 `https:` goes through `orivon.net.connectSecure` (`https.connect`, hostname-bound by the TLS
 handshake itself), `http:` goes through `orivon.net.connect` (`tcp.connect`, resolved-address-bound
 by `checkConnect`'s own "resolve once, check every answer" discipline). `fetchThirdParty` mirrors
@@ -6543,7 +6544,7 @@ what `tcp.connect` the app holds.
 dialling the EXACT resolved literal the check just validated, never re-resolving the hostname
 afterwards (`connect.ts`'s own header: "RESOLVE ONCE, check EVERY address that came back, and hand
 the caller the validated literals to dial"). `fetchThirdParty`'s actual network I/O
-(`serve-reach.ts`'s `nodeReachDial`) is Node's own `https` module, dialling by HOSTNAME -- there is
+(`reach/reach.ts`'s `nodeReachDial`) is Node's own `https` module, dialling by HOSTNAME -- there is
 no way to hand it a pre-validated literal address while keeping the real hostname for the
 connection and the `Host` header. Authorising a plain request here would therefore check one
 address (at grant-authorisation time) and could legitimately connect to a DIFFERENT one moments
@@ -6551,7 +6552,7 @@ later if the name's DNS answer changes in between (T12, DNS rebinding) -- the ch
 connection would be resolving independently, reopening exactly the gap `checkConnect`'s own design
 exists to close.
 
-**This is the SAME limitation `electron-fetch.ts`'s own A66 already names** ("neither `net.fetch`
+**This is the SAME limitation `electron/fetch.ts`'s own A66 already names** ("neither `net.fetch`
 nor `net.request` exposes a way to pin a request's underlying connection to a specific resolved
 address while keeping the real hostname for TLS SNI/the Host header") -- confirmed there against
 Electron's API surface, and true of Node's `https` module for the identical reason (neither
@@ -6578,7 +6579,7 @@ its own partition -- not before.
 **Raised 2026-09-14**, lane `F-granular` (`stream/shell-09-per-capability-consent`), closing
 A138's contracts-only landing (PR #192) with a real implementation.
 
-**Part 1, urgent and self-contained, landed first.** `src/loader/manifest.ts`'s `readManifest`
+**Part 1, urgent and self-contained, landed first.** `src/loader/manifest/manifest.ts`'s `readManifest`
 rejects any field its `MANIFEST_KEYS` allowlist does not name -- and that allowlist never learned
 `consentGranularity` when PR #192 added it to `Manifest`. Any app author who read the contract,
 added the field, and shipped it got refused at install with "manifest has an unrecognised field",
@@ -6629,7 +6630,7 @@ extend to it or use its own.
 **Needed by:** whenever the owner reviews this lane's PR, the natural moment to also settle
 whether the update-time widening path should match.
 
-### A164 -- `src/loader/manifest-capabilities.ts` never implemented `net.https`, so a manifest declaring `https.connect` was rejected outright, at install and at every serve **[RESOLVED 2026-09-14 -- lane G-hydrate]**
+### A164 -- `src/loader/manifest/capabilities.ts` never implemented `net.https`, so a manifest declaring `https.connect` was rejected outright, at install and at every serve **[RESOLVED 2026-09-14 -- lane G-hydrate]**
 
 **Raised and fixed 2026-09-14**, lane `G-hydrate`, closing `A158`. Not something this lane set out
 to find: `A158`'s own fix needed a test that pins a REAL bundle whose manifest actually declares
@@ -6643,22 +6644,22 @@ mechanism at all). Building that fixture hit the bug directly.
 (`src/broker/policy/request-grant.ts`'s `CONNECT_SHAPED_CAPABILITIES`, `manifest-patterns.ts`'s
 own `secureConnect` line, which even carries a comment about a PRIOR bug in the same neighbourhood:
 "ADDED https.connect went undetected by decideUpdate()'s subset check"). But
-`src/loader/manifest-capabilities.ts`'s `readNet` -- the LOADER's own, independent manifest
+`src/loader/manifest/capabilities.ts`'s `readNet` -- the LOADER's own, independent manifest
 parser -- never learned about it: `NET_KEYS` listed only `['tcp', 'udp', 'concurrentSockets']`, so
 `extraKey(raw, NET_KEYS)` rejected any manifest with a `net.https` field as an "unrecognised
 field", unconditionally. `parseManifest` is called from exactly two places, both load-bearing:
-`fetch-bundle.ts` (install time) and `serve.ts`'s `createAppRequestHandler` (every time a pinned
+`fetch/bundle.ts` (install time) and `serve.ts`'s `createAppRequestHandler` (every time a pinned
 bundle is served). So a manifest declaring `https.connect` could not be installed, and if somehow
 already pinned before this bug, could not be served either -- the entire capability was
 unreachable through any real app, only through a test that injects the grant as a raw callback and
 never parses a manifest at all, which is exactly what every existing test that exercises
-`https.connect` (`serve.test.ts`, `electron-serve.test.ts`, pre-this-lane) did. No manifest field
+`https.connect` (`serve.test.ts`, `electron/tests/serve.test.ts`, pre-this-lane) did. No manifest field
 introduced since `ADR-0017` had a test that actually round-tripped it through the real parser.
 
 **Fixed directly, not filed for later**, because it blocked verifying `A158`'s own fix honestly:
 `readNet` gained a `readHttps` (mirroring `readTcp`'s own `connect` field, reusing
 `validateConnectPattern`/`validateConnectHost` rather than a second grammar -- Rule 3), `NET_KEYS`
-now lists `https`. `src/loader/tests/manifest-capabilities.test.ts`'s new
+now lists `https`. `src/loader/manifest/tests/capabilities.test.ts`'s new
 `capabilities.net.https.connect (A164)` suite proves it parses (including `"*:*"`, ADR-0017's
 unlimited-HTTPS declaration), sits alongside `tcp`/`udp`/`concurrentSockets` without disturbing
 them, and still rejects the same malformed patterns and unrecognised sibling fields every other
@@ -6672,8 +6673,8 @@ field should know this file's allowlist does not grow itself.
 
 ### A165 -- an automatic check now fails CI when `src/contracts/manifest.ts` declares a field the loader will not accept, closing the failure mode behind A164 and the `consentGranularity` gap **[RESOLVED 2026-09-14 -- lane G-parity]**
 
-**The failure mode, named once rather than per incident.** `src/loader/manifest.ts` and
-`manifest-capabilities.ts` reject any manifest field they do not recognise, using hand-maintained
+**The failure mode, named once rather than per incident.** `src/loader/manifest/manifest.ts` and
+`manifest/capabilities.ts` reject any manifest field they do not recognise, using hand-maintained
 allowlists (`MANIFEST_KEYS`, `CAPABILITIES_KEYS`, `NET_KEYS` and their siblings). Twice in one day
 -- `Manifest.consentGranularity` (closed in a follow-up before this lane started) and `A164`'s
 `NetCapability.https` -- a field landed in the contract with no matching update to the loader's
@@ -6700,7 +6701,7 @@ interface currently declares is already accepted, following `A164`'s fix and the
 it adds a row there, with why, or this check fails on their branch -- which is the intended
 outcome, not a false positive.
 
-**Also landed: a round-trip regression test**, `src/loader/tests/manifest-contract-parity.test.ts`
+**Also landed: a round-trip regression test**, `src/loader/manifest/tests/contract-parity.test.ts`
 -- worth having independent of the check above, since it exercises the real `parseManifest` rather
 than a description of it. It types one "kitchen sink" manifest against `Required<Manifest>` (and
 `Required<>` on every nested capability interface), so a future field added anywhere in that chain
@@ -6806,8 +6807,8 @@ type this file already relies on for `ReadableStream`/`WritableStream` without a
 the type a renderer genuinely holds once Electron completes the transfer. The **broker** side
 constructs this message holding a real `MessagePortMain` (Electron-main-process, a different
 class), and contracts cannot import `electron` to reference that type directly
-(`check:contracts`). This is the same reason `src/broker/transport/port-transport.ts` and
-`src/preload/socket-port.ts` already define two independently-shaped `PortLike` interfaces
+(`check:contracts`). This is the same reason `src/broker/transport/relay/port-transport.ts` and
+`src/preload/ports/socket.ts` already define two independently-shaped `PortLike` interfaces
 rather than sharing one -- the concrete port class genuinely differs per process. The
 implementing lane will hit a real type gap constructing this message on the broker side; the
 call made here is to let contracts describe what the **renderer** receives (matching the type's
@@ -6817,13 +6818,13 @@ is the only right answer.
 
 **Also needed by that lane, not built here (implementation, out of this PR's scope):** both
 `PortLike.postMessage` signatures (`port-transport.ts`'s `(message: BrokerToRendererMessage) =>
-void`, `socket-port.ts`'s `(message: unknown) => void`) will need a transfer-list parameter --
+void`, `ports/socket.ts`'s `(message: unknown) => void`) will need a transfer-list parameter --
 today neither accepts one, and a `MessagePort`/`MessagePortMain` cannot cross a structured clone
 without being named in one. Verified this lane's own change causes **no typecheck break** from
 adding `AcceptedMessage` to the union itself: `npm run typecheck` (2026-09-15, this branch)
 found none, and a direct grep for an exhaustiveness check over `BrokerToRendererMessage`/`.kind`
 (`assertNever`, `: never`, a `Record` keyed on every kind) found none anywhere in the tree --
-`src/preload/socket-port.ts` and `src/preload/datagram-port.ts` both `switch` on `message.kind`
+`src/preload/ports/socket.ts` and `src/preload/ports/datagram.ts` both `switch` on `message.kind`
 with no exhaustiveness assertion, so a new member is silently unhandled there today, not a
 compile error. The real work -- constructing, sending and receiving this message -- is entirely
 unbuilt, matching A114's own "still open" status for the implementation half; only the shape
@@ -6901,7 +6902,7 @@ implementation-adjacent); the fix is one stub method and one signature update pe
 once this lane's shapes are confirmed.
 
 **Needed by:** the A114 implementation lane (item 1), the `fs.open`/`fs.userSelected` broker lane
-(item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
+(item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `net/dns.ts` to a real
 broker capability (item 3, `A107`).
 
 ---
@@ -6909,7 +6910,7 @@ broker capability (item 3, `A107`).
 ### A192 -- an app granted unlimited HTTPS gets exactly the same CSP as an app granted nothing, so the reach it was granted is blocked before any code runs **[RESOLVED 2026-09-22 -- owner decision]**
 
 `reachSourcesFor` (`src/broker/policy/connect-src.ts`; the header is assembled in
-`src/loader/serve-csp.ts`) builds `img-src`/`font-src`/`media-src`
+`src/loader/serve/csp.ts`) builds `img-src`/`font-src`/`media-src`
 from the granted `https.connect` patterns by reusing `connectSrcFor`. That function deliberately
 OMITS a `*` host, classifying it `host-any-public-unicast`, and the reason is good: CSP's bare `*`
 would also permit loopback and the LAN, which a `*` grant explicitly does not (`A82`).
@@ -7040,7 +7041,7 @@ very same modules the new mechanism covered for every other member. A porting de
 `catch (e) { if (e instanceof OrivonShimError) handleRefusal(e.reason) }` silently missed all three.
 The three now extend `OrivonShimError`, with `.message`/`.name`/`.code` verified unchanged.
 
-**`OrivonFsUnsupportedError` (`src/shim/node-fs-unsupported.ts`) is a fourth instance of the same
+**`OrivonFsUnsupportedError` (`src/shim/fs/unsupported.ts`) is a fourth instance of the same
 problem and is NOT fixed here** -- the lane's brief named three classes, and it reported the gap
 rather than silently widening its own scope. It should be folded in.
 
@@ -7132,7 +7133,7 @@ missingReadonly: [] }` unchanged.
 
 ### A179 -- a second hand-maintained duplicate of a shape, created two PRs after the guard (A165) against exactly this **[RESOLVED 2026-09-15 -- lane FIX-5]**
 
-**The shape.** `src/loader/pin-coverage.ts`'s `PinCoverageSnapshot` and
+**The shape.** `src/loader/serve/pin-coverage.ts`'s `PinCoverageSnapshot` and
 `src/trust/delivery-ladder.ts`'s `PinCoverageEvidence` are field-for-field identical
 (`pinnedRequests`, `thirdPartyRequests`, `deniedRequests`, `pinnedBytes`, `thirdPartyBytes`,
 `bytesIncomplete` -- same names, same types, in both). The duplication itself is deliberate and
@@ -7160,7 +7161,7 @@ typing already lets a type with an extra field satisfy `extends` against a narro
 field added to only one side is not guaranteed caught by both directions naively; the
 distributive-conditional form does not have that gap; it fails to reduce to `true` for any
 difference at all -- added, removed or retyped, on either side. Follows the precedent
-`src/loader/tests/manifest-contract-parity.test.ts` set for A164/A165: a type mismatch here is an
+`src/loader/manifest/tests/contract-parity.test.ts` set for A164/A165: a type mismatch here is an
 `npm run typecheck` failure, not a silent gap or a runtime-only assertion.
 
 **Proven to actually fail, not just written and trusted**, in this lane: a field
@@ -7171,7 +7172,7 @@ the constraint 'true'.` -- plus a second, expected error at the test's own runti
 (65,11) and an unrelated pre-existing error inside `pin-coverage.ts` itself from the now-missing
 field on its own tracker's return value (a side effect of the deliberately-broken fixture, not
 part of the binding). The field was then removed and `npm run typecheck` was re-run clean;
-`git diff --stat src/loader/pin-coverage.ts` showed no changes, confirming a clean revert.
+`git diff --stat src/loader/serve/pin-coverage.ts` showed no changes, confirming a clean revert.
 ### A181 -- pin coverage is measured but nothing reads it yet **[RESOLVED 2026-09-23]**
 
 **Resolution.** `src/main/browsing/site-trust.ts`'s `buildSiteTrust` is now the first production
@@ -7183,12 +7184,12 @@ popup's own Web3 Score page. Both claims below are now false; left in place for 
 tree.
 
 `stream/trust-02-pin-coverage` (PR #198) built the measurement `A166` asked for --
-`src/loader/pin-coverage.ts` tracks, per origin, how many requests and bytes came from the pin
+`src/loader/serve/pin-coverage.ts` tracks, per origin, how many requests and bytes came from the pin
 versus a granted third-party host -- but nothing in production reads it back out.
 
 **Verified by grep, both claims:**
-- `pinCoverageFor` (`src/loader/electron-serve.ts:49`) has no caller anywhere under `src/`
-  outside its own test file (`src/loader/tests/electron-serve.test.ts`).
+- `pinCoverageFor` (`src/loader/electron/serve.ts:49`) has no caller anywhere under `src/`
+  outside its own test file (`src/loader/electron/tests/serve.test.ts`).
 - `deliveryLadder` (`src/trust/delivery-ladder.ts`) has no call site anywhere under `src/`
   outside its own test file -- so `DeliveryHistoryInput.pinCoverage` is never supplied by
   production code either; nothing yet constructs the input that would carry a coverage snapshot
@@ -7265,11 +7266,11 @@ depending on which branch ran; and both other accept paths now retire the releva
 methods so no new broker primitive was needed, and `update-outcomes.ts`'s capability-prompt accept
 clears the whole record, justified because its `requestedPatterns` is the manifest's current
 declared set, the same shape as the all-or-nothing accept.
-### A173 -- `serve-reach.ts`'s outbound request body was buffered unbounded in the main process **[RESOLVED 2026-09-15]**
+### A173 -- `reach/reach.ts`'s outbound request body was buffered unbounded in the main process **[RESOLVED 2026-09-15]**
 
 **Raised and fixed 2026-09-15**, lane FIX-4 (`stream/loader-10-reach-hygiene`), an independent
 review finding re-verified by the fleet conductor reading the code before this lane started.
-`nodeReachDial` (`src/loader/serve-reach.ts`) read an app's own request body with
+`nodeReachDial` (`src/loader/reach/reach.ts`) read an app's own request body with
 `Buffer.from(await request.arrayBuffer())` -- the file's own header carefully argues the
 RESPONSE side needs no size cap (`Readable.toWeb` streams it) and says nothing about the
 request, which is the gap: a page `fetch()`-ing a large or effectively unbounded body to a
@@ -7278,7 +7279,7 @@ not the sandboxed renderer.
 
 **Fixed by `readCappedBody`**, a streaming reader over `request.body` that rejects the instant
 the running total would exceed `REACH_MAX_REQUEST_BODY_BYTES` (16 MiB), never buffering past
-the cap first -- the same discipline `src/preload/fetch-route.ts`'s own `readAllCapped` already
+the cap first -- the same discipline `src/preload/routed/fetch.ts`'s own `readAllCapped` already
 uses for its response body. The cap VALUE matches that file's own `ROUTED_FETCH_MAX_BODY_BYTES`
 exactly (16 MiB is the number this repo already chose once for "an unbounded page-supplied body
 must not be buffered whole"), but it is a second literal, not an import: `src/loader/` and
@@ -7293,16 +7294,16 @@ more permanently.
 
 **Verified (this lane):** a test sending a body one byte over the cap now rejects with a
 `REACH_MAX_REQUEST_BODY_BYTES`-naming `TypeError`, confirmed to resolve (not reject) against the
-pre-fix code first; a body exactly at the cap still succeeds. `src/loader/tests/serve-reach.test.ts`.
+pre-fix code first; a body exactly at the cap still succeeds. `src/loader/reach/tests/reach.test.ts`.
 
 **2026-09-22: the number it matched is gone.** The routed path no longer caps a response body:
 it streams, reading at most 512 KiB ahead of the app (`src/preload/README.md`, "The routed
 network path's numbers"; `d-0042`), so `ROUTED_FETCH_MAX_BODY_BYTES` and `readAllCapped` no
 longer exist. `REACH_MAX_REQUEST_BODY_BYTES` (16 MiB) stands on its own reason, an app's request
-body buffered in the privileged main process before dialling; `serve-reach.ts`'s comment on it
+body buffered in the privileged main process before dialling; `reach/reach.ts`'s comment on it
 still names the removed constant as its source and needs rewording to that reason.
 
-### A174 -- `serve-reach.ts` forwarded hop-by-hop response headers verbatim, including a `transfer-encoding` that was already false **[RESOLVED 2026-09-15]**
+### A174 -- `reach/reach.ts` forwarded hop-by-hop response headers verbatim, including a `transfer-encoding` that was already false **[RESOLVED 2026-09-15]**
 
 **Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173. `forwardedRequestHeaders`
 already stripped `host`/`connection`/`content-length` with an explicit
@@ -7326,12 +7327,12 @@ two or mis-describe why `transfer-encoding` matters on the response side specifi
 **Verified (this lane):** a test against a real chunked, `Connection: keep-alive`-declaring TLS
 response confirms all three headers are now absent from the `Response` while `content-type`
 still passes through untouched -- confirmed to fail against the pre-fix code first (transfer-
-encoding measured as `'chunked'`, not `null`). `src/loader/tests/serve-reach.test.ts`.
+encoding measured as `'chunked'`, not `null`). `src/loader/reach/tests/reach.test.ts`.
 
 ### A175 -- pin coverage counted the whole pinned asset's size even when a Range request served only a slice, or nothing at all **[RESOLVED 2026-09-15]**
 
 **Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173/A174.
-`createAppRequestHandler` (`src/loader/serve.ts`) called `recordCoverage?.('pinned',
+`createAppRequestHandler` (`src/loader/serve/serve.ts`) called `recordCoverage?.('pinned',
 content.length)` BEFORE `buildResponse` applied the request's `Range` header, so a 10 MB video
 fetched in many range requests recorded the full 10 MB every single time, and an unsatisfiable
 range (416, no body at all) recorded the full asset size for zero bytes actually sent. Third-
@@ -7354,11 +7355,11 @@ silent zero IS the correct, measured answer).
 **Verified (this lane):** three tests confirmed failing against the pre-fix code first (a single
 5-byte range recorded 300; fifty 10-byte range requests recorded 15000, not 500; a 416 recorded
 300, not 0), then passing after the fix; a fourth confirms a denied same-origin request still
-adds nothing. `src/loader/tests/pin-coverage.test.ts`.
+adds nothing. `src/loader/serve/tests/pin-coverage.test.ts`.
 
 ### A183 -- an app could smuggle a second request past the one host its grant names **[RESOLVED 2026-09-15 -- found by the review run's own security pass]**
 
-`nodeReachDial` (`src/loader/serve-reach.ts`) stripped only `host`, `connection` and
+`nodeReachDial` (`src/loader/reach/reach.ts`) stripped only `host`, `connection` and
 `content-length` from the OUTBOUND request. RFC 7230 SS6.1's remaining hop-by-hop headers --
 `transfer-encoding` above all -- were forwarded from whatever the app set, and nothing upstream of
 this file restricts an app's headers.
@@ -7396,9 +7397,9 @@ untouched. The asymmetry was the tell. Reading it raised the question; a probe a
 **Raised 2026-09-15**, lane L2-fsopen (`stream/broker-15-fs-open`). `FileHandle`
 (`docs/architecture/handle-contracts.md` §FileHandle, `src/contracts/handles.ts`) needed no
 `src/contracts/` change -- the shape was already complete -- so this lane built the broker
-capability (`src/broker/fs-capability.ts`, `src/broker/adapters/node-fs-adapter.ts`), the
-control-channel dispatch (`src/broker/transport/dispatch-fs.ts`) and the preload surface
-(`src/preload/orivon-surface.ts`, `src/preload/main-world-socket.ts`) in one PR.
+capability (`src/broker/capabilities/fs.ts`, `src/broker/adapters/node-fs-adapter.ts`), the
+control-channel dispatch (`src/broker/transport/dispatch/fs.ts`) and the preload surface
+(`src/preload/surface/orivon.ts`, `src/preload/surface/main-world-socket.ts`) in one PR.
 
 **What is genuinely done, page-reachable, and tested against real I/O:** `open`, positional
 `read`/`write` (no implicit cursor, matching the contract's own explicit-position rule), `stat`,
@@ -7443,7 +7444,7 @@ note for this lane (search `A184`) with the full reasoning -- summarised here:**
    later, deterministic because a real fs write cannot complete before the test's own next
    synchronous statement runs.
 4. **`open`'s flags string is checked against Node's own documented flag set** (`'r'`, `'r+'`,
-   `'w'`, `'wx'`, ... -- `fs-capability.ts`'s `VALID_OPEN_FLAGS`) before the confined path or the
+   `'w'`, `'wx'`, ... -- `capabilities/fs.ts`'s `VALID_OPEN_FLAGS`) before the confined path or the
    grant are even consulted, so a malformed flags string is `'invalid'` (an app bug) rather than
    whatever the raw adapter call happens to throw for it. No numeric-mode variant is accepted --
    `capability-api.ts`'s `open` types `flags` as a `string`, never a number.
@@ -7490,7 +7491,7 @@ either one alone. Whichever of the two merges second will need to renumber.
 
 **What a ported app sees, 2026-09-22.** The gap above is still open and still narrow: the
 module-level `fs.createReadStream`/`fs.createWriteStream` a Node library calls work, built over
-the shim's own positional reads and writes (`src/shim/node-fs-streams.ts`, `src/shim/README.md`),
+the shim's own positional reads and writes (`src/shim/fs/streams.ts`, `src/shim/README.md`),
 and each destroys itself at end, finish or a failed write, releasing its handle. Only
 `FileHandle#createReadStream`/`createWriteStream`, the instance methods on a handle from
 `fs.promises.open()`, still refuse by name, pending `readable()`/`writable()` reaching a page.
@@ -7523,7 +7524,7 @@ that `connect`/`connectSecure`/`udpBind` could not already force.
 **2. Which grant's revocation cancels an authorised lookup, when more than one held grant would
 authorise the same hostname.** Not specified anywhere -- this lane's answer: the first
 capability in the fixed check order above (`tcp.connect`, then `https.connect`, then
-`udp.send` -- `net-capability.ts`'s own `OUTBOUND_CAPABILITIES`) whose patterns actually
+`udp.send` -- `capabilities/net.ts`'s own `OUTBOUND_CAPABILITIES`) whose patterns actually
 authorise the hostname is what `handleTable.run`'s revocation scope binds to. A DIFFERENT held
 grant for the same origin being revoked must not cancel an in-flight lookup that a still-live
 grant authorised -- tested directly (`src/broker/tests/net-lookup.test.ts`, "is not cancelled by
@@ -7553,7 +7554,7 @@ an owner decision -- this lane built against it rather than waiting, per its own
 owner should confirm A167 (and the two judgment calls above, which only exist because that
 reading was taken as given) before `net.lookup` reaches a production grant path.
 
-**Needed by:** lane L6 (`src/shim/node-dns.ts`'s real `dns.lookup` shape, A107) -- this lane
+**Needed by:** lane L6 (`src/shim/net/dns.ts`'s real `dns.lookup` shape, A107) -- this lane
 deliberately left that file untouched, per its own scope.
 
 **Amended 2026-09-15 by the conductor, during the `src/broker/` hand-review, before merge.** The
@@ -7582,13 +7583,13 @@ page-reachable half of `orivon.net.listen` (A114/d-0028): `broker.net.listen`'s 
 `connections` stream, delivered to a real page as a real `TcpServer.connections` `ReadableStream`.
 This run resumed a predecessor cut off mid-work by a session-limit interruption (committed as
 `b61d9e8`); this entry covers the judgment call the predecessor's own code comments already
-pointed here for (`accept-pump.ts`, `server-port.ts`) but never wrote up, plus what this run found
+pointed here for (`accept-pump.ts`, `ports/server.ts`) but never wrote up, plus what this run found
 and fixed finishing the landing.
 
 **1. The judgment call: one accepted connection is ONE unit of demand, signalled by reusing
 `CreditMessage` (`{kind:'credit', handleId, bytesConsumed}`) rather than a new
-`RendererToBrokerMessage` member.** `src/broker/transport/accept-pump.ts`'s `handleDemand`
-interprets `bytesConsumed` as a COUNT of connections rather than bytes; `src/preload/server-port.ts`'s
+`RendererToBrokerMessage` member.** `src/broker/transport/relay/accept-pump.ts`'s `handleDemand`
+interprets `bytesConsumed` as a COUNT of connections rather than bytes; `src/preload/ports/server.ts`'s
 `reportAccepted` always sends `bytesConsumed: 1`, one call per app `connections.getReader().read()`.
 The alternative -- a purpose-built member, e.g. `{kind:'accept', handleId}` -- was not built: A167
 closed `src/contracts/` for this lane (its own scope rule: three shapes landed, no new
@@ -7603,7 +7604,7 @@ what it would look like?
 This is the property the brief named as the one most likely to be silently destroyed by a page-side
 wrapper that eagerly drains `connections` -- if it were, the broker would accept connections nobody
 asked for. Proven at each layer with an explicit "N reads accept exactly N connections, and an
-unread server accepts none" test: `accept-pump.test.ts` (the broker's own pump), `server-port.test.ts`
+unread server accepts none" test: `accept-pump.test.ts` (the broker's own pump), `ports/tests/server.test.ts`
 (the isolated-world preload state machine), and `main-world-socket-listen.test.ts` (the page's own
 `ReadableStream`, constructed with `CountQueuingStrategy({ highWaterMark: 0 })` in
 `main-world-socket.ts`'s `buildServer`, whose `pull()` is the ONLY caller of `reportAccepted` --
@@ -7614,14 +7615,14 @@ holds a reference to it).
 declared reachable but was never actually dispatched on `main`.** `src/broker/transport/
 ipc-validation.ts`'s `ControlMethod`/`isControlMethod` already listed `'net.listen'` (landed by
 the contracts-adjacent split before this run resumed), but neither `ipc.ts`'s pre-split `dispatch()`
-switch nor `dispatch-net.ts`'s post-split one had a matching `case` -- a call would have fallen
+switch nor `transport/dispatch/net.ts`'s post-split one had a matching `case` -- a call would have fallen
 through to the end of the switch and resolved `undefined` instead of erroring or listening,
 exactly the silent-gap shape the brief's first warning described for `message.kind` switches.
 Fixed by adding the case, and separately by adding a `never`-typed default case to BOTH `ipc.ts`'s
-`dispatch()` and `dispatch-net.ts`'s `dispatchNet()` switches, so a future `ControlMethod`/
+`dispatch()` and `transport/dispatch/net.ts`'s `dispatchNet()` switches, so a future `ControlMethod`/
 `NetControlMethod` member with no matching case is a compile error rather than a silent
-`undefined` -- neither switch had one before. `src/preload/socket-port.ts` and
-`src/preload/datagram-port.ts`'s own `message.kind` switches already had an equivalent
+`undefined` -- neither switch had one before. `src/preload/ports/socket.ts` and
+`src/preload/ports/datagram.ts`'s own `message.kind` switches already had an equivalent
 exhaustiveness guard (the predecessor's own work, before the interruption); this run did not find
 or need to change either.
 
@@ -7641,7 +7642,7 @@ stops at a real grant reaching a real page; nothing here issues one in productio
 **Raised 2026-09-15**, lane L5-userselected (`stream/main-10-user-selected`), built directly on
 top of `orivon.fs.open` (A184, merged same day). `DirectoryHandle`/`FileHandle` from the picker
 (`d-0029`, A167 item 2) needed no `src/contracts/` change -- the shape was already complete -- so
-this lane built the broker capability (`src/broker/user-selected-capability.ts`), the picked-path
+this lane built the broker capability (`src/broker/capabilities/user-selected.ts`), the picked-path
 state (`src/broker/grants/picked-path-ledger.ts`), the persistence slice sharing `GrantLedger`'s
 own on-disk file (`src/broker/grants/ledger-storage.ts`/`node-ledger-storage.ts`), the handle-
 table's own revocation index for a pick (`byPickedPath`, `HandleTable.revokeUserSelected`,
@@ -7650,7 +7651,7 @@ table's own revocation index for a pick (`byPickedPath`, `HandleTable.revokeUser
 
 **What is genuinely done, tested against both revocation-cascade halves and against a simulated
 restart:** `userSelected` for both the folder and file shapes, confined to the PICKED root (never
-the app's own files directory) through the same `confinePath` fs-capability.ts already uses,
+the app's own files directory) through the same `confinePath` capabilities/fs.ts already uses,
 under the same per-origin fs write quota, with the picker's cancel resolving `null`/`[]` rather
 than rejecting. Revoking the standing `fs` grant does not touch a picked handle; revoking the
 pick itself (`Broker.revokeUserSelectedPath`, addressed by a pickId minted once and shared
@@ -7769,14 +7770,14 @@ over `net.createServer`, `fs.open` and `dns.lookup`. Two of the three capabiliti
 told to build on ARE reachable at `origin/main @ f2bc8e0` (this lane's own cut commit), verified
 by reading the actual dispatch/preload wiring, not by trusting the brief: `net.listen` (PR #203)
 and `net.lookup` (PR #201) both have real broker dispatch cases and real preload/main-world
-bridges (`src/broker/transport/dispatch-net.ts`'s `'net.listen'`/`'net.lookup'` cases,
-`src/preload/net-surface.ts`'s `netListenBridge`/`netLookupBridge`,
-`src/preload/main-world-socket.ts`'s `buildServer`/`netLookup`). **The third is not.**
+bridges (`src/broker/transport/dispatch/net.ts`'s `'net.listen'`/`'net.lookup'` cases,
+`src/preload/surface/net.ts`'s `netListenBridge`/`netLookupBridge`,
+`src/preload/surface/main-world-socket.ts`'s `buildServer`/`netLookup`). **The third is not.**
 
 **`orivon.fs.open`'s broker half and preload wiring are NOT on `main` at this lane's cut point.**
-`src/broker/fs-capability.ts`'s own header says so directly ("`FileHandle` (orivon.fs.open) is
+`src/broker/capabilities/fs.ts`'s own header says so directly ("`FileHandle` (orivon.fs.open) is
 NOT here -- see this lane's own PR body for why it was parked"), there is no `'fs.open'` dispatch
-case anywhere under `src/broker/transport/`, and `src/preload/orivon-surface.ts`'s `exposeOrivon`
+case anywhere under `src/broker/transport/`, and `src/preload/surface/orivon.ts`'s `exposeOrivon`
 wires `fs.readFile`/`writeFile`/`mkdir`/`readdir`/`stat`/`rm`/`rename` but no `fs.open`. The work
 lives on an unmerged branch, `stream/broker-15-fs-open` (confirmed via `git log`: `09e7b2b`
 "Merge remote-tracking branch 'origin/main' into stream/broker-15-fs-open", `fcbd525` "Restore
@@ -7793,14 +7794,14 @@ gap while building `fs.open`'s broker half) and has simply not reached `main` ye
 reason its own branch has not. `npm run check:questions` only rejects a DUPLICATE `### A<n>`
 heading within one file; it does not require every A-number a branch cites in source actually
 resolve to a heading on that branch, so this lane's own `docs/open-questions.md A184` citations
-(`node-fs-handle.ts`, `node-fs.ts`, their tests, `README.md`) pass CI here regardless, and will
+(`fs/handle.ts`, `fs/fs.ts`, their tests, `README.md`) pass CI here regardless, and will
 resolve correctly once `stream/broker-15-fs-open` (or whatever carries A184's actual text) merges
 before or alongside this lane.
 
 **What this lane did about it, since the contract types (`src/contracts/handles.ts`'s
 `FileHandle`, `src/contracts/capability-api.ts`'s `OrivonFs.open`) ARE already stable on `main`
 regardless of the broker/preload wiring's merge status:** built and fully unit-tested
-`node-fs-handle.ts` (the local cursor, the callback family, the A184-citing
+`fs/handle.ts` (the local cursor, the callback family, the A184-citing
 `createReadStream`/`createWriteStream` refusal) entirely against that type contract, using a
 fake `orivon.fs.open` in every test -- never against a live broker, which this lane was told not
 to launch anyway. The code is correct against the contract and will start working the moment
@@ -7836,13 +7837,13 @@ number, so a lane can verify the claim instead of taking it on faith.
 
 **Raised 2026-09-16**, lane ADV-fix (`stream/broker-17-adversarial-fixes`), fixing the sibling
 leak this same lane closed for `TcpServer` (see that fix's own commit and
-`src/broker/transport/server-relay.ts`'s new comment on `cleanup()`). Both bugs share one root
+`src/broker/transport/relay/server.ts`'s new comment on `cleanup()`). Both bugs share one root
 cause -- a resource whose only abandonment signal is a `MessagePort` closing, reacted to by
 tearing down the underlying handle -- but `FileHandle` is structurally missing the half that made
 the `TcpServer` fix possible.
 
 **The mechanism, or rather its absence.** `orivon.fs.open` (A184) returns a `FailableFileHandle`
-registered in `dispatch-fs.ts`'s own `FsTransport.registry` (`src/broker/transport/dispatch-fs.ts`,
+registered in `transport/dispatch/fs.ts`'s own `FsTransport.registry` (`src/broker/transport/dispatch/fs.ts`,
 the `'fs.open'` case), but that registry has no dedicated `MessagePort` per handle the way
 `net.connect`'s socket relay or `net.listen`'s server relay do -- A184's own scope cut left
 `readable()`/`writable()`, and with them any per-handle port, at the broker layer only (this
@@ -7855,7 +7856,7 @@ nothing hooked yet.
 
 **Consequence.** A page that calls `orivon.fs.open(...)` and lets the resulting object fall out of
 scope without ever calling `close()` -- ordinary JS garbage-collection behaviour, not misuse --
-leaks the real OS file descriptor and one of `dispatch-fs.ts`'s registry entries for the life of
+leaks the real OS file descriptor and one of `transport/dispatch/fs.ts`'s registry entries for the life of
 the broker process, exactly the same shape of leak this lane's `TcpServer` fix closes, but with no
 available fix of the same shape.
 
@@ -7892,7 +7893,7 @@ product decision, not a bug.
 **Restates and sharpens A167's own flagged gap** (`policy/README.md:161-182`'s own design note,
 cited there as "the union-of-three-capabilities reading as still unconfirmed") with a concrete
 asymmetry A167 did not spell out: `net.lookup` authorises a hostname if ANY of `tcp.connect`,
-`https.connect` or `udp.send` holds a pattern matching it (`net-capability.ts`'s
+`https.connect` or `udp.send` holds a pattern matching it (`capabilities/net.ts`'s
 `OUTBOUND_CAPABILITIES`, `:428-478`'s `lookup`). Folding the three together is justified,
 per that same design note, by the claim that a held pattern already lets an app force the broker
 to resolve any name it authorises, by attempting a real connection through it -- **true for
@@ -7976,20 +7977,20 @@ turns out not to fit the existing transport.
 
 **What was built, FILE shape only:** `fs.userSelected` joined `ControlMethod`
 (`ipc-validation.ts`), with a new `isFsUserSelectedParams` validator and a
-`dispatch-fs.ts` case satisfying the `never`-typed exhaustiveness guard PR #213 added (both the
+`transport/dispatch/fs.ts` case satisfying the `never`-typed exhaustiveness guard PR #213 added (both the
 per-file `dispatchFs` switch and `ipc.ts`'s own top-level routing switch needed the new case --
 found by the compiler, not by reading, exactly what that guard is for). A picked file's
 `FailableFileHandle` registers in the EXACT SAME `FsTransport.registry` `fs.open` already uses
 (`registerFileHandle`, extracted so both callers share one registration mechanism rather than
 two copies of it, Rule 3) -- so a picked file's id is usable through the SAME
 `fs.read`/`write`/`fstat`/`truncate`/`sync`/`close` cases `fs.open` already wired, with zero new
-handle-scoped dispatch code. `src/preload/orivon-surface.ts` gained `fsUserSelected`, wired into
-both `exposeFallback` and the `executeInMainWorld` bridge; `src/preload/main-world-socket.ts`
+handle-scoped dispatch code. `src/preload/surface/orivon.ts` gained `fsUserSelected`, wired into
+both `exposeFallback` and the `executeInMainWorld` bridge; `src/preload/surface/main-world-socket.ts`
 gained the matching bridge field and reuses `buildFile` per returned handle (Rule 3 again -- no
 second wrapping implementation). The preload's own exposed type omits `directory` entirely
 rather than accept it and fail at runtime.
 
-**What was deliberately NOT built, FOLDER shape:** `dispatch-fs.ts`'s `'fs.userSelected'` case
+**What was deliberately NOT built, FOLDER shape:** `transport/dispatch/fs.ts`'s `'fs.userSelected'` case
 refuses `directory: true` with `'internal'` before the broker is ever called, citing this entry.
 **Why this is a shape problem, not plumbing, per the brief's own test:** `FileHandle`'s
 handle-scoped siblings (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`) already existed
@@ -8008,10 +8009,10 @@ not a shortfall.
 
 **Verified, this lane:** `npm run typecheck` clean; `npm test` 4610 passed, 3 skipped (202 test
 files) -- baseline after this lane's own merge of `origin/main` (which also resolved a real
-conflict in `src/broker/fs-capability.ts`, PR #213's `truncate` quota/lock fix carried forward
+conflict in `src/broker/capabilities/fs.ts`, PR #213's `truncate` quota/lock fix carried forward
 into `fs-handle-wrapper.ts` rather than dropped): 4584 passed, 3 skipped, 200 files; this lane
 added 26 net new passing tests (`picker-dialog-wording.test.ts`, `ipc-fs-user-selected.test.ts`,
-plus additions to `permissions.test.ts`, `orivon-surface.test.ts`,
+plus additions to `permissions.test.ts`, `surface/tests/orivon.test.ts`,
 `main-world-socket-fs.test.ts`). `npm run check:size`/`check:comments`/`check:contracts`/
 `check:natives`/`check:secrets`/`check:questions`/`check:manifest-parity` all pass.
 `npm run test:e2e` was deliberately **not run** -- this lane does not launch Electron.
@@ -8029,7 +8030,7 @@ gate cleared it.
 which is the actual precondition for building its delivery mechanism -- not a wiring task on its
 own, a design one.
 > **Resolved 2026-09-16, `d-0031`, lane `stream/broker-18-narrow-lookup-union` (A193). Option
-> (a).** `https.connect` is dropped from `net-capability.ts`'s `OUTBOUND_CAPABILITIES`, which now
+> (a).** `https.connect` is dropped from `capabilities/net.ts`'s `OUTBOUND_CAPABILITIES`, which now
 > reads `['tcp.connect', 'udp.send']`. An app holding only `https.connect` loses the DNS-lookup
 > convenience this entry describes; it must hold `tcp.connect` or `udp.send` to resolve a
 > hostname through `orivon.net.lookup` at all. `tcp.connect` and `udp.send` are both kept, per
@@ -8042,7 +8043,7 @@ own, a design one.
 > reason `checkLookup` (`src/broker/policy/lookup.ts`) declines -- `errors.ts`'s "denied never
 > varies by reason" rule is not relaxed for this case, and no new `OrivonErrorCode` was added.
 > The NAMED refusal this decision also asked for happens one layer up, in
-> `src/shim/node-dns.ts`'s `describeLookupDenial`: on a `'denied'` `net.lookup` rejection, it
+> `src/shim/net/dns.ts`'s `describeLookupDenial`: on a `'denied'` `net.lookup` rejection, it
 > reads the app's own `orivon.app.grants()` -- a standing, already-legitimate capability an app
 > has to introspect ITSELF, not the broker's reply saying anything new -- and, only when the held
 > set is exactly "https.connect, no tcp.connect, no udp.send", rewrites the Node-shaped error's
@@ -8093,7 +8094,7 @@ resolution (d-0031: `net.lookup` no longer reads a bound from `https.connect`, o
 `src/contracts/capability-api.ts`'s `OrivonNet.lookup` doc comment reads, unchanged by this lane:
 "this rides whatever `tcp.connect`, `https.connect` and `udp.send` patterns (manifest.js) the
 app already holds." That sentence is no longer true of the implementation this lane shipped
-(`src/broker/net-capability.ts`'s `OUTBOUND_CAPABILITIES`, now `['tcp.connect', 'udp.send']`) or
+(`src/broker/capabilities/net.ts`'s `OUTBOUND_CAPABILITIES`, now `['tcp.connect', 'udp.send']`) or
 of `src/broker/policy/README.md`'s design note, which this lane did update.
 
 **Why left stale rather than fixed here.** This lane's own scope, set by the dispatch that
@@ -8124,8 +8125,8 @@ none is queued soon enough that this drifts further from the implementation it d
 
 **Raised 2026-09-16**, lane `stream/broker-19-directory-handle-page` (A194-folder), closing A194's
 own "deliberately not built" gap: `DirectoryHandle`'s nine members (`contracts/handles.ts`) now
-have a full CONTROL_CHANNEL path, dispatched from `dispatch-fs.ts` and exposed through both preload
-worlds (`orivon-surface.ts`'s `exposeFallback`, `main-world-socket.ts`'s `installOrivon`).
+have a full CONTROL_CHANNEL path, dispatched from `transport/dispatch/fs.ts` and exposed through both preload
+worlds (`surface/orivon.ts`'s `exposeFallback`, `main-world-socket.ts`'s `installOrivon`).
 
 **1. The gate A194 named was not cleared -- it was overridden by explicit instruction, and that
 distinction matters.** A194's own text is direct: building this surface needs `DirectoryHandle`'s
@@ -8146,7 +8147,7 @@ over whatever the contract says.
 CONTROL_CHANNEL methods (`fs.dirReaddir`/`dirStat`/`dirMkdir`/`dirRm`/`dirRename`/`dirReadFile`/
 `dirWriteFile`/`dirOpen`), one per `DirectoryHandle` member, each carrying the folder handle's `id`
 the same way `fs.read`/`fs.write`/... already carry a file's. `fs.dirOpen` is the load-bearing
-case: `DirectoryHandle.open()` resolves a real `FileHandle` (`../user-selected-capability.ts`'s
+case: `DirectoryHandle.open()` resolves a real `FileHandle` (`../broker/capabilities/user-selected.ts`'s
 own `toFailableDirectoryHandle.open`, unchanged by this lane), registered through the EXACT SAME
 `registerFileHandle` `fs.open`/`fs.userSelected`'s file shape already use -- so every subsequent
 call against a folder-opened file (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`) needed ZERO
@@ -8161,7 +8162,7 @@ new dispatch code. No second file-handle mechanism was built, matching this lane
   to `Promise<FailableFileHandle>`** (`src/broker/handles/handle-contracts.ts`) -- precedented by
   `FailableTcpServer.connections: ReadableStream<FailableTcpSocket>` (that file's own doc: a
   nested handle a `Failable*` type PRODUCES needs the same broker-internal escape hatch its parent
-  has). Tightens a type to match what `user-selected-capability.ts` already returned at runtime;
+  has). Tightens a type to match what `capabilities/user-selected.ts` already returned at runtime;
   no behaviour change, confirmed by `npm run typecheck` before and after.
 - **`fs.close` closes either kind** (checks `FsTransport.registry` then `dirRegistry`) rather than
   adding a `fs.dirClose` method -- a page never knows which kind an id names, and ids are drawn
@@ -8181,9 +8182,9 @@ than claiming the broker did not implement `userSelected` -- that correction pre
 
 **Verified, this lane (2026-09-16, `5d144f9` base):** `npm run typecheck` clean. `npm test`: **4651
 passed, 3 skipped** (baseline before this lane: 4615 passed, 3 skipped -- one stale test removed
-from `ipc-fs-user-selected.test.ts`, two stale tests replaced in `orivon-surface.test.ts`, 39 net
+from `ipc-fs-user-selected.test.ts`, two stale tests replaced in `surface/tests/orivon.test.ts`, 39 net
 new added across `ipc-fs-user-selected-directory.test.ts` (31), `main-world-socket-fs.test.ts` (7),
-`orivon-surface.test.ts` (2)). `check:size`/`check:comments`/`check:contracts`/`check:questions`/
+`surface/tests/orivon.test.ts` (2)). `check:size`/`check:comments`/`check:contracts`/`check:questions`/
 `check:manifest-parity`/`check:natives`/`check:secrets` all pass. `src/broker/transport/tests/
 ipc.test-helpers.ts` was measured at 499/500 before this lane touched it; split into a new
 `stub-broker.ts` (pure move, own commit, `git log` shows it landed before any behavioural change)
@@ -8360,7 +8361,7 @@ either vanished silently or the whole pattern was dropped, never rendered with p
 **And this render-layer robustness is redundant with validation that already exists upstream, at
 both real production entry points**, confirmed by reading rather than assumed: `isDeclarableConnectPattern`
 (the `app.requestGrant` gate, `src/broker/policy/request-grant.ts`) and `validateConnectPattern`
-(the manifest-parse gate, `src/loader/manifest-capabilities.ts`) both reject outright any pattern
+(the manifest-parse gate, `src/loader/manifest/capabilities.ts`) both reject outright any pattern
 where `pattern !== pattern.trim()` -- `validateConnectPattern`'s own comment says this check
 exists specifically "to catch the padding parseConnectPattern's own trim would otherwise hide
 from us." A padded pattern therefore never reaches a real dialog: the whole `app.requestGrant`
@@ -8377,7 +8378,7 @@ as such rather than having a fix manufactured for it.
 ### A199 -- revoking a grant did not stop a third-party reach request already in flight **[FIXED -- stream/loader-11-reach-limits]**
 
 **Raised and fixed 2026-09-17**, `/claude-security` scan finding, lane `stream/loader-11-reach-
-limits`. `fetchThirdParty` (`src/loader/serve.ts`) authorised an app's proxied third-party HTTPS
+limits`. `fetchThirdParty` (`src/loader/serve/serve.ts`) authorised an app's proxied third-party HTTPS
 request exactly once, before dialling (`AuthoriseReach`) -- after that the request ran to
 completion regardless of anything that happened to the grant. A person who revoked an
 `https.connect` grant, watched the row disappear from the permissions UI, and kept receiving
@@ -8386,7 +8387,7 @@ same shape this repo already closed twice for raw sockets (`GrantLedger.revokePe
 teardown cascade, and A84's unlink-teardown), now closed a third time for a resource that was
 never a `HandleTable` handle at all.
 
-**Fix:** `src/loader/serve-reach-guard.ts` (new file) wraps the streamed `Response` body a
+**Fix:** `src/loader/reach/guard.ts` (new file) wraps the streamed `Response` body a
 granted reach returns. While the body is still being read, it re-calls the SAME `authoriseReach`
 function `fetchThirdParty` already called once, on a bounded timer (`REACH_REVOCATION_POLL_MS`,
 200ms) -- a revoke it catches cancels the underlying reader and calls `controller.error()` on the
@@ -8396,7 +8397,7 @@ was the whole file". A broker fault while polling (the authorisation check itsel
 fails closed the same way, never leaves the app reading past a check that could not complete.
 
 **Where this hooks in, and why the other two options were worse:** the HANDLER
-(`fetchThirdParty`/`guardReachResponse`), not the dial (`serve-reach.ts`) or the grant ledger's
+(`fetchThirdParty`/`guardReachResponse`), not the dial (`reach/reach.ts`) or the grant ledger's
 own revocation cascade (`HandleTable.revoke`) -- full reasoning in `src/loader/README.md`'s Design
 notes ("Why A199's cancellation hooks in the handler..."), not repeated here. Short version: the
 dial file is deliberately broker-policy-free and network-I/O-only; teaching it about grants would
@@ -8417,8 +8418,8 @@ than silently chosen (CLAUDE.md Rule 2).
 the grant WHILE it is still open (never before the request starts), and asserts the next read
 actually rejects within a bounded real-time race -- proven to FAIL against the pre-fix code
 (`expect(raced.kind).not.toBe('timed-out')` failed: the read hung until the test's own timeout).
-See `src/loader/tests/serve.test.ts`'s `fetchThirdParty A199` suite and
-`src/loader/tests/serve-reach-guard.test.ts` for the direct unit-level proof (fake timers, no
+See `src/loader/serve/tests/serve.test.ts`'s `fetchThirdParty A199` suite and
+`src/loader/reach/tests/guard.test.ts` for the direct unit-level proof (fake timers, no
 handler indirection).
 
 ### A200 -- third-party reach requests never counted toward an app's declared socket allowance **[FIXED -- stream/loader-11-reach-limits]**
@@ -8436,13 +8437,13 @@ its own lifetime exactly like a socket does.
 `Broker.app.socketAllowanceSync` (new, `src/broker/broker-contracts.ts`/`index.ts`) is a one-line,
 synchronous, never-throwing delegate to `GrantLedger.socketAllowance` -- same category as
 `hasGrantsSync`/`isRegisteredSync`, and the same kind of loader-specific seam
-`hydrateFromPinnedManifest` already is (A158). `src/loader/electron-serve.ts`'s `reachSlotsFor`
+`hydrateFromPinnedManifest` already is (A158). `src/loader/electron/serve.ts`'s `reachSlotsFor`
 keeps the actual per-origin IN-FLIGHT COUNT (necessarily new state: a proxied reach request is
 never a `HandleTable` resource), checked-and-reserved as one synchronous step against that number
 -- the same "check and reserve must not straddle an `await`" discipline
-`GrantLedger.reserveFsBytes`'s own doc names. `src/loader/serve.ts`'s `fetchThirdParty` reserves a
+`GrantLedger.reserveFsBytes`'s own doc names. `src/loader/serve/serve.ts`'s `fetchThirdParty` reserves a
 slot AFTER authorisation (a request never granted must not consume one at all) and BEFORE
-dialling, and `src/loader/serve-reach-guard.ts`'s `guardReachResponse` -- the SAME wrapper A199
+dialling, and `src/loader/reach/guard.ts`'s `guardReachResponse` -- the SAME wrapper A199
 needed anyway -- releases it exactly once, on every path the request can end: a clean EOF, an
 upstream read error, the consumer cancelling its own read (navigation, an aborted `fetch()`), and
 a revoke the A199 poll catches.
@@ -8453,8 +8454,8 @@ against the pre-fix code (`expected 200 to be 404`: the third request dialled an
 test proves the slot is restored once the two held requests actually finish. A third and fourth
 prove release on the two failure-shaped paths this kind of fix usually gets wrong: a dial that
 throws, and the consumer cancelling its own read -- see
-`src/loader/tests/serve.test.ts`'s `fetchThirdParty A200` suite, `src/loader/tests/serve-reach-
-guard.test.ts`, and `src/loader/tests/electron-serve.test.ts`'s `registerServingFor -- A200 real
+`src/loader/serve/tests/serve.test.ts`'s `fetchThirdParty A200` suite, `src/loader/reach/tests/
+guard.test.ts`, and `src/loader/electron/tests/serve.test.ts`'s `registerServingFor -- A200 real
 wiring` suite (a REAL `createBroker`, a manifest that actually declares `concurrentSockets`, and
 a real `Broker.app.socketAllowanceSync` reached end to end).
 
@@ -8732,7 +8733,7 @@ a response a `protocol.handle` handler returns. A cross-origin response with no
 `Access-Control-Allow-Origin` was readable, a `PUT` sent no preflight, and the handler's
 `Request` carries no `Origin` header at all. The reach path now adds CORS response headers for
 the app's origin and answers a browser preflight with a synthetic 204
-(`src/loader/serve-reach-cors.ts`), and `web-context-host.ts` wraps an isolated context's
+(`src/loader/reach/cors.ts`), and `web-context-host.ts` wraps an isolated context's
 responses the same way. Today none of it changes an outcome.
 
 **Why keep it:** if a later Electron starts enforcing CORS here, worker `fetch` and XHR on an
@@ -8743,9 +8744,9 @@ load-bearing and need tests that fail without them.
 ### A213 -- the reach path's queue, idle timeout and redirect cap are provisional **[AI-REC]**
 
 Filed 2026-09-22 (`d-0049`). A subresource request over the app's socket allowance now waits in
-a per-origin FIFO bounded at 256 waiters and 30 s (`serve-reach-slots.ts`); the dial's idle
+a per-origin FIFO bounded at 256 waiters and 30 s (`reach/slots.ts`); the dial's idle
 timeout is five minutes without a byte (`REACH_IDLE_TIMEOUT_MS`), so long-polls and event streams
-live. Both numbers were chosen, not measured. The redirect cap (20 hops, `serve-reach-redirects.ts`)
+live. Both numbers were chosen, not measured. The redirect cap (20 hops, `reach/redirects.ts`)
 is keyed by URL: a chain whose target URL the page's loader re-serialises differently restarts its
 count. Low risk, since each hop is still authorised and still costs the page a round trip.
 
@@ -8858,7 +8859,7 @@ the descriptor's shape and breaks.
 
 Filed 2026-09-22. The broker's confinement refuses any path that resolves to the app's root
 itself (`deny('is-root')`). The shim answers `stat`, `access`, `mkdir -p` and `fsync` of the root
-locally (`src/shim/node-fs-root.ts`), but `readdir` needs a listing only the broker has, so it
+locally (`src/shim/fs/root.ts`), but `readdir` needs a listing only the broker has, so it
 fails `EACCES` with a message naming the gap. A subdirectory lists normally.
 
 **What would settle it:** a broker policy change allowing a read-only listing of the root.
@@ -9350,3 +9351,23 @@ the shell stamps on every page's `.eth` request; the verifier host bypasses the 
 remains is listed in `ADR-0030`'s 2026-09-25 amendment: chiefly what any browser with a
 partitioned cache keeps (a top-level window opened on a name, shared slots), and public gateways'
 own edge caches, which nothing on this machine can partition.
+
+### A257 -- should `src/main/` adopt `ADR-0035`'s naming rule too **[NEEDS OWNER]**
+
+Filed 2026-09-25, while reorganising `src/preload/`, `src/shim/`, `src/verifier-host/`,
+`src/loader/` and `src/broker/` (`ADR-0035`). That ADR's rule is that a moved file drops the
+words its new folder already says: `src/loader/serve-csp.ts` became `serve/csp.ts`, not
+`serve/serve-csp.ts`. `src/main/` was organised into job folders earlier, by `ADR-0023`, on a
+different naming convention: `install/app-install.ts`, not `install/app.ts`; `consent/
+install-consent.ts`, not `consent/install.ts`. The two directories now read two different ways,
+and a reader moving between them has to notice which convention the one they are in uses.
+
+**Options:** rename `src/main/`'s files to match `ADR-0035`'s rule, at the same cost every prior
+move of this kind has paid (every import specifier, comment and doc link rewritten again); leave
+`src/main/` as `ADR-0023` left it, on the reasoning that a directory reorganised once is not
+obliged to match a convention adopted after the fact; or write `ADR-0035`'s rule into `ADR-0023`
+retroactively as the intended convention all along, without moving a single file, and apply it
+only forward from here.
+
+**Needs:** the owner's choice. Nothing behaves differently under any of the three; this is
+purely about which name a reader learns to expect.

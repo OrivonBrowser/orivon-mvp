@@ -8,7 +8,7 @@ import type { Broker } from '../broker-contracts.js'
 // fs-open.test.ts under code-guidelines.md's 800-line test limit, following
 // index-fs-extended.test.ts's own split precedent. Both are proven here
 // against `stubFs`'s in-memory streams, which is enough to prove
-// fs-capability.ts's OWN wiring (the quota check on writable(), reuse of
+// capabilities/fs.ts's OWN wiring (the quota check on writable(), reuse of
 // the same handle); whether the REAL adapter's streams behave correctly
 // against a real fd is node-fs-adapter-open.test.ts's job.
 

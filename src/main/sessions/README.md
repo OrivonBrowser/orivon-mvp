@@ -9,20 +9,20 @@ decided in `external-links.ts`, and `notifications` (`ADR-0028`), decided in
 `site-notifications.ts` and remembered per site by `notification-decisions.ts`. `tab-prompts.ts` is what each tab remembers between those
 questions. `web-context-host.ts`: ADR-0019's
 Electron half of the isolated `WebContext` — the real `WebContextHost`
-[`../../broker/web-capability.ts`](../../broker/web-capability.ts) calls through
+[`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) calls through
 `CreateBrokerOptions.webContextHost`: the partition, the sandboxed/isolated `WebContentsView`,
 the reach-only network path, and the CORS wrapper.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
-`writeFileAtomic`, `policy/origin.ts`, `broker-contracts.ts` types), [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts),
+`writeFileAtomic`, `policy/origin.ts`, `broker-contracts.ts` types), [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts),
 [`../shell/`](../shell/) (the two questions, `external-link-prompt.ts` and
 `notification-prompt.ts`; `showing-window.ts`; `exclusive-access-notice.ts`), the top-level
 `registry.ts`. Only `permission-gate.ts` and `web-context-host.ts` import `electron`: the
 decision files are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in
-[`../../broker/web-capability.ts`](../../broker/web-capability.ts) instead — that file stays
+[`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) instead — that file stays
 Electron-free by its own rule, which is exactly why this directory exists: the partition, the
 view construction and the network confinement have to live somewhere Electron-shaped, and this
 is it.
@@ -171,7 +171,7 @@ against the real shell, not assumed: `test/e2e-web-context-network.test.ts` fetc
 `https://example.com` through a context with both belts active and still gets a real response.
 This holds because `protocol.handle` REPLACES Chromium's network stack for the scheme it
 registers -- a request answered by a custom protocol handler never reaches the proxy-resolution
-step at all, the same reason [`../../loader/serve.ts`](../../loader/serve.ts)'s own app-origin
+step at all, the same reason [`../../loader/serve/serve.ts`](../../loader/serve/serve.ts)'s own app-origin
 handler never needed proxy awareness. The proxy only ever sees a connection attempt that
 `protocol.handle` did NOT intercept, which for `https:`/`http:` from inside a context should
 never happen -- so the discard-port proxy is a belt for exactly the gap outside those two

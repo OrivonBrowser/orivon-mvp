@@ -16,7 +16,7 @@ an installed app is served with.
 **What it depends on.** [`../../broker/`](../../broker/) (`policy/origin.ts`, `policy/update.ts`,
 `policy/manifest-patterns.ts`, `grants/origin-hash.ts`, `broker-contracts.ts` type,
 `transport/token-bucket.ts`), [`../../loader/`](../../loader/) (`index.ts` type only,
-`manifest.ts`, `electron-serve.ts`'s `liveCspHeaderFor`), [`../consent/`](../consent/)
+`manifest.ts`, `electron/serve.ts`'s `liveCspHeaderFor`), [`../consent/`](../consent/)
 (`update-outcomes.ts`, `install-consent.ts`, `install-consent-prompt.ts`,
 `update-outcomes-prompt.ts`), [`../dev/dev-mode.ts`](../dev/dev-mode.ts), the top-level
 `channels.ts`/`registry.ts`, `node:async_hooks`.
@@ -71,7 +71,7 @@ to "every app installs with nothing granted" with no error anywhere.
 **[`grant-without-install.ts`](grant-without-install.ts): why a loopback origin is asked, not
 refused.** An app served from this machine asks for its permissions like any other page, in every
 build, so a person running a local server gets the same prompt a published app shows. The install
-path cannot serve it: `../../loader/install-origin.ts` refuses a non-https, non-public origin
+path cannot serve it: `../../loader/fetch/install-origin.ts` refuses a non-https, non-public origin
 before any manifest is read, and pinning a bundle from one would protect nothing. What bounds it:
 
 - **Loopback only**, as `isLoopbackHost` in `../../broker/policy/origin.ts` defines it: a loopback
@@ -89,7 +89,7 @@ before any manifest is read, and pinning a bundle from one would protect nothing
 the installed CSP at all.** A port that runs cleanly on its own server and breaks once installed
 is a port that was never tested against the environment it ships into; the installed path's CSP
 is the difference most likely to cause that. So such an origin's documents carry the policy
-`../../loader/serve-csp.ts` builds, from the same live grants, read per response. It is added
+`../../loader/serve/csp.ts` builds, from the same live grants, read per response. It is added
 through `session.webRequest.onHeadersReceived` on the origin's own app partition, because the
 origin is served by its own server rather than through `protocol.handle` (A110 concerns only the
 latter).

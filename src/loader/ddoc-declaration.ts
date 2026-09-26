@@ -1,5 +1,5 @@
 // The bundle hash tree a site publishes about itself (ADR-0029): read,
-// never trusted to decide anything here. fetch-bundle.ts hands it on
+// never trusted to decide anything here. fetch/bundle.ts hands it on
 // beside the tree it computed, and src/trust/ddoc.ts compares the two.
 // An unreadable or missing file is `undefined` ("not published"), never a
 // failed fetch: the bundle loads either way.
@@ -8,8 +8,8 @@ import { MAX_BUNDLE_ENTRIES, isValidCanonicalPath } from '../broker/policy/canon
 import type { PathLeaf } from '../broker/policy/canonical-path.js'
 import { isString, ownProperty } from '../broker/policy/own-property.js'
 import { BUNDLE_HASH_PATTERN } from '../broker/policy/pin.js'
-import { fetchWithBudget, joinChunks } from './fetch-budget.js'
-import type { ByteBudget, Fetch } from './fetch-budget.js'
+import { fetchWithBudget, joinChunks } from './fetch/budget.js'
+import type { ByteBudget, Fetch } from './fetch/budget.js'
 
 /** Beside the manifest, and never a leaf: a root cannot describe the file that holds it. */
 export const DDOC_PATH = '/.well-known/orivon-ddoc.json'

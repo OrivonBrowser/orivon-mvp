@@ -15,7 +15,7 @@ import { forwardOutput } from './e2e-helpers.js'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
 import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/node-storage.js'
+import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
 
 export const FREETUBE_ORIGIN = 'https://freetube-e2e.orivon.test'
 const APP_DIR = join(process.cwd(), 'test', 'apps', 'freetube')

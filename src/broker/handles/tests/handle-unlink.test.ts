@@ -130,7 +130,7 @@ describe('HandleTable.onUnlink', () => {
     const listener = vi.fn<(reason: CloseReason, code?: OrivonErrorCode) => void>()
     // Registering late must not invent a terminal code it cannot know. The
     // socket's own `closed` promise is the backstop for this window and
-    // carries the real reason -- see socket-relay.ts's subscription to it.
+    // carries the real reason -- see transport/relay/socket.ts's subscription to it.
     expect(() => { handles.onUnlink(APP, id, listener) }).not.toThrow()
     expect(listener).not.toHaveBeenCalled()
   })

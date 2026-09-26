@@ -1,10 +1,9 @@
 // Manifest.capabilities -> update.ts's PatternSet -- the declared-authority
 // half of the conversion patternSetFromGrants (./update.ts) already performs
-// for the GRANTED half. Moved here from src/loader/update-patterns.ts
-// (2026-09-10, P4-1): ./request-grant.ts's subset check needs the exact same
-// conversion decideUpdate() does, and src/broker/ may never import
-// src/loader/ (../README.md) -- only the reverse. src/loader/update-patterns.ts
-// now re-exports this so its existing import path needs no change.
+// for the GRANTED half. Lives here because ./request-grant.ts's subset check
+// needs the exact same conversion decideUpdate() does, and src/broker/ may
+// never import src/loader/ (../README.md) -- only the reverse.
+// src/loader/index.ts imports this directly.
 
 import type { Capabilities, CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { PatternSet } from './update.js'
@@ -51,9 +50,9 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   // of its own (manifest.ts's FsCapability/IdCapability/SecretsCapability),
   // so an empty array is the correct "requested" value, not a placeholder
   // for a missing field. `secrets` (ADR-0033) follows `id`'s own precedent:
-  // requireGrantedCurve (../id-capability.js) re-checks the live manifest
+  // requireGrantedCurve (../capabilities/id.js) re-checks the live manifest
   // for what an empty-patterns `id` grant actually authorises, and
-  // secrets-capability.ts needs nothing narrower than presence either.
+  // capabilities/secrets.ts needs nothing narrower than presence either.
   if (capabilities.fs !== undefined) set.fs = []
   if (capabilities.id !== undefined) set.id = []
   if (capabilities.secrets !== undefined) set.secrets = []

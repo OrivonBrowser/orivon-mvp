@@ -1,15 +1,15 @@
 import type { OrivonError, OrivonErrorCode } from '../contracts/errors.js'
 
 // The one OrivonError builder shared by every isolated-world file in this
-// directory that needs to reject or throw one -- socket-port.ts, socket-
-// bridge.ts and orivon-surface.ts each built their own copy before this
+// directory that needs to reject or throw one -- ports/socket.ts, socket-
+// bridge.ts and surface/orivon.ts each built their own copy before this
 // consolidation (code-guidelines.md Rule 3). main-world-socket.ts keeps a
 // separate copy: it is serialised into the main world with no free
 // identifiers allowed, so it cannot import this one.
 //
 // Returns a PLAIN OBJECT, never `new Error(...)` -- contextBridge's promise-
 // rejection marshalling only preserves `.message` on a real `Error`
-// instance and silently drops `.code`/`.platformCode` (orivon-surface.ts's
+// instance and silently drops `.code`/`.platformCode` (surface/orivon.ts's
 // own header has the full story). `OrivonError` is an interface for
 // exactly this reason: every consumer only needs the shape.
 

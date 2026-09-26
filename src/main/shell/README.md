@@ -17,7 +17,7 @@ permission gate puts to the person; `showing-window.ts` finds the window a tab i
 `context-menu.ts` is the right-click menu for tabs and the chrome.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
-`grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)
+`grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts)
 (type only); and, inside `src/main/`, [`../browsing/`](../browsing/) (bookmarks, favicon,
 omnibox, delivery-provenance), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every

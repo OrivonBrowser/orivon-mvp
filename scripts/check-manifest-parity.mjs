@@ -36,24 +36,24 @@ export const CONTRACT_FILE = 'src/contracts/manifest.ts'
  * exists for.
  */
 export const PARITY_MAP = [
-  { interfaceName: 'Manifest', loaderFile: 'src/loader/manifest.ts', arrayName: 'MANIFEST_KEYS' },
-  { interfaceName: 'Capabilities', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'CAPABILITIES_KEYS' },
-  { interfaceName: 'NetCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'NET_KEYS' },
-  { interfaceName: 'TcpCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'TCP_KEYS' },
-  { interfaceName: 'UdpCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'UDP_KEYS' },
-  { interfaceName: 'BindScopes', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'BIND_SCOPES_KEYS' },
-  { interfaceName: 'HttpsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'HTTPS_KEYS' },
-  { interfaceName: 'FsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'FS_KEYS' },
-  { interfaceName: 'IdCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'ID_CAPABILITY_KEYS' },
-  { interfaceName: 'WebCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'WEB_CAPABILITY_KEYS' },
-  { interfaceName: 'MediaCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'MEDIA_CAPABILITY_KEYS' },
-  { interfaceName: 'ClipboardCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'CLIPBOARD_CAPABILITY_KEYS' },
+  { interfaceName: 'Manifest', loaderFile: 'src/loader/manifest/manifest.ts', arrayName: 'MANIFEST_KEYS' },
+  { interfaceName: 'Capabilities', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'CAPABILITIES_KEYS' },
+  { interfaceName: 'NetCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'NET_KEYS' },
+  { interfaceName: 'TcpCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'TCP_KEYS' },
+  { interfaceName: 'UdpCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'UDP_KEYS' },
+  { interfaceName: 'BindScopes', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'BIND_SCOPES_KEYS' },
+  { interfaceName: 'HttpsCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'HTTPS_KEYS' },
+  { interfaceName: 'FsCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'FS_KEYS' },
+  { interfaceName: 'IdCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'ID_CAPABILITY_KEYS' },
+  { interfaceName: 'WebCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'WEB_CAPABILITY_KEYS' },
+  { interfaceName: 'MediaCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'MEDIA_CAPABILITY_KEYS' },
+  { interfaceName: 'ClipboardCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'CLIPBOARD_CAPABILITY_KEYS' },
   // SecretsCapability declares zero fields today (ADR-0033, "presence alone
   // is the declaration"), so this row never finds a gap or a stale entry --
   // but it stays here rather than being omitted, so the day a field IS
   // added to either side, this check catches the drift immediately instead
   // of needing to be remembered.
-  { interfaceName: 'SecretsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'SECRETS_CAPABILITY_KEYS' }
+  { interfaceName: 'SecretsCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'SECRETS_CAPABILITY_KEYS' }
 ]
 
 /**

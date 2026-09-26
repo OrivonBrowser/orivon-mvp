@@ -3,7 +3,7 @@
 // script -- see that file's header for what this proves and what it stands
 // in for.
 //
-// IMPORTS src/shim/node-net.ts BY RELATIVE PATH, not via the bare 'net'
+// IMPORTS src/shim/net/net.ts BY RELATIVE PATH, not via the bare 'net'
 // specifier module-map.ts's alias table points a real app's own bundler at.
 // This repository has no bundler step for an EXTERNAL app's own code --
 // that aliasing (electron.vite.config.ts's `renderer.resolve.alias`,
@@ -12,7 +12,7 @@
 // origin. So there is no real `require('net')` resolution step to
 // reproduce here. What this file DOES exercise for real is the exact
 // module that alias points at -- the genuine, unmodified orivon-node-shim
-// `net` implementation (src/shim/node-net.ts, src/shim/node-net-socket.ts),
+// `net` implementation (src/shim/net/net.ts, src/shim/net/socket.ts),
 // run inside a real browser page, driven exactly the way an ordinary
 // Node TCP client library drives `require('net')`: `connect(opts, cb)`,
 // `.write()`/`.end()`, `.on('data'/'end'/'error')` -- never the raw
@@ -20,7 +20,7 @@
 // (src/shim/orivon-global.ts's `getOrivon()` is the ONLY place that
 // happens, inside the imported module, not here).
 
-import { connect } from '../src/shim/node-net.js'
+import { connect } from '../src/shim/net/net.js'
 
 // A151 (docs/open-questions.md), CLOSED: this file used to call
 // installGlobals() itself here, worked around the fact that nothing in
@@ -34,7 +34,7 @@ import { connect } from '../src/shim/node-net.js'
 // `process is not defined` again, that is a real regression in the
 // production wiring, not something this fixture should paper back over.
 
-/** Matches src/shim/node-http-errors.ts's NodeShapedError -- the shape a
+/** Matches src/shim/node-errors.ts's NodeShapedError -- the shape a
  * denial or connect failure actually arrives in through this shim, not the
  * raw OrivonError src/contracts/errors.ts declares. Read only for this
  * probe's own reporting. */

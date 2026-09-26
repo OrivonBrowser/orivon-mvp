@@ -192,7 +192,7 @@ list behind it is curated or not. Single-digit-vs-double-digit measures how a nu
 whether a host list is broad.
 
 **So the threshold is anchored on `MAX_PATTERNS`**, the enforced ceiling
-([`../../loader/manifest-capabilities.ts`](../../loader/manifest-capabilities.ts)) on how many
+([`../../loader/manifest/capabilities.ts`](../../loader/manifest/capabilities.ts)) on how many
 patterns one capability's array may ever declare, already imported here for the wildcard-port
 check. The threshold is `MAX_PATTERNS / 2`, 128 at today's ceiling of 256. A feed reader's dozen sources clears it
 by more than 10x; so would a large CDN allowlist of several dozen hosts. What trips it is a
@@ -268,7 +268,7 @@ dropped from the summary, never rendered padded. Separately, and before renderin
 reached: both `isDeclarableConnectPattern` (the `app.requestGrant` gate,
 [`../../broker/policy/request-grant.ts`](../../broker/policy/request-grant.ts)) and
 `validateConnectPattern` (the manifest-parse gate,
-[`../../loader/manifest-capabilities.ts`](../../loader/manifest-capabilities.ts)) already reject
+[`../../loader/manifest/capabilities.ts`](../../loader/manifest/capabilities.ts)) already reject
 any pattern where `pattern !== pattern.trim()` outright -- a check that file's own comment says
 exists specifically "to catch the padding parseConnectPattern's own trim would otherwise hide
 from us." No render-side change was made; the test suite records the investigation

@@ -52,7 +52,7 @@ export type { PickedPath } from './grants/picked-path-ledger.js'
  * revoke an acquisition that has not happened yet.
  *
  * `appName` is the requesting origin's own declared `manifest.name`
- * (`GrantLedger.manifestFor`, read by `user-selected-capability.ts` before
+ * (`GrantLedger.manifestFor`, read by `capabilities/user-selected.ts` before
  * calling this), `undefined` only if no manifest was ever registered for
  * the origin. An implementation may use it to name the app in the dialog's
  * own chrome (d-0032) -- `transport/ipc.ts`'s `describePickerDialog` is the
@@ -65,7 +65,7 @@ export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: 
  * that declining a picker is never a rejected promise, so this is a plain
  * value the caller branches on, not an error `PickPath` throws. `paths` are
  * real host OS paths, exactly what a native `dialog.showOpenDialog` hands
- * back; `userSelected` in ./user-selected-capability.ts is what turns them
+ * back; `userSelected` in ./capabilities/user-selected.ts is what turns them
  * into confined, revocable handles.
  */
 export type PickPathResult =
@@ -284,7 +284,7 @@ export interface Broker {
      * from it meanwhile.
      *
      * `manifest` MUST already be proven a leaf of a hash-pinned bundle
-     * (`src/loader/serve.ts`'s `verifiedManifestFor`), NEVER a manifest
+     * (`src/loader/serve/serve.ts`'s `verifiedManifestFor`), NEVER a manifest
      * merely read off disk: that is what separates this from the unverified
      * disk hydration A137 rejected. `GrantLedger.hydrateFromPinnedManifest`'s
      * own doc has the full reasoning, and what happens once `registerApp`
@@ -353,7 +353,7 @@ export interface Broker {
    * entirely rather than wiring one that can only ever fail.
    */
   readonly id: {
-    /** Silent, no prompt -- checked against the `id` grant only. 'invalid' for an unrecognised curve, 'internal' for a recognised one this policy layer cannot serve yet (id-capability.ts, policy/derive-p256.ts). */
+    /** Silent, no prompt -- checked against the `id` grant only. 'invalid' for an unrecognised curve, 'internal' for a recognised one this policy layer cannot serve yet (capabilities/id.ts, policy/derive-p256.ts). */
     publicKey(origin: string, opts: { curve: string }): Promise<Uint8Array>
     /** Same per-origin key `publicKey` returns for this `curve`. Same error shape as `publicKey`. */
     sign(origin: string, opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array>

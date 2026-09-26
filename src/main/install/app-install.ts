@@ -48,7 +48,7 @@ export type AppInstallDeps = UpdateOutcomeDeps
  * record for any origin it is asked about at all, even a bogus one, so
  * validating first is not optional. What this does NOT run is the full
  * T12/SSRF resolution check `Loader.load()` itself applies internally
- * (`src/loader/install-origin.ts`) -- this function's own check is cheap
+ * (`src/loader/fetch/install-origin.ts`) -- this function's own check is cheap
  * same-origin validation only, not a substitute for it.
  *
  * Wrapped in `withOriginQueue` (A62) so two calls for the same origin --

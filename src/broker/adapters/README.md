@@ -46,7 +46,7 @@ dependence on that detail entirely rather than relying on it holding.
 
 **[`tls-adapter.ts`](tls-adapter.ts) passes the app's TLS options to `tls.connect` and binds
 `checkServerIdentity` to the name.** Node's default check verifies against `servername || host`,
-and here `host` may be a checked address literal (when `../net-connect-secure.ts` added the
+and here `host` may be a checked address literal (when `../capabilities/net-connect-secure.ts` added the
 address check) and `servername` may be `''`, Node's way of sending no SNI. Binding Node's own
 `checkServerIdentity` to the intended name keeps verification identical to Node's in every case.
 Credentials that fail to load throw synchronously from `tls.connect`; they become `'invalid'`

@@ -201,7 +201,7 @@ export function nodeFs (userDataPath: string): BrokerFs {
       return root
     },
     realpathSync,
-    // NEITHER readFile NOR writeFile CATCHES. fs-capability.ts's `mapIoError`
+    // NEITHER readFile NOR writeFile CATCHES. capabilities/fs.ts's `mapIoError`
     // is the one place an errno becomes an OrivonError; a catch here that
     // produced one instead would BYPASS that mapping, forwarding the
     // confined absolute path -- and through it the OS account name and the
