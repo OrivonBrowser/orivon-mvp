@@ -1,10 +1,15 @@
 // The verifier host's utility-process entry: every untrusted parser (UnixFS,
 // dag-pb, IPNS protobuf, the light client's WASM, CCIP answers) runs here,
-// never in the main process. It reaches the network only through Electron's
-// net, so a configured proxy applies, and it is started and restarted by
-// src/main/verifier/.
+// never in the main process. It reaches the network through Electron's
+// net, so a configured proxy applies -- with one deliberate exception,
+// dns-fallback.ts's direct connection to a gateway `config.unproxiedGateways`
+// already found to have no proxy in front of it, taken only once `net`
+// itself has failed that gateway and a DNS-over-HTTPS answer disagreed with
+// the system resolver's (A251, docs/open-questions.md). It is started and
+// restarted by src/main/verifier/.
 
 import { net } from 'electron'
+import { createDirectFetch } from './direct-fetch.js'
 import { startHeliosLightClient } from './light-client/light-client.js'
 import type { FromHost, ToHost } from './protocol.js'
 import { startHost } from './service.js'
@@ -35,7 +40,8 @@ function main (): void {
         resolveHost: async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address),
         post,
         startLightClient: startHeliosLightClient,
-        fixturesAllowed: FIXTURES_ALLOWED
+        fixturesAllowed: FIXTURES_ALLOWED,
+        directFetch: createDirectFetch()
       })
       host.then(
         (running) => { post({ type: 'listening', fingerprint: running.fingerprint }) },

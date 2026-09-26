@@ -166,3 +166,76 @@ describe('blockstoreFor', () => {
     await expect(async () => { for await (const _ of store.get(leaf)) { void _ } }).rejects.toMatchObject({ failure: 'unverifiable' })
   })
 })
+
+describe('BlockSource.get -- in-flight sharing, not just cache hits', () => {
+  it('shares one fetch across concurrent callers in the same partition', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    const s = new BlockSource(gateways.fetch, new GatewayPool([A, B], 4), DEFAULT_LIMITS, new BlockCache(), 'https://one.example')
+    const [a, b] = await Promise.all([s.get(leaf, signal, () => {}), s.get(leaf, signal, () => {})])
+    expect(a).toEqual(leafBytes)
+    expect(b).toEqual(leafBytes)
+    expect(gateways.requests).toHaveLength(1)
+  })
+
+  it('does not share across partitions, even started concurrently', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    const pool = new GatewayPool([A, B], 4)
+    const cache = new BlockCache()
+    const one = new BlockSource(gateways.fetch, pool, DEFAULT_LIMITS, cache, 'https://one.example')
+    const two = new BlockSource(gateways.fetch, pool, DEFAULT_LIMITS, cache, 'https://two.example')
+    await Promise.all([one.get(leaf, signal, () => {}), two.get(leaf, signal, () => {})])
+    expect(gateways.requests).toHaveLength(2)
+  })
+
+  it('does not share under NO_BLOCK_MEMORY, even started concurrently', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    const s = new BlockSource(gateways.fetch, new GatewayPool([A, B], 4), DEFAULT_LIMITS, NO_BLOCK_MEMORY)
+    await Promise.all([s.get(leaf, signal, () => {}), s.get(leaf, signal, () => {})])
+    expect(gateways.requests).toHaveLength(2)
+  })
+
+  it('a refusal reaches every joiner sharing the fetch that caught it', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.tamper(leafKey, [A])
+    const s = new BlockSource(gateways.fetch, new GatewayPool([A, B], 4), DEFAULT_LIMITS, new BlockCache(), 'https://one.example')
+    const seenBy: string[][] = [[], []]
+    const [a, b] = await Promise.all([
+      s.get(leaf, signal, (r) => { seenBy[0]!.push(r.source) }),
+      s.get(leaf, signal, (r) => { seenBy[1]!.push(r.source) })
+    ])
+    expect(a).toEqual(leafBytes)
+    expect(b).toEqual(leafBytes)
+    expect(seenBy[0]).toEqual([A])
+    expect(seenBy[1]).toEqual([A])
+  })
+
+  it('the only joiner aborting stops the underlying fetch', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(A)
+    const s = new BlockSource(gateways.fetch, new GatewayPool([A], 4), DEFAULT_LIMITS, new BlockCache(), 'https://one.example')
+    const controller = new AbortController()
+    const promise = s.get(leaf, controller.signal, () => {})
+    controller.abort(new Error('gave up'))
+    await expect(promise).rejects.toThrow('gave up')
+  })
+
+  it('one joiner leaving does not affect another still waiting on the same fetch', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    const s = new BlockSource(gateways.fetch, new GatewayPool([A, B], 4), DEFAULT_LIMITS, new BlockCache(), 'https://one.example')
+    const controllerA = new AbortController()
+    const first = s.get(leaf, controllerA.signal, () => {})
+    const second = s.get(leaf, signal, () => {})
+    controllerA.abort(new Error('first gave up'))
+    await expect(first).rejects.toThrow('first gave up')
+    await expect(second).resolves.toEqual(leafBytes)
+  })
+
+  it('a joiner whose signal was already aborted rejects immediately, without waiting on the shared fetch', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(A) // if this joiner waited on the fetch at all, the test would hang
+    const s = new BlockSource(gateways.fetch, new GatewayPool([A], 4), DEFAULT_LIMITS, new BlockCache(), 'https://one.example')
+    const controller = new AbortController()
+    controller.abort(new Error('already gone'))
+    await expect(s.get(leaf, controller.signal, () => {})).rejects.toThrow('already gone')
+  })
+})

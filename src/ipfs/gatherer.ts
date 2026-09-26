@@ -34,7 +34,7 @@ function loadable (records: readonly NameRecord[]): NameRecord | undefined {
 
 export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer {
   const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...options.limits }
-  const pool = new GatewayPool(options.gateways, limits.gatewayConcurrency)
+  const pool = new GatewayPool(options.gateways, limits.perGatewayConcurrency)
   const cache = new BlockCache()
   const resolvers = {
     ipns: async (key: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void) =>

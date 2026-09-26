@@ -29,6 +29,7 @@ import { chooseNameEvidence } from './name-evidence.js'
 import type { NameEvidence } from './name-evidence.js'
 import { checkpointProblem, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
+import { unproxiedGateways } from './proxy-check.js'
 
 /** Started this long after ready at the latest, if no page has finished loading by then. */
 const START_FALLBACK_MS = 3_000
@@ -85,7 +86,14 @@ function chooseNow (): CheckpointChoice {
   return checkpoint
 }
 
-function hostConfig (): HostConfig {
+/** Empty under the test seam: a hermetic run has no real gateways to check
+ * a proxy against, and the fallback would only ever add noise there. */
+async function unproxiedGatewaysFor (gateways: readonly string[], seamActive: boolean): Promise<string[]> {
+  if (seamActive) return []
+  return await unproxiedGateways(gateways, async (url) => await app.resolveProxy(url))
+}
+
+async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
   const stored = verifierStore()
   let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
@@ -97,10 +105,12 @@ function hostConfig (): HostConfig {
       ? { lightClient: { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: choice.checkpoint.root } }
       : { lightClient: undefined, lightClientOff: `the Ethereum light client cannot start: ${checkpointProblem(choice)}` }
   }
+  const gateways = seam?.gateways ?? DEFAULT_ENDPOINTS.gateways
   return {
     port: loopbackPort(),
     ...lightClient,
-    gateways: seam?.gateways ?? DEFAULT_ENDPOINTS.gateways,
+    gateways,
+    unproxiedGateways: await unproxiedGatewaysFor(gateways, seam !== undefined),
     ipnsNameServices: seam === undefined ? DEFAULT_ENDPOINTS.ipnsNameServices : [],
     dnsOverHttps: seam?.dnsOverHttps ?? DEFAULT_ENDPOINTS.dnsOverHttps,
     ipnsSequences: stored.ipnsSequences(),

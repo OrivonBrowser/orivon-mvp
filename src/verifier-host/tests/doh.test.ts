@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dohTxtResolver, txtStrings } from '../doh.js'
+import { dohAddressResolver, dohTxtResolver, txtStrings } from '../doh.js'
 
 const signal = new AbortController().signal
 const answer = (body: unknown): Response => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/dns-json' } })
@@ -35,5 +35,45 @@ describe('dohTxtResolver', () => {
     expect(await second('_dnslink.x.example', signal)).toEqual([['dnslink=/ipfs/x']])
     const none = dohTxtResolver(['https://a.example/q'], async () => answer({ Status: 2 }))
     await expect(none('_dnslink.x.example', signal)).rejects.toThrow(/DNS status 2/)
+  })
+})
+
+describe('dohAddressResolver', () => {
+  it('merges public A and AAAA answers', async () => {
+    const resolve = dohAddressResolver(['https://dns.example/q'], async (url) => {
+      const type = new URL(url).searchParams.get('type')
+      return type === 'A'
+        ? answer({ Status: 0, Answer: [{ type: 1, data: '93.184.216.34' }] })
+        : answer({ Status: 0, Answer: [{ type: 28, data: '2606:2800:220:1:248:1893:25c8:1946' }] })
+    })
+    expect(await resolve('example.com', signal)).toEqual(['93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946'])
+  })
+
+  it('drops a private or loopback answer rather than trusting it', async () => {
+    const resolve = dohAddressResolver(['https://dns.example/q'], async (url) => {
+      const type = new URL(url).searchParams.get('type')
+      return type === 'A'
+        ? answer({ Status: 0, Answer: [{ type: 1, data: '127.0.0.1' }, { type: 1, data: '93.184.216.34' }] })
+        : answer({ Status: 0, Answer: [] })
+    })
+    expect(await resolve('example.com', signal)).toEqual(['93.184.216.34'])
+  })
+
+  it('succeeds on one family alone when the other genuinely has none (NXDOMAIN-shaped empty answer)', async () => {
+    const resolve = dohAddressResolver(['https://dns.example/q'], async (url) => {
+      const type = new URL(url).searchParams.get('type')
+      return type === 'A' ? answer({ Status: 0, Answer: [{ type: 1, data: '93.184.216.34' }] }) : answer({ Status: 0, Answer: [] })
+    })
+    expect(await resolve('example.com', signal)).toEqual(['93.184.216.34'])
+  })
+
+  it('throws only once BOTH families fail to answer at all', async () => {
+    const resolve = dohAddressResolver(['https://dns.example/q'], async () => new Response('', { status: 500 }))
+    await expect(resolve('example.com', signal)).rejects.toThrow(/no DNS-over-HTTPS resolver answered/)
+  })
+
+  it('returns an empty list, not a throw, when both families answer with nothing', async () => {
+    const resolve = dohAddressResolver(['https://dns.example/q'], async () => answer({ Status: 0, Answer: [] }))
+    expect(await resolve('example.com', signal)).toEqual([])
   })
 })

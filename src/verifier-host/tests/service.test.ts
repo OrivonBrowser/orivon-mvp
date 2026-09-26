@@ -11,7 +11,7 @@ const running: RunningHost[] = []
 afterEach(() => { for (const host of running.splice(0)) host.server.close() })
 
 function config (overrides: Partial<HostConfig> = {}): HostConfig {
-  return { port: 0, lightClient: undefined, gateways: [GATEWAY], ipnsNameServices: [], dnsOverHttps: ['https://dns.example/q'], ipnsSequences: {}, fixtures: { 'fixture.eth': `ipfs://${dag.root.toString()}` }, ...overrides }
+  return { port: 0, lightClient: undefined, gateways: [GATEWAY], unproxiedGateways: [], ipnsNameServices: [], dnsOverHttps: ['https://dns.example/q'], ipnsSequences: {}, fixtures: { 'fixture.eth': `ipfs://${dag.root.toString()}` }, ...overrides }
 }
 
 function deps (overrides: Partial<HostDeps> = {}): HostDeps & { posted: FromHost[] } {
@@ -24,6 +24,7 @@ function deps (overrides: Partial<HostDeps> = {}): HostDeps & { posted: FromHost
     post: (message) => { posted.push(message) },
     startLightClient: () => { throw new Error('no light client in this test') },
     fixturesAllowed: true,
+    directFetch: async () => { throw new Error('no direct fetch in this test -- config().unproxiedGateways is empty') },
     ...overrides
   }
 }
