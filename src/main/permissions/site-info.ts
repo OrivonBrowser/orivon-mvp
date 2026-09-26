@@ -14,8 +14,10 @@ import type { PickedPath } from '../../broker/broker-contracts.js'
 import { decideGrantRequest } from '../../broker/policy/request-grant.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import { describeCapabilityGrant, formatOriginForDisplay } from '../consent/grant-prompt-render.js'
+import { summaryAtLevel } from '../consent/grant-level.js'
 import { describePickedPath } from './permissions.js'
 import type { PickedPathRow } from './permissions.js'
+import type { ScoreLevel } from '../../trust/website-level.js'
 
 export interface SiteCapabilityRow {
   readonly capability: CapabilityKind
@@ -68,13 +70,18 @@ export interface SiteInfo {
  * (this file's own header). It gates `canTurnOn` for an off row only: an
  * ALREADY-HELD capability's `canTurnOn` is always true, matching how a
  * revoke never needs a live manifest either.
+ *
+ * `level` (ADR-0037), when this origin is displayed at Level 4, strips
+ * every row's warning through `summaryAtLevel` -- an off row (what turning
+ * the switch on would grant) and an on row alike.
  */
 export function buildSiteInfo (
   origin: string,
   manifest: Manifest,
   grants: readonly Grant[],
   pickedPaths: readonly PickedPath[],
-  registered: boolean
+  registered: boolean,
+  level?: ScoreLevel
 ): SiteInfo {
   const heldByCapability = new Map(grants.map((grant): [CapabilityKind, Grant] => [grant.capability, grant]))
   const declared = Object.keys(patternSetFromCapabilities(manifest.capabilities)) as readonly CapabilityKind[]
@@ -83,7 +90,7 @@ export function buildSiteInfo (
   for (const capability of declared) {
     const held = heldByCapability.get(capability)
     if (held !== undefined) {
-      const { warning, message } = describeCapabilityGrant(capability, held.patterns)
+      const { warning, message } = summaryAtLevel(describeCapabilityGrant(capability, held.patterns), level)
       capabilityRows.push({ capability, on: true, canTurnOn: true, warning, message, patterns: held.patterns })
       continue
     }
@@ -93,13 +100,13 @@ export function buildSiteInfo (
     // grantChangedCapabilities's own call shape one level up.
     const decision = decideGrantRequest(manifest, capability, undefined)
     if (!decision.allowed) continue // decideGrantRequest fails-closed; nothing to switch.
-    const { warning, message } = describeCapabilityGrant(capability, decision.patterns)
+    const { warning, message } = summaryAtLevel(describeCapabilityGrant(capability, decision.patterns), level)
     capabilityRows.push({ capability, on: false, canTurnOn: registered, warning, message, patterns: decision.patterns })
   }
 
   const pickedPathRows = pickedPaths.map((pick): PickedPathRow => {
-    const { warning, message } = describePickedPath(pick.kind, pick.path)
-    return { pickId: pick.id, warning, message }
+    const { warning, message } = summaryAtLevel(describePickedPath(pick.kind, pick.path), level)
+    return { pickId: pick.id, kind: pick.kind, warning, message }
   })
 
   return {

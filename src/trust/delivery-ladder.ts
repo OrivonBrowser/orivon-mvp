@@ -1,19 +1,28 @@
-// The delivery ladder (ADR-0006's D-ladder): how this app's code reached the
-// machine, and how much that costs in ongoing trust. Pure, no I/O -- the
-// caller supplies `now` rather than this file reading the clock, so a test
-// (or a UI computing "how stale is this") never depends on when it runs.
+// The delivery ladder (ADR-0006's D-ladder): how trustless the connection
+// that delivered this app's code is, on the canonical Web3 scores page's own
+// Connection-to-network scale. Pure, no I/O -- the caller supplies `now`
+// rather than this file reading the clock, so a test (or a UI computing "how
+// stale is this") never depends on when it runs.
 //
-// D1..D4 are ADR-0006's own rungs, unchanged:
-//   D1 fetched from a host on every load (an ordinary website)      -- trust cost: continuous
-//   D2 fetched once, cached, HASH-PINNED (TOFU on the bundle)       -- trust cost: once
-//   D3 content-addressed (infohash / CID) -- the address IS the proof -- trust cost: none
-//   D4 D3 AND the name is resolved trustlessly (ENS)                -- trust cost: none
+// Three levels, matching the canonical page exactly (never renamed to
+// "Connection" in this codebase's own UI: `src/trust/connection-ladder.ts`
+// already owns that word, for the unrelated, still-unwired per-app
+// network-log axis -- see this directory's own README):
+//   D1  relies on a trusted, centralised party for the bytes           -- red
+//   D2  a `.eth` name proven trustlessly AND its content addressed by  -- yellow
+//       CID, so every byte is checked against something no single host
+//       can rewrite
+//   D3  trustless for data availability -- nothing in this build fetches
+//       peer-to-peer, so no automatic path reaches it; a developer-only
+//       override can, for previewing the UI (`../main/dev/score-levels.ts`)
 //
-// D3 and D4 are reached only by a `.eth` name: the caller derives both from
-// what the verifier proved (`src/main/verifier/name-evidence.ts`). Every
-// other origin arrives with both `false`.
+// A TOFU-pinned installed app (hash-pinned, trusted the first time) and a
+// CID reached through an unproven DNSLink both stay D1: the pin and the
+// DNSLink record are each trusted once, from a single source, never proven
+// trustless. Neither fact is lost -- both stay visible as evidence (the pin
+// block, the name-evidence line) beside this level, never folded into it.
 
-export type DeliveryRung = 'D1' | 'D2' | 'D3' | 'D4'
+export type DeliveryLevel = 1 | 2 | 3
 
 export type DeliveryMethod = 'fetched-each-load' | 'served-from-pinned-cache'
 
@@ -22,13 +31,14 @@ export type DeliveryMethod = 'fetched-each-load' | 'served-from-pinned-cache'
  * hash-verified pin versus a granted third-party host (owner's framing,
  * 2026-09-15: fetching third-party code is not a violation the pin fails to
  * catch -- the pin still proves the app's OWN bytes are unaltered -- but it
- * costs trust score, and no rung below said by how much). Passed through
- * into `DeliveryEvidence.pinCoverage` verbatim -- no rung here reads it, the
- * same "evidence, not a verdict" stance connection-ladder.ts already takes
- * for its own pattern heuristic (this scores nothing; see build step 7 for
- * how it renders). Structurally identical to src/loader/serve/pin-coverage.ts's
- * `PinCoverageSnapshot`, defined separately rather than imported from it --
- * this directory's README: never reach into another stream's internals.
+ * costs trust score, and the level alone does not say by how much). Passed
+ * through into `DeliveryEvidence.pinCoverage` verbatim -- the level does not
+ * read it, the same "evidence, not a verdict" stance connection-ladder.ts
+ * already takes for its own pattern heuristic (this scores nothing; see
+ * build step 7 for how it renders). Structurally identical to
+ * src/loader/serve/pin-coverage.ts's `PinCoverageSnapshot`, defined
+ * separately rather than imported from it -- this directory's README: never
+ * reach into another stream's internals.
  */
 export interface PinCoverageEvidence {
   readonly pinnedRequests: number
@@ -65,17 +75,12 @@ export interface DeliveryHistoryInput {
   readonly currentFetchMatchesPin: boolean | null
   /** Whether the pinned hash has ever changed since this app was first installed (an accepted, re-consented update). */
   readonly pinHasChanged: boolean
-  /** Whether the app's own address is itself content-addressed (infohash/CID) rather than a DNS host -- D3/D4. */
+  /** Whether the app's own address is itself content-addressed (infohash/CID) rather than a DNS host. */
   readonly addressIsContentAddressed: boolean
-  /** Whether the human-readable name resolving to that address was itself resolved trustlessly (e.g. ENS) -- D4. */
+  /** Whether the human-readable name resolving to that address was itself resolved trustlessly (e.g. ENS). */
   readonly nameResolvedTrustlessly: boolean
   /** This app's pin-coverage for the current session, or `undefined` when the caller has none to report (no request observed yet, or nothing wired it up). Passed through into `DeliveryEvidence.pinCoverage` unchanged -- see `PinCoverageEvidence`'s own doc. */
   readonly pinCoverage?: PinCoverageEvidence
-}
-
-export interface DeliveryRungResult {
-  readonly rung: DeliveryRung
-  readonly met: boolean
 }
 
 export interface DeliveryEvidence {
@@ -99,24 +104,17 @@ export interface DeliveryEvidence {
 }
 
 export interface DeliveryLadderResult {
-  /** All four rungs, always, each independently evaluated -- never a single label. */
-  readonly rungs: readonly DeliveryRungResult[]
+  readonly level: DeliveryLevel
   readonly evidence: DeliveryEvidence
 }
 
-const ALL_RUNGS: readonly DeliveryRung[] = ['D1', 'D2', 'D3', 'D4']
-
-function metRung (rung: DeliveryRung, evidence: DeliveryEvidence, input: DeliveryHistoryInput): boolean {
-  switch (rung) {
-    case 'D1':
-      return input.deliveryMethod === 'fetched-each-load'
-    case 'D2':
-      return input.deliveryMethod === 'served-from-pinned-cache' && evidence.pinned && !evidence.pinMismatch
-    case 'D3':
-      return input.addressIsContentAddressed
-    case 'D4':
-      return input.addressIsContentAddressed && input.nameResolvedTrustlessly
-  }
+/** D2 is met only by a `.eth` name proven trustlessly, its content itself
+ * content-addressed -- the strict canonical reading the owner chose: a
+ * TOFU-pinned app and an unproven DNSLink CID both stay D1, since each is
+ * trusted from a single source rather than proven. Nothing here can reach
+ * D3: no automatic path in this build fetches peer-to-peer. */
+function level (input: DeliveryHistoryInput): DeliveryLevel {
+  return input.addressIsContentAddressed && input.nameResolvedTrustlessly ? 2 : 1
 }
 
 /** The delivery ladder for one app's fetch/pin history. */
@@ -135,7 +133,5 @@ export function deliveryLadder (input: DeliveryHistoryInput): DeliveryLadderResu
     pinCoverage: input.pinCoverage
   }
 
-  const rungs = ALL_RUNGS.map((rung) => ({ rung, met: metRung(rung, evidence, input) }))
-
-  return { rungs, evidence }
+  return { level: level(input), evidence }
 }

@@ -55,8 +55,9 @@ detected lie (`unverifiable`) above everything else, so that "one gateway was do
 **[`pointer-chain.ts`](pointer-chain.ts) judges the pointers, not the bytes.** Two questions are
 kept apart. DDOC asks whether every byte served matched the content's hashes, and the gatherer's
 report answers it per mount. Whether every pointer from the name to the root was proven is the
-connection axis's question, the delivery ladder's D4, and this file answers it, for a live page
-and an installed app's stored chain alike. A DNSLink hop is not proven, because DNS can forge the
+Delivery level's own question (the canonical Connection-to-network scale's proven-name rung,
+`ADR-0006`'s 2026-09-26 amendment), and this file answers it, for a live page and an installed
+app's stored chain alike. A DNSLink hop is not proven, because DNS can forge the
 TXT record, yet the bytes are still checked against the CID it named: DDOC holds, and the site is
 Level 2 with its DNS hop shown unproven. A test build's `fixture`
 provenance counts as proven: the seam that produces it is compiled out of an ordinary build.

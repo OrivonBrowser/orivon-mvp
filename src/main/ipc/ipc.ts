@@ -18,7 +18,8 @@ import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL } from '../channels.js'
 import type { TabManager } from '../shell/tabs.js'
 import type { SiteInfoController, SiteSummary } from '../permissions/site-info-controller.js'
-import type { DeliveryProvenance } from '../browsing/delivery-provenance.js'
+import { web3Score } from '../browsing/site-trust.js'
+import type { Web3Score } from '../browsing/site-trust.js'
 import type { PanelAnchor } from '../permissions/permissions-panel.js'
 import type { SiteInfoPage } from '../permissions/site-info-panel.js'
 
@@ -46,12 +47,12 @@ export type ShellCommand =
    * channel is chrome-only, and the chrome view itself never needs either
    * in full). */
   | { type: 'siteSummaryFor'; url: string }
-  /** S4-6, ADR-0007: whether the active tab's URL is currently being
-   * answered from Orivon's own pinned local cache -- the address-bar
-   * shield's one truthful provenance signal, queried the same lagging,
-   * per-active-tab way `siteSummaryFor` already is (see
-   * ./delivery-provenance.ts). */
-  | { type: 'deliveryProvenanceFor'; url: string }
+  /** The address-bar shield's own signal: the active tab's displayed
+   * Website level and Delivery level (`../browsing/site-trust.js`'s
+   * `web3Score`), queried the same lagging, per-active-tab way
+   * `siteSummaryFor` already is. `null` when there is nothing to show
+   * (no loader published, no canonical origin). */
+  | { type: 'web3ScoreFor'; url: string }
   /** Opens, or closes, the all-sites permissions popup under the
    * toolbar cluster's tune icon -- see ./permissions-panel.ts. `url` is
    * the active TAB's url, not yet an origin (window.ts derives one via
@@ -81,15 +82,9 @@ export function registerShellIpc (
   bookmarks: BookmarkStore,
   siteInfo: SiteInfoController,
   openSettings: (anchor: PanelAnchor, url?: string) => void,
-  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void,
-  /** Injected, matching `siteInfo` above -- ipc.test.ts stubs this rather
-   * than reaching through to a real Electron `session`, the same reason
-   * `siteInfo` is a `SiteInfoController` object rather than an imported
-   * broker call. Defaults to `deliveryProvenanceFor` in window.ts's real
-   * construction. */
-  deliveryProvenance: (url: string) => Promise<DeliveryProvenance> = async () => ({ servedFromPinnedCache: false })
+  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
 ): void {
-  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | DeliveryProvenance | null> => {
+  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | Web3Score | null> => {
     if (!isFromChrome(event, chromeWebContents)) {
       // Not the chrome view's top frame -- refuse silently rather than
       // throwing a message back that confirms the channel exists.
@@ -141,8 +136,8 @@ export function registerShellIpc (
       }
       case 'siteSummaryFor':
         return siteInfo.siteSummaryFor(command.url)
-      case 'deliveryProvenanceFor':
-        return deliveryProvenance(command.url)
+      case 'web3ScoreFor':
+        return siteInfo.siteTrustFor(command.url).then(web3Score)
       case 'openSettings':
         openSettings(command.anchor, command.url)
         return

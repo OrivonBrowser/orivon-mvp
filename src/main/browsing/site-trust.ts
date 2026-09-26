@@ -9,11 +9,11 @@
 // connection log (`src/trust/README.md`), and the popover says so.
 
 import { deliveryLadder } from '../../trust/delivery-ladder.js'
-import type { DeliveryLadderResult, PinCoverageEvidence } from '../../trust/delivery-ladder.js'
+import type { DeliveryLadderResult, DeliveryLevel, PinCoverageEvidence } from '../../trust/delivery-ladder.js'
 import { ddocVerdict } from '../../trust/ddoc.js'
 import type { DdocVerdict, PublishedTree } from '../../trust/ddoc.js'
-import { websiteLevel } from '../../trust/website-level.js'
-import type { WebsiteLevel } from '../../trust/website-level.js'
+import { displayedLevel, websiteLevel } from '../../trust/website-level.js'
+import type { ScoreLevel, WebsiteLevel } from '../../trust/website-level.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 import type { EvidenceRow, NameEvidence } from '../verifier/name-evidence.js'
 
@@ -29,6 +29,39 @@ export interface SiteTrust {
   readonly ddoc: DdocVerdict
   /** How a `.eth` name led to this page's content; `undefined` for any other origin. */
   readonly name: { readonly line: string, readonly rows: readonly EvidenceRow[] } | undefined
+  /** A developer-only override of the Website level (`../dev/score-levels.ts`), for previewing
+   * Level 3/4 before a real Web3 Score provider exists. `undefined` outside developer mode, or
+   * when this origin has none. Never folded into `level` above -- `level.level` stays exactly
+   * what this browser observed. */
+  readonly levelOverride: ScoreLevel | undefined
+  /** `level.level`, or `levelOverride` when one exists -- what every surface should actually
+   * show (`../../trust/website-level.js`'s `displayedLevel`). */
+  readonly displayedLevel: ScoreLevel
+  /** The same override mechanism, for the Delivery level (`../../trust/delivery-ladder.js`). */
+  readonly deliveryOverride: DeliveryLevel | undefined
+  /** `delivery.level`, or `deliveryOverride` when one exists. */
+  readonly displayedDelivery: DeliveryLevel
+}
+
+/** The toolbar shield's own IPC reply -- the smallest slice of `SiteTrust` it needs, so the
+ * chrome view never has to reach into the full popover payload (evidence rows, pin details) it
+ * has no use for. `overridden`/`deliveryOverridden` let the shield's tooltip name a developer
+ * override rather than presenting it as observed (ADR-0006). */
+export interface Web3Score {
+  readonly level: ScoreLevel
+  readonly overridden: boolean
+  readonly delivery: DeliveryLevel
+  readonly deliveryOverridden: boolean
+}
+
+export function web3Score (trust: SiteTrust | null): Web3Score | null {
+  if (trust === null) return null
+  return {
+    level: trust.displayedLevel,
+    overridden: trust.levelOverride !== undefined,
+    delivery: trust.displayedDelivery,
+    deliveryOverridden: trust.deliveryOverride !== undefined
+  }
 }
 
 /**
@@ -48,7 +81,11 @@ export interface SiteTrust {
  * ADR-0006 exists to prevent. `pinHasChanged` is always `false`: `PinRecord`
  * keeps no history of a prior hash, so there is nothing here to claim
  * either way -- callers must not render this field (no rung reads it; see
- * `metRung` in `delivery-ladder.js`).
+ * `deliveryLadder` in `delivery-ladder.js`).
+ *
+ * `levelOverride`/`deliveryOverride` come from `../dev/score-levels.ts`, read
+ * by the caller so this function stays free of `devModeEnabled()` --
+ * matching every other optional fact here, supplied rather than fetched.
  */
 export function buildSiteTrust (
   origin: string,
@@ -57,7 +94,9 @@ export function buildSiteTrust (
   pinCoverage: PinCoverageEvidence | undefined,
   published: PublishedTree | undefined,
   now: number,
-  name?: NameEvidence
+  name?: NameEvidence,
+  levelOverride?: ScoreLevel,
+  deliveryOverride?: DeliveryLevel
 ): SiteTrust {
   const connection: ConnectionState = servedFromCache ? 'cached' : origin.startsWith('https://') ? 'secure' : 'insecure'
 
@@ -77,12 +116,17 @@ export function buildSiteTrust (
   })
 
   const ddoc = ddocVerdict(pin, published)
+  const level = websiteLevel(name?.content, ddoc, pin?.bundleHash, servedFromCache)
   return {
     connection,
-    level: websiteLevel(name?.content, ddoc, pin?.bundleHash, servedFromCache),
+    level,
     delivery,
     pin: pin === null ? undefined : { bundleHash: pin.bundleHash, version: pin.version, pinnedAt: pin.pinnedAt },
     ddoc,
-    name: name === undefined ? undefined : { line: name.line, rows: name.rows }
+    name: name === undefined ? undefined : { line: name.line, rows: name.rows },
+    levelOverride,
+    displayedLevel: displayedLevel(level.level, levelOverride),
+    deliveryOverride,
+    displayedDelivery: deliveryOverride ?? delivery.level
   }
 }

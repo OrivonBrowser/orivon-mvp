@@ -9,10 +9,15 @@
 // and `x` icons (ISC licence, https://lucide.dev) onto their own default
 // attributes (24x24 viewBox, stroke-width 2, round caps/joins). See
 // README.md for why no icon library is a dependency here.
+//
+// `svg`/`path`/`circle`/`rect`/`line` are exported for `./web3-shield.ts`,
+// `./site-info/icons.ts` and `./grant-icons.ts` to build on -- one set of
+// primitives, not a copy in every file that draws an inline SVG
+// (code-guidelines.md Rule 3).
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
-function svg (viewBox: string): SVGSVGElement {
+export function svg (viewBox: string): SVGSVGElement {
   const el = document.createElementNS(SVG_NS, 'svg')
   el.setAttribute('viewBox', viewBox)
   el.setAttribute('fill', 'none')
@@ -21,7 +26,7 @@ function svg (viewBox: string): SVGSVGElement {
   return el
 }
 
-function path (d: string, strokeWidth: string): SVGPathElement {
+export function path (d: string, strokeWidth: string): SVGPathElement {
   const el = document.createElementNS(SVG_NS, 'path')
   el.setAttribute('d', d)
   el.setAttribute('stroke-width', strokeWidth)
@@ -44,12 +49,34 @@ export function globeIcon (): SVGSVGElement {
   return el
 }
 
-function circle (cx: number, cy: number, r: number): SVGCircleElement {
+export function circle (cx: number, cy: number, r: number): SVGCircleElement {
   const el = document.createElementNS(SVG_NS, 'circle')
   el.setAttribute('cx', String(cx))
   el.setAttribute('cy', String(cy))
   el.setAttribute('r', String(r))
   el.setAttribute('stroke-width', '2')
+  return el
+}
+
+export function rect (x: number, y: number, width: number, height: number, rx?: number): SVGRectElement {
+  const el = document.createElementNS(SVG_NS, 'rect')
+  el.setAttribute('x', String(x))
+  el.setAttribute('y', String(y))
+  el.setAttribute('width', String(width))
+  el.setAttribute('height', String(height))
+  if (rx !== undefined) el.setAttribute('rx', String(rx))
+  el.setAttribute('stroke-width', '2')
+  return el
+}
+
+export function line (x1: number, y1: number, x2: number, y2: number): SVGLineElement {
+  const el = document.createElementNS(SVG_NS, 'line')
+  el.setAttribute('x1', String(x1))
+  el.setAttribute('y1', String(y1))
+  el.setAttribute('x2', String(x2))
+  el.setAttribute('y2', String(y2))
+  el.setAttribute('stroke-width', '2')
+  el.setAttribute('stroke-linecap', 'round')
   return el
 }
 

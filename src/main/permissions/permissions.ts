@@ -27,12 +27,20 @@ import type { CapabilityKind, Grant, GrantId, Manifest } from '../../contracts/i
 import type { Broker, PickedPath } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { describeCapabilityGrant } from '../consent/grant-prompt-render.js'
+import { summaryAtLevel } from '../consent/grant-level.js'
 import { addDeclinedCapability } from '../consent/request-grant.js'
 import { isCapabilityKind } from '../../broker/policy/request-grant.js'
 import { UNSAFE_TEXT_CHARS } from '../../loader/manifest/manifest.js'
 import type { PersistedApp, PersistedPick } from '../../broker/grants/ledger-storage.js'
 import type { SubsystemContext } from '../registry.js'
 import type { NotificationDecision } from '../sessions/notification-decisions.js'
+import type { ScoreLevel } from '../../trust/website-level.js'
+
+/** Never overriding (ADR-0037) -- the default `levelOverrideFor` everywhere
+ * below, so an unwired caller (and every existing test) keeps warning
+ * exactly as before. */
+type LevelOverrideFor = (origin: string) => ScoreLevel | undefined
+const NO_OVERRIDE: LevelOverrideFor = () => undefined
 
 /** One granted capability, rendered in the install prompt's own words
  * (`describeCapabilityGrant`) -- "same fact, same words" between the two
@@ -59,6 +67,10 @@ export interface PermissionRow {
  */
 export interface PickedPathRow {
   readonly pickId: string
+  /** For the renderer's grant icon (`../../renderer/grant-icons.ts`) -- a
+   * folder and a file get their own glyph, matching how a folder pick
+   * already reads as a materially broader grant in `warning`/`message`. */
+  readonly kind: PersistedPick['kind']
   readonly warning: boolean
   readonly message: string
 }
@@ -104,15 +116,19 @@ export function describePickedPath (kind: PersistedPick['kind'], path: string): 
 /** Pure: no broker, no I/O -- the mapping from what the ledger holds to
  * what a person reads, testable directly against real `Manifest`/`Grant`
  * values. `pickedPaths` defaults to empty so every existing call site (none
- * of which knew about picks before this lane) keeps compiling unchanged. */
-export function buildAppPermissions (origin: string, manifest: Manifest, grants: readonly Grant[], pickedPaths: readonly PickedPath[] = []): AppPermissions {
+ * of which knew about picks before this lane) keeps compiling unchanged.
+ * `level` (ADR-0037), when this origin is displayed at Level 4, strips
+ * every row's warning through `summaryAtLevel` -- a picked directory's
+ * warning too, since it is exactly the same "breadth must be visible"
+ * signal a network grant's warning is. */
+export function buildAppPermissions (origin: string, manifest: Manifest, grants: readonly Grant[], pickedPaths: readonly PickedPath[] = [], level?: ScoreLevel): AppPermissions {
   const rows = grants.map((grant): PermissionRow => {
-    const { warning, message } = describeCapabilityGrant(grant.capability, grant.patterns)
+    const { warning, message } = summaryAtLevel(describeCapabilityGrant(grant.capability, grant.patterns), level)
     return { capability: grant.capability, grantId: grant.id, warning, message }
   })
   const pickedPathRows = pickedPaths.map((pick): PickedPathRow => {
-    const { warning, message } = describePickedPath(pick.kind, pick.path)
-    return { pickId: pick.id, warning, message }
+    const { warning, message } = summaryAtLevel(describePickedPath(pick.kind, pick.path), level)
+    return { pickId: pick.id, kind: pick.kind, warning, message }
   })
   return { origin, appName: manifest.name, rows, pickedPathRows }
 }
@@ -127,19 +143,19 @@ export function buildAppPermissions (origin: string, manifest: Manifest, grants:
  * origin with no saved name shows as its origin alone, which is honest and is
  * what a record written before the name was saved will do.
  */
-export function buildPersistedAppPermissions (app: PersistedApp): AppPermissions {
+export function buildPersistedAppPermissions (app: PersistedApp, level?: ScoreLevel): AppPermissions {
   const rows: PermissionRow[] = []
   for (const [capability, grant] of Object.entries(app.grants)) {
     // UNTRUSTED disk content: a key here is not yet known to be one of the
     // seven real capability kinds, the same check hydration applies.
     if (!isCapabilityKind(capability)) continue
-    const { warning, message } = describeCapabilityGrant(capability, grant.patterns)
+    const { warning, message } = summaryAtLevel(describeCapabilityGrant(capability, grant.patterns), level)
     rows.push({ capability, grantId: null, warning, message })
   }
   const pickedPathRows: PickedPathRow[] = []
   for (const [pickId, pick] of Object.entries(app.pickedPaths)) {
-    const { warning, message } = describePickedPath(pick.kind, pick.path)
-    pickedPathRows.push({ pickId, warning, message })
+    const { warning, message } = summaryAtLevel(describePickedPath(pick.kind, pick.path), level)
+    pickedPathRows.push({ pickId, kind: pick.kind, warning, message })
   }
   return { origin: app.origin, appName: displayableName(app.appName) ?? app.origin, rows, pickedPathRows }
 }
@@ -231,7 +247,7 @@ export class PermissionsRegistry {
    * registered) is dropped from the registry rather than shown as a broken
    * row -- there is nothing a person could do with a card for an app that
    * no longer exists. */
-  async list (broker: Broker): Promise<readonly AppPermissions[]> {
+  async list (broker: Broker, levelOverrideFor: LevelOverrideFor = NO_OVERRIDE): Promise<readonly AppPermissions[]> {
     // THE BROKER IS THE SOURCE, not this set. `#origins` was once the only
     // input and `noteOrigin` never acquired a production caller, so the list
     // was empty for every grant made before the current session -- a person
@@ -251,7 +267,7 @@ export class PermissionsRegistry {
       // authoritative question is asked separately, of the one call that
       // cannot fail transiently: isRegisteredSync reads an in-memory map and
       // never throws or awaits.
-      const app = await describeOrigin(broker, origin)
+      const app = await describeOrigin(broker, origin, levelOverrideFor(origin))
       if (app !== null) {
         results.push(app)
         loaded.add(origin)
@@ -271,7 +287,7 @@ export class PermissionsRegistry {
     // than from whatever disk last recorded.
     for (const app of broker.app.persistedAppsSync()) {
       if (loaded.has(app.origin)) continue
-      const described = buildPersistedAppPermissions(app)
+      const described = buildPersistedAppPermissions(app, levelOverrideFor(app.origin))
       // An app whose last capability was revoked leaves an empty record behind
       // (`revoke` does not delete the file when the set empties). Showing that
       // as a card with no rows and no revoke button would be a permanent piece
@@ -290,19 +306,19 @@ export class PermissionsRegistry {
    * dependency on whether it was ever noted. `null` for anything the
    * broker does not recognise as registered -- an ordinary website, or an
    * app whose grants were all revoked and then forgotten. */
-  async forOrigin (broker: Broker, origin: string): Promise<AppPermissions | null> {
+  async forOrigin (broker: Broker, origin: string, level?: ScoreLevel): Promise<AppPermissions | null> {
     if (!broker.app.isRegisteredSync(origin)) return null
-    return await describeOrigin(broker, origin)
+    return await describeOrigin(broker, origin, level)
   }
 }
 
 /** Shared by `list`/`forOrigin` -- one manifest+grants fetch, one failure
  * mode (drop the row rather than throw into a renderer that cannot recover
  * from it). */
-async function describeOrigin (broker: Broker, origin: string): Promise<AppPermissions | null> {
+async function describeOrigin (broker: Broker, origin: string, level?: ScoreLevel): Promise<AppPermissions | null> {
   try {
     const [manifest, grants, pickedPaths] = await Promise.all([broker.app.manifest(origin), broker.app.grants(origin), broker.app.pickedPaths(origin)])
-    return buildAppPermissions(origin, manifest, grants, pickedPaths)
+    return buildAppPermissions(origin, manifest, grants, pickedPaths, level)
   } catch {
     return null
   }
@@ -336,20 +352,22 @@ export interface PermissionsController {
 /** The one way to build a `PermissionsController`, closing over `ctx`
  * (never a captured `Broker`) so it always reads whichever broker is
  * currently published -- `ctx.broker` is a live getter (registry.ts), and
- * this must see the same instance every other subsystem does. */
-export function createPermissionsController (ctx: SubsystemContext): PermissionsController {
+ * this must see the same instance every other subsystem does.
+ * `levelOverrideFor` defaults to never overriding (ADR-0037); the real
+ * `../dev/score-levels.js` function is wired in at `../shell/window.ts`. */
+export function createPermissionsController (ctx: SubsystemContext, levelOverrideFor: LevelOverrideFor = NO_OVERRIDE): PermissionsController {
   const registry = new PermissionsRegistry()
   return {
     async list () {
       const broker = ctx.broker
-      return broker === undefined ? [] : await registry.list(broker)
+      return broker === undefined ? [] : await registry.list(broker, levelOverrideFor)
     },
     async forUrl (url) {
       const broker = ctx.broker
       if (broker === undefined) return null
       const origin = originFromUrl(url)
       if (origin === null) return null
-      return await registry.forOrigin(broker, origin)
+      return await registry.forOrigin(broker, origin, levelOverrideFor(origin))
     },
     async revoke (origin, grantId) {
       const broker = ctx.broker

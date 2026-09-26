@@ -309,40 +309,6 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
   })
 })
 
-describe('isOriginServedFromCache -- the address bar\'s S4-6 provenance signal', () => {
-  it('is true once the origin\'s own scheme is actually registered', async () => {
-    const session = fakeSession()
-    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
-    const { registerAppOrigin, isOriginServedFromCache } = await import('../serve.js')
-
-    registerAppOrigin(session, 'https://app.example', async () => new Response(null))
-
-    expect(await isOriginServedFromCache('https://app.example')).toBe(true)
-
-    vi.doUnmock('electron')
-  })
-
-  it('is false for an origin nothing has registered serving for -- never a manifest-only "isRegisteredSync" guess', async () => {
-    const session = fakeSession()
-    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
-    const { isOriginServedFromCache } = await import('../serve.js')
-
-    expect(await isOriginServedFromCache('https://never-installed.example')).toBe(false)
-
-    vi.doUnmock('electron')
-  })
-
-  it('is false, not thrown, for a malformed origin', async () => {
-    const session = fakeSession()
-    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
-    const { isOriginServedFromCache } = await import('../serve.js')
-
-    expect(await isOriginServedFromCache('not a url')).toBe(false)
-
-    vi.doUnmock('electron')
-  })
-})
-
 describe('pinCoverageFor -- the registered handler\'s own pin-coverage tracker', () => {
   it('is undefined for an origin nothing has registered serving for', async () => {
     vi.doMock('electron', () => ({ session: { fromPartition: () => fakeSession() } }))

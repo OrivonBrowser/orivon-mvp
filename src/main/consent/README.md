@@ -4,7 +4,9 @@
 `install-consent.ts`/`request-grant.ts`/`update-outcomes.ts` decide; `grant-prompt-render.ts`
 (plus `grant-prompt-connect.ts`, `grant-prompt-origin.ts`, `grant-prompt-choice.ts`) turn a
 decision into words; `install-consent-prompt.ts`/`request-grant-prompt.ts`/`update-outcomes-prompt.ts`
-show those words in a real dialog. `grant-changed-capabilities.ts` is the one place both
+show those words in a real dialog. `grant-level.ts`'s `summaryAtLevel` is the one place a Level 4
+site's summary loses its warning (`ADR-0037`), called from every function above that produces a
+`CapabilityGrantSummary`. `grant-changed-capabilities.ts` is the one place both
 `install-consent.ts` and `update-outcomes.ts` turn "capabilities the person just agreed to" into
 actual `broker.grant()` calls. `request-grant-subsystem.ts` wires `request-grant.ts` into the
 running app.
@@ -13,7 +15,10 @@ running app.
 [`../../broker/policy/`](../../broker/policy/) (`manifest-patterns.ts`, `request-grant.ts`,
 `update.ts`, `canonical-host.ts`, `connect.ts`, `connect-patterns.ts`, `address.ts`),
 [`../../broker/broker-contracts.ts`](../../broker/broker-contracts.ts) (type only),
-[`../../loader/index.ts`](../../loader/index.ts) (type only), and the top-level `registry.ts`.
+[`../../loader/index.ts`](../../loader/index.ts) (type only), [`../../trust/website-level.ts`](../../trust/website-level.ts)
+(`ScoreLevel` type only), [`../dev/score-levels.ts`](../dev/score-levels.ts) (`scoreLevelOverrideFor`,
+wired in at `../install/app-install-subsystem.ts` and `./request-grant-subsystem.ts`), and the
+top-level `registry.ts`.
 
 **What it must never import.** `electron`, in every file except the three named `*-prompt.ts` —
 the suffix rule ([`../README.md`](../README.md)) is load-bearing here specifically: eight of
@@ -24,6 +29,18 @@ import in one of them would silently lose that.
 Maintenance only.
 
 ## Design notes
+
+**[`grant-level.ts`](grant-level.ts): one rule, applied at row-building time, not five
+re-derivations of "is this site Level 4" (`ADR-0037`).** Every function in this directory that
+produces a `CapabilityGrantSummary` — `describeGrantRequest`, the shared `describeCapabilitySet`
+behind `describeInstallConsent`/`describeCapabilityPrompt`, `describeCapabilityChoice` (every row
+on its screen, not only the current one, since the context lines are built from the same
+summaries) — takes an optional trailing `level?: ScoreLevel` and passes it straight to
+`summaryAtLevel`. `describeReconsent`/`describeRollbackChoice` take no level at all: neither
+renders a capability row, so there is nothing for Level 4 to silence. The three `*-prompt.ts`
+factories default `levelOverrideFor` to `() => undefined`, so an unwired caller (and every
+existing test) keeps warning exactly as before; only `app-install-subsystem.ts` and
+`request-grant-subsystem.ts` wire in the real `../dev/score-levels.ts` function.
 
 **[`grant-prompt-render.ts`](grant-prompt-render.ts): every pattern is rendered from the parsed
 form, never a second guess at the raw string.** Every pattern goes through `hostSpecKind`

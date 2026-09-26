@@ -1,11 +1,16 @@
 # `src/trust/`: the trust indicator
 
 **What lives here.** The Website level this browser can observe (Level 1 or 2 of the canonical
-[Web3 scores](https://docs.orivonstack.com/docs/implementations/web3-score) page), the delivery
-ladder, the connection ladder built from the broker's per-app connection log, operation scoring,
-and the same-host hash tree check: whether the pinned bundle matches the tree its site publishes.
-Click-through shows the level and, beneath it, **the actual evidence it rests on**
-([`ADR-0006`](../../docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
+[Web3 scores](https://docs.orivonstack.com/docs/implementations/web3-score) page; `website-level.ts`),
+the Delivery level on that same page's Connection-to-network scale (three levels, red/yellow/
+green; `delivery-ladder.ts`), the connection ladder built from the broker's per-app connection log
+(a different, still-unwired axis -- see Design notes below), operation scoring, and the same-host
+hash tree check: whether the pinned bundle matches the tree its site publishes. Click-through
+shows the level and, beneath it, **the actual evidence it rests on**
+([`ADR-0006`](../../docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)). A
+developer-only override (`../main/dev/score-levels.ts`) can preview Website Level 3/4 or Delivery
+Level 3 before a real provider or peer-to-peer fetching exist -- always named as an override,
+never as observed or judged.
 
 **What it depends on.** [`src/contracts/`](../contracts/), and the broker's connection log
 *through a contract*, never by reaching into broker internals.
@@ -73,7 +78,7 @@ this module maps those reasons down to these.
 **Pin coverage is counted in bytes, not requests. Provisional, and deliberately easy to
 change.** [`delivery-ladder.ts`](delivery-ladder.ts)'s `PinCoverageEvidence` (owner's framing,
 2026-09-15: fetching third-party code is not a violation the pin fails to catch, but it costs
-trust score, and D2 had no way to say by how much) keeps both a request count and a byte count
+trust score, and the old D2 rung had no way to say by how much) keeps both a request count and a byte count
 per bucket, but byte totals are the one that answers "how much of the running app". A single
 enormous remote script and forty tiny pinned icons are not well described by a request count:
 by that measure the pinned side would dominate 40:1 while the app's actual weight ran almost
@@ -108,11 +113,20 @@ the table. Its wording states what was compared, "files match the hash tree this
 and never that the domain's owner published them. The tree sits on the same host as the files
 (`ADR-0029`), and saying more would be the overclaim this component exists to prevent.
 
-**The Website level stops at 2, and 2 means DDOC holds** ([`website-level.ts`](website-level.ts)).
-Levels 1 and 2 are observations: does DDOC hold. Level 3 and above are judgements about the code
-itself, and only a Web3 Score provider may give them, so this file has no type for them. DDOC
-holds when a site's files match the hashes its owner published: IPFS content, by design, as long
-as no file failed its check, and an installed site whose files match the tree it publishes on its
-own host. How well that anchor is held, a name proven on Ethereum, a DNSLink or the site's own
-host, is not part of the level: it is evidence shown beside it, and the delivery ladder's D4
-already grades a proven name. Mixing the two would make one number answer two questions.
+**The Website level's `ObservedLevel` stops at 2, and 2 means DDOC holds**
+([`website-level.ts`](website-level.ts)). Levels 1 and 2 are observations: does DDOC hold. Level
+3 and above are judgements about the code itself, and only a Web3 Score provider may give them
+(or, in this build, the developer-only override), so `ObservedLevel` itself has no 3 or 4 --
+`displayedLevel` is the one place "observed, or overridden" is decided, and every surface shows
+that, never `WebsiteLevel.level` directly. DDOC holds when a site's files match the hashes its
+owner published: IPFS content, by design, as long as no file failed its check, and an installed
+site whose files match the tree it publishes on its own host. How well that anchor is held, a
+name proven on Ethereum, a DNSLink or the site's own host, is not part of the level: it is
+evidence shown beside it, and the Delivery level's D2 rung already grades a proven name. Mixing
+the two would make one number answer two questions.
+
+**The Delivery level (`delivery-ladder.ts`) is a single value on the canonical Connection-to-
+network scale, not four independent rungs.** D2 is met only by a `.eth` name proven trustlessly
+whose content is itself content-addressed; a TOFU-pinned installed app and a CID reached through
+an unproven DNSLink both stay D1 -- each is trusted from a single source, not proven. Nothing
+automatic in this build reaches D3, which needs fetching peer-to-peer.

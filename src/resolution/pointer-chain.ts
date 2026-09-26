@@ -21,9 +21,9 @@ function stepVerified (step: PointerStep): boolean {
 
 /**
  * Whether every hop from the name to the content's root was verified: the
- * delivery ladder's D4, for a live page and for an installed app's stored
- * chain alike. DDOC is the bytes' question, not this one. An empty chain
- * proves nothing.
+ * Delivery level's D2 rung, when the content is also content-addressed, for
+ * a live page and for an installed app's stored chain alike. DDOC is the
+ * bytes' question, not this one. An empty chain proves nothing.
  */
 export function pointerChainVerdict (steps: readonly PointerStep[]): PointerChainVerdict {
   if (steps.length === 0) return { verified: false, unverified: undefined }

@@ -1,6 +1,7 @@
 import type { SiteDataSnapshot } from '../../main/ipc/site-info-ipc.js'
 import type { PickedPathRow } from '../../main/permissions/permissions.js'
 import { backIcon } from './icons.js'
+import { grantIcon } from '../grant-icons.js'
 
 // The Cookies and site data page -- two sections, kept visibly separate
 // (`ADR-0003`'s tiers): the site's ordinary browser storage, and what it
@@ -133,7 +134,7 @@ export function renderDataPage (
       revoke.className = 'btn-secondary'
       revoke.textContent = 'Remove'
       revoke.addEventListener('click', () => { callbacks.onRevokePickedPath(pick.pickId) })
-      li.append(text, revoke)
+      li.append(grantIcon(pick.kind), text, revoke)
       picks.append(li)
     }
     container.append(picks)

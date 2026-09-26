@@ -144,12 +144,12 @@ const servedPartitions = new Set<string>()
  * with no side effect?
  *
  * Needed because a tab's partition is fixed when its `WebContentsView` is
- * constructed, so `isOriginServedFromCache` below (async) cannot answer in
- * time. Do NOT "simplify" this into asking Electron directly: that means
- * `session.fromPartition(...)`, which CREATES the session it asks about, and
- * `partitionFor` yields a `persist:` partition -- so probing it per navigation
- * would mint an on-disk app partition for every ordinary website visited,
- * which is the cost A109 removed.
+ * constructed, and because the toolbar's own delivery/level query
+ * (`../../main/permissions/site-info-controller.js`) must not itself probe
+ * `session.fromPartition(...)` per navigation: that call CREATES the session
+ * it asks about, and `partitionFor` yields a `persist:` partition -- so
+ * probing it for every ordinary website visited would mint an on-disk app
+ * partition for each one, which is the cost A109 removed.
  */
 export function isOriginServedFromCacheSync (origin: string): boolean {
   return servedPartitions.has(partitionFor(origin))
@@ -342,28 +342,6 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
  */
 function carriesLiveAuthority (origin: string, broker: Broker | undefined): boolean {
   return isOriginServedFromCacheSync(origin) || broker?.app.hasGrantsSync(origin) === true
-}
-
-/**
- * The address bar's own S4-6 provenance signal (ADR-0007: "the padlock is
- * now misleading unless the UI corrects it"). Asks Electron's OWN
- * protocol-handler registry, never the broker's `isRegisteredSync` --
- * `registerApp` (a manifest in the grant ledger) and `registerServingFor`
- * (this file, actually intercepting the scheme) are two separate calls, and
- * only this one reflects whether a request to `origin` right now would
- * truly be answered from the pinned cache rather than reaching the real
- * network. A malformed `origin` answers `false`, the same fail-closed
- * default `deliveryProvenanceFor` (src/main/) already applies one layer up.
- */
-export async function isOriginServedFromCache (origin: string): Promise<boolean> {
-  let scheme: string
-  try {
-    scheme = new URL(origin).protocol.replace(':', '')
-  } catch {
-    return false
-  }
-  const { session } = await import('electron')
-  return session.fromPartition(partitionFor(origin)).protocol.isProtocolHandled(scheme)
 }
 
 /**

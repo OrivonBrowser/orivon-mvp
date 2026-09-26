@@ -19,7 +19,10 @@ capability switches, its Web3 Score page, its Cookies and site data page).
 | `style.css` | Entry point: colour/size tokens, both themes, page-wide base rules, `@import`s the three below |
 | `styles/tabstrip.css`, `styles/toolbar.css`, `styles/bookmarks.css` | One row each |
 | `main.ts` | Renders `ShellState`, turns clicks/typing into `orivonShell.*` commands |
-| `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button); everything else is static markup; also imported by `newtab/main.ts` for its bookmark tiles |
+| `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button), and the shared `svg`/`path`/`circle`/`rect`/`line` primitives every other icon file in this tree builds on; also imported by `newtab/main.ts` for its bookmark tiles |
+| `web3-shield.ts` | The Web3 Score shield element, shared by the toolbar and the site-info popup's connection row so the two can never draw it differently |
+| `grant-icons.ts` | One icon per capability kind, picked-path kind or site notification, for the left side of a permission row (the site-info popup and the all-sites panel) |
+| `styles/web3-level.css` | The shield's colour tokens and shape rules; the site-info popup's own stylesheet keeps a literal copy, matching this tree's cross-entry convention |
 | `bookmarks-view.ts` | Renders the bookmarks bar's dynamic list |
 | `newtab/index.html`, `newtab/main.ts`, `newtab/style.css` | The dashboard: a search box, then a grid of app-shortcut and bookmark tiles, with its own small entry, separate from the chrome view |
 | `settings/index.html`, `settings/main.ts`, `settings/permissions-view.ts`, `settings/style.css` | The all-sites popup: every app, all its grants, revoke-only |
@@ -87,22 +90,20 @@ on `null` or a load failure; it never fetches a favicon itself. `src/main/browsi
 actual fetching, capped and re-encoded to `data:`, specifically so this privileged view's CSP
 can stay `img-src 'self' data:` rather than opening it to arbitrary third-party hosts.
 
-**The Web3 Score shield leads the address pill, and carries the trust dot's own states.** A
-padlock reading "secure" for bytes read off disk, never touching TLS, would be the false claim
-`ADR-0007` names as unacceptable, so the shield cannot simply keep guessing from the URL scheme
-once a tab is a pinned app. `main.ts`'s `updateWeb3ScoreShield` still paints the ordinary
-secure/insecure read first, synchronously (no page ever shows a blank shield while a query is in
-flight), then asks main via `shell.deliveryProvenanceFor`, a separate round trip from the pill's
-own `siteSummaryFor`, because the two answer different questions (where this page's bytes came
-from, versus what it has asked to do), and upgrades to `.cached` if the answer says so. The
-tooltip text on that state is `"Running from local cache, pinned"`, quoted directly from
-`ADR-0007`'s own wording rather than paraphrased, so the two can never read differently.
-`src/main/browsing/delivery-provenance.ts` is deliberately built on the loader's own
-protocol-handler registry, never the broker's `isRegisteredSync`, since the latter means only "a
-manifest is registered," not "this origin's scheme is actually being answered from disk," and
-the difference is exactly the false-claim risk this feature exists to avoid. Clicking the shield
-opens the site-info popup straight to its Web3 Score page (`src/main/permissions/site-trust.ts`),
-which renders that same evidence in full, plus the delivery ladder -- never a grade
+**The Web3 Score shield leads the address pill, and shows the site's displayed Website level.**
+`web3-shield.ts`'s `web3Shield`/`paintShield` draw one element, used unchanged by both this
+toolbar and the site-info popup's connection row: a plain grey outline with no level yet, or a
+wide filled badge once one resolves -- red (Level 1, labelled "Web2"), orange (2), yellow (3),
+green (Level 4, labelled "Web3"). `main.ts`'s `updateWeb3ScoreShield` paints the empty state
+first, synchronously, then asks main via `shell.web3ScoreFor` (a separate round trip from the
+pill's own `siteSummaryFor`, because the two answer different questions: how trustless this site
+is, versus what it has asked to do) and paints whichever level comes back, naming a developer
+override in the tooltip when one applies (`ADR-0006`'s 2026-09-26 amendment) rather than ever
+showing it as observed. The shield no longer signals whether a page is served from Orivon's own
+pinned cache -- `ADR-0007`'s own amendment records that as a real narrowing, deferred to a future
+"store this Web3site locally" affordance. Clicking the shield opens the site-info popup straight
+to its Web3 Score page (`src/main/browsing/site-trust.ts`), which renders the level's own
+evidence in full, plus the Delivery level -- never a grade
 (`ARCHITECTURE.md`: "trust is shown as observed behaviour, never as a grade").
 
 **The site-info key sits right after the shield, and is absent until the site has asked for
@@ -110,9 +111,11 @@ something.** `main.ts`'s `updateSitePermissionsBadge` queries `shell.siteSummary
 active-tab change and toggles the key's own `hidden` attribute on `summary.asked` -- an ordinary
 website carries no key at all, the same way Chrome's own permission icon stays absent until a
 site has asked (owner reference). `.has-warning` tints it the moment any asked-for row is an
-unlimited grant. Clicking it opens the site-info popup to its main page: the connection row,
-then one switch per capability or picked path the site has asked for, staged until a Confirm
-click (`src/main/permissions/site-info-controller.ts`, `site-switches.ts`).
+unlimited grant -- a Level 4 site's own grants never trip it, since their rows carry no warning
+at all (`ADR-0037`). Clicking it opens the site-info popup to its main page: the connection row,
+then one switch per capability or picked path the site has asked for, each row led by an icon
+for what it grants (`grant-icons.ts`), staged until a Confirm click
+(`src/main/permissions/site-info-controller.ts`, `site-switches.ts`).
 
 **The all-sites popup moved to a tune icon in the right-hand cluster.** It lists every app this
 browser has ever granted anything to, revoke-only, and is reached either directly or from the

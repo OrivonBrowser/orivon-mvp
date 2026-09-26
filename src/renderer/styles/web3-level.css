@@ -1,0 +1,49 @@
+/* The Web3 Score shield's level colours and shape -- shared between the
+   toolbar (style.css @imports this) and the site-info popup
+   (site-info/style.css @imports the SAME file, a deliberate exception to
+   this codebase's usual "copy tokens literally, never share a stylesheet
+   across entries" convention: the shield's colours must never drift
+   between the two surfaces that draw it, matching src/renderer/web3-shield.ts
+   being the one module both build it from.
+
+   Theme-invariant, like --wok/--winsecure/--waccent already are (style.css):
+   a level's colour is not a light/dark-mode design choice, it is the fact
+   the level names. wlevel1/wlevel4 are dark enough for the white "Web2"/
+   "Web3" label they carry; wlevel2/wlevel3 never carry text, so they stay
+   closer to the canonical page's own red/orange/yellow/green. */
+
+:root {
+  --wlevel1: #b91c1c; /* red    -- Website L1, Delivery D1 */
+  --wlevel2: #ea580c; /* orange -- Website L2 only */
+  --wlevel3: #ca8a04; /* yellow -- Website L3, Delivery D2 */
+  --wlevel4: #15803d; /* green  -- Website L4, Delivery D3 */
+}
+
+/* No level yet (a new tab, or a query still in flight): today's plain grey
+   outline, unchanged -- .web3-shield with no `.leveled` class draws through
+   the ordinary `stroke: currentColor` a .pillbtn/.iconbtn icon already gets. */
+.web3-shield {
+  transition: color 500ms ease;
+}
+
+.web3-shield.leveled {
+  width: 28px;
+  height: 20px;
+}
+
+.web3-shield-fill {
+  stroke: none;
+}
+.web3-shield-fill[data-level='1'] { fill: var(--wlevel1); }
+.web3-shield-fill[data-level='2'] { fill: var(--wlevel2); }
+.web3-shield-fill[data-level='3'] { fill: var(--wlevel3); }
+.web3-shield-fill[data-level='4'] { fill: var(--wlevel4); }
+
+.web3-shield-label {
+  fill: #fff;
+  font-weight: 700;
+  font-size: 8px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-family: inherit;
+}

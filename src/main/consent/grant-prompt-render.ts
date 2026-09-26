@@ -19,10 +19,12 @@
 
 import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js'
 import type { CapabilityGrantSummary } from './grant-prompt-connect.js'
-import { describeConnectCapability, portsPhrase } from './grant-prompt-connect.js'
+import { describeConnectCapability, portsPhrase, WARNING_MARK } from './grant-prompt-connect.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import type { PatternSet } from '../../broker/policy/update.js'
 import { formatOriginForDisplay } from './grant-prompt-origin.js'
+import { summaryAtLevel } from './grant-level.js'
+import type { ScoreLevel } from '../../trust/website-level.js'
 // Re-exported so every existing caller and test keeps its import path (this
 // split moved code, never an interface).
 export { formatOriginForDisplay }
@@ -83,7 +85,7 @@ function describeWebContextGrant (patterns: readonly Pattern[]): CapabilityGrant
   })
   return {
     warning: true,
-    message: hosts.map((host) => `⚠ Run code as ${host}, in a private, empty session.`).join('\n'),
+    message: hosts.map((host) => `${WARNING_MARK}Run code as ${host}, in a private, empty session.`).join('\n'),
     explanation: 'It cannot see your account or anything you keep there.'
   }
 }
@@ -119,25 +121,25 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
     case 'tcp.listen.local':
       return {
         warning: true,
-        message: `⚠ Accept connections from other programs on this device on ${portsPhrase(patterns)}`,
+        message: `${WARNING_MARK}Accept connections from other programs on this device on ${portsPhrase(patterns)}`,
         explanation: 'Any other program on this computer -- including another Orivon app -- can connect to this app on this port. Not reachable from your network or the internet.'
       }
     case 'udp.bind.local':
       return {
         warning: true,
-        message: `⚠ Receive data from other programs on this device on ${portsPhrase(patterns)}`,
+        message: `${WARNING_MARK}Receive data from other programs on this device on ${portsPhrase(patterns)}`,
         explanation: 'Any other program on this computer -- including another Orivon app -- can send this app data on this port. Not reachable from your network or the internet.'
       }
     case 'tcp.listen.network':
       return {
         warning: true,
-        message: `⚠ Accept incoming connections on ${portsPhrase(patterns)}`,
+        message: `${WARNING_MARK}Accept incoming connections on ${portsPhrase(patterns)}`,
         explanation: 'This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can connect to this app, not only computers it reached out to first.'
       }
     case 'udp.bind.network':
       return {
         warning: true,
-        message: `⚠ Receive data on ${portsPhrase(patterns)}`,
+        message: `${WARNING_MARK}Receive data on ${portsPhrase(patterns)}`,
         explanation: 'This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can send this app data, not only computers it contacted first.'
       }
     // Not merged with udp.bind.network here -- that merge only makes sense
@@ -193,9 +195,10 @@ export function describeGrantRequest (
   origin: string,
   manifest: Manifest,
   capability: CapabilityKind,
-  patterns: readonly Pattern[]
+  patterns: readonly Pattern[],
+  level?: ScoreLevel
 ): GrantPromptContent {
-  const { warning, message, explanation } = describeCapabilityGrant(capability, patterns)
+  const { warning, message, explanation } = summaryAtLevel(describeCapabilityGrant(capability, patterns), level)
   // A115: rendered once here, reused for both `title` and `detail`'s last
   // line below -- never the raw origin twice over, which is how a
   // subdomain-prefix confusable used to survive.
@@ -248,7 +251,7 @@ function describeInboundAccess (listenPatterns: readonly Pattern[], bindPatterns
     : `on ${portsPhrase(listenPatterns)} (TCP) and ${portsPhrase(bindPatterns)} (UDP)`
   return {
     warning: true,
-    message: `⚠ Accepts connections and data from other computers ${portsText}`,
+    message: `${WARNING_MARK}Accepts connections and data from other computers ${portsText}`,
     explanation: 'This opens a door into your device: any other computer that can reach these ports -- on your network, or the internet if they are forwarded -- can connect to or send data to this app, not only computers this app contacted first.'
   }
 }
@@ -318,7 +321,8 @@ function describeCapabilitySet (
   declared: PatternSet,
   capabilities: readonly CapabilityKind[],
   message: string,
-  held: readonly CapabilityKind[]
+  held: readonly CapabilityKind[],
+  level?: ScoreLevel
 ): GrantPromptContent {
   const mergeInbound = capabilities.includes('tcp.listen.network') && capabilities.includes('udp.bind.network')
   let inboundRowEmitted = false
@@ -334,11 +338,11 @@ function describeCapabilitySet (
     if (mergeInbound && isInboundCapability) {
       if (inboundRowEmitted) continue
       inboundRowEmitted = true
-      rows.push(describeInboundAccess(declared['tcp.listen.network'] ?? [], declared['udp.bind.network'] ?? []))
+      rows.push(summaryAtLevel(describeInboundAccess(declared['tcp.listen.network'] ?? [], declared['udp.bind.network'] ?? []), level))
       rowCapabilities.push(['tcp.listen.network', 'udp.bind.network'])
       continue
     }
-    rows.push(describeCapabilityGrant(capability, declared[capability] ?? []))
+    rows.push(summaryAtLevel(describeCapabilityGrant(capability, declared[capability] ?? []), level))
     rowCapabilities.push([capability])
   }
   const mergedRows = mergeRowsWithIdenticalMessage(rows)
@@ -392,9 +396,10 @@ export function describeInstallConsent (
   origin: string,
   manifest: Manifest,
   capabilities: readonly CapabilityKind[],
-  held: readonly CapabilityKind[] = []
+  held: readonly CapabilityKind[] = [],
+  level?: ScoreLevel
 ): GrantPromptContent {
-  return describeCapabilitySet(origin, manifest, patternSetFromCapabilities(manifest.capabilities), capabilities, 'This app wants to:', held)
+  return describeCapabilitySet(origin, manifest, patternSetFromCapabilities(manifest.capabilities), capabilities, 'This app wants to:', held, level)
 }
 
 /**
@@ -412,13 +417,14 @@ export function describeInstallConsent (
 export function describeCapabilityPrompt (
   origin: string,
   manifest: Manifest,
-  requestedPatterns: PatternSet
+  requestedPatterns: PatternSet,
+  level?: ScoreLevel
 ): GrantPromptContent {
   const capabilities = Object.keys(requestedPatterns) as readonly CapabilityKind[]
   // A170 is scoped to describeInstallConsent's own dialog -- this screen's
   // `capabilities` is already exactly what is being asked about here, so
   // there is no held-vs-outstanding distinction of the SAME kind to mark.
-  return describeCapabilitySet(origin, manifest, requestedPatterns, capabilities, 'This app wants to do more than you already allowed:', [])
+  return describeCapabilitySet(origin, manifest, requestedPatterns, capabilities, 'This app wants to do more than you already allowed:', [], level)
 }
 
 /**

@@ -1,10 +1,11 @@
 import type { Bookmark } from '../main/browsing/bookmarks.js'
 import type { SiteSummary } from '../main/permissions/site-info-controller.js'
 import type { SiteInfoPage } from '../main/permissions/site-info-panel.js'
-import type { DeliveryProvenance } from '../main/browsing/delivery-provenance.js'
+import type { Web3Score } from '../main/browsing/site-trust.js'
 import type { ShellState, TabState } from '../main/shell/tabs.js'
 import { createBookmarksView } from './bookmarks-view.js'
 import { closeIcon, faviconElement } from './icons.js'
+import { paintShield, shieldLabel, web3Shield } from './web3-shield.js'
 
 // The chrome view's whole job: render ShellState, turn clicks/typing into
 // orivonShell.* commands. Main holds truth (src/main/tabs.ts,
@@ -30,11 +31,9 @@ interface OrivonShell {
    * for anything at all, and whether any asked-for row carries a warning.
    * `false`/`false` for an ordinary website. */
   siteSummaryFor: (url: string) => Promise<SiteSummary>
-  /** S4-6, ADR-0007: is the active tab's document actually being answered
-   * from Orivon's own pinned local cache -- the one truthful signal the
-   * Web3 Score shield owes a page whose padlock would otherwise claim a
-   * live TLS connection that never happened. */
-  deliveryProvenanceFor: (url: string) => Promise<DeliveryProvenance>
+  /** The active tab's displayed Website level and Delivery level -- the
+   * Web3 Score shield's own data, `null` when there is nothing to show. */
+  web3ScoreFor: (url: string) => Promise<Web3Score | null>
   /** Opens (or closes) the all-sites popup under the cluster's tune icon.
    * `anchor` is that icon's own rect -- main cannot know where the toolbar
    * put it. `url`, when given, is the tab whose card to scroll to. */
@@ -82,6 +81,11 @@ const bookmarkToggle = must(document.querySelector<HTMLButtonElement>('#bookmark
 const addressForm = must(document.querySelector<HTMLFormElement>('#address-form'), '#address-form missing')
 const addressInput = must(document.querySelector<HTMLInputElement>('#address'), '#address missing')
 const web3ScoreBtn = must(document.querySelector<HTMLButtonElement>('#web3-score-btn'), '#web3-score-btn missing')
+// index.html ships this button empty -- built here, once, so
+// updateWeb3ScoreShield below only ever repaints an existing element
+// rather than replacing the button's whole content on every state push.
+const web3ScoreShieldEl = web3Shield()
+web3ScoreBtn.append(web3ScoreShieldEl)
 const sitePermissionsBtn = must(document.querySelector<HTMLButtonElement>('#site-permissions-btn'), '#site-permissions-btn missing')
 const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#permissions-btn'), '#permissions-btn missing')
 const bookmarksList = must(document.querySelector<HTMLDivElement>('#bookmarks-list'), '#bookmarks-list missing')
@@ -171,34 +175,28 @@ function renderTabs (state: ShellState): void {
   }
 }
 
-/** The plain https/http read `updateWeb3ScoreShield` paints immediately,
- * and upgrades to `.cached` once (or if) the provenance query below
- * resolves otherwise -- never downgrades a page that really is plain
- * https/http. */
-function applyConnectionState (url: string): void {
-  if (url.startsWith('https://')) web3ScoreBtn.classList.add('secure')
-  else if (url.startsWith('http://')) web3ScoreBtn.classList.add('insecure')
+function applyShield (score: Web3Score | null): void {
+  paintShield(web3ScoreShieldEl, score?.level ?? null)
+  const label = shieldLabel(score)
+  web3ScoreBtn.title = label
+  web3ScoreBtn.setAttribute('aria-label', label)
 }
 
-/** S4-6, ADR-0007's "the padlock is now misleading unless the UI corrects
- * it": the Web3 Score shield's own provenance state, resolved the same
- * lagging, per-active-tab way `updateSitePermissionsBadge` below already
- * is (`shieldRequestUrl` guards against a stale response the same way
- * `permissionsRequestUrl` does). Paints the ordinary secure/insecure read
- * first, synchronously, then replaces it with the pinned-cache state if
- * `deliveryProvenanceFor` says so -- a page really is plain https/http
- * until proven otherwise, never the reverse. */
+/** The shield's own displayed-level query, resolved the same lagging,
+ * per-active-tab way `updateSitePermissionsBadge` below already is
+ * (`shieldRequestUrl` guards against a stale response the same way
+ * `permissionsRequestUrl` does). Paints the empty, grey "no level yet"
+ * state first, synchronously, then replaces it with whatever
+ * `web3ScoreFor` answers. */
 let shieldRequestUrl: string | null = null
 
 function updateWeb3ScoreShield (active: TabState | undefined): void {
-  web3ScoreBtn.classList.remove('secure', 'insecure', 'cached')
-  web3ScoreBtn.title = 'Web3 Score'
-  web3ScoreBtn.setAttribute('aria-label', 'Web3 Score')
+  applyShield(null)
 
   // Skip isNewTab: in dev mode the dashboard's own URL is a plain
-  // http://localhost:... address (electron-vite's dev server), which
-  // would otherwise flag Orivon's own page "insecure" -- wrong for an
-  // internal page, not a real signal about anything the user visited.
+  // http://localhost:... address (electron-vite's dev server), which has
+  // no Website level to show -- an internal page, not a real signal about
+  // anything the user visited.
   if (active === undefined || active.isNewTab) {
     shieldRequestUrl = null
     return
@@ -206,17 +204,10 @@ function updateWeb3ScoreShield (active: TabState | undefined): void {
 
   const url = active.url
   shieldRequestUrl = url
-  applyConnectionState(url)
 
-  void shell.deliveryProvenanceFor(url).then((provenance) => {
+  void shell.web3ScoreFor(url).then((score) => {
     if (shieldRequestUrl !== url) return // the active tab moved on; this answer is stale
-    if (!provenance.servedFromPinnedCache) return
-    web3ScoreBtn.classList.remove('secure', 'insecure')
-    web3ScoreBtn.classList.add('cached')
-    // The literal wording ADR-0007 asks for -- quoted, not paraphrased, so
-    // the shield and the ADR never drift apart on what it says.
-    web3ScoreBtn.title = 'Running from local cache, pinned'
-    web3ScoreBtn.setAttribute('aria-label', 'Running from local cache, pinned')
+    applyShield(score)
   })
 }
 

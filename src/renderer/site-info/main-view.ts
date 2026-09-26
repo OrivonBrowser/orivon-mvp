@@ -1,7 +1,9 @@
 import type { SiteInfo, SiteCapabilityRow } from '../../main/permissions/site-info.js'
 import type { SiteTrust } from '../../main/browsing/site-trust.js'
 import { createSwitch } from './switch.js'
-import { shieldIcon, chevronIcon } from './icons.js'
+import { chevronIcon } from './icons.js'
+import { paintShield, web3Shield } from '../web3-shield.js'
+import { grantIcon } from '../grant-icons.js'
 
 // The site-info popup's main page -- Chrome's own layout (a connection
 // row, then one switch per permission the site actually asked for), with
@@ -33,23 +35,27 @@ function connectionLabel (connection: SiteTrust['connection']): string {
   }
 }
 
-/** One short line naming the observed Website level and the strongest
- * delivery rung; connections are never observed, so they stay `?`. */
+/** One short line naming the displayed Website level and Delivery level;
+ * per-app connections are never observed, so they stay `?`
+ * (`src/trust/README.md`). Names a developer override rather than letting
+ * it read as observed (ADR-0006). */
 function trustGlance (trust: SiteTrust | null): string {
   if (trust === null) return 'Web3 Score'
-  const met = trust.delivery.rungs.filter((r) => r.met).map((r) => r.rung)
-  const delivery = met.length > 0 ? met[met.length - 1] : 'D1'
-  return `Web3 Score · Website L${String(trust.level.level)} · Delivery ${delivery} · Connections ?`
+  const overridden = trust.levelOverride !== undefined || trust.deliveryOverride !== undefined
+  const glance = `Web3 Score · Website L${String(trust.displayedLevel)} · Delivery D${String(trust.displayedDelivery)} · Connections ?`
+  return overridden ? `${glance} (developer override)` : glance
 }
 
-function row (message: string, warning: boolean, control: HTMLElement): HTMLElement {
+/** `kind` is a sibling appended BEFORE `.row-message`, never inside it --
+ * matching `../settings/permissions-view.ts`'s own row icon. */
+function row (kind: Parameters<typeof grantIcon>[0], message: string, warning: boolean, control: HTMLElement): HTMLElement {
   const li = document.createElement('li')
   li.className = 'row'
   li.classList.toggle('warning', warning)
   const text = document.createElement('span')
   text.className = 'row-message'
   text.textContent = message
-  li.append(text, control)
+  li.append(grantIcon(kind), text, control)
   return li
 }
 
@@ -81,7 +87,9 @@ export function renderMainPage (
   const connectionRow = document.createElement('button')
   connectionRow.type = 'button'
   connectionRow.className = `connection-row ${trust?.connection ?? 'unknown'}`
-  connectionRow.append(shieldIcon())
+  const shield = web3Shield()
+  paintShield(shield, trust?.displayedLevel ?? null)
+  connectionRow.append(shield)
   const connectionText = document.createElement('span')
   connectionText.className = 'connection-text'
   const connectionLabelEl = document.createElement('span')
@@ -115,7 +123,7 @@ export function renderMainPage (
     for (const capRow of info.capabilityRows) {
       const on = staged.get(capRow.capability) ?? capRow.on
       const control = createSwitch(on, !capRow.on && !capRow.canTurnOn, (next) => { callbacks.onToggle(capRow.capability, next) })
-      const li = row(capRow.message, capRow.warning, control)
+      const li = row(capRow.capability, capRow.message, capRow.warning, control)
       if (pendingStaleCapabilities.has(capRow.capability)) {
         const note = document.createElement('span')
         note.className = 'row-note'
@@ -176,7 +184,7 @@ export function renderMainPage (
     picks.className = 'row-list'
     for (const pick of info.pickedPathRows) {
       const control = createSwitch(true, false, () => { callbacks.onRevokePickedPath(pick.pickId) })
-      picks.append(row(pick.message, pick.warning, control))
+      picks.append(row(pick.kind, pick.message, pick.warning, control))
     }
     container.append(picks)
   }

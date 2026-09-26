@@ -1,10 +1,27 @@
 // The Website level of the canonical Web3 scores page, as far as this
 // browser can observe it: Level 1 or Level 2. Level 3 and above are judged,
-// and only a Web3 Score provider may give them.
+// and only a Web3 Score provider may give them; a developer-only override
+// (`../main/dev/score-levels.ts`) can stand in for one, for previewing the
+// UI. `displayedLevel` below is the one place "observed, or overridden" is
+// decided -- every caller shows that, and names the override when one
+// applies, never claiming an override as observed (ADR-0006).
 
 import type { DdocVerdict } from './ddoc.js'
 
 export type ObservedLevel = 1 | 2
+
+/** The full canonical scale -- what a shield, a panel row or a dialog may
+ * ever DISPLAY. `ObservedLevel` stays narrower on purpose: nothing in this
+ * file can compute a 3 or a 4, so a caller that skips `displayedLevel` and
+ * reads `WebsiteLevel.level` directly can never claim one either. */
+export type ScoreLevel = ObservedLevel | 3 | 4
+
+/** The level to show: the override when one exists, otherwise what this
+ * browser actually observed. Pure so every surface (shield, panel, consent
+ * dialog) computes it the same way, from the same two facts. */
+export function displayedLevel (observed: ObservedLevel, override: ScoreLevel | undefined): ScoreLevel {
+  return override ?? observed
+}
 
 /** A `.eth` site's content, as the verifier served it now or as an installed app's pin recorded it. */
 export interface ContentEvidence {
@@ -31,7 +48,7 @@ function contentLevel (content: ContentEvidence): { level: ObservedLevel, becaus
   const checked = content.source === 'live' ? 'Every file shown was checked' : 'Every file was checked, when it was installed,'
   return content.pointersVerified
     ? { level: 2, because: `${checked} against the content this name points to on Ethereum.` }
-    : { level: 2, because: `${checked} against the content a DNSLink record names. That record is ordinary DNS, which the delivery rungs below show unproven.` }
+    : { level: 2, because: `${checked} against the content a DNSLink record names. That record is ordinary DNS, which the Delivery level below shows unproven.` }
 }
 
 function hostedLevel (ddoc: DdocVerdict, servedFromPin: boolean): { level: ObservedLevel, because: string } {

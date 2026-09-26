@@ -13,7 +13,13 @@ function ctxWith (broker: Broker | undefined, loader?: Loader): SubsystemContext
   return { broker, loader } as unknown as SubsystemContext
 }
 
-const NO_TRUST: SiteTrustSources = { isOriginServedFromCacheSync: () => false, pinCoverageFor: () => undefined, nameEvidenceFor: async () => undefined }
+const NO_TRUST: SiteTrustSources = {
+  isOriginServedFromCacheSync: () => false,
+  pinCoverageFor: () => undefined,
+  nameEvidenceFor: async () => undefined,
+  levelOverrideFor: () => undefined,
+  deliveryOverrideFor: () => undefined
+}
 
 function fakeLoader (overrides: Partial<Loader> = {}): Loader {
   return {
@@ -106,7 +112,9 @@ describe('createSiteInfoController -- siteTrustFor', () => {
     const trustSources: SiteTrustSources = {
       isOriginServedFromCacheSync: (origin) => origin === APP,
       pinCoverageFor: () => ({ pinnedRequests: 1, thirdPartyRequests: 0, deniedRequests: 0, pinnedBytes: 5, thirdPartyBytes: 0, bytesIncomplete: false }),
-      nameEvidenceFor: async () => undefined
+      nameEvidenceFor: async () => undefined,
+      levelOverrideFor: () => undefined,
+      deliveryOverrideFor: () => undefined
     }
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), loader), trustSources)
 
@@ -144,6 +152,23 @@ describe('createSiteInfoController -- siteTrustFor', () => {
   it('null for a malformed url', async () => {
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), NO_TRUST)
     expect(await controller.siteTrustFor('not a url')).toBeNull()
+  })
+
+  it('asks the injected sources for a level and a delivery override, and shows them as the displayed values', async () => {
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), {
+      ...NO_TRUST,
+      levelOverrideFor: (origin) => origin === APP ? 4 : undefined,
+      deliveryOverrideFor: (origin) => origin === APP ? 3 : undefined
+    })
+
+    const trust = await controller.siteTrustFor(APP)
+
+    expect(trust?.levelOverride).toBe(4)
+    expect(trust?.displayedLevel).toBe(4)
+    expect(trust?.deliveryOverride).toBe(3)
+    expect(trust?.displayedDelivery).toBe(3)
+    // The observed level is untouched by the override.
+    expect(trust?.level.level).toBe(1)
   })
 })
 

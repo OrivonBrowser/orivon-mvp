@@ -12,14 +12,20 @@ still can, and an accepted request clears that record. `permissions.ts` also tur
 remembered notification answer into a row a person can reset (`createSiteNotificationsController`):
 a Chromium permission, not an `orivon.*` grant, so the popup shows it as its own card per site,
 after the apps, and Reset means the site asks again. `permissions-panel.ts` is its own in-window
-popup hanging off the toolbar cluster's tune icon.
+popup hanging off the toolbar cluster's tune icon. `buildAppPermissions`/`buildPersistedAppPermissions`
+take an optional displayed Website level; at Level 4 every row's warning is gone
+(`../consent/grant-level.ts`'s `summaryAtLevel`, `ADR-0037`) — `createPermissionsController`'s
+`levelOverrideFor` parameter (`window.ts` wires in `../dev/score-levels.ts`'s
+`scoreLevelOverrideFor`) is where that level comes from.
 
 The site-info surface, for the address pill's shield and key: `site-info.ts` (pure —
 row-per-declared-capability, not row-per-grant, so a switch can show something the site asked
-for and does not currently hold), `site-switches.ts` (`turnOffCapability`/`turnOnCapability`,
+for and does not currently hold; the same optional level and `summaryAtLevel` treatment as
+`permissions.ts`'s rows), `site-switches.ts` (`turnOffCapability`/`turnOnCapability`,
 re-validated against the manifest at commit time — the same A153 idiom
 `../consent/request-grant.ts` already uses), `site-info-controller.ts` (the one door to the
-broker/loader for this surface, mirroring `permissions.ts`'s own controller),
+broker/loader for this surface, mirroring `permissions.ts`'s own controller; its
+`SiteTrustSources` also carries the Website/Delivery level overrides `site-trust.ts` needs),
 `site-data-runner.ts` (the Cookies and site data page's I/O: disk sizes, cookie counts, a
 best-effort `navigator.storage.estimate()` read through the tab's own isolated world), and
 `site-info-panel.ts` (its own in-window popup, left-aligned).
@@ -34,8 +40,9 @@ own close just dismissed).
 types), [`../../loader/`](../../loader/) (`manifest.ts`; `index.ts`'s `Loader`/`LoadResult`
 types and `pinFor`; `electron/serve.ts`'s `isOriginServedFromCacheSync`/`pinCoverageFor`, real
 implementations injected by `../shell/window.ts`, never imported by `site-info.ts`/`site-switches.ts`
-themselves), [`../../trust/`](../../trust/) (`delivery-ladder.ts` types, via `../browsing/site-trust.ts`),
-[`../consent/grant-prompt-render.ts`](../consent/grant-prompt-render.ts) and
+themselves), [`../../trust/`](../../trust/) (`delivery-ladder.ts`/`website-level.ts` types, via
+`../browsing/site-trust.ts`), [`../consent/grant-prompt-render.ts`](../consent/grant-prompt-render.ts),
+[`../consent/grant-level.ts`](../consent/grant-level.ts) and
 [`../consent/request-grant.ts`](../consent/request-grant.ts) (`clearDeclinedCapability`/
 `addDeclinedCapability`), [`../browsing/site-trust.ts`](../browsing/site-trust.ts),
 [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts) (type only), and, inside

@@ -17,6 +17,7 @@ import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishRequestGrant } from '../registry.js'
 import { requestGrant } from './request-grant.js'
 import { createGrantPrompt } from './request-grant-prompt.js'
+import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 
 export const requestGrantSubsystem: Subsystem = {
   name: 'request-grant',
@@ -25,7 +26,8 @@ export const requestGrantSubsystem: Subsystem = {
       throw new Error('request-grant subsystem requires ctx.broker -- check its position in subsystems.ts')
     }
     const broker = ctx.broker
-    const consent = createGrantPrompt(broker)
+    // ADR-0037: same developer-only override as app-install-subsystem.ts.
+    const consent = createGrantPrompt(broker, scoreLevelOverrideFor)
     publishRequestGrant(ctx, async (origin, request) => await requestGrant(broker, consent, origin, request))
   }
 }
