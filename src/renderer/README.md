@@ -39,6 +39,9 @@ loaded outside a genuinely fresh tab; see that file's own header comment. `intro
 preload at all: it reports "Enter Orivon" to main by moving its own URL hash to `#leaving` and
 then `#entered`, which `src/main/shell/intro-view.ts` watches, so the page holds no capability
 beyond its own document.
+`settings/permissions-view.ts` also imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
+to show a protocol's origin as its address (`ipfs://<cid>`): pure string work over data, with no
+Node and no protocol's code behind it.
 
 **What it must never import.** `electron`, `node:*`, or anything under
 [`src/main/`](../main/). This is a sandboxed renderer with `nodeIntegration: false`; there is

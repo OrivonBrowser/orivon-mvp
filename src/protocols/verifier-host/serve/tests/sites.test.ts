@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { NameRecord } from '../../../resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver } from '../../../resolution/providers.js'
-import { ResolutionRegistry } from '../../../resolution/registry.js'
+import { ProtocolRegistry } from '../../../registry.js'
+import { defineProtocol } from '../../../protocol.js'
+import { ENS } from '../../../ens/descriptor.js'
 import { FAILURE_TTL_MS, MAX_CONCURRENT_MOUNTS, MAX_SITES, Sites, SITE_TTL_MS, STALE_SERVE_MS } from '../sites.js'
 
 const P = 'https://top.example'
 const record: NameRecord = { type: 'contenthash', pointer: { kind: 'ipfs', cid: 'bafkqaaa' }, provenance: { via: 'fixture' } }
 const site: MountedSite = { gatherer: 'stub', root: { kind: 'ipfs', cid: 'bafkqaaa' }, pointers: [], open: async () => { throw new Error('unused') }, ddoc: () => ({ status: 'met', refusals: [] }) }
 
-function registry (resolve: () => Promise<NameRecord[]>): { registry: ResolutionRegistry, calls: { n: number } } {
+function registry (resolve: () => Promise<NameRecord[]>): { registry: ProtocolRegistry, calls: { n: number } } {
   const calls = { n: 0 }
-  const resolver: NameResolver = { id: 'stub', topLevelDomains: ['eth'], resolve: async () => { calls.n++; return await resolve() } }
+  const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => { calls.n++; return await resolve() } }
   const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
-  return { registry: new ResolutionRegistry([resolver], [gatherer]), calls }
+  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]), calls }
 }
 
 describe('Sites', () => {
@@ -103,12 +105,12 @@ describe('Sites', () => {
 /** A registry whose resolve behaviour can be swapped mid-test, for the
  * stale-while-revalidate scenarios below (success, then failure, then
  * success again, all against the SAME name). */
-function switchableRegistry (): { registry: ResolutionRegistry, resolve: { current: () => Promise<NameRecord[]> }, calls: { n: number } } {
+function switchableRegistry (): { registry: ProtocolRegistry, resolve: { current: () => Promise<NameRecord[]> }, calls: { n: number } } {
   const calls = { n: 0 }
   const resolve = { current: async () => [record] }
-  const resolver: NameResolver = { id: 'stub', topLevelDomains: ['eth'], resolve: async () => { calls.n++; return await resolve.current() } }
+  const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => { calls.n++; return await resolve.current() } }
   const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
-  return { registry: new ResolutionRegistry([resolver], [gatherer]), resolve, calls }
+  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]), resolve, calls }
 }
 
 describe('Sites -- stale-while-revalidate', () => {

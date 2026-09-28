@@ -1,25 +1,17 @@
-// The verifier host's work, apart from the process it runs in: resolvers and
-// gatherers behind the registry, the loopback server, and the answers the
-// shell asks for. entry.ts gives it Electron's net and the parent port.
+// The verifier host's work, apart from the process it runs in: every
+// protocol's providers behind the registry, the loopback server, and the
+// answers the shell asks for. entry.ts gives it Electron's net and the parent port.
 
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:https'
-import { ResolutionError } from '../resolution/records.js'
-import type { NameResolver } from '../resolution/providers.js'
-import { ResolutionRegistry } from '../resolution/registry.js'
-import { createEnsResolver } from '../ens/resolver.js'
+import { ProtocolRegistry } from '../registry.js'
 import type { Eip1193Provider } from '../ens/resolver.js'
-import { createIpfsGatherer } from '../ipfs/gatherer.js'
-import type { SequenceStore } from '../ipfs/ipns.js'
 import { createRunCertificate } from './serve/certificate.js'
-import { dohAddressResolver, dohTxtResolver } from './doh.js'
-import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.js'
 import type { WebFetch } from './egress.js'
-import { withDnsFallback } from './dns-fallback.js'
 import type { DirectFetch } from './direct-fetch.js'
-import { createFixtureResolver } from './fixture-resolver.js'
+import { startProtocols } from './protocols.js'
 import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
-import { createEthServer } from './serve/server.js'
+import { createVerifierServer } from './serve/server.js'
 import { Sites } from './serve/sites.js'
 import type { SiteRecord } from './serve/sites.js'
 
@@ -50,68 +42,12 @@ export interface RunningHost {
   answer: (request: HostRequest) => Promise<HostReplies[HostRequest['kind']]>
 }
 
-function sequenceStore (initial: Readonly<Record<string, string>>, post: HostDeps['post']): SequenceStore {
-  const highest = new Map<string, bigint>()
-  for (const [key, value] of Object.entries(initial)) {
-    if (/^\d+$/.test(value)) highest.set(key, BigInt(value))
-  }
-  return {
-    highest: (key) => highest.get(key),
-    record: (key, sequence) => {
-      const current = highest.get(key)
-      if (current !== undefined && sequence <= current) return
-      highest.set(key, sequence)
-      post({ type: 'ipns-sequence', key, sequence: sequence.toString() })
-    }
-  }
-}
-
-function offResolver (reason: string): NameResolver {
-  return {
-    id: 'ens',
-    topLevelDomains: ['eth'],
-    resolve: async () => { throw new ResolutionError('unavailable', reason) }
-  }
-}
-
 export async function startHost (config: HostConfig, deps: HostDeps): Promise<RunningHost> {
-  const dohFetch = allowlisted(config.dnsOverHttps, deps.fetch, 'DNS-over-HTTPS')
-  // A251 (docs/open-questions.md): only for a gateway main found to have no
-  // proxy in front of it, and only once net.fetch has already failed it
-  // transport-wise, this reaches it directly instead -- everything else
-  // (name services, a proxied gateway, an ordinary HTTP failure) is
-  // unaffected and still goes through `deps.fetch` alone.
-  const reach = withDnsFallback(config.unproxiedGateways, {
-    fetch: deps.fetch,
-    direct: deps.directFetch,
-    systemAddresses: deps.resolveHost,
-    dohAddresses: dohAddressResolver(config.dnsOverHttps, dohFetch)
-  })
-  const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], reach, 'the IPFS gatherer')
-  const gatherer = createIpfsGatherer({
-    fetch: async (url, init) => await gatewayFetch(url, init),
-    gateways: config.gateways,
-    ipnsNameServices: config.ipnsNameServices,
-    resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch),
-    ipnsSequences: sequenceStore(config.ipnsSequences, deps.post)
-  })
-
-  let lightClient: LightClient | undefined
-  const resolvers: NameResolver[] = []
-  if (config.fixtures !== undefined && deps.fixturesAllowed) resolvers.push(createFixtureResolver(config.fixtures))
-  if (config.lightClient === undefined) {
-    resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
-  } else {
-    lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], deps.fetch, 'the light client'), deps.post)
-    resolvers.push(createEnsResolver({
-      provider: lightClient.provider,
-      ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, { fetch: deps.fetch, resolveHost: deps.resolveHost }, DEFAULT_CCIP_LIMITS, signal)
-    }))
-  }
-
-  const sites = new Sites(new ResolutionRegistry(resolvers, [gatherer]))
+  const { protocols, lightClient } = startProtocols(config, deps)
+  const registry = new ProtocolRegistry(protocols)
+  const sites = new Sites(registry)
   const certificate = createRunCertificate()
-  const server = createEthServer(sites, certificate)
+  const server = createVerifierServer(registry, sites, certificate)
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, '127.0.0.1', () => {

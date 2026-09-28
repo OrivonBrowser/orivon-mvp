@@ -1,6 +1,7 @@
-// The loopback TLS server every `*.eth` host resolves to. It serves only
-// `.eth` hosts on the default port, only GET and HEAD, and only bytes the
-// gatherer verified; anything it cannot verify becomes an error page.
+// The loopback TLS server every protocol host resolves to: a `.eth` name, or
+// `<name>.<scheme>.orivon` for an address. It serves only those hosts, on
+// the default port, only GET and HEAD, and only bytes a gatherer verified;
+// anything it cannot verify becomes an error page.
 
 import { createServer } from 'node:https'
 import type { Server } from 'node:https'
@@ -8,6 +9,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { TLSSocket } from 'node:tls'
 import { ResolutionError } from '../../resolution/records.js'
 import type { GatheredFile } from '../../resolution/providers.js'
+import type { ProtocolAddresses } from '../../address.js'
+import type { ProtocolRegistry } from '../../registry.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
 import { CONTENT_ROOT_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
@@ -20,17 +23,17 @@ export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
 
 /**
  * Every response says the page came from the public internet, whatever
- * loopback address served it, so a `.eth` page never gains a local page's
+ * loopback address served it, so a protocol's page never gains a local page's
  * reach once Chromium enforces Local Network Access (A252).
  */
 const PUBLIC_ADDRESS_CSP = 'treat-as-public-address'
 
-/** A `.eth` name, with no port or the default one: every other port would be another origin for the same name. */
-const ETH_HOST = /^([\x21-\x39\x3b-\x7e]+\.eth)(?::443)?$/
+/** A host with no port or the default one: every other port would be another origin for the same name. */
+const HOST = /^([\x21-\x39\x3b-\x7e]+)(?::443)?$/
 
-function hostOf (req: IncomingMessage): string | undefined {
-  const host = ETH_HOST.exec(req.headers.host?.toLowerCase() ?? '')?.[1]
-  if (host === undefined) return undefined
+function hostOf (req: IncomingMessage, addresses: ProtocolAddresses): string | undefined {
+  const host = HOST.exec(req.headers.host?.toLowerCase() ?? '')?.[1]
+  if (host === undefined || !addresses.routesToVerifier(host)) return undefined
   // The name the TLS handshake was for must be the name the request is for.
   const servername = (req.socket as TLSSocket).servername
   if (typeof servername === 'string' && servername.toLowerCase() !== host) return undefined
@@ -66,10 +69,10 @@ function pathOf (target: string | undefined, host: string): URL | undefined {
   }
 }
 
-function sendError (res: ServerResponse, host: string, error: unknown): void {
+function sendError (res: ServerResponse, shown: string, error: unknown): void {
   const failure = error instanceof ResolutionError ? error.failure : 'unavailable'
   const detail = error instanceof Error ? error.message : String(error)
-  const { status, html } = renderErrorPage(failure, host, detail)
+  const { status, html } = renderErrorPage(failure, shown, detail)
   const headers: Record<string, string> = {
     'content-type': 'text/html; charset=utf-8',
     'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}`,
@@ -122,10 +125,28 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
   }
 }
 
-async function handle (sites: Sites, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const host = hostOf(req)
-  if (host === undefined) {
-    res.writeHead(421, { 'content-type': 'text/plain' }).end('this server answers only .eth names')
+/**
+ * `https://ipfs.orivon/<name>/<path>`, where a typed or linked `ipfs://` address
+ * lands: redirected to the origin of the name's canonical spelling, so one
+ * site has one origin however its address was written. No page runs here.
+ */
+function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: URL, res: ServerResponse): void {
+  const [, written = '', path = '/'] = /^\/([^/]*)(\/.*)?$/.exec(url.pathname) ?? []
+  const shown = `${scheme}://${written}`
+  try {
+    const name = registry.canonicalName(scheme, decodeURIComponent(written))
+    const origin = registry.addresses.originFor(scheme, name)
+    if (origin === undefined) throw new ResolutionError('unsupported', `${scheme}://${name} is too long, or not lowercase, to be a host of its own`)
+    res.writeHead(301, { location: `${origin}${path}${url.search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
+  } catch (error) {
+    sendError(res, shown, error instanceof URIError ? new ResolutionError('invalid-name', `${shown} is not a valid address`) : error)
+  }
+}
+
+async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const host = hostOf(req, registry.addresses)
+  if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
+    res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
     return
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -137,6 +158,12 @@ async function handle (sites: Sites, req: IncomingMessage, res: ServerResponse):
     res.writeHead(400, { 'content-type': 'text/plain' }).end('not a path this server serves')
     return
   }
+  const scheme = registry.addresses.schemeEndpoint(host)
+  if (scheme !== undefined) {
+    redirectToCanonical(registry, scheme, url, res)
+    return
+  }
+  const shown = registry.addresses.displayOrigin(`https://${host}`)
   // Whatever this request set going stops when its client leaves.
   const left = new AbortController()
   res.once('close', () => { left.abort(new Error('the client went away')) })
@@ -188,14 +215,14 @@ async function handle (sites: Sites, req: IncomingMessage, res: ServerResponse):
     await sendBody(res, status, headers, file, length)
   } catch (error) {
     if (res.headersSent) res.destroy()
-    else sendError(res, host, error)
+    else sendError(res, shown, error)
   }
 }
 
-export function createEthServer (sites: Sites, certificate: RunCertificate): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: Sites, certificate: RunCertificate): Server {
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
-    // A rejection left unobserved would end the host process, and with it every `.eth` page.
-    handle(sites, req, res).catch((error: unknown) => {
+    // A rejection left unobserved would end the host process, and with it every protocol's page.
+    handle(registry, sites, req, res).catch((error: unknown) => {
       console.error('[verifier] request failed:', error)
       if (res.headersSent) res.destroy()
       else res.writeHead(500, { 'content-type': 'text/plain' }).end('the verifier failed on this request')

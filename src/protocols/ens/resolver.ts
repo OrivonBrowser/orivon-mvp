@@ -131,7 +131,7 @@ export function createEnsResolver (options: EnsResolverOptions): NameResolver {
   const universalResolver = options.universalResolver ?? UNIVERSAL_RESOLVER
   return {
     id: 'ens',
-    topLevelDomains: ['eth'],
+    namespaces: ['.eth'],
     async resolve (host, signal = new AbortController().signal) {
       const name = ensNameFromHost(host)
       let offchain = false

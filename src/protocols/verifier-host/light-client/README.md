@@ -6,7 +6,7 @@ and `rpc-failover.ts` (trying execution RPCs in turn per request).
 **What it depends on.** [`../egress.ts`](../egress.ts), [`../protocol.ts`](../protocol.ts) and
 `@a16z/helios`.
 
-**What it must never import.** [`../../main/`](../../../main/) beyond type-only imports -- see the
+**What it must never import.** [`../../../main/`](../../../main/) beyond type-only imports -- see the
 parent README's "What it must never import".
 
 **Owner stream.** `ens-ipfs`.

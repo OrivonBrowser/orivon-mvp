@@ -7,6 +7,7 @@ import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js
 import { redirectRefusal } from '../../loader/electron/fetch.js'
 import { readCapped } from '../ipfs/gateways.js'
 import type { CcipRequestParameters } from '../ens/resolver.js'
+import { BUILTIN_ADDRESSES } from '../builtin.js'
 
 export type WebFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -57,7 +58,8 @@ async function urlRefusal (raw: string, deps: CcipDeps): Promise<string | null> 
   if (url.username !== '' || url.password !== '') return 'credentials in the URL'
   const host = url.hostname.replace(/^\[|\]$/g, '')
   if (classifyAddress(host) !== 'unparseable') return isPublicUnicast(host) ? null : `${host} is not a public address`
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.eth')) return `${host} is not a public name`
+  // A protocol host resolves to the verifier itself, never to a public server.
+  if (host === 'localhost' || host.endsWith('.localhost') || BUILTIN_ADDRESSES.routesToVerifier(host)) return `${host} is not a public name`
   const addresses = await deps.resolveHost(host)
   if (addresses.length === 0) return `${host} resolved to no address`
   const private_ = addresses.find((a) => !isPublicUnicast(a))

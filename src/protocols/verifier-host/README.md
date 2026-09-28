@@ -1,8 +1,9 @@
-# `src/protocols/verifier-host/`: the process that serves `.eth` names
+# `src/protocols/verifier-host/`: the process that serves every protocol's pages
 
-**What lives here.** The verifier host: an Electron utility process that proves `.eth` names with a
-light client, gathers their IPFS content block by verified block, and serves it to tabs over a
-loopback TLS server. Every untrusted parser (the light client's WebAssembly, CCIP-Read answers,
+**What lives here.** The verifier host: an Electron utility process that runs every protocol's
+providers ([`protocols.ts`](protocols.ts)), proving `.eth` names with a light client and reading
+`ipfs://` and `ipns://` addresses, gathers their IPFS content block by verified block, and serves
+it to tabs over a loopback TLS server. Every untrusted parser (the light client's WebAssembly, CCIP-Read answers,
 IPNS protobuf, dag-pb, DNS-over-HTTPS JSON) runs here, never in the main process.
 [`ADR-0030`](../../../docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md) is the
 design; [`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md) admits Helios.
@@ -12,21 +13,21 @@ file that imports `electron`; [`service.ts`](service.ts) takes Electron's `net` 
 as arguments, so everything else runs under plain vitest.
 
 **What it depends on.** [`../resolution/`](../resolution/), [`../ens/`](../ens/),
-[`../ipfs/`](../ipfs/); from [`../loader/`](../../loader/) the range parser, the content-type map and
-the redirect rule, and from [`../broker/policy/`](../../broker/policy/) the address classifier, all
+[`../ipfs/`](../ipfs/); from [`../../loader/`](../../loader/) the range parser, the content-type map and
+the redirect rule, and from [`../../broker/policy/`](../../broker/policy/) the address classifier, all
 reused rather than copied; `@a16z/helios`.
 
 **What it must never import.** [`src/main/`](../../main/) beyond type-only imports: main starts it and
-talks to it over [`protocol.ts`](protocol.ts), and nothing else. [`../main/verifier/`](../../main/verifier/)
+talks to it over [`protocol.ts`](protocol.ts), and nothing else. [`../../main/verifier/`](../../main/verifier/)
 is its other side.
 
 **Owner stream.** `ens-ipfs`.
 
 | Folder | Holds |
 |---|---|
-| (top level) | `entry.ts` (the utility-process entry, a build input), `service.ts`, `protocol.ts`, `egress.ts`, `doh.ts`, `direct-fetch.ts`, `dns-fallback.ts`, `fixture-resolver.ts` |
+| (top level) | `entry.ts` (the utility-process entry, a build input), `service.ts`, `protocols.ts` (which protocols run, and what each may reach), `protocol.ts` (the messages it exchanges with the shell), `egress.ts`, `doh.ts`, `direct-fetch.ts`, `dns-fallback.ts`, `fixture-resolver.ts` |
 | [`light-client/`](light-client/) | Proving a `.eth` name: Helios and its wrappers |
-| [`serve/`](serve/) | The loopback TLS server, its certificate and per-name mount cache |
+| [`serve/`](serve/) | The loopback TLS server, its certificate and per-host mount cache |
 
 ## Design notes
 

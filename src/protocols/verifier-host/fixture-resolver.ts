@@ -26,7 +26,7 @@ export function createFixtureResolver (names: Readonly<Record<string, string>>):
   }
   return {
     id: 'fixture',
-    topLevelDomains: ['eth'],
+    namespaces: ['.eth'],
     async resolve (name) {
       const record = records.get(name)
       // Not holding a name proves nothing about it, so this must not outrank another resolver's answer.

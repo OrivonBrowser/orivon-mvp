@@ -3,25 +3,24 @@
 **What lives here.** The two provider shapes the canonical
 [DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution) and
 [Data gathering](https://docs.orivonstack.com/docs/implementations/data-gathering) pages give
-Apps, as internal TypeScript: a `NameResolver` returns a name's records for the top-level domains
-it declares, and a `DataGatherer` loads a site from those records and reports DDOC. Plus the
-registry that orders them, the one rule both an open page and an installed app use to judge a
-chain of pointers, and two helpers the providers and the verifier host share: DNS-name validation
-([`dns-name.ts`](dns-name.ts)) and a concurrency limit, abortable per waiter
-([`slots.ts`](slots.ts)).
+Apps, as internal TypeScript: a `NameResolver` returns a name's records for the namespaces it
+declares (a top-level domain, `.eth`, or an address scheme, `ipfs:`), and a `DataGatherer` loads a
+site from those records and reports DDOC. Plus the one rule both an open page and an installed app
+use to judge a chain of pointers, and two helpers the providers and the verifier host share:
+DNS-name validation ([`dns-name.ts`](dns-name.ts)) and a concurrency limit, abortable per waiter
+([`slots.ts`](slots.ts)). A protocol ([`../protocol.ts`](../protocol.ts)) groups providers under
+its namespaces, and [`../registry.ts`](../registry.ts) orders them.
 
-In this build each list has one built-in entry: the ENS resolver ([`src/protocols/ens/`](../ens/)) for
-`.eth`, and the IPFS gatherer ([`src/protocols/ipfs/`](../ipfs/)). Ordinary ICANN names never pass through
-here; Chromium resolves them. Opening these interfaces to third-party Apps would be a
-`src/contracts/` change, and is not part of this build.
+Ordinary ICANN names never pass through here; Chromium resolves them. Opening these interfaces to
+third-party Apps would be a `src/contracts/` change, and is not part of this build.
 
 **Not tied to Electron.** Durable: nothing here would change if the shell did.
 
 **What it depends on.** Nothing outside this directory.
 
-**What it must never import.** `electron`, `node:*`, any package, and every other `src/`
-directory. It is imported by [`src/protocols/ens/`](../ens/), [`src/protocols/ipfs/`](../ipfs/), the verifier host
-and the shell, so an edge out of it would reach all of them.
+**What it must never import.** `electron`, `node:*`, any package, every other `src/`
+directory, and the rest of `src/protocols/`. Every protocol, the registry, the verifier host and
+the shell import it, so an edge out of it would reach all of them.
 
 **Owner stream.** `ens-ipfs`.
 
@@ -44,14 +43,8 @@ the verifier host and the shell, and this directory stays free of any IPFS libra
 parses them and refuses anything that does not parse, so a string here is never trusted as a
 valid CID.
 
-**An empty record list counts as a failure in [`registry.ts`](registry.ts).** The canonical
-fallback hands a name to the next resolver when one "fails to solve" it, and a resolver that finds
-nothing has not solved it. A thrown error that is not a `ResolutionError` is a bug, and counts as
-`unavailable`, never as an answer or as a proven absence.
-
-**When every provider fails, the most specific failure is shown.** `mostSpecificFailure` ranks a
-detected lie (`unverifiable`) above everything else, so that "one gateway was down" never hides
-"another sent a block that failed its hash". The message keeps every provider's reason.
+**How providers fall back to one another** is the registry's, and
+[`../README.md`](../README.md)'s Design notes cover it.
 
 **[`pointer-chain.ts`](pointer-chain.ts) judges the pointers, not the bytes.** Two questions are
 kept apart. DDOC asks whether every byte served matched the content's hashes, and the gatherer's
@@ -61,4 +54,5 @@ Delivery level's own question (the canonical Connection-to-network scale's prove
 app's stored chain alike. A DNSLink hop is not proven, because DNS can forge the
 TXT record, yet the bytes are still checked against the CID it named: DDOC holds, and the site is
 Level 2 with its DNS hop shown unproven. A test build's `fixture`
-provenance counts as proven: the seam that produces it is compiled out of an ordinary build.
+provenance counts as proven: the seam that produces it is compiled out of an ordinary build. So
+does an `address`: `ipfs://<cid>` names its own content, and there is no pointer to forge.

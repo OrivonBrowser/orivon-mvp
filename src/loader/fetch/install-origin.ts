@@ -7,7 +7,7 @@ import { canonicalAddress, classifyAddress, isPublicUnicast } from '../../broker
 import { MAX_ANSWERS } from '../../broker/policy/connect.js'
 import type { Resolver } from '../../broker/policy/connect.js'
 import { isLocalhostName } from '../../broker/policy/origin.js'
-import { servedByVerifier } from './eth-origin.js'
+import { servedByVerifier } from './verifier-origin.js'
 
 /**
  * `ensurePublicUnicastOrigin`'s success case: the validated, canonical

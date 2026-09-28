@@ -1,14 +1,16 @@
 # `src/protocols/verifier-host/serve/`: the loopback TLS server
 
-**What lives here.** `server.ts` (the loopback TLS server itself), `certificate.ts` (its
-per-run self-signed DER certificate), `sites.ts` (the per-name mount cache) and
-`error-pages.ts`.
+**What lives here.** `server.ts` (the loopback TLS server itself, which answers every host a
+protocol serves: a `.eth` name, `<name>.<scheme>.orivon`, and each scheme's endpoint
+`<scheme>.orivon`), `certificate.ts` (its per-run self-signed DER certificate), `sites.ts` (the
+per-host mount cache) and `error-pages.ts`.
 
-**What it depends on.** [`../protocol.ts`](../protocol.ts), [`../egress.ts`](../egress.ts) and
-[`../../loader/`](../../../loader/)'s range parser, content-type map and redirect rule, reused
+**What it depends on.** [`../../registry.ts`](../../registry.ts) and
+[`../../address.ts`](../../address.ts), [`../protocol.ts`](../protocol.ts), [`../egress.ts`](../egress.ts) and
+[`../../../loader/`](../../../loader/)'s range parser, content-type map and redirect rule, reused
 rather than copied.
 
-**What it must never import.** [`../../main/`](../../../main/) beyond type-only imports -- see the
+**What it must never import.** [`../../../main/`](../../../main/) beyond type-only imports -- see the
 parent README's "What it must never import".
 
 **Owner stream.** `ens-ipfs`.
@@ -61,3 +63,9 @@ reason [`../entry.ts`](../entry.ts) bypasses Electron's HTTP cache.
 with on every request of one install, and the server answers `409` once the name points elsewhere.
 An unchanged root answers a matching `If-None-Match` with `304` before any file is opened, so an
 update check on an unchanged name asks no gateway for anything.
+
+**A scheme's endpoint only redirects** ([`server.ts`](server.ts)'s `redirectToCanonical`).
+`https://ipfs.orivon/<name>/<path>` is where every typed or linked `ipfs://` address lands, and it
+answers with a `301` to the origin of the name's canonical spelling, or an error page. Nothing is
+ever served under the endpoint's own origin, so no page can run there, and the redirect is
+`no-store` because it costs one local round trip.

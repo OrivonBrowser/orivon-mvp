@@ -31,6 +31,7 @@ OS (sockets, filesystem, keychain)
 | [`shim/`](shim/) | `net`, `dgram`, `fs` over `orivon.*`, so Node code runs in a renderer | 3 | done |
 | [`shim-electron/`](shim-electron/) | `electron` itself, reconstructed or refused on top of `orivon.*`, for a tier-2 app | 3 | in progress |
 | [`loader/`](loader/) | Manifest discovery, fetch, cache, hash-pinning, DDOC | 4 | done |
+| [`protocols/`](protocols/) | The protocol registry: one function every protocol registers through, and the address rule that shows `ipfs://<cid>` and serves `https://<cid>.ipfs.orivon` | 6 | in progress |
 | [`protocols/resolution/`](protocols/resolution/) | The `NameResolver`/`DataGatherer` provider interfaces a `.eth` name is proven and loaded through | 6 | in progress |
 | [`protocols/ens/`](protocols/ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | 6 | in progress |
 | [`protocols/ipfs/`](protocols/ipfs/) | Loading IPFS content from trustless gateways, every block hashed against its CID | 6 | in progress |

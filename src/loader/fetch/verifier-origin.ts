@@ -1,6 +1,9 @@
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+
 /**
- * Every `.eth` host resolves to the verifier's loopback server, whose
- * certificate each session accepts by the run's fingerprint alone
+ * Every host a protocol serves (a `.eth` name, an `ipfs://` address's
+ * `<name>.<scheme>.orivon`) resolves to the verifier's loopback server,
+ * whose certificate each session accepts by the run's fingerprint alone
  * (src/main/verifier/). A request to one reaches no host on the network, so
  * the public-address checks that guard every other install do not apply to
  * it: its host has no public address to check. Only `https:`; a developer
@@ -9,7 +12,7 @@
 export function servedByVerifier (url: string): boolean {
   try {
     const parsed = new URL(url)
-    return parsed.protocol === 'https:' && parsed.hostname.endsWith('.eth')
+    return parsed.protocol === 'https:' && BUILTIN_ADDRESSES.routesToVerifier(parsed.hostname)
   } catch {
     return false
   }

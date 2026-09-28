@@ -74,7 +74,7 @@ export interface RunCertificate {
 export function createRunCertificate (now = new Date(), validDays = 30, sanDnsName = '*.eth'): RunCertificate {
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' })
   const algorithm = der(SEQUENCE, oid(ECDSA_WITH_SHA256))
-  const name = commonName('Orivon .eth verifier')
+  const name = commonName('Orivon verifier')
   const sanEntry = der(0x82, Buffer.from(sanDnsName))
   const tbs = der(SEQUENCE,
     der(0xa0, der(INTEGER, Buffer.from([2]))),

@@ -11,7 +11,7 @@ describe('createRunCertificate', () => {
   it('is a self-signed certificate Node parses, whose signature verifies with its own key', () => {
     expect(cert.verify(cert.publicKey)).toBe(true)
     expect(cert.checkPrivateKey(createPrivateKey(run.keyPem))).toBe(true)
-    expect(cert.subject).toBe('CN=Orivon .eth verifier')
+    expect(cert.subject).toBe('CN=Orivon verifier')
     expect(cert.issuer).toBe(cert.subject)
     expect(cert.subjectAltName).toBe('DNS:*.eth')
   })

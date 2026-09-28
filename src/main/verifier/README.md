@@ -1,12 +1,13 @@
-# `src/main/verifier/`: the shell's side of the `.eth` verifier
+# `src/main/verifier/`: the shell's side of the verifier
 
-**What lives here.** Everything the main process does for `.eth` names: the resolver rules that
-send every `.eth` host to the verifier's loopback port, the certificate check each session applies,
-starting and restarting the verifier host ([`../../verifier-host/`](../../protocols/verifier-host/)), choosing
+**What lives here.** Everything the main process does for the hosts a protocol serves, `.eth` names
+and `ipfs://` addresses alike: the resolver rules that send every such host to the verifier's
+loopback port, the certificate check each session applies,
+starting and restarting the verifier host ([`../../protocols/verifier-host/`](../../protocols/verifier-host/)), choosing
 the light client's checkpoint, keeping what the host verified between runs, and saying in words
-what the light client is doing and how a `.eth` name led to the page a tab shows
+what the light client is doing and how a `.eth` name or an address led to the page a tab shows
 ([`name-evidence.ts`](name-evidence.ts), for the site-info popover). It also stamps every page's
-`.eth` request with the top-level page origin it belongs to ([`partition.ts`](partition.ts)), so
+request to the verifier with the top-level page origin it belongs to ([`partition.ts`](partition.ts)), so
 the verifier keeps one cache per site, and checks which configured gateway has no proxy in front
 of it ([`proxy-check.ts`](proxy-check.ts)), for the DNS-tamper fallback the host itself runs.
 
@@ -14,12 +15,13 @@ of it ([`proxy-check.ts`](proxy-check.ts)), for the DNS-tamper fallback the host
 that imports `electron`; the rest are decisions, unit-tested under plain vitest, on this
 directory's `<name>.ts` / `<name>-subsystem.ts` convention ([`../README.md`](../README.md)).
 
-**What it depends on.** [`../../verifier-host/protocol.ts`](../../protocols/verifier-host/protocol.ts) for the
-messages it exchanges with the host, [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts) for this
+**What it depends on.** [`../../protocols/verifier-host/protocol.ts`](../../protocols/verifier-host/protocol.ts) for the
+messages it exchanges with the host, [`../../protocols/builtin.ts`](../../protocols/builtin.ts) for
+which hosts the verifier serves, [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts) for this
 run's developer names, the broker's atomic file write and pin types
-([`../../broker/policy/pin.ts`](../../broker/policy/pin.ts)), the loader's test for a `.eth` origin
-([`../../loader/fetch/eth-origin.ts`](../../loader/fetch/eth-origin.ts)), and the pointer-chain verdict and
-Website level types ([`../../resolution/`](../../protocols/resolution/), [`../../trust/`](../../trust/)).
+([`../../broker/policy/pin.ts`](../../broker/policy/pin.ts)), the loader's test for an origin the verifier serves
+([`../../loader/fetch/verifier-origin.ts`](../../loader/fetch/verifier-origin.ts)), and the pointer-chain verdict and
+Website level types ([`../../protocols/resolution/`](../../protocols/resolution/), [`../../trust/`](../../trust/)).
 
 **What it must never import.** The verifier host's code, as opposed to its protocol types: it runs
 in another process, and only [`host-supervisor.ts`](host-supervisor.ts) talks to it.
@@ -44,7 +46,8 @@ dial through Node's `https`, which cannot resolve a `.eth` name. Every page that
 
 **One owner of `--host-resolver-rules`** ([`resolver-rules.ts`](resolver-rules.ts)). A second copy of
 the switch replaces the first, and the first matching `MAP` clause wins. So one value is built, in
-this order: developer-mode names, then `MAP *.eth 127.0.0.1:<port>`, then whatever the command line
+this order: developer-mode names, then one `MAP *.<suffix> 127.0.0.1:<port>` per suffix the
+protocols route (`*.eth`, and `*.orivon` for every address scheme), then whatever the command line
 already carried, which is how a test run's hermetic rules survive.
 
 **The port is chosen before ready, synchronously** ([`loopback-port.ts`](loopback-port.ts)). The
@@ -53,9 +56,9 @@ bind with no host is synchronous in Node, so for about a millisecond the probe l
 interface with no handler before closing. The host binds the port later; if something took it in
 between, that bind fails and Settings says so.
 
-**A `.eth` certificate is judged by fingerprint only** ([`certificate-check.ts`](certificate-check.ts)).
+**A verifier host's certificate is judged by fingerprint only** ([`certificate-check.ts`](certificate-check.ts)).
 The name inside the certificate decides nothing; the run's fingerprint does, and until the host
-reports one every `.eth` host is rejected. Every other host keeps Chromium's own verdict. The check
+reports one every host the resolver rules send to the verifier is rejected. Every other host keeps Chromium's own verdict. The check
 goes on every session through `session-created`, because a partition without it fails.
 
 **The host starts after the first page loads** ([`verifier-subsystem.ts`](verifier-subsystem.ts)).
@@ -83,9 +86,9 @@ verifier host's own `net.fetch` never has a `session` to ask the equivalent ques
 `utilityProcess.fork` gives it none. `hostConfig()` is therefore async, checking every configured
 gateway once per host start (a PAC script can answer differently per URL, so one check does not
 stand in for all of them) and folding the result into `unproxiedGateways`
-([`../../verifier-host/protocol.ts`](../../protocols/verifier-host/protocol.ts)); the fallback that reaches
+([`../../protocols/verifier-host/protocol.ts`](../../protocols/verifier-host/protocol.ts)); the fallback that reaches
 one of them directly lives in the host itself
-([`../../verifier-host/dns-fallback.ts`](../../protocols/verifier-host/dns-fallback.ts)).
+([`../../protocols/verifier-host/dns-fallback.ts`](../../protocols/verifier-host/dns-fallback.ts)).
 [`host-supervisor.ts`](host-supervisor.ts)'s `start()` posts a synchronous config in the same
 tick as before, and only awaits when `config()` genuinely returns a promise -- a request made
 right after `start()` awaits that same resolution first, so it can never reach a host that has

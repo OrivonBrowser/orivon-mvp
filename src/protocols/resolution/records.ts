@@ -22,6 +22,8 @@ export type Provenance =
   | { readonly via: 'chain', readonly block: number, readonly offchain: boolean }
   /** Read from DNS, unauthenticated. */
   | { readonly via: 'dns', readonly domain: string }
+  /** The address itself names the content, as `ipfs://<cid>` does: nothing was looked up to reach it. */
+  | { readonly via: 'address' }
   /** A test build's fixed name, never compiled into an ordinary build. */
   | { readonly via: 'fixture' }
 

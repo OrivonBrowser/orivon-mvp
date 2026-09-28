@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { servedByVerifier } from '../eth-origin.js'
+import { servedByVerifier } from '../verifier-origin.js'
 import { ensurePublicUnicastOrigin } from '../install-origin.js'
 
 describe('servedByVerifier', () => {
-  it('is true for an https .eth origin only', () => {
+  it('is true for an https origin a protocol serves only', () => {
+    expect(servedByVerifier('https://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi.ipfs.orivon/')).toBe(true)
+    expect(servedByVerifier('https://ipfs.orivon/Qm')).toBe(true)
+    expect(servedByVerifier('https://orivon')).toBe(false)
     expect(servedByVerifier('https://vitalik.eth')).toBe(true)
     expect(servedByVerifier('https://app.ens.eth/path')).toBe(true)
     expect(servedByVerifier('http://freetube.eth')).toBe(false)

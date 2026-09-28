@@ -60,18 +60,42 @@ describe('liveNameEvidence', () => {
     expect(viaDns.rows.map((r) => r.value)).toContain('Via DNS: app.example, which anyone on the network path could forge')
     expect(liveNameEvidence(provenance({ ddoc: { status: 'failed', resource: '/app.js', refusals: [] } }), NOW).content).toMatchObject({ failedResource: '/app.js' })
   })
+
+  it('calls an ipfs:// or ipns:// address verified by what it names, with no light client involved', () => {
+    const byCid = liveNameEvidence(provenance({
+      host: `${CID}.ipfs.orivon`,
+      pointers: [{ step: 'contenthash', name: CID, pointer: { kind: 'ipfs', cid: CID }, provenance: { via: 'address' } }]
+    }), NOW)
+    expect(byCid.nameProven).toBe(true)
+    expect(byCid.line).toBe("Address verified: it is the content's own hash, 3 minutes ago")
+    expect(byCid.rows[0]).toEqual({ term: 'Address', value: 'The address itself names the content' })
+    const byKey = liveNameEvidence(provenance({
+      pointers: [
+        { step: 'contenthash', name: KEY, pointer: { kind: 'ipns-key', key: KEY }, provenance: { via: 'address' } },
+        { step: 'ipns-record', key: KEY, sequence: 3n, target: `/ipfs/${CID}` }
+      ]
+    }), NOW)
+    expect(byKey.nameProven).toBe(true)
+    expect(byKey.line).toBe('Address verified: it names a key whose signed record was checked, 3 minutes ago')
+  })
 })
 
 describe('pinnedNameEvidence', () => {
   it('says what an installed app came from and how its name was proven', () => {
-    expect(pinnedNameEvidence({ cid: CID, via: 'ipfs', block: 7, pointersVerified: true })).toEqual({
+    expect(pinnedNameEvidence({ cid: CID, via: 'ipfs', block: 7, pointersVerified: true }, false)).toEqual({
       content: { source: 'pinned', cid: CID, pointersVerified: true },
       nameProven: true,
       line: 'Installed from the content its name pointed to. Proven at block 7 when installed',
       rows: [{ term: 'Installed from', value: 'bafybeiczdb3…olejbcgi' }, { term: 'Name', value: 'Proven at block 7 when installed' }]
     })
-    expect(pinnedNameEvidence({ cid: CID, via: 'dnslink', pointersVerified: false }).rows[1]?.value).toMatch(/DNSLink/)
-    expect(pinnedNameEvidence({ cid: CID, via: 'ipfs', pointersVerified: true }).rows[1]?.value).toMatch(/test fixture/)
+    expect(pinnedNameEvidence({ cid: CID, via: 'dnslink', pointersVerified: false }, false).rows[1]?.value).toMatch(/DNSLink/)
+    expect(pinnedNameEvidence({ cid: CID, via: 'ipfs', pointersVerified: true }, false).rows[1]?.value).toMatch(/test fixture/)
+  })
+
+  it('says an app installed from an address needed no proof of a name, and is no test fixture', () => {
+    const evidence = pinnedNameEvidence({ cid: CID, via: 'ipfs', pointersVerified: true }, true)
+    expect(evidence.line).toBe('Installed from the content its address pointed to. The address itself names the content')
+    expect(evidence.rows[1]).toEqual({ term: 'Address', value: 'The address itself names the content' })
   })
 })
 
@@ -79,14 +103,15 @@ describe('chooseNameEvidence', () => {
   const pinned = { cid: 'bafkreiapinnedcontentaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', via: 'ipfs' as const, block: 7, pointersVerified: true }
 
   it('describes the bytes the tab shows: the pin when served from it, else the live mount', () => {
-    expect(chooseNameEvidence(pinned, true, provenance({}), 'x', NOW).content).toMatchObject({ source: 'pinned' })
-    expect(chooseNameEvidence(pinned, false, provenance({}), 'x', NOW).content).toMatchObject({ source: 'live' })
-    expect(chooseNameEvidence(undefined, false, provenance({}), 'x', NOW).content).toMatchObject({ source: 'live' })
-    expect(chooseNameEvidence(pinned, false, null, 'x', NOW).content).toMatchObject({ source: 'pinned' })
+    expect(chooseNameEvidence(pinned, true, provenance({}), 'x', NOW, false).content).toMatchObject({ source: 'pinned' })
+    expect(chooseNameEvidence(pinned, false, provenance({}), 'x', NOW, false).content).toMatchObject({ source: 'live' })
+    expect(chooseNameEvidence(undefined, false, provenance({}), 'x', NOW, false).content).toMatchObject({ source: 'live' })
+    expect(chooseNameEvidence(pinned, false, null, 'x', NOW, false).content).toMatchObject({ source: 'pinned' })
   })
 
   it('says why nothing is known when the verifier has no answer and nothing is installed', () => {
-    const none = chooseNameEvidence(undefined, false, null, 'Catching up with the chain, since just now.', NOW)
+    const none = chooseNameEvidence(undefined, false, null, 'Catching up with the chain, since just now.', NOW, false)
     expect(none).toMatchObject({ content: undefined, nameProven: false, line: 'Name not verified. Catching up with the chain, since just now.' })
+    expect(chooseNameEvidence(undefined, false, null, 'Not loaded yet.', NOW, true).line).toBe('Address not verified. Not loaded yet.')
   })
 })

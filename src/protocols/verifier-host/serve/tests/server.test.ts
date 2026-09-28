@@ -5,9 +5,14 @@ import type { Server } from 'node:https'
 import { ResolutionError } from '../../../resolution/records.js'
 import type { NameRecord } from '../../../resolution/records.js'
 import type { DataGatherer, GatheredFile, MountedSite, NameResolver } from '../../../resolution/providers.js'
-import { ResolutionRegistry } from '../../../resolution/registry.js'
+import { ProtocolRegistry } from '../../../registry.js'
+import { defineProtocol } from '../../../protocol.js'
+import { ENS } from '../../../ens/descriptor.js'
+import { IPFS } from '../../../ipfs/descriptor.js'
+import { createIpfsAddressResolvers } from '../../../ipfs/address-resolver.js'
+import { CID } from 'multiformats/cid'
 import { createRunCertificate } from '../certificate.js'
-import { MAX_BUFFERED_BYTES, createEthServer } from '../server.js'
+import { MAX_BUFFERED_BYTES, createVerifierServer } from '../server.js'
 import { Sites } from '../sites.js'
 
 const ROOT = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
@@ -74,7 +79,7 @@ const site: MountedSite = {
 const record: NameRecord = { type: 'contenthash', pointer: { kind: 'ipfs', cid: ROOT }, provenance: { via: 'fixture' } }
 const resolver: NameResolver = {
   id: 'stub',
-  topLevelDomains: ['eth'],
+  namespaces: ['.eth'],
   resolve: async (name) => {
     if (name === 'syncing.eth') throw new ResolutionError('not-synced', 'light client syncing')
     if (name === 'site.eth' || name === 'part.eth' || name === 'own.eth') return [record]
@@ -83,12 +88,16 @@ const resolver: NameResolver = {
 }
 const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async (_name, _records, _signal, partition) => { partitions.push(partition ?? ''); return site } }
 
+const registry = new ProtocolRegistry([
+  defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] }),
+  defineProtocol(IPFS, { resolvers: createIpfsAddressResolvers() })
+])
 const certificate = createRunCertificate()
 let server: Server
 let port: number
 
 beforeAll(async () => {
-  server = createEthServer(new Sites(new ResolutionRegistry([resolver], [gatherer])), certificate)
+  server = createVerifierServer(registry, new Sites(registry), certificate)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   port = (server.address() as AddressInfo).port
 })
@@ -236,5 +245,43 @@ describe('the .eth loopback server', () => {
     expect(reply.status).toBe(200)
     expect(Number(reply.headers['content-length'])).toBe(BIG)
     expect(reply.body.length).toBeLessThan(BIG)
+  })
+})
+
+describe('the loopback server, for an address scheme', () => {
+  it('redirects a written address to the origin of its canonical spelling, keeping path and query', async () => {
+    const v0 = CID.parse(ROOT).toV0().toString()
+    const reply = await get(`/${v0}/docs/a.html?x=1`, { host: 'ipfs.orivon' })
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe(`https://${ROOT}.ipfs.orivon/docs/a.html?x=1`)
+    expect(reply.headers['cache-control']).toBe('no-store')
+    expect((await get(`/${ROOT}`, { host: 'ipfs.orivon' })).headers.location).toBe(`https://${ROOT}.ipfs.orivon/`)
+  })
+
+  it('inlines a DNSLink name into one label on the way', async () => {
+    const reply = await get('/en.Wikipedia-on-IPFS.org/wiki/', { host: 'ipns.orivon' })
+    expect(reply.headers.location).toBe('https://en-wikipedia--on--ipfs-org.ipns.orivon/wiki/')
+  })
+
+  it('shows the invalid-name page, naming the address as written, for one that does not parse', async () => {
+    const reply = await get('/not-a-cid/', { host: 'ipfs.orivon' })
+    expect(reply.status).toBe(400)
+    expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address")
+    expect(reply.body.toString()).toContain('ipfs://not-a-cid')
+  })
+
+  it('serves a canonical address through the gatherers, and refuses a second spelling of it', async () => {
+    const served = await get('/', { host: `${ROOT}.ipfs.orivon` })
+    expect(served.status).toBe(200)
+    expect(served.body.toString()).toBe('<h1>home</h1>')
+    const base36 = CID.parse(ROOT).toString((await import('multiformats/bases/base36')).base36)
+    const second = await get('/', { host: `${base36}.ipfs.orivon` })
+    expect(second.status).toBe(400)
+    expect(second.body.toString()).toContain(`ipfs://${base36}`)
+  })
+
+  it('refuses a host under the address suffix that no protocol serves', async () => {
+    expect((await get('/', { host: `${ROOT}.nope.orivon` })).status).toBe(421)
+    expect((await get('/', { host: 'example.com' })).status).toBe(421)
   })
 })

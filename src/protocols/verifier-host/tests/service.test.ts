@@ -3,6 +3,8 @@ import { request } from 'node:https'
 import { buildDag, fakeGateways } from '../../ipfs/tests/dag.test-helpers.js'
 import type { FromHost, HostConfig } from '../protocol.js'
 import { startHost } from '../service.js'
+import { startProtocols } from '../protocols.js'
+import { BUILTIN_PROTOCOLS } from '../../builtin.js'
 import type { HostDeps, RunningHost } from '../service.js'
 
 const GATEWAY = 'https://a.gateway'
@@ -29,17 +31,34 @@ function deps (overrides: Partial<HostDeps> = {}): HostDeps & { posted: FromHost
   }
 }
 
-async function get (port: number, host: string, path = '/', partition = `https://${host}`): Promise<{ status: number, body: string }> {
+async function get (port: number, host: string, path = '/', partition = `https://${host}`): Promise<{ status: number, body: string, location?: string | undefined }> {
   return await new Promise((resolve, reject) => {
     request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host, 'x-orivon-partition': partition } }, (res) => {
       let body = ''
       res.on('data', (c: Buffer) => { body += c.toString() })
-      res.on('end', () => { resolve({ status: res.statusCode ?? 0, body }) })
+      res.on('end', () => { resolve({ status: res.statusCode ?? 0, body, ...(res.headers.location === undefined ? {} : { location: res.headers.location }) }) })
     }).on('error', reject).end()
   })
 }
 
+describe('startProtocols', () => {
+  it('runs exactly the protocols the shell routes and shows, in the same order', () => {
+    expect(startProtocols(config(), deps()).protocols.map((p) => p.descriptor)).toEqual(BUILTIN_PROTOCOLS)
+  })
+})
+
 describe('startHost', () => {
+  it('serves an ipfs:// address from its canonical origin, with no light client, and calls it proven by the address', async () => {
+    const host = await startHost(config(), deps())
+    running.push(host)
+    const cid = dag.root.toV1().toString()
+    const redirect = await get(host.port, 'ipfs.orivon', `/${dag.root.toV0().toString()}/`)
+    expect(redirect).toMatchObject({ status: 301, location: `https://${cid}.ipfs.orivon/` })
+    expect(await get(host.port, `${cid}.ipfs.orivon`)).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    const provenance = await host.answer({ kind: 'provenance', host: `${cid}.ipfs.orivon`, partition: `https://${cid}.ipfs.orivon` })
+    expect(provenance).toMatchObject({ resolver: 'ipfs-address', pointers: [{ step: 'contenthash', provenance: { via: 'address' } }], ddoc: { status: 'met' } })
+  })
+
   it('serves a fixture name from IPFS through the loopback server, and reports its provenance', async () => {
     const host = await startHost(config(), deps())
     running.push(host)

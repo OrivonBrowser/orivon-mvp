@@ -1,4 +1,4 @@
-// Mounted `.eth` sites by host and partition, kept a short while so one
+// Mounted sites by host and partition, kept a short while so one
 // page's many requests read one root without resolving the name for each.
 // A partition is the top-level page origin a request came from: a name one
 // site's pages opened is cold for every other site, so timing a request
@@ -6,7 +6,7 @@
 
 import { ResolutionError } from '../../resolution/records.js'
 import type { MountedSite } from '../../resolution/providers.js'
-import type { ResolutionRegistry } from '../../resolution/registry.js'
+import type { ProtocolRegistry } from '../../registry.js'
 import { Slots } from '../../resolution/slots.js'
 
 /** How long a proven name stays fresh -- served with no re-check at all. */
@@ -73,7 +73,7 @@ export class Sites {
   private readonly mounting = new Slots(MAX_CONCURRENT_MOUNTS)
 
   constructor (
-    private readonly registry: ResolutionRegistry,
+    private readonly registry: ProtocolRegistry,
     private readonly now: () => number = Date.now,
     private readonly timeoutMs = MOUNT_TIMEOUT_MS
   ) {}

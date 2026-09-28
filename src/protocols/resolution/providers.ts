@@ -1,13 +1,26 @@
 // The two provider shapes of the canonical DNS resolution and Data gathering
-// pages, as internal interfaces. Built in, not yet open to Apps.
+// pages, as internal interfaces. Built in, not yet open to Apps; a protocol
+// (../protocol.ts) groups them under the namespaces it serves.
 
 import type { ContentRoot, NameRecord, PointerStep } from './records.js'
 
-/** Resolves names under the top-level domains it declares, to every record a gatherer can use. */
+/**
+ * Where a name lives: a top-level domain, `.eth`, whose names are hosts; or
+ * an address scheme, `ipfs:`, whose names are whatever follows `ipfs://`.
+ */
+export type Namespace = `.${string}` | `${string}:`
+
+/** Resolves names in the namespaces it declares, to every record a gatherer can use. */
 export interface NameResolver {
   readonly id: string
-  /** Lowercase, without a dot: `['eth']`. */
-  readonly topLevelDomains: readonly string[]
+  /** Lowercase: `['.eth']`, `['ipfs:']`. */
+  readonly namespaces: readonly Namespace[]
+  /**
+   * An address scheme's one spelling of `name`, which becomes the host label
+   * of its origin: two spellings would be two origins for one site. Throws a
+   * ResolutionError `invalid-name`. Without it, the lowercased name is canonical.
+   */
+  canonicalName?: (name: string) => string
   /** Throws a ResolutionError; an empty list means the name has no usable record. */
   resolve: (name: string, signal?: AbortSignal) => Promise<NameRecord[]>
 }

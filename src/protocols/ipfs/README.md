@@ -1,10 +1,16 @@
-# `src/protocols/ipfs/`: the IPFS gatherer
+# `src/protocols/ipfs/`: the IPFS protocol
 
 **What lives here.** The `DataGatherer` ([`../resolution/`](../resolution/)) that loads a site
 from an IPFS CID, an IPNS key or a DNSLink domain, over trustless HTTP gateways that are trusted
 for availability only. Every block is hashed against its CID before any of it is used, every IPNS
 record is checked against its key's signature, and the DDOC report of one navigation says whether
-every pointer and every byte was verified.
+every pointer and every byte was verified. It loads a `.eth` name's content as much as an
+address's.
+
+Also the protocol itself: its descriptor ([`descriptor.ts`](descriptor.ts), the `ipfs` and `ipns`
+schemes), the resolvers for `ipfs://` and `ipns://` addresses
+([`address-resolver.ts`](address-resolver.ts)), and [`protocol.ts`](protocol.ts), which registers
+both with the gatherer.
 
 **Not tied to Electron.** Durable. It runs over an injected `fetch` and an injected TXT resolver.
 
@@ -76,6 +82,13 @@ can time (`open-questions.md` A256).
 could otherwise serve an old, validly signed record and roll a site back. The highest sequence
 per key comes from an injected store; the verifier host keeps it across restarts. An expired
 record is not treated as a lie, because it was genuinely signed.
+
+**Resolving an address is parsing it** ([`address-resolver.ts`](address-resolver.ts)). An
+`ipfs://` or `ipns://` address already names the content, so its resolver looks nothing up: it
+returns the pointer, and the gatherer follows an IPNS key or DNSLink name from there as it would
+for a `.eth` name's contenthash. It parses with the same [`names.ts`](names.ts) that parses an
+IPNS or DNSLink value, so the canonical spelling it gives an address (base32 CIDv1, base36 key,
+lowercase domain) is the one every other path records.
 
 **A path inside an IPNS or DNSLink target is refused** ([`names.ts`](names.ts)). `/ipfs/<cid>/sub`
 would make a site's root a subdirectory of another DAG. That is legal IPFS, but nothing in this

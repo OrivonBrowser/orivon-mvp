@@ -6,7 +6,7 @@ export type PointerChainVerdict =
   | { readonly verified: false, readonly unverified: PointerStep | undefined }
 
 function provenVia (provenance: Provenance): boolean {
-  return provenance.via === 'chain' || provenance.via === 'fixture'
+  return provenance.via === 'chain' || provenance.via === 'fixture' || provenance.via === 'address'
 }
 
 function stepVerified (step: PointerStep): boolean {
