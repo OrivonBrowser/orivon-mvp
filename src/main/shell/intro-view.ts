@@ -40,9 +40,10 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   function dismiss (): void {
     if (!open) return
     open = false
-    if (win.isDestroyed()) return
-    win.removeListener('resize', onResize)
-    win.contentView.removeChildView(view)
+    if (!win.isDestroyed()) {
+      win.removeListener('resize', onResize)
+      win.contentView.removeChildView(view)
+    }
     if (!webContents.isDestroyed()) webContents.close()
   }
 
@@ -71,6 +72,9 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   layout()
   win.contentView.addChildView(view)
   win.on('resize', onResize)
+  // A window closed during the welcome screen: its view is not a child of a
+  // window any more, and nothing else would close it.
+  win.once('closed', dismiss)
   tabs.onStateChange(keepOnTop)
   const devServerUrl = process.env['ELECTRON_RENDERER_URL']
   void webContents.loadURL(rendererEntryUrl(import.meta.dirname, devServerUrl, '/intro/', '../renderer/intro/index.html'))

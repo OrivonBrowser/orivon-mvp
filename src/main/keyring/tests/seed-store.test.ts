@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SeedStore, type SafeStorageLike } from '../seed-store.js'
+import { SESSION_ONLY_STORAGE, SeedStore, type SafeStorageLike } from '../seed-store.js'
 
 let dir: string
 let path: string
@@ -174,5 +174,23 @@ describe('SeedStore -- never overwrites a file it cannot make sense of', () => {
     writeFileSync(path, JSON.stringify({ version: 1, ciphertext: Buffer.from('placeholder').toString('base64') }))
     const { persistent } = await store.resolve()
     expect(persistent).toBe(false)
+  })
+})
+
+describe('SESSION_ONLY_STORAGE (a private session)', () => {
+  it('gives an identity that is made fresh, is not persistent, and writes nothing down', async () => {
+    const first = await new SeedStore(path, SESSION_ONLY_STORAGE).resolve()
+    const second = await new SeedStore(path, SESSION_ONLY_STORAGE).resolve()
+    expect(first.persistent).toBe(false)
+    expect(first.seed).toHaveLength(32)
+    expect(Buffer.from(first.seed).equals(Buffer.from(second.seed))).toBe(false)
+    expect(readdirSync(dir)).toEqual([])
+  })
+
+  it('never touches an identity file that is there', async () => {
+    writeFileSync(path, JSON.stringify({ version: 1, ciphertext: 'aGVsbG8=' }))
+    const resolved = await new SeedStore(path, SESSION_ONLY_STORAGE).resolve()
+    expect(resolved.persistent).toBe(false)
+    expect(readFileSync(path, 'utf8')).toContain('aGVsbG8=')
   })
 })

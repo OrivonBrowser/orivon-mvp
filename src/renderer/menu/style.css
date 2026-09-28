@@ -1,0 +1,54 @@
+/* The main menu popover's own stylesheet: a small literal copy of the palette,
+   as every renderer entry has (see permissions/style.css). */
+
+:root {
+  --wbg: #f2f2f7;
+  --wborder: color-mix(in srgb, var(--wbg) 82%, black);
+  --wink: rgba(0, 0, 0, 0.90);
+  --wink-dim: rgba(0, 0, 0, 0.55);
+  --whover: rgba(0, 0, 0, 0.07);
+  --waccent: #4f46e5;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wbg: #2b2c31;
+    --wborder: #3b3c42;
+    --wink: #e6e7e8;
+    --wink-dim: #a4a5af;
+    --whover: rgba(255, 255, 255, 0.08);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--wbg);
+  color: var(--wink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+
+.items { list-style: none; margin: 0; padding: 6px; }
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.item:hover, .item:focus-visible { background: var(--whover); outline: none; }
+.item:focus-visible { box-shadow: inset 0 0 0 2px var(--waccent); }
+.keys { color: var(--wink-dim); }
+
+.separator { height: 1px; margin: 5px 6px; background: var(--wborder); }

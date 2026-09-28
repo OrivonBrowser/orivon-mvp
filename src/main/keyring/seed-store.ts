@@ -28,6 +28,15 @@ export interface SafeStorageLike {
  * plaintext-adjacent secret, the wrong direction for this decision. */
 const NO_REAL_KEYRING = new Set(['basic_text', 'unknown'])
 
+/** What a private session stores its identity with: nothing that outlives it. `SeedStore` reads it as "no keyring is reachable",
+ * so the seed is made fresh in memory, never written down, and `orivon.secrets.available()` is false. */
+export const SESSION_ONLY_STORAGE: SafeStorageLike = {
+  isAsyncEncryptionAvailable: async () => false,
+  encryptStringAsync: async () => { throw new Error('a private session stores nothing') },
+  decryptStringAsync: async () => { throw new Error('a private session stores nothing') },
+  getSelectedStorageBackend: () => 'basic_text'
+}
+
 const FILE_VERSION = 1
 const SEED_BYTES = 32
 const HEX_SEED = /^[0-9a-f]{64}$/

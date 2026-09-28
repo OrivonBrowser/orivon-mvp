@@ -55,7 +55,7 @@ const DENY_ALL = 2
  * Builds the real PerCapabilityConsentPrompt ./app-install-subsystem.ts
  * wires in for a manifest declaring `consentGranularity: 'per-capability'`.
  *
- * STAGED, PER THIS LANE'S OWN BRIEF: one overview dialog first, offering
+ * STAGED: one overview dialog first, offering
  * "Allow all" / "Choose individually" / "Deny all" -- the common cases cost
  * one click, same as the all-or-nothing dialog above, and only a person who
  * actually wants finer control pays for the longer path. Defaults and

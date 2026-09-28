@@ -65,8 +65,8 @@ export async function requestGrant (
   // Checked here rather than inside decideGrantRequest (../broker/policy/
   // request-grant.js): that function is ALSO grant-persistence.ts's own
   // "does a restored grant still fit the current manifest" check and this
-  // file's own sibling's real grant call, and a blanket refusal there once
-  // silently broke both -- see decideGrantRequest's own doc for the finding.
+  // file's own sibling's real grant call, and a blanket refusal there would
+  // silently break both -- see decideGrantRequest's own doc for why.
   // ADR-0039's `web.embed` keeps the same one door: the install-consent
   // dialog, never a dynamic request.
   if (request.capability === 'web.context' || request.capability === 'web.embed') return false

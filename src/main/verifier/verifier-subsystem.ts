@@ -44,6 +44,15 @@ let lightClient: LightClientState = { state: 'off' }
 let checkpoint: CheckpointChoice | undefined
 let hostDown: string | undefined = 'not started yet'
 const listeners = new Set<() => void>()
+/** Whether the person has the light client on. Set once the settings are read; until then it is on. */
+let enabledByPerson: () => boolean = () => true
+
+/** Lets the person's setting, and not only the environment, switch the light client off. Read when the host starts. */
+export function configureVerifier (options: { lightClientEnabled: () => boolean }): void {
+  enabledByPerson = options.lightClientEnabled
+}
+
+const lightClientSwitchedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off' || !enabledByPerson()
 
 function changed (): void {
   for (const listener of listeners) listener()
@@ -99,8 +108,8 @@ async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
   const stored = verifierStore()
   let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
-  if (process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off') {
-    lightClient = { lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off for this run, so no .eth name can be verified' }
+  if (lightClientSwitchedOff()) {
+    lightClient = { lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off, so no .eth name can be verified' }
   } else {
     const choice = chooseNow()
     lightClient = choice.ok
@@ -173,7 +182,7 @@ export function verifierView (): LightClientView {
     lightClient,
     checkpoint,
     hostDown,
-    switchedOff: process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off',
+    switchedOff: lightClientSwitchedOff(),
     endpoints: DEFAULT_ENDPOINTS
   }, Date.now())
 }

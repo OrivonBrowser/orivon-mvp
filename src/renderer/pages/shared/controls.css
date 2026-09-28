@@ -1,0 +1,55 @@
+/* Buttons, choices and text boxes shared by the shell's own pages. */
+
+.btn {
+  padding: 6px 14px;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  background: var(--wsurface);
+  cursor: pointer;
+}
+.btn:hover { background: var(--whover); }
+.btn[disabled] { opacity: 0.5; cursor: default; }
+.btn.primary { background: var(--waccent); border-color: var(--waccent); color: var(--waccent-ink); }
+.btn.danger { color: var(--wdanger); border-color: color-mix(in srgb, var(--wdanger) 50%, var(--wborder)); }
+.btn.danger.armed { background: var(--wdanger); border-color: var(--wdanger); color: #fff; }
+
+.select, .text {
+  min-width: 220px;
+  padding: 6px 10px;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  background: var(--wsurface);
+}
+.text { width: 100%; max-width: 420px; }
+.text[aria-invalid="true"] { border-color: var(--wdanger); }
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex: none;
+}
+.switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.switch .track {
+  position: absolute;
+  inset: 0;
+  border-radius: 11px;
+  background: var(--wborder);
+  transition: background 0.15s;
+  pointer-events: none;
+}
+.switch .track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.switch input:checked + .track { background: var(--waccent); }
+.switch input:checked + .track::after { transform: translateX(18px); }
+.switch input:focus-visible + .track { outline: 2px solid var(--waccent); outline-offset: 2px; }

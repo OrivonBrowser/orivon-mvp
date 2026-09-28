@@ -1,27 +1,31 @@
 # `src/renderer/`: the browser chrome UI
 
-**What lives here.** Five entries, plain vanilla-TS pages with no framework. Tied to Electron,
+**What lives here.** Nine entries, plain vanilla-TS pages with no framework. Tied to Electron,
 entirely.
 
 | Entry | What it is |
 |---|---|
-| (top level) | The chrome view: tab strip (sharing its row with the native window buttons), toolbar and bookmarks bar, in its own `WebContentsView` above the active tab |
+| (top level) | The chrome view: tab strip (sharing its row with the native window buttons, and dragging a tab out of it: `tab-drag.ts`), toolbar and bookmarks bar, in its own `WebContentsView` above the active tab |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
-| [`settings/`](settings/) | The all-sites permissions popup: every app and its grants, revoke-only |
+| [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
 | [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches, its Web3 Score and site data pages |
 | [`intro/`](intro/) | The welcome screen, a full-window view over the shell (`src/main/shell/intro-view.ts`) |
+| [`menu/`](menu/) | The main menu popup: the commands under the menu button, each with its keys |
+| [`split-frame/`](split-frame/) | The view behind the two panes of a split: the divider, the ring round the pane in use, and where a dragged tab would go |
+| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `profiles`, `private`), on the tokens and controls in `pages/shared/` |
 
 **What it depends on.** The chrome view on `src/preload/shell.ts`'s commands, typed by that file's
 `OrivonShell` so a dropped command fails the typecheck, and `newtab/` on
-`src/preload/newtab.ts`'s, degrading to plain markup outside a fresh tab. `intro/` has no
-preload: it reports "Enter Orivon" through its URL hash, which `intro-view.ts` watches.
-`settings/permissions-view.ts` imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
+`src/preload/newtab.ts`'s, degrading to plain markup outside a fresh tab. `pages/` depends on
+`src/preload/internal.ts`'s one `request` and `onEvent` and holds no capability of its own: it is
+served with a CSP that allows no network. `intro/` has no preload: it reports "Enter Orivon"
+through its URL hash, which `intro-view.ts` watches. `permissions/permissions-view.ts` imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
 for pure string work (showing `ipfs://<cid>` as an address).
 
 **What it must never import.** `electron`, `node:*`, or anything under [`src/main/`](../main/).
 This is a sandboxed renderer with no Node; reaching for it means the logic belongs in main.
-Type-only imports from `src/main/shell/tabs.ts`, `src/main/browsing/bookmarks.ts` and
-`src/preload/shell.ts` are fine: `verbatimModuleSyntax` erases them.
+Type-only imports from `src/main/shell/tabs.ts`, `src/main/browsing/bookmarks.ts`,
+`src/main/settings/schema.ts` and `src/preload/shell.ts` are fine: `verbatimModuleSyntax` erases them.
 
 **The chrome document never changes its own URL, not even the fragment.** Main refuses every
 command from a sender whose URL is not exactly the chrome's (`src/main/ipc/ipc.ts`'s
@@ -58,6 +62,10 @@ them, so this view's CSP stays `img-src 'self' data:`; the renderer never fetche
 matching `orivon-browser-v2` ported from lucide (ISC), credited in `icons.ts`. A control with no
 behaviour yet ships `disabled` with an honest `title`, never omitted or silently clickable
 (A32).
+
+**The zoom chip sits at the right of the address pill, and is absent at the default level.** `main.ts` shows
+`state.zoomPercent` when main sends one (`src/main/shell/window.ts`), and clicking it asks main to run the
+`zoom.reset` command, so the chip and the keyboard reset one way.
 
 **Visual reference only, never code:** `orivon-browser-v2` (the prior prototype at
 `<prior-mvp>`) and `webtorrent-desktop` (ADR-0002). What is reused is v2's measured colours,

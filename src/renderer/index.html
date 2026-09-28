@@ -88,6 +88,8 @@
             placeholder="Search or enter address"
           />
           <div class="addressbar-trailing">
+            <!-- The page's zoom, when it is not the default. Choosing it puts the page back to actual size. -->
+            <button id="zoom-chip" class="zoom-chip" type="button" hidden title="Zoom: click for actual size"></button>
             <!-- The same level as a word: Web2, Web2.5 or Web3. Hidden
                  until a level is known (web3-shield.ts's paintMark). -->
             <span id="web3-mark" class="web3-mark" hidden></span>
@@ -130,7 +132,9 @@
           </svg>
         </button>
         <span class="statusdot" aria-hidden="true" title="Node status — not in v0"></span>
-        <button id="menu" class="iconbtn" type="button" disabled title="Menu — not in v0">
+        <!-- Which profile this window is, once there is more than one, and always in a private window. Opens the page that manages them. -->
+        <button id="profile-chip" class="profile-chip" type="button" hidden></button>
+        <button id="menu" class="iconbtn" type="button" title="Menu">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
             <path d="M3 5h18" /><path d="M3 12h18" /><path d="M3 19h18" />
           </svg>

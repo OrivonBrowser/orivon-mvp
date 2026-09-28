@@ -12,7 +12,7 @@
 // navigated to, independently of lock-navigation.ts refusing that. Checked
 // synchronously at the top of the handler, per Electron's own warning that
 // a WebFrameMain reference can go stale after an await.
-import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL } from '../channels.js'
 import type { TabManager } from '../shell/tabs.js'
@@ -20,10 +20,17 @@ import type { SiteInfoController, SiteSummary } from '../permissions/site-info-c
 import { web3Score } from '../browsing/site-trust.js'
 import type { Web3Score } from '../browsing/site-trust.js'
 import type { PanelAnchor } from '../permissions/permissions-panel.js'
+import { isCommandId } from '../shortcuts/commands.js'
+import type { CommandId } from '../shortcuts/commands.js'
 import type { SiteInfoPage } from '../permissions/site-info-panel.js'
+import { isInternalPageId } from '../pages/internal-pages.js'
 
 export type ShellCommand =
   | { type: 'newTab'; url?: string }
+  /** Runs one of the shell's commands (./../shortcuts/commands.ts) on this window: what a button does that a key also does. */
+  | { type: 'runCommand'; id: string }
+  /** One of the shell's own pages (Settings, History, ...), optionally at a place inside it. */
+  | { type: 'openInternal'; page: string; path?: string }
   | { type: 'closeTab'; id: string }
   | { type: 'activateTab'; id: string }
   | { type: 'navigate'; id: string; input: string }
@@ -63,12 +70,22 @@ export type ShellCommand =
    * and the window width, both of which live in the renderer. It is only a
    * position -- treated as a hint and clamped to the window in
    * panelBounds(), never trusted as a bounds to set directly. */
-  | { type: 'openSettings'; url?: string; anchor: PanelAnchor }
+  | { type: 'openPermissions'; url?: string; anchor: PanelAnchor }
   /** Opens, or closes, the site-info popup under the address pill's shield
    * or key -- see ./site-info-panel.ts. Same `anchor`/`url` shape as
-   * `openSettings`; `page` is which icon was clicked (the shield opens
+   * `openPermissions`; `page` is which icon was clicked (the shield opens
    * straight to the Web3 Score page, the key to the main page). */
   | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
+  /** Opens, or closes, the main menu under the toolbar's menu button. Same `anchor` contract as `openPermissions`. */
+  | { type: 'openMenu'; anchor: PanelAnchor }
+  /** Puts a tab at a place in the strip. */
+  | { type: 'moveTab'; id: string; index: number }
+  /** A tab is being dragged, below the strip, at this point of the window (`x` and `y` absent: back in the strip). */
+  | { type: 'dragTab'; id: string; x?: number; y?: number }
+  /** A tab was let go outside the strip: `x`, `y` where on the screen, `clientX`, `clientY` where in this window. */
+  | { type: 'dropTab'; id: string; x: number; y: number; clientX: number; clientY: number }
+  /** The right-click menu of a tab, which main shows (it lists the other windows). */
+  | { type: 'tabMenu'; id: string }
 
 /**
  * BOTH object identity AND URL, matching `newtab-ipc.ts`'s own
@@ -87,16 +104,30 @@ function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents
     event.senderFrame.url === chromeUrl
 }
 
+/** What the chrome's commands do that is the window's own business rather than the tab collection's. */
+export interface ShellActions {
+  openPermissions: (anchor: PanelAnchor, url?: string) => void
+  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
+  runCommand: (id: CommandId) => void
+  openMenu: (anchor: PanelAnchor) => void
+  dragTab: (id: string, at: { x: number, y: number } | null) => void
+  dropTab: (id: string, screen: { x: number, y: number }, client: { x: number, y: number }) => void
+  showTabMenu: (id: string) => void
+}
+
 export function registerShellIpc (
   chromeWebContents: WebContents,
   chromeUrl: string,
   tabs: TabManager,
   bookmarks: BookmarkStore,
   siteInfo: SiteInfoController,
-  openSettings: (anchor: PanelAnchor, url?: string) => void,
-  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
+  actions: ShellActions
 ): void {
-  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | Web3Score | null> => {
+  // On the chrome view's own webContents rather than the process-wide
+  // ipcMain: a second window registers its own without colliding, and the
+  // handler goes with the view. The frame check below stays: a webContents'
+  // handlers hear every frame in it.
+  chromeWebContents.ipc.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | Web3Score | null> => {
     if (!isFromChrome(event, chromeWebContents, chromeUrl)) {
       // Not the chrome view's top frame -- refuse silently rather than
       // throwing a message back that confirms the channel exists.
@@ -106,6 +137,13 @@ export function registerShellIpc (
     switch (command.type) {
       case 'newTab':
         tabs.createTab(command.url)
+        return
+      case 'runCommand':
+        if (isCommandId(command.id)) actions.runCommand(command.id)
+        return
+      case 'openInternal':
+        // The page name comes from the chrome view, but is checked all the same.
+        if (isInternalPageId(command.page)) tabs.openInternal(command.page, typeof command.path === 'string' ? command.path : '/')
         return
       case 'closeTab':
         tabs.closeTab(command.id)
@@ -150,11 +188,26 @@ export function registerShellIpc (
         return siteInfo.siteSummaryFor(command.url)
       case 'web3ScoreFor':
         return siteInfo.siteTrustFor(command.url).then(web3Score)
-      case 'openSettings':
-        openSettings(command.anchor, command.url)
+      case 'openPermissions':
+        actions.openPermissions(command.anchor, command.url)
         return
       case 'openSiteInfo':
-        openSiteInfo(command.anchor, command.page, command.url)
+        actions.openSiteInfo(command.anchor, command.page, command.url)
+        return
+      case 'openMenu':
+        actions.openMenu(command.anchor)
+        return
+      case 'moveTab':
+        if (typeof command.id === 'string' && Number.isFinite(command.index)) tabs.moveTab(command.id, command.index)
+        return
+      case 'dragTab':
+        if (typeof command.id === 'string') actions.dragTab(command.id, Number.isFinite(command.x) && Number.isFinite(command.y) ? { x: command.x as number, y: command.y as number } : null)
+        return
+      case 'dropTab':
+        if (typeof command.id === 'string' && [command.x, command.y, command.clientX, command.clientY].every(Number.isFinite)) actions.dropTab(command.id, { x: command.x, y: command.y }, { x: command.clientX, y: command.clientY })
+        return
+      case 'tabMenu':
+        if (typeof command.id === 'string') actions.showTabMenu(command.id)
         return
     }
   })

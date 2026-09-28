@@ -16,12 +16,12 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 // to be unambiguous.
 const ELISION_MARKER = '...'
 
-// Owner decision, 2026-09-14: always show the last three dot-separated
-// labels of the host -- "the sub domain, the domain name, and the domain
-// name level 1 (the www, the google and the .com)" -- and the whole host
-// when it has three or fewer. See this directory's README (Design notes)
-// for why a label count, not a character count, and why this closes A142
-// without a public-suffix-list dependency.
+// Always show the last three dot-separated labels of the host -- "the sub
+// domain, the domain name, and the domain name level 1 (the www, the
+// google and the .com)" -- and the whole host when it has three or fewer.
+// See this directory's README (Design notes) for why a label count, not a
+// character count, and why this closes A142 without a public-suffix-list
+// dependency.
 const DISPLAYED_LABEL_COUNT = 3
 
 // A161: a small, evidenced list of multi-label PRIVATE hosting suffixes the

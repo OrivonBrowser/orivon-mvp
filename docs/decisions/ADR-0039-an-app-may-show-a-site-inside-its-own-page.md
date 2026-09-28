@@ -21,7 +21,11 @@ The patterns are exact `http(s)://host[:port]` origins, or the single entry `"*"
 on the web. A page the app shows may load a document, in its top frame or a frame inside it, only
 from the granted origins. `"*"` never reaches an address literal outside public unicast or a
 `localhost` name (T12); an origin named exactly may be one, and the person sees that address at
-consent.
+consent. For a `"*"`-admitted document whose host is an ordinary name, the guest session's own
+resolver is asked before the load proceeds, and every address it returns must be public unicast
+too -- a name that only answers a private or loopback address once asked is refused the same as
+one named literally (A286 is the one residual this leaves: a name whose answer changes between
+that check and the connection).
 
 Every page an app shows runs:
 
@@ -95,11 +99,19 @@ warning on `webviewTag` is that a page can name a `preload` with Node integratio
 attach time would destroy the guest with no event the app can act on; rewriting keeps every
 attach working and makes the security properties hold whatever the app wrote.
 
-**Why `"*"` stops at private addresses.** A page shown inside an app is reached by Chromium's
-own network stack, at a URL the app chose, with the app's script inside it. `"*"` reaching a
-router's admin page or a service on loopback is the T12 threat with a page around it. The rule
-mirrors `tcp.connect`: a wildcard reaches public addresses only, and an address the person was
-shown reaches what it names.
+**Why `"*"` stops at private addresses, and how.** A page shown inside an app is reached by
+Chromium's own network stack, at a URL the app chose, with the app's script inside it. `"*"`
+reaching a router's admin page or a service on loopback is the T12 threat with a page around it.
+The rule mirrors `tcp.connect`: a wildcard reaches public addresses only, and an address the
+person was shown reaches what it names. No Electron `webRequest` event that can still cancel a
+document load carries the address Chromium actually connects to, so an ordinary NAME cannot be
+checked by its connected address the way `tcp.connect` checks a literal. Instead, before
+admitting such a load, the guest session's own `resolveHost` is asked for the name and the load
+is refused unless every address it returns is public unicast (`src/main/embed/embed-guard.ts`).
+Asking THAT session, not a separate resolver, is what keeps this from reopening the resolve-then-
+check window A196 already accepts elsewhere: it shares Chromium's own host cache with the
+connection that follows, so a static name answers from the same cache rather than a second,
+independently-timed lookup. A286 is the one residual this still leaves.
 
 ## Consequences
 

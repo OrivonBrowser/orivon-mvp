@@ -8,6 +8,9 @@
 // the channel name it shares with src/broker/transport/ipc.ts has nowhere
 // else neutral to live.
 
+/** Main -> chrome view: a command for the chrome itself to carry out, such as focusing the address bar. */
+export const SHELL_EVENT_CHANNEL = 'orivon-shell:event'
+
 /** Chrome view -> main: tab commands (newTab, closeTab, navigate, ...). See ./ipc.ts. */
 export const COMMAND_CHANNEL = 'orivon-shell:command'
 
@@ -48,8 +51,8 @@ export const SYNC_CONTROL_CHANNEL = 'orivon:control-sync'
  * list/revoke (queue item 4.4). A separate channel from COMMAND_CHANNEL:
  * this is its own popup view, not the chrome view, so its sender check is
  * against ITS OWN webContents identity, never chrome's. See
- * ./ipc/settings-ipc.ts. */
-export const SETTINGS_COMMAND_CHANNEL = 'orivon-settings:command'
+ * ./ipc/permissions-ipc.ts. */
+export const PERMISSIONS_COMMAND_CHANNEL = 'orivon-permissions:command'
 
 /** Ordinary tab -> main: reports a `<link rel="orivon-manifest">` hint's
  * href, seen at most once per navigation (src/preload/manifest-hint.ts).
@@ -62,7 +65,7 @@ export const MANIFEST_HINT_CHANNEL = 'orivon-loader:manifest-hint'
 /** The site-info popup's own WebContentsView -> main: the current site's
  * capability switches, its Web3 Score evidence, and its Cookies and site
  * data page (`./ipc/site-info-ipc.ts`). A separate channel from
- * SETTINGS_COMMAND_CHANNEL -- two independent popup views, each its own
+ * PERMISSIONS_COMMAND_CHANNEL -- two independent popup views, each its own
  * webContents identity, opened at different toolbar icons and never both
  * at once (`./permissions/popover-view.ts`). */
 export const SITE_INFO_COMMAND_CHANNEL = 'orivon-site-info:command'
@@ -71,7 +74,7 @@ export const SITE_INFO_COMMAND_CHANNEL = 'orivon-site-info:command'
  * Main to the settings panel only: the light client's state, sent whenever
  * it changes while the panel is open, so the page never polls for it.
  */
-export const LIGHT_CLIENT_STATUS_CHANNEL = 'orivon-settings:light-client'
+export const LIGHT_CLIENT_STATUS_CHANNEL = 'orivon-permissions:light-client'
 
 /**
  * A page an app shows inside itself -> main (ADR-0039): the shell's own
@@ -82,3 +85,22 @@ export const LIGHT_CLIENT_STATUS_CHANNEL = 'orivon-settings:light-client'
  * it), never from anything in the payload. See `src/main/embed/`.
  */
 export const EMBED_SCRIPT_CHANNEL = 'orivon-embed:page-script'
+
+/**
+ * An internal page (Settings, History, ...) -> main: `{ domain, command }`.
+ * One channel for all of them; which domains a page may reach is decided per
+ * call in `./pages/internal-ipc.ts`, never by the page.
+ */
+export const INTERNAL_COMMAND_CHANNEL = 'orivon-internal:command'
+
+/** The main menu popover's own WebContentsView -> main: what it lists, and which entry was chosen. See ./ipc/menu-ipc.ts. */
+export const MENU_COMMAND_CHANNEL = 'orivon-menu:command'
+
+/** The split backdrop's own view -> main: the divider being dragged or reset. See ./shell/split-frame.ts. */
+export const SPLIT_FRAME_CHANNEL = 'orivon-split:command'
+
+/** Main -> the split backdrop: what to draw. */
+export const SPLIT_STATE_CHANNEL = 'orivon-split:state'
+
+/** Main -> an internal page: `{ topic, payload }`, for changes made elsewhere while the page is open. */
+export const INTERNAL_EVENT_CHANNEL = 'orivon-internal:event'

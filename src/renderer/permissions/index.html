@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Same shape as newtab/index.html's CSP: no network requests of its
+         own -- every fact on this page comes over IPC (orivonPermissions.*),
+         never a fetch. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'"
+    />
+    <title>Permissions</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <!-- The permissions panel's own WebContentsView
+         (src/main/permissions-panel.ts) -- queue item 4.4's "every
+         installed app, and what each one can do, with revoke". Anchored
+         under the toolbar's permission key, inside the shell window; it
+         was a separate BaseWindow until 2026-09-16 (owner). -->
+    <main class="page">
+      <header class="page-header">
+        <h1>Permissions</h1>
+        <p class="subtitle">Every app you've used and every site you've answered, and what each can do. Changes take effect immediately.</p>
+      </header>
+
+      <p id="empty-state" class="empty-state" hidden>
+        Nothing here yet — an app's permissions appear once you've opened it and granted it something, and a site's once you've answered it.
+      </p>
+
+      <div id="apps-list" class="apps-list" role="list"></div>
+
+      <section id="light-client" class="light-client" aria-labelledby="light-client-title" hidden></section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

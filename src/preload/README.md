@@ -1,8 +1,9 @@
 # `src/preload/`: the privilege boundary
 
-**What lives here.** Six preload scripts at six privilege levels, the app-tab wiring they share
-(`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`, `page-buffer.ts`,
-`ordinary-tab.ts`), and
+**What lives here.** Nine preload scripts at nine privilege levels (`app.ts`, `shell.ts`, `newtab.ts`,
+`permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts`, `internal.ts` and `embed.ts`), the
+app-tab wiring they share (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`,
+`page-buffer.ts`, `ordinary-tab.ts`), and
 `orivon-error.ts`, the plain-object error shape [`surface/`](surface/) and [`ports/`](ports/)
 share. The narrowest and most security-critical surface in the repository. Tied to Electron,
 entirely.
@@ -32,18 +33,21 @@ across this boundary.
 |---|---|---|
 | `app.ts` | every ordinary tab | `./ordinary-tab.ts`'s `exposeOrdinaryTabSurface()`: `window.orivon` and what depends on it -- nothing at all on a `chrome-extension:` page |
 | `shell.ts` | only the chrome view, and only at the URL `--orivon-shell-url` names | Tab commands, typed by its `OrivonShell` |
-| `settings.ts` | only the all-sites popup (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list and revoke grants, list and reset notification answers |
+| `permissions.ts` | only the all-sites popup (`src/main/permissions/permissions-panel.ts`), and only at its expected URL | `orivonPermissions`: list and revoke grants, list and reset notification answers; `src/main/ipc/permissions-ipc.ts` re-verifies the sender on every call |
+| `menu.ts` | only the main menu popup (`src/main/shell/menu-panel.ts`) | `orivonMenu`: the entries with their keys, run one, report the list's height; `src/main/ipc/menu-ipc.ts` runs only an entry the menu lists |
+| `split-frame.ts` | only the view behind a split (`src/main/shell/split-frame.ts`) | `orivonSplit`: what to draw, and drag the divider to a place or reset it |
+| `internal.ts` | only a tab the shell opened as one of its own pages (`src/main/pages/`: Settings, History, ...) | `orivonInternal`: one `request(domain, command)` and one `onEvent`, after checking the document's scheme and host against the page the shell named; `src/main/pages/internal-ipc.ts` decides on every call what the page may reach |
 | `site-info.ts` | only the per-site popup (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info, switches, picked paths and browser data |
 | `embed.ts` | only a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest; ADR-0039) | Nothing on `window`: runs the script set with `orivon.web.setEmbedScript` before the page's own code, handing it `orivonEmbed` |
 | `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrdinaryTabSurface()` as `app.ts` |
 | `expose-fetch-route.ts`, `expose-shim-globals.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, and `process`, `global`, `setImmediate`, `clearImmediate` and `Buffer` |
 
-`shell.ts`, `settings.ts`, `site-info.ts` and `newtab.ts` each check `location.href` against the
-URL main passed them (`--orivon-shell-url` and its siblings) before exposing anything. The chrome
-view and the two popups are also locked to that document (`src/main/shell/lock-navigation.ts`); a
-fresh tab is not, since it navigates. Main re-verifies the sender on every call: `ipc.ts`'s
-`isFromChrome` by frame identity and URL, `newtab-ipc.ts` by URL, `settings-ipc.ts` and
-`site-info-ipc.ts` by identity (A269), and site-info fixes the origin itself.
+`shell.ts`, `permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts` and `newtab.ts` each check
+`location.href` against the URL main passed them (`--orivon-shell-url` and its siblings) before exposing
+anything. The chrome view, the popups and the split view are also locked to that document
+(`src/main/shell/lock-navigation.ts`); a fresh tab is not, since it navigates. Main re-verifies the sender on
+every call: `ipc.ts`'s `isFromChrome` by frame identity and URL, `newtab-ipc.ts` by URL, `permissions-ipc.ts`,
+`menu-ipc.ts` and `site-info-ipc.ts` by identity (A269), and site-info fixes the origin itself.
 
 ## The rule that governs this directory
 

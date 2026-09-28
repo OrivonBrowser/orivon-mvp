@@ -379,11 +379,11 @@ export interface SendFailedMessage {
  * is the one that actually works, which is the only reason `port` is safe
  * to carry here. Do not generalise this into a symmetric API:
  * `RendererToBrokerMessage` must never gain a transferable member on the
- * strength of this one existing. Sending this message is not an ordinary
- * `postMessage(message)` call either -- `port` cannot cross a structured
- * clone inline; whatever sends this message must name `port` in an
- * explicit transfer list, the same way any `postMessage` call carrying a
- * real port anywhere else in this codebase already must.
+ * strength of this one existing. `port` is what the RENDERER sees, not
+ * what crosses: a `MessagePortMain` inside the message fails to clone, so
+ * the sender puts the port in the transfer list alone and leaves this
+ * member off, and the receiver sets it back on the message from the
+ * event's transferred ports.
  */
 export interface AcceptedMessage {
   readonly kind: 'accepted'

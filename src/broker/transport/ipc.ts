@@ -28,6 +28,7 @@ import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createWebContextHost } from '../../main/sessions/web-context-host.js'
 import { createElectronKeychain } from '../../main/keyring/electron-keychain.js'
+import { SESSION_ONLY_STORAGE } from '../../main/keyring/seed-store.js'
 import { createPortRegistry } from './relay/port-registry.js'
 import type { RateLimiter } from './token-bucket.js'
 import { admitControlCall, createControlLimiter } from './control-limiter.js'
@@ -399,7 +400,8 @@ export const brokerIpcSubsystem: Subsystem = {
       // `safeStorage`) or, absent a reachable keyring, generated fresh for
       // this process alone -- see ../../main/keyring/seed-store.ts for the
       // full "never falls back to plaintext" reasoning.
-      keychain: createElectronKeychain(ctx.app.getPath('userData')),
+      // A private session keeps no identity past its end, so its seed lives in memory only.
+      keychain: createElectronKeychain(ctx.app.getPath('userData'), ctx.privateSession ? SESSION_ONLY_STORAGE : undefined),
       // ADR-0019's Electron escape hatch. A LAZY GETTER, not `ctx.broker`
       // itself -- `deps` is built here to CONSTRUCT the broker a few lines
       // below, so `ctx.broker` is not published yet; `web-context-host.ts`'s

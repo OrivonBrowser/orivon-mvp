@@ -27,6 +27,50 @@ function embedderOrigin (embedder: WebContents): string | null {
 }
 
 /**
+ * The origin `will-attach-webview` admitted, carried to that SAME attach's
+ * `did-attach-webview` -- which gets no origin of its own, only the new
+ * guest `WebContents`, so it cannot re-derive one. Re-reading
+ * `embedderOrigin(contents)` a second time there would trust whatever the
+ * embedder's top frame shows AT THAT LATER INSTANT: if it navigated in
+ * between, the guest would be hardened (partition, preload) under one
+ * origin's grant and then attributed to and governed by another. Queued
+ * per embedder, FIFO, because one tab may attach several `<webview>`s
+ * whose will/did pairs are not guaranteed not to interleave. An attach
+ * that never completes leaves its entry behind, so a new admission for a
+ * different origin drops the older ones (the embedder has navigated away
+ * from them), and the queue never holds more than `MAX_PENDING` entries.
+ */
+const pendingEmbedderOrigins = new WeakMap<WebContents, string[]>()
+
+const MAX_PENDING = 32
+
+function queueEmbedderOrigin (embedder: WebContents, origin: string): void {
+  const queue = (pendingEmbedderOrigins.get(embedder) ?? []).filter((queued) => queued === origin)
+  queue.push(origin)
+  pendingEmbedderOrigins.set(embedder, queue.slice(-MAX_PENDING))
+}
+
+/** The next queued origin for `embedder`, or undefined if none is pending (no matching `will-attach-webview` admitted one). */
+function dequeueEmbedderOrigin (embedder: WebContents): string | undefined {
+  return pendingEmbedderOrigins.get(embedder)?.shift()
+}
+
+/**
+ * `embedSession`'s own resolver, wrapped to `guestRequestAllowed`'s
+ * `resolve` shape -- the whole point of A286's check. Resolving through
+ * THIS SPECIFIC session, not `net.resolveHost`/`dns`, is what shares
+ * Chromium's host cache with the load `onBeforeRequest` is about to admit
+ * or refuse: the same name, asked again moments later to actually connect,
+ * answers from that same cache rather than re-querying DNS a second time.
+ */
+function resolveViaSession (embedSession: Session): (host: string) => Promise<readonly string[]> {
+  return async (host) => {
+    const resolved = await embedSession.resolveHost(host)
+    return resolved.endpoints.map((endpoint) => endpoint.address)
+  }
+}
+
+/**
  * Wires one embed partition's session, once per process: no downloads, and
  * every document request judged against the app's LIVE grant, read fresh
  * per request so a revoke or a narrowed re-consent reaches the next load.
@@ -35,8 +79,13 @@ function embedderOrigin (embedder: WebContents): string | null {
  */
 function configureEmbedSession (embedSession: Session, appOrigin: string, broker: Broker): void {
   embedSession.on('will-download', (event) => { event.preventDefault() })
+  const resolve = resolveViaSession(embedSession)
   embedSession.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: !guestRequestAllowed(details.url, details.resourceType, broker.embed.originsSync(appOrigin)) })
+    guestRequestAllowed(details.url, details.resourceType, broker.embed.originsSync(appOrigin), resolve)
+      // A callback Electron waits on is called exactly once: a rejection
+      // refuses, the way every refusal here fails closed.
+      .then((allowed) => !allowed, () => true)
+      .then((cancel) => { callback({ cancel }) })
   })
 }
 
@@ -80,11 +129,12 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
         event.preventDefault()
         return
       }
+      queueEmbedderOrigin(contents, appOrigin)
       hardenGuest(webPreferences, params, { preloadPath, partition: partitionReady(appOrigin), devTools: devModeEnabled() })
     })
     contents.on('did-attach-webview', (_attachEvent, guest) => {
-      const appOrigin = embedderOrigin(contents)
-      if (appOrigin === null) {
+      const appOrigin = dequeueEmbedderOrigin(contents)
+      if (appOrigin === undefined) {
         if (!guest.isDestroyed()) guest.close()
         return
       }

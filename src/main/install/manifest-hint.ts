@@ -62,15 +62,13 @@ const HINT_RATE_LIMIT_REFILL_PER_SECOND = 1 / 10
  * it with a fake ManifestHintEvent and an injected limiter, without ever
  * touching `ipcMain` (see registerManifestHintIpc for the real wiring).
  *
- * TAKES THE PUBLISHED `ctx.installApp`, NEVER `AppInstallDeps`. It used to
- * build its own `{ broker, loader }` and call `installFromHint` directly,
- * which was correct when it was the only caller -- and became a real defect
- * the moment install-time consent landed (d-0025): `AppInstallDeps.consent`
- * is optional, omitting it fails closed, and a listener assembling its own
- * deps therefore silently produced an install where every declared
- * capability was treated as declined and no dialog ever appeared. Fail-safe,
- * but indistinguishable from working. Taking the one published function
- * makes that shape unrepresentable rather than merely discouraged.
+ * TAKES THE PUBLISHED `ctx.installApp`, NEVER `AppInstallDeps`.
+ * `AppInstallDeps.consent` is optional and fails closed when omitted, so a
+ * listener that assembled its own `{ broker, loader }` and called
+ * `installFromHint` directly could silently produce an install where every
+ * declared capability reads as declined and no dialog ever appears.
+ * Fail-safe, but indistinguishable from working. Taking the one published
+ * function makes that shape unrepresentable rather than merely discouraged.
  */
 export function createManifestHintListener (
   installApp: InstallApp,
@@ -138,7 +136,7 @@ export function registerManifestHintIpc (ipc: IpcMainOnLike, installApp: Install
  * loaderSubsystem (that file's own header: it reads ctx.broker AND
  * ctx.loader). Not critical -- registry.ts's own doc on Subsystem.critical:
  * an unwired discovery trigger leaves the browser exactly as usable as
- * before this lane existed, never a capability enforcing nothing.
+ * without it, never a capability enforcing nothing.
  */
 export const manifestHintSubsystem: Subsystem = {
   name: 'manifest-hint',

@@ -6,7 +6,8 @@
 
 import type { WebPreferences } from 'electron'
 import { originHash } from '../../broker/grants/origin-hash.js'
-import { embedDocumentAllowed } from '../../broker/policy/embed-origin.js'
+import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
+import { embedAdmissionKind, embedDocumentAllowed } from '../../broker/policy/embed-origin.js'
 import type { Pattern } from '../../contracts/index.js'
 
 const PARTITION_PREFIX = 'persist:embed-'
@@ -67,11 +68,46 @@ const DOCUMENT_TYPES: ReadonlySet<string> = new Set(['mainFrame', 'subFrame'])
  * Whether a request inside a shown page may proceed under `patterns`. A
  * subresource always may: the grant names which sites the app shows, and
  * what those sites load is their own business. A document load, top frame
- * or subframe, must pass the grant (`embedDocumentAllowed`), and with no
- * live grant at all nothing loads.
+ * or subframe, must pass the grant, and with no live grant nothing loads.
+ *
+ * No cancellable Electron webRequest event carries the address a document
+ * load actually connects to, so a `"*"`-admitted NAME is checked first,
+ * through `resolve`: the guest session's own `Session.resolveHost`, which
+ * ./embed-host.ts injects, sharing Chromium's host cache with the load that
+ * follows.
+ *
+ * `embedAdmissionKind`'s pure hostname gate (`reachableByWildcard`) stays
+ * the FIRST gate: a `localhost` name or a non-public address literal named
+ * IN THE URL is refused with no lookup, exactly as before. What this adds
+ * is for the case that gate cannot see -- a name that only resolves to a
+ * private/loopback address once asked: an EXACT origin match never
+ * resolves at all (ADR-0039 lets a named origin be private); a `"*"` match
+ * whose host is already an address literal (`classifyAddress` parses it)
+ * needs no lookup either, since `reachableByWildcard` already proved it
+ * public; only a `"*"` match whose host is a genuine NAME is resolved, and
+ * refused unless `resolve` returns at least one address and every one of
+ * them is public unicast. `resolve` throwing refuses, same as everything
+ * else here: fail closed. The residual this cannot close -- a TTL-0 name
+ * that answers differently between this check and the connection -- is
+ * A286, the same class A196 already accepts for `connectSecure`.
  */
-export function guestRequestAllowed (url: string, resourceType: string, patterns: readonly Pattern[] | undefined): boolean {
+export async function guestRequestAllowed (
+  url: string,
+  resourceType: string,
+  patterns: readonly Pattern[] | undefined,
+  resolve: (host: string) => Promise<readonly string[]>
+): Promise<boolean> {
   if (patterns === undefined) return false
   if (!DOCUMENT_TYPES.has(resourceType)) return true
-  return embedDocumentAllowed(url, patterns)
+  const admission = embedAdmissionKind(url, patterns)
+  if (admission.kind === 'refused') return false
+  if (admission.kind === 'exact') return true
+  if (classifyAddress(admission.hostname) !== 'unparseable') return true
+  let addresses: readonly string[]
+  try {
+    addresses = await resolve(admission.hostname)
+  } catch {
+    return false
+  }
+  return addresses.length > 0 && addresses.every(isPublicUnicast)
 }

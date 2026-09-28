@@ -8,11 +8,11 @@
 // escape or a local-file-disclosure vector one keystroke away, unlike a
 // normal page navigation which is already sandboxed.
 //
-// Owner decision, 2026-08-26: non-address input goes to DuckDuckGo
-// (scope.md IN table, updated the same day -- this is a deliberate
-// scope addition, not a silent one).
+// Input that is not an address goes to the chosen search engine, DuckDuckGo
+// unless the person picked another (./search-engines.ts).
 
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { DEFAULT_SEARCH_ENGINE, searchUrlFor } from './search-engines.js'
 
 export type OmniboxResult =
   | { kind: 'url'; url: string }
@@ -62,7 +62,12 @@ function looksLikeHost (input: string): boolean {
   return false
 }
 
-export function parseOmniboxInput (raw: string, isDevEthName: (host: string) => boolean = () => false): OmniboxResult {
+/** `searchUrl` turns a query into the URL that searches for it. */
+export function parseOmniboxInput (
+  raw: string,
+  isDevEthName: (host: string) => boolean = () => false,
+  searchUrl: (query: string) => string = (query) => searchUrlFor(DEFAULT_SEARCH_ENGINE, '', query)
+): OmniboxResult {
   const trimmed = raw.trim()
 
   if (trimmed.length === 0) {
@@ -108,9 +113,8 @@ export function parseOmniboxInput (raw: string, isDevEthName: (host: string) => 
     }
   }
 
-  // Not URL-shaped: a DuckDuckGo search.
-  const query = new URLSearchParams({ q: trimmed }).toString()
-  return { kind: 'search', url: `https://duckduckgo.com/?${query}` }
+  // Not URL-shaped: a search.
+  return { kind: 'search', url: searchUrl(trimmed) }
 }
 
 /**

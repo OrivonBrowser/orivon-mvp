@@ -9,7 +9,8 @@ Durable: it depends on no Electron API, only on JSPI, which Chromium ships from 
 
 **What it depends on.** [`../../contracts/`](../../contracts/), and within the shim
 `fs/paths.ts` and `fs/root.ts` (so a Node program and a WASI program in one app see the same
-files), `orivon-global.ts`, `node-errors.ts`, `errors.ts` and `polyfills/module-proxy.ts`.
+files), `orivon-global.ts`, `node-errors.ts`, `errors.ts`, `warn-once.ts` and
+`polyfills/module-proxy.ts`.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README. The host reaches files only through the `WasiFs` it is handed.
@@ -60,6 +61,12 @@ outlives any one call, and its caller handles the error.
 **A reactor's exports must be called through `WebAssembly.promising`** if they can reach a file
 call; `initializeReactor` wraps only `_initialize`, and a `Suspending` import reached from an
 unwrapped export traps. A reactor's files stay open after `_initialize`, since it lives on.
+
+**Only one such call may be in flight on a given instance at a time.** `ctx.fds` and a
+descriptor's `position` are read and written across the suspend point, with no lock; two
+`WebAssembly.promising` calls that overlap would interleave that state. Orivon's own code never
+overlaps them; `host.ts`'s import wrapper refuses a second concurrent async import with `BUSY`
+as a cheap backstop.
 
 **`path_remove_directory` has a window** between its emptiness check and the delete, because
 `orivon.fs.rm` removes a directory only recursively: a file created in that window is deleted too

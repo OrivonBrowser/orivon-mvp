@@ -140,6 +140,23 @@ async function notifyUpdateAvailable (release: ReleaseInfo): Promise<void> {
   notification.show()
 }
 
+/** What "Check now" tells the person. */
+export interface UpdateAnswer {
+  /** False when the latest release could not be read: offline, or none published. */
+  readonly reached: boolean
+  readonly current: string
+  readonly latest: string | null
+  readonly newer: boolean
+  /** The release page, built from known parts, never taken from the response. */
+  readonly url: string | null
+}
+
+/** Asks now, whatever was asked last and whatever was said: no notification, no state written. */
+export async function checkUpdateNow (app: App, now: number = Date.now()): Promise<UpdateAnswer> {
+  const result = await checkForUpdate({ currentVersion: app.getVersion(), now, fetchLatestRelease: fetchLatestGithubRelease })
+  return { reached: result.release !== null, current: app.getVersion(), latest: result.release?.version ?? null, newer: result.shouldNotify, url: result.release?.url ?? null }
+}
+
 /**
  * Exported for src/main/subsystems.ts to call directly if the two-line
  * append (see updateCheckSubsystem below) is not what the integrator wants.

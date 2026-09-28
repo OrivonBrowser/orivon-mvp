@@ -119,6 +119,22 @@ describe('reading and writing a file', () => {
   })
 })
 
+describe('one async import in flight per instance', () => {
+  it('refuses a second overlapping fd_write with BUSY, rather than let both race the same position', async () => {
+    const fd = await create('race.txt', 'abcdef')
+    h.iovec(IOV, BUF, h.put(BUF, 'A'))
+    const first = h.call('fd_write', fd, IOV, 1, NUM)
+    const secondIov = 700
+    const secondNum = 720
+    const secondBuf = 1100
+    h.iovec(secondIov, secondBuf, h.put(secondBuf, 'B'))
+    const second = h.call('fd_write', fd, secondIov, 1, secondNum)
+    // The overlapping call never touches fd state: refused before it is even attempted.
+    expect(await second).toBe(Errno.BUSY)
+    expect(await first).toBe(Errno.SUCCESS)
+  })
+})
+
 describe('opening', () => {
   it('a missing file without CREAT is NOENT, and CREAT|EXCL on an existing one is EXIST', async () => {
     expect((await open('missing')).errno).toBe(Errno.NOENT)

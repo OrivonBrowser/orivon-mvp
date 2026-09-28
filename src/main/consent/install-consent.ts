@@ -1,5 +1,5 @@
-// The install-time consent mechanism: owner decision d-0025 (ADR-0012's
-// 2026-09-13 amendment) -- ask once, before the app's own code runs, for
+// The install-time consent mechanism: d-0025 (ADR-0012) -- ask once,
+// before the app's own code runs, for
 // the WHOLE set its manifest declares, never one dialog per capability.
 // Mirrors request-grant.ts's own split: this file stays free of any
 // Electron import (a stub prompt exercises it under plain vitest),
@@ -76,9 +76,8 @@ export type PerCapabilityConsentPrompt = (
  * (either accepted or declined), show the dialog, and grant everything on
  * acceptance. `perCapabilityConsent` is used instead of `consent` only when
  * the manifest declares `consentGranularity: 'per-capability'` AND it is
- * wired -- otherwise this behaves exactly as it did before A138's
- * 'per-capability' path existed, `consentGranularity` absent or
- * 'all-or-nothing' included.
+ * wired -- otherwise this falls back to the all-or-nothing flow below,
+ * whether `consentGranularity` is absent or set to 'all-or-nothing'.
  *
  * Never throws. A failure anywhere in here -- no prompt wired, the prompt
  * itself rejecting, a grant call rejecting -- degrades to "nothing new
@@ -105,7 +104,8 @@ export async function requestInstallConsent (
   // (README.md, Design notes) -- filtering to what is NOT held is what stops
   // that from silently withholding every OTHER declared capability forever
   // (A157). No call is skipped entirely unless NOTHING declared is left
-  // unheld, matching the old `.every` gate's own short-circuit exactly.
+  // unheld -- the same short-circuit an `.every` check across `capabilities`
+  // would give, applied per key.
   const notHeld = capabilities.filter((capability) => !held.some((existing) => existing.capability === capability))
   if (notHeld.length === 0) return
 

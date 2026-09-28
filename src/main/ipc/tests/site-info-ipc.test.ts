@@ -4,22 +4,14 @@ import type { SiteInfo } from '../../permissions/site-info.js'
 
 // The site-info popup's own channel -- get/trust/data/apply/
 // revokePickedPath/clearBrowserData/reload/openAllSites, and the sender-
-// identity check every command here gets (mirrors settings-ipc.ts's own
-// isFromSettingsWindow, against this popup's webContents instead).
+// identity check every command here gets (mirrors permissions-ipc.ts's own
+// isFromPermissionsPanel, against this popup's webContents instead).
 // site-info-controller.test.ts already proves turnOn/turnOff reach a real
 // broker; this file proves the IPC layer on top routes to the ORIGIN it
 // was constructed with, never one a command payload could name, and
 // refuses an impostor sender.
 
 const handlers = new Map<string, (event: unknown, command: unknown) => unknown>()
-
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: vi.fn((channel: string, fn: (event: unknown, command: unknown) => unknown) => {
-      handlers.set(channel, fn)
-    })
-  }
-}))
 
 vi.mock('../../permissions/site-data-runner.js', () => ({
   orivonStorageFor: vi.fn(async () => ({ filesBytes: 10, filesQuotaBytes: 20, codeBytes: 30, codeVersion: '1.0.0' })),
@@ -31,7 +23,8 @@ const { registerSiteInfoIpc } = await import('../site-info-ipc.js')
 const { SITE_INFO_COMMAND_CHANNEL } = await import('../../channels.js')
 
 const SITE_INFO_FRAME = {}
-const siteInfoWebContents = { mainFrame: SITE_INFO_FRAME } as unknown as import('electron').WebContents
+// The handler is registered on the popup's own webContents.
+const siteInfoWebContents = { mainFrame: SITE_INFO_FRAME, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
 const OTHER_FRAME = {}
 const ORIGIN = 'https://app.example'
 

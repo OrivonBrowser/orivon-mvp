@@ -1136,17 +1136,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A259: Closing a window with two or more tabs throws in main **[AI-REC]**
-
-- **Question:** On teardown the window dies first; forgetting the active tab activates the next,
-  whose `tabBounds` (`src/main/shell/window.ts`) reads the destroyed window and throws.
-- **Why it matters:** the uncaught error becomes `app.exit(1)`; untested for a person closing the
-  real window, or on macOS. E2e suites close their tabs first, so none sees it.
-- **Options:** guard a destroyed window in `TabManager.activateTab` or its caller, as `closeWindow`
-  does for one tab, with a test that quits with two tabs open (rec.).
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A260: `ipfs://` subresources inside a page do not load **[RESEARCH]**
 
 - **Question:** Navigations to `ipfs://`/`ipns://` load (ADR-0038); an `<img>`, `fetch`, script
@@ -1299,7 +1288,145 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A274: Security model T4 says ordinary tabs never see `orivon.*`; they do **[AI-REC]**
+### A274: A second profile counts as a second install in usage statistics **[OWNER]**
+
+- **Question:** Should a second profile send its own usage statistics, or share the default's install id?
+- **Why it matters:** telemetry's install id is kept in the data directory, so each profile reports its
+  own time and a person with two profiles counts as two installs. The success metric counts people.
+- **Options:** the default profile's directory keeps the id and other profiles send nothing (rec.);
+  other profiles share its id; leave it. Each is a small change to `src/telemetry/`.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A275: The update check is off until the owner decides **[OWNER]**
+
+- **Question:** Should looking for a newer release be on by default, and should Settings link to it?
+- **Why it matters:** the check asks GitHub once a day and installs nothing (`update-check.ts`); a
+  request to a third party at every start is a decision about what the browser tells one. It only
+  notifies, and Settings gives no way to the release page.
+- **Options:** keep it off, with "Check now" in Settings (rec.); on by default with a disclosure.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A276: What happens to a download is not settled **[RESEARCH]**
+
+- **Question:** Where does a download go, does it ask, and what may an app tab download?
+- **Why it matters:** Settings has no downloads section because none of it was checked against a real
+  page; a control would promise behaviour nobody measured. A private window keeps downloaded files.
+- **Options:** download from a website tab and an app tab in each kind of window, then decide the
+  folder (rec.).
+- **Who decides:** research first
+- **Blocks:** a downloads section in Settings
+
+### A277: Dragging a tab into another window is best effort on Wayland **[RESEARCH]**
+
+- **Question:** Can a tab dropped over another window find it under Wayland?
+- **Why it matters:** where the pointer let go is read from the screen. Wayland tells an application
+  neither where its windows are nor lets it move them, so a drop may miss and a torn-off window opens
+  where the compositor puts it. The tab's menu and the commands never depend on position.
+- **Options:** measure drag and drop on a real Wayland session (rec.); use the compositor's protocol.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A278: A development run and an installed one share a data directory **[OWNER]**
+
+- **Question:** Should a development run and an installed browser use different directories by default?
+- **Why it matters:** both use the operating system's directory, and a profile allows one browser at a
+  time, so starting one while the other runs hands over to it (`ADR-0042`). Both at once needs
+  `--user-data-dir`.
+- **Options:** keep sharing and document the switch (rec.); separate them by default.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A279: Sweeping a private session's directory on Windows is unmeasured **[RESEARCH]**
+
+- **Question:** Does the sweep remove a crashed private session's directory on Windows?
+- **Why it matters:** the sweep checks this user owns the directory; Windows has no owner id to compare
+  and refuses to delete a file another process holds open, so it may survive a start (`ADR-0042`).
+- **Options:** run a private session's start, crash and sweep on Windows (rec.).
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A280: History's defaults are provisional, and it feeds nothing yet **[AI-REC]**
+
+- **Question:** Is 90 days the right retention, and should the address bar suggest from history?
+- **Why it matters:** 90 is a guess at what a person expects, and nothing else reads history. It is one
+  SQLite file through Node's experimental `node:sqlite`, behind an interface.
+- **Options:** keep the guess until people ask otherwise (rec.); set it from measured use.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A281: Clearing app data reaches the apps that hold permissions **[AI-REC]**
+
+- **Question:** Should "Clear browsing data" also reach an app that is installed but holds none?
+- **Why it matters:** it clears the browser storage of every app that holds a permission; an app whose
+  code is pinned but which holds none keeps its own session and is not reached.
+- **Options:** list apps from what is pinned as well as granted, once a real app is installed without a
+  grant (rec.).
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A282: The first-run usage statistics screen is not built **[OWNER]**
+
+- **Question:** Where in the welcome flow does the usage statistics question sit?
+- **Why it matters:** `ADR-0004` calls for a first-run screen with the exact text and two buttons,
+  neither preselected. Settings has the same choice, undecided until made and nothing sent before it,
+  but no screen asks on first run.
+- **Options:** build it on the welcome flow once the owner says where (rec.).
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A283: Fs confinement checks a path, then the adapter opens it by name **[AI-REC]**
+
+- **Question:** `confinePath` proves a path stays inside its root, then the fs adapter and the
+  synchronous `readFileSync` path open the joined path by name, so a symlink planted at the leaf,
+  or a directory swapped for one, in between still escapes. How is the open tied to the check?
+- **Why it matters:** `src/contracts/handles.ts` promises an escaping symlink is refused. No app
+  can create a symlink through the broker, so the writer is another local process sharing a root.
+- **Options:** open the canonical path the check resolved, with `O_NOFOLLOW`, for open, read,
+  write and stat, and act on the joined path for rm and rename (rec.; a blanket `O_NOFOLLOW` on
+  the joined path refuses in-root symlinks the check allows); wait for an atomic beneath-root open.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A284: Served `.eth`/`ipfs://` content sends no `frame-ancestors` **[OWNER]**
+
+- **Question:** Served content can be framed by any page (clickjacking a dApp), and static
+  content cannot set its own header.
+- **Why it matters:** a page under an origin the user trusts (a `.eth` name, an IPFS gateway
+  response) can be embedded and manipulated by any other page that frames it.
+- **Options:** `frame-ancestors 'self'` by default (rec.; breaks embedding by other origins);
+  `'none'`; leave it as the web does today and document the gap.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A285: CCIP-Read egress validates a resolved hostname, then fetches the hostname again **[OWNER]**
+
+- **Question:** `urlRefusal` resolves a CCIP gateway hostname and checks every address against
+  T12, but `requestOne` then fetches the ORIGINAL url string, which resolves again -- a
+  DNS-rebinding TOCTOU `direct-fetch.ts`'s `pinnedLookup` already avoids on the sibling path.
+- **Why it matters:** a `.eth` name's own resolver contract controls the CCIP gateway url, so a
+  short-TTL rebind could point the verifier-host process at an internal address.
+- **Options:** reuse `pinnedLookup` for CCIP's POST/redirect-following path (rec.; a real change,
+  since CCIP needs a body and its own redirect loop, unlike `createDirectFetch`'s GET/HEAD-only
+  shape); accept the residual, narrowed by the existing `https`-only rule.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A286: A TTL-0 name can still rebind between the embed check and the connection **[OWNER]**
+
+- **Question:** A `"*"`-admitted document whose host is a name is resolved through the guest
+  session's own `resolveHost`, refused unless every address is public unicast. A name that
+  answers differently once Chromium actually connects still reaches it.
+- **Why it matters:** the same class of residual A196 accepts for `connectSecure`'s own wildcard
+  -- sharing the guest session's host cache narrows the window, it does not close it, since no
+  cancellable webRequest event carries the connected address.
+- **Options:** accept the residual, narrowed as it is (rec.); close it fully only if Electron
+  exposes a cancellable event carrying the connected address.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A287: Security model T4 says ordinary tabs never see `orivon.*`; they do **[AI-REC]**
 
 - **Question:** Should T4 be rewritten to what the code does: `src/preload/app.ts` exposes the
   locked `window.orivon` on every ordinary tab, and the broker, keyed on the frame's origin, is
@@ -1311,7 +1438,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** extensions build plan package 3
 
-### A275: One extension instance everywhere undoes per-app sessions **[OWNER]**
+### A288: One extension instance everywhere undoes per-app sessions **[OWNER]**
 
 - **Question:** Extensions run on granted apps as one instance (owner, 2026-09-28). Does a grant
   then stop implying a session partition, with only a pinned cache keeping one?

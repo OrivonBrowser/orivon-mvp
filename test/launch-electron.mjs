@@ -81,6 +81,14 @@ export const APP_CLOSE_RACE_MS = 8_000
 const USER_DATA_DIRS = new WeakMap()
 
 /**
+ * The root pid of each launch, read once at launch. A test that makes the
+ * app quit by itself leaves Playwright's connection torn down, after which
+ * `app.process()` throws; closeElectron() must still find the pid to reap
+ * the tree and remove the profile directory.
+ */
+const APP_PIDS = new WeakMap()
+
+/**
  * Each launch's own main-process stdout+stderr, captured in arrival order --
  * see mainOutput() below for why this lives here rather than in each test
  * that wants to read it.
@@ -110,7 +118,10 @@ const SEEN_PIDS = new Set()
 export function registerLaunchForTeardown (app, { userDataDir } = {}) {
   if (userDataDir !== undefined) USER_DATA_DIRS.set(app, userDataDir)
   const pid = app.process().pid
-  if (pid !== undefined) SEEN_PIDS.add(pid)
+  if (pid !== undefined) {
+    SEEN_PIDS.add(pid)
+    APP_PIDS.set(app, pid)
+  }
 }
 
 /**
@@ -520,7 +531,7 @@ async function settledWithin (promise, ms) {
  * @returns {Promise<void>}
  */
 export async function closeElectron (app, { raceMs = APP_CLOSE_RACE_MS, beforeClose } = {}) {
-  const pid = app.process().pid
+  const pid = APP_PIDS.get(app) ?? app.process().pid
   try {
     if (typeof beforeClose === 'function') {
       const beforeCloseSettled = await settledWithin(
@@ -533,7 +544,8 @@ export async function closeElectron (app, { raceMs = APP_CLOSE_RACE_MS, beforeCl
         console.error(`[closeElectron] beforeClose did not settle within ${raceMs}ms -- tearing down anyway`)
       }
     }
-    const closed = await settledWithin(app.close(), raceMs)
+    // Nothing to close when the app already quit on its own.
+    const closed = pid !== undefined && !isAlive(pid) ? true : await settledWithin(app.close(), raceMs)
     if (!closed) {
       console.error(`[closeElectron] app.close() did not settle within ${raceMs}ms -- killing the process tree`)
     }
