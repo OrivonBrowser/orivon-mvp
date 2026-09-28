@@ -139,9 +139,10 @@ with the three empty buckets.
 
 ## 5. Check the length, then report
 
-Before printing anything: count the words in every bullet and every cue. Rewrite each one
-over 25 words. This check is not optional and not a judgment call — it is the only thing
-that has ever caught this, because a long bullet reads as thorough while writing it.
+Before printing anything, run `npm run check:devlog`. It counts the words in every bullet and
+cue of the journal and the update file, and names each one over 25. Rewrite each one it names
+and run it again until it passes. This is not a judgment call: a long bullet reads as thorough
+while writing it, and CI runs the same check.
 
 ## 6. Report
 
