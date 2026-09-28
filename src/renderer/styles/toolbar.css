@@ -104,6 +104,24 @@
 }
 .addressbar::placeholder { color: var(--wink-dim); }
 
+.zoom-chip {
+  height: 20px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 999px;
+  flex: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--wink-dim);
+  background: color-mix(in srgb, var(--wink-dim) 14%, transparent);
+  cursor: pointer;
+}
+.zoom-chip[hidden] { display: none; }
+.zoom-chip:hover { color: var(--wink); }
+
 .addressbar-trailing {
   display: flex;
   align-items: center;

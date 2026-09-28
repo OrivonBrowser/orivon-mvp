@@ -57,6 +57,8 @@ export interface ShellState extends TabsSnapshot {
   bookmarks: Bookmark[]
   /** Whether the bookmarks bar is shown: main decides (it sizes the chrome view to match) and the page follows. */
   bookmarksBar: boolean
+  /** The active page's zoom, when it differs from what a site gets by default; otherwise null. */
+  zoomPercent: number | null
 }
 
 export interface Bounds {

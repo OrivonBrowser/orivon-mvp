@@ -33,6 +33,13 @@ export const appearance: Section = {
           { value: 'never', label: 'Never show it' }
         ]
       }
+    },
+    {
+      id: 'default-zoom',
+      label: 'Page zoom',
+      help: 'How large websites are shown, unless you have zoomed a site yourself. Zoom a site with Ctrl and the mouse wheel, or Ctrl + and Ctrl -.',
+      keywords: ['zoom', 'size', 'text', 'larger', 'smaller', 'magnify', 'scale'],
+      control: { type: 'choice', key: 'appearance.defaultZoom' }
     }
   ]
 }

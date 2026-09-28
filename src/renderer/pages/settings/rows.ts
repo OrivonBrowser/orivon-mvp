@@ -66,6 +66,40 @@ function renderAction (control: Extract<Control, { type: 'action' }>, state: Set
   return button
 }
 
+function caps (keys: readonly string[]): HTMLElement {
+  return h('span', { className: 'keys' }, ...keys.map((key) => h('kbd', { textContent: key })))
+}
+
+function renderShortcut (control: Extract<Control, { type: 'shortcut' }>, state: SettingsState): HTMLElement {
+  const shortcuts = state.shortcuts
+  const shortcut = shortcuts.rows.find((candidate) => candidate.id === control.id)
+  if (shortcut === undefined) return h('span')
+  const button = (label: string, onclick: () => void, title?: string): HTMLElement =>
+    h('button', { className: 'link-btn', type: 'button', textContent: label, title: title ?? '', onclick })
+  const mode = shortcuts.modeOf(control.id)
+
+  if (mode.mode === 'recording') {
+    return h('div', { className: 'shortcut' },
+      h('span', { className: 'listening', textContent: 'Press the new shortcut…', role: 'status' }),
+      button('Cancel', () => { void shortcuts.cancel(control.id) }))
+  }
+  if (mode.mode === 'conflict') {
+    return h('div', { className: 'shortcut stacked' },
+      h('p', { className: 'problem', role: 'alert', textContent: `That combination already belongs to "${mode.withLabel}".` }),
+      h('div', { className: 'shortcut' },
+        mode.canSwap ? button('Swap', () => { void shortcuts.swap(control.id) }, `"${mode.withLabel}" gets the keys "${shortcut.label}" has now`) : null,
+        button('Cancel', () => { shortcuts.dismiss(control.id) })))
+  }
+  return h('div', { className: 'shortcut stacked' },
+    mode.mode === 'problem' ? h('p', { className: 'problem', role: 'alert', textContent: mode.message }) : null,
+    h('div', { className: 'shortcut' },
+      shortcut.keys === null ? h('span', { className: 'muted', textContent: 'Not set' }) : caps(shortcut.keys),
+      shortcut.aliases.length === 0 ? null : h('span', { className: 'muted also' }, 'Also ', ...shortcut.aliases.map((alias) => caps(alias))),
+      button('Change', () => { void shortcuts.record(control.id) }),
+      shortcut.keys === null ? null : button('Clear', () => { void shortcuts.clear(control.id) }),
+      shortcut.isDefault ? null : button('Reset', () => { void shortcuts.reset(control.id) })))
+}
+
 export function renderRow (row: Row, state: SettingsState): HTMLElement {
   controlCount += 1
   const controlId = `control-${String(controlCount)}`
@@ -76,6 +110,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'toggle': field = renderToggle(control, state, controlId); break
     case 'text': field = renderText(control, state, controlId); break
     case 'action': field = renderAction(control, state); break
+    case 'shortcut': field = renderShortcut(control, state); break
     case 'info': field = h('span', { className: 'value', textContent: control.text(state) }); break
   }
 

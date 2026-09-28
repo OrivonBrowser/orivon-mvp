@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { COMMAND_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
+import { COMMAND_CHANNEL, SHELL_EVENT_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
 import type { ShellCommand } from '../main/ipc/ipc.js'
 import type { ShellState } from '../main/shell/tabs.js'
 import type { SiteSummary } from '../main/permissions/site-info-controller.js'
@@ -28,7 +28,8 @@ async function request<T> (command: ShellCommand): Promise<T> {
 
 contextBridge.exposeInMainWorld('orivonShell', {
   newTab: (url?: string) => { send(url === undefined ? { type: 'newTab' } : { type: 'newTab', url }) },
-  newWindow: () => { send({ type: 'newWindow' }) },
+  newWindow: () => { send({ type: 'runCommand', id: 'window.new' }) },
+  runCommand: (id: string) => { send({ type: 'runCommand', id }) },
   openInternal: (page: string, path?: string) => { send(path === undefined ? { type: 'openInternal', page } : { type: 'openInternal', page, path }) },
   closeTab: (id: string) => { send({ type: 'closeTab', id }) },
   activateTab: (id: string) => { send({ type: 'activateTab', id }) },
@@ -65,6 +66,8 @@ contextBridge.exposeInMainWorld('orivonShell', {
     send(url === undefined ? { type: 'openSiteInfo', anchor, page } : { type: 'openSiteInfo', url, anchor, page })
   },
 
+  openMenu: (anchor: PanelAnchor) => { send({ type: 'openMenu', anchor }) },
+
   /** Subscribes to shell state pushes from main. Returns an unsubscribe
    * function; the listener is a closure, not the raw ipcRenderer, so the
    * page can never register on any channel but this one. */
@@ -72,6 +75,14 @@ contextBridge.exposeInMainWorld('orivonShell', {
     const handler = (_event: Electron.IpcRendererEvent, state: ShellState): void => listener(state)
     ipcRenderer.on(STATE_CHANNEL, handler)
     return () => ipcRenderer.removeListener(STATE_CHANNEL, handler)
+  },
+
+  /** Commands main asks the chrome to carry out itself (today: focus the
+   * address bar). Returns the unsubscribe; a closure, like `onState`. */
+  onCommand: (listener: (command: { type: 'focusAddress' }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, command: { type: 'focusAddress' }): void => listener(command)
+    ipcRenderer.on(SHELL_EVENT_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(SHELL_EVENT_CHANNEL, handler)
   },
 
   /** A read-only value, not a command -- lets the chrome view reserve

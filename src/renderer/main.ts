@@ -17,6 +17,8 @@ type PopoverAnchor = { x: number, y: number, width: number, height: number }
 interface OrivonShell {
   newTab: (url?: string) => void
   newWindow: () => void
+  /** Runs one of main's commands on this window, by id. */
+  runCommand: (id: string) => void
   /** One of the shell's own pages, e.g. `'settings'`, optionally at a place inside it. */
   openInternal: (page: string, path?: string) => void
   closeTab: (id: string) => void
@@ -45,7 +47,11 @@ interface OrivonShell {
    * same anchor contract as openPermissions. `page` says which icon was
    * clicked. */
   openSiteInfo: (anchor: PopoverAnchor, page: SiteInfoPage, url?: string) => void
+  /** Opens (or closes) the main menu under the toolbar's menu button; same anchor contract as openPermissions. */
+  openMenu: (anchor: PopoverAnchor) => void
   onState: (listener: (state: ShellState) => void) => () => void
+  /** Commands main asks the chrome to carry out itself. */
+  onCommand: (listener: (command: { type: 'focusAddress' }) => void) => () => void
   /** Read-only -- see preload/shell.ts for why this exists instead of
    * env(titlebar-area-*) or navigator.windowControlsOverlay. */
   platform: string
@@ -92,6 +98,8 @@ web3ScoreBtn.append(web3ScoreShieldEl)
 const web3MarkEl = must(document.querySelector<HTMLSpanElement>('#web3-mark'), '#web3-mark missing')
 const sitePermissionsBtn = must(document.querySelector<HTMLButtonElement>('#site-permissions-btn'), '#site-permissions-btn missing')
 const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#permissions-btn'), '#permissions-btn missing')
+const zoomChip = must(document.querySelector<HTMLButtonElement>('#zoom-chip'), '#zoom-chip missing')
+const menuBtn = must(document.querySelector<HTMLButtonElement>('#menu'), '#menu missing')
 const bookmarksList = must(document.querySelector<HTMLDivElement>('#bookmarks-list'), '#bookmarks-list missing')
 
 const bookmarksView = createBookmarksView(
@@ -106,6 +114,12 @@ let addressFocused = false
 
 function activeTab (state: ShellState): TabState | undefined {
   return state.tabs.find((t) => t.id === state.activeTabId)
+}
+
+/** A tab that is showing a site: not the new-tab page, and not one of the
+ * shell's own pages, which have no shield, no permissions and nothing to bookmark. */
+function hasSite (tab: TabState | undefined): tab is TabState {
+  return tab !== undefined && !tab.isNewTab && !tab.isInternal
 }
 
 function isBookmarked (bookmarks: Bookmark[], url: string): boolean {
@@ -211,7 +225,7 @@ function updateWeb3ScoreShield (active: TabState | undefined): void {
   // http://localhost:... address (electron-vite's dev server), which has
   // no Website level to show -- an internal page, not a real signal about
   // anything the user visited.
-  if (active === undefined || active.isNewTab) {
+  if (!hasSite(active)) {
     shieldRequestUrl = null
     shieldOrigin = null
     applyShield(null)
@@ -248,6 +262,9 @@ function renderToolbar (state: ShellState): void {
   bookmarkToggle.setAttribute('aria-pressed', String(bookmarked))
 
   updateSitePermissionsBadge(active)
+
+  zoomChip.hidden = state.zoomPercent === null
+  if (state.zoomPercent !== null) zoomChip.textContent = `${String(state.zoomPercent)}%`
 }
 
 /** The site-info popup's own key: hidden until the active tab's site has
@@ -260,7 +277,7 @@ function renderToolbar (state: ShellState): void {
 let permissionsRequestUrl: string | null = null
 
 function updateSitePermissionsBadge (active: TabState | undefined): void {
-  const url = active === undefined || active.isNewTab ? null : active.url
+  const url = hasSite(active) ? active.url : null
   permissionsRequestUrl = url
   if (url === null) {
     applySitePermissionsBadge({ asked: false, warning: false })
@@ -290,7 +307,7 @@ function render (state: ShellState): void {
   bookmarksView.render(state.bookmarks)
 }
 
-let currentState: ShellState = { tabs: [], activeTabId: null, bookmarks: [], bookmarksBar: false }
+let currentState: ShellState = { tabs: [], activeTabId: null, bookmarks: [], bookmarksBar: false, zoomPercent: null }
 shell.onState((state) => {
   currentState = state
   render(state)
@@ -310,7 +327,7 @@ reloadBtn.addEventListener('click', () => {
 
 bookmarkToggle.addEventListener('click', () => {
   const active = activeTab(currentState)
-  if (active === undefined || active.isNewTab) return
+  if (!hasSite(active)) return
   if (isBookmarked(currentState.bookmarks, active.url)) {
     shell.removeBookmark(active.url)
   } else {
@@ -335,7 +352,7 @@ function anchorFor (el: HTMLElement): PopoverAnchor {
 // list unscrolled, which is the ordinary open.
 permissionsBtn.addEventListener('click', () => {
   const active = activeTab(currentState)
-  shell.openPermissions(anchorFor(permissionsBtn), active === undefined || active.isNewTab ? undefined : active.url)
+  shell.openPermissions(anchorFor(permissionsBtn), hasSite(active) ? active.url : undefined)
 })
 
 // The site-info popup's two entry points: the shield opens straight to the
@@ -344,13 +361,23 @@ permissionsBtn.addEventListener('click', () => {
 // there is no origin for either page to describe.
 web3ScoreBtn.addEventListener('click', () => {
   const active = activeTab(currentState)
-  if (active === undefined || active.isNewTab) return
+  if (!hasSite(active)) return
   shell.openSiteInfo(anchorFor(web3ScoreBtn), 'web3', active.url)
 })
 sitePermissionsBtn.addEventListener('click', () => {
   const active = activeTab(currentState)
-  if (active === undefined || active.isNewTab) return
+  if (!hasSite(active)) return
   shell.openSiteInfo(anchorFor(sitePermissionsBtn), 'main', active.url)
+})
+
+zoomChip.addEventListener('click', () => { shell.runCommand('zoom.reset') })
+menuBtn.addEventListener('click', () => { shell.openMenu(anchorFor(menuBtn)) })
+
+// A keyboard shortcut in main asks for the address bar.
+shell.onCommand((command) => {
+  if (command.type !== 'focusAddress') return
+  addressInput.focus()
+  addressInput.select()
 })
 
 addressInput.addEventListener('focus', () => { addressFocused = true })

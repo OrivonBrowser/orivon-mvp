@@ -1,12 +1,12 @@
 # `src/main/ipc/`: the chrome→main channels
 
-**What lives here.** The four IPC surfaces the chrome view and its popups use to reach main:
+**What lives here.** The IPC surfaces the chrome view and its popups use to reach main:
 `ipc.ts` (tab commands — new tab, close, navigate — plus the toolbar's own `siteSummaryFor`/
 `web3ScoreFor`/`openPermissions`/`openSiteInfo`), `newtab-ipc.ts` (the dashboard's read-only bookmark
 access and navigate-the-calling-tab command), `permissions-ipc.ts` (the all-sites popup's list/revoke
-commands, and the site list's list/reset), `site-info-ipc.ts` (the site-info popup's get/trust/data/apply/revokePickedPath/
+commands, and the site list's list/reset), `menu-ipc.ts` (the main menu's list and the one entry chosen, which must be an entry it lists), `site-info-ipc.ts` (the site-info popup's get/trust/data/apply/revokePickedPath/
 clearBrowserData/reload/openAllSites commands, all fixed to the ONE origin the popup was opened
-for — never a command field). Three register on the `ipc` of the view they serve, so the
+for — never a command field). All but one register on the `ipc` of the view they serve, so the
 handler goes with the view and each window has its own; `newtab-ipc.ts` serves every dashboard
 tab in every window and registers on `ipcMain` once per process. Each verifies
 `event.senderFrame` against a known frame before doing anything — object identity against a

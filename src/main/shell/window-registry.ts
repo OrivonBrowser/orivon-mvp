@@ -9,6 +9,8 @@ export interface ShellWindow {
   readonly window: BaseWindow
   readonly chrome: WebContentsView
   readonly tabs: TabManager
+  /** A page in this window holds the screen (HTML fullscreen), so the browser's keys wait. */
+  readonly shortcutsSuspended: () => boolean
 }
 
 export class WindowRegistry {
@@ -22,6 +24,22 @@ export class WindowRegistry {
 
   all (): readonly ShellWindow[] {
     return [...this.windows]
+  }
+
+  /** The window a webContents is in: its chrome, one of its tabs, or any other view in it (a popover). */
+  findOwner (contents: WebContents): ShellWindow | undefined {
+    for (const entry of this.windows) {
+      if (entry.window.isDestroyed()) continue
+      if (entry.chrome.webContents === contents || entry.tabs.findTabIdByWebContents(contents) !== null) return entry
+      if (entry.window.contentView.children.some((view) => (view as Partial<WebContentsView>).webContents === contents)) return entry
+    }
+    return undefined
+  }
+
+  /** The window the person is using: the focused one, else the newest. */
+  focused (): ShellWindow | undefined {
+    const live = [...this.windows].filter((entry) => !entry.window.isDestroyed())
+    return live.find((entry) => entry.window.isFocused()) ?? live.at(-1)
   }
 
   /** The window and tab a tab's webContents belongs to, in any window. */

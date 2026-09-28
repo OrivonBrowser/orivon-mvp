@@ -21,13 +21,15 @@ import type { SiteInfoController, SiteSummary } from '../permissions/site-info-c
 import { web3Score } from '../browsing/site-trust.js'
 import type { Web3Score } from '../browsing/site-trust.js'
 import type { PanelAnchor } from '../permissions/permissions-panel.js'
+import { isCommandId } from '../shortcuts/commands.js'
+import type { CommandId } from '../shortcuts/commands.js'
 import type { SiteInfoPage } from '../permissions/site-info-panel.js'
 import { isInternalPageId } from '../pages/internal-pages.js'
 
 export type ShellCommand =
   | { type: 'newTab'; url?: string }
-  /** Another shell window in this process, on the same profile. */
-  | { type: 'newWindow' }
+  /** Runs one of the shell's commands (./../shortcuts/commands.ts) on this window: what a button does that a key also does. */
+  | { type: 'runCommand'; id: string }
   /** One of the shell's own pages (Settings, History, ...), optionally at a place inside it. */
   | { type: 'openInternal'; page: string; path?: string }
   | { type: 'closeTab'; id: string }
@@ -75,6 +77,8 @@ export type ShellCommand =
    * `openPermissions`; `page` is which icon was clicked (the shield opens
    * straight to the Web3 Score page, the key to the main page). */
   | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
+  /** Opens, or closes, the main menu under the toolbar's menu button. Same `anchor` contract as `openPermissions`. */
+  | { type: 'openMenu'; anchor: PanelAnchor }
 
 function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents): boolean {
   return event.senderFrame !== null &&
@@ -88,7 +92,8 @@ export function registerShellIpc (
   siteInfo: SiteInfoController,
   openPermissions: (anchor: PanelAnchor, url?: string) => void,
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void,
-  openWindow: () => void
+  runCommand: (id: CommandId) => void,
+  openMenu: (anchor: PanelAnchor) => void
 ): void {
   // On the chrome view's own webContents rather than the process-wide
   // ipcMain: a second window registers its own without colliding, and the
@@ -105,8 +110,8 @@ export function registerShellIpc (
       case 'newTab':
         tabs.createTab(command.url)
         return
-      case 'newWindow':
-        openWindow()
+      case 'runCommand':
+        if (isCommandId(command.id)) runCommand(command.id)
         return
       case 'openInternal':
         // The page name comes from the chrome view, but is checked all the same.
@@ -160,6 +165,9 @@ export function registerShellIpc (
         return
       case 'openSiteInfo':
         openSiteInfo(command.anchor, command.page, command.url)
+        return
+      case 'openMenu':
+        openMenu(command.anchor)
         return
     }
   })

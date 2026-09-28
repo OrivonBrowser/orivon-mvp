@@ -32,7 +32,7 @@ export const SCANNED_DIRECTORIES = ['src/preload/', 'src/shim/', 'src/shim-elect
  * sets no contract for its shape, and locking it costs an app nothing --
  * surface/main-world-socket.ts states that reason at the install itself.
  */
-export const ORIVON_OWN_GLOBALS = new Set(['orivon', 'orivonShell', 'orivonNewTab', 'orivonPermissions', 'orivonSiteInfo', 'orivonInternal'])
+export const ORIVON_OWN_GLOBALS = new Set(['orivon', 'orivonShell', 'orivonNewTab', 'orivonPermissions', 'orivonSiteInfo', 'orivonMenu', 'orivonInternal'])
 
 /**
  * Identifiers that name a page's global object at an install site. A

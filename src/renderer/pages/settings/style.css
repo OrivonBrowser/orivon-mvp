@@ -120,3 +120,31 @@
   .row-control { max-width: none; }
   .content { padding: 20px 16px 48px; }
 }
+
+.group {
+  padding: 14px 18px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--wink-dim);
+  border-top: 1px solid var(--wborder);
+  background: color-mix(in srgb, var(--wsurface) 45%, transparent);
+}
+.card > .group:first-child { border-top: none; }
+
+.shortcut { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.shortcut.stacked { flex-direction: column; align-items: flex-end; gap: 6px; }
+.keys { display: inline-flex; gap: 4px; }
+kbd {
+  padding: 2px 7px;
+  border: 1px solid var(--wborder);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--wsurface);
+  font: inherit;
+  font-size: 12px;
+}
+.muted { color: var(--wink-dim); font-size: 13px; }
+.also { display: inline-flex; align-items: center; gap: 6px; }
+.listening { color: var(--waccent); font-weight: 500; }

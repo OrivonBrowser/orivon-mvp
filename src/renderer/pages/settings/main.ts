@@ -7,7 +7,7 @@ import type { Row, Section } from './model.js'
 import { pathFor, placeFor } from './router.js'
 import { renderRow } from './rows.js'
 import { searchRows } from './search.js'
-import { SECTIONS } from './sections/index.js'
+import { sectionsFor } from './sections/index.js'
 import { SettingsState } from './state.js'
 
 const state = new SettingsState()
@@ -19,11 +19,19 @@ const content = h('main', { className: 'content', tabIndex: -1 })
 const search = h('input', { className: 'text search', type: 'search', placeholder: 'Search settings', autocomplete: 'off', spellcheck: false })
 search.setAttribute('aria-label', 'Search settings')
 
-let current: Section = placeFor(location.pathname, SECTIONS).section
+// Set once the state has loaded: some sections are built from what main reports.
+let sections: readonly Section[] = []
+let current: Section = { id: '', title: '', rows: [] }
 let highlight: string | null = null
 
 function renderSectionBody (section: Section): HTMLElement {
-  const rows = section.rows.filter(isShown).map((row) => renderRow(row, state))
+  // A row that opens a group gets its heading first.
+  let group: string | undefined
+  const rows = section.rows.filter(isShown).flatMap((row) => {
+    const heading = row.group !== undefined && row.group !== group ? h('h3', { className: 'group', textContent: row.group }) : null
+    group = row.group
+    return heading === null ? [renderRow(row, state)] : [heading, renderRow(row, state)]
+  })
   return h('section', { className: 'section' },
     h('h2', { textContent: section.title }),
     section.intro === undefined ? null : h('p', { className: 'intro', textContent: section.intro }),
@@ -31,7 +39,7 @@ function renderSectionBody (section: Section): HTMLElement {
 }
 
 function renderSearchBody (query: string): HTMLElement {
-  const hits = searchRows(SECTIONS, query, isShown)
+  const hits = searchRows(sections, query, isShown)
   if (hits.length === 0) return h('p', { className: 'empty', textContent: `Nothing in Settings matches "${query}".` })
   return h('section', { className: 'section' },
     h('h2', { textContent: `${String(hits.length)} ${hits.length === 1 ? 'result' : 'results'}` }),
@@ -46,7 +54,7 @@ function renderSearchBody (query: string): HTMLElement {
 }
 
 function renderNav (): void {
-  replaceChildren(nav, ...SECTIONS.map((section) => h('li', null, h('a', {
+  replaceChildren(nav, ...sections.map((section) => h('li', null, h('a', {
     className: section.id === current.id && search.value.trim() === '' ? 'nav-item current' : 'nav-item',
     href: pathFor(section),
     textContent: section.title,
@@ -78,6 +86,8 @@ function go (section: Section, rowId?: string): void {
 
 async function start (): Promise<void> {
   await state.load()
+  sections = sectionsFor(state)
+  current = placeFor(location.pathname, sections).section
   search.addEventListener('input', render)
   search.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && search.value !== '') {
@@ -93,7 +103,7 @@ async function start (): Promise<void> {
     }
   })
   window.addEventListener('popstate', () => {
-    current = placeFor(location.pathname, SECTIONS).section
+    current = placeFor(location.pathname, sections).section
     search.value = ''
     render()
   })
@@ -105,7 +115,7 @@ async function start (): Promise<void> {
     render()
   })
 
-  const place = placeFor(location.pathname, SECTIONS)
+  const place = placeFor(location.pathname, sections)
   if (place.canonicalPath !== null) history.replaceState(null, '', place.canonicalPath)
 
   document.getElementById('app')?.append(

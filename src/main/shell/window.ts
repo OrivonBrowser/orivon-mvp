@@ -20,6 +20,8 @@ import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from '../ipc/ipc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
+import { createMenuPanel } from './menu-panel.js'
+import type { ShellWindow } from './window-registry.js'
 import type { PopoverAnchor } from '../permissions/popover-view.js'
 import { HtmlFullscreen } from './fullscreen.js'
 import { NOTICES, noticeForWindow } from './window-notice.js'
@@ -142,6 +144,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     // this is what every browser does with its own.
     permissionsPanel.close()
     siteInfoPanel.close()
+    menuPanel.close()
   }
 
   // A16, resolved (owner decision, 2026-08-28): closing the last tab
@@ -229,6 +232,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       lastActiveTabId = state.activeTabId
       permissionsPanel.close()
       siteInfoPanel.close()
+      menuPanel.close()
     }
     // The site-info popup describes ONE origin -- a same-tab navigation
     // to a different one (the active tab id unchanged) leaves it showing
@@ -241,7 +245,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       siteInfoPanel.close()
     }
     fullscreen.tabsChanged(state.activeTabId, (id) => state.tabs.some((tab) => tab.id === id))
-    chrome.webContents.send(STATE_CHANNEL, { ...state, bookmarks: bookmarks.getAll(), bookmarksBar: bookmarksBarShown() })
+    chrome.webContents.send(STATE_CHANNEL, { ...state, bookmarks: bookmarks.getAll(), bookmarksBar: bookmarksBarShown(), zoomPercent: zoomChip(activeTab?.url) })
   }
 
   // Only the first and last bookmark change the chrome's height, so the
@@ -260,7 +264,16 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     pushState()
   }
 
+  // Shown only when the page is not at the default level: a chip that always said 100% would be noise.
+  function zoomChip (url: string | undefined): number | null {
+    const origin = url === undefined ? null : originFromUrl(url)
+    if (origin === null) return null
+    const percent = services.zoom.percentFor(origin)
+    return percent === services.zoom.defaultPercent() ? null : percent
+  }
+
   tabs.onStateChange(pushState)
+  const stopListeningToZoom = services.zoom.onChange(pushState)
   const stopListeningToBookmarks = bookmarks.onChange(onBookmarksChanged)
   const stopListeningToSettings = services.settings.onChange(({ key }) => {
     if (key === 'appearance.bookmarksBar') onBookmarksChanged()
@@ -312,6 +325,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     import.meta.dirname
   )
 
+  const entry: ShellWindow = { window: win, chrome, tabs, shortcutsSuspended: () => fullscreen.tabId !== null }
+  const menuPanel = createMenuPanel(win, win.contentView, services.shortcuts, (id) => { services.commands.run(id, entry) }, import.meta.dirname)
+
   registerShellIpc(
     chrome.webContents, tabs, bookmarks, siteInfo,
     (anchor, url) => {
@@ -322,6 +338,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       // an error.
       const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
       siteInfoPanel.close() // only one popup open at a time
+      menuPanel.close()
       permissionsPanel.toggle(anchor, focusOrigin)
     },
     (anchor, page, url) => {
@@ -330,18 +347,26 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       lastSiteInfoAnchor = anchor
       lastSiteInfoOrigin = origin
       permissionsPanel.close() // only one popup open at a time
+      menuPanel.close()
       siteInfoPanel.toggle(anchor, origin, page)
     },
-    () => { createShellWindow(ctx, services) }
+    (id) => { services.commands.run(id, entry) },
+    (anchor) => {
+      permissionsPanel.close() // only one popup open at a time
+      siteInfoPanel.close()
+      menuPanel.toggle(anchor)
+    }
   )
-  const forgetWindow = services.windows.add({ window: win, chrome, tabs })
+  const forgetWindow = services.windows.add(entry)
   win.on('close', () => { tabs.dispose() })
   win.on('closed', () => {
     forgetWindow()
     stopListeningToBookmarks()
     stopListeningToSettings()
+    stopListeningToZoom()
     permissionsPanel.close()
     siteInfoPanel.close()
+    menuPanel.close()
     // Destroying a window leaves its views' renderers running: the chrome
     // view's is closed here, as the tabs' are by `dispose`.
     if (!chrome.webContents.isDestroyed()) chrome.webContents.close()

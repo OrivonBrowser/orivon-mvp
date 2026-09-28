@@ -4,6 +4,8 @@ import { createShellServices } from './shell/shell-services.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
+import { installShortcuts } from './shortcuts/install-shortcuts.js'
+import { installZoom } from './zoom/install-zoom.js'
 import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
@@ -75,15 +77,18 @@ void app.whenReady().then(async () => {
     return
   }
 
-  // Only this first window can open on the welcome screen: the macOS
-  // 'activate' below recreates a window in a process that has already shown it.
   const shell = createShellServices(app.getPath('userData'))
   // Before the first window, so it opens in the chosen theme with the chosen
   // bookmarks bar rather than changing after it is on screen.
-  await shell.settings.load()
+  await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])
   applyThemeSetting(shell.settings, nativeTheme)
   startInternalPages(shell)
+  shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, openWindow: () => { createShellWindow(ctx, shell) }, quit: () => { app.quit() } })
+  installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
+  installZoom(app, shell.windows, shell.zoom)
   registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
+  // Only this first window can open on the welcome screen: the macOS
+  // 'activate' below recreates a window in a process that has already shown it.
   createShellWindow(ctx, shell, await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')))
   app.on('activate', () => {
     if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
@@ -108,6 +113,19 @@ async function flushStoresBeforeQuit (): Promise<void> {
   ])
 }
 
+// Every way of quitting passes here: a quit command, the last window closing
+// or the system asking. The first pass holds the quit while the stores flush,
+// then quits again.
+let storesFlushed = false
+app.on('before-quit', (event) => {
+  if (storesFlushed) return
+  event.preventDefault()
+  void flushStoresBeforeQuit().then(() => {
+    storesFlushed = true
+    app.quit()
+  })
+})
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') void flushStoresBeforeQuit().then(() => app.quit())
+  if (process.platform !== 'darwin') app.quit()
 })

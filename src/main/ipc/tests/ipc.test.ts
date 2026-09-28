@@ -48,7 +48,7 @@ function dispatch (command: unknown, senderFrame: unknown = CHROME_FRAME): unkno
 describe('registerShellIpc -- siteSummaryFor', () => {
   it('forwards the tab URL to siteInfo.siteSummaryFor()', async () => {
     const siteInfo = fakeSiteInfo({ siteSummaryFor: vi.fn(async () => ({ asked: true, warning: false })) })
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn(), vi.fn(), vi.fn())
 
     const result = await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' })
 
@@ -58,7 +58,7 @@ describe('registerShellIpc -- siteSummaryFor', () => {
 
   it('refuses siteSummaryFor from a frame that is not the chrome view\'s own', async () => {
     const siteInfo = fakeSiteInfo()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn(), vi.fn(), vi.fn())
 
     await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' }, OTHER_FRAME)
 
@@ -66,10 +66,24 @@ describe('registerShellIpc -- siteSummaryFor', () => {
   })
 })
 
+describe('registerShellIpc -- openMenu', () => {
+  it('toggles the main menu at the anchor the chrome measured, and only for the chrome view', async () => {
+    const openMenu = vi.fn()
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), vi.fn(), openMenu)
+    const anchor = { x: 1, y: 2, width: 3, height: 4 }
+
+    await dispatch({ type: 'openMenu', anchor }, OTHER_FRAME)
+    expect(openMenu).not.toHaveBeenCalled()
+    await dispatch({ type: 'openMenu', anchor })
+
+    expect(openMenu).toHaveBeenCalledExactlyOnceWith(anchor)
+  })
+})
+
 describe('registerShellIpc -- openPermissions', () => {
   it('toggles the all-sites popup, passing the tune icon\'s anchor and the tab url when given', async () => {
     const openPermissions = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openPermissions, vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openPermissions, vi.fn(), vi.fn(), vi.fn())
 
     // The anchor is the chrome view's measurement of its own tune icon --
     // main has no way to derive it, so it always rides the command.
@@ -83,7 +97,7 @@ describe('registerShellIpc -- openPermissions', () => {
 
   it('refuses openPermissions from a frame that is not the chrome view\'s own', async () => {
     const openPermissions = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openPermissions, vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openPermissions, vi.fn(), vi.fn(), vi.fn())
 
     await dispatch({ type: 'openPermissions', anchor: { x: 900, y: 44, width: 32, height: 32 } }, OTHER_FRAME)
 
@@ -94,7 +108,7 @@ describe('registerShellIpc -- openPermissions', () => {
 describe('registerShellIpc -- openSiteInfo', () => {
   it('toggles the site-info popup, passing the icon\'s anchor, the requested page and the tab url when given', async () => {
     const openSiteInfo = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), openSiteInfo, vi.fn())
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), openSiteInfo, vi.fn(), vi.fn())
 
     const anchor = { x: 40, y: 44, width: 28, height: 28 }
     await dispatch({ type: 'openSiteInfo', anchor, page: 'web3' })
@@ -106,7 +120,7 @@ describe('registerShellIpc -- openSiteInfo', () => {
 
   it('refuses openSiteInfo from a frame that is not the chrome view\'s own', async () => {
     const openSiteInfo = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), openSiteInfo, vi.fn())
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), openSiteInfo, vi.fn(), vi.fn())
 
     await dispatch({ type: 'openSiteInfo', anchor: { x: 40, y: 44, width: 28, height: 28 }, page: 'main' }, OTHER_FRAME)
 
@@ -120,7 +134,7 @@ describe('registerShellIpc -- starring a page keeps its icon', () => {
   it('stores the icon MAIN already captured for that tab, not one sent by the renderer', () => {
     const add = vi.fn()
     const tabs = { faviconFor: vi.fn(() => ICON) } as unknown as TabManager
-    registerShellIpc(chromeWebContents, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), vi.fn(), vi.fn())
 
     void dispatch({ type: 'addBookmark', url: 'https://a.example/', title: 'A', tabId: 'tab-7' })
 
@@ -131,7 +145,7 @@ describe('registerShellIpc -- starring a page keeps its icon', () => {
   it('saves the bookmark with no icon when that tab has not got one yet', () => {
     const add = vi.fn()
     const tabs = { faviconFor: vi.fn(() => null) } as unknown as TabManager
-    registerShellIpc(chromeWebContents, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), vi.fn(), vi.fn())
 
     void dispatch({ type: 'addBookmark', url: 'https://a.example/', title: 'A', tabId: 'tab-7' })
 
@@ -149,7 +163,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
         levelOverride: 4, displayedLevel: 4, deliveryOverride: undefined, displayedDelivery: 1
       } as never))
     })
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn(), vi.fn(), vi.fn())
 
     const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
@@ -158,7 +172,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
   })
 
   it('is null when siteTrustFor has nothing to report', async () => {
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), vi.fn(), vi.fn())
 
     const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
@@ -167,7 +181,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
 
   it('refuses web3ScoreFor from a frame that is not the chrome view\'s own', async () => {
     const siteInfo = fakeSiteInfo()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn(), vi.fn())
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, vi.fn(), vi.fn(), vi.fn(), vi.fn())
 
     await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' }, OTHER_FRAME)
 
@@ -175,22 +189,25 @@ describe('registerShellIpc -- web3ScoreFor', () => {
   })
 })
 
-describe('registerShellIpc -- newWindow', () => {
-  it('opens another window in this process', async () => {
-    const openWindow = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), openWindow)
+describe('registerShellIpc -- runCommand', () => {
+  it('runs a command the shell has, and only for the chrome view', async () => {
+    const runCommand = vi.fn()
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), runCommand, vi.fn())
 
-    await dispatch({ type: 'newWindow' })
+    await dispatch({ type: 'runCommand', id: 'window.new' }, OTHER_FRAME)
+    expect(runCommand).not.toHaveBeenCalled()
+    await dispatch({ type: 'runCommand', id: 'window.new' })
 
-    expect(openWindow).toHaveBeenCalledTimes(1)
+    expect(runCommand).toHaveBeenCalledExactlyOnceWith('window.new')
   })
 
-  it('refuses newWindow from a frame that is not the chrome view\'s own', async () => {
-    const openWindow = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), openWindow)
+  it('ignores a command that does not exist', async () => {
+    const runCommand = vi.fn()
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), vi.fn(), vi.fn(), runCommand, vi.fn())
 
-    await dispatch({ type: 'newWindow' }, OTHER_FRAME)
+    await dispatch({ type: 'runCommand', id: 'nope' })
+    await dispatch({ type: 'runCommand', id: 7 })
 
-    expect(openWindow).not.toHaveBeenCalled()
+    expect(runCommand).not.toHaveBeenCalled()
   })
 })

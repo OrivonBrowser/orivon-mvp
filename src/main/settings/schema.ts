@@ -15,6 +15,13 @@ const SPECS = {
   'appearance.theme': { kind: 'enum', options: ['system', 'light', 'dark'], default: 'system' },
   // 'auto' shows the bar when there is a bookmark to put in it.
   'appearance.bookmarksBar': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
+  // Percent, as text: a choice among the zoom levels, and the level a site with none of its own gets.
+  'appearance.defaultZoom': {
+    kind: 'enum',
+    options: ['75', '80', '90', '100', '110', '125', '150', '175', '200'],
+    default: '100',
+    labels: { 75: '75%', 80: '80%', 90: '90%', 100: '100%', 110: '110%', 125: '125%', 150: '150%', 175: '175%', 200: '200%' }
+  },
   'search.engine': {
     kind: 'enum',
     options: [...SEARCH_ENGINES.map((engine) => engine.id), CUSTOM_SEARCH_ENGINE],

@@ -26,10 +26,16 @@ guard raises; `external-link-prompt.ts` and `notification-prompt.ts` ask the two
 permission gate puts to the person; `showing-window.ts` finds the window a tab is on screen in;
 `context-menu.ts` is the right-click menu for tabs and the chrome.
 
+The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows (the
+names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a key that does
+not work), and `menu-panel.ts` is the popover that shows it, built on
+[`../permissions/popover-view.ts`](../permissions/popover-view.ts) like the two other toolbar popups.
+
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts)
 (type only); and, inside `src/main/`, [`../browsing/`](../browsing/) (bookmarks, favicon,
-omnibox), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+omnibox), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/), [`../shortcuts/`](../shortcuts/) (the command table and the
+service the menu reads, and the command bus a window runs a chosen command through),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
 `permission-gate.ts`'s notification store, handed to the permissions panel),

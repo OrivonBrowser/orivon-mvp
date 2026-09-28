@@ -10,6 +10,8 @@ export type Control =
   | { readonly type: 'choice', readonly key: SettingKey, readonly options?: ReadonlyArray<{ readonly value: string, readonly label: string }> }
   | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string }
   | { readonly type: 'toggle', readonly key: SettingKey }
+  /** A keyboard shortcut: its keys, and the buttons that change it. */
+  | { readonly type: 'shortcut', readonly id: string }
   /** A value shown, not changed. */
   | { readonly type: 'info', readonly text: (state: SettingsState) => string }
   /** A button. With `confirm`, the first click arms it and the second does it. */
@@ -22,6 +24,8 @@ export interface Row {
   /** Words a person might search for that the label and help do not use. */
   readonly keywords?: readonly string[]
   readonly control: Control
+  /** A heading shown above this row when it is the first of its group. */
+  readonly group?: string
   /** Absent means always shown. */
   readonly visible?: (state: SettingsState) => boolean
 }

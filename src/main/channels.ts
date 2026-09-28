@@ -8,6 +8,9 @@
 // the channel name it shares with src/broker/transport/ipc.ts has nowhere
 // else neutral to live.
 
+/** Main -> chrome view: a command for the chrome itself to carry out, such as focusing the address bar. */
+export const SHELL_EVENT_CHANNEL = 'orivon-shell:event'
+
 /** Chrome view -> main: tab commands (newTab, closeTab, navigate, ...). See ./ipc.ts. */
 export const COMMAND_CHANNEL = 'orivon-shell:command'
 
@@ -89,6 +92,9 @@ export const EMBED_SCRIPT_CHANNEL = 'orivon-embed:page-script'
  * call in `./pages/internal-ipc.ts`, never by the page.
  */
 export const INTERNAL_COMMAND_CHANNEL = 'orivon-internal:command'
+
+/** The main menu popover's own WebContentsView -> main: what it lists, and which entry was chosen. See ./ipc/menu-ipc.ts. */
+export const MENU_COMMAND_CHANNEL = 'orivon-menu:command'
 
 /** Main -> an internal page: `{ topic, payload }`, for changes made elsewhere while the page is open. */
 export const INTERNAL_EVENT_CHANNEL = 'orivon-internal:event'

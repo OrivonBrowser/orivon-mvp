@@ -276,3 +276,16 @@ export async function closeElectronApp (app: ElectronApplication, raceMs = APP_C
   })
 }
 
+
+/** Presses a key on the webContents whose URL contains `urlPart`, through the
+ * browser process, the way a key from the keyboard arrives. Playwright's own
+ * `keyboard` goes straight to the renderer and never reaches the browser's
+ * shortcut handling. `keyCode` is Electron's name for the key ('T', 'Tab', 'F5'). */
+export async function pressKey (app: ElectronApplication, urlPart: string, keyCode: string, modifiers: string[] = []): Promise<void> {
+  await app.evaluate(({ webContents }, [part, code, mods]) => {
+    const target = webContents.getAllWebContents().find((contents) => contents.getURL().includes(part as string))
+    if (target === undefined) throw new Error(`no webContents at ${part as string}`)
+    const events = [{ type: 'keyDown' }, { type: 'keyUp' }] as const
+    for (const { type } of events) target.sendInputEvent({ type, keyCode: code as string, modifiers: mods as Array<'control'> })
+  }, [urlPart, keyCode, modifiers] as const)
+}
