@@ -23,7 +23,7 @@
 // same rules, same reasons, applied to a different comparison.
 
 import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
-import { classifyAddress, isPublicUnicast } from './address.js'
+import { isNonPublicAddressLiteral } from './address.js'
 import { normalizeHost } from './canonical-host.js'
 import { portMatches } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
@@ -79,17 +79,6 @@ function deny (reason: ConnectSecureDenialReason): ConnectSecureDenied {
   return { allowed: false, code: 'denied', reason }
 }
 
-/**
- * True if `requested` is an address literal (not a hostname) that is NOT
- * ordinary public internet space -- loopback, RFC 1918, link-local
- * (169.254.169.254 included), or any other class `./address.ts`'s
- * `isPublicUnicast` denies for checkConnect. False for a hostname, because
- * this file has no resolver and cannot classify what a name resolves to --
- * see this module's header and A196 for that residual.
- */
-function isNonPublicAddressLiteral (requested: string): boolean {
-  return classifyAddress(requested) !== 'unparseable' && !isPublicUnicast(requested)
-}
 
 /**
  * One pattern's host part against the requested hostname.

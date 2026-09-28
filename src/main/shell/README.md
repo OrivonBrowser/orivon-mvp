@@ -6,7 +6,10 @@ active tab's `WebContentsView` below. `tabs.ts` owns the tab collection, with `t
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
 and notification questions the permission gate asks, the right-click menu for tabs and the
-chrome, and the plain Chrome User-Agent every page sees.
+chrome, and the plain Chrome User-Agent every page sees. `lock-navigation.ts` refuses every navigation
+and popup on a view whose privileged preload must stay on the document it was created for: the
+chrome view and its popups, and [`../sessions/web-context-host.ts`](../sessions/web-context-host.ts)'s
+isolated context.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types);
