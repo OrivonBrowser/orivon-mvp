@@ -147,9 +147,10 @@ export class UdpSocket {
     ).finally(() => { this.#pending = undefined })
   }
 
-  finishBind (): void {
+  /** Waits for the bind to settle rather than answering would-block, which wasi-libc's bind() takes as failure on a non-blocking socket. */
+  async finishBind (): Promise<void> {
     if (this.#state !== 'bind-started') throw 'not-in-progress'
-    if (this.#pending !== undefined) throw 'would-block'
+    await this.#pending
     if (this.#failure !== undefined) { this.#state = 'closed'; throw this.#failure }
     this.#state = 'bound'
   }

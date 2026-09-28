@@ -15,7 +15,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **A spawned program can open sockets**: `spawn` runs a WASI 0.2 component from the jco output
   shipped beside it, its files and sockets reaching `orivon.fs` and `orivon.net` under the app's
-  grants (ADR-0040).
+  grants (ADR-0040). A Rust program built for `wasm32-wasip2` runs, whether it blocks on `std::net`
+  or runs tokio.
 - **A Settings page, and the browser features a person lives in.** `orivon://settings` has a section for
   everything Orivon implements: appearance (theme, bookmarks bar, page zoom), search, tabs and windows,
   profiles, privacy and data, the apps that hold permissions, the Ethereum light client, remappable

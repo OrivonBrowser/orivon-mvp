@@ -33,50 +33,27 @@
 //
 // Last run with Rust 1.98.1: every mode passes.
 
-import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { createFakeTcpServer } from '../../tests/support/fake-tcp-server.js'
 import { createFakeTcpSocket } from '../../tests/support/fake-tcp-socket.js'
 import { createFakeUdpSocket } from '../../tests/support/fake-udp-socket.js'
 import { createRealDiskFs } from '../../tests/support/real-disk-fs.js'
-import { hasJspi, jspiWebAssembly } from '../../wasi/tests/support/jspi.js'
+import { hasJspi } from '../../wasi/tests/support/jspi.js'
 import type { SocketNet } from '../addresses.js'
-import { componentImports } from '../imports.js'
-import { InputStream, OutputStream } from '../io.js'
-import { runComponent, unmarkedAsyncImports } from '../run.js'
-import { instantiateFrom } from './support/component-fixture.js'
-import { JCO_DIR, type Transpiled, loadJco } from './support/jco.js'
+import { JCO_DIR, type Transpiled } from './support/jco.js'
+import { netWith, runProgram, transpileProgram } from './support/real-program.js'
 
 const PROGRAM = process.env.ORIVON_WASIP2_STD_PROGRAM
 
 let program: Transpiled
 
-function netWith (overrides: Partial<SocketNet>): SocketNet {
-  const unused = async (): Promise<never> => { throw new Error('not reached in this mode') }
-  return { connect: unused, listen: unused, udpBind: unused, lookup: unused, ...overrides } as SocketNet
-}
-
-async function run (mode: string, target: string, net: SocketNet, fs: unknown = {}): Promise<{ code: number, stdout: string }> {
-  let stdout = ''
-  const imports = componentImports({
-    fs: fs as never,
-    net,
-    preopens: { '/': '/orivon/app', '.': '/orivon/app' },
-    args: ['netcheck', mode, target],
-    env: {},
-    cwd: '/',
-    stdin: new InputStream(async () => new Uint8Array(0)),
-    stdout: new OutputStream(async (bytes) => { stdout += new TextDecoder().decode(bytes) }),
-    stderr: new OutputStream(async () => {})
-  })
-  const code = await runComponent(instantiateFrom(program.glue, jspiWebAssembly), async (name) => await jspiWebAssembly.compile(program.cores.get(name) as Uint8Array<ArrayBuffer>), imports)
-  return { code, stdout }
+async function run (mode: string, target: string, net: SocketNet, fs?: unknown): Promise<{ code: number, stdout: string }> {
+  return await runProgram(program, 'netcheck', mode, target, net, fs)
 }
 
 describe.skipIf(PROGRAM === undefined || JCO_DIR === undefined || !hasJspi)('a Rust standard-library program, wasm32-wasip2', () => {
   beforeAll(async () => {
-    program = (await loadJco()).transpile(readFileSync(PROGRAM as string), 'netcheck')
-    expect(unmarkedAsyncImports(program.glue)).toEqual([])
+    program = await transpileProgram(PROGRAM as string, 'netcheck')
   })
 
   it('creates, writes, reads and lists files through orivon.fs', async () => {

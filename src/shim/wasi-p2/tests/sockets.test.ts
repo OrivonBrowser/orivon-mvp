@@ -83,15 +83,14 @@ describe('TCP', () => {
     expect(() => socket.finishConnect()).toThrow('not-in-progress')
   })
 
-  it('binds at listen, in the scope its address names, and accepts each connection as it arrives', async () => {
+  it('binds at listen, in the scope its address names, waits in finish-listen, and accepts each connection as it arrives', async () => {
     const fake = createFakeTcpServer({ localAddress: '127.0.0.1', localPort: 4001 })
     const net = fakeNet({ listen: vi.fn(async () => fake.server as TcpServer) })
     const socket = createTcp(socketInterfaces(net))
     socket.startBind({}, v4(127, 0, 0, 1, 4001))
     socket.finishBind()
     socket.startListen()
-    await socket.subscribe().block()
-    socket.finishListen()
+    await socket.finishListen()
     expect(net.listen).toHaveBeenCalledWith({ port: 4001, scope: 'local' })
     expect(socket.isListening()).toBe(true)
     expect(() => socket.accept()).toThrow('would-block')
@@ -103,6 +102,18 @@ describe('TCP', () => {
     const [peer] = socket.accept()
     expect(peer.remoteAddress()).toEqual(v4(127, 0, 0, 1, 5555))
     expect(socket.localAddress()).toEqual(v4(127, 0, 0, 1, 4001))
+  })
+
+  it('throws a listen that fails from finish-listen once it settles, and a UDP bind that fails from finish-bind', async () => {
+    const inUse = Object.assign(new Error('in use'), { code: 'failed', platformCode: 'EADDRINUSE' })
+    const tcp = createTcp(socketInterfaces(fakeNet({ listen: async () => { throw inUse } })))
+    tcp.startBind({}, v4(127, 0, 0, 1, 4004))
+    tcp.finishBind()
+    tcp.startListen()
+    await expect(tcp.finishListen()).rejects.toBe('address-in-use')
+    const udp = fn<(family: string) => UdpSocket>(socketInterfaces(fakeNet({ udpBind: async () => { throw inUse } })), 'wasi:sockets/udp-create-socket', 'createUdpSocket')('ipv4')
+    udp.startBind({}, v4(0, 0, 0, 0, 5354))
+    await expect(udp.finishBind()).rejects.toBe('address-in-use')
   })
 
   it('carries bytes both ways over a connected socket, and shuts down its send side with a FIN', async () => {
@@ -128,9 +139,7 @@ describe('UDP', () => {
     await resolve(interfaces, 'example.com')
     const socket = fn<(family: string) => UdpSocket>(interfaces, 'wasi:sockets/udp-create-socket', 'createUdpSocket')('ipv4')
     socket.startBind({}, v4(0, 0, 0, 0, 5353))
-    expect(() => { socket.finishBind() }).toThrow('would-block')
-    await socket.subscribe().block()
-    socket.finishBind()
+    await socket.finishBind()
     expect(net.udpBind).toHaveBeenCalledWith({ port: 5353, scope: 'network' })
     const [incoming, outgoing] = socket.stream(v4(93, 184, 216, 34, 53))
     fake.deliver({ data: new Uint8Array([9]), address: '6.6.6.6', port: 53, family: 'IPv4' })
@@ -171,8 +180,7 @@ describe('what a dropped or failing socket leaves behind', () => {
       socket.startBind({}, v4(127, 0, 0, 1, 4002))
       socket.finishBind()
       socket.startListen()
-      await socket.subscribe().block()
-      socket.finishListen()
+      await socket.finishListen()
       return socket
     }
     const socket = await listening()
@@ -190,8 +198,7 @@ describe('what a dropped or failing socket leaves behind', () => {
     socket.startBind({}, v4(127, 0, 0, 1, 4003))
     socket.finishBind()
     socket.startListen()
-    await socket.subscribe().block()
-    socket.finishListen()
+    await socket.finishListen()
     await vi.waitFor(() => { expect(server.pullCount()).toBeGreaterThan(0) })
     server.fail('reset', 'gone')
     await socket.subscribe().block()
@@ -249,8 +256,7 @@ describe('UDP sends', () => {
     const fake = createFakeUdpSocket()
     const socket = fn<(family: string) => UdpSocket>(socketInterfaces(fakeNet({ udpBind: async () => fake.socket as OrivonUdpSocket })), 'wasi:sockets/udp-create-socket', 'createUdpSocket')('ipv4')
     socket.startBind({}, v4(0, 0, 0, 0, 0))
-    await socket.subscribe().block()
-    socket.finishBind()
+    await socket.finishBind()
     const [, outgoing] = socket.stream(undefined)
     expect(() => outgoing.send([{ data: new Uint8Array([1]), remoteAddress: v4(1, 2, 3, 4, 53) }, { data: new Uint8Array([2]), remoteAddress: v4(1, 2, 3, 4, 0) }])).toThrow('invalid-argument')
     await new Promise((settle) => setTimeout(settle, 10))

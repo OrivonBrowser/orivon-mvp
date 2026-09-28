@@ -60,7 +60,10 @@ termination, which unwinds the component as a trap.
 **A bind is made at listen**, since `orivon.net` binds and listens in one call: `finish-bind`
 always succeeds, and an address in use is reported by `finish-listen` (`tcp.ts`).
 
-**Sockets never block.** Every connect, bind, listen and lookup is started at once and answered
-`would-block` until `orivon.net` settles; the program waits on a pollable, and only `poll` and
-`pollable.block` suspend. The streams read ahead of the program (`io.ts`), so a non-blocking read
-answers from what has arrived.
+**Sockets block only where POSIX does.** A connect and a lookup are started at once and answered
+`would-block` until `orivon.net` settles, and the program waits on a pollable: a non-blocking
+`connect()` is `EINPROGRESS`, as a Rust or C event loop expects. A TCP listen and a UDP bind
+instead suspend in `finish-listen` and `finish-bind` until it settles, because wasi-libc's
+`listen()` and `bind()` take `would-block` there as failure on a non-blocking socket, which every
+mio and tokio socket is; wasmtime never answers it. The streams read ahead of the program
+(`io.ts`), so a non-blocking read answers from what has arrived.

@@ -146,7 +146,10 @@ export class TcpSocket {
     this.#state = 'listen-started'
   }
 
-  finishListen (): void {
+  /** Waits for the listen to settle rather than answering would-block, which wasi-libc's listen() takes as failure on a non-blocking socket. */
+  async finishListen (): Promise<void> {
+    if (this.#state !== 'listen-started') throw 'not-in-progress'
+    while (this.#pending === 'running') await this.#signal.wait()
     this.#finish('listen-started')
     this.#state = 'listening'
     void this.#pumpConnections()

@@ -44,6 +44,8 @@ export const ASYNC_IMPORTS: readonly string[] = [
   'wasi:io/poll#[method]pollable.block',
   ...['blocking-read', 'blocking-skip'].map((name) => `wasi:io/streams#[method]input-stream.${name}`),
   ...['blocking-write-and-flush', 'blocking-flush', 'blocking-write-zeroes-and-flush', 'blocking-splice'].map((name) => `wasi:io/streams#[method]output-stream.${name}`),
+  'wasi:sockets/tcp#[method]tcp-socket.finish-listen',
+  'wasi:sockets/udp#[method]udp-socket.finish-bind',
   ...[
     'sync-data', 'sync', 'set-size', 'read', 'write', 'read-directory', 'create-directory-at', 'stat', 'stat-at',
     'readlink-at', 'open-at', 'remove-directory-at', 'rename-at', 'unlink-file-at', 'metadata-hash', 'metadata-hash-at'
