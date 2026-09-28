@@ -135,15 +135,18 @@ export class Sites {
   }
 
   /** The site currently mounted for `host` in `partition`, without
-   * resolving anything. Serves a stale `good` the same way `get` does. */
+   * resolving anything. Serves a stale `good` the same way `get` does, and
+   * nothing `get` would refuse to serve. */
   async current (host: string, partition: string): Promise<SiteRecord | undefined> {
     const entry = this.entries.get(`${partition} ${host}`)
     if (entry === undefined) return undefined
-    if (entry.good !== undefined && this.now() - entry.good.mountedAt <= STALE_SERVE_MS) return entry.good
+    const servable = (record: SiteRecord | undefined): SiteRecord | undefined =>
+      record !== undefined && this.now() - record.mountedAt <= STALE_SERVE_MS ? record : undefined
+    if (servable(entry.good) !== undefined) return entry.good
     try {
-      return await entry.settled
+      return servable(await entry.settled)
     } catch {
-      return entry.good
+      return undefined
     }
   }
 

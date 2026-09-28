@@ -1,6 +1,5 @@
 interface Waiter {
   readonly grant: () => void
-  readonly abort: (reason: unknown) => void
 }
 
 /**
@@ -8,15 +7,13 @@ interface Waiter {
  *
  * A slot a finishing task frees is handed to the next WAITER directly
  * (`release`, below), never freed and then re-taken by whoever calls `run`
- * next: those are two different things only when a queue is waiting, and
- * collapsing them was a real bug here -- a released slot briefly counted as
- * free while the waiter it was meant for was still an unsettled promise (its
- * own `active++` runs only once its `await` resumes, a microtask after
- * `release` runs), so a brand-new caller arriving inside that window could
- * take the slot the queue was waiting for, and both callers would then hold
- * it at once. `../../loader/reach/slots.ts`'s `createReachSlotPool` already
- * gets this right the same way (Rule 3): the releaser adjusts the count for
- * whoever it hands the slot to, in the same synchronous step.
+ * next. Freeing it first would let it count as free while the waiter it was
+ * meant for is still an unsettled promise (its own `active++` would run only
+ * once its `await` resumes, a microtask after `release`), so a brand-new
+ * caller arriving inside that window could take it too, and both would hold
+ * one slot. `../../loader/reach/slots.ts`'s `createReachSlotPool` does the
+ * same: the releaser adjusts the count for whoever it hands the slot to, in
+ * the same synchronous step.
  *
  * `signal`, if given to `run`, lets a QUEUED caller give up: aborting it
  * removes the waiter from the queue and rejects with `signal.reason`,
@@ -62,10 +59,6 @@ export class Slots {
           grant: () => {
             signal?.removeEventListener('abort', onAbort)
             resolve()
-          },
-          abort: (reason) => {
-            signal?.removeEventListener('abort', onAbort)
-            reject(reason)
           }
         }
         signal?.addEventListener('abort', onAbort, { once: true })
