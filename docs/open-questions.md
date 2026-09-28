@@ -682,7 +682,7 @@ unfixable after the first grant is persisted, so it is recorded here rather than
 Found while planning the chrome restyle (2026-08-28). The owner asked for a full visual match
 to a reference screenshot, including icons for features that don't exist yet in this repository
 and, in one case (a wallet-shaped glyph), a feature that is a stated MVP non-goal
-(`mvp-scope.md` §Explicit non-goals — "Not a wallet"). The glyph is relabelled `identity` rather
+(`scope.md` §Explicit non-goals — "Not a wallet"). The glyph is relabelled `identity` rather
 than `wallet` in code and in its tooltip, since Nostr identity *is* in scope and the shape is
 generic; nothing about the icon itself implies funds.
 
@@ -1855,7 +1855,7 @@ symptom has a mitigation.
 ## BB. Public-docs corrections — and what is *not* one
 
 **The MVP being narrower than the vision is not a contradiction.** It is expected, and nothing
-in `mvp-scope.md`'s non-goals implies the final product is limited the same way. Those
+in `scope.md`'s non-goals implies the final product is limited the same way. Those
 non-goals are MVP-scoped only.
 
 Only genuine errors belong here — statements wrong **independently of the MVP**:
@@ -4438,7 +4438,7 @@ assertion about itself. Electron's own declaration for `MessageBoxOptions`:
 
 **Where the title is dropped, the prompt identifies the requesting app solely by a string the app
 chose** — the exact inversion `grant-prompt-render.ts`'s own doc comment says it exists to prevent.
-Run-from-source on macOS is an `mvp-scope.md` IN-table item, and macOS is the platform historically
+Run-from-source on macOS is an `scope.md` IN-table item, and macOS is the platform historically
 documented as ignoring message-box titles.
 
 **The fix — render the origin somewhere always shown — is correct regardless of which platforms drop
@@ -8496,7 +8496,7 @@ and each belongs to a prompt this browser has not built.
 **The narrower question it leaves open:** `clipboard-read` is denied today and has no legacy
 bypass, so it is the first permission where a real prompt would buy something. Whether it
 becomes an `orivon.*` capability with a grant, a Chromium-level prompt, or stays denied for v0
-is undecided. Nothing in the MVP needs it: no ported app has asked, and `mvp-scope.md`'s IN
+is undecided. Nothing in the MVP needs it: no ported app has asked, and `scope.md`'s IN
 table does not name it.
 
 **Needed by:** whenever a second permission is proposed for the allowlist, or an app asks to
@@ -8621,7 +8621,7 @@ that leaves three places where it differs from Chrome:
   work here.
 
 **AI recommendation:** leave all three as they are for this build. Each of the first two is
-bounded to a file the person handed over, and nothing in `mvp-scope.md`'s IN table needs a
+bounded to a file the person handed over, and nothing in `scope.md`'s IN table needs a
 folder; FreeTube needs one file. An app written for Orivon that needs a folder already has
 `fs.userSelected`'s folder shape.
 
@@ -8965,7 +8965,7 @@ unauthenticated connection is address-checked (`d-0098`).
 
 Filed 2026-09-22. `net.createServer` is built over `orivon.net.listen`, but there is no HTTP
 request parser or `ServerResponse` on top of it, so `http.createServer` refuses by name. Rule 4
-puts anything absent from `mvp-scope.md`'s IN table out by default, and the table does not name
+puts anything absent from `scope.md`'s IN table out by default, and the table does not name
 an app serving HTTP.
 
 **What would settle it:** the owner saying whether a ported app that serves HTTP is in this
@@ -9237,7 +9237,7 @@ Filed 2026-09-24 with `d-0105`. The success metric is 25 h/month of `activeSec`,
 and `ADR-0001` argued the torrent app met it (people torrent daily) and doubled as the
 distribution asset (a 15-second clip). With the torrent app an idea, build step 5's ported apps
 are test cases, and none of them is named as the app a person opens every day, or as what gets
-shown to the communities the distribution plan targets. `mvp-scope.md`'s failure criterion on
+shown to the communities the distribution plan targets. `scope.md`'s failure criterion on
 organic traction cannot fire until one is.
 
 **What would settle it:** the owner naming the app or journey that carries daily use and

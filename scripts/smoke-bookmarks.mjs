@@ -32,7 +32,7 @@ export async function runBookmarksJourney (ctx) {
   const { app, chrome, check, checkTab, clickChecked, navigateTo, urlFor, wantA } = ctx
 
   // ---- Bookmarks bar: star, appear, open, unstar ------------------------
-  // Owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not in the
+  // Owner override, 2026-08-28 (scope.md, ADR-0003) -- not in the
   // original scope pass. Exercises the real path -- click -> IPC ->
   // BookmarkStore -> pushed ShellState -> bookmarks-view.ts -- the same
   // shape every other check in this file already holds tab commands to,

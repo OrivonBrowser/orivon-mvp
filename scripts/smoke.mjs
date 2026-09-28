@@ -480,7 +480,7 @@ async function main () {
     }
 
     // ---- Address-bar text that is not a URL resolves to a search ---------
-    // Owner decision, build step 1 (mvp-scope.md IN table; build-plan.md's
+    // Owner decision, build step 1 (scope.md IN table; build-plan.md's
     // "Sequence" step 1): non-address input is sent to DuckDuckGo -- a stated
     // known limitation, since in the PRODUCT the search text leaves the
     // machine.

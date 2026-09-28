@@ -5,7 +5,7 @@
 There are no UI tests, no coverage targets, and a deliberately small number of unit tests. That
 is a decision, not a backlog ([`build-plan.md`](../planning/build-plan.md) §Testing).
 
-The reasoning: this is a one-month MVP built by one person, and at that scale broad test suites
+The reasoning: this is a browser built by one person, and at that scale broad test suites
 cost more than they return: they are written once, then maintained forever, against code that
 is still changing shape weekly. So testing is **concentrated where a silent failure is both
 plausible and expensive**, and absent everywhere else.

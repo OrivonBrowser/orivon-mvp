@@ -148,7 +148,7 @@ This is the `GENERATE_PO_TOKEN` handler the reconnaissance listed as *Unassessed
 assessed: it is load-bearing, not optional.** Producing the token means executing YouTube's own
 bot-guard script, which needs somewhere to run untrusted code plus real HTTP. Nothing in this
 repository offers that, and a sandboxed runtime such as `orivon-runtime` is out of scope by
-`mvp-scope.md`.
+`scope.md`.
 
 **This wall is not Orivon's.** It refuses `curl` and a stock browser tab the same way. It does
 mean FreeTube cannot be a playback demo for the platform on its own, which is worth knowing

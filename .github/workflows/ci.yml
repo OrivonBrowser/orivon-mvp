@@ -93,7 +93,7 @@ jobs:
       # The unit tests prove derive.ts (WebCrypto) matches the frozen table.
       # This proves an INDEPENDENT node:crypto implementation matches it too, so
       # the table cannot quietly become a recording of one implementation's own
-      # bugs. Keys are not exportable in the MVP (ADR-0003), so a derivation
+      # bugs. Keys are not exportable in this version (ADR-0003), so a derivation
       # change is unrecoverable -- see ADR-0010.
       - name: Golden vectors match an independent implementation
         run: npm run check:vectors

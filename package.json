@@ -2,7 +2,7 @@
   "name": "orivon",
   "version": "0.0.0",
   "private": true,
-  "description": "Orivon MVP - a browser that runs applications impossible in Chrome, under user-granted per-app capabilities",
+  "description": "Orivon Browser - runs applications impossible in Chrome, under user-granted per-app capabilities",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",

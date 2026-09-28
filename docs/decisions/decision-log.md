@@ -102,10 +102,10 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0099` | 2026-09-23 | A custom `checkServerIdentity` runs in the shim, in Node's order, and its connection is address-checked; SNI defaults to the host; `https` sends the Host header's name as SNI, as Node's agent does. AI | `../../src/shim/README.md` |
 | `d-0100` | 2026-09-23 | STARTTLS (`tls.connect({ socket })`) stays refused by name. AI | A226 |
 | `d-0101` | 2026-09-24 | A site publishes its bundle hash tree at `/.well-known/orivon-ddoc.json`, root and every leaf; the Web3 Score page shows DDOC as verified, failed (naming the files), not published or not checked; none of them blocks a load, since acting on a failure is the Web3 Score's job. Owner | ADR-0029, `../architecture/bundle-hash.md` |
-| `d-0102` | 2026-09-24 | DDOC does not depend on trustless resolution: it is the website axis, and trust in a DNS answer is the connection axis's question. DDOC's anchor in this build is the site's own host, *provisional*. Reverses A4b's premise. Owner | ADR-0029, ADR-0006, A4b, `../mvp-scope.md` |
+| `d-0102` | 2026-09-24 | DDOC does not depend on trustless resolution: it is the website axis, and trust in a DNS answer is the connection axis's question. DDOC's anchor in this build is the site's own host, *provisional*. Reverses A4b's premise. Owner | ADR-0029, ADR-0006, A4b, `../scope.md` |
 | `d-0103` | 2026-09-24 | An `id` grant with empty `patterns` (every consent-made grant: `manifest-patterns.ts` maps `id` presence-only) authorises whatever curves the origin's currently-registered manifest declares, re-checked live, not frozen at grant time; a non-empty `patterns` list (the dev-only grant hook) still narrows further. Fixes a real gap: every consent-made `id` grant was refused in production before this. AI | `../../src/broker/capabilities/id.ts` |
 | `d-0104` | 2026-09-24 | `LIMITS.secretBytes` (the largest `orivon.secrets.encrypt` plaintext) is 64 KiB. AI; provisional | ADR-0033, `../../src/contracts/limits.ts` |
-| `d-0107` | 2026-09-24 | DDOC's off-host anchor is in scope, as the `.eth` name's ENS record read at build step 6; a DNS record stays out. Owner | [`ADR-0029`](ADR-0029-sites-publish-their-bundle-hash-tree.md), `../mvp-scope.md` |
+| `d-0107` | 2026-09-24 | DDOC's off-host anchor is in scope, as the `.eth` name's ENS record read at build step 6; a DNS record stays out. Owner | [`ADR-0029`](ADR-0029-sites-publish-their-bundle-hash-tree.md), `../scope.md` |
 | `d-0108` | 2026-09-24 | Trust levels follow the canonical Web3 scores page. Every site shows its Website level; only Level 1 and Level 2 are automatic; Level 3 and above come only from a Web3 Score provider assessing the content identifier, the bundle hash or the CID. Overrides ADR-0006's level list. Owner | [`ADR-0006`](ADR-0006-trust-indicator-from-observed-behaviour.md), `../planning/ens-ipfs-plan.md`, B3 |
 | `d-0109` | 2026-09-24 | Every trust question follows the canonical pages: an IPNS-key `.eth` name is IPFS content, where DDOC is met by the protocol, so it is Level 2. Owner | [`ADR-0030`](ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md) |
 | `d-0110` | 2026-09-24 | Offchain (CCIP-Read) `.eth` names are allowed: the resolver contract checks the gateway's answer inside the proven call, and the evidence says "offchain resolver". Owner | [`ADR-0030`](ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md) |
@@ -132,6 +132,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0131` | 2026-09-28 | A mark at the address pill's right end replaces Orivon's logo there and names the level: Web2 orange for Level 1, Web2.5 yellow for Levels 2 and 3, Web3 green for Level 4. Owner | [`ADR-0006`](ADR-0006-trust-indicator-from-observed-behaviour.md) |
 | `d-0132` | 2026-09-28 | In developer mode, a local origin (loopback, or a developer `.eth` name) that serves a readable DDOC tree is marked DDOC, since no domain record can anchor a local address's tree; the Web3 Score page says it is marked only because of developer mode. Owner | [`ADR-0029`](ADR-0029-sites-publish-their-bundle-hash-tree.md) |
 | `d-0133` | 2026-09-28 | A shield repaint for the same origin keeps the level it shows while it re-asks, clearing only on a new origin, so a page load no longer flashes it grey. AI | `src/renderer/main.ts` |
+| `d-0134` | 2026-09-28 | This repository is Orivon Browser, not an MVP: built on Electron, mostly in TypeScript, gaining the vision's promised features one at a time as a need calls for each, and some may not reach this version. The success metric is unchanged. A feature no longer needs an IN-table row before it is built, only a named need; the Electron shell is labelled *tied to Electron*, not *disposable*; `mvp-scope.md` is renamed `scope.md`. Owner | [`ADR-0002`](ADR-0002-capability-api-is-the-durable-asset.md), [`../scope.md`](../scope.md), `CLAUDE.md` Rules 4 and 5 |
 
 ## Directives
 
@@ -158,19 +159,19 @@ moved here so those documents can state the behaviour without the provenance.
 | 2026-08-25 | Signed/unsigned trust tiers and `publisherKey` cut from v0; integrity is hash-pinning alone | `../architecture/capability-api.md`, ADR-0002, ADR-0005 |
 | 2026-08-25 | Grants are keyed on `(origin, capability, pattern set)`, never on the capability kind | `../architecture/capability-api.md`, `../architecture/security-model.md` T19 |
 | 2026-08-25 | Handles are WHATWG streams; Node shapes are reconstructed by the shim (A10) | ADR-0008, `../architecture/capability-api.md` |
-| 2026-08-25 | The success metric is stated on `activeSec`, not on time the app is open | ADR-0004, `../mvp-scope.md` |
-| 2026-08-25 | The "115-130 installs" figure is withdrawn; the honest funnel is thousands of downloads | `../mvp-scope.md` |
-| 2026-08-25 | App #3 for the genericity test is the e2e fixture app | `../mvp-scope.md` |
-| 2026-08-25 | MP4/H.264 only in v0; MKV waits on a post-launch remuxer | `../planning/build-plan.md`, `../mvp-scope.md`, `README.md` |
+| 2026-08-25 | The success metric is stated on `activeSec`, not on time the app is open | ADR-0004, `../scope.md` |
+| 2026-08-25 | The "115-130 installs" figure is withdrawn; the honest funnel is thousands of downloads | `../scope.md` |
+| 2026-08-25 | App #3 for the genericity test is the e2e fixture app | `../scope.md` |
+| 2026-08-25 | MP4/H.264 only in v0; MKV waits on a post-launch remuxer | `../planning/build-plan.md`, `../scope.md`, `README.md` |
 | 2026-08-25 | Auto-install of updates is cut; v0 checks and notifies | `../planning/build-plan.md`, `ARCHITECTURE.md` |
 | 2026-08-25 | Tier-2 examples corrected: the hardware-wallet cluster is blocked on `hid` | `../architecture/app-compatibility.md` |
-| 2026-08-26 | Address-bar search via DuckDuckGo, added at build step 1 | `../mvp-scope.md` IN table |
+| 2026-08-26 | Address-bar search via DuckDuckGo, added at build step 1 | `../scope.md` IN table |
 | 2026-08-26 | Apps get the specific failure reason inside their grant; `denied` stays uniform | `../architecture/handle-contracts.md` §Errors |
 | 2026-08-27 | `origin` and `identityId` frozen: canonical origin, broker-generated opaque id | ADR-0010, `../architecture/capability-api.md` |
 | 2026-08-27 | Code guidelines: comments earn their place, 500-line files, one implementation per idea | `../development/code-guidelines.md` |
 | 2026-08-27 | Bundle-hash vector V5 re-expressed in percent-encoded form; the table is closed | ADR-0009, `../architecture/bundle-hash.md` |
-| 2026-08-28 | Bookmarks bar, real tab favicons and the new-tab dashboard added to scope | `../mvp-scope.md` IN table, ADR-0003 |
-| 2026-09-03 | There is no "open as app" action; the `<link>` hint is the only discovery trigger | `ARCHITECTURE.md`, `../architecture/capability-api.md`, `../mvp-scope.md` |
+| 2026-08-28 | Bookmarks bar, real tab favicons and the new-tab dashboard added to scope | `../scope.md` IN table, ADR-0003 |
+| 2026-09-03 | There is no "open as app" action; the `<link>` hint is the only discovery trigger | `ARCHITECTURE.md`, `../architecture/capability-api.md`, `../scope.md` |
 | 2026-09-03 | DDOC expands to "Domain Data Ownership Confirmation", canonical everywhere | `../glossary.md`, open-questions C1 |
 | 2026-09-03 | `+Privacy` placement withdrawn as a question; it follows from each ladder's top rung | `../glossary.md`, ADR-0006, open-questions B3 |
 | 2026-09-04 | A below-floor version is warned and chosen, never silently blocked | ADR-0013, `../architecture/security-model.md` T19 |
@@ -181,7 +182,7 @@ moved here so those documents can state the behaviour without the provenance.
 | 2026-09-21 | Ported third-party apps and the porting harness move to `orivon-ports`; `apps/` here keeps the flagship and the test fixtures | ADR-0020, `CLAUDE.md`, `ARCHITECTURE.md` |
 | 2026-09-22 | A port couples to the shell through storage assertions, not only a test path; where those assertions belong is unsettled | ADR-0020, open-questions B5 |
 | 2026-09-22 | The apps the test suite serves move to `test/apps/`; there is no top-level `apps/` directory. `test/apps/` is carved out of Rule 2's "test file" definition so the comment and size guards keep covering it | ADR-0020, `CLAUDE.md`, `ARCHITECTURE.md`, `../development/code-guidelines.md` |
-| 2026-09-22 | `apps/torrent/` is removed; the flagship has no directory here until build step 5 opens, and `build-plan.md` holds its design | ADR-0001, `../planning/build-plan.md`, `../mvp-scope.md` |
+| 2026-09-22 | `apps/torrent/` is removed; the flagship has no directory here until build step 5 opens, and `build-plan.md` holds its design | ADR-0001, `../planning/build-plan.md`, `../scope.md` |
 | 2026-09-22 | `src/main/` is organised into nine job-named directories, following the naming convention (not the directory count) `src/broker/` set | ADR-0023, ADR-0015 |
 
 ## Adding a row

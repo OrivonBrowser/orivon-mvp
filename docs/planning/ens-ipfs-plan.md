@@ -17,7 +17,7 @@ decided elsewhere; nothing here assumes an order relative to other work.
 [DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution),
 [Data gathering](https://docs.orivonstack.com/docs/implementations/data-gathering), and
 [Native DDOC](https://docs.orivonstack.com/docs/implementations/native-ddoc-specs). In this
-repository: [`mvp-scope.md`](../mvp-scope.md) (both features sit in its OUT table until EI-0
+repository: [`scope.md`](../scope.md) (both features sit in its OUT table until EI-0
 lands), [ADR-0006](../decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) (the trust
 indicator, which EI-0 amends), and
 [ADR-0007](../decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) (a bundle is
@@ -87,7 +87,7 @@ Owner, 2026-09-24. EI-0 records each in the decision log.
 
 - **A DNSLink name (`uniswap.eth`) is Level 1.** DDOC means the data is exactly what the domain
   owner wanted. A DNSLink's last hop is a DNS TXT record, which is forgeable on ICANN domains,
-  the same reason `mvp-scope.md` gives for DDOC's own DNS anchor (A4b). The bytes are still
+  the same reason `scope.md` gives for DDOC's own DNS anchor (A4b). The bytes are still
   verified against the CID that DNS returned, and the evidence says so.
 - **Third-party code does not break Level 2.** Level 2 holds while every byte from the site's own
   origin is verified. The canonical Level 3 is the one that forbids executing external code
@@ -144,7 +144,7 @@ decision 1 overrides.
 
 Docs only, one PR, merged first.
 
-- `mvp-scope.md`: move "Trustless resolution (ENS and friends)" and "IPFS" to IN, scoped to this
+- `scope.md`: move "Trustless resolution (ENS and friends)" and "IPFS" to IN, scoped to this
   build as `.eth` names and IPFS content; Arweave and DDOC's native DNS record stay OUT. The
   README's "No ENS, no IPFS" bullet is rewritten. `build-plan.md` is not touched.
 - `.claude/hookify.scope-creep.local.md`: drop `ipfs` and `ens\b` from the pattern.

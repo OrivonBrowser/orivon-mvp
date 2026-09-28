@@ -261,7 +261,7 @@ more slowly.
   platform's test cases, and build step 6 adds `.eth` names and IPFS delivery, verified on the
   machine rather than trusted to a server. The torrent app and Nostr identity are ideas, not
   build steps ([`ADR-0001`](docs/decisions/ADR-0001-flagship-app-bittorrent-streaming.md),
-  [`docs/mvp-scope.md`](docs/mvp-scope.md)).
+  [`docs/scope.md`](docs/scope.md)).
 - **Judged Web3 Score levels were out of the MVP. They are in**, from a provider that need not
   be trustless and may run locally. Each names its provider and is shown apart from what the
   machine observed ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).

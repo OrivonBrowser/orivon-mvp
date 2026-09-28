@@ -6,7 +6,7 @@ Forty-odd documents. Pick one of the three tracks below rather than reading them
 
 | | |
 |---|---|
-| 1. [`mvp-scope.md`](mvp-scope.md) | What the MVP proves, the metric that judges it, the four journeys, and what is deliberately out |
+| 1. [`scope.md`](scope.md) | What Orivon Browser proves first, the metric that judges it, the four journeys, and what is not built yet |
 | 2. [`architecture/capability-api.md`](architecture/capability-api.md) | The highest-care artefact here. What apps program against |
 | 3. [`architecture/handle-contracts.md`](architecture/handle-contracts.md) | What a `TcpSocket`, `FileHandle` or `IdentityHandle` actually does: backpressure, close semantics, errors, revocation |
 
@@ -103,7 +103,7 @@ Four reversals worth knowing about, because they are the ones people still repea
 | Question | Read |
 |---|---|
 | What is Orivon, long-term? | [orivon-docs](https://github.com/OrivonBrowser/orivon-docs), canonical, deployed at docs.orivonstack.com. Not duplicated here |
-| What is in the MVP? | [`mvp-scope.md`](mvp-scope.md) |
+| What is in this version? | [`scope.md`](scope.md) |
 | What do apps program against? | [`architecture/capability-api.md`](architecture/capability-api.md) |
 | What does a handle do? | [`architecture/handle-contracts.md`](architecture/handle-contracts.md) |
 | What identifies an app's content, and how is a change to it noticed? | [`architecture/bundle-hash.md`](architecture/bundle-hash.md), [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) |

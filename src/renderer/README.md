@@ -80,7 +80,7 @@ exposed read-only from `preload/shell.ts` (available even under `sandbox: true`)
 `document.documentElement.dataset.platform` at the top of `main.ts`, before first paint.
 
 **Bookmarks are a real feature, not decoration**
-(`docs/mvp-scope.md`, `ADR-0003`), and not in the original scope pass. `src/main/browsing/bookmarks.ts`
+(`docs/scope.md`, `ADR-0003`), and not in the original scope pass. `src/main/browsing/bookmarks.ts`
 holds the list and persists it; this directory only ever renders what it's sent and asks main
 to add/remove/open, the same pattern the tab strip already uses for tabs.
 

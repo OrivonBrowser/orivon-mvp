@@ -53,7 +53,7 @@ renderer fetch directly.** Provisional, not yet confirmed. The chrome view's CSP
 makes zero outbound requests. Letting the renderer `<img src>` an arbitrary, attacker-influenced
 `https://` URL directly would need `img-src 'self' https:` and hands a hostile page a live
 request from the privileged, cookie-bearing chrome origin: a new, silent tracking surface
-exactly where this codebase has been careful before (`mvp-scope.md` already flags DuckDuckGo
+exactly where this codebase has been careful before (`scope.md` already flags DuckDuckGo
 search itself as a stated "known limitation" for far less: leaving the machine at all). Fetching
 in main instead keeps the guarantee intact; the CSP only needs `img-src 'self' data:`.
 

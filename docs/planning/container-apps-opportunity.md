@@ -1,6 +1,6 @@
 # Native apps in a tab, via Linux containers
 
-**Status: parked, post-MVP. Not a commitment and not scheduled.** This document exists so the
+**Status: parked. Not a commitment and not scheduled.** This document exists so the
 analysis is not re-derived from scratch, and so the assumptions behind the numbers are visible
 when someone checks them. Explored with the owner on 2026-09-08 and 2026-09-09.
 
@@ -11,7 +11,7 @@ container, with a virtual screen inside that container, and stream its windows i
 Orivon tab. The user sees the app in a tab. The app sees a normal Linux desktop.
 
 `app-compatibility.md` places these in **tier 3** ("must rewrite the frontend, bundle a
-supervised helper process") and cuts them from the MVP for that reason, with Bisq as its worked
+supervised helper process") and cuts them from this version for that reason, with Bisq as its worked
 example. This approach is a fourth path that document does not consider: **tier 3 stops costing
 a rewrite and starts costing an image build.**
 
@@ -84,7 +84,7 @@ thing: see the assumptions below.
 ### What it reopens
 
 - **`subprocess`**, removed from v0 in `capability-api.md` on the grounds that no tier-3 app is
-  in the MVP and it "costs the largest attack surface in the design". This reopens it, but in a
+  in this version and it "costs the largest attack surface in the design". This reopens it, but in a
   much narrower shape: not "run any program", but "start the container image this manifest
   declares". The manifest states the image, whether it gets network, and which paths are
   mounted; the existing grant, prompt and revocation machinery then applies unchanged.
@@ -190,8 +190,8 @@ shows dialogs and resizing working or it does not.
 
 **CheerpJ**, which runs compiled Java inside a web page. Bisq is Java, so it would run in a tab
 and on every platform *by construction*, with no container, no virtual machine and no prerequisite,
-and the sockets it needs would come from `orivon.net`, meaning the MVP being built now would be
-the engine.
+and the sockets it needs would come from `orivon.net`, meaning the browser being built now would
+be the engine.
 
 **Whether it supports JavaFX is genuinely unknown to the author of this document**, and that
 single question decides whether the idea is excellent or dead. Checking is hours, not weeks:

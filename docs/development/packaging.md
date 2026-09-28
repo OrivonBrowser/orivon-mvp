@@ -16,7 +16,7 @@ certificates ([`docs/planning/build-plan.md`](../planning/build-plan.md) "Platfo
 ## `deb` is the primary artefact
 
 Not a coin flip between two equally good options. The project's success metric is measured in
-daily-driver hours ([`docs/mvp-scope.md`](../mvp-scope.md)), and only an **installed package**
+daily-driver hours ([`docs/scope.md`](../scope.md)), and only an **installed package**
 can put a `.desktop` file where `xdg-settings` looks for it. `xdg-settings
 set default-web-browser` walks `/usr/share/applications/`, not the filesystem in general, and a
 bare AppImage never places anything there on its own, and electron-builder's own docs say plainly

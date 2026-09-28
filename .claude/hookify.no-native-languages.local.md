@@ -13,5 +13,5 @@ conditions:
 
 This repository's code is TypeScript only. No Rust, no C++, no native addons. Apps Orivon runs
 are not bound by this: WebAssembly built from any language qualifies (ADR-0036). `orivon-runtime`
-(Wasmtime) is deferred, not cancelled, and is post-MVP. If this is really needed, it is an ADR,
+(Wasmtime) is deferred, not cancelled, and not built yet. If this is really needed, it is an ADR,
 not a file.

@@ -11,7 +11,7 @@ This is a synthesis; it does not restate what the linked documents already say.
 
 **Clear.**
 - What the MVP proves, and the metric that judges it: 100 active users in EU/USA at
-  25 h/month. The metric, not the long-term vision, decides scope (`mvp-scope.md`).
+  25 h/month. The metric, not the long-term vision, decides scope (`scope.md`).
 - The flagship, with reasoning recorded so it is not re-litigated (`ADR-0001`).
 - Three journeys that must work: the clip, the identity, the developer.
 - Everything classified: in / deferrable / later / unrelated, plus explicit public non-goals.

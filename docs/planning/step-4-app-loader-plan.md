@@ -165,7 +165,7 @@ leaves no surviving process and no temp profile behind.
   on the line between "an app installs" and "an app runs with the authority a person gave it".
 - **`net.listen`'s page wiring**, blocked on a nested-port IPC shape (`A114`), unrelated to
   this step.
-- **Anything in `mvp-scope.md`'s excluded rows.** Ambient filesystem, `subprocess`, `hid`/USB are
+- **Anything in `scope.md`'s excluded rows.** Ambient filesystem, `subprocess`, `hid`/USB are
   refusals, not gaps.
 
 ## Order and what may run at once

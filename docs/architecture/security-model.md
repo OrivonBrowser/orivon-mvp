@@ -9,7 +9,7 @@ an ordinary browser never does.
 they were granted) rather than *containment*. If the broker has a hole, a hostile app has the user's
 machine.
 
-This is stated in the product (`mvp-scope.md` non-goals), it is why developer mode carries a
+This is stated in the product (`scope.md` non-goals), it is why developer mode carries a
 real warning rather than a reassuring one, and it is the concrete reason `orivon-runtime`
 exists on the roadmap (`ADR-0002`).
 
@@ -173,8 +173,8 @@ build step explain why.
 
 ## Capabilities excluded from v0, on security grounds
 `subprocess` and `hid` are absent from the v0 API entirely, for signed apps too, not merely
-unsigned ones (`capability-api.md`). No MVP app needs them, and they are the largest available
-attack surface. Adding either requires an ADR.
+unsigned ones (`capability-api.md`). No app in this version needs them, and they are the largest
+available attack surface. Adding either requires an ADR.
 
 ## Cross-platform note
 `safeStorage` is Keychain on macOS and DPAPI on Windows, but on Linux requires an available
@@ -189,5 +189,5 @@ disk; the choice is not shown to the person for now, only logged.
 - A hostile app that a user deliberately installs in developer mode and grants capabilities to.
   That is the point of developer mode, and containment arrives with `orivon-runtime`.
 - A compromised build machine or a malicious release. There is no reproducible build and, on
-  Linux, no signing in month 1.
-- Traffic analysis. No Tor integration in the MVP.
+  Linux, no signing in v0.
+- Traffic analysis. No Tor integration in this version.

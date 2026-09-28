@@ -46,7 +46,7 @@ has no privileged access to anything here.
 
 - **Move all of `apps/`.** The fixture has nine references across the e2e suite, the native
   demo is bundled from real files on disk by two more, and the flagship is an IN row in
-  `mvp-scope.md` with its own ADR. Moving them would make this repository's test suite depend on
+  `scope.md` with its own ADR. Moving them would make this repository's test suite depend on
   a second checkout to run at all, in exchange for a tidier directory listing.
 - **Keep everything here and add the harness under `scripts/`.** Cheaper today. It makes the
   shell repository the home of third-party build tooling, and it means every contributor who
@@ -106,4 +106,4 @@ building it is held by `../planning/torrent-app.md`, not by `build-plan.md`.
   and nothing here imports from it; folding it back is a directory copy and a path change.
 - **What would make us revisit:** a port needing a privileged path a third-party app could not
   take. That would mean the capability API is not generic, which is a bigger finding than where
-  the files live — and it would fail the genericity test in `mvp-scope.md` rather than this ADR.
+  the files live — and it would fail the genericity test in `scope.md` rather than this ADR.

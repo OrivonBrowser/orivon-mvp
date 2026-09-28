@@ -3,7 +3,7 @@
 // receives a pushed snapshot and issues commands, never derives state
 // itself.
 //
-// Owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- bookmarks were
+// Owner override, 2026-08-28 (scope.md, ADR-0003) -- bookmarks were
 // not in the original scope pass; they arrived bundled with the chrome
 // restyle. ADR-0003's storage table gained a fifth tier for this: plain
 // JSON under <userData>, no safeStorage -- a bookmark list is not a

@@ -9,7 +9,7 @@
 // WebCrypto, not node:crypto, and no dependency. `globalThis.crypto.subtle` is
 // a global that exists in browsers, Node and WASI alike, so this layer outlives
 // the engine underneath it (ADR-0002). node:crypto would tie the durable asset
-// to the disposable one, which is precisely backwards.
+// to the engine beneath it, which is precisely backwards.
 //
 // Split across three files (Rule 2, docs/development/code-guidelines.md):
 // ./derive-encoding.ts (the wire format), this file (the frozen core --
@@ -59,7 +59,7 @@ export interface DeriveRequest {
 
   /**
    * WHERE THIS VALUE COMES FROM IS PART OF THE CONTRACT, because it is frozen
-   * into a key that cannot be exported, backed up or migrated in the MVP
+   * into a key that cannot be exported, backed up or migrated in this version
    * (ADR-0003). Two spellings of the same thing are two different identities.
    *
    *   label 'app'      -> the canonical origin, as produced by

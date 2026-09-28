@@ -3,7 +3,7 @@
 > This document defines the five handle types named but not specified in
 > `capability-api.md` §v0 surface: `TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`,
 > `IdentityHandle`. It is a sibling of that document, not a section inside it, and the same
-> care level applies (ADR-0002: the Electron shell is disposable, this interface is not),
+> care level applies (ADR-0002: the Electron shell is tied to one engine, this interface is not),
 > kept separate so the policy content in `capability-api.md` stays readable at its current
 > length.
 >

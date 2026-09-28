@@ -23,16 +23,16 @@ is replaced per library (§Where WASM fits). Where Orivon's Node environment fal
 Node, [`compatibility-matrix.md`](../planning/compatibility-matrix.md) lists the gap, and each
 gap is taken case by case.
 
-## What this implies for the MVP
+## What this implies for this version
 
-**The MVP's apps are tier 2.** Build step 5 ports Node.js and Electron desktop apps (FreeTube,
+**This version's apps are tier 2.** Build step 5 ports Node.js and Electron desktop apps (FreeTube,
 Element, AirGap Vault, ASGARDEX), each its own unmodified frontend plus one bridge file, in
 `orivon-ports`. Tier 2 is where the thesis is most literal: software that had to be a desktop app
 because a web page could not reach the network or the disk.
 
 **Nostr would be tier 1, at ~1 day.** Orivon would inject `window.nostr` (NIP-07) backed by
 `orivon.id`, and every existing Nostr web client would work unmodified with no extension
-installed. It is an idea, not a build step (`../mvp-scope.md` §LATER).
+installed. It is an idea, not a build step (`../scope.md` §LATER).
 
 **Mastodon was considered and rejected** (ADR-0001). Its *client* is tier 1, but the system
 is not trustless: identity is `@user@instance`, owned by the instance admin, and the feed
@@ -45,20 +45,20 @@ has. It is an idea, not a build step; `../planning/torrent-app.md` keeps what is
 Reuse is available even there: `webtorrent-desktop` is MIT-licensed Electron with a working
 player UI whose components can be lifted.
 
-**Bisq is tier 3** and is out of the MVP. Its UI is JavaFX, so nothing is reusable: it needs
+**Bisq is tier 3** and is not in this version. Its UI is JavaFX, so nothing is reusable: it needs
 both a new frontend *and* a bundled JVM, for an app used episodically rather than daily.
 
 > **A fourth path for tier 3, parked:**
 > [`../planning/container-apps-opportunity.md`](../planning/container-apps-opportunity.md).
 > Run the app unmodified inside a Linux container and stream its windows into a tab, so tier 3
 > costs an image build instead of a rewrite. It would also reach the tier-2 wallet cluster that
-> waits on `hid` (below). Post-MVP, unverified, and it reopens `subprocess`. But the
+> waits on `hid` (below). Not built, unverified, and it reopens `subprocess`. But the
 > "must rewrite" column above is not the only option, and that document says what it would cost.
 
 **What tier 2 actually reaches in v0.** Ledger Live, Trezor Suite and Frame are
 **hardware-wallet applications requiring `hid`/USB**, which `capability-api.md` excludes from v0
 entirely, for every tier. The apps build step 5 ports are the v0 examples; the wallet cluster
-waits on `hid`, a post-MVP capability.
+waits on `hid`, a capability not built yet.
 
 **"Swap Node calls for the shim" understates the shim's real surface.** Running `webtorrent` in a
 sandboxed renderer needs `Buffer`, `stream`, `events`, `crypto`, `path`, `os` and `process`
@@ -124,7 +124,7 @@ WebAssembly build (`sql.js` for `better-sqlite3`), which is the usual substitute
 GUI toolkit, so WebAssembly does not turn a Qt or JVM app into a tier-2 app.
 
 **Not as a host, in this build.** `orivon-runtime`, a WASI host that would run WebAssembly with no
-JavaScript around it, is post-MVP (ADR-0002). Its real jobs are narrower: containment for
+JavaScript around it, is not built yet (ADR-0002). Its real jobs are narrower: containment for
 untrusted third-party code, and portability to mobile. A standalone WASI program has nothing to
 host it today (`compatibility-matrix.md` Table 4).
 

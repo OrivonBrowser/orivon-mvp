@@ -4,23 +4,23 @@
 here. This document covers what it does not: how a capability call actually travels, which parts
 of the codebase are meant to survive, and which decisions are already settled.
 
-## What is disposable, and what is not
+## What is tied to Electron, and what is not
 
-Almost all of this is disposable on purpose: the Electron shell, the preload, the renderer
-chrome, the Node shim. Each exists to make the current version work, and each would be rewritten
-if the foundation underneath changed.
+Almost all of this is tied to Electron: the shell, the preload, the renderer chrome, the Node
+shim. Each is how the current version works, and each would be rewritten if the foundation
+underneath changed.
 
 One thing would not, and that is the interface apps program against, in
 [`src/contracts/`](src/contracts/). An app calls `orivon.net.connect({ host, port })`; today
 that is a Node `net.Socket` in an Electron main process, and the interface is shaped so it could
 be something else later without any app already written having to change.
 
-That is a property of the design, not a plan. A WASM runtime and a browser-engine fork are both
-out of scope ([`docs/mvp-scope.md`](docs/mvp-scope.md) §LATER).
+That is a property of the design, not a plan. A WASM runtime is not scheduled
+([`docs/scope.md`](docs/scope.md) §LATER).
 
-The practical rule that follows: a shortcut in `src/main/` costs a refactor of code that was
-going to be replaced anyway. A shortcut in `src/contracts/` costs every app ever written for
-Orivon. Spend your care accordingly.
+The practical rule that follows: a shortcut in `src/main/` costs a refactor of code tied to
+Electron. A shortcut in `src/contracts/` costs every app ever written for Orivon. Spend your care
+accordingly.
 
 ## How a capability call reaches the OS
 
@@ -58,19 +58,18 @@ avoids the TOCTOU race where a check and its use disagree.
 
 ## Where things live
 
-The third column answers one question: if the Electron shell were thrown away tomorrow, would
-this code have to be rewritten? It is a measure of where care is worth spending, not a plan to
-throw anything away.
+The third column answers one question: if the engine beneath Orivon changed, would this code
+have to be rewritten? It is a measure of where care is worth spending.
 
 | Directory | What | Tied to Electron? |
 |---|---|---|
 | [`src/contracts/`](src/contracts/) | The `orivon.*` interface, types only | **No. This is the asset.** It imports nothing, by enforced rule |
 | [`src/broker/policy/`](src/broker/policy/) | Pure decision functions: capability matching, path confinement, origin derivation | **No.** No Electron, no I/O, portable anywhere |
 | [`src/broker/`](src/broker/) | Grants, prompts, session partitions, handle tables | Partly: the decisions are portable, the OS plumbing relies on Electron |
-| [`src/main/`](src/main/) | Window, tabs, consent dialogs, permissions, app install, subsystem registry | **Entirely. Knowingly disposable** |
+| [`src/main/`](src/main/) | Window, tabs, consent dialogs, permissions, app install, subsystem registry | **Entirely** |
 | [`src/preload/`](src/preload/) | The privilege boundary | **Entirely.** "preload" is an Electron concept |
 | [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the site's published hash tree, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
-| [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer, by design temporary |
+| [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer over `orivon.*` |
 | [`src/renderer/`](src/renderer/) | Browser chrome UI | **Entirely** |
 | [`src/resolution/`](src/resolution/) | The name-resolver and data-gatherer interfaces, and the registry that orders them | **No.** Pure types and decisions |
 | [`src/ens/`](src/ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | **No** |
@@ -133,8 +132,8 @@ you disagree with one, the ADR is where the objections are already answered.
   addon does not carry over
   ([`ADR-0036`](docs/decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)).
 - **The capability API is the durable asset.** A WASM runtime is deferred, not cancelled:
-  containment for untrusted code and mobile portability are both real goals, and both post-MVP
-  ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
+  containment for untrusted code and mobile portability are both real goals, and neither is
+  built yet ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
 
 **How an app reaches you**
 
@@ -216,5 +215,5 @@ resolution overrides in `electron.vite.config.ts`.
 | [`src/contracts/`](src/contracts/) | The product surface, in seven files |
 | [`docs/architecture/capability-api.md`](docs/architecture/capability-api.md) | The specification those files transcribe |
 | [`docs/architecture/handle-contracts.md`](docs/architecture/handle-contracts.md) | What each handle does: backpressure, close semantics, errors, revocation |
-| [`docs/architecture/security-model.md`](docs/architecture/security-model.md) | The threat model. The MVP's model is authorisation, not containment; see [`SECURITY.md`](SECURITY.md) |
+| [`docs/architecture/security-model.md`](docs/architecture/security-model.md) | The threat model. This version's model is authorisation, not containment; see [`SECURITY.md`](SECURITY.md) |
 | [`docs/development/parallel-work.md`](docs/development/parallel-work.md) | How several people work here at once |

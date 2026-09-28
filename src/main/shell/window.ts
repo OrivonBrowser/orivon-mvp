@@ -164,7 +164,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // electron.vite.config.ts's `newtab` entry.
   const dashboardUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/newtab/', '../renderer/newtab/index.html')
 
-  // Bookmarks: owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not
+  // Bookmarks: owner override, 2026-08-28 (scope.md, ADR-0003) -- not
   // in the original scope pass, arrived bundled with the chrome restyle.
   // A separate store, not folded into TabManager -- tabs and bookmarks
   // change independently and neither needs to know the other exists;

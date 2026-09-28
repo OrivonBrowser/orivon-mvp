@@ -9,7 +9,7 @@
 // normal page navigation which is already sandboxed.
 //
 // Owner decision, 2026-08-26: non-address input goes to DuckDuckGo
-// (mvp-scope.md IN table, updated the same day -- this is a deliberate
+// (scope.md IN table, updated the same day -- this is a deliberate
 // scope addition, not a silent one).
 
 export type OmniboxResult =

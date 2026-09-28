@@ -13,22 +13,22 @@ Nothing in this file is a decision. Decisions live in `docs/decisions/`.
 `docs.orivonstack.com`, remote `github.com/OrivonBrowser/orivon-docs`, Apache-2.0.
 Last commit `5fdfb93` (2026-03-03). **This is the newest and canonical copy.**
 
-| File | Content | MVP relevance |
+| File | Content | Relevance now |
 |---|---|---|
 | `docs/orivon.mdx` | Master vision doc: Web3 problems, Applications system, Web3 Scores, Advanced WASM, appstore, search, DDOC, connection settings | **High**, contains the core thesis |
 | `docs/technical-design/orivon-runtime.mdx` | WASM host: Wasmtime + WASI + Component Model/WIT; module identity (`bitcoin.node.metamask`); Library/Module/Group module kinds; permissions + OS grants | **High**, the closest thing to an architecture spec |
 | `docs/technical-design/orivon-core.mdx` | 15-line stub. `orivon-core` = official client wrapping `orivon-runtime`, enforces standards, embedded in browser | **High but nearly empty** |
 | `docs/technical-design/standards.mdx` | Interface definitions for `group.net.dns`, `group.net.data-gather`, `group.net.web3score`, `group.crypto.account`. TODO list for btc/eth/address-book/network groups | **High**, the only concrete API surface |
-| `docs/technical-design/orivon-objects.mdx` | `CapabilityDescriptor` schema + 6 worked examples (HW wallet, mnemonic, eIDAS smart card, KeePassXC, Binance custodial) | Medium: wallet layer, likely post-MVP |
+| `docs/technical-design/orivon-objects.mdx` | `CapabilityDescriptor` schema + 6 worked examples (HW wallet, mnemonic, eIDAS smart card, KeePassXC, Binance custodial) | Medium: wallet layer, not built yet |
 | `docs/implementations/dns-resolution.md` | Pluggable TLD resolution, priority table, fallback | Medium |
 | `docs/implementations/data-gathering.md` | Pluggable content fetch (IPFS/Arweave/IP+proxy), priority + fallback, reports DDOC status | Medium |
 | `docs/implementations/native-ddoc-specs.md` | DDOC wire format: `DDOC <version> <hash>` DNS record, Core hash-tree + per-page hash-trees, `page.html.hashes`, generator script via headless Chromium | Medium |
 | `docs/implementations/web3-score.md` | Trustlessity levels for Websites (4) / Operations (5) / Connections (3), `+Privacy` bonus. Security levels = "Work in progress" | Medium; see contradictions |
-| `docs/implementations/wallet-system.md` | 3 layers: Accounts / Crypto (TAGs e.g. `MONERO_V1`) / Address book | Low for MVP |
-| `docs/implementations/dashboard-app.md` | Android-style resizable widget grid as new-tab page | Low for MVP |
-| `docs/roadmap.mdx` | Current phase = "Establishing a solid Elite Team". Build order: philosophy → team → community → name → **funding → build browser**. 3 funding stages: 30-80k / 150-400k / 750k-2M | **High**, and defines what the MVP is *for* |
+| `docs/implementations/wallet-system.md` | 3 layers: Accounts / Crypto (TAGs e.g. `MONERO_V1`) / Address book | Low for now |
+| `docs/implementations/dashboard-app.md` | Android-style resizable widget grid as new-tab page | Low for now |
+| `docs/roadmap.mdx` | Current phase = "Establishing a solid Elite Team". Build order: philosophy → team → community → name → **funding → build browser**. 3 funding stages: 30-80k / 150-400k / 750k-2M | **High**, and defines what this repository is *for* |
 | `docs/economical-strategy.md` | Revenue: featured placement, default search engine, paid Web3-Score evaluation priority | Context (see contradictions) |
-| `docs/dao-plan.mdx` | Pre-DAO (Discord polls) → After-DAO (on-chain, treasury). Merit-tracked token distribution. Dev salary 60-80% cash / 40-20% tokens | Not MVP |
+| `docs/dao-plan.mdx` | Pre-DAO (Discord polls) → After-DAO (on-chain, treasury). Merit-tracked token distribution. Dev salary 60-80% cash / 40-20% tokens | Not a browser feature |
 | `docs/involving.mdx` | Roles sought: Community growth, **Rust/C++ dev**, HTML/CSS/JS, NodeJS, Solidity, Partnership, Investor | Context |
 | `docs/more/mobile-note.md` | No mobile design yet; architecture intended to stay mobile-portable | Constraint |
 | `docs/more/acknowledgements.md` | Contributors: Kai (community), WowSeoWeb3 (partner, prospective Web3-Score provider), Alirem, Peter | Context |
@@ -59,7 +59,7 @@ Contains untranslated Italian `TODO:` markers, so it is mid-draft.
 
 | File | Lines | Content |
 |---|---|---|
-| `Introduction.md` | 49 | Purpose of the book; author bio; the "Orivon theory": *Web3 is revolutionary; the only thing missing is easy interfaces*. `TODO: aggiungere roadmap` (Where Orivon stands / What Orivon builds first / How Orivon builds). **This is exactly the MVP question, and it is unwritten** |
+| `Introduction.md` | 49 | Purpose of the book; author bio; the "Orivon theory": *Web3 is revolutionary; the only thing missing is easy interfaces*. `TODO: aggiungere roadmap` (Where Orivon stands / What Orivon builds first / How Orivon builds). **This is exactly the question `scope.md` answers, and the book leaves it unwritten** |
 | `Web3 Potential.md` | 173 | The strategic frame. Web ladder: *Web1 = protocols to read, Web2 = easy interfaces to read/write, Web3 = protocols to own, **Web4 = easy interfaces to use***. Argues Web3's value comes from globalising **supply** + maximum trust in that supply. Market table (Ethereum, Polymarket, Filecoin, Helium, Akash, Power Ledger). Historical analogy: Netscape/IE opened Web2 in 1995-96 → **Orivon intends to be the "Web4 era starter"**. One unverified economic claim (Web3 = +5-10% global economy vs +3.4% for Web1+2) sourced only to a ChatGPT share link |
 | `Orivon_ How_.md` | 119 | **The most important single file in the corpus.** Motivation × Ability behavioural frame. Names **10 desktop adoption barriers**, then maps each to a feature, then justifies each mapping. Explicitly states: *"this is the source code of the Orivon idea"* and *"if the Team building Orivon fails to follow that scheme, it is reasonable that goes wrong"* |
 | `New Empires.md`, `Orivon DAO Empire.md`, `Resources.md` | 0 | Planned, empty |
@@ -125,7 +125,7 @@ an onboarding flow that was removed for crashing, and wallet init moved to main 
 > Not a baseline, not a reference architecture. Its only value is as evidence about
 > what went wrong; see `docs/open-questions.md`.
 
-**`<website-repo>`**: Next.js marketing site. Unrelated to MVP.
+**`<website-repo>`**: Next.js marketing site. Unrelated to the browser.
 
 **`github.com/OrivonBrowser/native-ddoc-lib`**: referenced from `roadmap.mdx` as a
 contributor proof-of-concept for DDOC. Not present locally; not yet reviewed.

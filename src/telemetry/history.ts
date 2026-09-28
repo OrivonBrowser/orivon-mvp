@@ -37,7 +37,7 @@ export const initialHistoryState: HistoryState = { entries: [] }
  * No document sizes this figure (flagged -- AI judgment call, the same
  * status as accounting.ts's DEFAULT_IDLE_TIMEOUT_MS): at most one entry
  * is produced per period, so 36 covers three years of monthly sends --
- * comfortably past this MVP's measurement window -- without a long-lived
+ * comfortably past the success metric's measurement window -- without a long-lived
  * install growing the record forever. A caller may override it; see
  * recordSent.
  */

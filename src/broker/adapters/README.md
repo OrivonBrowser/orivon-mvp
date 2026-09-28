@@ -20,8 +20,8 @@ decision; it performs one already taken.
 lines) are the whole of it, and that is the point rather than an oversight: this is the
 **only** place in the broker where a real address is dialled or a real path is opened, so an
 auditor asking "where does this program touch the network or the disk?" has two files, not a
-search. It is also the layer `ADR-0002` calls disposable: a different engine replaces this
-directory and leaves [`../handles/`](../handles/) and [`../policy/`](../policy/) untouched.
+search. It is also the layer tied to Electron (`ADR-0002`): a different engine would replace this
+directory and leave [`../handles/`](../handles/) and [`../policy/`](../policy/) untouched.
 `udp.send` and the fs quota reconciliation land here when they are built.
 
 ## Design notes

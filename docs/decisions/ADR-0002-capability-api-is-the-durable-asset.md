@@ -66,7 +66,7 @@ Two consequences, stated rather than smoothed over:
   broker policy.
 
 `orivon-runtime`'s **mobile portability** justification is untouched. Its containment
-justification is now open, and `mvp-scope.md` states it publicly, so this matters beyond the
+justification is now open, and `scope.md` states it publicly, so this matters beyond the
 repository.
 
 ## Amendment recorded 2026-09-26
@@ -78,6 +78,15 @@ JavaScript does, through `orivon.*`. The Wasmtime "different app model" above is
 JavaScript around it, calling a WASI host, and remains deferred. The "capability-bearing WASM inside
 the renderer's own V8" alternative below is impossible only in the sense it states, raw sockets from
 inside the sandbox; nothing needs that.
+
+## Amendment recorded 2026-09-28
+
+**6. The Electron shell is the foundation, no longer "explicitly disposable".** This repository is
+Orivon Browser, not an MVP: built on Electron, mostly in TypeScript, it gains the vision's features
+one at a time as a need calls for each. Read "month 1" and "the MVP" above as *this version*. The
+shell is labelled *tied to Electron* (`CLAUDE.md` Rule 5), not disposable. The decision stands: the
+capability API is the durable asset, specified with care so that the implementation beneath it
+could change without any app already written having to change.
 
 ## Context
 The public technical design (`orivon-runtime.mdx`, `orivon-core.mdx`,

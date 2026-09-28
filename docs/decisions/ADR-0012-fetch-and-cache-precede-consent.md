@@ -71,7 +71,7 @@ it as free.
 ## Context
 `ADR-0005`'s original "Delivery model" line specified the opposite order: *"fetch → show the
 capability grant prompt → cache → run from cache thereafter."* That line was never touched when
-PR #63 cut the "Open as app" menu action and rewrote `capability-api.md`, `mvp-scope.md` and
+PR #63 cut the "Open as app" menu action and rewrote `capability-api.md`, `scope.md` and
 `ARCHITECTURE.md` around the fetch-then-cache-then-defer-consent model, so as of that PR, two
 accepted documents in this repository stated incompatible answers to the same question: does the
 browser ever put a website's files on the user's disk before asking them anything?
@@ -136,7 +136,7 @@ The core argument is the popup-fatigue one above, stated once more directly: **c
 worth asking for when it is legible.** "This site wants to connect to a server" is a decision a
 user can actually reason about. "This site might, at some future point, want something" is not a
 decision at all: it is a checkbox nobody reads, on a browser whose entire differentiator is that
-its permission prompts are supposed to *mean something* (`mvp-scope.md`'s journey 1, the flagship
+its permission prompts are supposed to *mean something* (`scope.md`'s journey 1, the flagship
 clip, exists specifically to put a real, legible grant prompt on camera). Moving consent to
 install time would cheapen the one moment this product is built around.
 
@@ -228,7 +228,7 @@ turn one visit into an unbounded stream of fetches.
 - **Cost to reverse:** moderate. Reverting to "prompt before fetch" is a design and UX change, not
   a data-format or protocol change. No cached bundle, grant record, or hash pin depends on
   *when* consent was asked, only on *whether* it was. The cost is mostly in re-litigating the UX
-  (a prompt has to reappear somewhere, and journey 2 in `mvp-scope.md` would need rewriting again)
+  (a prompt has to reappear somewhere, and journey 2 in `scope.md` would need rewriting again)
   and in the fact that, once real users have experienced silent installs, reintroducing an
   install-time prompt reads as the product becoming more invasive, not less, which is a harder sell than
   shipping it that way from the start.

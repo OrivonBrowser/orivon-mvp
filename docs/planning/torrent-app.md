@@ -1,7 +1,7 @@
 # A torrent app: what is already known
 
 **An idea, not a build step.** A BitTorrent streaming app is listed under
-[`mvp-scope.md`](../mvp-scope.md) §LATER: nobody is building it, and nothing in this repository
+[`scope.md`](../scope.md) §LATER: nobody is building it, and nothing in this repository
 waits on it. [`ADR-0001`](../decisions/ADR-0001-flagship-app-bittorrent-streaming.md) has the
 case for building one. This page keeps what the week-0 spike and the planning around it
 established, so whoever picks the idea up does not re-derive it.
@@ -80,7 +80,7 @@ one that actually governs, and `ADR-0006` exists to prevent exactly this kind of
 ## Limitations it would state in-product
 
 - **MP4/H.264 only.**
-- **Swarm peers see the user's IP.** There is no Tor in the MVP.
+- **Swarm peers see the user's IP.** There is no Tor in this version.
 - **Seeding behind NAT is reduced.** No UPnP, so no automatic port forwarding.
 - **Local peer discovery is unavailable.** The manifest grammar has no multicast bind.
 - **UDP binds are IPv4-only**, so the DHT does not work at all on an IPv6-only network, and a

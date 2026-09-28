@@ -74,7 +74,7 @@ reach it usually isn't.
 That is a browser limitation, not a protocol limitation. Orivon removes it: the page gets the
 capability, under a permission you granted, so a decentralised app can just be a web page.
 
-Two things in this MVP demonstrate it:
+Two things in this version demonstrate it:
 
 - Desktop apps in a tab. Node.js and Electron apps that needed a desktop client to reach the
   network run from a URL instead, under permissions you granted.
@@ -83,13 +83,14 @@ Two things in this MVP demonstrate it:
   for correctness. It is trust-minimised rather than trustless: the root is a chain checkpoint,
   and the servers can still withhold.
 
-**What is not in this MVP.** These are scope boundaries for *this month's build*, not statements
-about where Orivon is going. The difference matters, so it is spelled out:
+**What is not in this version.** These are boundaries of what is built today, not statements
+about where Orivon is going: promised features land one at a time, as a need calls for each. The
+difference matters, so it is spelled out:
 
 - **No funds movement.** An app can hold a signing key the browser derives for it
   (`orivon.id`), which the project calls a Web3 Account. It holds no funds, shows no seed
   phrase, and cannot send or receive. The wallet is a long-term goal rather than a rejected idea: the design
-  has three layers (Accounts, Crypto, Address book), and this MVP ships only the first. The
+  has three layers (Accounts, Crypto, Address book), and this version has only the first. The
   other two need a meaningfully different security model and come later.
 - **No torrent client and no Nostr identity.** Both are ideas the project may come back to, and
   neither is scheduled in this build.
@@ -102,12 +103,12 @@ about where Orivon is going. The difference matters, so it is spelled out:
 The longer framing, in the project's own words, is *Web4*: easy interfaces to **use** Web3, in
 the way Web2 gave easy interfaces to read and write Web1. That vision, including the wallet
 layers and the DAO, lives in
-[orivon-docs](https://github.com/OrivonBrowser/orivon-docs). This repository is deliberately
-narrower than the vision: it is one testable claim, tested first.
+[orivon-docs](https://github.com/OrivonBrowser/orivon-docs). This repository is Orivon
+Browser, growing toward that vision one feature at a time.
 
 ## Roadmap
 
-**In this MVP.** [`docs/planning/build-plan.md`](docs/planning/build-plan.md) has the detail.
+**In this version.** [`docs/planning/build-plan.md`](docs/planning/build-plan.md) has the detail.
 Strictly dependency-ordered; each step needs the one before it.
 
 | | Step | State |
@@ -124,8 +125,8 @@ Strictly dependency-ordered; each step needs the one before it.
 | 9 | **Developer mode**: load an unpacked app | |
 | 10 | **Packaging**: AppImage and deb | |
 
-**Deliberately deferred.** These are choices, not oversights, and every one of them is still on
-the long-term plan ([`docs/mvp-scope.md`](docs/mvp-scope.md)): DDOC anchored in DNS · Arweave as
+**Not built yet.** These are choices, not oversights: each is still on the plan, and lands when a
+need calls for it ([`docs/scope.md`](docs/scope.md)): DDOC anchored in DNS · Arweave as
 a delivery path · an app store · the wallet's Crypto and Address-book layers · identity export
 and backup · `subprocess` and `hid` capabilities · signed Windows and macOS installers.
 
@@ -133,9 +134,7 @@ and backup · `subprocess` and `hid` capabilities · signed Windows and macOS in
 every client).
 
 **Longer term, and not scheduled:** a WebAssembly runtime for containing untrusted apps ·
-mobile · Tor and proxy chains · cross-device sync. A browser-engine fork is a hypothesis about
-where this could eventually go. Nobody is working on it, and nothing here depends on it
-happening.
+mobile · Tor and proxy chains · cross-device sync.
 
 *This roadmap covers the product. Orivon's organisational plans (the DAO, the treasury,
 contribution and token distribution) are real, and they live in
@@ -144,18 +143,16 @@ not browser features.*
 
 ## The idea underneath
 
-This repository is an Electron app, and it is meant to be replaceable. The thing built to last
-is the *interface* apps are written against: seven files of TypeScript types in
-[`src/contracts/`](src/contracts/), with no implementation in them at all.
+Orivon Browser is built on Electron. The thing built to last is the *interface* apps are written
+against: seven files of TypeScript types in [`src/contracts/`](src/contracts/), with no
+implementation in them at all.
 
 An app calls `orivon.net.connect()`. Today that reaches a Node socket in an Electron main
 process. The interface is designed so it could reach something else entirely one day without any
 app already written having to change a line.
 
-That is a property engineered into the design rather than a roadmap: nobody is building a
-browser engine, and nothing in this MVP depends on anyone ever doing so. It costs nothing extra
-now, and it means apps written this year aren't thrown away if the thing underneath them
-changes.
+That is a property engineered into the design rather than a roadmap. It costs nothing extra now,
+and it means apps written this year aren't thrown away if the thing underneath them changes.
 
 If you want to know what Orivon actually is, read those seven files before anything else.
 [`ARCHITECTURE.md`](ARCHITECTURE.md) explains how they fit together, and which design choices
@@ -171,8 +168,8 @@ were deliberate.
 
 The long-term vision lives in a separate repository,
 [orivon-docs](https://github.com/OrivonBrowser/orivon-docs) (deployed at docs.orivonstack.com).
-This repository is deliberately narrower: it is the MVP, and
-[`docs/mvp-scope.md`](docs/mvp-scope.md) says what is in it and what is not.
+This repository is Orivon Browser, built toward that vision a feature at a time, and
+[`docs/scope.md`](docs/scope.md) says what this version has and what it does not yet.
 
 ## Known limitations of v0
 

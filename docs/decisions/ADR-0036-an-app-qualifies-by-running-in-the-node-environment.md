@@ -63,7 +63,7 @@ Orivon's, because the renderer already is one.
 
 ## Reasoning
 
-The thesis is that a desktop app becomes a URL (`mvp-scope.md` journey 1). What decides whether
+The thesis is that a desktop app becomes a URL (`scope.md` journey 1). What decides whether
 an app can make that move is whether its code executes where Orivon puts it, and WebAssembly
 executes there exactly as it executes in Node. A source language makes no difference to how an
 app runs. Running in the Node environment does: it is the environment the shim reproduces and

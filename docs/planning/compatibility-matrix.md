@@ -139,7 +139,7 @@ as owned by the `shim` stream, matching Table 2's `net, dgram, fs, Buffer, strea
 | Unmapped Node builtins: `child_process`, `vm` | `dup` | ported apps, and their dependency trees | ❌ missing | Absent from [`module-map.ts`](../../src/shim/module-map.ts), so the renderer build fails to resolve the specifier. That is a build error, not the named refusal `refusingProxy` gives an unmapped member *inside* a mapped module. `child_process` is the one that is a refusal rather than a gap (Table 1, `subprocess`) |
 | The app's own preload surface (`window.<name>`) | `dup` | every app ported from Electron | ➖ per-app | Table 2's fourth family. Not in `src/` at all, and not in this repository: one file per app, in `orivon-ports` |
 | `worker_threads` | `dup` | validation-heavy work | ❌ missing | Web Workers are already in the renderer, so the substrate exists and no Table 1 entry is needed; the shape does not match and a shim cannot fully fake it. A fidelity problem, not a substrate one |
-| Background lifetime | **`outside`** | seeding, syncing, pinning | ⚠️ **unspecified** | Nothing in Node, `electron` or the web platform means "keep running once the tab is gone". Shell holds the process, contracts describe it, UI shows it. `mvp-scope.md` counts `backgroundSec` in the metric but nothing grants it. An app tab that is not the active one is hidden, and keeps Chromium's default throttling of hidden pages |
+| Background lifetime | **`outside`** | seeding, syncing, pinning | ⚠️ **unspecified** | Nothing in Node, `electron` or the web platform means "keep running once the tab is gone". Shell holds the process, contracts describe it, UI shows it. `scope.md` counts `backgroundSec` in the metric but nothing grants it. An app tab that is not the active one is hidden, and keeps Chromium's default throttling of hidden pages |
 | Ambient FS (`~/.bitcoin`) | **`outside`** | migrating an installed app | 🚫 excluded by design | A refusal, not a gap. `fs` is rooted; `userSelected` is a picker, not a mount. `src/shim-electron/app.ts`'s `getPath` enforces the identical boundary for any name but `'userData'` |
 | Secure seed storage (OS keyring, `safeStorage`) | **`dup`** | `orivon.id` surviving a restart, `window.nostr` behind it, `orivon.secrets` | ✅ built | [ADR-0003](../decisions/ADR-0003-local-first-storage.md) puts the identity seed behind Electron `safeStorage` and says **no app, ever** -- amended by [ADR-0033](../decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md) to add: an app may hold its own *derived*, origin-bound secret with a grant, never the seed. Production's `Keychain` ([`electron-keychain.ts`](../../src/main/keyring/electron-keychain.ts)) uses the async `safeStorage` trio; a keyring the async trio cannot reach (`isAsyncEncryptionAvailable()` false, or the selected backend is `basic_text`/`unknown`) yields a **session-only** seed, generated fresh and never written to disk in plaintext -- the file is also never overwritten once one exists but fails to decrypt ([`seed-store.ts`](../../src/main/keyring/seed-store.ts)). `orivon.secrets.available()` is exactly this signal, surfaced to an app so it can choose not to rely on persistence rather than lose data silently |
 | Desktop shell (tray, autostart, protocol handlers, hotkeys) | **`outside`** | Electron apps' outer half | ⚠️ partial | `BrowserWindow`/`Menu`/`Tray` are explicit, tested named refusals (`src/shim-electron/desktop-shell.ts`); autostart, protocol handlers and hotkeys are simply absent |
@@ -203,7 +203,7 @@ wrong, not on the build toolchain.
 
 | Library | Why an app wants it | Renderer answer that exists today | Verdict |
 |---|---|---|---|
-| `better-sqlite3` | local relational store | `sql.js` / `wa-sqlite` (WASM SQLite) over `orivon.fs`, or IndexedDB | ✅ No capability needed. Slower; irrelevant at MVP scale |
+| `better-sqlite3` | local relational store | `sql.js` / `wa-sqlite` (WASM SQLite) over `orivon.fs`, or IndexedDB | ✅ No capability needed. Slower; irrelevant at this scale |
 | `leveldown` / `classic-level` | key-value store | `browser-level` (IndexedDB), `memory-level`; the level ecosystem ships browser backends by design | ✅ No capability needed |
 | `secp256k1` bindings | ECDSA / Schnorr | `@noble/secp256k1`, pure JS and audited; plus `orivon.id.sign` for the user's key | ✅ No capability needed. ~10x slower, still thousands of ops/sec |
 | `node-datachannel` | WebRTC inside Node | the renderer has real `RTCPeerConnection` | ✅ Evaporates. `check-no-native-modules.mjs` names this exact chain as the threat; in a renderer it isn't one |
@@ -212,7 +212,7 @@ wrong, not on the build toolchain.
 **What the question is really pointing at is a real gap:** the missing thing is not permission
 to compile C++, it is **a place to run non-renderer code**. `ADR-0005` dissolved the "app
 backend", so all app code runs in the renderer. Preinstalled natives only pay off once something can
-load them on an app's behalf: `subprocess`, or the container path. Both post-MVP.
+load them on an app's behalf: `subprocess`, or the container path. Neither is built yet.
 
 ## Table 6: how to update this
 

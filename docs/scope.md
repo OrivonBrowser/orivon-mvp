@@ -1,10 +1,11 @@
-# MVP scope
+# Scope
 
 > **Draft.**
 > The long-term vision lives in `orivon-docs` and in the OrivonBook drafts
-> (`docs/inventory.md` §1b). This document is deliberately narrower than both.
+> (`docs/inventory.md` §1b). This document says which parts of it Orivon Browser has in this
+> version; the rest lands one feature at a time, as a need calls for each.
 
-## What the MVP proves
+## What Orivon Browser proves first
 
 That a browser can run applications which are impossible in Chrome, reaching the network and
 the filesystem directly under user-granted, per-app capabilities, while those applications are
@@ -17,7 +18,7 @@ Everything else in Orivon's vision is downstream of that being true.
 **100 active users in EU/USA, where active = 25 hours/month of `activeSec`.**
 
 That is ~50 min/day of *actual use*, i.e. daily-driver usage. This metric, not the long-term
-vision, decides what is in scope.
+vision, decides what comes first.
 
 `ADR-0004` reports `activeSec` (window focused, user interacting within an idle timeout)
 separately from `backgroundSec` (running, idle, syncing, seeding), and the metric is stated on
@@ -61,7 +62,7 @@ and choosing channels happens outside this repository.
 4. **The developer.** Write a JSON manifest and a frontend → load unpacked → an app with real
    network access, in an afternoon.
 
-If these work, the MVP has done its job. None of them is yet named as the distribution asset
+If these work, this version has done its job. None of them is yet named as the distribution asset
 (`open-questions.md` A249).
 
 ---
@@ -71,7 +72,7 @@ If these work, the MVP has done its job. None of them is yet named as the distri
 | Item | Why it is essential |
 |---|---|
 | Shell: tabs, omnibox, back/forward | It has to be a browser, or the thesis is untested |
-| Address-bar search via DuckDuckGo | Added at build step 1, not in the original scope pass. Non-address input needs *some* resolution or the omnibox rejects plain text outright; DuckDuckGo chosen over a settings-based picker (no settings screen exists in month 1) and over addresses-only. Known limitation, stated in-product: search text leaves the machine (`README.md` §Known limitations of v0) |
+| Address-bar search via DuckDuckGo | Added at build step 1, not in the original scope pass. Non-address input needs *some* resolution or the omnibox rejects plain text outright; DuckDuckGo chosen over a settings-based picker (no settings screen existed at build step 1) and over addresses-only. Known limitation, stated in-product: search text leaves the machine (`README.md` §Known limitations of v0) |
 | **Capability broker**: manifest, grants, per-origin enforcement | This *is* the product. `ADR-0002` |
 | **`orivon-node-shim`** | Load-bearing: without it a Node.js app cannot run from a URL. `ADR-0005` |
 | URL-addressed app fetch + cache + integrity check | The "apps are URLs" claim. `ADR-0005` |
@@ -91,24 +92,24 @@ If these work, the MVP has done its job. None of them is yet named as the distri
 | Real tab favicons | A fix-round follow-on to the chrome restyle. Known limitation, same shape as the DuckDuckGo search row above: fetching a visited site's favicon is main-process network egress to whatever host serves that icon (`src/main/browsing/favicon.ts`), capped and re-encoded to a `data:` URL specifically so the privileged chrome view itself never makes the request |
 | **New-tab dashboard**: a search box, every bookmark as a tile, and two inert shortcut tiles (Torrent, Nostr) | Replaces `about:blank`. Styled as a grid to match the long-term vision's layout (`orivon-docs`'s `dashboard-app.md`), but populated with only what is real today: no Wallet, Network or App-Store tiles, and no pluggable widget system underneath it, because that platform is the OUT row below, deliberately not pulled forward. The Torrent and Nostr tiles are honest placeholders (`disabled`, with a tooltip saying each is an idea not in this build), the same pattern already shipped for the toolbar's own not-yet-built icons |
 
-## OUT: important but deferrable
+## OUT: promised, not built yet
 
-Real parts of Orivon, deliberately not in month 1.
+Real parts of Orivon, not in this version yet. Each lands when a need calls for it.
 
 | Item | Why deferred |
 |---|---|
 | DDOC anchored in DNS (the vision's `DDOC <version> <hash>` record) | Scope: the ENS record is this build's off-host anchor. On ICANN domains without DNSSEC the record is forgeable anyway (`open-questions.md` C1). `ADR-0029` |
 | Arweave, and content-addressed stores other than IPFS | IPFS is this build's second delivery path, and one proves the model |
-| App store | Needs apps first. Developer mode covers month 1 |
+| App store | Needs apps first. Developer mode covers the need until then |
 | Dashboard **widget/extension platform**: installed apps placing their own widgets, an App Store, Wallet and Network widgets | Pure surface area; zero contribution to the metric. (The new-tab page itself, a grid with real bookmarks and two inert app shortcuts, shipped 2026-08-28 as an IN-table item above; this row is the pluggable platform underneath it, not the page) |
 | Funds-bearing wallet | Different security model entirely from per-origin identity |
-| `subprocess` and `hid` capabilities | No MVP app needs them, and they are the largest attack surface |
+| `subprocess` and `hid` capabilities | No app here needs them yet, and they are the largest attack surface |
 | Identity export / backup | First thing to add once identity has value to users |
 
-## LATER: useful, clearly post-MVP
+## LATER: useful, further out
 
 `orivon-runtime` (Wasmtime; arrives when untrusted third-party apps or mobile do) ·
-Chromium fork · mobile · Web3 search · Tor / proxy chains · client profiles ·
+mobile · Web3 search · Tor / proxy chains · client profiles ·
 wallet Crypto and Address-book layers plus `CapabilityDescriptor` · cross-device sync ·
 Windows and macOS packaging with code signing.
 
@@ -126,7 +127,7 @@ It would make compatibility tier 3 cost an image build rather than a rewrite. Re
 before re-deriving the estimate: the standalone figure that made it look too expensive was
 mostly permission machinery the broker already builds.
 
-## UNRELATED to the MVP
+## UNRELATED to the browser
 
 DAO and tokenomics · advertising and featured placement · governance · community growth
 systems · merit tracking. These are organisational, not product, and none moves the metric.
@@ -135,7 +136,8 @@ systems · merit tracking. These are organisational, not product, and none moves
 
 ## Explicit non-goals
 
-State these publicly. They prevent both scope creep and disappointed users.
+The wallet, app store, mobile, sync, containment and Bitcoin Core items bound this version, not
+Orivon. State them publicly: they prevent disappointed users.
 
 - **Not a wallet.** No funds, no seed phrase, no send/receive.
 - **Not an app store.** Developer mode, not a marketplace.
@@ -143,7 +145,6 @@ State these publicly. They prevent both scope creep and disappointed users.
   observed apart from what a provider attests, names the provider behind every judged level, and
   shows a bundle no provider has assessed as grey `?`. Blurring the two would be exactly the
   dishonesty the indicator exists to prevent.
-- **No Chromium fork**, and no pretence that Electron is the final architecture.
 - **No mobile.**
 - **No sync**, and no Orivon-operated server for user data. Infrastructure is limited to the
   telemetry ingest endpoint plus static hosting of first-party app bundles (e.g. GitHub
@@ -151,7 +152,7 @@ State these publicly. They prevent both scope creep and disappointed users.
 - **Untrusted apps are not contained.** Developer mode is genuinely "at your own risk"; a
   Node broker cannot sandbox hostile code. This is what `orivon-runtime` later fixes.
 - **Bitcoin Core does not run in a tab.** That remains a long-term goal for the execution
-  layer, not an MVP claim.
+  layer, not a claim of this version.
 
 ## The genericity test
 

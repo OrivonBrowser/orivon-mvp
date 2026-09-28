@@ -7,7 +7,7 @@
 > surface *is*.
 >
 > Per ADR-0002 this is the highest-care artefact in the repository. The Electron shell is
-> disposable; **this interface is not.** Every app ever written for Orivon codes against it,
+> tied to one engine; **this interface is not.** Every app ever written for Orivon codes against it,
 > and it must survive the swap from Node → Wasmtime → Chromium/Mojo underneath.
 >
 > `orivonApiVersion: 0` explicitly means unstable: breaking changes are permitted while
@@ -105,7 +105,7 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
   "entry": "index.html",
   "assets": ["style.css", "app.js"],  // every other frontend file; omit if entry is the whole app
   // NOTE: "publisherKey" is CUT from v0. See "Signing is not in
-  // v0" below. Every month-1 app is unsigned; integrity rests on hash-pinning, with
+  // v0" below. Every v0 app is unsigned; integrity rests on hash-pinning, with
   // the site's published hash tree (/.well-known/orivon-ddoc.json) shown as DDOC evidence.
 
   "capabilities": {
@@ -385,7 +385,7 @@ different Nostr identity to snort.social and noStrudel. So `id` yields two disti
 | Consumer | app-internal crypto | `window.nostr` (NIP-07), future wallet connect |
 
 **What `origin` and `identityId` are, precisely** (`ADR-0010`). Both
-are frozen into a key that the MVP cannot export, back up or migrate (`ADR-0003`), so two
+are frozen into a key that this version cannot export, back up or migrate (`ADR-0003`), so two
 spellings of one of them are two different identities, permanently.
 
 - **`origin`** is the *canonical* origin, as produced by `originFromSenderFrame()` in
@@ -405,9 +405,9 @@ make Nostr unusable). Presence of `window.nostr` is fingerprintable, as it is of
 extension; the *data* is what sits behind consent (`security-model.md` T16).
 
 ### Deliberately **not** in v0
-- **`subprocess`.** No tier-3 app is in the MVP (Bisq is cut), so it buys nothing and costs
+- **`subprocess`.** No tier-3 app is in this version (Bisq is cut), so it buys nothing and costs
   the largest attack surface in the design.
-- **`hid` / USB.** No wallet app in the MVP.
+- **`hid` / USB.** No wallet app in this version.
 - **Raw sockets / ICMP.** No use case, and unreachable from WASM later anyway.
 
 > **Narrower than ADR-0002.** That ADR says `subprocess` and `hid` are "not grantable to
@@ -417,7 +417,7 @@ extension; the *data* is what sits behind consent (`security-model.md` T16).
 ### Signing is not in v0
 
 `ADR-0002` posits signed and unsigned trust tiers; `ADR-0005`'s amendment keyed silent updates
-on a publisher signature. **Both are cut for month 1.** Three reasons, from the audit:
+on a publisher signature. **Both are cut from v0.** Three reasons, from the audit:
 
 1. **The tiers were already capability-identical in v0.** Their only stated difference was
    `subprocess` and `hid`, and this spec removes both for *every* tier. The distinction cost
@@ -575,7 +575,7 @@ Apps call `orivon.net.connect`. Underneath, that is:
 
 | phase | implementation |
 |---|---|
-| month 1 | Node `net.Socket` in the main process |
+| now | Node `net.Socket` in the main process |
 | later | a Wasmtime host function |
 | later | Mojo IPC in a Chromium fork |
 

@@ -9,7 +9,7 @@
  *      third-party type, not even via `import type`. An external import is a
  *      dependency edge, and a dependency edge is a merge conflict waiting for
  *      two streams to reach it from different directions -- and worse, it
- *      would tie the durable interface to the disposable engine underneath it
+ *      would tie the durable interface to the Electron engine underneath it
  *      (ADR-0002). `./errors.js` from `./handles.js` is fine and necessary;
  *      `electron` is not. ReadableStream, WritableStream and Uint8Array are
  *      ambient globals here, available via tsconfig.json's

@@ -27,7 +27,7 @@ does not need trustless DNS, and ships as evidence; judged levels ship too, from
 need not be trustless.)*
 
 ## Context
-An earlier draft of `mvp-scope.md` cut the indicator down to content-addressing only. The
+An earlier draft of `scope.md` cut the indicator down to content-addressing only. The
 owner rejected that: *"having the full spectrum of Trustlessity scores is so important … if
 the site is completely running locally, we can say that this is trustless, the only concern
 remains the centralized host."*
@@ -252,7 +252,7 @@ centralised or local provider is shown as what it is, because trusting the level
 that provider. Which provider this build ships with is `open-questions.md` A250.
 
 Nostr signing, the Operation ladder's concrete instance, is an idea rather than a build step
-(`mvp-scope.md` §LATER), so the operation ladder has no scheduled instance; `orivon.id` signing
+(`scope.md` §LATER), so the operation ladder has no scheduled instance; `orivon.id` signing
 remains the candidate.
 
 ## Amendment, 2026-09-25: Website levels follow the canonical Web3 scores page

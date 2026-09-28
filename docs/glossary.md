@@ -26,7 +26,7 @@ sits on the site's own host, a `.eth` name's contenthash anchors its content off
 ICANN domains without DNSSEC, so *Certification* would oversell precisely the weakest link.
 
 **Action outstanding:** correct the other two documents (`Posts/Technical Specifications`,
-`Old-Private-Plan/Glossario`) to match. Not blocking the MVP.
+`Old-Private-Plan/Glossario`) to match. Not blocking any build step.
 
 ### `+Privacy` attaches to the top rung of each ladder
 
@@ -52,7 +52,7 @@ Orivon itself is not owned by it.
 interfaces to *read and write* Web1 (`OrivonBook/Web3 Potential.md`).
 
 **WASM Orivon Execution Layer**: current name for what earlier documents called "Advanced
-WASM" or "programs on-fly". In the MVP this capability is delivered by the broker, not by
+WASM" or "programs on-fly". Today this capability is delivered by the broker, not by
 a WASM runtime (`ADR-0002`).
 
 **Web3 Accounts**: the no-setup identity system. Silent per-origin app keys, plus
@@ -64,7 +64,7 @@ inverse of the yellow "you are in Web2" badge.
 
 ## Architecture
 
-**Shell**: the Electron browser UI (tabs, omnibox, navigation). Explicitly disposable
+**Shell**: the Electron browser UI (tabs, omnibox, navigation). Tied to Electron
 (`ADR-0002`).
 
 **Broker**: the main-process component enforcing manifests and grants, and the sole path from
@@ -93,8 +93,8 @@ Electron apps port mechanically. Load-bearing for every Node.js app (`ADR-0005`)
 **`orivon-runtime`**: the deferred Wasmtime host. Purpose: containment for untrusted code, and
 mobile portability. Not cancelled (`ADR-0002`).
 
-**`orivon-core`**: in the published docs, the client wrapping `orivon-runtime`. The MVP's
-broker occupies this role; the name is not yet used in the MVP codebase.
+**`orivon-core`**: in the published docs, the client wrapping `orivon-runtime`. Orivon
+Browser's broker occupies this role; the name is not yet used in this codebase.
 
 **Developer mode**: off by default; loads unpacked, unsigned apps at the user's risk, with a
 reduced capability set.
@@ -125,7 +125,7 @@ locally (`ADR-0006`); which provider ships is open (`open-questions.md` A250).
 ("hash X is Level 4").
 Verified locally and offline, so a provider cannot track users (`ADR-0006`).
 
-**Observed behaviour**: what the broker actually saw an app do. The basis of the MVP's
+**Observed behaviour**: what the broker actually saw an app do. The basis of this version's
 indicator. Always reported as *observed*, never *guaranteed*.
 
 **TOFU**: trust on first use. The delivery host is trusted once at install; the bundle is then
@@ -169,4 +169,4 @@ and serves `.eth` names on loopback (`src/verifier-host/`).
 - **"Special extensions"** (`orivon.mdx`) → say **apps**.
 - **"Wallet"** for the no-setup identity → say **Web3 Account**; reserve *wallet* for
   funds-bearing, setup-requiring accounts.
-- **"Advanced WASM"** → say **execution layer**; in the MVP it is the broker, not a WASM runtime.
+- **"Advanced WASM"** → say **execution layer**; today it is the broker, not a WASM runtime.

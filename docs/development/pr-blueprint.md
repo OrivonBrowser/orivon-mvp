@@ -152,7 +152,7 @@ worth questioning.
 The section pairs with the `ux:` label, so the answer is also filterable.
 
 **Why it is mandatory.** The metric this project is judged by is **100 active users at
-25 h/month** ([`mvp-scope.md`](../mvp-scope.md)), not lines of code. A section that forces the
+25 h/month** ([`scope.md`](../scope.md)), not lines of code. A section that forces the
 question on every change is cheap; noticing six months late that nothing shipped touched anybody
 is not. The point is that somebody looked, and answered.
 

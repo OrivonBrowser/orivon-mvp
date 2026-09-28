@@ -47,7 +47,7 @@ so the implementation in `stream/broker-06-keys` had to choose all four. Under R
 choices are load-bearing and reversible only at cost, which is what this ADR records.
 
 What makes them one-way rather than merely awkward: **key export and backup are out of scope for
-the MVP** (`ADR-0003`, `mvp-scope.md`). While that holds, a user has no copy of their key and no
+the MVP** (`ADR-0003`, `scope.md`). While that holds, a user has no copy of their key and no
 way to restore one. So a derivation change does not fail loudly: it silently issues every user a
 new identity, orphaning their Nostr follows and posts on an npub they can no longer produce. The
 damage is invisible when introduced and permanent by the time anyone notices.

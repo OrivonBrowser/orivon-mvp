@@ -1369,7 +1369,7 @@ tested and a newcomer will otherwise assume neglect:
 The reading order, in three explicit tracks, so a reader picks one rather than reading all 45
 documents:
 
-- **To understand the product:** `mvp-scope.md` → `architecture/capability-api.md` →
+- **To understand the product:** `scope.md` → `architecture/capability-api.md` →
   `architecture/handle-contracts.md`
 - **To understand a decision:** `decisions/`, eight ADRs. Warn that **ADR-0002 and ADR-0005
   carry amendments superseding parts of their own text**, and ADR-0008 rescopes ADR-0002's
@@ -1780,7 +1780,7 @@ git log --oneline | wc -l
 ```
 
 Show the owner the count and confirm, one last time, that decision D1 stands: the full history
-and the planning corpus (`readiness.md`, `audit-2026-08-25.md`, `mvp-scope.md`'s funnel
+and the planning corpus (`readiness.md`, `audit-2026-08-25.md`, `scope.md`'s funnel
 arithmetic, and `devlog/`) all become public.
 
 - [ ] **Step 4: Create the repository and push**

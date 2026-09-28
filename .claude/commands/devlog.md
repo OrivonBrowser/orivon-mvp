@@ -5,7 +5,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git log:*), Bash(date:*), Bas
 
 # /devlog — weekly devlog compiler
 
-Produce the Sunday devlog for the Orivon MVP. Output file: `devlog/updates/YYYY-MM-DD.md`,
+Produce the Sunday devlog for Orivon Browser. Output file: `devlog/updates/YYYY-MM-DD.md`,
 named for **the Sunday of the week being compiled** — not the day the compile happens to run.
 Compiling on a Monday still writes the Sunday before it. If that file already exists,
 regenerate it in place.
