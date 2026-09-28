@@ -144,9 +144,18 @@ function deny (reason: ConfineDenialReason): ConfineResult {
  *
  * WHAT THIS DOES NOT DO -- read before using the result. It confines the
  * deepest EXISTING ancestor, so a symlink planted at the LEAF between this
- * check and the open still escapes -- the caller must open with O_NOFOLLOW
- * (or lstat the leaf); pure path arithmetic cannot close that TOCTOU
- * window, only the open can. It also does not check the grant, the quota,
+ * check and the real filesystem call still escapes -- pure path arithmetic
+ * cannot close that TOCTOU window, only the open can. Every caller
+ * (`../adapters/node-fs-adapter.ts`'s `readFile`/`writeFile`/`open`/`stat`,
+ * `../transport/sync-fs-policy.ts`'s `readFileSync`) opens the leaf with
+ * `O_NOFOLLOW` where the platform defines it, operating on the returned
+ * handle/descriptor rather than re-resolving `resolved`, and lstats the
+ * leaf first where it does not (refusing a symlink before the open); `stat`
+ * itself uses `lstat` rather than `stat`, so it reports the leaf, never a
+ * target beyond it. `rename`/`rm` need no such change: both act on the leaf
+ * name itself and never follow it. This closes the leaf case only -- a
+ * parent directory swapped for a symlink between this check and the open is
+ * A283, an accepted residual. It also does not check the grant, the quota,
  * or the capability -- it answers exactly one question: is this path
  * inside that root.
  *

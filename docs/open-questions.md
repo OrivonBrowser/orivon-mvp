@@ -1288,6 +1288,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
+### A283: A parent-directory swap between confinement and the open still escapes **[AI-REC]**
+
+- **Question:** `confinePath`'s callers now open the leaf with `O_NOFOLLOW` (or lstat it first
+  where the platform has none), closing the leaf-symlink race. `O_NOFOLLOW` covers only the last
+  component: a parent directory swapped mid-walk still escapes, and Node exposes no
+  `openat2`/`RESOLVE_BENEATH` to confine the whole walk atomically.
+- **Why it matters:** a concurrent writer to a shared root (a user-picked folder, T1/T10) could
+  still redirect a path by replacing an ancestor directory, not just the leaf.
+- **Options:** accept the residual, scoped to this narrower window (rec.); reopen once Node
+  exposes an atomic beneath-root resolve.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared
