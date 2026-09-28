@@ -191,4 +191,13 @@ describe('fork', () => {
     expect(() => fork('/child.js', [], { execPath: '/opt/helper' })).toThrow(OrivonShimError)
     expect(() => fork('/child.js', [], { stdio: 'pipe' })).toThrow(expect.objectContaining({ code: 'ERR_CHILD_PROCESS_IPC_REQUIRED' }))
   })
+
+  it('warns once that execArgv is dropped, rather than silently ignoring it', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const first = fork('/child.js', [], { execArgv: ['--first-flag'] })
+    const second = fork('/child.js', [], { execArgv: ['--second-flag'] })
+    expect(warn.mock.calls.filter((call) => String(call[0]).includes('execArgv'))).toHaveLength(1)
+    first.kill()
+    second.kill()
+  })
 })

@@ -9,8 +9,8 @@ operating-system process
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../worker/`](../worker/),
 [`../wasi/`](../wasi/), `../fs/paths.ts`, `../node-errors.ts`, `../errors.ts`,
-`../orivon-global.ts`, `../polyfills/module-proxy.ts`, and the `buffer`, `events` and `stream`
-polyfills.
+`../orivon-global.ts`, `../warn-once.ts`, `../polyfills/module-proxy.ts`, and the `buffer`,
+`events` and `stream` polyfills.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README.

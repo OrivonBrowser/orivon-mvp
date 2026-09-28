@@ -9,7 +9,8 @@ Durable: it depends on no Electron API, only on JSPI, which Chromium ships from 
 
 **What it depends on.** [`../../contracts/`](../../contracts/), and within the shim
 `fs/paths.ts` and `fs/root.ts` (so a Node program and a WASI program in one app see the same
-files), `orivon-global.ts`, `node-errors.ts`, `errors.ts` and `polyfills/module-proxy.ts`.
+files), `orivon-global.ts`, `node-errors.ts`, `errors.ts`, `warn-once.ts` and
+`polyfills/module-proxy.ts`.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README. The host reaches files only through the `WasiFs` it is handed.
