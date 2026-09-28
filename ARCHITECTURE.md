@@ -71,10 +71,11 @@ have to be rewritten? It is a measure of where care is worth spending.
 | [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the site's published hash tree, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
 | [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer over `orivon.*` |
 | [`src/renderer/`](src/renderer/) | Browser chrome UI | **Entirely** |
-| [`src/protocols/resolution/`](src/protocols/resolution/) | The name-resolver and data-gatherer interfaces, and the registry that orders them | **No.** Pure types and decisions |
-| [`src/protocols/ens/`](src/protocols/ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | **No** |
-| [`src/protocols/ipfs/`](src/protocols/ipfs/) | Loading IPFS content from trustless gateways, every block hashed against its CID | **No** |
-| [`src/protocols/verifier-host/`](src/protocols/verifier-host/) | The utility process that runs the light client and serves `.eth` names on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` (one narrow, gated exception: `dns-fallback.ts`'s direct connection to a gateway a resolver appears to be lying about) |
+| [`src/protocols/`](src/protocols/) | The one function every protocol registers through, the address rule (`ipfs://<cid>` shown, `https://<cid>.ipfs.orivon` served), and the registry that orders providers | **No.** Pure data and decisions |
+| [`src/protocols/resolution/`](src/protocols/resolution/) | The name-resolver and data-gatherer interfaces | **No.** Pure types and decisions |
+| [`src/protocols/ens/`](src/protocols/ens/) | ENS: proving a `.eth` name's contenthash, over any EIP-1193 provider | **No** |
+| [`src/protocols/ipfs/`](src/protocols/ipfs/) | IPFS: `ipfs://` and `ipns://` addresses, and loading content from trustless gateways, every block hashed against its CID | **No** |
+| [`src/protocols/verifier-host/`](src/protocols/verifier-host/) | The utility process that runs every protocol's providers, including the light client, and serves their pages on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` (one narrow, gated exception: `dns-fallback.ts`'s direct connection to a gateway a resolver appears to be lying about) |
 | [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
 | [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
 
@@ -108,6 +109,14 @@ that never included it.
 client proves what the name points to, the content comes from IPFS with every block hashed
 against its CID, and a verifier on loopback serves only bytes that passed. From there the page is
 an ordinary one: the same hint, the same one dialog, the same pin, which also records the CID.
+
+**An `ipfs://` or `ipns://` address is shown as itself and served over HTTPS**
+([`ADR-0038`](docs/decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md)).
+The address bar and every consent surface read `ipfs://<cid>/`; the page runs at
+`https://<cid>.ipfs.orivon/`, an ordinary https origin the same verifier serves. Every address
+scheme shares the `.orivon` suffix, routed once at launch. Registering a protocol while Orivon runs
+is not part of this build; the shared suffix is what would let one route with no restart. Each protocol is registered through one function over data the shell can read
+([`src/protocols/README.md`](src/protocols/README.md) says how to add one).
 
 **The grant prompt is origin-first.** Any origin can serve a manifest, and the `name` in it is
 self-asserted, so the origin is the largest and primary element and the app's claimed name is

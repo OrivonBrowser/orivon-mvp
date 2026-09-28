@@ -18,6 +18,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   launch, and `npm run dev -- --skip-intro` skips it. The same mountain-meadow picture is now the
   new-tab page's background, under a dark wash in both colour schemes. The screen loads nothing
   from the network: its font and picture ship with the browser.
+- **`ipfs://` and `ipns://` addresses load, shown as themselves.** Typing or clicking
+  `ipfs://<cid>` opens the content with every block checked, exactly as a `.eth` name's is, and the
+  address bar, consent dialogs and permissions show `ipfs://<cid>/` while the page runs at an
+  ordinary https origin, `https://<cid>.ipfs.orivon`. `ipns://` takes an IPNS key or a DNSLink name.
+  A link to one never reaches whatever app claims the scheme on the computer. Protocols now live in
+  `src/protocols/`, each registered through one function over data the shell reads, so the next one
+  is an isolated piece of work. Registering one while Orivon runs is not built; every address scheme
+  shares one routed suffix so that it would need no restart (ADR-0038).
 - **The identity seed survives a restart, and an app can hold its own encrypted secret.** The
   seed behind `orivon.id` now lives in the OS keyring (Electron `safeStorage`), not a placeholder
   that refused every call. A new `secrets` capability (`orivon.secrets.available`/`encrypt`/
