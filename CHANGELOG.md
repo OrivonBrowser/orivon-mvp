@@ -88,6 +88,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **Favicons survive a hash change or a same-origin page**, a failed icon fetch no longer holds a
   socket, the icon cache is bounded, and an SVG entity bomb behind a quoted DOCTYPE literal is
   refused.
+- **`.eth` pages keep their gateways through a lost race, a cooldown and a hostile answer**: the
+  verifier host no longer crashes on a 999 status or stalls on a 101, and every run certificate
+  parses.
 
 ### Resolved
 

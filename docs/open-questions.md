@@ -1136,17 +1136,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A258: `createRunCertificate` rarely emits a certificate Node's TLS refuses **[RESEARCH]**
-
-- **Question:** Why did one new certificate (`src/protocols/verifier-host/serve/certificate.ts`)
-  fail in `createVerifierServer` with `asn1 ... illegal padding`? Re-runs did not reproduce it.
-- **Why it matters:** random key and serial per call; launch (`verifier-host/service.ts`) calls
-  `createVerifierServer` too, so a bad draw may break a run.
-- **Options:** parse thousands with `new X509Certificate(...)` to find the pattern; suspect ECDSA
-  `r`/`s` in the hand-rolled `der()` lacking `positiveInteger`'s leading-zero fix (rec.).
-- **Who decides:** research first
-- **Blocks:** nothing
-
 ### A259: Closing a window with two or more tabs throws in main **[AI-REC]**
 
 - **Question:** On teardown the window dies first; forgetting the active tab activates the next,
@@ -1179,6 +1168,90 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   reach anything a person could type into the address bar.
 - **Who decides:** owner
 - **Blocks:** nothing until a real app reaches either limit
+
+### A262: The direct gateway route trusts a proxy check made at the verifier host's start **[OWNER]**
+
+- **Question:** Should the direct route check for a proxy when it is taken, not only when the
+  verifier host starts?
+- **Why it matters:** a proxy turned on mid-run (a VPN, a corporate network, Tor through a proxy)
+  is not seen until the host restarts; until then a failing gateway whose system address disagrees
+  with DNS-over-HTTPS is reached directly, from the person's real address (T40).
+- **Options:** the host asks main (`app.resolveProxy`) at decision time, one round trip on a rare
+  path (rec.); main pushes proxy changes into the host; keep the snapshot and say so.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A263: T20 and T40 disagree about going around a proxy **[OWNER]**
+
+- **Question:** Does T20 ("never silently direct-connect around a proxy ... same for DNS
+  resolution") bind the verifier host, or only app capabilities?
+- **Why it matters:** T40's route resolves over DNS-over-HTTPS and connects outside `net`, and
+  neither row cites the other. Split-horizon DNS, whose internal answer differs on purpose, looks
+  exactly like ISP forgery and is routed around too.
+- **Options:** scope T20 to app capabilities and say in T40 why the verifier differs, with A262's
+  live check (rec.); read T40 as a T20 violation and drop the route whenever a proxy could apply.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A264: Taking the direct gateway route is silent **[OWNER]**
+
+- **Question:** Should the person learn that their resolver forges a gateway's address, and that
+  Orivon went around it?
+- **Why it matters:** today it is one line on the verifier host's stderr. The person learns
+  neither fact, though the second changes which route their traffic takes.
+- **Options:** a line in Settings' verifier section and a switch to turn the route off (rec.: it
+  is a fact about the network, not one site); a `route` field on `SiteProvenance`
+  (`src/protocols/verifier-host/protocol.ts`) shown in the site-info popover; leave it silent.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A265: A network observer can tell the direct gateway route apart **[OWNER]**
+
+- **Question:** Is it acceptable that adversary 4 (`security-model.md`) sees Orivon working
+  around its DNS?
+- **Why it matters:** the retry is a Node TLS handshake (a ClientHello unlike Chromium's, no ALPN)
+  naming the gateway, seconds after Chromium's failed attempt. T40 names it.
+- **Options:** accept it and keep it named (rec.); make the handshake resemble Chromium's, which
+  Node cannot fully do; let the person turn the route off (A264).
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A266: "No address in common" is a weak sign of tampering behind a CDN **[OWNER]**
+
+- **Question:** Are disjoint answers from the system resolver and DNS-over-HTTPS enough to take
+  the direct route?
+- **Why it matters:** a CDN gives different resolvers different honest addresses (GeoDNS, client
+  subnet, round robin), so a fast transport failure on an honest line can switch a gateway to the
+  direct route for `DIRECT_FOR_MS` (10 minutes). TLS and block hashes still hold.
+- **Options:** also require the system address to fail TLS for the name while the DoH one passes
+  (rec.); shorten `DIRECT_FOR_MS`; accept it. Both answers are compared canonically already.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A267: A resolver that blackholes a gateway is never detected **[OWNER]**
+
+- **Question:** Should a gateway that times out, rather than failing fast, ever lead to the
+  resolver comparison?
+- **Why it matters:** the comparison runs only on a transport error before the request's
+  deadline, so an address where nothing answers is never checked. A system resolver failing with
+  anything but "name not resolved" never leads to the direct route either (`d-0154`).
+- **Options:** keep it: a timeout is no evidence of tampering, and traffic stays on `net` (rec.);
+  count a second consecutive timeout per gateway as a failure worth checking.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A268: Electron's `net.fetch` throws uncaught on a status outside 200-599 **[AI-REC]**
+
+- **Question:** How should the verifier host survive a 999 or 600 answer through `net.fetch`?
+- **Why it matters:** measured on Electron 44 (in main): `net.fetch` builds its `Response` inside
+  its own listener, so the `RangeError` is uncaught and the promise never settles. The host has no
+  handler for that, so it would exit and every `.eth` page fail until it restarts. A CCIP-Read URL
+  is chosen by a name's resolver contract, so a `.eth` name can point it at such a server.
+- **Options:** the host's fetch over `net.request`, the status checked before a `Response` is built,
+  as `src/loader/electron/fetch.ts` does (rec.); a process-level handler, which leaves the request
+  hanging. Report it to Electron either way.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
 
 ### A269: The toolbar popups' commands are checked by sender identity, not URL **[OWNER]**
 

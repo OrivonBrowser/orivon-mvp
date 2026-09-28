@@ -6,17 +6,13 @@
 // vitest the same way this directory's other `<name>.ts` files are
 // (verifier-subsystem.ts is the one file here that imports `electron`).
 
+import { withTimeout } from '../../protocols/resolution/timing.js'
+
 /** How long one gateway's proxy check may take before it counts as
  * "proxied" -- fails closed, the same direction a check that errors takes:
  * a system that cannot even answer "is there a proxy" is not one the
  * fallback should treat as proxy-free. */
 const PROXY_CHECK_TIMEOUT_MS = 2_000
-
-function withTimeout<T> (promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([promise, new Promise<never>((_resolve, reject) => {
-    setTimeout(() => { reject(new Error(`took longer than ${String(ms)} ms`)) }, ms)
-  })])
-}
 
 /**
  * Every gateway in `gateways` whose exact answer from `resolveProxy` is
@@ -31,7 +27,7 @@ function withTimeout<T> (promise: Promise<T>, ms: number): Promise<T> {
 export async function unproxiedGateways (gateways: readonly string[], resolveProxy: (url: string) => Promise<string>): Promise<string[]> {
   const checked = await Promise.all(gateways.map(async (gateway) => {
     try {
-      return (await withTimeout(resolveProxy(gateway), PROXY_CHECK_TIMEOUT_MS)).trim() === 'DIRECT'
+      return (await withTimeout(resolveProxy(gateway), PROXY_CHECK_TIMEOUT_MS, 'the proxy check')).trim() === 'DIRECT'
     } catch {
       return false
     }

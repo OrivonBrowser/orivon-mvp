@@ -21,8 +21,7 @@ export interface SupervisorEvents {
 export interface SupervisorDeps {
   readonly fork: () => HostProcess
   /** A promise so a restart can re-check things that answer asynchronously
-   * (unproxiedGateways.ts's proxy check, at minimum) on every start, not
-   * only the first. */
+   * (proxy-check.ts, at minimum) on every start, not only the first. */
   readonly config: () => HostConfig | Promise<HostConfig>
   readonly events: SupervisorEvents
   readonly setTimer?: (callback: () => void, ms: number) => unknown
@@ -72,10 +71,8 @@ export class HostSupervisor {
     child.on('exit', (code) => { this.exited(child, `the verifier host exited with code ${String(code)}`) })
 
     const result = this.deps.config()
-    // A config answered synchronously (every real config today except the
-    // proxy check) posts in the same tick, exactly as before this class had
-    // to support an async one at all -- no artificial delay, and `request()`
-    // right after `start()` needs no await either (`this.starting` stays
+    // A config answered synchronously posts in the same tick, so `request()`
+    // right after `start()` needs no await (`this.starting` stays
     // undefined). Only a genuine Promise takes the deferred path below.
     if (!(result instanceof Promise)) {
       this.starting = undefined // clears whatever a PREVIOUS start() left, on a restart
@@ -90,9 +87,11 @@ export class HostSupervisor {
       (config) => { if (this.child === child) child.postMessage({ type: 'start', config }) },
       (error: unknown) => {
         if (this.child !== child) return
+        // The same path as a host that reports it cannot serve: `child`
+        // stays current until it exits, so `exited()` rejects what is
+        // pending, clears `failure` and schedules the restart.
         this.failure = `the verifier host's configuration could not be prepared: ${error instanceof Error ? error.message : String(error)}`
         this.deps.events.down(this.failure)
-        this.child = undefined
         child.kill()
       }
     )

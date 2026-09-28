@@ -142,20 +142,39 @@ describe('HostSupervisor', () => {
     expect(await reply).toEqual({ state: 'off' })
   })
 
-  it('an async config that rejects marks the host down and kills it, without ever posting start', async () => {
+  it('an async config that rejects kills the host without posting start, then restarts it once it exits', async () => {
     const hosts: FakeHost[] = []
     const log: string[] = []
+    const timers: Array<{ ms: number, run: () => void }> = []
+    let rejectOnce = true
     const supervisor = new HostSupervisor({
       fork: () => { const h = new FakeHost(); hosts.push(h); return h },
-      config: async () => { throw new Error('the proxy check hung') },
-      events: { listening: () => {}, down: (r) => log.push(r), status: () => {}, checkpoint: () => {}, ipnsSequence: () => {} }
+      config: async () => {
+        if (!rejectOnce) return CONFIG
+        rejectOnce = false
+        throw new Error('the verifier store is corrupt')
+      },
+      events: { listening: () => {}, down: (r) => log.push(r), status: () => {}, checkpoint: () => {}, ipnsSequence: () => {} },
+      setTimer: (run, ms) => { timers.push({ run, ms }) }
     })
     supervisor.start()
+    const pending = supervisor.request({ kind: 'status' }, 60_000)
     await Promise.resolve()
     await Promise.resolve()
-    expect(hosts[0]?.sent).toEqual([])
+    expect(hosts[0]?.sent.filter((m) => (m as { type: string }).type === 'start')).toEqual([])
     expect(hosts[0]?.killed).toBe(true)
-    expect(log.at(-1)).toMatch(/could not be prepared.*the proxy check hung/)
-    await expect(supervisor.request({ kind: 'status' })).rejects.toThrow(/not running/)
+    expect(log.at(-1)).toMatch(/could not be prepared.*the verifier store is corrupt/)
+
+    hosts[0]?.crash(0) // what kill() leads to
+    await expect(pending).rejects.toThrow(/could not be prepared/)
+    expect(timers.filter((t) => t.ms === 1_000)).toHaveLength(1) // the backoff restart
+    timers.find((t) => t.ms === 1_000)?.run()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(hosts).toHaveLength(2)
+    expect(hosts[1]?.sent).toEqual([{ type: 'start', config: CONFIG }])
+    hosts[1]?.crash(3)
+    expect(log.at(-1)).toBe('the verifier host exited with code 3') // the first host's failure did not stick
   })
 })
