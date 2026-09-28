@@ -22,6 +22,18 @@ describe('chordFromInput', () => {
     expect(chordFromInput(input('т', 'KeyN', { control: true }))?.key).toBe('n')
   })
 
+  it('does not read what AltGr typed as a chord: Windows reports it as Control and Alt together', () => {
+    // Polish ó, ś and ź, on the keys that carry O, S and X in Latin.
+    for (const [key, code] of [['ó', 'KeyO'], ['ś', 'KeyS'], ['ź', 'KeyX'], ['@', 'KeyQ'], ['²', 'Digit2']] as const) {
+      expect(chordFromInput(input(key, code, { control: true, alt: true })), key).toBeNull()
+    }
+    // Control alone, or Alt alone, still reads the key underneath, and a plain key with both still reads.
+    expect(chordFromInput(input('ó', 'KeyO', { control: true }))?.key).toBe('o')
+    expect(chordFromInput(input('ó', 'KeyO', { alt: true }))?.key).toBe('o')
+    expect(chordFromInput(input('o', 'KeyO', { control: true, alt: true }))).toMatchObject({ ctrl: true, alt: true, key: 'o' })
+    expect(chordFromInput(input('1', 'Digit1', { control: true, alt: true }))).toMatchObject({ ctrl: true, alt: true, key: '1' })
+  })
+
   it.each([
     ['Tab', 'Tab'], ['Escape', 'Escape'], [' ', 'Space'], ['ArrowLeft', 'Left'], ['PageDown', 'PageDown'], ['Delete', 'Delete']
   ])('names %j as %s', (key, name) => {

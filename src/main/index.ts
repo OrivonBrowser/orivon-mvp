@@ -155,9 +155,8 @@ function boot (runtime: Runtime): void {
       void runUpdateCheck(app).catch((error) => { console.error('[orivon] the update check failed:', error) })
     }
     if (!runtime.isPrivate) {
-      runtime.profiles.markRunning(runtime.profileId, process.pid)
       app.once('will-quit', () => { runtime.profiles.clearRunning(runtime.profileId) })
-      setTimeout(() => { sweepPrivateDirs() }, SWEEP_DELAY_MS).unref()
+      setTimeout(() => { sweepPrivateDirs(); runtime.profiles.sweepDeleted() }, SWEEP_DELAY_MS).unref()
     }
     opener = (urls) => {
       if (shell.windows.focused() === undefined) createShellWindow(ctx, shell)

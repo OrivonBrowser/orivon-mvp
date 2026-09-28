@@ -48,6 +48,24 @@ describe('attachHistory', () => {
     expect(visit).toHaveBeenCalledExactlyOnceWith('https://a.example/#/route', 'Title')
   })
 
+  it('records a change of address inside a page no more than once a second, so a page cannot fill the list', () => {
+    const contents = new FakeContents()
+    const visit = vi.fn()
+    const clock = { now: 10_000 }
+    attachHistory(contents as unknown as WebContents, { visit, titled: vi.fn() } as unknown as HistoryService, { recordable: () => true }, () => clock.now)
+
+    for (let n = 0; n < 500; n += 1) {
+      clock.now += 2
+      contents.emit('did-navigate-in-page', {}, `https://a.example/#${String(n)}`, true)
+    }
+    expect(visit).toHaveBeenCalledTimes(1)
+
+    clock.now += 1000
+    contents.emit('did-navigate-in-page', {}, 'https://a.example/#later', true)
+    contents.emit('did-navigate', {}, 'https://a.example/real', 200)
+    expect(visit).toHaveBeenCalledTimes(3)
+  })
+
   it('does not record an error page, a page that is not one to return to, or one in no tab', () => {
     const { contents, visit } = attached()
     contents.emit('did-navigate', {}, 'https://a.example/missing', 404)

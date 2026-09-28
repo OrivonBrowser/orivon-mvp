@@ -61,7 +61,12 @@ export class HistoryService {
   prune (): void {
     const days = this.settings.get('history.retentionDays')
     if (days === 'forever') return
-    this.store.removeRange(0, this.now() - Number(days) * DAY_MS)
+    // Run at start, where a failure would end the browser on every start and leave no way into Settings to clear it.
+    try {
+      this.store.removeRange(0, this.now() - Number(days) * DAY_MS)
+    } catch (error) {
+      console.error('[orivon] history could not be pruned:', error)
+    }
   }
 
   flush (): void {

@@ -53,14 +53,16 @@ describe('making a profile', () => {
   it('copies in only the public data it is asked to, from the default profile', async () => {
     await mkdir(join(home, 'verifier'), { recursive: true })
     await writeFile(join(home, 'verifier', 'checkpoint.json'), '{"c":1}')
+    await writeFile(join(home, 'verifier', 'ipns-sequences.json'), '{"k51visited":7}')
     await writeFile(join(home, 'bookmarks.json'), '[]')
     await writeFile(join(home, 'history.db'), 'private')
-    const result = store().create('Work', 'blue', ['verifier'])
+    const result = store().create('Work', 'blue', true)
     if (!result.ok) throw new Error('not created')
     const dir = join(home, 'profiles', result.profile.id)
     expect(await readFile(join(dir, 'verifier', 'checkpoint.json'), 'utf8')).toBe('{"c":1}')
     expect(existsSync(join(dir, 'bookmarks.json'))).toBe(false)
     expect(existsSync(join(dir, 'history.db'))).toBe(false)
+    expect(existsSync(join(dir, 'verifier', 'ipns-sequences.json'))).toBe(false)
   })
 
   it('refuses a name or colour it cannot keep, and makes nothing', () => {
@@ -146,6 +148,26 @@ describe('deleting a profile', () => {
     store().remove('0123456789ab')
     expect(await readFile(join(outside, 'precious.txt'), 'utf8')).toBe('keep')
     await rm(outside, { recursive: true, force: true })
+  })
+})
+
+describe('what a failed deletion leaves', () => {
+  it('is removed by the sweep, and a profile beside it is not', async () => {
+    const s = store()
+    const kept = s.create('Kept', 'green')
+    if (!kept.ok) throw new Error('not created')
+    const left = join(home, 'profiles', '.deleting-0123456789ab')
+    await mkdir(left, { recursive: true })
+    await writeFile(join(left, 'bookmarks.json'), 'what was deleted')
+
+    s.sweepDeleted()
+
+    expect(existsSync(left)).toBe(false)
+    expect(s.read(kept.profile.id)).not.toBeNull()
+  })
+
+  it('is nothing to do when there is no profiles directory', () => {
+    expect(() => { store().sweepDeleted() }).not.toThrow()
   })
 })
 

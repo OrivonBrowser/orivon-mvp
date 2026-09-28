@@ -23,7 +23,12 @@ export function historyAddress (url: string): string | null {
   }
 }
 
-export function attachHistory (contents: WebContents, history: HistoryService, host: HistoryHost): void {
+/** A page can change its own address as often as it likes, and each change is a row: one in a second is what a person
+ * could have made by moving through it. */
+const IN_PAGE_INTERVAL_MS = 1000
+
+export function attachHistory (contents: WebContents, history: HistoryService, host: HistoryHost, now: () => number = Date.now): void {
+  let lastInPage = -Infinity
   const visit = (url: string): void => {
     if (contents.isDestroyed() || !host.recordable(contents)) return
     const address = historyAddress(url)
@@ -35,7 +40,9 @@ export function attachHistory (contents: WebContents, history: HistoryService, h
     visit(url)
   })
   contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
-    if (isMainFrame) visit(url)
+    if (!isMainFrame || now() - lastInPage < IN_PAGE_INTERVAL_MS) return
+    lastInPage = now()
+    visit(url)
   })
   contents.on('page-title-updated', (_event, title) => {
     if (contents.isDestroyed() || !host.recordable(contents)) return

@@ -60,4 +60,10 @@ describe('routeInternalRequest', () => {
     }
     expect(routeInternalRequest('orivon://settings/@fs/etc/passwd', true)).toEqual({ kind: 'not-found' })
   })
+
+  it('refuses a path that is encoded twice, which a later parse would read as a way up', () => {
+    for (const url of ['orivon://settings/pages/%252e%252e/@fs/etc/passwd', 'orivon://settings/@vite/%252e%252e/%252e%252e/x', 'orivon://settings/assets/%252e%252e/x.js']) {
+      expect(routeInternalRequest(url, true), url).toEqual({ kind: 'not-found' })
+    }
+  })
 })

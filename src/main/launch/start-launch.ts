@@ -71,6 +71,9 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
     app.exit(0)
     return null
   }
+  // Said at once, not once the first window is up: until then a second window of this browser would see the profile as
+  // not in use, and Delete would remove it from under a browser that is starting.
+  if (launch.kind !== 'private') profiles.markRunning(profileId, process.pid)
   const inherit = argv.filter((argument) => INHERITED_SWITCHES.some((switchName) => argument === switchName || argument.startsWith(switchName)))
   return { launch, dir, profiles, source, isPrivate: launch.kind === 'private', profileId, inherit }
 }

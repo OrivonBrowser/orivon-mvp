@@ -3,18 +3,19 @@
 // rules hold for all of them: the setting, the shell's own pages, and the one
 // question asked before a console can act with an app's permissions.
 import type { BaseWindow, WebContents } from 'electron'
-import { originFromUrl } from '../../broker/policy/origin.js'
 import type { SettingsStore } from '../settings/settings-store.js'
 
 export interface DevToolsDeps {
-  /** Whether the page at `url` is an app that holds permissions or is installed: its console acts with them. */
-  isApp: (url: string) => boolean
+  /** The app whose permissions a page's console would act with, or null for a page that is not one. Decided by the
+   * session the page runs in, not by its address alone: a popup an app opened is at `about:blank` and has its opener.
+   * `key` names the app for the once-only question; `label` is what the question shows. */
+  appOf: (contents: WebContents) => { readonly key: string, readonly label: string } | null
   /** One of the shell's own pages (Settings, ...). */
   isShellPage: (contents: WebContents) => boolean
   /** The developer-only overrides are on (set from outside the browser, never from a page). */
   developerMode: () => boolean
-  /** Asks whether to go ahead, for an app at `origin`. */
-  confirm: (window: BaseWindow, origin: string) => boolean
+  /** Asks whether to go ahead, for the app shown as `label`. */
+  confirm: (window: BaseWindow, label: string) => boolean
 }
 
 /** What a tab's own menu needs of developer tools. */
@@ -66,12 +67,10 @@ export class DevToolsService implements DevToolsGate {
 
   private permit (contents: WebContents, window: BaseWindow): boolean {
     if (!this.allowed(contents)) return false
-    const url = contents.getURL()
-    if (!this.deps.isApp(url)) return true
-    const origin = originFromUrl(url)
-    if (origin === null || this.confirmed.has(origin)) return true
-    if (!this.deps.confirm(window, origin)) return false
-    this.confirmed.add(origin)
+    const app = this.deps.appOf(contents)
+    if (app === null || this.confirmed.has(app.key)) return true
+    if (!this.deps.confirm(window, app.label)) return false
+    this.confirmed.add(app.key)
     return true
   }
 

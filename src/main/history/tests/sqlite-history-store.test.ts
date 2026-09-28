@@ -1,8 +1,8 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MAX_TITLE_LENGTH, MAX_URL_LENGTH } from '../history-store.js'
 import { SqliteHistoryStore } from '../sqlite-history-store.js'
 
@@ -145,5 +145,54 @@ describe('the history file', () => {
     history.close()
     expect(() => { history.flush() }).not.toThrow()
     expect(() => { history.close() }).not.toThrow()
+  })
+})
+
+describe('a store that cannot write', () => {
+  it('reports it and goes on, so that a failing write is never an uncaught exception in an event handler', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const history = store()
+    ;(history as unknown as { db: DatabaseSync }).db.exec('DROP TABLE visits')
+
+    history.record(A, 'A', 1)
+    expect(() => { history.flush() }).not.toThrow()
+    expect(complaint).toHaveBeenCalled()
+    expect(() => { history.record(B, 'B', 2); history.flush() }).not.toThrow()
+    complaint.mockRestore()
+  })
+})
+
+describe('a store with too many pages', () => {
+  it('forgets the pages visited longest ago and keeps the newest', () => {
+    const history = new SqliteHistoryStore(':memory:', { maxPages: 100, checkEvery: 10 })
+    for (let n = 0; n < 130; n += 1) history.record(`https://a.example/${String(n)}`, '', 1000 + n)
+    history.flush()
+
+    const urls = history.list({ limit: 500 }).map((entry) => entry.url)
+    expect(urls.length).toBeLessThanOrEqual(100)
+    expect(urls.length).toBeGreaterThanOrEqual(80)
+    expect(urls[0]).toBe('https://a.example/129')
+    expect(urls).not.toContain('https://a.example/0')
+  })
+})
+
+describe('what clearing leaves in the file', () => {
+  it('is none of the addresses that were cleared', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'orivon-history-file-'))
+    try {
+      const path = join(dir, 'history.db')
+      const history = new SqliteHistoryStore(path)
+      for (let n = 0; n < 50; n += 1) history.record(`https://visited-marker.example/${String(n)}`, 'a title to forget', n)
+      history.flush()
+      history.clear()
+      history.close()
+
+      for (const name of ['history.db', 'history.db-wal']) {
+        const bytes = await readFile(join(dir, name)).catch(() => Buffer.alloc(0))
+        expect(bytes.includes('visited-marker'), name).toBe(false)
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

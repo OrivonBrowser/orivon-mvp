@@ -5,6 +5,7 @@ private session (`ADR-0041`), and what follows from that. `launch-context.ts` re
 `start-launch.ts` runs first of all, points the data directory at the right place and steps aside if that profile
 is already open; `profile-store.ts` is the profiles (one directory each, with a `profile.json`);
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions;
+`public-seed.ts` is the one list of what a new profile or a private session is given from the default profile;
 `peer-spawn.ts` starts another Orivon process; `profiles-service.ts` is what the rest of the shell asks:
 this process's own profile, the list, changes to it, and "open"; `profiles-domain.ts` is what the Profiles,
 Private and Settings pages may ask of it.
@@ -37,6 +38,12 @@ nothing else: a debugger's port on the first process would be taken by the secon
 it ends, so `start-launch.ts` refuses one that is not directly under the temp directory, named as the
 system names a new one, and present.
 
-**What a private session starts with is a short list** (`private-session.ts`): the settings of the profile
-that opened it, and the light client's checkpoint, which is public and without which a `.eth` name would fail
-once the shipped one is old. Adding to the list is a change to what the Private page promises.
+**What a private session starts with is a short list** (`private-session.ts`, `public-seed.ts`): the settings of
+the profile that opened it, and the light client's checkpoint file, which is public and without which a `.eth`
+name would fail once the shipped one is old. The list of IPNS names visited that sits beside the checkpoint is
+not copied: it says what the person has browsed. A new profile gets the same seed. Adding to the list is a change
+to what the Private page promises.
+
+**A profile says it is in use as soon as it holds the lock** (`start-launch.ts`), not when its first window is up:
+until then another window of this browser would see it as free, and Delete would remove it from under a browser
+that is starting. What a deletion that failed part way leaves (`.deleting-<id>`) is swept at the next start.

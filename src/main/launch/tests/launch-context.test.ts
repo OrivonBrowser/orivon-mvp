@@ -38,6 +38,9 @@ describe('the shape of a profile id', () => {
   it('is what randomBytes(6).toString("hex") makes, and nothing that names a path', () => {
     expect(PROFILE_ID.test('0123456789ab')).toBe(true)
     expect(PROFILE_ID.test('.hidden00')).toBe(false)
+    expect(PROFILE_ID.test('0123456789abc')).toBe(false)
+    expect(PROFILE_ID.test('0123456789ag')).toBe(false)
+    expect(PROFILE_ID.test('01234567')).toBe(false)
     expect(PROFILE_ID.test('has space1')).toBe(false)
   })
 })

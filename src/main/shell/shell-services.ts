@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
+import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
 import { partitionForTarget } from './tab-view.js'
 import { HistoryService } from '../history/history-service.js'
 import { NullHistoryStore } from '../history/history-store.js'
@@ -43,13 +45,20 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
   const settings = new SettingsStore(join(userDataPath, 'settings.json'))
   const zoomStore = new ZoomStore(join(userDataPath, 'zoom.json'))
   const internalPages = new InternalPageRegistry()
+  const windows = new WindowRegistry()
   // A private session writes down no pages: it never opens a history file at all.
   const openedHistory = runtime.isPrivate ? { store: new NullHistoryStore(), problem: null } : openHistory(join(userDataPath, 'history.db'))
   return {
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
     commands: new CommandBus(),
     devtools: new DevToolsService(settings, {
-      isApp: (url) => partitionForTarget(url, ctx.broker) !== undefined,
+      appOf: (contents) => {
+        const url = contents.getURL()
+        // The session the page runs in, and only after that its address: a popup an app opened is at about:blank, with the app's opener.
+        const found = windows.findTab(contents)
+        const partition = found?.window.tabs.partitionOf(found.tabId) ?? partitionForTarget(url, ctx.broker)
+        return partition === undefined || partition === INTERNAL_PARTITION ? null : { key: partition, label: originFromUrl(url) ?? 'this app' }
+      },
       isShellPage: (contents) => internalPages.pageOf(contents) !== undefined,
       developerMode: devModeEnabled,
       confirm: confirmOpenDevTools
@@ -60,7 +69,7 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
-    windows: new WindowRegistry(),
+    windows,
     zoom: new ZoomService(zoomStore, settings),
     zoomStore
   }

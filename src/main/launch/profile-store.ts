@@ -3,10 +3,13 @@
 // profile is the app's own data directory, so the browser a person already has
 // stays where it is; the others sit in `profiles/` inside it. A running profile
 // leaves a marker with its process id, so one that is in use is never deleted.
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { DEFAULT_PROFILE_ID, PROFILE_ID } from './launch-context.js'
+import { copyPublicSeed } from './public-seed.js'
+
+const DELETING_PREFIX = '.deleting-'
 
 export const PROFILE_COLORS = ['blue', 'green', 'orange', 'red', 'purple', 'pink', 'teal', 'gray'] as const
 export type ProfileColor = (typeof PROFILE_COLORS)[number]
@@ -82,8 +85,8 @@ export class ProfileStore {
     return [this.read(DEFAULT_PROFILE_ID) as Profile, ...others]
   }
 
-  /** Makes a profile. `seed` is copied into it (public data a new profile needs, such as the light client's checkpoint). */
-  create (name: unknown, color: unknown, seed: readonly string[] = []): { ok: true, profile: Profile } | Extract<Outcome, { ok: false }> {
+  /** Makes a profile. `seeded` gives it the public seed (./public-seed.ts). */
+  create (name: unknown, color: unknown, seeded = false): { ok: true, profile: Profile } | Extract<Outcome, { ok: false }> {
     const clean = cleanName(name)
     if (clean === null) return { ok: false, reason: 'invalid-name' }
     if (!isProfileColor(color)) return { ok: false, reason: 'invalid-color' }
@@ -91,7 +94,7 @@ export class ProfileStore {
     const dir = this.dirOf(id) as string
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 })
-      for (const item of seed) this.copySeed(item, dir)
+      if (seeded) copyPublicSeed(this.home, dir)
       const profile: Profile = { id, name: clean, color, created: this.now() }
       this.write(dir, profile)
       return { ok: true, profile }
@@ -119,13 +122,24 @@ export class ProfileStore {
     if (dir === null || !existsSync(dir)) return { ok: false, reason: 'unknown-profile' }
     if (this.isRunning(id)) return { ok: false, reason: 'running' }
     // Renamed first: a browser started for it in the meantime finds nothing, not a directory half gone.
-    const doomed = join(this.home, 'profiles', `.deleting-${id}`)
+    const doomed = join(this.home, 'profiles', `${DELETING_PREFIX}${id}`)
     try {
       renameSync(dir, doomed)
       rmSync(doomed, { recursive: true, force: true })
       return { ok: true }
     } catch {
       return { ok: false, reason: 'failed' }
+    }
+  }
+
+  /** Removes what a deletion that failed part way left behind: the data of a profile that is gone. */
+  sweepDeleted (): void {
+    try {
+      for (const entry of readdirSync(join(this.home, 'profiles'), { withFileTypes: true })) {
+        if (entry.isDirectory() && entry.name.startsWith(DELETING_PREFIX)) rmSync(join(this.home, 'profiles', entry.name), { recursive: true, force: true })
+      }
+    } catch {
+      // No profiles directory, or a file still open: the next start tries again.
     }
   }
 
@@ -171,11 +185,6 @@ export class ProfileStore {
 
   private write (dir: string, profile: Profile): void {
     writeFileSync(join(dir, PROFILE_FILE), JSON.stringify({ version: FILE_VERSION, name: profile.name, color: profile.color, created: profile.created }, null, 2))
-  }
-
-  private copySeed (item: string, into: string): void {
-    const from = join(this.home, item)
-    if (existsSync(from)) cpSync(from, join(into, item), { recursive: true, dereference: false })
   }
 }
 

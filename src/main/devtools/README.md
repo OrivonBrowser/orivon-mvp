@@ -5,10 +5,9 @@ opens them, for every way in: the key, the main menu, and "Inspect" in a page's 
 `devtools-prompt.ts` is the one question asked before they open on an app that holds permissions.
 
 **What it depends on.** `electron` (the prompt, and the `WebContents` it acts on);
-[`../settings/`](../settings/) (whether developer tools are allowed, and where they open);
-[`../../broker/policy/origin.ts`](../../broker/policy/origin.ts) (the origin a confirmation is kept under).
-The rest arrives as functions: which pages are apps and which are the shell's own is decided by the
-caller (`../shell/shell-services.ts`).
+[`../settings/`](../settings/) (whether developer tools are allowed, and where they open).
+The rest arrives as functions: which app a page runs as and which pages are the shell's own is decided by
+the caller (`../shell/shell-services.ts`).
 
 **What it must never import.** [`../shell/`](../shell/) as values, and [`../pages/`](../pages/): the
 shell hands this directory what it needs to know about a tab.
@@ -26,7 +25,9 @@ do not widen what any origin may do.
 
 **A console on an app acts with the app's permissions.** Someone pasting into it what a stranger
 told them to paste hands that stranger the app's grants. The first opening for each app in a run asks
-once, with Cancel as the default answer. Chromium's own warning about pasting into the console stays.
+once, with Cancel as the default answer. Chromium's own warning about pasting into the console stays. A page
+is an app by the session it runs in, not by its address alone: a popup an app opened is at `about:blank`,
+holds the app's opener, and is asked about as that app.
 
 **The shell's own pages are closed to them** outside developer mode: their console would hold the
 channel Settings speaks on.

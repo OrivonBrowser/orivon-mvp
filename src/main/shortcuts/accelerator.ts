@@ -47,16 +47,19 @@ export function isFunctionKey (key: string): boolean {
 export function chordFromInput (input: KeyInput): Chord | null {
   if (MODIFIER_KEYS.has(input.key)) return null
   let key: string | undefined
+  // On Windows a layout's AltGr key arrives as Ctrl and Alt together, and what it typed is text: it is never read by
+  // its physical key, or a Polish `ó` would run the command bound to Ctrl+Alt+O and not be typed.
+  const byPhysicalKey = !(input.control && input.alt)
   if (input.key in NAMED_KEYS) key = NAMED_KEYS[input.key]
   else if (FUNCTION_KEY.test(input.key)) key = input.key
   // A digit is the same key on every layout; a layout that needs Shift for it
   // types a symbol in `input.key`.
-  else if (/^Digit[0-9]$/.test(input.code)) key = input.code.slice(5)
+  else if (byPhysicalKey && /^Digit[0-9]$/.test(input.code)) key = input.code.slice(5)
   else if (input.key.length === 1) {
     const lower = input.key.toLowerCase()
-    if (isLetter(lower) || SYMBOLS.includes(lower)) key = lower
+    if (isLetter(lower) || isDigit(lower) || SYMBOLS.includes(lower)) key = lower
     // A letter of another alphabet is the letter its physical key has in Latin.
-    else if (/^Key[A-Z]$/.test(input.code)) key = input.code.slice(3).toLowerCase()
+    else if (byPhysicalKey && /^Key[A-Z]$/.test(input.code)) key = input.code.slice(3).toLowerCase()
   }
   return key === undefined ? null : { ctrl: input.control, alt: input.alt, shift: input.shift, meta: input.meta, key }
 }

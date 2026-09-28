@@ -129,6 +129,8 @@ export interface TabViewHost {
   adoptPopup: (view: WebContentsView, partition: string | undefined) => void
   atCapacity: () => boolean
   htmlFullscreenChanged: (id: string, entered: boolean) => void
+  /** The window is closing: nothing more is made or shown for it. */
+  isClosing: () => boolean
   readonly devtools: DevToolsGate | undefined
 }
 

@@ -43,13 +43,30 @@ export interface TabDragHost {
 }
 
 let dragging = false
+/** A tab is pressed and may yet be dragged or clicked. */
+let pressed = false
+/** Ends the drag under way, for Escape; one listener serves every tab. */
+let cancelDrag: (() => void) | null = null
+let listeningForEscape = false
 
-/** Whether a drag is under way: the strip is not redrawn under a pointer that has hold of one of its tabs. */
+/** Whether a tab is held: the strip is not redrawn under a pointer that has hold of one of its tabs, or the click that
+ * follows would go to an element that is no longer there. */
 export function isDraggingTab (): boolean {
-  return dragging
+  return dragging || pressed
+}
+
+function listenForEscape (): void {
+  if (listeningForEscape) return
+  listeningForEscape = true
+  window.addEventListener('keydown', (event) => { if (event.key === 'Escape') cancelDrag?.() })
+  // A press whose element was taken away never reaches its own end: the pointer going up anywhere frees the strip.
+  for (const type of ['pointerup', 'pointercancel']) {
+    window.addEventListener(type, () => { setTimeout(() => { if (!dragging) pressed = false }, 0) }, true)
+  }
 }
 
 export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost): void {
+  listenForEscape()
   let start: { x: number, grab: number, pointerId: number, y: number } | null = null
   let active = false
   /** The tabs that move together: this one, and the one it is joined to, in the strip's order. */
@@ -69,17 +86,24 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     }
   }
 
-  const end = (tornOut = false): void => {
+  /** `redraw` is false for a drop in the strip that moved the tab: main's word about the new order is on its way,
+   * and drawing the old order first would flash it. */
+  const end = (tornOut = false, redraw = true): void => {
     if (start !== null && el.hasPointerCapture(start.pointerId)) el.releasePointerCapture(start.pointerId)
     start = null
     const wasActive = active
     active = false
     dragging = false
+    pressed = false
+    cancelDrag = null
     for (const member of group) member.classList.remove('dragging', 'torn')
     clear()
     if (wasActive) {
       host.hover(id)
-      host.finished(tornOut)
+      if (redraw) host.finished(tornOut)
+    } else {
+      // After the click that follows a press: redrawn now, it would have no tab to land on.
+      setTimeout(() => { host.finished(false) }, 0)
     }
   }
 
@@ -97,6 +121,7 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     target = firstAt
     active = true
     dragging = true
+    cancelDrag = () => { end(true) }
     for (const member of group) member.classList.add('dragging')
   }
 
@@ -105,6 +130,7 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     start = { x: event.clientX, y: event.clientY, grab: event.clientX - el.getBoundingClientRect().left, pointerId: event.pointerId }
     const partner = host.partnerOf(el)
     group = partner === null ? [el] : host.tabs().filter((tab) => tab === el || tab === partner)
+    pressed = true
     el.setPointerCapture(event.pointerId)
   })
 
@@ -142,11 +168,10 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     const index = target
     // The click that follows a drag must not also activate the tab.
     el.addEventListener('click', (click) => { click.stopImmediatePropagation() }, { capture: true, once: true })
-    end(torn)
+    end(torn, torn || index === firstAt)
     if (torn) host.dropTab(id, event.screenX, event.screenY, event.clientX, event.clientY)
     else host.moveTab(id, index)
   })
 
   el.addEventListener('pointercancel', () => { end(true) })
-  window.addEventListener('keydown', (event) => { if (event.key === 'Escape' && active) end(true) })
 }

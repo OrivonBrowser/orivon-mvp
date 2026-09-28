@@ -7,6 +7,7 @@
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { copyPublicSeed } from './public-seed.js'
 
 export const PRIVATE_PREFIX = 'orivon-private-'
 const MARKER = '.orivon-private.json'
@@ -15,11 +16,9 @@ const NAME = new RegExp(`^${PRIVATE_PREFIX}[A-Za-z0-9]{6}$`)
 /** A directory with no marker yet may be one whose process has not written it. */
 export const GRACE_MS = 10 * 60 * 1000
 
-/** What a private session starts with, copied from the profile that opened it: its settings, and the light client's
- * verified checkpoint, which is public and without which a `.eth` name would fail once the shipped one is old. Never
- * history, bookmarks, grants, apps, identity or site data. */
+/** What a private session starts with, copied from the profile that opened it: its settings, and the public seed
+ * (./public-seed.ts). Never history, bookmarks, grants, apps, identity or site data. */
 export const SNAPSHOT_FILES = ['settings.json'] as const
-export const SNAPSHOT_FROM_HOME = ['verifier'] as const
 
 /** Makes the directory. `from` is the opening profile's directory, `home` the default profile's. */
 export function createPrivateDir (from: string, home: string, tmp = tmpdir()): string {
@@ -28,9 +27,7 @@ export function createPrivateDir (from: string, home: string, tmp = tmpdir()): s
   for (const file of SNAPSHOT_FILES) {
     if (existsSync(join(from, file))) cpSync(join(from, file), join(dir, file))
   }
-  for (const item of SNAPSHOT_FROM_HOME) {
-    if (existsSync(join(home, item))) cpSync(join(home, item), join(dir, item), { recursive: true, dereference: false })
-  }
+  copyPublicSeed(home, dir)
   return dir
 }
 

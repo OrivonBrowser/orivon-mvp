@@ -34,6 +34,14 @@ have none left, and a page visited on both sides of the range stays, with a coun
 **Writes wait half a second.** A page that redirects twice is one transaction. Reading flushes what is waiting
 first, so a list is never behind, and quitting flushes it (`DebouncedWriter.flushAll`).
 
+**A page cannot make the list grow without bound.** A change of address inside a page is kept at most once a
+second per tab, and past 100,000 pages the ones visited longest ago go. A write that fails (a full disk, a damaged
+page) is reported and dropped rather than raised: it happens inside event handlers, where a throw ends the browser.
+
+**Forgetting overwrites.** `secure_delete` is on, and clearing or removing a range empties the write-ahead log (and
+clearing rewrites the file), so an address a person cleared is not left readable in it. That is not a claim about
+what the disk itself keeps.
+
 **A file that cannot be used is left alone.** If the database is damaged or from a newer version, history is off
 for that run and Settings says why; the file is neither deleted nor replaced, so nothing a person could recover is
 destroyed by a bad start.

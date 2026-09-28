@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { HistoryService } from '../history-service.js'
 import { SqliteHistoryStore } from '../sqlite-history-store.js'
 
@@ -48,6 +48,16 @@ describe('the history service', () => {
 
     set('history.retentionDays', '7')
     expect(store.list().map((entry) => entry.title)).toEqual(['New'])
+  })
+
+  it('does not let a store that cannot prune end the browser at start', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { service, store } = setup()
+    vi.spyOn(store, 'removeRange').mockImplementation(() => { throw new Error('database or disk is full') })
+
+    expect(() => { service.prune() }).not.toThrow()
+    expect(complaint).toHaveBeenCalled()
+    complaint.mockRestore()
   })
 
   it('keeps everything when the person chose forever', () => {

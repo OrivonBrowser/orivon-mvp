@@ -22,7 +22,8 @@ function safeSegments (pathname: string): string[] | null {
   } catch {
     return null
   }
-  if (decoded.includes('\\') || decoded.includes('\0')) return null
+  // A `%` left after decoding once is a second layer of encoding, which a later URL parse would read as `..`.
+  if (decoded.includes('\\') || decoded.includes('\0') || decoded.includes('%')) return null
   const segments = decoded.split('/').slice(1)
   return segments.every((segment) => segment !== '' && segment !== '.' && segment !== '..') ? segments : null
 }

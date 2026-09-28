@@ -30,6 +30,7 @@ describe('a private session\'s directory', () => {
     await writeFile(join(home, 'settings.json'), '{"version":1,"values":{"appearance.theme":"dark"}}')
     await mkdir(join(home, 'verifier'), { recursive: true })
     await writeFile(join(home, 'verifier', 'checkpoint.json'), '{"c":1}')
+    await writeFile(join(home, 'verifier', 'ipns-sequences.json'), '{"k51visited":7}')
     for (const secret of ['bookmarks.json', 'history.db', 'zoom.json', 'shortcuts.json', 'telemetry.json']) await writeFile(join(home, secret), 'private')
     await mkdir(join(home, 'identity'), { recursive: true })
     await writeFile(join(home, 'identity', 'seed.json'), '{"seed":"secret"}')
@@ -40,7 +41,7 @@ describe('a private session\'s directory', () => {
 
     expect(await readFile(join(dir, 'settings.json'), 'utf8')).toContain('dark')
     expect(await readFile(join(dir, 'verifier', 'checkpoint.json'), 'utf8')).toBe('{"c":1}')
-    for (const name of ['bookmarks.json', 'history.db', 'zoom.json', 'shortcuts.json', 'telemetry.json', 'identity', 'grants']) expect(existsSync(join(dir, name)), name).toBe(false)
+    for (const name of ['bookmarks.json', 'history.db', 'zoom.json', 'shortcuts.json', 'telemetry.json', 'identity', 'grants', join('verifier', 'ipns-sequences.json')]) expect(existsSync(join(dir, name)), name).toBe(false)
   })
 
   it('takes the settings from the opener and the checkpoint from home, when they are not the same profile', async () => {
@@ -49,10 +50,10 @@ describe('a private session\'s directory', () => {
     await writeFile(join(opener, 'settings.json'), 'from the opener')
     await writeFile(join(home, 'settings.json'), 'from home')
     await mkdir(join(home, 'verifier'), { recursive: true })
-    await writeFile(join(home, 'verifier', 'c.json'), 'x')
+    await writeFile(join(home, 'verifier', 'checkpoint.json'), 'x')
     const dir = createPrivateDir(opener, home, tmp)
     expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe('from the opener')
-    expect(existsSync(join(dir, 'verifier', 'c.json'))).toBe(true)
+    expect(existsSync(join(dir, 'verifier', 'checkpoint.json'))).toBe(true)
   })
 
   it('is made when there is nothing to copy', () => {

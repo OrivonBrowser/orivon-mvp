@@ -8,8 +8,8 @@ import type { DevToolsService } from '../../devtools/devtools-service.js'
 import type { ProfilesService } from '../../launch/profiles-service.js'
 import type { ZoomService } from '../../zoom/zoom-service.js'
 
-interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean }
-const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, ...extra })
+interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null }
+const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, ...extra })
 
 function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
   const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab', 'toggle', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
@@ -173,6 +173,16 @@ describe('runCommand', () => {
     const alone = harness([tab('a')], 'a')
     runCommand('tab.moveToNewWindow', alone.target, alone.deps)
     expect(alone.deps.openWindow).not.toHaveBeenCalled()
+  })
+
+  it('moves a joined pair along the strip as one, from where the pair begins', () => {
+    const pair = [tab('a'), tab('b', { splitWith: 'c' }), tab('c', { splitWith: 'b' }), tab('d')]
+    for (const active of ['b', 'c']) {
+      const { target, calls, deps } = harness(pair, active)
+      runCommand('tab.moveLeft', target, deps)
+      runCommand('tab.moveRight', target, deps)
+      expect(calls['moveTab']?.mock.calls, active).toEqual([[active, 0], [active, 2]])
+    }
   })
 
   it('works the split of the active tab', () => {

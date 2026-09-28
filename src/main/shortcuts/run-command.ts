@@ -69,9 +69,14 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       else deps.bookmarks.add({ url: active.url, title: active.title.length > 0 ? active.title : active.url, favicon: tabs.faviconFor(active.id) })
       return
     case 'window.new': deps.openWindow({ place: cascadeFrom(window.getBounds()) }); return
-    case 'tab.moveLeft': case 'tab.moveRight':
-      if (active !== undefined) tabs.moveTab(active.id, activeIndex + (id === 'tab.moveRight' ? 1 : -1))
+    case 'tab.moveLeft': case 'tab.moveRight': {
+      if (active === undefined) return
+      // A joined pair moves as one, from where it begins.
+      const partnerAt = active.splitWith === null ? -1 : order.findIndex((tab) => tab.id === active.splitWith)
+      const begins = partnerAt === -1 ? activeIndex : Math.min(activeIndex, partnerAt)
+      tabs.moveTab(active.id, begins + (id === 'tab.moveRight' ? 1 : -1))
       return
+    }
     case 'split.toggle': if (active !== undefined) tabs.splits.toggle(active.id); return
     case 'split.focusOther': if (active !== undefined) tabs.splits.focusOther(active.id); return
     case 'split.swap': if (active !== undefined) tabs.splits.swap(active.id); return

@@ -121,13 +121,33 @@ describe('the profiles service', () => {
     expect(existsSync(dir)).toBe(false)
   })
 
+  it('reports a profile it could not start instead of raising in the event that asked', () => {
+    const made = service()
+    const created = made.service.create('Work', 'green')
+    if (!created.ok) throw new Error('not created')
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const failing = vi.fn(() => { throw new Error('no such program') })
+    const s = new ProfilesService({ launch: { kind: 'default', home, dir: home }, dir: home, profiles: made.store, source: { execPath: '/x', appPath: '/x', packaged: true, appImage: undefined, env: {} }, isPrivate: false, profileId: 'default', inherit: [] }, failing as never)
+
+    expect(s.open(created.profile.id)).toBe(false)
+    complaint.mockRestore()
+  })
+
+  it('says whether a private session was started', () => {
+    const { service: s, children } = service()
+    expect(s.openPrivate()).toBe(true)
+    children[0]?.emit('exit')
+  })
+
   it('removes the directory of a private session that could not be started', () => {
     const made = service()
     const failing = vi.fn(() => { throw new Error('no such program') })
     const s = new ProfilesService({ launch: { kind: 'default', home, dir: home }, dir: home, profiles: made.store, source: { execPath: '/x', appPath: '/x', packaged: true, appImage: undefined, env: {} }, isPrivate: false, profileId: 'default', inherit: [] }, failing as never)
     const count = (): number => readdirSync(tmpdir()).filter(isPrivateDirName).length
     const before = count()
-    s.openPrivate()
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(s.openPrivate()).toBe(false)
+    complaint.mockRestore()
     expect(failing).toHaveBeenCalledTimes(1)
     expect(count()).toBe(before)
   })

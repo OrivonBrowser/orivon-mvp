@@ -20,7 +20,7 @@ import { internalUrl, parseInternalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { SubsystemContext } from '../registry.js'
 import { BLANK_URL, TabFactory } from './tab-factory.js'
-import { moveInOrder } from './tab-order.js'
+import { clearOfPairs, moveInOrder } from './tab-order.js'
 import { PaneHost } from './pane-host.js'
 import { SplitController } from './split-controller.js'
 import { closeParkedViews, partitionChanged, repartitionView } from './tab-view.js'
@@ -41,14 +41,10 @@ const MAX_TABS = 100
 const EXIT_FULLSCREEN_WORLD_ID = 1001
 
 export class TabManager {
-  /** One record per tab -- replaces a bare `Map<string, WebContentsView>`
-   * (build step 1) so favicon state and the view share one lifetime.
-   * A second, parallel map would need closeTab() to remember deleting
-   * from both, which is exactly the leak class this avoids. */
+  /** One record per tab, so favicon state and the view share one lifetime:
+   * a second, parallel map is the leak class this avoids. */
   private readonly tabs = new Map<string, TabRecord>()
-  /** Tab strip order, separate from the Map's insertion-order guarantee so
-   * reordering (not in this step's scope, but the seam matters) doesn't
-   * require touching the Map. */
+  /** Tab strip order, kept apart from the Map's insertion order. */
   private readonly order: string[] = []
   private activeId: string | null = null
   /** Set once the window is closing: from then on no tab is activated, laid
@@ -108,10 +104,12 @@ export class TabManager {
       adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => {
-        if (entered) this.fullscreenId = id
-        else if (this.fullscreenId === id) this.fullscreenId = null
+        // Only the tab in front is given the window: the shell refuses any other, and a refusal must leave nothing shown.
+        if (entered && id === this.activeId) this.fullscreenId = id
+        else if (!entered && this.fullscreenId === id) this.fullscreenId = null
         shell?.htmlFullscreenChanged(id, entered)
       },
+      isClosing: () => this.disposed,
       devtools: shell?.devtools
     }
     this.searchUrl = shell?.searchUrl
@@ -121,6 +119,7 @@ export class TabManager {
     this.splits = new SplitController({
       order: this.order,
       activate: (id) => { this.activateTab(id) },
+      focus: (id) => { this.liveWebContents(id)?.focus() },
       changed: () => { this.syncViews(); this.emitState() },
       openTab: () => this.createTab(),
       area: getTabBounds
@@ -228,7 +227,7 @@ export class TabManager {
 
   /** Puts a tab at `index` in the strip. */
   moveTab (id: string, index: number): void {
-    if (this.splits.move(id, index) || moveInOrder(this.order, id, index)) this.emitState()
+    if (this.splits.move(id, index) || moveInOrder(this.order, id, index, this.splits.groups.pairs())) this.emitState()
   }
 
   get tabCount (): number {
@@ -256,7 +255,8 @@ export class TabManager {
   giveTab (id: string, record: TabRecord, index?: number): void {
     record.host = this.viewHost
     this.tabs.set(id, record)
-    this.order.splice(Math.min(Math.max(0, index ?? this.order.length), this.order.length), 0, id)
+    const wanted = Math.min(Math.max(0, index ?? this.order.length), this.order.length)
+    this.order.splice(clearOfPairs(this.order, wanted, this.splits.groups.pairs(), -1), 0, id)
     this.activateTab(id)
   }
 
@@ -270,18 +270,20 @@ export class TabManager {
     const record = this.tabs.get(id)
     if (record === undefined) return
 
+    const partner = this.splits.groups.partnerOf(id)
     if (!this.disposed) this.panes.hide(id)
     this.splits.groups.separate(id)
+    // Out of the books before the view closes: closing announces its own end
+    // at once, and that second call must find nothing left to do.
+    this.tabs.delete(id)
+    const idx = this.order.indexOf(id)
+    if (idx !== -1) this.order.splice(idx, 1)
     if (closeView && !record.view.webContents.isDestroyed()) {
       record.view.webContents.close()
     }
     // On the crash path too: a parked view is alive whatever became of the
     // one the tab showed.
     if (!handedOn) closeParkedViews(record)
-    this.tabs.delete(id)
-
-    const idx = this.order.indexOf(id)
-    if (idx !== -1) this.order.splice(idx, 1)
 
     if (this.disposed) return
 
@@ -294,18 +296,15 @@ export class TabManager {
       }
     }
 
-    // A16, resolved: the last tab closing means there is nothing left to
-    // show -- close the window rather than leaving it open and empty.
-    // Reachable from exactly one call site: `record` is already deleted
-    // above, so a second forgetTab() for a since-removed id returns at
-    // the guard at the top of this method instead of reaching here --
-    // onEmpty cannot double-fire off the multiple emitState() sources
-    // (tab events, bookmark events) the way a `state.tabs.length === 0`
-    // check in window.ts's pushState would.
+    // The last tab closing leaves nothing to show. The record is already
+    // gone, so a second forgetTab() for it returns at the top: `onEmpty`
+    // cannot fire twice the way a check in window.ts's pushState would.
     if (this.order.length === 0) {
       if (!handedOn) this.onEmpty()
       return
     }
+    // The tab beside it now has the whole area.
+    if (partner !== null) this.syncViews()
     this.emitState()
   }
 
@@ -321,6 +320,8 @@ export class TabManager {
   /** Puts the views on screen as the plan says: the tab in front, or the two panes of a split, sized. */
   private syncViews (): void {
     if (this.disposed) return
+    // A page holds the window only while it is the tab in front: a tab that closed or was left has no claim.
+    if (this.fullscreenId !== this.activeId) this.fullscreenId = null
     const plan = this.splits.plan(this.activeId, this.getTabBounds(), this.fullscreenId)
     const panes = plan.panes.flatMap(({ id, bounds }) => {
       const view = this.tabs.get(id)?.view
@@ -446,6 +447,11 @@ export class TabManager {
       if (record.view.webContents === wc) return id
     }
     return null
+  }
+
+  /** The session partition a tab's page runs in: an app's own, or undefined for the open web. */
+  partitionOf (id: string): string | undefined {
+    return this.tabs.get(id)?.partition
   }
 
   /** A tab's webContents, or undefined if the tab is gone or its

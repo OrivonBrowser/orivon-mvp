@@ -34,6 +34,9 @@ export function peerCommand (source: PeerSource, flags: readonly string[]): Peer
 export function spawnPeer (source: PeerSource, flags: readonly string[], spawn: typeof nodeSpawn = nodeSpawn): ChildProcess {
   const { command, args, env } = peerCommand(source, flags)
   const child = spawn(command, [...args], { detached: true, stdio: 'ignore', env })
+  // A program that cannot be started (an AppImage that was replaced since) reports it here, later, and an 'error'
+  // nobody hears is an uncaught exception, which ends this browser. Callers that care add their own listener.
+  child.on('error', (error) => { console.error(`could not start another browser: ${error.message}`) })
   // Its own process group and no attachment to this one's streams: this browser closing does not close it.
   child.unref()
   return child

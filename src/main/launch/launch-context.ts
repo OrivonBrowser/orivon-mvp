@@ -12,8 +12,8 @@ export type Launch =
   | { readonly kind: 'private', readonly home: string, readonly dir: string | null }
 
 export const DEFAULT_PROFILE_ID = 'default'
-/** The shape of an id this browser made: random, lowercase, never a path. Checked before any path is built from one. */
-export const PROFILE_ID = /^[a-z0-9]{8,32}$/
+/** The shape of an id this browser made: twelve random lowercase hexadecimal characters, never a path. Checked before any path is built from one. */
+export const PROFILE_ID = /^[0-9a-f]{12}$/
 
 const PROFILE_FLAG = '--orivon-profile='
 const PRIVATE_FLAG = '--orivon-private'

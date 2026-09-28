@@ -45,7 +45,7 @@ export class ProfilesService {
 
   create (name: unknown, color: unknown): ReturnType<Runtime['profiles']['create']> {
     // The light client's checkpoint is public and a new profile starts faster, and safer, with it.
-    const result = this.runtime.profiles.create(name, color, ['verifier'])
+    const result = this.runtime.profiles.create(name, color, true)
     if (result.ok) this.notify()
     return result
   }
@@ -73,19 +73,30 @@ export class ProfilesService {
   /** Starts a browser for a profile, or brings the one running forward (its second start hands over and stops). */
   open (id: string): boolean {
     if (this.runtime.profiles.read(id) === null || (id === this.runtime.profileId && !this.runtime.isPrivate)) return false
-    this.spawn(this.runtime.source, [...this.runtime.inherit, ...(id === DEFAULT_PROFILE_ID ? [] : flagsFor({ kind: 'profile', id }))])
-    return true
+    try {
+      this.spawn(this.runtime.source, [...this.runtime.inherit, ...(id === DEFAULT_PROFILE_ID ? [] : flagsFor({ kind: 'profile', id }))])
+      return true
+    } catch (error) {
+      console.error(`could not start the profile: ${error instanceof Error ? error.message : String(error)}`)
+      return false
+    }
   }
 
-  /** Starts a private session: a fresh directory holding this profile's settings, and a process of its own for it. Deleted when it ends. */
-  openPrivate (): void {
-    const dir = createPrivateDir(this.runtime.dir, this.runtime.launch.home)
+  /** Starts a private session: a fresh directory holding this profile's settings, and a process of its own for it. Deleted when it ends.
+   * A shortcut calls this from an event handler, where a throw would end the browser: a failure is reported, not raised. */
+  openPrivate (): boolean {
+    let dir: string | null = null
     try {
-      const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir })])
-      child.once('exit', () => { removePrivateDir(dir) })
-      child.once('error', () => { removePrivateDir(dir) })
-    } catch {
-      removePrivateDir(dir)
+      const made = createPrivateDir(this.runtime.dir, this.runtime.launch.home)
+      dir = made
+      const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir: made })])
+      child.once('exit', () => { removePrivateDir(made) })
+      child.once('error', () => { removePrivateDir(made) })
+      return true
+    } catch (error) {
+      if (dir !== null) removePrivateDir(dir)
+      console.error(`could not start a private session: ${error instanceof Error ? error.message : String(error)}`)
+      return false
     }
   }
 

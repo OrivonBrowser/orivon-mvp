@@ -70,6 +70,7 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
     openTab: vi.fn(),
     adoptPopup: vi.fn(),
     atCapacity: () => false,
+    isClosing: () => false,
     htmlFullscreenChanged: vi.fn(),
     ...overrides
   } as Host & Record<string, unknown>
@@ -238,6 +239,20 @@ describe('wireView -- a popup keeps its session while its opener holds it', () =
     wc.emit('did-navigate', {}, `${APP}/callback`)
 
     expect(r.partition).toBe(APP_PARTITION)
+  })
+
+  it('makes no new view for a navigation that commits while the window is closing', () => {
+    const wc = fakeContents()
+    const host = fakeHost({ isClosing: () => true })
+    const r = record(wc, undefined, host)
+    wireView('tab-1', r)
+    const before = r.view
+
+    wc.emit('did-navigate', {}, `${APP}/callback`)
+
+    expect(r.view).toBe(before)
+    expect(r.partition).toBeUndefined()
+    expect(adoptedViews).toHaveLength(0)
   })
 
   it('moves back to the default session like any other tab once the opener is gone', () => {

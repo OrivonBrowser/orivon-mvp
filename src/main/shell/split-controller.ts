@@ -29,6 +29,8 @@ export interface SplitHost {
   /** The strip, live: this reorders it. */
   readonly order: string[]
   activate: (id: string) => void
+  /** Puts the keyboard in a tab's page: the pane came forward by a command, not by a click in it. */
+  focus: (id: string) => void
   /** The panes or their sizes changed: put the views right and tell the chrome. */
   changed: () => void
   /** A tab that holds nothing, opened for a split; returns its id. */
@@ -150,6 +152,7 @@ export class SplitController {
     const partner = this.groups.partnerOf(id)
     if (partner === null) return false
     this.host.activate(partner)
+    this.host.focus(partner)
     return true
   }
 

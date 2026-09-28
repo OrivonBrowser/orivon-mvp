@@ -331,6 +331,8 @@ export function repartitionView (
   nextPartition: string | undefined
 ): void {
   const { host } = record
+  // A navigation that commits as the window closes must not make a view nobody will close.
+  if (host.isClosing()) return
   const oldView = record.view
   const oldPartition = record.partition
   const wasShown = host.isShown(id)

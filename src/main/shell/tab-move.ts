@@ -49,7 +49,8 @@ export function dropTab (
   openWindow: (options: ShellWindowOptions) => void,
   topHeight: number
 ): void {
-  const target = windows.find((candidate) => candidate !== from && !candidate.window.isDestroyed() && inTop(candidate.window.getBounds(), point, topHeight))
+  // Nothing says which of overlapping windows is in front; the newest is the likeliest.
+  const target = windows.filter((candidate) => candidate !== from && !candidate.window.isDestroyed() && inTop(candidate.window.getBounds(), point, topHeight)).at(-1)
   if (target !== undefined) {
     const bounds = target.window.getBounds()
     // Where along the strip it landed, as a share of the tabs there: the strip's own layout is the chrome's.

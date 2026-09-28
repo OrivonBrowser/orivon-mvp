@@ -104,6 +104,13 @@ registered once. A closing window closes every view it made: the tabs' (`TabMana
 chrome view's, and a welcome screen still open. Destroying a window destroys only what is attached
 to it.
 
+**A joined pair stays whole.** A tab moved into the strip goes past a pair, not between its tabs
+(`tab-order.ts`, also for a tab given by another window); a pair moves as one from the keyboard; and when
+the tab beside a closed or departed one was in a split, `forgetTab()` lays the views out again so the
+survivor has the whole area. A page holds the window in HTML fullscreen only while its tab is the one in
+front, and a tab that closes or is left has no claim on it. `forgetTab()` takes the record out before it
+closes the view, because closing announces its own end at once and that call must find nothing to do.
+
 **[`tabs.ts`](tabs.ts): a closing window disposes its tabs before it is destroyed.** Destroying a
 window destroys the views attached to it and nothing else: a background tab's view and every parked
 view are detached, so their renderers would outlive the window. `window.ts` calls

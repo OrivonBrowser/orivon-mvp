@@ -105,6 +105,11 @@ export class SplitGroups {
     return group.a === id ? group.b : group.a
   }
 
+  /** Every joined pair, for the strip to keep whole. */
+  pairs (): Array<readonly [string, string]> {
+    return this.groups.map((group) => [group.a, group.b] as const)
+  }
+
   /** False when either tab is already in a group, or the two are one. */
   create (a: string, b: string, orientation: Orientation = 'row', ratio = 0.5): boolean {
     if (a === b || this.groupOf(a) !== undefined || this.groupOf(b) !== undefined) return false

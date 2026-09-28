@@ -42,7 +42,7 @@ vi.mock('electron', () => ({
 }))
 
 const { TabManager } = await import('../tabs.js')
-const { moveToNewWindow, moveToWindow } = await import('../tab-move.js')
+const { dropTab, moveToNewWindow, moveToWindow } = await import('../tab-move.js')
 
 beforeEach(() => { createdViews.length = 0 })
 
@@ -197,5 +197,20 @@ describe('reordering a window\'s tabs', () => {
     expect(heard).toHaveBeenCalledTimes(1)
     manager.moveTab(a, 2)
     expect(heard).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a tab let go where windows overlap', () => {
+  it('goes to the newest window whose strip is under the pointer', () => {
+    const bounds = { x: 100, y: 100, width: 800, height: 600 }
+    const [from, older, newer] = [side(), side(), side()]
+    for (const each of [from, older, newer]) (each.entry.window as unknown as { getBounds: () => typeof bounds }).getBounds = () => bounds
+    from.manager.createTab('https://a.example/')
+    const moved = from.manager.createTab('https://b.example/')
+
+    dropTab(from.entry, moved, { x: 300, y: 110 }, [older.entry, newer.entry, from.entry], vi.fn(), 80)
+
+    expect(ids(newer.manager)).toEqual([moved])
+    expect(ids(older.manager)).toEqual([])
   })
 })

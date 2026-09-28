@@ -15,6 +15,7 @@ interface FakeContents extends EventEmitter {
   navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean }
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn>
 }
 interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, name: string }
 const createdViews: RecordedView[] = []
@@ -30,6 +31,7 @@ function makeFakeWebContents (): FakeContents {
   emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false }
   emitter.setWindowOpenHandler = vi.fn()
   emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })
+  emitter.focus = vi.fn()
   return emitter
 }
 
@@ -54,6 +56,7 @@ interface Rig {
   area: { current: typeof AREA }
   backdrop: { view: { name: string, setBounds: ReturnType<typeof vi.fn> }, update: ReturnType<typeof vi.fn> }
   fullscreen: (id: string, entered: boolean) => void
+  onEmpty: ReturnType<typeof vi.fn>
 }
 
 function rig (): Rig {
@@ -64,12 +67,13 @@ function rig (): Rig {
   }
   const area = { current: AREA }
   const backdrop = { view: { name: 'backdrop', setBounds: vi.fn() }, update: vi.fn() }
-  const manager = new TabManager(contentView as never, () => area.current, vi.fn(), 'http://localhost:5999/newtab/', {} as SubsystemContext, {
+  const onEmpty = vi.fn()
+  const manager = new TabManager(contentView as never, () => area.current, onEmpty, 'http://localhost:5999/newtab/', {} as SubsystemContext, {
     window: { isDestroyed: () => false } as never,
     htmlFullscreenChanged: vi.fn(),
     backdrop: backdrop as never
   })
-  return { manager, children, area, backdrop, fullscreen: (id, entered) => { (manager as unknown as { viewHost: { htmlFullscreenChanged: (id: string, entered: boolean) => void } }).viewHost.htmlFullscreenChanged(id, entered) } }
+  return { manager, children, area, backdrop, onEmpty, fullscreen: (id, entered) => { (manager as unknown as { viewHost: { htmlFullscreenChanged: (id: string, entered: boolean) => void } }).viewHost.htmlFullscreenChanged(id, entered) } }
 }
 
 const ids = (manager: InstanceType<typeof TabManager>): string[] => manager.getState().tabs.map((tab) => tab.id)
@@ -203,6 +207,7 @@ describe('two tabs in a split', () => {
     const b = manager.createTab('https://b.example/')
     manager.splits.split(a, b, 'right')
 
+    manager.activateTab(a)
     fullscreen(a, true)
     manager.layout()
     expect(names(children)).toEqual([(createdViews[0] as RecordedView).name])
@@ -294,6 +299,8 @@ describe('two tabs in a split', () => {
 
     expect(manager.splits.focusOther(b)).toBe(true)
     expect(manager.getState().activeTabId).toBe(a)
+    expect((createdViews[0] as RecordedView).webContents.focus).toHaveBeenCalledTimes(1)
+    expect((createdViews[1] as RecordedView).webContents.focus).not.toHaveBeenCalled()
     expect(manager.splits.focusOther('tab-not-here')).toBe(false)
   })
 })
@@ -338,5 +345,89 @@ describe('splitting is refused', () => {
     const a = manager.createTab('https://a.example/')
     expect(manager.splits.split(a, a, 'right')).toBe(false)
     expect(manager.splits.split(a, 'tab-nope', 'right')).toBe(false)
+  })
+})
+
+describe('the tab beside one that closes or leaves', () => {
+  it('has the whole area when the one in front closes and when it is handed on', () => {
+    for (const leave of [(m: ReturnType<typeof rig>['manager'], id: string) => { m.closeTab(id) }, (m: ReturnType<typeof rig>['manager'], id: string) => { m.takeTab(id) }]) {
+      createdViews.length = 0
+      const { manager, children } = rig()
+      const a = manager.createTab('https://a.example/')
+      const b = manager.createTab('https://b.example/')
+      manager.splits.split(a, b, 'right')
+      manager.activateTab(a)
+
+      leave(manager, b)
+
+      expect(names(children)).toEqual([(createdViews[0] as RecordedView).name])
+      expect(boundsOf(createdViews[0] as RecordedView)).toEqual(AREA)
+    }
+  })
+
+  it('is reported once as the last tab going, however soon the closed view says so', () => {
+    const { manager, onEmpty } = rig()
+    manager.closeTab(manager.createTab('https://a.example/'))
+    expect(onEmpty).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a page that holds the window', () => {
+  it('lets go of it when its tab closes, so the next tab is shown', () => {
+    const { manager, children, fullscreen } = rig()
+    manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    fullscreen(b, true)
+
+    manager.closeTab(b)
+    manager.layout()
+
+    expect(names(children)).toEqual([(createdViews[0] as RecordedView).name])
+    manager.createTab('https://c.example/')
+    expect(names(children)).toEqual([(createdViews[2] as RecordedView).name])
+  })
+
+  it('is not given it when its tab is not the one in front', () => {
+    const { manager, children, fullscreen } = rig()
+    const a = manager.createTab('https://a.example/')
+    manager.createTab('https://b.example/')
+
+    fullscreen(a, true)
+    manager.layout()
+    expect(names(children)).toEqual([(createdViews[1] as RecordedView).name])
+
+    fullscreen(a, false)
+    manager.layout()
+    expect(names(children)).toEqual([(createdViews[1] as RecordedView).name])
+  })
+})
+
+describe('a joined pair in the strip', () => {
+  it('is passed by a tab moved into it, on the side the tab came from', () => {
+    const { manager } = rig()
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    const c = manager.createTab('https://c.example/')
+    const d = manager.createTab('https://d.example/')
+    manager.splits.split(a, b, 'right')
+
+    manager.moveTab(c, 1)
+    expect(ids(manager)).toEqual([c, a, b, d])
+    manager.moveTab(c, 1)
+    expect(ids(manager)).toEqual([a, b, c, d])
+  })
+
+  it('is passed by a tab that arrives from another window at a place inside it', () => {
+    const { manager } = rig()
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    manager.splits.split(a, b, 'right')
+    const other = rig().manager
+    const arriving = other.createTab('https://x.example/')
+    const record = other.takeTab(arriving)
+
+    manager.giveTab(arriving, record as NonNullable<typeof record>, 1)
+
+    expect(ids(manager)).toEqual([a, b, arriving])
   })
 })

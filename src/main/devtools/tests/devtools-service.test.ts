@@ -28,7 +28,7 @@ function setup (deps: Partial<DevToolsDeps> = {}, initial: Partial<Values> = {})
     onChange: (listener: (change: { key: string }) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }
   }
   const confirm = vi.fn(() => true)
-  const service = new DevToolsService(settings as never, { isApp: () => false, isShellPage: () => false, developerMode: () => false, confirm, ...deps })
+  const service = new DevToolsService(settings as never, { appOf: () => null, isShellPage: () => false, developerMode: () => false, confirm, ...deps })
   return { service, values, confirm, change: (key, value) => { Object.assign(values, { [key]: value }); for (const listener of listeners) listener({ key }) } }
 }
 
@@ -80,7 +80,7 @@ describe('developer tools', () => {
   })
 
   it('ask once for each app, and open only when the answer is yes', () => {
-    const { service, confirm } = setup({ isApp: () => true })
+    const { service, confirm } = setup({ appOf: (contents) => ({ key: `partition-of-${new URL((contents as unknown as FakeContents).url).origin}`, label: new URL((contents as unknown as FakeContents).url).origin }) })
     confirm.mockReturnValueOnce(false)
     const first = page('https://app.example/index.html')
     service.toggle(as(first), WINDOW)
@@ -99,6 +99,19 @@ describe('developer tools', () => {
     const another = page('https://other-app.example/')
     service.toggle(as(another), WINDOW)
     expect(confirm).toHaveBeenCalledTimes(3)
+  })
+
+  it('ask about a page by the app it runs as, whatever its address: a popup an app opened has none', () => {
+    const { service, confirm } = setup({ appOf: () => ({ key: 'persist:app-1', label: 'this app' }) })
+    const popup = page('about:blank')
+    service.toggle(as(popup), WINDOW)
+    expect(confirm).toHaveBeenCalledExactlyOnceWith(WINDOW, 'this app')
+    expect(popup.openDevTools).toHaveBeenCalledTimes(1)
+
+    const sameApp = page('blob:https://app.example/1234')
+    service.toggle(as(sameApp), WINDOW)
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(sameApp.openDevTools).toHaveBeenCalledTimes(1)
   })
 
   it('never ask for a plain website', () => {

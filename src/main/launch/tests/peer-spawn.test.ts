@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
 import type { ChildProcess } from 'node:child_process'
 import { peerCommand, spawnPeer } from '../peer-spawn.js'
 import type { PeerSource } from '../peer-spawn.js'
@@ -36,10 +37,20 @@ describe('peerCommand', () => {
 
 describe('spawnPeer', () => {
   it('starts it detached, with no streams, and lets go of it', () => {
-    const child = { unref: vi.fn() } as unknown as ChildProcess
+    const child = Object.assign(new EventEmitter(), { unref: vi.fn() }) as unknown as ChildProcess
     const spawn = vi.fn(() => child)
     expect(spawnPeer(source(), ['--orivon-private'], spawn as never)).toBe(child)
     expect(spawn).toHaveBeenCalledWith('/opt/Orivon/orivon', ['--orivon-private'], expect.objectContaining({ detached: true, stdio: 'ignore' }))
     expect(child.unref).toHaveBeenCalledTimes(1)
+  })
+
+  it('hears a program that cannot be started, so that it does not end this browser', () => {
+    const child = Object.assign(new EventEmitter(), { unref: vi.fn() }) as unknown as ChildProcess
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+    spawnPeer(source(), [], (() => child) as never)
+
+    expect(() => child.emit('error', new Error('spawn ENOENT'))).not.toThrow()
+    expect(complaint).toHaveBeenCalledWith(expect.stringContaining('spawn ENOENT'))
+    complaint.mockRestore()
   })
 })
