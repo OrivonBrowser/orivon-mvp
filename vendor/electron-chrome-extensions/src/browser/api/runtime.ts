@@ -14,9 +14,9 @@ export class RuntimeAPI extends EventEmitter {
     handle('runtime.sendNativeMessage', this.sendNativeMessage, { permission: 'nativeMessaging' })
   }
 
-  // Orivon patch: native messaging spawns a host process, which the no-native-code rule
-  // (CLAUDE.md rule 8) forbids outside the broker. The handlers stay registered so an
-  // extension gets this error instead of silently hanging.
+  // Orivon patch (UPSTREAM.md, patch 1): native messaging starts a desktop program, native
+  // code outside Orivon's broker. The handlers stay registered so an extension gets this
+  // error instead of silently hanging.
   private connectNative = async (
     _event: ExtensionEvent,
     _connectionId: string,

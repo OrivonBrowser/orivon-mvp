@@ -4,7 +4,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["node", "chrome", "debug", "adm-zip"],
+    "types": ["node", "chrome", "debug"],
 
     "strict": true,
     "esModuleInterop": true,

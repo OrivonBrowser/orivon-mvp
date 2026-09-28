@@ -3,8 +3,10 @@
 - Source: https://github.com/samuelmaddock/electron-browser-shell, `packages/electron-chrome-web-store/`
 - Commit: `354b0b8192e8c2d960e50cf108b5dbbb70448fec`
 - Date: 2026-09-01
-- License: MIT (package.json's `license` field; upstream ships no package-local LICENSE file, so
-  `LICENSE.md` here is the standard MIT text with the package's declared author)
+- License: MIT, as the package's `package.json` declares (`"license": "MIT"`, author Samuel
+  Maddock). Upstream ships no package-local licence file, so `LICENSE.md` here is the standard
+  MIT text with that author. The monorepo root's `LICENSE` is GPL-3.0; under either licence the
+  code combines with Orivon's AGPL-3.0-only.
 - Vendored from: `packages/electron-chrome-web-store/src/` (no build output)
 
 ## Patches

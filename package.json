@@ -43,7 +43,7 @@
   "dependencies": {
     "@a16z/helios": "0.11.1",
     "@ipld/dag-pb": "^4.2.0",
-    "adm-zip": "0.5.18",
+    "adm-zip": "0.6.1",
     "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
     "crypto-browserify": "^3.12.1",
@@ -66,7 +66,6 @@
     "@libp2p/crypto": "^5.1.23",
     "@playwright/test": "^1.62.1",
     "@swc/core": "^1.13.0",
-    "@types/adm-zip": "0.5.8",
     "@types/chrome": "0.0.300",
     "@types/debug": "4.1.13",
     "@types/node": "^24.0.0",

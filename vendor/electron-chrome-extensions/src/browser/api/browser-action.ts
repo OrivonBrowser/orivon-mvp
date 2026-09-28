@@ -261,7 +261,7 @@ export class BrowserActionAPI {
           }
 
           if (iconImage) {
-            return new Response(iconImage.toPNG(), {
+            return new Response(new Uint8Array(iconImage.toPNG()), {
               status: 200,
               headers: {
                 'Content-Type': 'image/png',

@@ -14,12 +14,18 @@
    `src/browser/api/runtime.ts`, `connectNative`, `disconnectNative` and `sendNativeMessage` now
    throw `Error('Native messaging is not supported in Orivon')` instead of spawning a host
    process; the IPC handlers stay registered so an extension gets that error rather than a
-   silent hang. Reason: native messaging spawns an OS process, which Orivon's no-native-code
-   rule forbids outside the broker (CLAUDE.md rule 8).
+   silent hang. Reason: native messaging starts a desktop program, native code outside
+   Orivon's broker, which Orivon does not run.
 2. **Explicit preload path.** `src/browser/index.ts`: added `preloadPath?: string` to
    `ChromeExtensionOptions`; when set, `prependPreload()` uses it instead of
    `resolvePreloadPath()`. Reason: Orivon bundles this preload itself and never installs from
    `electron-chrome-extensions/preload`.
+
+3. **Icon response body type.** `src/browser/api/browser-action.ts` (the `crx://` icon
+   handler): `new Response(iconImage.toPNG(), ...)` becomes
+   `new Response(new Uint8Array(iconImage.toPNG()), ...)`. Reason: the DOM lib bundled with
+   Orivon's TypeScript 7 no longer accepts a `Buffer<ArrayBufferLike>` as `BodyInit`; the bytes
+   are unchanged.
 
 Nothing else changed; upstream code is not reformatted.
 
