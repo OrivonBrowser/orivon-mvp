@@ -1,5 +1,6 @@
 /**
- * Fails the build if a source file opens with more than 25 lines of comment.
+ * Fails the build if a source file opens with more than 25 lines of comment,
+ * or a CI workflow or root *.config.ts file holds any comment block over 10.
  *
  * docs/development/code-guidelines.md Rule 1. The rule's own test is whether a
  * comment restates the code, and that test cannot see the failure this guard
@@ -17,9 +18,9 @@
  * The limit is calibrated, not chosen: the files code-guidelines.md defends as
  * correctly dense open with 14-21 lines, and the essays open with 26-94.
  *
- * SCOPE: source only. Test files are deliberately not checked -- Rule 2 already
- * gives them a higher budget for the same reason (a header describing a test
- * strategy is worth its length), and the problem reported was in src/.
+ * SCOPE: source files, plus BLOCK_BUDGETED. Test files are deliberately not
+ * checked -- Rule 2 already gives them a higher budget for the same reason (a
+ * header describing a test strategy is worth its length).
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -27,6 +28,9 @@ import { isInvokedDirectly, trackedFiles } from './cli.mjs'
 
 /** Lines of comment a file may open with before the block needs justifying. */
 export const PREAMBLE_LIMIT = 25
+
+/** Lines any one comment block may run in a file BLOCK_BUDGETED names. */
+export const BLOCK_LIMIT = 10
 
 /** Where the list of known, not-yet-fixed offenders lives. */
 export const BASELINE_FILE = 'scripts/comment-budget-baseline.txt'
@@ -42,6 +46,16 @@ const PRAGMA_WITH_REASON = /orivon:comment-budget\s*--\s*(\S.*?)\s*$/
 
 const SOURCE_EXTENSION = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/
 const DECLARATION_FILE = /\.d\.ts$/
+
+/**
+ * Files whose every comment block is budgeted, not only the leading one: an
+ * edit to one step or option re-reads the block above it, so narration there
+ * is paid for on every edit. Each rule names what a comment line looks like.
+ */
+const BLOCK_BUDGETED = [
+  { path: /^\.github\/workflows\/[^/]+\.ya?ml$/, isComment: (line) => line.startsWith('#') },
+  { path: /^[^/]+\.config\.ts$/, isComment: (line) => isCommentLine(line) }
+]
 
 /** A line opening (or continuing) an `import` statement -- see `findPreambleBlock`. */
 const IMPORT_STATEMENT = /^import\b/
@@ -175,7 +189,41 @@ export function measurePreamble (text) {
   return findPreambleBlock(text).length
 }
 
-/** The pragma's reason, or null when there is no pragma or it carries none. */
+/**
+ * Every comment block in `text` longer than `limit`. A block is measured the
+ * way the preamble is: first comment line to last, so a blank line between two
+ * paragraphs joins them and only a non-comment line ends one.
+ *
+ * @returns {Array<{ start: number, end: number, length: number }>}
+ */
+function findLongBlocks (text, isComment, limit) {
+  const long = []
+  let start = -1
+  let last = -1
+  const close = () => {
+    if (start !== -1 && last - start + 1 > limit) long.push({ start, end: last, length: last - start + 1 })
+    start = -1
+  }
+  text.split('\n').forEach((line, i) => {
+    const trimmed = line.trim()
+    if (isComment(trimmed)) {
+      if (start === -1) start = i
+      last = i
+    } else if (trimmed !== '') {
+      close()
+    }
+  })
+  close()
+  return long
+}
+
+/** True for a file the leading-block budget applies to. */
+function hasPreambleBudget (file) {
+  return !DECLARATION_FILE.test(file) && SOURCE_EXTENSION.test(file) &&
+    !isTestFile(file) && !EXEMPT_DIRECTORY.test(file)
+}
+
+/** The pragma's reason, null when the pragma carries none, undefined when there is no pragma. */
 function exemptionReason (text, block) {
   const lines = text.split('\n')
   for (let i = block.start; i <= block.end; i++) {
@@ -201,10 +249,11 @@ function readBaseline (root) {
 
 /**
  * @param {string} root Repository root to check.
- * @param {{ limit?: number }} [opts] `limit` overrides PREAMBLE_LIMIT, for this
- *   guard's own tests.
+ * @param {{ limit?: number, blockLimit?: number }} [opts] Override
+ *   PREAMBLE_LIMIT and BLOCK_LIMIT, for this guard's own tests.
  * @returns {{ ok: boolean,
  *   offenders: Array<{file: string, preamble: number, limit: number}>,
+ *   longBlocks: Array<{file: string, line: number, length: number, limit: number}>,
  *   unjustified: Array<{file: string}>,
  *   exempted: Array<{file: string, reason: string}>,
  *   baselined: string[], stale: string[],
@@ -222,9 +271,11 @@ function readBaseline (root) {
  */
 export function checkComments (root, opts = {}) {
   const limit = opts.limit ?? PREAMBLE_LIMIT
+  const blockLimit = opts.blockLimit ?? BLOCK_LIMIT
   const baseline = new Set(readBaseline(root))
 
   const offenders = []
+  const longBlocks = []
   const unjustified = []
   const exempted = []
   const baselined = []
@@ -237,6 +288,7 @@ export function checkComments (root, opts = {}) {
     return {
       ok: false,
       offenders,
+      longBlocks,
       unjustified,
       exempted,
       baselined,
@@ -247,8 +299,8 @@ export function checkComments (root, opts = {}) {
   }
 
   for (const file of files) {
-    if (DECLARATION_FILE.test(file) || !SOURCE_EXTENSION.test(file)) continue
-    if (isTestFile(file) || EXEMPT_DIRECTORY.test(file)) continue
+    const blockRule = BLOCK_BUDGETED.find((rule) => rule.path.test(file))
+    if (blockRule === undefined && !hasPreambleBudget(file)) continue
 
     let text
     try {
@@ -259,6 +311,14 @@ export function checkComments (root, opts = {}) {
       unreadable.push({ file, error: err.code ?? String(err) })
       continue
     }
+
+    for (const long of blockRule ? findLongBlocks(text, blockRule.isComment, blockLimit) : []) {
+      const reason = exemptionReason(text, long)
+      if (reason === null) unjustified.push({ file })
+      else if (reason !== undefined) exempted.push({ file, reason })
+      else longBlocks.push({ file, line: long.start + 1, length: long.length, limit: blockLimit })
+    }
+    if (!hasPreambleBudget(file)) continue
 
     const block = findPreambleBlock(text)
     if (block.length <= limit) continue
@@ -285,6 +345,7 @@ export function checkComments (root, opts = {}) {
 
   const byPath = (a, b) => (a.file ?? a).localeCompare(b.file ?? b)
   offenders.sort(byPath)
+  longBlocks.sort((a, b) => byPath(a, b) || a.line - b.line)
   unjustified.sort(byPath)
   exempted.sort(byPath)
   unreadable.sort(byPath)
@@ -292,9 +353,10 @@ export function checkComments (root, opts = {}) {
   stale.sort()
 
   return {
-    ok: offenders.length === 0 && unjustified.length === 0 &&
+    ok: offenders.length === 0 && longBlocks.length === 0 && unjustified.length === 0 &&
       stale.length === 0 && unreadable.length === 0,
     offenders,
+    longBlocks,
     unjustified,
     exempted,
     baselined,
@@ -307,7 +369,7 @@ if (isInvokedDirectly(import.meta.url)) {
   const result = checkComments(process.cwd())
 
   if (process.argv.includes('--exemptions') && !result.error) {
-    console.log(`\nFiles exempt from the ${PREAMBLE_LIMIT}-line comment budget:\n`)
+    console.log('\nFiles exempt from a comment budget:\n')
     for (const { file, reason } of result.exempted) console.log(`  ${file}\n    ${reason}`)
     for (const file of result.baselined) console.log(`  ${file}\n    (baselined, not yet justified)`)
     console.log(`\n${result.exempted.length} justified, ${result.baselined.length} baselined.\n`)
@@ -330,6 +392,17 @@ if (isInvokedDirectly(import.meta.url)) {
         '\nhas -- which belongs in the directory README or an ADR, not in the source.' +
         '\n\nIf it genuinely cannot be shortened, say why, in the file:' +
         '\n  // orivon:comment-budget -- <why this cannot be shortened>\n'
+      )
+    }
+
+    if (result.longBlocks.length > 0) {
+      console.error(`\nComment blocks over the ${BLOCK_LIMIT}-line budget for CI workflows and root config files:\n`)
+      for (const { file, line, length, limit } of result.longBlocks) {
+        console.error(`  ${file}:${line}  (${length} lines, limit ${limit})`)
+      }
+      console.error(
+        '\nState the constraint the step or option enforces, in the present tense.' +
+        '\nHow it came to be belongs in git history, not in the file.\n'
       )
     }
 
@@ -358,5 +431,8 @@ if (isInvokedDirectly(import.meta.url)) {
     `${result.exempted.length} justified exemption(s)`,
     `${result.baselined.length} baselined`
   ].join(', ')
-  console.log(`Every source file opens within the ${PREAMBLE_LIMIT}-line comment budget (${notes}).`)
+  console.log(
+    `Every source file opens within the ${PREAMBLE_LIMIT}-line comment budget, and every ` +
+    `workflow and root config comment block is within ${BLOCK_LIMIT} lines (${notes}).`
+  )
 }

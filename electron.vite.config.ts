@@ -52,24 +52,11 @@ export function pageBufferPackage (): Plugin {
   }
 }
 
-// WORKAROUND, found 2026-08-28: electron-vite 5.0.0's own `isolatedEntries`
-// preload feature (used below -- see the `preload` config's own comment for
-// why it's necessary) calls process.stdout.clearLine()/moveCursor()
-// UNCONDITIONALLY from its build-progress reporter, with no check for
-// whether stdout is a real TTY. Those methods only exist when stdout IS a
-// TTY -- they are simply undefined on a plain pipe, which is exactly how
-// most non-interactive shells and every CI runner invoke `npm run build`.
-// The result is a hard crash (`process.stdout.clearLine is not a function`)
-// on every non-interactive build, including this repo's own `npm run
-// smoke`. Confirmed against electron-vite's installed source
-// (dist/chunks/lib-*.js's isolateEntriesPlugin/transformReporterPlugin);
-// this is electron-vite's bug, not a config mistake, and 5.0.0 is the
-// latest stable release (6.x is beta-only, not appropriate to depend on
-// for this reason alone). A `script`/pty wrapper would "fix" this on
-// Linux/macOS but silently break Windows, a supported run-from-source
-// platform (Rule 8) -- `script` doesn't exist there. Patching only the
-// specific methods, only when missing, keeps real interactive terminal
-// behaviour (a genuine TTY) completely untouched.
+// electron-vite 5's isolatedEntries reporter (preload, below) calls
+// process.stdout.clearLine()/cursorTo()/moveCursor() unconditionally, and
+// they exist only on a TTY, so every piped build (CI, `npm run smoke`)
+// crashes. Stub only the missing ones, so a real terminal is untouched. A
+// `script`/pty wrapper would break Windows, a run-from-source platform.
 if (process.stdout.clearLine === undefined) {
   process.stdout.clearLine = () => true
 }
@@ -118,24 +105,14 @@ export default defineConfig({
     logLevel: 'warn',
     plugins: [pageBufferPackage()],
     build: {
-      // CommonJS by default, which is what a sandboxed preload requires --
-      // it has no ESM context and loads electron via require. See the note
-      // in src/main/index.ts.
+      // CommonJS, which a sandboxed preload requires: it has no ESM context
+      // and loads electron via require (see src/main/index.ts).
       //
-      // Three preloads, different privilege (build step 1, extended
-      // 2026-08-28 for the new-tab dashboard): `app` is loaded by every
-      // ordinary tab and exposes only `orivon.version`; `shell` is
-      // loaded ONLY by the chrome view and exposes tab commands;
-      // `newtab` is loaded ONLY for a genuinely fresh tab and exposes
-      // read-only bookmark access plus navigate-this-tab-only -- see its
-      // own file for why it independently re-checks its own URL before
-      // exposing anything. Keys match the output filenames window.ts and
-      // tabs.ts reference (`../preload/app.js`, `../preload/shell.js`,
-      // `../preload/newtab.js`).
-      //
-      // APPEND POINT. One line per entry, so a stream adding a preload adds
-      // one key and touches nothing else in this file.
-      // Ownership: docs/development/parallel-work.md.
+      // One entry per privilege level: `app` for every ordinary tab, `shell`
+      // for the chrome view only, `newtab` for a fresh tab only (it re-checks
+      // its own URL), `settings`/`site-info` for the toolbar popups. Keys are
+      // the output filenames src/main/ loads (`../preload/<key>.js`). APPEND
+      // POINT: one line per entry (docs/development/parallel-work.md).
       rollupOptions: {
         input: {
           app: resolve(root, 'src/preload/app.ts'),
@@ -146,30 +123,12 @@ export default defineConfig({
           embed: resolve(root, 'src/preload/embed.ts')
         }
       },
-      // BUG (found 2026-08-28, real regression): `shell.ts` and
-      // `newtab.ts` both import from `./channels.js` -- the first time two
-      // preload entries had shared a local import. (No longer the sole
-      // example: build step 2's IPC task has `app.ts` share `./channels.js`
-      // too, plus `./surface/orivon.js` with `newtab.ts`. isolatedEntries
-      // already covers both cases the same way.) Without isolatedEntries,
-      // Rollup's default multi-entry
-      // behaviour extracts that shared import into `chunks/channels-
-      // *.js` and each preload's own output calls
-      // `require('./chunks/channels-*.js')` -- but a SANDBOXED preload's
-      // require() is restricted to a small Electron/Node allowlist
-      // (electron, events, timers, url) and cannot load an arbitrary
-      // local chunk file. It fails SILENTLY from the chrome view's own
-      // perspective: shell.ts's top-level require() throws before
-      // `contextBridge.exposeInMainWorld` ever runs, so `window.orivonShell`
-      // is simply undefined and every click/keypress in the chrome UI
-      // does nothing, with no error visible anywhere the smoke script or
-      // an ordinary run would surface it (confirmed via a direct
-      // window.orivonShell probe, not guessed). `isolatedEntries` is
-      // electron-vite 5's own documented fix for exactly this: each
-      // preload entry becomes one fully self-contained bundle again,
-      // duplicating the shared code rather than chunking it --
-      // `externalizeDeps: false` is paired with it per electron-vite's
-      // own guide, for full bundling under isolated entries.
+      // Preloads share local imports (./channels.js, ./surface/orivon.js).
+      // Chunked, each would require('./chunks/...'), which a sandboxed
+      // preload's allowlisted require() cannot load: it throws before
+      // contextBridge runs, so e.g. window.orivonShell is silently undefined.
+      // isolatedEntries makes each preload one self-contained bundle, and
+      // electron-vite's guide pairs it with externalizeDeps: false.
       isolatedEntries: true,
       externalizeDeps: false
     }
@@ -197,27 +156,14 @@ export default defineConfig({
       }
     },
     resolve: {
-      // Populated by the week-0 spike, Task 3.
-      //
-      // These aliases must beat webtorrent's `browser` field, which maps
-      // `net`, `bittorrent-dht`, `ut_pex`, `./lib/conn-pool.js` and
-      // `./lib/utp.cjs` to `false`. Left alone, the renderer bundle is
-      // WebRTC-only -- which is Brave parity, and the exact thing ADR-0001
-      // reason 3 exists to beat.
-      //
-      // Deliberately NOT aliased: `@thaunknown/simple-peer` and
-      // `webrtc-polyfill` keep browser resolution, so the renderer uses
-      // Chromium's native WebRTC and node-datachannel never enters the tree.
-      //
-      // APPEND POINT, owned by the `shim` stream (build step 3). No other
-      // stream writes to this map. Ownership: docs/development/parallel-work.md.
-      //
-      // Generated from src/shim/module-map.ts's SHIM_MODULE_MAP -- add or
-      // change an entry there, not here. A 'local' entry resolves against
-      // src/shim/ (below); a 'package' entry is an npm specifier, used as
-      // written. See module-map.ts for why the split exists.
-      // Each row matches whole, bare or `node:`-prefixed (module-map.ts's
-      // aliasPattern); vitest.config.ts resolves shim tests the same way.
+      // Generated from src/shim/module-map.ts's SHIM_MODULE_MAP: change it
+      // there. 'local' resolves against src/shim/, 'package' is an npm
+      // specifier; each matches bare or `node:`-prefixed, as in vitest.config.ts.
+      // They must beat webtorrent's `browser` field, which maps `net`,
+      // `bittorrent-dht`, `ut_pex`, conn-pool and utp to `false` and leaves
+      // the renderer WebRTC-only (ADR-0001 reason 3). Never alias
+      // `@thaunknown/simple-peer` or `webrtc-polyfill`: they keep Chromium's
+      // WebRTC, so node-datachannel never enters the tree.
       alias: buildAliasEntries().map(({ specifier, kind, implementation }) => ({
         find: aliasPattern(specifier),
         replacement: kind === 'package' ? implementation : resolve(root, 'src/shim', implementation)

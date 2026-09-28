@@ -1,104 +1,88 @@
 # `src/preload/`: the privilege boundary
 
-**What lives here.** Six preload scripts at six different privilege levels (`app.ts`,
-`shell.ts`, `newtab.ts` for the new-tab dashboard, `settings.ts` for the all-sites popup,
-`site-info.ts` for the per-site popup, and `embed.ts` for a page an app shows inside itself),
-the app-tab wiring they share
+**What lives here.** Six preload scripts at six privilege levels, the app-tab wiring they share
 (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`, `page-buffer.ts`), and
-`orivon-error.ts`, the plain-object error shape shared by [`surface/`](surface/) and
-[`ports/`](ports/). This is the narrowest and most security-critical surface in the repository.
+`orivon-error.ts`, the plain-object error shape [`surface/`](surface/) and [`ports/`](ports/)
+share. The narrowest and most security-critical surface in the repository. Tied to Electron,
+entirely.
 
 | Folder | Holds |
 |---|---|
-| (top level) | The six entry points, the app-tab wiring they share, and `orivon-error.ts` |
-| [`surface/`](surface/) | `window.orivon`'s page surface: `orivon.ts`, `control-call.ts`, `net.ts`, `web.ts`, and the main-world installer (`main-world-socket.ts`) |
-| [`ports/`](ports/) | The isolated-world per-socket state machines `surface/main-world-socket.ts` wraps: `socket-bridge.ts`, `socket.ts`, `datagram.ts`, `server.ts` |
-| [`routed/`](routed/) | ADR-0017's routed network path: ten main-world installers for `fetch`, `XMLHttpRequest`, `EventSource` and `WebSocket` |
+| [`surface/`](surface/) | `window.orivon`'s page surface and its main-world installer |
+| [`ports/`](ports/) | The isolated-world per-socket state machines that installer wraps |
+| [`routed/`](routed/) | ADR-0017's routed network path: the main-world `fetch`, `XMLHttpRequest`, `EventSource` and `WebSocket` |
 
-**What it depends on.** `electron` (via `require`, since these are CommonJS),
-[`src/contracts/`](../contracts/) for types, and (from `expose-shim-globals.ts` only, A151)
-[`src/shim/globals.ts`](../shim/globals.ts), the one shim file with no `electron` import and no
-free identifier of its own, so it is safe to run inside a preload and to hand to
-`contextBridge.executeInMainWorld` unchanged.
+**What it depends on.** `electron` (via `require`: these are CommonJS),
+[`src/contracts/`](../contracts/) for types, and, from `expose-shim-globals.ts` only,
+[`src/shim/globals.ts`](../shim/globals.ts): the one shim file with no `electron` import and no
+free identifier, so it can run in a preload and go to `contextBridge.executeInMainWorld`
+unchanged (A151).
 
-**What it must never import.** [`src/broker/`](../broker/), because a preload runs in the renderer
-process, and importing broker LOGIC there would either fail or, worse, appear to work. **One
-documented exception to "never import `src/main/`":** [`../main/channels.ts`](../main/channels.ts)
-is a zero-dependency leaf of plain string constants, safe in either process, and the one
-neutral place a channel name shared across this trust boundary can live; `shell.ts` and
-`newtab.ts` already relied on this before `surface/orivon.ts` did too. Nothing else under
-`src/main/` is fair game.
+**What it must never import.** [`src/broker/`](../broker/): a preload runs in the renderer
+process, where broker logic would fail or, worse, appear to work. Nothing under `src/main/`,
+with one exception: [`../main/channels.ts`](../main/channels.ts), a zero-dependency leaf of
+string constants, safe in either process and the one neutral home for a channel name shared
+across this boundary.
 
-**Owner stream.** `app.ts`, `orivon-error.ts`, everything under `surface/`, `ports/` and
-`routed/` belong to `broker` (build step 2); `shell.ts` and `newtab.ts` belong to `shell` (build
-step 1, done).
+**Owner stream.** `broker` for `app.ts`, `orivon-error.ts`, `surface/`, `ports/` and `routed/`;
+`shell` for `shell.ts` and `newtab.ts`.
 
 | File | Loaded by | Exposes |
 |---|---|---|
-| `app.ts` | **every ordinary tab** | `surface/orivon.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`/`readFileSync` (the last one ADR-0016's synchronous exception; see `surface/orivon.ts`'s own `fsReadFileSync`), `orivon.id.publicKey`/`sign`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `surface/main-world-socket.ts` |
-| `shell.ts` | **only** the chrome view | Tab commands |
-| `settings.ts` | **only** the all-sites popup's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, and list each site's notification answer and reset one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
-| `site-info.ts` | **only** the site-info popup's own view (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info/trust/data, apply a staged set of switches, revoke a picked path, clear browser data, reload, open the all-sites popup — same `location.href` check as `settings.ts`; `src/main/ipc/site-info-ipc.ts` re-verifies the sender and fixes the origin, never trusting one from the page |
-| `embed.ts` | **only** a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest at attach, whatever `preload` the app named; ADR-0039) | Nothing on `window`. Runs the script the app set with `orivon.web.setEmbedScript`, before the page's own code and whatever its CSP says, handing it `orivonEmbed` (`sendToHost`/`on`, the element's own `ipc-message`/`send` channel) as an argument; no `orivon.*` at all, since a shown page is another site's document |
-| `newtab.ts` | **only** a genuinely fresh tab (`src/main/shell/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
-| `routed/fetch.ts`, `routed/xhr.ts`, `routed/eventsource.ts`, `routed/websocket.ts` (the routed network path) | `app.ts` and `newtab.ts`'s fallback branch, via `expose-fetch-route.ts`'s `exposeFetchRoute()` | ADR-0017: `window.fetch`, `XMLHttpRequest`, `EventSource` and `WebSocket` reach a registered app's GRANTED cross-origin hosts through `orivon.net`, when the tab's `--orivon-app-tab` flag says so (`src/main/shell/tab-view.ts`'s `appTabArgsFor`). Every other request -- same-origin, another scheme, or to a host the app was not granted -- takes the page's native API, CORS and CSP and all. A plain website keeps all four native, untouched |
-| `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`global`/`setImmediate`/`clearImmediate`, passing no reporter so an uncaught callback error reaches the page's own `reportError`, and `page-buffer.ts`'s `Buffer`, into the main world, gated on the SAME `--orivon-app-tab` flag `expose-fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
+| `app.ts` | every ordinary tab | `window.orivon`, from `surface/orivon.ts`'s `exposeOrivon()` |
+| `shell.ts` | only the chrome view | Tab commands |
+| `settings.ts` | only the all-sites popup (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list and revoke grants, list and reset notification answers |
+| `site-info.ts` | only the per-site popup (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info, switches, picked paths and browser data |
+| `embed.ts` | only a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest; ADR-0039) | Nothing on `window`: runs the script set with `orivon.web.setEmbedScript` before the page's own code, handing it `orivonEmbed` |
+| `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrivon()` as `app.ts` |
+| `expose-fetch-route.ts`, `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, and `process`, `global`, `setImmediate`, `clearImmediate` and `Buffer` |
 
-**Preload builds are isolated per entry (`electron.vite.config.ts`'s `isolatedEntries: true`).**
-When two preloads share a local import (`shell.ts` and `newtab.ts` both import `./channels.js`),
-Rollup's default multi-entry build extracts it into a shared chunk that a sandboxed preload's
-restricted `require()` cannot load, so `contextBridge.exposeInMainWorld` never runs and the whole
-chrome UI goes silently inert with no visible error. `isolatedEntries` keeps
-each preload a single, fully self-contained bundle.
+`settings.ts`, `site-info.ts` and `newtab.ts` load into navigable views, so each checks
+`location.href` against its expected URL before exposing anything; `src/main/ipc/settings-ipc.ts`
+and `site-info-ipc.ts` re-verify the sender on every call, and site-info fixes the origin itself.
 
 ## The rule that governs this directory
 
 **The raw `MessagePortMain` never crosses into the main world.** [`ports/`](ports/) holds it in
-the isolated world and exposes only plain closures over it, and [`surface/`](surface/)'s
-`main-world-socket.ts` builds the page's real streams over exactly those closures, the port
-itself never crossing. See [`ports/README.md`](ports/README.md) for the full rule, the
-measurement behind it, and why it is a security rule rather than a throughput optimisation left
-for later.
+the isolated world behind plain closures, and `surface/main-world-socket.ts` builds the page's
+streams over those closures. The threat and the measurement: [`ports/README.md`](ports/README.md).
 
 ## Design notes
 
-**Why the page surface, the ports and the routed network path are each their own folder.** See
-[`surface/README.md`](surface/README.md), [`ports/README.md`](ports/README.md) and
-[`routed/README.md`](routed/README.md) for what belongs to each and why it is shaped the way it
-is; this file covers only what is common to the whole directory.
+**Whether a tab is an app tab is fixed when its view is built.** `src/main/shell/tab-view.ts`'s
+`appTabArgsFor` asks `Broker.app.isRegisteredSync` once, at `WebContentsView` construction, and
+passes `--orivon-app-tab` in `additionalArguments`; `expose-fetch-route.ts` and
+`expose-shim-globals.ts` read it synchronously off `process.argv`. `window.orivon` reaches every
+ordinary tab, so routing whenever `orivon.net` exists would break every cross-origin `fetch()` on
+the open web, and awaiting `orivon.app.manifest()` in the main world would race the page's first
+script. The known, permanent limitation: an origin registered after its tab's view was built
+keeps the old answer until a navigation swaps in a fresh view, so an app installed during its
+own first visit gets routing and shimmed globals from its next navigation.
 
-**Every global this directory installs on an app's window carries the platform's own property
-descriptor -- `orivon` excepted.** ADR-0021 states the rule and the evidence for it; the short
-version is that a locked global cannot be shadowed in strict mode, so a bundle that ponyfills one
-dies while its module graph is still evaluating, naming no cause. So the routed `fetch` is
-installed `writable`, `configurable` and `enumerable` (an operation's descriptor), the routed
-`XMLHttpRequest`, `EventSource` and `WebSocket` `writable` and `configurable` but not `enumerable`
-(an interface object's), [`../shim/globals.ts`](../shim/globals.ts)'s `process`, `global`,
-`setImmediate` and `clearImmediate` are plain assignments, and [`page-buffer.ts`](page-buffer.ts)'s `Buffer` is
-`writable` and `configurable` but not `enumerable`, as Node defines its own.
-`npm run check:page-globals` fails the build on a locked one, and reads an omitted `writable` as
-the lock it actually is.
+**A method the broker cannot serve is left off `window.orivon`, never wired to fail:** a method
+that always threw `'invalid'` would be worse than a method that is not there.
+[`surface/README.md`](surface/README.md) names what this leaves off today.
+
+**Every global installed on an app's window keeps the platform's own property descriptor,
+`orivon` excepted:**
+[ADR-0021](../../docs/decisions/ADR-0021-page-globals-carry-the-platform-descriptor.md).
+`npm run check:page-globals` fails the build on a locked one.
 
 **Why `Buffer` reaches the page inlined into [`page-buffer.ts`](page-buffer.ts)'s installer.**
-`contextBridge.executeInMainWorld` serialises a function alone, so the installer cannot import
-the `buffer` package. `electron.vite.config.ts`'s `pageBufferPackage` plugin bundles the package
-(resolved from [`../shim/polyfills/buffer.ts`](../shim/polyfills/buffer.ts), so the one the shim wraps) and
-writes it into the installer's body at build time, and fails the build if the placeholder it
-replaces is not there exactly once. Measured in a headless Electron 44 tab against five page CSPs (none; the served
-bundle's own; `script-src 'self' 'unsafe-inline'`; nonce-only; nonce plus Trusted Types), this
-defines `Buffer` before the page's first inline `<head>` script under all five, and the page can
-still assign over, shadow and delete it. Two other routes were measured beside it:
+`executeInMainWorld` serialises a function alone, so the installer cannot import `buffer`;
+`electron.vite.config.ts`'s `pageBufferPackage` writes the package (resolved from
+[`../shim/polyfills/buffer.ts`](../shim/polyfills/buffer.ts)) into its body at build time.
+Measured in a headless Electron 44 tab under five page CSPs (none; the served bundle's own;
+`script-src 'self' 'unsafe-inline'`; nonce-only; nonce plus Trusted Types), this defines `Buffer`
+before the page's first inline `<head>` script, and the page can still assign over, shadow and
+delete it. Two other routes were measured and rejected:
 
-- **Evaluating the package source with the `Function` constructor in the main world** fails,
-  silently, under every policy without `'unsafe-eval'`. An app tab can carry one: developer mode
-  appends Orivon's policy to the dev server's own rather than replacing it, so the stricter of
-  the two applies.
-- **`webFrame.executeJavaScript`** passed all five too, but that it runs before the page's own
-  scripts is observed behaviour of a call that returns a promise, not a documented property.
-  `executeInMainWorld` runs synchronously by contract, and a failure throws where it can be
-  logged.
+- **The `Function` constructor in the main world** fails silently without `'unsafe-eval'`, which
+  an app tab can lack: developer mode appends Orivon's policy to the dev server's own, so the
+  stricter applies.
+- **`webFrame.executeJavaScript`** passed all five, but that it runs before the page's scripts is
+  observed behaviour of a promise-returning call, not a contract. `executeInMainWorld` is
+  synchronous by contract, and a failure throws where it can be logged.
 
-The bundler drops a nested `'use strict'`, so the package runs sloppy in the page, as
-`installGlobals` does; `tests/page-buffer.test.ts` and `test/e2e-page-buffer.test.ts` both run
-it that way. [`../shim/polyfills/buffer.ts`](../shim/polyfills/buffer.ts) adopts this global when it finds
-it, which is what keeps `require('buffer').Buffer` and `Buffer` one class.
+**The routed path's shared slot, its numbers and its divergences from a browser** (which
+ADR-0017 requires be written down) are in [`routed/README.md`](routed/README.md)'s Design notes.

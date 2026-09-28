@@ -190,8 +190,8 @@ so two branches that each opened the same heading get it twice.
 
 ### Open-question numbers: renumber yours, never main's
 
-`open-questions.md` is the one shared file every stream appends to, and its rows are
-**numbered**. Four streams branched from the same main, each read "A14 is the highest", and
+`open-questions.md` is the one shared file every stream files into, and its entries are
+**numbered**, with numbers shared with `decisions/resolved-questions.md`. Four streams branched from the same main, each read "A14 is the highest", and
 each filed its finding as A15. On 2026-08-27 that produced three separate claims to A15, three
 to A16 and two to A17, across four branches.
 
@@ -217,7 +217,8 @@ has, not above what your branch has:
 
 ```bash
 git fetch origin
-git show origin/main:docs/open-questions.md | grep -oE '^\| A[0-9]+' | sort -V | tail -1
+git show origin/main:docs/open-questions.md origin/main:docs/decisions/resolved-questions.md |
+  grep -oE '^(### |\| )A[0-9]+' | grep -oE 'A[0-9]+' | sort -V | tail -1
 ```
 
 ### CI is the semantic check
@@ -303,5 +304,6 @@ Read this page before starting any build step. Then:
 - Append at the append points rather than editing shared logic.
 - Sync `main` only as §Syncing `main` with `origin` says: never `git pull`, and on a dirty tree
   report rather than act.
-- Surface contradictions rather than smoothing them over, appending to
-  [`open-questions.md`](../open-questions.md) ([`CLAUDE.md`](../../CLAUDE.md) Rule 3).
+- Surface contradictions rather than smoothing them over, filing them in
+  [`open-questions.md`](../open-questions.md) in its fixed shape ([`CLAUDE.md`](../../CLAUDE.md)
+  Rule 3).

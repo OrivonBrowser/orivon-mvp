@@ -244,7 +244,34 @@ export async function launchElectron ({
     )
   }
 
+  // src/main/index.ts opens the shell window only after every afterReady
+  // subsystem has run, so hooks such as __orivonDevGrant exist once it does.
+  await waitForShellWindow(app)
+
   return app
+}
+
+/** How long launchElectron() waits for the shell window before returning anyway. */
+export const SHELL_WINDOW_WAIT_MS = 15_000
+
+/**
+ * Resolves once `app` has a window, when its main process is gone, or after
+ * `timeoutMs`, and never throws: a launch built to fail at startup opens no
+ * window, and its test asserts on that itself. Each poll races the deadline
+ * because a startup error box can block the main process.
+ */
+async function waitForShellWindow (app, timeoutMs = SHELL_WINDOW_WAIT_MS) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const poll = app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length > 0)
+      .catch(() => 'gone')
+    let timer
+    const expired = new Promise((resolve) => { timer = setTimeout(resolve, deadline - Date.now(), 'expired') })
+    const state = await Promise.race([poll, expired])
+    clearTimeout(timer)
+    if (state !== false) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
 }
 
 /**

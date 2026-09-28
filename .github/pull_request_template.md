@@ -10,6 +10,10 @@
          Carrying several major changes? Name the theme:
          "Land the folder picker and close three broker defects"
 
+  LENGTH: at most 400 words, each Changes entry at most six lines. No ceiling if the PR
+  touches src/contracts/, src/broker/, src/loader/, src/shim/ or src/main/consent/, or
+  carries type:security.
+
   A small PR that genuinely stands alone (a revert, a hotfix) may keep only
   What changes for the user, one Changes entry, and How it was verified.
 -->
@@ -110,7 +114,7 @@
 ## How it was verified
 
 <!--
-  The commands you ran and what they ACTUALLY said. Paste the numbers.
+  The commands you ran and what they ACTUALLY said. Paste each one's summary line only.
   "Should work" and "tests pass" are different claims.
   A check you did not run: say so and say why. Silence reads as a pass.
 
@@ -121,7 +125,7 @@
 ```
 npm run typecheck && npm test
 npm run check:natives && npm run check:contracts && npm run check:vectors && npm run check:secrets
-npm run check:comments && npm run check:size && npm run check:questions
+npm run check:comments && npm run check:size && npm run check:questions && npm run check:devlog
 npm run check:manifest-parity && npm run check:dev-grant-absent && npm run check:advisories
 npm run smoke     # only if you touched src/main/
 ```

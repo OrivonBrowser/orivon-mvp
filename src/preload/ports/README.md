@@ -1,38 +1,30 @@
 # `src/preload/ports/`: the isolated-world socket state machines
 
-**What lives here.** `socket-bridge.ts`, the only file that touches
-`ipcRenderer.on(PORT_CHANNEL)`, and deliberately kind-agnostic: it maps a handle id to a port and
-does not care what kind of socket it belongs to. `socket.ts`, `datagram.ts` and `server.ts` are
-the isolated-world per-connection state machines for TCP, UDP and server accepts, all
-Electron-free (they hold a `PortLike`, not `MessagePortMain` itself).
+**What lives here.** `socket-bridge.ts`, the only file that listens on `PORT_CHANNEL`, mapping a
+handle id to its port whatever the socket's kind; and `socket.ts`, `datagram.ts` and
+`server.ts`, the per-connection state machines for TCP, UDP and server accepts. Those three are
+free of Electron: they hold a `PortLike`, not a `MessagePortMain`.
 
-**What it depends on.** [`../orivon-error.ts`](../orivon-error.ts) and, within this folder,
-`socket.ts` (the other three build on its `PortLike` shape and its send/receive plumbing).
+**What it depends on.** [`../orivon-error.ts`](../orivon-error.ts), and within this folder
+`socket.ts`, whose `PortLike` and plumbing the other three build on.
 
-**What it must never import.** [`../../broker/`](../../broker/) -- see the parent README's "What
-it must never import". Nothing under [`../surface/`](../surface/): the surface is what wraps
-these closures for the main world, never the other way round.
-
-**Owner stream.** `broker`, build step 2.
+**What it must never import.** [`../../broker/`](../../broker/), as the parent README says.
+Nothing under [`../surface/`](../surface/): the surface wraps these closures, never the reverse.
 
 ## The rule this folder exists to hold to
 
-**The raw `MessagePortMain` never crosses into the main world.** `socket-bridge.ts`, `socket.ts`
-and `datagram.ts` hold it in the isolated world and expose only plain closures over it:
-`write(chunk)`, `onData(cb)`, and so on (`socket.ts`'s own `SocketPort`). Transferring the port
-to the page is the obvious move when optimising for throughput, and it hands a raw socket to
+**The raw `MessagePortMain` never crosses into the main world.** These files hold it in the
+isolated world and expose only plain closures (`write(chunk)`, `onData(cb)`: `socket.ts`'s
+`SocketPort`), and `../surface/main-world-socket.ts` builds the page's streams over them.
+Transferring the port is the obvious throughput move, and it hands a bearer capability to
 anything the page can reach
-([`../../../docs/architecture/security-model.md`](../../../docs/architecture/security-model.md)
-T17). `../surface/main-world-socket.ts`'s `installOrivon` builds the page's real
-`ReadableStream`/`WritableStream` in the main world over exactly these closures, and the closures
-cross via `contextBridge.executeInMainWorld`'s proxying, the port itself never does.
+([`security-model.md`](../../../docs/architecture/security-model.md) T17). A security rule, not
+an optimisation left for later; `contextIsolation: true` is what makes it free.
 
-This is a **security rule, not a throughput optimisation left for later**. `contextIsolation:
-true` is what makes it free. Spike gate 0 measured 1134.8 MB/s *through the closures* for the
-`exposeInMainWorld` mechanism. **That figure does not cover `net.connect`'s path**, which goes
-through `executeInMainWorld` and adds a `contextBridge` clone on top of the structured clone
-already in the path (three copies of every byte, two of them on the renderer main thread). That
-path is unmeasured, so the figure is evidence for `app.*`/`fs.*`'s throughput only.
+The throughput evidence does not cover `net.connect`. Spike gate 0 measured 1134.8 MB/s through
+`exposeInMainWorld`'s closures; `net.connect` goes through `executeInMainWorld`, which adds a
+`contextBridge` clone to the structured clone (three copies of every byte, two on the renderer
+main thread). That path is unmeasured.
 
-The smoke check asserts `require` and `process` are `undefined` in every renderer. If that ever
-regresses, stop.
+The smoke check asserts `require` and `process` are `undefined` in every window it drives. If
+that ever regresses, stop.
