@@ -202,6 +202,8 @@ async function startTelemetry (app: App): Promise<void> {
 export const telemetrySubsystem: Subsystem = {
   name: 'telemetry',
   afterReady: (ctx) => {
+    // A private session measures nothing about the person and sends nothing.
+    if (ctx.privateSession) return
     // Deliberately NOT awaited -- same reasoning as updateCheckSubsystem
     // (update-check-runner.ts): runAfterReady (registry.ts) awaits every
     // subsystem in order before the shell window is created, and nothing

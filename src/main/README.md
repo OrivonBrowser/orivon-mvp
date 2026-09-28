@@ -21,6 +21,7 @@ to no single job, and `registry.ts`/`channels.ts` are the seam other packages
 
 | Directory | Job | Holds state? | Imports `electron`? |
 |---|---|---|---|
+| [`launch/`](launch/) | **Start as**: which browser this process is (default, another profile, a private session) and its data directory | the profiles, on disk | `start-launch.ts` only, as a type |
 | [`shell/`](shell/) | **Compose**: the window and the views inside it | yes, the tab collection | yes |
 | [`pages/`](pages/) | **Serve**: the shell's own pages at `orivon://`, in a session only they can load, and the one channel they speak on | which webContents are which page | `internal-session.ts`, `internal-ipc.ts` and `pages-subsystem.ts` only |
 | [`history/`](history/) | **Remember**: the pages that were visited, kept on this computer and forgotten on request | yes, `history.db` on disk | `attach-history.ts` and `install-history.ts` only |

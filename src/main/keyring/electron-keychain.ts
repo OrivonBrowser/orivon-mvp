@@ -7,6 +7,7 @@
 import { join } from 'node:path'
 import { safeStorage } from 'electron'
 import { SeedStore } from './seed-store.js'
+import type { SafeStorageLike } from './seed-store.js'
 import type { Keychain } from '../../broker/secrets-contracts.js'
 
 /**
@@ -15,8 +16,8 @@ import type { Keychain } from '../../broker/secrets-contracts.js'
  * (ADR-0003's own tiers), never inside `apps/<origin>/`, because this is
  * BROWSER SECRET, not app-owned, data.
  */
-export function createElectronKeychain (userDataPath: string): Keychain {
-  const store = new SeedStore(join(userDataPath, 'identity', 'seed.json'), safeStorage)
+export function createElectronKeychain (userDataPath: string, storage: SafeStorageLike = safeStorage): Keychain {
+  const store = new SeedStore(join(userDataPath, 'identity', 'seed.json'), storage)
 
   return {
     async getSeed () {

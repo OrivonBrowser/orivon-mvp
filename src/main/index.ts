@@ -13,6 +13,10 @@ import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
+import { urlsFromArgv } from './launch/launch-context.js'
+import { sweepPrivateDirs } from './launch/private-session.js'
+import { startLaunch } from './launch/start-launch.js'
+import type { Runtime } from './launch/start-launch.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
 // this machine first -- the window-visibility bug it was chasing is really
@@ -57,47 +61,6 @@ function report (failures: SubsystemFailure[]): void {
   }
 }
 
-const beforeReadyFailures = runBeforeReady(subsystems)
-report(beforeReadyFailures)
-
-void app.whenReady().then(async () => {
-  const ctx = createSubsystemContext(app)
-  const afterReadyFailures = await runAfterReady(subsystems, ctx)
-  report(afterReadyFailures)
-
-  // A CRITICAL subsystem failing (today: only the broker) means the
-  // capability layer is dark -- opening a normal-looking shell window in
-  // that state is strictly worse than not opening one at all: every
-  // orivon.* call from every app would be silently unroutable, with only a
-  // main-process console line as evidence. Fail loud instead of booting a
-  // browser that only looks like it works (open-questions.md A51).
-  const fatal = criticalFailureMessage([...beforeReadyFailures, ...afterReadyFailures])
-  if (fatal !== null) {
-    dialog.showErrorBox('Orivon failed to start', fatal)
-    app.exit(1)
-    return
-  }
-
-  const shell = createShellServices(app.getPath('userData'), ctx)
-  // Before the first window, so it opens in the chosen theme with the chosen
-  // bookmarks bar rather than changing after it is on screen.
-  await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])
-  applyThemeSetting(shell.settings, nativeTheme)
-  shell.history.prune()
-  startInternalPages(shell, ctx)
-  shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
-  installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
-  installZoom(app, shell.windows, shell.zoom)
-  installHistory(app, shell.windows, shell.internalPages, shell.history)
-  registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
-  // Only this first window can open on the welcome screen: the macOS
-  // 'activate' below recreates a window in a process that has already shown it.
-  createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')) })
-  app.on('activate', () => {
-    if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
-  })
-})
-
 // A change made within the debounce window of the browser closing (a starred
 // page, a setting) must not be silently lost -- that is precisely what
 // DebouncedWriter.flushAll() exists to prevent, so quit waits for it.
@@ -129,6 +92,90 @@ app.on('before-quit', (event) => {
   })
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+/** A private directory a crash left is removed a while after start, when nothing else needs the disk. */
+const SWEEP_DELAY_MS = 20_000
+
+/** Starts the browser this process is. */
+function boot (runtime: Runtime): void {
+  const beforeReadyFailures = runBeforeReady(subsystems)
+  report(beforeReadyFailures)
+
+  // A second start of this profile asks it to show itself, and to open what it was given.
+  // The ask can arrive while this one is still starting, so it waits for it.
+  let opener: (urls: string[]) => void = () => {}
+  let markStarted: () => void = () => {}
+  const startedUp = new Promise<void>((resolve) => { markStarted = resolve })
+  const requested: string[][] = []
+  app.on('second-instance', (_event, argv) => {
+    requested.push(urlsFromArgv(argv))
+    void startedUp.then(() => { for (const urls of requested.splice(0)) opener(urls) })
+  })
+
+  // A private session ends with its last window on every platform: there is nothing to keep resident, and no window to bring back.
+  app.on('window-all-closed', () => {
+    if (runtime.isPrivate || process.platform !== 'darwin') app.quit()
+  })
+
+  void app.whenReady().then(async () => {
+    const ctx = createSubsystemContext(app, runtime.isPrivate)
+    const afterReadyFailures = await runAfterReady(subsystems, ctx)
+    report(afterReadyFailures)
+
+    // A CRITICAL subsystem failing (today: only the broker) means the
+    // capability layer is dark -- opening a normal-looking shell window in
+    // that state is strictly worse than not opening one at all: every
+    // orivon.* call from every app would be silently unroutable, with only a
+    // main-process console line as evidence. Fail loud instead of booting a
+    // browser that only looks like it works (open-questions.md A51).
+    const fatal = criticalFailureMessage([...beforeReadyFailures, ...afterReadyFailures])
+    if (fatal !== null) {
+      dialog.showErrorBox('Orivon failed to start', fatal)
+      app.exit(1)
+      return
+    }
+
+    const shell = createShellServices(app.getPath('userData'), ctx, runtime)
+    // Before the first window, so it opens in the chosen theme with the chosen
+    // bookmarks bar rather than changing after it is on screen.
+    await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])
+    applyThemeSetting(shell.settings, nativeTheme)
+    shell.history.prune()
+    startInternalPages(shell, ctx)
+    shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
+    installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
+    installZoom(app, shell.windows, shell.zoom)
+    installHistory(app, shell.windows, shell.internalPages, shell.history)
+    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
+    if (!runtime.isPrivate) {
+      runtime.profiles.markRunning(runtime.profileId, process.pid)
+      app.once('will-quit', () => { runtime.profiles.clearRunning(runtime.profileId) })
+      setTimeout(() => { sweepPrivateDirs() }, SWEEP_DELAY_MS).unref()
+    }
+    opener = (urls) => {
+      if (shell.windows.focused() === undefined) createShellWindow(ctx, shell)
+      const target = shell.windows.focused()
+      if (target === undefined) return
+      if (target.window.isMinimized()) target.window.restore()
+      target.window.show()
+      target.window.focus()
+      for (const url of urls) target.tabs.createTab(url)
+    }
+    markStarted()
+    if (runtime.isPrivate) {
+      // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
+      createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') } })
+    } else {
+      // Only this first window can open on the welcome screen: the macOS
+      // 'activate' below recreates a window in a process that has already shown it.
+      createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')) })
+      app.on('activate', () => {
+        if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
+      })
+    }
+  })
+}
+
+// Which browser this process is, before anything reads a byte of data: another profile or a private session
+// has a directory of its own, and a second start of a profile already open hands over and stops here.
+const runtime = startLaunch(app, process.argv)
+if (runtime !== null) boot(runtime)
