@@ -1240,6 +1240,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
+### A268: Electron's `net.fetch` throws uncaught on a status outside 200-599 **[AI-REC]**
+
+- **Question:** How should the verifier host survive a 999 or 600 answer through `net.fetch`?
+- **Why it matters:** measured on Electron 44 (in main): `net.fetch` builds its `Response` inside
+  its own listener, so the `RangeError` is uncaught and the promise never settles. The host has no
+  handler for that, so it would exit and every `.eth` page fail until it restarts. A CCIP-Read URL
+  is chosen by a name's resolver contract, so a `.eth` name can point it at such a server.
+- **Options:** the host's fetch over `net.request`, the status checked before a `Response` is built,
+  as `src/loader/electron/fetch.ts` does (rec.); a process-level handler, which leaves the request
+  hanging. Report it to Electron either way.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared
