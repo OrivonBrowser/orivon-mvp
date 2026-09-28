@@ -1,8 +1,9 @@
 # ADR-0029: Sites publish their bundle hash tree, and the browser shows whether it matches (DDOC)
 
 - **Status:** accepted, **amended 2026-09-24: the off-host anchor is in scope, as the name's ENS
-  record**, and **2026-09-25: that record is the contenthash, and a verified tree is Website Level
-  2** (see the Amendments below)
+  record**, **2026-09-25: that record is the contenthash, and a verified tree is Website Level
+  2**, and **2026-09-28: in developer mode, a local origin's served tree counts as its DDOC** (see
+  the Amendments below)
 - **Date:** 2026-09-24
 - **Type:** architecture
 - **Decided by:** owner
@@ -110,7 +111,8 @@ first use rather than proven.)*
   fails an install.
 - **A manifest's `assets` may not name the manifest or the tree.** `parseManifest` refuses both.
 - **A dev origin is never installed, so its DDOC reads "not checked".** Ported apps run that way
-  in this build.
+  in this build. *(Amended 2026-09-28, below: in developer mode, one that serves a readable tree
+  reads as DDOC, named as developer mode.)*
 - **A release that changes only files is not seen** when the manifest answers 304 (A236), so its
   tree is not fetched either. Comparing the published root with the pin could replace that check.
 - **Nothing acts on a failure yet.** The Web3 Score doing so is separate work.
@@ -146,6 +148,25 @@ own published hashes as well as content that meets it by design, as IPFS does. S
 site whose files match the tree it publishes is Level 2, whatever holds the anchor. How well the
 anchor is held, the site's own host or a name proven on Ethereum, is evidence shown beside the
 level. A failed, unpublished or unchecked tree leaves the site at Level 1.
+
+## Amendment, 2026-09-28: in developer mode, a local origin's served tree counts as its DDOC
+
+A local origin, a loopback address or a developer `.eth` name mapped to loopback, has no domain
+record: no DNS record and no ENS contenthash can anchor its tree, and it is never installed, so
+there is no pin to compare. It could therefore never show Level 2, which left a ported app's
+Website level unpreviewable while it was being developed.
+
+**In developer mode (`ORIVON_DEV_ORIGINS=1`), a local origin that serves a readable tree at
+`/.well-known/orivon-ddoc.json` is marked DDOC, and so Website Level 2.** The tree is fetched
+each time the Web3 Score is read. The record it would need is assumed, and no file is compared
+against the tree. The Web3 Score page says so in place of the level's reason: DDOC is marked
+only because Orivon is running in developer mode on a local origin. The shield's tooltip and the
+popup's connection row both name developer mode. Outside developer mode, and for any origin that
+is not local, nothing changes: the verdict is still "not checked".
+
+"Local" is exactly the set of origins Orivon grants without installing
+(`src/main/install/grant-without-install.ts`). Nothing about a real site can reach this path, and
+it grants nothing: no grant-level rule reads Level 2.
 
 ## Reversibility
 

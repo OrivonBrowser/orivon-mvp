@@ -5,7 +5,9 @@
   evidence, and judged levels ship, from a provider that need not be trustless, **on
   2026-09-25**: Website levels follow the canonical Web3 scores page, and **on 2026-09-26**: the
   shield and panel show the displayed level with its own colour, the D-ladder collapses to the
-  canonical Connection-to-network scale, and a developer-only override can preview a judged level
+  canonical Connection-to-network scale, and a developer-only override can preview a judged level,
+  and **on 2026-09-28**: the shield keeps its outline shape, and a Web2/Web2.5/Web3 mark at the
+  address pill's right end names the level
 - **Date:** 2026-08-18
 - **Type:** product / architecture
 - **Decided by:** owner (insisted the full spectrum matters, and proposed the attestation
@@ -282,6 +284,8 @@ red, Level 2 orange, Level 3 yellow, Level 4 green; Level 1 and Level 4 carry a 
 "Web3" label, matching the canonical page's own naming of the ends of the scale. With no level
 yet (a new tab, or a query still in flight) the shield stays a plain grey outline. The Web3 Score
 page colours each met rung by its own level, and Level 1's row reads "Standard website (Web2)".
+*(Amended 2026-09-28, below: the shield keeps the outline shape at every level, and the words
+move to a mark of their own.)*
 
 **This narrows what ADR-0007 asked the shield to carry.** ADR-0007's "the padlock is now
 misleading unless the UI corrects it" required the shield to show whether a page's bytes came
@@ -315,6 +319,18 @@ exist.** It is always named as an override, on the shield's tooltip and on the W
 never presented as observed or judged (this ADR's own standing rule). `ADR-0037` records the
 further consequence: at Website Level 4, a site's own grants read without warnings, on every
 consent surface.
+
+## Amendment, 2026-09-28: the shield keeps its shape, and a mark names the level
+
+**The shield is the same outline at every level**, the one a new tab shows: grey with no level
+yet, and once one is known its outline takes that level's colour, red/orange/yellow/green. The
+wide filled badge the 2026-09-26 amendment describes is gone, and so is the lettering inside it.
+
+**A mark at the address pill's right end names the level in words**, in place of Orivon's own
+logo, which carried no information there: **Web2** in orange for Level 1, **Web2.5** in yellow
+for Levels 2 and 3, **Web3** in green for Level 4. It is hidden while there is no level. The
+shield's tooltip names the same word beside the level number. The mark's three colours are its
+own; the shield and the Web3 Score page keep the four level colours above.
 
 ## Reversibility
 - **Cost to reverse:** cheap to extend, expensive to retract. Levels shown once become claims

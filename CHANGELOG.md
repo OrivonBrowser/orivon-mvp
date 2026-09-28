@@ -42,6 +42,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   (`ORIVON_SCORE_LEVELS_FILE`, gated behind `ORIVON_DEV_ORIGINS=1`) can override either level per
   origin, for previewing Level 3/4 and Delivery Level 3 before a real provider or peer-to-peer
   fetching exist, always named as an override rather than shown as observed.
+- **The Web3 Score shield keeps its outline shape, and a Web2 / Web2.5 / Web3 mark names the
+  level.** The shield no longer turns into a wide filled badge once a level resolves: it stays the
+  outline a new tab shows, its stroke coloured by level. The words move to a mark at the address
+  pill's right end, replacing Orivon's logo there: Web2 in orange for Level 1, Web2.5 in yellow for
+  Levels 2 and 3, Web3 in green for Level 4. Reloading or finishing a load on the same site no
+  longer flashes the shield grey.
+- **In developer mode, a local origin that serves a DDOC hash tree is Website Level 2.** A
+  loopback URL or a developer `.eth` name has no domain record to anchor its tree, so with
+  `ORIVON_DEV_ORIGINS=1` a readable `/.well-known/orivon-ddoc.json` is taken as its DDOC, and the
+  Web3 Score page says it is marked only because Orivon is running in developer mode.
 - **A site shown at Website Level 4 has its grants presented without warnings**, on every consent
   surface: the install-consent dialog, the `app.requestGrant` prompt, the update-widening prompt,
   the site-info popup's switches and the all-sites settings panel. The words a grant carries never

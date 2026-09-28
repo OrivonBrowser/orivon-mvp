@@ -155,7 +155,8 @@ you disagree with one, the ADR is where the objections are already answered.
   ([`ADR-0004`](docs/decisions/ADR-0004-telemetry.md)).
 - **Trust is shown as a level with its evidence, never as a bare grade.** The address bar's Web3
   Score shield and the Web3 Score page it opens lead with the canonical Website level, coloured
-  red/orange/yellow/green (Level 1/4 labelled "Web2"/"Web3"). Level 1 or 2 is what the machine
+  red/orange/yellow/green, and a mark at the pill's right end names it: Web2 (Level 1), Web2.5
+  (Levels 2-3) or Web3 (Level 4). Level 1 or 2 is what the machine
   observed: whether the site meets DDOC. Level 3 and above are a named provider's judgement,
   shown grey `?` when no provider has judged, and kept apart from what was observed; a
   developer-only override can preview one before a provider exists, always named as an override.

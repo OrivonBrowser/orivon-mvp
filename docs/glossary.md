@@ -113,8 +113,9 @@ much trust it requires. Levels remain unspecified (`web3-score.md`: "Work in pro
 standard site ("Web2"); Level 2 a site that meets DDOC, which the browser detects itself; Level 3
 and above are judged, and only a Web3 Score provider gives them, or, in this build, a
 developer-only override previewing one (`src/main/dev/score-levels.ts`). The address bar's Web3
-Score shield leads with it, coloured red/orange/yellow/green, Level 1/4 labelled "Web2"/"Web3",
-and the Web3 Score page it opens leads with it too (`ADR-0006`).
+Score shield leads with it, coloured red/orange/yellow/green, a mark at the pill's right end
+names it Web2 (Level 1), Web2.5 (Levels 2-3) or Web3 (Level 4), and the Web3 Score page the
+shield opens leads with it too (`ADR-0006`).
 
 **Web3 Score provider**: an entity issuing judged scores. The user may choose several. Never
 required for the automatic ladders. In this build a provider need not be trustless, and may run
