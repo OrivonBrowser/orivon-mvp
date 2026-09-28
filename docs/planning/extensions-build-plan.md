@@ -15,6 +15,10 @@
 | D6 | MV2 loads from a folder or file; never promised (exploration recommendation, not contested) |
 | D7 | Reuse electron-browser-shell's libraries; do not reinvent |
 | D8 | Native messaging off (exploration recommendation; the library path is removed) |
+| Sessions | Granted apps served from the network join the default session; cache-served apps keep their partition, with no extensions, until pins move to the network path. Existing app data does not carry over (2026-09-29) |
+| Filter | The stack filter, **and** granted apps' `script-src` loses `'unsafe-inline'`, which closes the inline-script route; apps that need inline scripts break (2026-09-29) |
+| Shell | The multi-window shell (PR #38) landed first; extensions build on it. The extensions page is `orivon://extensions` (ADR-0041) |
+| dNR | Port Firefox's matcher (2026-09-29) |
 
 ## What the measurements and audits add
 
@@ -53,13 +57,12 @@
   Bitwarden needs `sidePanel.setOptions`; MetaMask's popup throws on LavaMoat's scuttled
   `chrome`, so the library's page injection needs a MetaMask-safe shape. Package 4 closes these.
 - **Stack attribution from the isolated world is blind** (`extension-stack-probe.json`): a call
-  across `contextBridge` shows only the preload's own two frames, whoever made it. Capture has
-  to happen in the main world with references saved at install; that variant is being measured.
+  across `contextBridge` shows only the preload's own two frames, whoever made it. Captured in
+  the main world with references saved at install, it names the extension (section below).
 - Why the Firefox matcher and not Electron's own dNR: Orivon needs `webRequest` listeners in the
   browsing session (the partition stamp; the T22 CSP once granted apps move in), which silence
   Chromium's dNR; static rulesets never load; and uBOL's rule count exceeds the dynamic and
   session caps it would have to be squeezed into.
-- Stack attribution for D2's refusal: `spike-results/extension-stack-probe.json` (pending).
 
 ## The session model D2 implies
 
@@ -82,8 +85,13 @@ isolation. What depends on it (code map, 2026-09-28):
 - **Existing app data** in `persist:app-*` does not carry over; granted apps start with empty
   storage in the default session once. Pre-release, so accepted unless the owner objects.
 
-Proposed ADR: *extensions run in one browsing session; a grant no longer implies a partition,
-a pinned cache still does.* Owner confirmation asked before package 6 starts.
+ADR (owner confirmed 2026-09-29): *extensions run in one browsing session; a grant no longer
+implies a partition, a pinned cache still does.*
+
+**Profiles and private sessions** (ADR-0042) are separate processes, each with its own data
+directory, so each profile has its own registry and its own extension instances, as in Chrome.
+A private session starts from a fresh directory and so runs no extensions; letting a person
+allow one in private windows is a later choice, not part of this plan.
 
 ## Refusing extension code at `window.orivon` (D2)
 
@@ -103,9 +111,14 @@ Layered, strongest first:
    only on an origin where some enabled extension without the permission has host access, so a
    person with no extensions sees no change. **This is a filter, not a sandbox**, and the
    remaining routes are stated in the security model in the manner of ADR-0021: an extension
-   can write an inline `<script>` that then runs as page code (the granted-app CSP allows
-   `'unsafe-inline'`), can change what the page itself submits, and can freeze `Error` to make
-   every `orivon` call on that page refuse (a denial of service it could cause anyway).
+   can change what the page itself submits, and can freeze `Error` to make every `orivon` call
+   on that page refuse (a denial of service it could cause anyway). The inline-script route (an
+   extension writes a `<script>` that runs as page code) is closed by dropping `'unsafe-inline'`
+   from granted apps' `script-src` (owner, 2026-09-29): the T22 builder in
+   `src/loader/serve/csp.ts` for cached apps and the appended policy for network-served ones.
+   For a pinned bundle Orivon can add `'sha256-...'` sources for the inline scripts in the HTML
+   it serves, so a cached app keeps its own inline scripts; a network-served granted app loses
+   them.
 4. **Disclosure** (exploration N2): grant prompts and the site-info popup name the extensions
    with host access to that origin.
 
@@ -119,11 +132,11 @@ Each is executed by a Sonnet agent from a brief; Opus reviews every diff before 
 | 2 | Privileged views move to an `orivon-shell` partition (chrome view, popovers, intro, notice); extensions never get file access, so `file://` dashboard stays out of reach | none | A |
 | 3 | `src/main/extensions/`: registry (userData, atomic JSON), loader at boot into the default session, install from folder / `.zip` / `.crx` with CRX3 check, manifest copy that strips `nativeMessaging`, `webRequest*` and `declarativeNetRequest*` into a recorded side table, uninstall, enable/disable. `src/broker/policy/extension-manifest.ts` (durable, pure): host patterns, MAIN-world use, the `orivon` key rejected until package 9, install-prompt lines, the T19 update re-prompt rule | 1 | A |
 | 4 | Library wiring: `ElectronChromeExtensions` on the default session, `TabManager` bridge across windows, `<browser-action-list>` in the toolbar replacing the disabled button, `crx://` icons on the shell session, popups | 1-3 | A |
-| 5 | Extensions page (renderer entry, URL-gated preload): list, details with **source and updater always shown**, enable, remove, install from folder/file, developer mode; the install prompt | 3-4 | B |
+| 5 | Extensions page at `orivon://extensions` (ADR-0041's internal pages): list, details with **source and updater always shown**, enable, remove, install from folder/file, developer mode | 3-4 | B |
 | 6 | Session model: granted network-served origins in the default session; T22 CSP and the partition stamp under one `webRequest` owner per event | owner confirms | C |
 | 7 | Chrome Web Store: vendored installer and updater behind the CRX3 verifier; install from the store page; updater state shown per extension | 3, 5 | B |
 | 8 | `declarativeNetRequest` from Firefox's matcher (MPL-2.0, vendored) + `webRequest` observation + `userScripts`/`offscreen`/`alarms` gaps, driven by uBOL Lite and AdGuard MV3 | 3, 6 | D |
-| 9 | Stack-attribution refusal and N2 disclosure; `self` and `hook` (ADRs; contracts PR first, alone) | 6 | E, then contracts |
+| 9 | Stack-attribution refusal, granted-app `script-src` without `'unsafe-inline'` (hashes for pinned inline scripts), N2 disclosure; then `self` and `hook` (ADRs; contracts PR first, alone) | 6 | E, then contracts |
 
 Day PRs: A (packages 1-4) and B can open the same day; C needs the owner; D and E follow.
 

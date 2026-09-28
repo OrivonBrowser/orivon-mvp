@@ -4,27 +4,19 @@
 //   window.probeA -- plain contextBridge.exposeInMainWorld('probeA', {...}).
 //     Captures the stack in the ISOLATED world (crossing the bridge first).
 //   window.probeB -- mirrors src/preload/surface/main-world-socket.ts's own
-//     shape: a plain object of closures ("bridge") handed straight to
-//     contextBridge.executeInMainWorld's `args`, consumed by a function
-//     that is serialised and re-run fresh in the main world (confirmed
-//     against src/preload/surface/orivon.ts:330-372 in orivon-extensions).
-//     Also captures in the ISOLATED world.
-//   window.probeM -- captures the stack IN THE MAIN WORLD itself, inside
-//     the object installProbeM installs, using intrinsics captured at
-//     install time (before any page or extension script has run) so a
-//     later main-world tamper cannot reach them. Only the resulting plain
-//     frame data crosses back to the isolated world, via bridgeM.report.
+//     shape: closures handed to contextBridge.executeInMainWorld's `args`,
+//     serialised and re-run fresh in the main world. Also captures in the
+//     ISOLATED world.
+//   window.probeM -- captures the stack IN THE MAIN WORLD itself, using
+//     intrinsics captured at install time so a later main-world tamper
+//     cannot reach them. Only plain frame data crosses back, via
+//     bridgeM.report.
 //
-// probeA/probeB's call(tag, opts) records:
-//   - `new Error().stack` as a plain string
-//   - a structured CallSite walk via a LOCAL Error.prepareStackTrace
-//     override (restored immediately after), each frame's getFileName,
-//     getScriptNameOrSourceURL, isEval, getEvalOrigin, getFunctionName,
-//     isNative
-// opts.deep: true raises Error.stackTraceLimit to Infinity for this one
-//   capture, to see whether more frames become visible.
-// opts.perf: true skips the IPC send and returns the frame count instead,
-//   so a timing loop in the page is not polluted by IPC overhead.
+// probeA/probeB's call(tag, opts) records `new Error().stack` as a plain
+// string, plus a structured CallSite walk via a local
+// Error.prepareStackTrace override. opts.deep raises
+// Error.stackTraceLimit to Infinity for one capture; opts.perf skips the
+// IPC send and returns the frame count instead, for timing.
 const { contextBridge, ipcRenderer } = require('electron')
 
 function capture (tag, opts) {

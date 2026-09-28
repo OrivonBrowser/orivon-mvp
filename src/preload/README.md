@@ -1,7 +1,8 @@
 # `src/preload/`: the privilege boundary
 
 **What lives here.** Six preload scripts at six privilege levels, the app-tab wiring they share
-(`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`, `page-buffer.ts`), and
+(`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`, `page-buffer.ts`,
+`ordinary-tab.ts`), and
 `orivon-error.ts`, the plain-object error shape [`surface/`](surface/) and [`ports/`](ports/)
 share. The narrowest and most security-critical surface in the repository. Tied to Electron,
 entirely.
@@ -29,13 +30,13 @@ across this boundary.
 
 | File | Loaded by | Exposes |
 |---|---|---|
-| `app.ts` | every ordinary tab | `window.orivon`, from `surface/orivon.ts`'s `exposeOrivon()` |
+| `app.ts` | every ordinary tab | `./ordinary-tab.ts`'s `exposeOrdinaryTabSurface()`: `window.orivon` and what depends on it -- nothing at all on a `chrome-extension:` page |
 | `shell.ts` | only the chrome view, and only at the URL `--orivon-shell-url` names | Tab commands, typed by its `OrivonShell` |
 | `settings.ts` | only the all-sites popup (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list and revoke grants, list and reset notification answers |
 | `site-info.ts` | only the per-site popup (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info, switches, picked paths and browser data |
 | `embed.ts` | only a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest; ADR-0039) | Nothing on `window`: runs the script set with `orivon.web.setEmbedScript` before the page's own code, handing it `orivonEmbed` |
-| `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrivon()` as `app.ts` |
-| `expose-fetch-route.ts`, `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, and `process`, `global`, `setImmediate`, `clearImmediate` and `Buffer` |
+| `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrdinaryTabSurface()` as `app.ts` |
+| `expose-fetch-route.ts`, `expose-shim-globals.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, and `process`, `global`, `setImmediate`, `clearImmediate` and `Buffer` |
 
 `shell.ts`, `settings.ts`, `site-info.ts` and `newtab.ts` each check `location.href` against the
 URL main passed them (`--orivon-shell-url` and its siblings) before exposing anything. The chrome
