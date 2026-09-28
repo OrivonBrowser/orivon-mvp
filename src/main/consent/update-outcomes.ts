@@ -159,8 +159,8 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
       }
       // NO SECOND FETCH: decideUpdate() has not yet run its widening/
       // bundle-change checks for a below-floor version
-      // (LoadNeedsRollbackChoice's own doc, ADR-0013's 2026-09-05
-      // amendment) -- reconsider() re-runs that decision against the SAME
+      // (LoadNeedsRollbackChoice's own doc, ADR-0013) -- reconsider()
+      // re-runs that decision against the SAME
       // already-fetched tree/entries. Its result can itself be 'installed'
       // (rollback-notice), 'needs-reconsent' or 'needs-capability-prompt' --
       // driven through this same function, recursively, exactly like a

@@ -9,8 +9,7 @@
 // declaration and an unlimited one must be unmistakably different at a
 // glance -- `warning` (drives the dialog's own icon) plus a literal
 // "Unlimited" marker in the text, never a computed score or a detail a
-// person has to expand to see (both considered and rejected -- see this
-// lane's PR body).
+// person has to expand to see (both considered and rejected).
 //
 // EVERY PATTERN IS RENDERED FROM THE PARSED FORM (../broker/policy/connect-
 // patterns.js), NEVER A SECOND GUESS AT THE RAW STRING -- see this
@@ -49,7 +48,7 @@ export interface GrantPromptContent {
   readonly title: string
   /** The one-line headline a person reads first. */
   readonly message: string
-  /** Secondary text, owner decision 2026-09-14: the app's claimed name on
+  /** Secondary text: the app's claimed name on
    * its own line first (AR-03 -- never blended into the same sentence as
    * Orivon's own words, where 200 characters of ordinary app-chosen text
    * could fabricate a reassurance), then the plain-language consequence
@@ -203,8 +202,8 @@ export function describeGrantRequest (
 ): GrantPromptContent {
   const { warning, message, explanation } = summaryAtLevel(describeCapabilityGrant(capability, patterns), level)
   // A115: rendered once here, reused for both `title` and `detail`'s last
-  // line below -- never the raw origin twice over, which is how a
-  // subdomain-prefix confusable used to survive.
+  // line below -- never the raw origin twice over, which would let a
+  // subdomain-prefix confusable survive.
   const displayOrigin = formatOriginForDisplay(origin)
   // AR-03: the app's claimed name gets its OWN line, never concatenated
   // into the same sentence as Orivon's explanation -- a `manifest.name`
@@ -216,11 +215,10 @@ export function describeGrantRequest (
   // including `\n`/`\r`, at parse time), so only this template -- never
   // the app -- can introduce a line break here.
   //
-  // Owner decision, 2026-09-14: the origin goes LAST, after the claim and
-  // its explanation, not first -- AR-01 still puts it in a field Electron
-  // never drops (unlike `title`), but now as the final line a person
-  // reads before the dialog's buttons, since it is the one line here an
-  // app cannot fabricate.
+  // The origin goes LAST, after the claim and its explanation, not first --
+  // AR-01 still puts it in a field Electron never drops (unlike `title`),
+  // as the final line a person reads before the dialog's buttons, since it
+  // is the one line here an app cannot fabricate.
   const claim = `Claims to be "${manifest.name}".`
   const detailLines = [claim]
   if (explanation !== undefined) detailLines.push(explanation)
@@ -367,9 +365,9 @@ function describeCapabilitySet (
     return row.explanation === undefined ? `- ${marker}${row.message}` : `- ${marker}${row.message}\n  ${row.explanation}`
   })
 
-  // Owner decision, 2026-09-14: the origin closes `detail`, after the
-  // claim and every capability row, rather than opening it -- see the
-  // matching comment on `describeGrantRequest`.
+  // The origin closes `detail`, after the claim and every capability row,
+  // rather than opening it -- see the matching comment on
+  // `describeGrantRequest`.
   return {
     warning,
     title: displayOrigin,
@@ -379,14 +377,14 @@ function describeCapabilitySet (
 }
 
 /**
- * d-0025 (ADR-0012's 2026-09-13 amendment) / queue item S4-4: one dialog for
- * the WHOLE set a manifest declares, asked once before the app's own code
- * runs -- never `describeGrantRequest`'s one-capability shape shown once per
- * declared capability, which is the fatigue that amendment exists to remove.
+ * d-0025 (ADR-0012) / queue item S4-4: one dialog for the WHOLE set a
+ * manifest declares, asked once before the app's own code runs -- never
+ * `describeGrantRequest`'s one-capability shape shown once per declared
+ * capability, which is the fatigue d-0025 exists to remove.
  *
  * `formatOriginForDisplay` and the origin/claim lines are exactly
  * `describeGrantRequest`'s own (A115, AR-01, AR-03), including the claim-
- * first, address-last order (owner decision 2026-09-14), so every dialog in
+ * first, address-last order, so every dialog in
  * this file reads as one family, not several designs.
  *
  * `held` (A170) names whatever `capabilities` already holds through a
@@ -439,8 +437,8 @@ export function describeCapabilityPrompt (
 export function describeReconsent (origin: string, manifest: Manifest): GrantPromptContent {
   const displayOrigin = formatOriginForDisplay(origin)
   const claim = `Claims to be "${manifest.name}".`
-  // Owner decision, 2026-09-14: claim, then notice, then the address last --
-  // same order as every other dialog in this file.
+  // Claim, then notice, then the address last -- same order as every other
+  // dialog in this file.
   return {
     warning: false,
     title: displayOrigin,
@@ -462,8 +460,8 @@ export function describeRollbackChoice (origin: string, manifest: Manifest, vers
   const claim = `Claims to be "${manifest.name}".`
   const notice = `You've used version ${versionFloor} or newer from this app before. It is now offering version ${manifest.version} -- an older one.`
   const risk = 'This can be a genuine rollback by the developer, or a sign that something is serving old, less secure code.'
-  // Owner decision, 2026-09-14: claim, then both notices, then the address
-  // last -- same order as every other dialog in this file.
+  // Claim, then both notices, then the address last -- same order as every
+  // other dialog in this file.
   return {
     warning: true,
     title: displayOrigin,

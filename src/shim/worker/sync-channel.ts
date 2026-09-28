@@ -13,6 +13,8 @@ const TOTAL_LENGTH = 2
 const HEADER_BYTES = 16
 const IDLE = 0
 const READY = 1
+/** The largest reply `TOTAL_LENGTH` (a signed Int32 header slot) can carry without wrapping negative. */
+export const MAX_REPLY_LENGTH = 2 ** 31 - 1
 /** One chunk of a reply; a larger one takes a round trip per chunk. */
 const DATA_BYTES = 1 << 20
 
@@ -90,6 +92,11 @@ export class ReplyWriter {
   }
 
   send (reply: Uint8Array): void {
+    // Refuse here, on the writer side: past this length the header would wrap to a negative
+    // count and the Worker's `new Uint8Array(header[TOTAL_LENGTH])` would throw a raw RangeError.
+    if (reply.length > MAX_REPLY_LENGTH) {
+      throw Object.assign(new RangeError('a reply this large cannot cross the synchronous channel'), { name: 'OrivonShimError', reason: 'not-applicable' })
+    }
     this.#pending = reply
     this.#offset = 0
     this.more()

@@ -60,32 +60,54 @@ function reachableByWildcard (hostname: string): boolean {
 }
 
 /**
- * Whether a page shown under `patterns` may load a document at `url`, in
- * its top frame or a frame inside it. Subresources are never judged here.
- *
- * `about:` documents and `data:` documents pass: neither reaches a site,
- * and a `data:` document's origin is opaque. `blob:` is judged by the
- * origin that minted it. Everything else must be `http:`/`https:` and
- * match a pattern: an exact origin exactly, or `"*"` when the host is
- * neither a `localhost` name nor an address literal outside public unicast.
- * A URL that does not parse is refused, never passed through.
+ * HOW a document load at `url` is admitted under `patterns` -- never just
+ * whether. `'exact'`: an exact-origin pattern matched (or the URL is
+ * `about:`/`data:`, which reach no site at all, or `blob:`, judged by the
+ * origin that minted it); ADR-0039 lets a named origin be private, so
+ * nothing about it is ever resolved. `'wildcard'`: only `"*"` admitted it,
+ * carrying the hostname that passed `reachableByWildcard`'s pure gate --
+ * the caller (`../../main/embed/embed-guard.ts`) decides from there whether
+ * that hostname still needs its connected address checked (an address
+ * literal does not; a name does, A286). `'refused'`: neither, or the URL
+ * does not parse. An exact match anywhere in `patterns` wins over a
+ * wildcard match, whichever appears first -- `embedDocumentAllowed` below
+ * depends only on `!== 'refused'`, so this is a refinement, not a new rule.
  */
-export function embedDocumentAllowed (url: string, patterns: readonly Pattern[]): boolean {
+export type EmbedAdmission =
+  | { readonly kind: 'exact' }
+  | { readonly kind: 'wildcard', readonly hostname: string }
+  | { readonly kind: 'refused' }
+
+const EXACT: EmbedAdmission = { kind: 'exact' }
+const REFUSED: EmbedAdmission = { kind: 'refused' }
+
+export function embedAdmissionKind (url: string, patterns: readonly Pattern[]): EmbedAdmission {
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
-    return false
+    return REFUSED
   }
-  if (parsed.protocol === 'about:' || parsed.protocol === 'data:') return true
-  if (parsed.protocol === 'blob:') return embedDocumentAllowed(parsed.pathname, patterns)
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+  if (parsed.protocol === 'about:' || parsed.protocol === 'data:') return EXACT
+  if (parsed.protocol === 'blob:') return embedAdmissionKind(parsed.pathname, patterns)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return REFUSED
+  let wildcardMatch = false
   for (const pattern of patterns) {
     if (pattern === ANY_SITE) {
-      if (reachableByWildcard(parsed.hostname)) return true
+      if (reachableByWildcard(parsed.hostname)) wildcardMatch = true
       continue
     }
-    if (pattern === parsed.origin) return true
+    if (pattern === parsed.origin) return EXACT
   }
-  return false
+  return wildcardMatch ? { kind: 'wildcard', hostname: parsed.hostname } : REFUSED
+}
+
+/**
+ * Whether a page shown under `patterns` may load a document at `url`, in
+ * its top frame or a frame inside it. Subresources are never judged here.
+ * Built on `embedAdmissionKind`: a URL that does not parse, or matches no
+ * pattern, is refused, never passed through.
+ */
+export function embedDocumentAllowed (url: string, patterns: readonly Pattern[]): boolean {
+  return embedAdmissionKind(url, patterns).kind !== 'refused'
 }

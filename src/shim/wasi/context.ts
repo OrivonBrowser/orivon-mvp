@@ -4,6 +4,7 @@
 import type { OrivonFs } from '../../contracts/capability-api.js'
 import type { FileStat } from '../../contracts/handles.js'
 import { isRootPath, rootStat } from '../fs/root.js'
+import { createWarnOnce } from '../warn-once.js'
 import { type Op, fsCall } from './effects.js'
 import { Filetype, type Filestat, GuestMemory } from './memory.js'
 import { FdTable, inodeFor } from './fds.js'
@@ -29,7 +30,7 @@ export class HostContext {
   #terminated: WasiTerminationReason | undefined
   readonly #termination: Promise<never>
   #rejectTermination: (error: WasiTerminated) => void = () => {}
-  readonly #warned = new Set<string>()
+  readonly #warnOnce = createWarnOnce('orivon WASI host')
 
   constructor (fs: WasiFs, args: readonly string[], env: readonly string[], stdin: StdinSource, stdout: Sink, stderr: Sink) {
     this.fs = fs
@@ -81,9 +82,7 @@ export class HostContext {
 
   /** A gap is named, never silent: one console line per program per call it cannot serve. */
   warnOnce (call: string, why: string): void {
-    if (this.#warned.has(call)) return
-    this.#warned.add(call)
-    console.warn(`orivon WASI host: ${call} is not supported (${why})`)
+    this.#warnOnce(call, why)
   }
 }
 

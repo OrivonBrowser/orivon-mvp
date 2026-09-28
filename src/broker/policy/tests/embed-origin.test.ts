@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ANY_SITE, embedDocumentAllowed, embedOriginRejection } from '../embed-origin.js'
+import { ANY_SITE, embedAdmissionKind, embedDocumentAllowed, embedOriginRejection } from '../embed-origin.js'
 
 // ADR-0039's two decisions: which strings a manifest may declare under
 // web.embed.origins, and which document a shown page may then load. The
@@ -95,5 +95,65 @@ describe('embedDocumentAllowed -- "*"', () => {
   it('refuses everything with no patterns at all', () => {
     expect(embedDocumentAllowed('https://anything.example/', [])).toBe(false)
     expect(embedDocumentAllowed('about:blank', [])).toBe(true)
+  })
+})
+
+// A286: embedDocumentAllowed's own boolean cannot say whether the
+// admitting pattern was an exact origin (ADR-0039 lets it be private, no
+// address check ever needed) or "*" alone (whose hostname still needs its
+// connected address checked -- embed-guard.ts's own job, not this file's).
+describe('embedAdmissionKind -- HOW a document load is admitted', () => {
+  it('is "exact" for an exact-origin match, even when "*" is also granted', () => {
+    const patterns = [ANY_SITE, 'https://example.com']
+    expect(embedAdmissionKind('https://example.com/page', patterns)).toEqual({ kind: 'exact' })
+  })
+
+  it('is "exact" for an exact-origin match appearing after "*" in the pattern list', () => {
+    // The loop keeps scanning past a wildcard match, so an exact match
+    // later in the array still wins -- exact never needs a lookup.
+    const patterns = ['https://example.com', ANY_SITE]
+    expect(embedAdmissionKind('https://example.com/page', patterns)).toEqual({ kind: 'exact' })
+  })
+
+  it('is "exact" for about:, data: and a blob: minted by an exactly-granted origin', () => {
+    const patterns = ['https://example.com']
+    expect(embedAdmissionKind('about:blank', patterns)).toEqual({ kind: 'exact' })
+    expect(embedAdmissionKind('data:text/html,<p>hi</p>', patterns)).toEqual({ kind: 'exact' })
+    expect(embedAdmissionKind('blob:https://example.com/123e4567-e89b-12d3-a456-426614174000', patterns))
+      .toEqual({ kind: 'exact' })
+  })
+
+  it('is "wildcard", carrying the hostname, when only "*" admits it', () => {
+    expect(embedAdmissionKind('https://anything.example/path', [ANY_SITE]))
+      .toEqual({ kind: 'wildcard', hostname: 'anything.example' })
+  })
+
+  it('is "wildcard" for a public address literal admitted only by "*"', () => {
+    expect(embedAdmissionKind('http://93.184.216.34/', [ANY_SITE]))
+      .toEqual({ kind: 'wildcard', hostname: '93.184.216.34' })
+  })
+
+  it('is "refused" for a loopback/private/localhost host under "*" (the pure hostname gate stays first)', () => {
+    expect(embedAdmissionKind('http://127.0.0.1:8080/', [ANY_SITE])).toEqual({ kind: 'refused' })
+    expect(embedAdmissionKind('http://192.168.1.1/', [ANY_SITE])).toEqual({ kind: 'refused' })
+    expect(embedAdmissionKind('http://localhost:3000/', [ANY_SITE])).toEqual({ kind: 'refused' })
+  })
+
+  it('is "refused" for a non-matching origin, an unparseable URL, or no patterns at all', () => {
+    expect(embedAdmissionKind('https://other.example/', ['https://example.com'])).toEqual({ kind: 'refused' })
+    expect(embedAdmissionKind('not a url', ['https://example.com'])).toEqual({ kind: 'refused' })
+    expect(embedAdmissionKind('https://anything.example/', [])).toEqual({ kind: 'refused' })
+  })
+
+  it('embedDocumentAllowed is exactly embedAdmissionKind(...).kind !== \'refused\'', () => {
+    const cases: Array<[string, readonly string[]]> = [
+      ['https://example.com/page', ['https://example.com']],
+      ['https://anything.example/', [ANY_SITE]],
+      ['http://127.0.0.1/', [ANY_SITE]],
+      ['https://other.example/', ['https://example.com']]
+    ]
+    for (const [url, patterns] of cases) {
+      expect(embedDocumentAllowed(url, patterns)).toBe(embedAdmissionKind(url, patterns).kind !== 'refused')
+    }
   })
 })
