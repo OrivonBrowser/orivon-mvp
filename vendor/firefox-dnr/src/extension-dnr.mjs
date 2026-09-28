@@ -236,27 +236,195 @@ function indexDomainsForRule(rule) {
   return null
 }
 
-/** @param {Rule[]} rules @returns {{byDomain: Map<string, object[]>, generic: object[]}} */
+// Patch 11 (UPSTREAM.md): a token index over the rules patch 10 leaves in
+// the generic (always-tested) list, the technique uBlock Origin itself uses
+// for the same problem. UPSTREAM.md's patch 11 entry has the full soundness
+// argument; the short version: a token is only indexed when the pattern
+// guarantees it appears in any matching URL as a whole maximal run of
+// TOKEN_CHAR_RE characters, never as part of a longer run -- so a token
+// lookup can never miss a rule that would otherwise have matched.
+const TOKEN_MIN_LEN = 3
+// The character class a token run is built from; see UPSTREAM.md patch 11
+// for why its complement is provably a superset of the matcher's own
+// separator class (CompiledUrlFilter's #regexIsSep), which is what makes an
+// interior "^" boundary sound to index on too, not only literal characters.
+const TOKEN_CHAR_RE = /[a-z0-9%]+/gi
+
+/**
+ * @param {string} urlFilter - a rule's condition.urlFilter, non-empty.
+ * @param {boolean} isUrlFilterCaseSensitive
+ * @returns {string[]} Every token in urlFilter's literal segments that is
+ *   provably bounded on both sides -- by a "^" separator, an anchor ("||",
+ *   "|" or a trailing "|"), or another literal character in the same
+ *   segment -- so it is guaranteed to appear as a whole maximal alphanumeric
+ *   (+"%") run in any URL the rule can match. Never bounded by "*" or by the
+ *   pattern's own start/end without an anchor there. Left-to-right pattern
+ *   order, deduplicated; empty if the pattern has no such token.
+ */
+function extractIndexTokenCandidates(urlFilter, isUrlFilterCaseSensitive) {
+  let start = 0
+  let end = urlFilter.length
+  let isAnchorDomain = false
+  let isAnchorLeft = false
+  let isAnchorRight = false
+
+  // Mirrors CompiledUrlFilter's own #initializeUrlFilter anchor/wildcard
+  // trimming, so "bounded by an anchor" here means exactly what it means
+  // there.
+  if (urlFilter[0] === '|') {
+    if (urlFilter[1] === '|') {
+      start = 2
+      isAnchorDomain = true
+    } else {
+      start = 1
+      isAnchorLeft = true
+    }
+  }
+  if (end > start && urlFilter[end - 1] === '|') {
+    --end
+    isAnchorRight = true
+  }
+  while (start < end && urlFilter[start] === '*') {
+    ++start
+    isAnchorLeft = false
+  }
+  while (end > start && urlFilter[end - 1] === '*') {
+    --end
+    isAnchorRight = false
+  }
+
+  let body = urlFilter.slice(start, end)
+  if (!isUrlFilterCaseSensitive) {
+    body = body.toLowerCase()
+  }
+  // "*" splits into the same parts CompiledUrlFilter matches independently
+  // (a "*" boundary is never sound to index on: it can sit anywhere).
+  const parts = body.split('*')
+  const seen = new Set()
+  const candidates = []
+
+  parts.forEach((part, partIndex) => {
+    const isFirstPart = partIndex === 0
+    const isLastPart = partIndex === parts.length - 1
+    // A part's own left/right edge is bounded only when it sits at the
+    // pattern's true edge AND that edge carries an anchor.
+    const partLeftBounded = isFirstPart && (isAnchorDomain || isAnchorLeft)
+    const partRightBounded = isLastPart && isAnchorRight
+
+    // "^" splits further within a part; each split point is itself a bound
+    // (the matcher requires a separator character, or the trailing "^"
+    // end-of-URL case, right there).
+    const chunks = part.split('^')
+    chunks.forEach((chunk, chunkIndex) => {
+      const isFirstChunk = chunkIndex === 0
+      const isLastChunk = chunkIndex === chunks.length - 1
+      const chunkLeftBounded = !isFirstChunk || partLeftBounded
+      const chunkRightBounded = !isLastChunk || partRightBounded
+
+      TOKEN_CHAR_RE.lastIndex = 0
+      let m
+      while ((m = TOKEN_CHAR_RE.exec(chunk))) {
+        const runStart = m.index
+        const runEnd = runStart + m[0].length
+        // A run not touching the chunk's own edge is already bounded by a
+        // literal (non-token) character inside the chunk; one that does
+        // touch the edge inherits that edge's boundedness.
+        const leftOk = runStart > 0 || chunkLeftBounded
+        const rightOk = runEnd < chunk.length || chunkRightBounded
+        if (leftOk && rightOk && m[0].length >= TOKEN_MIN_LEN && !seen.has(m[0])) {
+          seen.add(m[0])
+          candidates.push(m[0])
+        }
+      }
+    })
+  })
+
+  return candidates
+}
+
+/**
+ * @param {Rule[]} rules
+ * @returns {{
+ *   byDomain: Map<string, object[]>,
+ *   byToken: Map<string, object[]>,
+ *   byTokenCS: Map<string, object[]>,
+ *   generic: object[],
+ * }}
+ */
 function buildRuleIndex(rules) {
   const byDomain = new Map()
   const generic = []
+  // Two passes, same as uBlock Origin's own token index: the first collects
+  // every rule's candidate tokens and how many rules share each one; the
+  // second commits each rule to its least-common candidate, so a token
+  // shared by few rules (and therefore a more selective bucket) is
+  // preferred over one nearly every rule also happens to contain.
+  const pendingByToken = [] // { rule, order, candidates }
+  const pendingByTokenCS = []
+  const freq = new Map() // "ci:"+token or "cs:"+token -> rule count
+
   rules.forEach((rule, order) => {
     const domains = indexDomainsForRule(rule)
-    if (!domains) {
-      generic.push({ rule, order })
+    if (domains) {
+      for (const domain of domains) {
+        const key = domain.toLowerCase()
+        let bucket = byDomain.get(key)
+        if (!bucket) {
+          bucket = []
+          byDomain.set(key, bucket)
+        }
+        bucket.push({ rule, order })
+      }
       return
     }
-    for (const domain of domains) {
-      const key = domain.toLowerCase()
-      let bucket = byDomain.get(key)
+    const cond = rule.condition
+    // A regexFilter rule's literal text (if any) is not what regexFilter
+    // actually requires the URL to contain, so it is never indexed here --
+    // UPSTREAM.md patch 10 already made this same call for the domain
+    // index.
+    if (cond.urlFilter && !cond.regexFilter) {
+      const caseSensitive = !!cond.isUrlFilterCaseSensitive
+      const candidates = extractIndexTokenCandidates(cond.urlFilter, caseSensitive)
+      if (candidates.length) {
+        const key = caseSensitive ? 'cs:' : 'ci:'
+        for (const token of candidates) {
+          const freqKey = key + token
+          freq.set(freqKey, (freq.get(freqKey) ?? 0) + 1)
+        }
+        ;(caseSensitive ? pendingByTokenCS : pendingByToken).push({ rule, order, candidates, freqKey: key })
+        return
+      }
+    }
+    generic.push({ rule, order })
+  })
+
+  const byToken = new Map()
+  const byTokenCS = new Map()
+  for (const [pending, map] of [
+    [pendingByToken, byToken],
+    [pendingByTokenCS, byTokenCS],
+  ]) {
+    for (const { rule, order, candidates, freqKey } of pending) {
+      let best = candidates[0]
+      let bestFreq = freq.get(freqKey + best)
+      for (let i = 1; i < candidates.length; ++i) {
+        const token = candidates[i]
+        const tokenFreq = freq.get(freqKey + token)
+        if (tokenFreq < bestFreq) {
+          best = token
+          bestFreq = tokenFreq
+        }
+      }
+      let bucket = map.get(best)
       if (!bucket) {
         bucket = []
-        byDomain.set(key, bucket)
+        map.set(best, bucket)
       }
       bucket.push({ rule, order })
     }
-  })
-  return { byDomain, generic }
+  }
+
+  return { byDomain, byToken, byTokenCS, generic }
 }
 
 class Ruleset {
@@ -282,19 +450,23 @@ class Ruleset {
   /**
    * @param {string[] | null} requestDomains - the request's host and every
    *   parent domain (RequestDetails#allRequestDomains).
+   * @param {RequestDataForUrlFilter} [requestDataForUrlFilter] - precomputed
+   *   once per request (see that class); carries the token sets patch 11's
+   *   index looks candidates up by.
    * @returns {Rule[]} A subset of |this.rules|, in the same relative order
    *   a full scan of |this.rules| would visit them in. Always a superset of
    *   the rules that can match: every rule not returned here is provably
-   *   excluded by indexDomainsForRule's own domain condition, which
+   *   excluded by indexDomainsForRule's domain condition or
+   *   extractIndexTokenCandidates's token condition, either of which
    *   #matchesRuleCondition would also have rejected.
    */
-  getCandidateRules(requestDomains) {
+  getCandidateRules(requestDomains, requestDataForUrlFilter) {
     if (this.#indexRulesRef !== this.rules) {
       this.#index = buildRuleIndex(this.rules)
       this.#indexRulesRef = this.rules
     }
-    const { byDomain, generic } = this.#index
-    if (byDomain.size === 0 || !requestDomains) {
+    const { byDomain, byToken, byTokenCS, generic } = this.#index
+    if (!requestDomains || (byDomain.size === 0 && byToken.size === 0 && byTokenCS.size === 0)) {
       return this.rules
     }
     const seenOrder = new Set()
@@ -303,13 +475,13 @@ class Ruleset {
       picked.push(entry)
       seenOrder.add(entry.order)
     }
-    let matchedAnyDomain = false
+    let matchedAny = false
     for (const domain of requestDomains) {
       const bucket = byDomain.get(domain)
       if (!bucket) {
         continue
       }
-      matchedAnyDomain = true
+      matchedAny = true
       for (const entry of bucket) {
         if (!seenOrder.has(entry.order)) {
           seenOrder.add(entry.order)
@@ -317,7 +489,39 @@ class Ruleset {
         }
       }
     }
-    if (!matchedAnyDomain) {
+    if (requestDataForUrlFilter) {
+      if (byToken.size) {
+        for (const token of requestDataForUrlFilter.tokensLowerCase) {
+          const bucket = byToken.get(token)
+          if (!bucket) {
+            continue
+          }
+          matchedAny = true
+          for (const entry of bucket) {
+            if (!seenOrder.has(entry.order)) {
+              seenOrder.add(entry.order)
+              picked.push(entry)
+            }
+          }
+        }
+      }
+      if (byTokenCS.size) {
+        for (const token of requestDataForUrlFilter.tokensAnyCase) {
+          const bucket = byTokenCS.get(token)
+          if (!bucket) {
+            continue
+          }
+          matchedAny = true
+          for (const entry of bucket) {
+            if (!seenOrder.has(entry.order)) {
+              seenOrder.add(entry.order)
+              picked.push(entry)
+            }
+          }
+        }
+      }
+    }
+    if (!matchedAny) {
       return generic.map(entry => entry.rule)
     }
     picked.sort((a, b) => a.order - b.order)
@@ -607,6 +811,9 @@ class CompiledUrlFilter {
 
 // See CompiledUrlFilter for documentation of RequestDataForUrlFilter.
 class RequestDataForUrlFilter {
+  #tokensLowerCase
+  #tokensAnyCase
+
   /** @param {string} requestURIspec - The URL to match against. */
   constructor(requestURIspec) {
     // "^" is appended, see CompiledUrlFilter's #initializeUrlFilter.
@@ -618,6 +825,31 @@ class RequestDataForUrlFilter {
 
   getUrl(isUrlFilterCaseSensitive) {
     return isUrlFilterCaseSensitive ? this.urlAnyCase : this.urlLowerCase
+  }
+
+  // Patch 11 (UPSTREAM.md): the request's URL, tokenised into maximal
+  // TOKEN_CHAR_RE runs, for Ruleset#getCandidateRules's token index. Lazy
+  // and memoized: computed at most once per request (this object is built
+  // once per RequestDetails, reused across every ruleset/extension the
+  // request is evaluated against), and never at all for a request that
+  // never reaches a ruleset with a non-empty token index.
+  get tokensLowerCase() {
+    return (this.#tokensLowerCase ??= RequestDataForUrlFilter.#tokenize(this.urlLowerCase))
+  }
+
+  get tokensAnyCase() {
+    return (this.#tokensAnyCase ??= RequestDataForUrlFilter.#tokenize(this.urlAnyCase))
+  }
+
+  /** @param {string} url @returns {Set<string>} */
+  static #tokenize(url) {
+    const tokens = new Set()
+    TOKEN_CHAR_RE.lastIndex = 0
+    let m
+    while ((m = TOKEN_CHAR_RE.exec(url))) {
+      tokens.add(m[0])
+    }
+    return tokens
   }
 
   #getDomainAnchors(url) {
@@ -1455,7 +1687,9 @@ class RequestEvaluator {
   #collectMatchInRuleset(ruleset) {
     // Patch 10 (UPSTREAM.md): candidate pre-selection via the ruleset's
     // index, instead of always scanning every rule.
-    const rules = ruleIndexEnabled ? ruleset.getCandidateRules(this.req.allRequestDomains) : ruleset.rules
+    const rules = ruleIndexEnabled
+      ? ruleset.getCandidateRules(this.req.allRequestDomains, this.req.requestDataForUrlFilter)
+      : ruleset.rules
     for (const rule of rules) {
       if (ruleset.disabledRuleIds?.has(rule.id)) {
         continue

@@ -83,8 +83,26 @@ rules. `tests/index-equivalence.test.ts` proves this over the Chrome/Firefox tes
 request evaluated once with the index on and once with `ExtensionDNR.__setRuleIndexEnabledForTesting(false)`,
 decisions asserted identical. **Measured limit**: uBOL's own default rulesets are ~38% rules
 with no domain-shaped condition at all (a plain substring or wildcard `urlFilter`, or a
-`regexFilter`), which the index cannot narrow; see the performance test paragraph below for
-what that leaves the median/p99 at.
+`regexFilter`), which the domain index cannot narrow -- patch 11 below narrows most of that
+remainder instead.
+
+**A token index on the same `Ruleset` narrows most of what the domain index leaves generic.**
+`vendor/firefox-dnr/UPSTREAM.md` patch 11 has the exact mechanism and its full soundness
+argument (a `urlFilter` rule is only indexed under a token guaranteed to appear as a *whole*
+maximal run in any URL it can match, never as part of a longer one) -- the short version:
+extract every literal-segment token bounded on both sides by an anchor, a `^` separator, or
+another literal character (never by `*` or an unanchored pattern edge), index each rule under
+its least-common such token (uBlock Origin's own selectivity heuristic), and leave a rule with
+no such token -- or any `regexFilter` rule -- on the generic list, unchanged.
+`getCandidateRules` now merges the generic list with both the matched domain buckets and the
+matched token buckets, in the same original relative order patch 10 already preserves, for the
+same reason (`compareRule`'s total order plus `getMatchingModifyHeadersRules`'s own sort).
+`tests/index-equivalence.test.ts`'s "token-index vectors" `describe` block exercises every
+boundary kind the soundness argument depends on (always-on, not gated), and its uBOL run adds
+over 5,000 requests including URLs built from the loaded rulesets' own patterns. **Measured
+effect**: of uBOL's 7,143 rules with no domain-shaped condition, 6,748 (94.5%) get a sound token
+and move off the generic list; 395 stay generic for lacking one (a bare wildcard, or a pattern
+whose only literal segments are under 3 characters).
 
 **`redirect.extensionPath` resolves against `chrome-extension://<extensionId>/`.** Chrome/Firefox
 resolve it against the calling extension's own origin. This engine has no origin registry of its
@@ -135,9 +153,14 @@ budget.
 
 Measured on the machine this index was built on (10,000 `evaluate()` calls over uBOL's six
 default-enabled rulesets, 18,664 rules): a full scan (index disabled) runs median 2.1ms, p99
-5.6ms per request; with the index, median 0.69ms, p99 1.3ms -- roughly a 3x/4x improvement, not
-the low-double-digit-microsecond figure a fully domain-anchored ruleset would allow, because
-close to 40% of uBOL's own rules (plain substring or wildcard `urlFilter`, `regexFilter`) have
-no domain-shaped condition for the index to use and stay in the generic, always-tested list (see
-the Design notes entry above). Narrowing that further -- e.g. a token/substring index over the
-generic `urlFilter` set -- is out of scope here and would need its own equivalence proof.
+5.6ms per request; with the domain index alone (patch 10), median 0.69ms, p99 1.3ms -- roughly a
+3x/4x improvement, not the low-double-digit-microsecond figure a fully domain-anchored ruleset
+would allow, because close to 40% of uBOL's own rules had no domain-shaped condition for that
+index to use and stayed in the generic, always-tested list (see the Design notes entry above).
+
+With the token index added (patch 11), which narrows 6,748 of those 7,143 remaining generic
+rules: **median 52us, p99 174us** -- roughly another 13x/7x improvement over the domain-index-
+only numbers, and comfortably under this package's working targets of 60us median / 300us p99.
+The 395 rules the token index cannot narrow (no bounded token of at least 3 characters) are why
+this is not lower still; narrowing them further would need either a literal-prefix index for
+their specific shapes or a lower token-length floor, neither attempted here.

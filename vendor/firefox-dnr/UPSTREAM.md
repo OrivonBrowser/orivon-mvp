@@ -186,6 +186,110 @@ patch.
     of all rules in the generic list, because that many have no domain-
     shaped condition at all.
 
+11. **A token index on `Ruleset`, also not present upstream, narrowing the
+    generic list patch 10 leaves behind.** The technique is the one uBlock
+    Origin's own engine uses for the same problem: for a rule whose
+    `urlFilter` has no domain-shaped condition (so patch 10 leaves it
+    generic), extract every token in its literal segments that is provably
+    bounded on both sides, index the rule under whichever candidate token is
+    least common across all rules built at the same time (a two-pass build:
+    count first, then commit each rule to its rarest candidate, the same
+    "most selective bucket" heuristic uBlock Origin uses), and leave a rule
+    with no such token -- a pure wildcard pattern, a pattern whose only
+    tokens are shorter than 3 characters, or any `regexFilter` rule -- on
+    the always-tested generic list, unchanged. A "token" is a maximal run of
+    `[a-z0-9%]` characters (`TOKEN_CHAR_RE`), lowercased when the rule is
+    case-insensitive (dNR's default -- indexed in `byToken`, looked up
+    against the request URL's own lowercased tokens) and left as-is when
+    `isUrlFilterCaseSensitive` is `true` (indexed in `byTokenCS` instead,
+    looked up against the un-lowercased URL). `Ruleset#getCandidateRules`
+    now merges up to three sources -- the (now smaller) generic list, the
+    matched domain buckets, and the matched token buckets -- preserving the
+    same relative order a full scan would produce, for the same reason
+    patch 10's domain buckets do (`compareRule` is a total order over the
+    *set* of rules scanned, not their scan order, and
+    `getMatchingModifyHeadersRules` sorts its own output).
+
+    **Soundness.** The risk a token index runs is a false negative: indexing
+    a rule under token T is only sound if T is guaranteed to appear in any
+    URL the rule can match as a whole maximal `[a-z0-9%]` run, never merely
+    as part of a longer one (the rule's pattern might contain `ads`, but the
+    URL might contain `loads` -- T would be "there" as a substring without
+    being a token match). `extractIndexTokenCandidates` only accepts a
+    candidate run that is bounded on **both** sides by one of: an anchor
+    (`||`, a leading `|`, or a trailing `|`, exactly where
+    `CompiledUrlFilter`'s own `#initializeUrlFilter` computes one), a literal
+    `^` separator in the pattern, or another literal (non-token) character
+    in the same literal segment. It is never bounded by `*` (an unindexed
+    wildcard can sit anywhere) or by the pattern's own start/end without an
+    anchor there (an unanchored head/tail is matched by `#indexAfterPart`
+    with an unconstrained `url.indexOf`, per this file's own top-of-class
+    comment on `CompiledUrlFilter`). Three boundary kinds, three arguments:
+
+    - **A literal (punctuation) character.** `#matchesRuleCondition` requires
+      that exact character at that exact URL position (`#matchPartAt`'s
+      `partChar !== urlChar` branch). Since the character is by construction
+      not in `[a-z0-9%]`, any URL that truly matches has that same
+      non-token character adjacent to T, which is exactly where the token
+      scanner (the same `[a-z0-9%]+` run extraction, run once over the
+      request URL and cached on `RequestDataForUrlFilter`) also stops a run.
+    - **An anchor.** A domain anchor requires T to start at one of
+      `domainAnchors` -- offsets computed only right after `://`, `@`, or a
+      `.` in the host (`#getDomainAnchors`) -- each of which is a character
+      outside `[a-z0-9%]` in *any* URL, matching or not, so it is always a
+      run boundary. A left anchor requires T to start at URL index 0, and a
+      right anchor (or the pattern's own trailing `^`, still present as a
+      literal in `#urlFilterParts` since only wildcards and `|` are trimmed
+      before the split) requires T to end at the URL's real end (or its
+      appended `^`) -- both are string edges, which bound a run trivially.
+    - **A literal `^` separator.** This is the one that needs its own
+      argument, because the matcher's separator class and the token class
+      are not the same set. `CompiledUrlFilter`'s `#regexIsSep` accepts
+      `^` matching any character **outside** `[A-Za-z0-9_\-.%]` -- so `_`,
+      `-`, `.` and `%` do *not* satisfy a pattern `^`, only a "harder"
+      separator (`/`, `:`, `?`, space, ...) does. The token class
+      `[a-z0-9%]` is a strict subset of that non-separator set
+      (`[A-Za-z0-9_\-.%]`), so its complement -- the set of characters that
+      break a token run -- is a strict *superset* of the matcher's true
+      separator set. Consequently: whenever a pattern `^` genuinely matches
+      (the URL holds a real separator there), that same character is also
+      outside `[a-z0-9%]`, so the token scanner breaks a run there too. The
+      token scanner can (and does) break runs in *more* places than the
+      matcher's `^` requires -- e.g. at a `-` or `_` the matcher would not
+      accept as a separator -- but never in *fewer*: it cannot fail to
+      expose T as a standalone run wherever the pattern's `^` boundary is
+      actually satisfied. Over-splitting only produces extra, harmless
+      candidate rules (`#matchesRuleCondition` still rejects them); under-
+      splitting is what would be unsound, and cannot happen here.
+
+    Every candidate this reasoning accepts is still only a *candidate*:
+    `#matchesRuleCondition` re-runs the unmodified `CompiledUrlFilter` match
+    against every rule `getCandidateRules` returns, so an over-inclusive
+    bucket (e.g. `ads` embedded in `pre-ads-track` when the rule requires
+    `/ads/track`) costs an extra check, never a wrong decision.
+    `src/main/extensions/dnr/tests/index-equivalence.test.ts`'s "token-index
+    vectors" `describe` block exercises exactly these boundary kinds (a
+    literal-bounded token, a left-anchor-bounded token, an unbounded token
+    that must stay generic and still match embedded, a case-sensitive
+    token, and a dynamic-rule add/remove), each checked both for
+    indexed/unindexed parity and for the actual match/no-match decision
+    Chrome's `urlFilter` semantics require; its gated uBOL run adds over
+    5,000 requests, including URLs synthesized from the loaded rulesets'
+    own `urlFilter` patterns with randomized surrounding text, so the
+    parity check exercises the real ruleset's own token buckets, not only
+    hand-picked vectors.
+
+    **Measured effect**: of uBOL's default rulesets' 7,143 rules with no
+    domain-shaped condition (patch 10's generic list), 6,748 (94.5%) get a
+    sound token and move to the token index; 395 stay generic (of uBOL's
+    current default rulesets, all 395 for lacking any bounded token of at
+    least 3 characters -- e.g. a bare wildcard or a pattern whose only
+    literal is under 3 characters -- rather than for being `regexFilter`,
+    which this ruleset build happens not to use in its default-enabled
+    sets, though the code path still exists for one that does). See
+    `src/main/extensions/dnr/README.md`'s performance paragraph for the
+    resulting median/p99 change.
+
 Nothing else changed: class/function bodies, the top-of-file design comment,
 and every doc comment not touched by a patch above are upstream's own words,
 reformatted only where ESLint-style (`let`→`const` where safe, semicolons
