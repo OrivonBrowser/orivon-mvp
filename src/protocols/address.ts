@@ -14,18 +14,25 @@ export interface ServedName {
   readonly name: string
 }
 
-/** What a name may hold when it is typed or linked, before its protocol canonicalises it. */
-const ADDRESS_NAME = /^[A-Za-z0-9._~-]+$/
+/**
+ * What a name may hold when it is typed or linked, before its protocol
+ * canonicalises it. No longer than a DNS name: a longer one can never become
+ * a host, and a protocol's parser should never be handed an unbounded string.
+ */
+export const MAX_ADDRESS_NAME = 253
+const ADDRESS_NAME = new RegExp(`^[A-Za-z0-9._~-]{1,${String(MAX_ADDRESS_NAME)}}$`)
 const ADDRESS = /^([A-Za-z][A-Za-z0-9]*):\/\/([^/?#\s]+)([/?#]\S*)?$/
 
 /**
  * A name as one host label, the way IPFS subdomain gateways inline a DNSLink
  * name: each `-` doubled, each `.` made a `-`. Undefined when the result is
- * not a DNS label, too long or not lowercase.
+ * not a DNS label, too long or not lowercase; when it starts `xn--`, which
+ * Chromium parses as punycode and refuses; and when it does not decode back
+ * to `name`, since `a.-b` and `a-.b` would otherwise share one origin.
  */
 export function labelFor (name: string): string | undefined {
   const label = name.replace(/-/g, '--').replace(/\./g, '-')
-  return isDnsLabel(label) ? label : undefined
+  return isDnsLabel(label) && !label.startsWith('xn--') && nameFromLabel(label) === name ? label : undefined
 }
 
 /** labelFor, reversed. The alternation matches `--` before `-`, so a doubled hyphen is never read as two dots. */
@@ -33,9 +40,9 @@ function nameFromLabel (label: string): string {
   return label.replace(/--|-/g, (hyphens) => hyphens === '--' ? '-' : '.')
 }
 
+/** A trailing dot is kept, as an empty last label: Chromium's `MAP *.eth` does not match `vitalik.eth.`, so that host never reaches the verifier. */
 function hostLabels (host: string): string[] {
-  const lower = host.toLowerCase()
-  return (lower.endsWith('.') ? lower.slice(0, -1) : lower).split('.')
+  return host.toLowerCase().split('.')
 }
 
 export class ProtocolAddresses {

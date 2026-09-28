@@ -9,6 +9,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { TLSSocket } from 'node:tls'
 import { ResolutionError } from '../../resolution/records.js'
 import type { GatheredFile } from '../../resolution/providers.js'
+import { MAX_ADDRESS_NAME } from '../../address.js'
 import type { ProtocolAddresses } from '../../address.js'
 import type { ProtocolRegistry } from '../../registry.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
@@ -132,9 +133,12 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
  */
 function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: URL, res: ServerResponse): void {
   const [, written = '', path = '/'] = /^\/([^/]*)(\/.*)?$/.exec(url.pathname) ?? []
-  const shown = `${scheme}://${written}`
+  const shown = `${scheme}://${written.slice(0, MAX_ADDRESS_NAME)}`
   try {
-    const name = registry.canonicalName(scheme, decodeURIComponent(written))
+    const decoded = decodeURIComponent(written)
+    // Any page can send one of these, and a protocol's parser may be slow on a long string.
+    if (decoded.length > MAX_ADDRESS_NAME) throw new ResolutionError('invalid-name', `${scheme}:// names are at most ${String(MAX_ADDRESS_NAME)} characters`)
+    const name = registry.canonicalName(scheme, decoded)
     const origin = registry.addresses.originFor(scheme, name)
     if (origin === undefined) throw new ResolutionError('unsupported', `${scheme}://${name} is too long, or not lowercase, to be a host of its own`)
     res.writeHead(301, { location: `${origin}${path}${url.search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()

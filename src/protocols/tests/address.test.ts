@@ -16,25 +16,36 @@ describe('labelFor', () => {
     expect(labelFor('a'.repeat(64))).toBeUndefined()
     expect(labelFor('')).toBeUndefined()
   })
+
+  it('never gives two names one label, and never a label Chromium would parse as punycode', () => {
+    expect(labelFor('a-.b')).toBe('a---b')
+    expect(labelFor('a.-b')).toBeUndefined()
+    expect(labelFor('a..b')).toBeUndefined()
+    expect(labelFor('a-b')).toBe('a--b')
+    expect(labelFor('xn--mnchen-3ya.de')).toBeUndefined()
+    expect(labelFor('xn-.a')).toBeUndefined()
+  })
 })
 
 describe('ProtocolAddresses', () => {
   it('routes each top-level domain and the one address suffix to the verifier, and nothing else', () => {
     expect(addresses.routedSuffixes()).toEqual(['eth', 'orivon'])
-    for (const host of ['vitalik.eth', 'Vitalik.ETH.', `${CID}.ipfs.orivon`, 'ipfs.orivon', 'unknown.scheme.orivon']) expect(addresses.routesToVerifier(host)).toBe(true)
-    for (const host of ['eth', 'orivon', 'example.com', 'eth.example.com', 'orivon.example', 'a..eth']) expect(addresses.routesToVerifier(host)).toBe(false)
+    for (const host of ['vitalik.eth', 'Vitalik.ETH', `${CID}.ipfs.orivon`, 'ipfs.orivon', 'unknown.scheme.orivon']) expect(addresses.routesToVerifier(host)).toBe(true)
+    // `MAP *.eth` does not match a trailing dot, so neither may this: the loader would skip a public-address check for a host DNS resolves.
+    for (const host of ['eth', 'orivon', 'example.com', 'eth.example.com', 'orivon.example', 'a..eth', 'vitalik.eth.', `${CID}.ipfs.orivon.`]) expect(addresses.routesToVerifier(host)).toBe(false)
   })
 
   it('reads a host as its namespace and name', () => {
-    expect(addresses.servedName('Vitalik.ETH.')).toEqual({ namespace: '.eth', name: 'vitalik.eth' })
+    expect(addresses.servedName('Vitalik.ETH')).toEqual({ namespace: '.eth', name: 'vitalik.eth' })
     expect(addresses.servedName(`${CID}.ipfs.orivon`)).toEqual({ namespace: 'ipfs:', name: CID })
     expect(addresses.servedName('en-wikipedia--on--ipfs-org.ipns.orivon')).toEqual({ namespace: 'ipns:', name: 'en.wikipedia-on-ipfs.org' })
-    for (const host of ['ipfs.orivon', 'a.b.ipfs.orivon', `${CID}.nope.orivon`, 'example.com', 'eth']) expect(addresses.servedName(host)).toBeUndefined()
+    for (const host of ['ipfs.orivon', 'a.b.ipfs.orivon', `${CID}.nope.orivon`, 'example.com', 'eth', 'vitalik.eth.', `${CID}.ipfs.orivon.`]) expect(addresses.servedName(host)).toBeUndefined()
   })
 
   it('names the scheme endpoint, and only for a registered scheme', () => {
     expect(addresses.schemeEndpoint('ipfs.orivon')).toBe('ipfs')
-    expect(addresses.schemeEndpoint('IPNS.orivon.')).toBe('ipns')
+    expect(addresses.schemeEndpoint('IPNS.orivon')).toBe('ipns')
+    expect(addresses.schemeEndpoint('ipns.orivon.')).toBeUndefined()
     expect(addresses.schemeEndpoint('nope.orivon')).toBeUndefined()
     expect(addresses.schemeEndpoint(`${CID}.ipfs.orivon`)).toBeUndefined()
   })
@@ -52,7 +63,7 @@ describe('ProtocolAddresses', () => {
     expect(addresses.servedUrl('ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG?x')).toBe('https://ipfs.orivon/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG/?x')
   })
 
-  it.each(['https://example.com', 'magnet:?xt=1', 'ipfs://', 'ipfs:///path', 'ipfs://a b', 'ipfs://a%2fb', 'ipfs://user@cid', 'javascript://x'])('does not serve %s', (input) => {
+  it.each(['https://example.com', 'magnet:?xt=1', 'ipfs://', 'ipfs:///path', 'ipfs://a b', 'ipfs://a%2fb', 'ipfs://user@cid', 'javascript://x', `ipfs://${'a'.repeat(254)}`])('does not serve %s', (input) => {
     expect(addresses.servedUrl(input)).toBeUndefined()
   })
 

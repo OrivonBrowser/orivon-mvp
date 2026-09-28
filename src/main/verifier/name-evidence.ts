@@ -5,7 +5,7 @@
 
 import type { ContentAddress } from '../../broker/policy/pin.js'
 import { pointerChainVerdict } from '../../protocols/resolution/pointer-chain.js'
-import type { PointerStep, Provenance } from '../../protocols/resolution/records.js'
+import type { ContentPointer, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { ContentEvidence } from '../../trust/website-level.js'
 import type { SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import { ago } from './status-view.js'
@@ -38,13 +38,23 @@ function provenLine (provenance: Provenance): string {
     case 'chain': return `Proven by the light client at block ${blockNumber(provenance.block)}${provenance.offchain ? ', through an offchain resolver the contract checked' : ''}`
     case 'fixture': return 'A test fixture, not proven'
     case 'dns': return `Read from DNS (${provenance.domain}), unverified`
-    case 'address': return 'The address itself names the content'
+    case 'address': return 'Read from the address itself'
+  }
+}
+
+/** What an `ipfs://` or `ipns://` address itself establishes: only a CID names the content outright. */
+function addressLine (pointer: ContentPointer): string {
+  switch (pointer.kind) {
+    case 'ipfs': return "The address is the content's own hash"
+    case 'ipns-key': return 'The address is a key; the content is whatever its signed record names'
+    case 'dnslink': return 'The address is a DNS name, followed through DNSLink'
+    case 'unsupported': return `The address names ${pointer.protocol} content, which this build cannot load`
   }
 }
 
 function stepRow (step: PointerStep): EvidenceRow {
   switch (step.step) {
-    case 'contenthash': return { term: step.provenance.via === 'address' ? 'Address' : 'Name', value: provenLine(step.provenance) }
+    case 'contenthash': return step.provenance.via === 'address' ? { term: 'Address', value: addressLine(step.pointer) } : { term: 'Name', value: provenLine(step.provenance) }
     case 'ipns-record': return { term: 'IPNS record', value: `Signed by its key ${shortId(step.key)}, sequence ${step.sequence.toString()}` }
     case 'dnslink': return { term: 'DNSLink', value: `Via DNS: ${step.domain}, which anyone on the network path could forge` }
   }
@@ -94,7 +104,7 @@ export function pinnedNameEvidence (content: ContentAddress, address: boolean): 
   const name = !content.pointersVerified
     ? 'Through a DNSLink, which anyone on the network path could forge'
     : address
-      ? 'The address itself names the content'
+      ? content.via === 'ipns-key' ? 'A key whose signed record named the content when installed' : "The address is the content's own hash"
       : content.block === undefined ? 'A test fixture when installed, not proven' : `Proven at block ${blockNumber(content.block)} when installed`
   return {
     content: { source: 'pinned', cid: content.cid, pointersVerified: content.pointersVerified },

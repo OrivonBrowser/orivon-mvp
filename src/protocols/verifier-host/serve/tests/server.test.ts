@@ -280,6 +280,20 @@ describe('the loopback server, for an address scheme', () => {
     expect(second.body.toString()).toContain(`ipfs://${base36}`)
   })
 
+  it('refuses a name too long to be a host before any parser sees it, and says so without echoing it whole', async () => {
+    const started = Date.now()
+    const reply = await get(`/Q${'z'.repeat(16_000)}/`, { host: 'ipns.orivon' })
+    expect(reply.status).toBe(400)
+    expect(reply.body.length).toBeLessThan(4_000)
+    expect(Date.now() - started).toBeLessThan(1_000)
+  })
+
+  it('shows the unsupported page, not a redirect to a host Chromium refuses, for a punycode DNSLink name', async () => {
+    const reply = await get('/xn--mnchen-3ya.de/', { host: 'ipns.orivon' })
+    expect(reply.status).toBe(501)
+    expect(reply.headers.location).toBeUndefined()
+  })
+
   it('refuses a host under the address suffix that no protocol serves', async () => {
     expect((await get('/', { host: `${ROOT}.nope.orivon` })).status).toBe(421)
     expect((await get('/', { host: 'example.com' })).status).toBe(421)

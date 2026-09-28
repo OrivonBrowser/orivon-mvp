@@ -118,10 +118,16 @@ describe('ProtocolRegistry.resolve', () => {
     await expect(registryOf([empty], []).resolve('vitalik.eth')).rejects.toMatchObject({ failure: 'not-found' })
   })
 
-  it('passes the name on lowercased and without a trailing dot', async () => {
+  it('passes the name on lowercased', async () => {
     const ens = resolver('ens', ['.eth'], async () => [record()])
-    await registryOf([ens], []).resolve('Vitalik.ETH.')
+    await registryOf([ens], []).resolve('Vitalik.ETH')
     expect(ens.calls).toEqual(['vitalik.eth'])
+  })
+
+  it('refuses a host with a trailing dot, which the resolver rules never route to the verifier', async () => {
+    const ens = resolver('ens', ['.eth'], async () => [record()])
+    await expect(registryOf([ens], []).resolve('vitalik.eth.')).rejects.toMatchObject({ failure: 'not-found' })
+    expect(ens.calls).toEqual([])
   })
 })
 

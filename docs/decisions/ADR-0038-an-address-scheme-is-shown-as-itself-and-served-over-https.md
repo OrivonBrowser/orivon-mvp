@@ -100,8 +100,10 @@ second reason, a namespace Orivon must own and defend, does carry over, and is a
 - **Each CID is its own origin**, so an `ipfs://` app's grants and storage do not carry over to a
   new release. An app that wants to keep them ships under `ipns://` or a `.eth` name.
 - **Orivon owns `.orivon` as a namespace.** Nothing outside Orivon resolves it, and the resolver
-  rule means no lookup for it ever reaches DNS. If ICANN ever delegated `.orivon`, Orivon would
-  still route it to the verifier.
+  rule keeps Chromium's own lookups for it off DNS. Two cases fall outside that rule, as they do for
+  `.eth`: a trailing-dot spelling (`<cid>.ipfs.orivon.`), which the shell does not treat as the
+  verifier's and which fails; and a configured proxy, which is sent the host name. If ICANN ever
+  delegated `.orivon`, Orivon would still route it to the verifier.
 - **A top-level domain added while Orivon runs still needs a restart**, since the name has to be
   the host. ENS is built in, so nothing in this build needs one.
 - **Any page can make the verifier fetch any CID or IPNS name** by linking or embedding its

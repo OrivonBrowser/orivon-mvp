@@ -5,13 +5,15 @@
 import { ResolutionError } from '../resolution/records.js'
 import type { ContentPointer, NameRecord } from '../resolution/records.js'
 import type { NameResolver } from '../resolution/providers.js'
+import { MAX_ADDRESS_NAME } from '../address.js'
 import { parseContentPath } from './names.js'
 import type { PathTarget } from './names.js'
 
 type AddressScheme = 'ipfs' | 'ipns'
 
 function targetOf (scheme: AddressScheme, name: string): PathTarget {
-  const target = name.includes('/') ? undefined : parseContentPath(`/${scheme}/${name}`)
+  // CID and base58 parsing are quadratic in the length of what they are given.
+  const target = name.includes('/') || name.length > MAX_ADDRESS_NAME ? undefined : parseContentPath(`/${scheme}/${name}`)
   if (target === undefined) throw new ResolutionError('invalid-name', `${scheme}://${name} is not ${scheme === 'ipfs' ? 'a CID' : 'an IPNS key or DNSLink name'} this build can load`)
   return target
 }

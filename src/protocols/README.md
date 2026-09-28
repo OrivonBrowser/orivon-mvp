@@ -78,7 +78,10 @@ costs one local round trip per typed address, and keeps protocol code out of the
 ([`address.ts`](address.ts)'s `labelFor`): each `-` doubled, each `.` made a `-`. A DNSLink name
 fits one label that way, a CID or key needs no change, and IPFS content written for subdomain
 gateways runs unchanged at the same shape of origin. A name that still cannot fit (over 63
-characters, or not lowercase) is refused rather than served under a second rule.
+characters, not lowercase, or starting `xn--`, which Chromium parses as punycode) is refused rather
+than served under a second rule, and so is one whose label would not decode back to it, so that no
+two names share an origin. Any name over 253 characters is refused before a protocol's parser sees
+it: any page can send one to a scheme's endpoint, and CID parsing is quadratic in its input.
 
 **[`registry.ts`](registry.ts) tries resolvers in the order their protocols are given, and every
 gatherer in order.** This is the canonical fallback rule of the DNS resolution and Data gathering

@@ -68,7 +68,7 @@ describe('liveNameEvidence', () => {
     }), NOW)
     expect(byCid.nameProven).toBe(true)
     expect(byCid.line).toBe("Address verified: it is the content's own hash, 3 minutes ago")
-    expect(byCid.rows[0]).toEqual({ term: 'Address', value: 'The address itself names the content' })
+    expect(byCid.rows[0]).toEqual({ term: 'Address', value: "The address is the content's own hash" })
     const byKey = liveNameEvidence(provenance({
       pointers: [
         { step: 'contenthash', name: KEY, pointer: { kind: 'ipns-key', key: KEY }, provenance: { via: 'address' } },
@@ -77,6 +77,7 @@ describe('liveNameEvidence', () => {
     }), NOW)
     expect(byKey.nameProven).toBe(true)
     expect(byKey.line).toBe('Address verified: it names a key whose signed record was checked, 3 minutes ago')
+    expect(byKey.rows[0]).toEqual({ term: 'Address', value: 'The address is a key; the content is whatever its signed record names' })
     const byDnslink = liveNameEvidence(provenance({
       pointers: [
         { step: 'contenthash', name: 'docs.ipfs.tech', pointer: { kind: 'dnslink', domain: 'docs.ipfs.tech' }, provenance: { via: 'address' } },
@@ -85,6 +86,7 @@ describe('liveNameEvidence', () => {
     }), NOW)
     expect(byDnslink.nameProven).toBe(false)
     expect(byDnslink.line).toBe('Address not verified: it points through DNS (docs.ipfs.tech)')
+    expect(byDnslink.rows[0]).toEqual({ term: 'Address', value: 'The address is a DNS name, followed through DNSLink' })
   })
 })
 
@@ -102,8 +104,10 @@ describe('pinnedNameEvidence', () => {
 
   it('says an app installed from an address needed no proof of a name, and is no test fixture', () => {
     const evidence = pinnedNameEvidence({ cid: CID, via: 'ipfs', pointersVerified: true }, true)
-    expect(evidence.line).toBe('Installed from the content its address pointed to. The address itself names the content')
-    expect(evidence.rows[1]).toEqual({ term: 'Address', value: 'The address itself names the content' })
+    expect(evidence.line).toBe("Installed from the content its address pointed to. The address is the content's own hash")
+    expect(evidence.rows[1]).toEqual({ term: 'Address', value: "The address is the content's own hash" })
+    expect(pinnedNameEvidence({ cid: CID, via: 'ipns-key', pointersVerified: true }, true).rows[1]?.value).toBe('A key whose signed record named the content when installed')
+    expect(pinnedNameEvidence({ cid: CID, via: 'dnslink', pointersVerified: false }, true).rows[1]?.value).toMatch(/DNSLink/)
   })
 })
 
