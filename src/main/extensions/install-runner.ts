@@ -8,17 +8,19 @@
 
 import { cpSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, sep } from 'node:path'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
 import type { Session } from 'electron'
 import AdmZip from 'adm-zip'
 import {
   describeExtensionInstall, loadableManifest, readExtensionManifest,
   type ExtensionInstallDescription, type ExtensionInstallSource
 } from '../../broker/policy/extension-manifest.js'
+import { isString, ownProperty } from '../../broker/policy/own-property.js'
 import { verifyCrx3 } from './crx.js'
 import { unpackZip } from './unpack-runner.js'
 import { readRegistry, writeRegistry } from './registry-runner.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
+import { generateId } from '../../../vendor/electron-chrome-web-store/src/browser/id.js'
 
 export type InstallPrompt = (description: ExtensionInstallDescription) => Promise<boolean>
 
@@ -69,6 +71,47 @@ function writeManifestOver (dir: string, manifestJson: string): void {
   writeFileSync(join(dir, 'manifest.json'), manifestJson)
 }
 
+function slotKeyPath (userDataPath: string, slot: string): string {
+  return join(extensionsRoot(userDataPath), slot, 'key.pub')
+}
+
+/**
+ * The per-slot RSA public key (SPKI DER, base64) that keeps a folder or
+ * `.zip` install's extension id stable across every update into `slot` --
+ * `resolveInstallKey`'s own doc says where this ranks against a manifest's
+ * own `key` and a `.crx`'s developer key. Generated once and persisted at
+ * `slotKeyPath`, then reused for every later install into the same slot;
+ * the matching private key is never exported, since nothing here signs
+ * with it.
+ */
+export function resolveSlotKey (userDataPath: string, slot: string): string {
+  const keyPath = slotKeyPath(userDataPath, slot)
+  try {
+    return readFileSync(keyPath, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  const encoded = publicKey.export({ type: 'spki', format: 'der' }).toString('base64')
+  mkdirSync(dirname(keyPath), { recursive: true })
+  writeFileSync(keyPath, encoded)
+  return encoded
+}
+
+/**
+ * The `key` (SPKI DER, base64) every loaded copy in `pending.slot` carries,
+ * so Electron derives a stable id across an update instead of one that
+ * embeds the version-numbered load path (README.md's Design notes, "Why
+ * every installed copy's manifest carries a key"). The manifest's own `key`
+ * wins outright when it has one (Chrome keeps it); else a `.crx`'s
+ * developer key (crx.ts's own doc); else the slot's generated key.
+ */
+function resolveInstallKey (ctx: InstallContext, pending: PendingInstall, manifestKey: string | undefined): string {
+  if (manifestKey !== undefined) return manifestKey
+  if (pending.developerPublicKey !== undefined) return pending.developerPublicKey.toString('base64')
+  return resolveSlotKey(ctx.userDataPath, pending.slot)
+}
+
 /** `manifest.json`'s bytes read straight out of a zip archive, without
  * extracting anything else to disk -- `installFromFile`'s `.crx`/`.zip`
  * paths both need to read the manifest BEFORE they know the final
@@ -86,9 +129,13 @@ interface PendingInstall {
   readonly source: ExtensionSource
   readonly updater: ExtensionUpdater
   readonly slot: string
-  /** Writes the loaded copy at `targetDir`, with `manifestJson` in place of
-   * `manifest.json` -- everything install-runner.ts's caller-specific step
-   * (folder copy, or the already-downloaded archive) needed to know. */
+  /** A `.crx`'s developer public key (crx.ts's own doc) -- `undefined` for
+   * a folder or `.zip` install, which carries no signature at all. */
+  readonly developerPublicKey?: Buffer
+  /** Writes the loaded copy at `targetDir`, with `manifestJson` (already
+   * carrying its resolved `key`) in place of `manifest.json` -- everything
+   * install-runner.ts's caller-specific step (folder copy, or the
+   * already-downloaded archive) needed to know. */
   readonly write: (targetDir: string, manifestJson: string) => void
 }
 
@@ -102,10 +149,39 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   if (!allowed) return { installed: false, reason: 'declined by the person' }
 
   const { manifest, stripped } = loadableManifest(pending.rawManifest)
+  const manifestKey = ownProperty(pending.rawManifest, 'key', isString)
+  const key = resolveInstallKey(ctx, pending, manifestKey)
+  if (manifestKey === undefined) manifest.key = key
+  const id = generateId(key)
+
   const targetDir = join(extensionsRoot(ctx.userDataPath), pending.slot, facts.version)
   pending.write(targetDir, JSON.stringify(manifest))
 
-  const loaded = await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
+  // Matched by SLOT, the directory the versions of one install live under
+  // (README.md's Design notes); the key resolved above makes `id` stable
+  // per slot as well.
+  const slotDir = join(extensionsRoot(ctx.userDataPath), pending.slot)
+  const registry = readRegistry(ctx.userDataPath)
+  const previousInSlot = registry.filter((existing) => existing.path.startsWith(`${slotDir}${sep}`))
+
+  // The old version, if this slot's id is currently loaded, is removed
+  // BEFORE the new one loads -- Electron never holds two loaded extensions
+  // under the same id at once. A load failure below is recovered by
+  // reloading that same previous version back from its own path, so a
+  // person never ends up with neither.
+  const wasLoaded = ctx.session.extensions.getExtension(id) !== undefined
+  if (wasLoaded) ctx.session.extensions.removeExtension(id)
+
+  let loaded: Awaited<ReturnType<Session['extensions']['loadExtension']>>
+  try {
+    loaded = await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
+  } catch (error) {
+    const previous = previousInSlot[0]
+    if (wasLoaded && previous !== undefined) {
+      await ctx.session.extensions.loadExtension(previous.path, { allowFileAccess: false })
+    }
+    throw error
+  }
 
   const now = Date.now()
   const entry: InstalledExtension = {
@@ -121,16 +197,6 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
     stripped
   }
 
-  // Matched by SLOT, never by `entry.id` alone: Electron derives an
-  // unpacked extension's id from its own load path when the manifest
-  // carries no `key` (Chromium's own id_util::GenerateIdForPath), and that
-  // path's version segment changes on every update -- an id match would
-  // never find "the same extension, an older version" for a folder or
-  // `.zip` install. A `.crx` install's `key` (installFromFile's own doc)
-  // keeps ITS id stable across versions too, so this still finds it.
-  const slotDir = join(extensionsRoot(ctx.userDataPath), pending.slot)
-  const registry = readRegistry(ctx.userDataPath)
-  const previousInSlot = registry.filter((existing) => existing.path.startsWith(`${slotDir}${sep}`))
   const kept = registry.filter((existing) => !previousInSlot.includes(existing))
   writeRegistry(ctx.userDataPath, [...kept, entry])
 
@@ -170,7 +236,6 @@ export async function installFromFile (ctx: InstallContext, filePath: string): P
   const crx = isCrx ? verifyCrx3(bytes, { requirePublisherProof: false }) : undefined
   const archive = crx?.archive ?? bytes
   const slot = crx?.id ?? slotHash(bytes)
-  const developerPublicKey = crx?.developerPublicKey
   const rawManifest = peekManifest(archive)
 
   return await finishInstall(ctx, {
@@ -178,12 +243,10 @@ export async function installFromFile (ctx: InstallContext, filePath: string): P
     source: { kind: 'file', fileName: filePath },
     updater: { kind: 'none', reason: 'installed from a local file' },
     slot,
+    ...(crx === undefined ? {} : { developerPublicKey: crx.developerPublicKey }),
     write: (targetDir, manifestJson) => {
       unpackZip(archive, targetDir)
-      const written = developerPublicKey === undefined
-        ? manifestJson
-        : JSON.stringify({ ...(JSON.parse(manifestJson) as Record<string, unknown>), key: developerPublicKey.toString('base64') })
-      writeManifestOver(targetDir, written)
+      writeManifestOver(targetDir, manifestJson)
     }
   })
 }
