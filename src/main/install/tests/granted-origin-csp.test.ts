@@ -1,12 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { HeadersReceivedResponse, OnHeadersReceivedListenerDetails } from 'electron'
+import type { OnHeadersReceivedListenerDetails } from 'electron'
+import type { Broker } from '../../../broker/broker-contracts.js'
+import type { ResponseHeadersResult } from '../../sessions/web-request-owner.js'
 
-const onHeadersReceived = vi.fn()
-const fromPartition = vi.fn(() => ({ webRequest: { onHeadersReceived } }))
-vi.mock('electron', () => ({ session: { fromPartition } }))
+const { served, liveCspHeaderFor } = vi.hoisted(() => ({
+  served: new Set<string>(),
+  liveCspHeaderFor: vi.fn(async () => "default-src 'self'; script-src 'self'")
+}))
+vi.mock('../../../loader/electron/serve.js', () => ({
+  isOriginServedFromCacheSync: (origin: string) => served.has(origin),
+  liveCspHeaderFor
+}))
 
-const { grantedOriginCspListener, installGrantedOriginCsp, withAppendedCsp } = await import('../granted-origin-csp.js')
-const { partitionFor } = await import('../../../broker/grants/origin-hash.js')
+const { defaultSessionGrantedOriginCsp, documentOriginOf, withAppendedCsp } = await import('../granted-origin-csp.js')
 
 const ORIGIN = 'http://127.0.0.1:8874'
 const CSP = "default-src 'self'; script-src 'self'"
@@ -26,8 +32,16 @@ function details (overrides: Partial<OnHeadersReceivedListenerDetails>): OnHeade
   }
 }
 
-async function run (listener: ReturnType<typeof grantedOriginCspListener>, input: OnHeadersReceivedListenerDetails): Promise<HeadersReceivedResponse> {
-  return await new Promise((resolve) => { listener(input, resolve) })
+function brokerWith (opts: { hasGrant?: boolean, isolated?: boolean, manifestFails?: boolean } = {}): Broker {
+  return {
+    app: {
+      hasGrantsSync: () => opts.hasGrant === true,
+      manifest: async () => {
+        if (opts.manifestFails === true) throw new Error('unregistered')
+        return { crossOriginIsolated: opts.isolated === true }
+      }
+    }
+  } as unknown as Broker
 }
 
 describe('withAppendedCsp', () => {
@@ -49,51 +63,106 @@ describe('withAppendedCsp', () => {
   })
 })
 
-describe('grantedOriginCspListener', () => {
-  it('gives a document from the granted origin the installed path\'s policy, built fresh per response', async () => {
-    let csp = CSP
-    const listener = grantedOriginCspListener(ORIGIN, async () => csp)
-
-    const first = await run(listener, details({}))
-    expect(first.responseHeaders?.['Content-Security-Policy']).toEqual([CSP])
-
-    csp = "default-src 'none'"
-    const second = await run(listener, details({ resourceType: 'subFrame', url: `${ORIGIN}/frame.html` }))
-    expect(second.responseHeaders?.['Content-Security-Policy']).toEqual(["default-src 'none'"])
+describe('documentOriginOf', () => {
+  it('is the origin for a mainFrame response', () => {
+    expect(documentOriginOf(details({ resourceType: 'mainFrame', url: `${ORIGIN}/page` }))).toBe(ORIGIN)
   })
 
-  it('leaves every non-document response untouched', async () => {
-    const cspFor = vi.fn(async () => CSP)
-    const listener = grantedOriginCspListener(ORIGIN, cspFor)
+  it('is the origin for a subFrame response too', () => {
+    expect(documentOriginOf(details({ resourceType: 'subFrame', url: `${ORIGIN}/frame.html` }))).toBe(ORIGIN)
+  })
+
+  it('is null for every non-document resource type', () => {
     for (const resourceType of ['script', 'xhr', 'image', 'stylesheet', 'other'] as const) {
-      expect(await run(listener, details({ resourceType, url: `${ORIGIN}/app.js` }))).toEqual({})
+      expect(documentOriginOf(details({ resourceType, url: `${ORIGIN}/app.js` }))).toBeNull()
     }
-    expect(cspFor).not.toHaveBeenCalled()
   })
 
-  it('leaves a document from any other origin untouched', async () => {
-    const listener = grantedOriginCspListener(ORIGIN, async () => CSP)
-    expect(await run(listener, details({ url: 'http://127.0.0.1:9999/' }))).toEqual({})
-    expect(await run(listener, details({ resourceType: 'subFrame', url: 'https://example.com/' }))).toEqual({})
-  })
-
-  it('answers without a policy rather than hanging the response when the grant read fails', async () => {
-    const listener = grantedOriginCspListener(ORIGIN, async () => { throw new Error('broker gone') })
-    expect(await run(listener, details({}))).toEqual({})
+  it('is null when the URL cannot be parsed', () => {
+    expect(documentOriginOf(details({ url: 'not a url' }))).toBeNull()
   })
 })
 
-describe('installGrantedOriginCsp', () => {
-  it('installs one listener on the granted origin\'s own app partition, building the installed path\'s policy from the live grants', async () => {
-    const grants = [{ id: 'g1', origin: ORIGIN, grantedAt: 0, capability: 'https.connect', patterns: ['api.example.com:443'] }]
-    installGrantedOriginCsp({ app: { grants: async () => grants } } as never, ORIGIN)
-    expect(fromPartition).toHaveBeenCalledWith(partitionFor(ORIGIN))
-    expect(onHeadersReceived).toHaveBeenCalledTimes(1)
+describe('defaultSessionGrantedOriginCsp -- the default session\'s one handler for every granted-without-install origin', () => {
+  const SEED: ResponseHeadersResult = { responseHeaders: {} }
 
-    const listener = onHeadersReceived.mock.calls[0]?.[0] as ReturnType<typeof grantedOriginCspListener>
-    const response = await run(listener, details({}))
-    const csp = response.responseHeaders?.['Content-Security-Policy']?.[0] ?? ''
-    expect(csp).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'")
-    expect(csp).toContain("connect-src 'self' data: blob: https://api.example.com:443")
+  it('gives a document from a granted origin the policy, built fresh per response', async () => {
+    served.clear()
+    const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true }))
+
+    liveCspHeaderFor.mockResolvedValueOnce(CSP)
+    const first = await handler(details({}), SEED)
+    expect(first.responseHeaders['Content-Security-Policy']).toEqual([CSP])
+
+    liveCspHeaderFor.mockResolvedValueOnce("default-src 'none'")
+    const second = await handler(details({ resourceType: 'subFrame', url: `${ORIGIN}/frame.html` }), SEED)
+    expect(second.responseHeaders['Content-Security-Policy']).toEqual(["default-src 'none'"])
+  })
+
+  it('leaves every non-document response untouched, and never asks the broker or the grant read at all', async () => {
+    served.clear()
+    liveCspHeaderFor.mockClear()
+    const hasGrantsSync = vi.fn(() => true)
+    const handler = defaultSessionGrantedOriginCsp({ app: { hasGrantsSync, manifest: vi.fn() } } as unknown as Broker)
+    for (const resourceType of ['script', 'xhr', 'image', 'stylesheet', 'other'] as const) {
+      expect(await handler(details({ resourceType, url: `${ORIGIN}/app.js` }), SEED)).toBe(SEED)
+    }
+    expect(liveCspHeaderFor).not.toHaveBeenCalled()
+    expect(hasGrantsSync).not.toHaveBeenCalled()
+  })
+
+  it('leaves a document from an origin with no grant untouched', async () => {
+    served.clear()
+    const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: false }))
+    expect(await handler(details({}), SEED)).toBe(SEED)
+  })
+
+  it('leaves a cache-served origin untouched even when it also holds a grant -- its CSP is set inside the protocol.handle response instead (A110)', async () => {
+    served.add(ORIGIN)
+    try {
+      const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true }))
+      expect(await handler(details({}), SEED)).toBe(SEED)
+    } finally {
+      served.clear()
+    }
+  })
+
+  it('reads from the ACCUMULATED result, not `details` directly -- it composes with whatever an earlier handler already left', async () => {
+    served.clear()
+    liveCspHeaderFor.mockResolvedValueOnce(CSP)
+    const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true }))
+    const current: ResponseHeadersResult = { responseHeaders: { 'x-earlier': ['yes'] } }
+
+    const result = await handler(details({ responseHeaders: { 'x-original': ['ignored'] } }), current)
+
+    expect(result.responseHeaders['x-earlier']).toEqual(['yes'])
+    expect(result.responseHeaders['x-original']).toBeUndefined()
+    expect(result.responseHeaders['Content-Security-Policy']).toEqual([CSP])
+  })
+
+  it('adds the isolation headers when the manifest asks, beside the policy', async () => {
+    served.clear()
+    liveCspHeaderFor.mockResolvedValueOnce(CSP)
+    const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true, isolated: true }))
+    const result = await handler(details({}), SEED)
+    expect(result.responseHeaders['Content-Security-Policy']).toEqual([CSP])
+    expect(result.responseHeaders['cross-origin-opener-policy']).toEqual(['same-origin'])
+    expect(result.responseHeaders['cross-origin-embedder-policy']).toEqual(['credentialless'])
+  })
+
+  it('keeps the policy and skips isolation when the manifest read fails', async () => {
+    served.clear()
+    liveCspHeaderFor.mockResolvedValueOnce(CSP)
+    const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true, manifestFails: true }))
+    const result = await handler(details({}), SEED)
+    expect(result.responseHeaders['Content-Security-Policy']).toEqual([CSP])
+    expect(result.responseHeaders['cross-origin-opener-policy']).toBeUndefined()
+  })
+
+  it('lets a failed CSP read reject -- the owner (../sessions/web-request-owner.ts) is what catches it and passes the response through unmodified, not this function', async () => {
+    served.clear()
+    liveCspHeaderFor.mockRejectedValueOnce(new Error('broker gone'))
+    const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true }))
+    await expect(handler(details({}), SEED)).rejects.toThrow('broker gone')
   })
 })

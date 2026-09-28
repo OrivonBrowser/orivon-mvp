@@ -24,22 +24,20 @@ const APP_TAB_FLAG = '--orivon-app-tab'
 /** Which Electron session `target` must run in: its own isolated partition,
  * or undefined for the shell's shared default session.
  *
- * Isolation follows CONSENT, not installation (ADR-0018) -- so do not add
- * `isRegisteredSync` back as a third arm here; an installed app with nothing
- * granted to it is deliberately not isolated.
+ * ONLY a cache-served origin gets its own partition. ADR-0007 intercepts a
+ * cached bundle with `protocol.handle`, scoped to one session, so an origin
+ * served from cache whose tab sat on the default session could not load at
+ * all; nothing there answers its scheme. This reads the registry
+ * `registerAppOrigin` itself writes -- deciding it from a different one is
+ * what made a served app unreachable (A109).
  *
- * The cache arm is not a second rule, it is what makes the first reachable:
- * ADR-0007 intercepts a cached bundle inside the app's own partition, so an
- * origin served from cache whose tab sat on the default session could not
- * load at all. It must read the registry `registerAppOrigin` itself writes --
- * deciding this from a different one is what made a served app unreachable.
- *
- * `broker` undefined (not yet published) reads as "nothing is granted"; the
- * cache arm still answers, because serving is restored before that point. */
-export function partitionForTarget (target: string, broker: Broker | undefined): string | undefined {
+ * A held grant, on its own, is NOT isolated: a Chrome extension runs as one
+ * instance across every page, granted or not, so the granted app itself has
+ * to share the session an extension reaches (owner, 2026-09-29). Do not add
+ * `broker.app.hasGrantsSync` back as an arm here. */
+export function partitionForTarget (target: string): string | undefined {
   const origin = originFromUrl(target)
   if (origin === null) return undefined
-  if (broker?.app.hasGrantsSync(origin) === true) return partitionFor(origin)
   return isOriginServedFromCacheSync(origin) ? partitionFor(origin) : undefined
 }
 
@@ -66,11 +64,10 @@ export interface PartitionSwap {
  * current session for a blank page would throw away history for nothing. */
 export function partitionChanged (
   target: string,
-  currentPartition: string | undefined,
-  broker: Broker | undefined
+  currentPartition: string | undefined
 ): PartitionSwap | undefined {
   if (originFromUrl(target) === null) return undefined
-  const next = partitionForTarget(target, broker)
+  const next = partitionForTarget(target)
   return next === currentPartition ? undefined : { to: next }
 }
 
@@ -97,9 +94,9 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
 }
 
 /** Whether `target` needs the app-tab flag `view` does not already carry, or vice
- * versa -- isolation follows CONSENT (`hasGrantsSync`, `partitionForTarget`) but this
- * flag follows REGISTRATION (`isRegisteredSync`), so a navigation between a
- * registered-but-ungranted app and an ordinary site can cross this without the
+ * versa -- a partition follows CACHE-SERVING (`partitionForTarget`) but this flag
+ * follows REGISTRATION (`isRegisteredSync`), so a navigation between a registered
+ * app that is not cache-served and an ordinary site can cross this without the
  * partition ever changing. Undefined for a target with no derivable origin, same as
  * `partitionChanged` -- a rejected navigation must not read as a flag change either. */
 export function appTabFlagChanged (target: string, view: WebContentsView, broker: Broker | undefined): boolean {
@@ -236,14 +233,14 @@ export function wireView (id: string, record: TabRecord): void {
       record.isDashboardTab = false
     }
     if (!record.isDashboardTab) {
-      const swap = partitionChanged(navigatedUrl, record.partition, record.host.broker)
+      const swap = partitionChanged(navigatedUrl, record.partition)
       if (swap !== undefined && !keepsOpenerSession(wc, swap)) {
         repartitionView(id, record, navigatedUrl, swap.to)
         return
       }
       // No partition swap does not mean no rebuild is needed: the app-tab
       // flag follows a different predicate (isRegisteredSync) than the
-      // partition does (hasGrantsSync), and can flip while the partition
+      // partition does (cache-serving), and can flip while the partition
       // -- and so `swap` -- stays undefined.
       if (swap === undefined && appTabFlagChanged(navigatedUrl, view, record.host.broker)) {
         repartitionView(id, record, navigatedUrl, record.partition)
@@ -322,7 +319,7 @@ export function wireView (id: string, record: TabRecord): void {
       watchAppTab(view, appTabArgsFor(url, record.host.broker))
       record.host.adoptPopup(view, partition)
     },
-    partitionFor: (url) => partitionForTarget(url, record.host.broker),
+    partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker))
   }, () => ({ url: wc.getURL(), partition: record.partition })))
 }

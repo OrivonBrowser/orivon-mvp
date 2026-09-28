@@ -378,7 +378,7 @@ export class TabManager {
     }
     const target = this.resolveTarget(rawInput)
 
-    const swap = partitionChanged(target, record.partition, this.ctx.broker)
+    const swap = partitionChanged(target, record.partition)
     if (swap !== undefined || appTabFlagChanged(target, record.view, this.ctx.broker)) {
       // swap.to can itself be undefined (PartitionSwap's own doc) -- ??
       // would wrongly read that as "no swap" and keep the old partition.

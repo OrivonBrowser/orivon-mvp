@@ -23,7 +23,13 @@ vi.mock('electron', () => ({
   Menu: { buildFromTemplate },
   clipboard: { writeText: vi.fn() }
 }))
-vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: () => false }))
+// ONLY a cache-served origin gets its own partition now (2026-09-29); this
+// file's own APP is that one cache-served, isolated origin throughout, the
+// same role it played as "the granted app" before. Written as the literal
+// string, not the APP constant below: vi.mock's factory is hoisted above
+// every const in this file, so a reference to APP here would run before it
+// is initialised.
+vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' }))
 
 const { wireView } = await import('../tab-view.js')
 type Record_ = Parameters<typeof wireView>[1]
@@ -55,7 +61,7 @@ function fakeContents (url = 'https://news.example/'): FakeContents {
 function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown> {
   return {
     preloadPath: '/preload/app.js',
-    broker: { app: { hasGrantsSync: (o: string) => o === APP, isRegisteredSync: (o: string) => o === APP } } as unknown as Broker,
+    broker: { app: { isRegisteredSync: (o: string) => o === APP } } as unknown as Broker,
     dashboardUrl: 'http://localhost:5999/newtab/',
     window: { isDestroyed: () => false } as never,
     isShown: () => true,

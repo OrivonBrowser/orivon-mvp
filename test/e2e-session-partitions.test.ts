@@ -1,35 +1,33 @@
-// The end-to-end proof for build-plan.md step 2's last deliverable
-// (.claude/unattended-build-queue.md item 0.4): "tabs open in the
-// app's own partition; a test proves two origins share no storage."
+// The end-to-end proof that a GRANT ALONE no longer isolates an origin
+// (2026-09-29): only a cache-served origin gets its own Electron session
+// partition now, because Chrome extensions load into session.defaultSession
+// and must run as one instance on every page, granted apps included -- so a
+// granted, network-served app has to share that session too.
+// `e2e-redirect-partition.test.ts` is where a CACHE-SERVED origin's own
+// partition is proven, through a real redirect landing a tab in it.
 //
 // WHY THIS DOES NOT JUST READ localStorage FROM TWO PAGES. Two unrelated
 // origins already cannot see each other's localStorage/cookies under
 // Chromium's own same-origin policy, in a SINGLE shared Electron session --
-// that isolation exists with or without src/main/tabs.ts's own partition
-// wiring, so a test that only proved that would pass whether or not this
-// lane's change ever shipped. What actually changed here is WHICH Electron
-// `session` object each tab's WebContents uses -- ADR-0003's "a dedicated
-// session partition per origin" -- and that is only observable from the
-// Electron MAIN process, via `app.evaluate()`, not from page-level
-// `evaluate()` calls. So this file proves two things, and only the second
-// is genuinely discriminating (see "Assertion 2" below for exactly why):
-//   1. Each tab's `webContents.session` is the SAME object
-//      `session.fromPartition(partitionFor(originFromUrl(url)))` returns --
-//      i.e. src/main/tabs.ts really did assign the partition this lane
-//      built, not merely "some" non-default session.
-//   2. Wiping ORIGIN A's partition from the main process clears tab A's own
-//      localStorage but leaves tab B's untouched -- which is what "share no
-//      storage" means in a way an unpartitioned build would fail.
+// that isolation exists regardless of this change, so a test that only
+// proved that would pass whether or not this file's own rule ever shipped.
+// What is actually being proven is WHICH Electron `session` object each
+// tab's WebContents uses, and that a granted origin's storage still comes
+// apart cleanly from another origin's even while both share one session --
+// both only observable from the Electron MAIN process, via `app.evaluate()`.
+// So this file proves three things, and the second is the genuinely
+// discriminating one (see "Assertion 2" for exactly why):
+//   1. Both tabs' `webContents.session` really is `session.defaultSession`.
+//   2. Neither tab's session is the partition `partitionFor(originFromUrl(url))`
+//      WOULD compute -- i.e. granting the origin did not mint that partition
+//      and quietly use it anyway.
+//   3. Clearing ORIGIN A's data on the shared default session, by origin
+//      (`session.defaultSession.clearData({ origins: [originA] })`, the same
+//      call `site-info-ipc.ts`'s own "clear browsing data for this site"
+//      makes), clears tab A's own localStorage but leaves tab B's untouched.
 //
-// RUN THIS WITH: (needs a real Electron launch -- see this repo's
-// CLAUDE.md/orivon-electron skill for why one is never started directly)
-//
-//   npx electron-vite build && npx vitest run --config test/vitest.e2e.config.ts test/e2e-session-partitions.test.ts
-//
-// NOT RUN AS PART OF THIS LANE'S OWN VERIFICATION -- see the PR body. The
-// lane that built this had no Electron launch token (another lane held it),
-// so this file is written and reasoned through as if it were about to run,
-// never executed locally.
+// RUN THIS WITH:
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-session-partitions.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
@@ -103,7 +101,7 @@ const WAIT_BUDGET_MS =
   APP_CLOSE_RACE_MS // teardown: app.close() race
 const TEST_TIMEOUT_MS = WAIT_BUDGET_MS + 20_000
 
-it('two tabs opened against two GRANTED origins use two different, correctly-named Electron session partitions, and wiping one leaves the other\'s storage untouched', async () => {
+it('two tabs opened against two GRANTED, network-served origins share the shell\'s default session, not a partition each, and clearing one origin\'s data by name leaves the other\'s untouched', async () => {
   // Started outside runPhase, deliberately: a fixture-server startup failure
   // should surface as an uncaught test error, not a silently reported phase.
   const startedA = await startOriginServer('origin-a')
@@ -114,10 +112,10 @@ it('two tabs opened against two GRANTED origins use two different, correctly-nam
   const originB = `${startedB.origin}/`
 
   await runPhase('two-origin session partition isolation', async (check) => {
-    const expectedPartitionA = partitionFor(originFromUrl(originA) as string)
-    const expectedPartitionB = partitionFor(originFromUrl(originB) as string)
+    const wouldBePartitionA = partitionFor(originFromUrl(originA) as string)
+    const wouldBePartitionB = partitionFor(originFromUrl(originB) as string)
     check('the two fixture origins really are different origins', originA !== originB)
-    check('their expected partitions really are different strings', expectedPartitionA !== expectedPartitionB)
+    check('their would-be partitions really are different strings', wouldBePartitionA !== wouldBePartitionB)
 
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     try {
@@ -126,13 +124,8 @@ it('two tabs opened against two GRANTED origins use two different, correctly-nam
       const windowsReady = await waitFor(() => (app as NonNullable<typeof app>).windows().length === 2)
       check('the shell reaches its launch-time window count', windowsReady, windowsReady ? undefined : `saw ${app.windows().length} window(s)`)
 
-
-      // ---- Grant both origins, because isolation follows CONSENT ----
-      // ADR-0018 (owner, 2026-09-16): a tab gets its own partition because
-      // the user granted that origin something, not because it is installed.
-      // Two ungranted localhost fixtures deliberately share the default
-      // session (A109 keeps the back button alive on ordinary browsing), so
-      // without this step there is nothing here left to observe.
+      // ---- Grant both origins: a HELD GRANT is exactly the case this file
+      // exists to prove no longer earns a partition (2026-09-29) ----
       const granted = await app.evaluate(async (_electron, requests: DevGrantRequest[]) => {
         const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
         if (typeof hook !== 'function') return { installed: false as const }
@@ -180,12 +173,10 @@ it('two tabs opened against two GRANTED origins use two different, correctly-nam
       check('both tabs are identifiable by their own URL', viewA !== undefined && viewB !== undefined)
       if (viewA === undefined || viewB === undefined) return
 
-      // ---- Assertion 1: each tab really is on the partition this lane assigns it ----
-      // getAllWebContents/session are read from the MAIN process (app.evaluate),
-      // because that is the only place a WebContents' actual `.session` object
-      // is observable -- see this file's header for why page-level localStorage
-      // checks alone would not distinguish this from the unpartitioned build.
-      const identity = await app.evaluate(({ webContents, session }, args: { urlA: string, urlB: string, expectedPartitionA: string, expectedPartitionB: string }) => {
+      // ---- Assertion 1 & 2: both tabs share the default session, and
+      // granting them did NOT quietly mint the partition each WOULD have
+      // had under the old rule ----
+      const identity = await app.evaluate(({ webContents, session }, args: { urlA: string, urlB: string, wouldBePartitionA: string, wouldBePartitionB: string }) => {
         const all = webContents.getAllWebContents()
         const wcA = all.find((wc) => wc.getURL() === args.urlA)
         const wcB = all.find((wc) => wc.getURL() === args.urlB)
@@ -194,52 +185,45 @@ it('two tabs opened against two GRANTED origins use two different, correctly-nam
         }
         return {
           found: true as const,
-          aMatchesExpectedPartition: wcA.session === session.fromPartition(args.expectedPartitionA),
-          bMatchesExpectedPartition: wcB.session === session.fromPartition(args.expectedPartitionB),
-          aDiffersFromB: wcA.session !== wcB.session,
-          aDiffersFromDefault: wcA.session !== session.defaultSession,
-          bDiffersFromDefault: wcB.session !== session.defaultSession
+          aIsDefaultSession: wcA.session === session.defaultSession,
+          bIsDefaultSession: wcB.session === session.defaultSession,
+          aIsNotItsWouldBePartition: wcA.session !== session.fromPartition(args.wouldBePartitionA),
+          bIsNotItsWouldBePartition: wcB.session !== session.fromPartition(args.wouldBePartitionB)
         }
-      }, { urlA: originA, urlB: originB, expectedPartitionA, expectedPartitionB })
+      }, { urlA: originA, urlB: originB, wouldBePartitionA, wouldBePartitionB })
 
       check('both tabs\' webContents are found in the main process', identity.found)
       if (identity.found) {
-        check('tab A uses exactly session.fromPartition(partitionFor(originFromUrl(originA)))', identity.aMatchesExpectedPartition)
-        check('tab B uses exactly session.fromPartition(partitionFor(originFromUrl(originB)))', identity.bMatchesExpectedPartition)
-        check('tab A and tab B are on two DIFFERENT session objects', identity.aDiffersFromB)
-        check('tab A is not on session.defaultSession', identity.aDiffersFromDefault)
-        check('tab B is not on session.defaultSession', identity.bDiffersFromDefault)
+        check('tab A runs on session.defaultSession, not a partition of its own', identity.aIsDefaultSession)
+        check('tab B runs on session.defaultSession, not a partition of its own', identity.bIsDefaultSession)
+        check('granting origin A did not mint the partition it WOULD have had under the old, grant-isolates rule', identity.aIsNotItsWouldBePartition)
+        check('granting origin B did not mint the partition it WOULD have had under the old, grant-isolates rule', identity.bIsNotItsWouldBePartition)
       }
 
-      // ---- Assertion 2: wiping A's partition storage does not touch B's ----
-      // THIS is the discriminating half (see file header): under the OLD,
-      // unpartitioned code every tab shared session.defaultSession, so
-      // `session.fromPartition(expectedPartitionA)` would resolve to a brand
-      // new, never-used partition -- clearing it would do nothing to tab A's
-      // REAL storage (which would still live in defaultSession), and this
-      // first check would correctly FAIL. Under the fix, tab A's real
-      // storage lives in exactly that partition, so clearing it and reading
-      // back localStorage after a reload must show the value is gone.
+      // ---- Assertion 3: clearing A's data BY ORIGIN, on the shared default
+      // session, does not touch B's -- the same call site-info-ipc.ts's own
+      // "clear browsing data for this site" makes (tab.session.clearData({
+      // origins: [origin] })), now usually against session.defaultSession
+      // rather than a partition of its own. ----
       await evaluateRetrying(viewA, () => { window.localStorage.setItem('probe', 'A') })
       await evaluateRetrying(viewB, () => { window.localStorage.setItem('probe', 'B') })
 
-      await app.evaluate(({ session }, args: { expectedPartitionA: string }) => {
-        return session.fromPartition(args.expectedPartitionA).clearStorageData()
-      }, { expectedPartitionA })
+      await app.evaluate(({ session }, args: { originA: string }) => {
+        return session.defaultSession.clearData({ origins: [args.originA] })
+      }, { originA: originFromUrl(originA) as string })
 
       await viewA.reload()
       const probeAAfterClear = await evaluateRetrying(viewA, () => window.localStorage.getItem('probe'))
       check(
-        'clearing origin A\'s own partition wipes tab A\'s own localStorage -- proves A\'s ' +
-        'storage genuinely lives in the partition this lane assigned it, not in a shared/default session',
+        'clearing origin A BY NAME on the shared default session wipes tab A\'s own localStorage -- proves ' +
+        'session.clearData({ origins }) genuinely scopes to that origin, even though the session itself is shared',
         probeAAfterClear === null,
         `saw ${JSON.stringify(probeAAfterClear)}`
       )
 
       const probeBAfterClear = await evaluateRetrying(viewB, () => window.localStorage.getItem('probe'))
       check(
-        'tab B\'s own localStorage is UNTOUCHED by clearing origin A\'s partition -- the two ' +
-        'origins share no storage',
+        'tab B\'s own localStorage is UNTOUCHED by clearing origin A\'s data on the SAME shared session',
         probeBAfterClear === 'B',
         `saw ${JSON.stringify(probeBAfterClear)}`
       )

@@ -83,7 +83,7 @@ export class TabFactory {
     // cannot tell that apart from a real app on scheme alone, but the
     // dashboard is shell UI (ADR-0003's "browser state" tier), never app
     // content, and must never be isolated as if it were an app's own origin.
-    const partition = isDashboard ? undefined : partitionForTarget(target, this.broker())
+    const partition = isDashboard ? undefined : partitionForTarget(target)
 
     const view = makeTabView(
       isDashboard ? this.newTabPreload : this.appPreload,

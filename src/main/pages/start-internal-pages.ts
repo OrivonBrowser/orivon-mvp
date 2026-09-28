@@ -18,6 +18,7 @@ import { profilesDomain } from '../launch/profiles-domain.js'
 import { historyDomain } from '../history/history-domain.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { createPermissionsController } from '../permissions/permissions.js'
 import type { SubsystemContext } from '../registry.js'
 import type { InternalDomain } from './internal-ipc.js'
@@ -53,7 +54,15 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       history: services.history,
       zoom: services.zoomStore,
       websites: session.defaultSession,
-      appSessions: async () => (await permissions.list()).map((app) => session.fromPartition(partitionFor(app.origin))),
+      // Only a CACHE-SERVED app still has a partition of its own to clear
+      // (2026-09-29): a granted-without-install app now shares
+      // session.defaultSession, which `websites` above already reaches.
+      // Calling session.fromPartition on the others would only mint a
+      // fresh, never-used, empty partition for each -- ADR-0018's own
+      // warning against probing session.fromPartition speculatively.
+      appSessions: async () => (await permissions.list())
+        .filter((app) => isOriginServedFromCacheSync(app.origin))
+        .map((app) => session.fromPartition(partitionFor(app.origin))),
       now: Date.now
     }),
     apps: appsDomain({ permissions, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
