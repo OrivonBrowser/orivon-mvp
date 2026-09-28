@@ -8,7 +8,7 @@
 
 import { instantiateNapiModule, instantiateNapiModuleSync, type InstantiateOptions } from '@emnapi/core'
 import { getDefaultContext } from '@emnapi/runtime'
-import { refuseShim } from '../errors.js'
+import { OrivonShimError, refuseShim } from '../errors.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { type SyncWasiFs, createWasiHost, type WasiFs } from '../wasi/host.js'
 import { synchronousWasi } from '../wasi/instantiate.js'
@@ -98,12 +98,16 @@ function napiRsConventions (bytes: Uint8Array, filename: string): Pick<Instantia
   } as Pick<InstantiateOptions, 'overwriteImports' | 'beforeInit'>
 }
 
+/** 1 GiB: a build declaring more initial memory than this refuses rather than claiming it on the calling thread. napi-rs's own loaders start at 256 MiB. */
+const MAX_INITIAL_PAGES = 16_384
+
 /** The memory a build imports, at the size it declares; one this loader cannot supply refuses by name. */
 function memoryFor (bytes: Uint8Array, filename: string): WebAssembly.Memory | undefined {
   const limits = importedMemory(bytes)
   if (limits === undefined) return undefined
   if (limits.shared) throw refuseShim('process.dlopen', 'not-built', `${filename} imports a shared memory, as a threaded build does; build it for wasm32-wasip1`)
   if (limits.memory64) throw dlopenError(filename, 'its WebAssembly build imports a 64-bit memory, which this loader does not supply')
+  if (limits.initial > MAX_INITIAL_PAGES) throw dlopenError(filename, `its WebAssembly build declares ${limits.initial} pages of memory, more than the ${MAX_INITIAL_PAGES} an addon may start with`)
   try {
     return new WebAssembly.Memory({ initial: limits.initial, maximum: limits.maximum ?? 65_536 })
   } catch (error) {
@@ -130,6 +134,12 @@ function options (filename: string, bytes: Uint8Array): InstantiateOptions {
   return { context: getDefaultContext(), filename, wasi: synchronousWasi(host), asyncWorkPoolSize: 0, ...napiRsConventions(bytes, filename) }
 }
 
+/** A failure while the build instantiates or registers (a trap in its code included) is ERR_DLOPEN_FAILED, as Node's dlopen reports one. */
+function instantiationFailure (filename: string, error: unknown): Error {
+  if (error instanceof OrivonShimError || (error as { code?: unknown } | null)?.code === 'ERR_DLOPEN_FAILED') return error as Error
+  return dlopenError(filename, `its WebAssembly build failed while loading: ${String((error as Error)?.message ?? error)}`)
+}
+
 function keyOf (filename: string, origin: string): string {
   const path = addonPath(filename, origin)
   if (path === undefined) throw dlopenError(filename, 'a native addon must come from the app\'s own origin')
@@ -153,9 +163,14 @@ export function loadAddon (filename: string, origin: string = globalThis.locatio
       throw dlopenError(filename, `its WebAssembly build is not valid: ${String(error)}`)
     }
     assertLoadable(module, filename)
-    const { napiModule } = instantiateNapiModuleSync(module, options(filename, bytes))
-    loaded.set(key, napiModule.exports)
-    return napiModule.exports
+    let exports: unknown
+    try {
+      exports = instantiateNapiModuleSync(module, options(filename, bytes)).napiModule.exports
+    } catch (error) {
+      throw instantiationFailure(filename, error)
+    }
+    loaded.set(key, exports)
+    return exports
   }
   throw notFound(filename, origin)
 }
@@ -175,8 +190,13 @@ async function preload (filename: string, key: string, origin: string): Promise<
     assertLoadable(module, filename)
     // A synchronous load may have finished while this one was compiling: the first instance stays.
     if (loaded.has(key)) return
-    const { napiModule } = await instantiateNapiModule(module, options(filename, bytes))
-    if (!loaded.has(key)) loaded.set(key, napiModule.exports)
+    let exports: unknown
+    try {
+      exports = (await instantiateNapiModule(module, options(filename, bytes))).napiModule.exports
+    } catch (error) {
+      throw instantiationFailure(filename, error)
+    }
+    if (!loaded.has(key)) loaded.set(key, exports)
     return
   }
   throw notFound(filename, origin)

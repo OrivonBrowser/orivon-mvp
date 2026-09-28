@@ -106,6 +106,20 @@ describe('a build shaped as napi-rs makes one', () => {
     expect(() => loadAddon('/lib/huge.node')).toThrow(expect.objectContaining({ code: 'ERR_DLOPEN_FAILED', message: expect.stringMatching(/declares 3 pages of memory/) }))
   })
 
+  it('refuses a build declaring more initial memory than an addon may start with, before allocating any', () => {
+    serveSync({ '/lib/greedy.wasm': napiRsShapedAddon({ initial: 20_000, maximum: 65_536 }) })
+    const memory = vi.spyOn(WebAssembly, 'Memory')
+    expect(() => loadAddon('/lib/greedy.node')).toThrow(expect.objectContaining({ code: 'ERR_DLOPEN_FAILED', message: expect.stringMatching(/declares 20000 pages/) }))
+    expect(memory).not.toHaveBeenCalled()
+  })
+
+  it('reports a registration that traps as ERR_DLOPEN_FAILED, as every other load failure is', async () => {
+    serveSync({ '/lib/panics.wasm': napiRsShapedAddon(undefined, true) })
+    expect(() => loadAddon('/lib/panics.node')).toThrow(expect.objectContaining({ code: 'ERR_DLOPEN_FAILED', message: expect.stringMatching(/failed while loading/) }))
+    vi.stubGlobal('fetch', async () => new Response(napiRsShapedAddon(undefined, true)))
+    await expect(preloadAddon('/lib/panics-async.node')).rejects.toMatchObject({ code: 'ERR_DLOPEN_FAILED' })
+  })
+
   it('reads an imported memory\'s limits off the binary, past other imports', () => {
     expect(importedMemory(napiRsShapedAddon())).toEqual({ initial: 3, maximum: 16, shared: false, memory64: false })
     expect(importedMemory(napiAddon())).toBeUndefined()
