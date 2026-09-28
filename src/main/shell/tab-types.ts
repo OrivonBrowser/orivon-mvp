@@ -3,7 +3,8 @@
 // navigate fix pushed that file over Rule 2's 500-line limit. These are
 // wire-format types with no logic of their own; tabs.ts re-exports them so
 // every existing `from './tabs.js'` import keeps working unchanged.
-import type { WebContentsView } from 'electron'
+import type { BaseWindow, View, WebContentsView } from 'electron'
+import type { Broker } from '../../broker/broker-contracts.js'
 import type { Bookmark } from '../browsing/bookmarks.js'
 
 export interface TabState {
@@ -59,9 +60,50 @@ export interface Bounds {
   height: number
 }
 
+/** What the window around the tabs gives them: window.ts supplies it. */
+export interface TabShell {
+  /** The window a tab's dialogs and menus attach to. */
+  readonly window: BaseWindow
+  /** A tab's page entered or left HTML fullscreen. */
+  htmlFullscreenChanged: (id: string, entered: boolean) => void
+}
+
+/** What the per-view wiring in tab-view.ts needs back from the TabManager
+ * that holds the tab.
+ *
+ * An explicit surface rather than the class itself: that wiring is about ONE
+ * view's lifetime, and keeping it honest about what it touches is what lets it
+ * live outside the tab collection at all. `forgetTab` is the crash path,
+ * `openTab` and `adoptPopup` the two ways a page opens a tab -- all
+ * deliberately narrower than the methods behind them. */
+export interface TabViewHost {
+  readonly preloadPath: string
+  readonly contentView: View
+  readonly broker: Broker | undefined
+  /** Read only to tell "still showing the dashboard" from "navigated away", in `wireView`'s did-navigate. Never used to decide that a tab IS the dashboard -- `TabRecord.isDashboardTab` owns that, and only creation sets it. */
+  readonly dashboardUrl: string
+  /** Undefined without a window around the tabs; a tab then shows no dialog or menu. */
+  readonly window: BaseWindow | undefined
+  isActive: (id: string) => boolean
+  emitState: () => void
+  captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
+  forgetTab: (id: string) => void
+  openTab: (url: string) => void
+  /** Makes Chromium's own popup webContents, already in `partition`, a tab. */
+  adoptPopup: (view: WebContentsView, partition: string | undefined) => void
+  atCapacity: () => boolean
+  htmlFullscreenChanged: (id: string, entered: boolean) => void
+  getTabBounds: () => Bounds
+}
+
 /** One live tab, as TabManager and the per-view wiring in tab-view.ts both
  * see it. Exported so that wiring can live outside the class. */
 export interface TabRecord {
+  /** The manager and window this tab belongs to, read AT CALL TIME by every
+   * handler `wireView` attaches. Reassigned when a tab moves to another
+   * window, so the handlers already on its views follow it there; a handler
+   * that captured the host would keep acting for the window the tab left. */
+  host: TabViewHost
   /** Mutable, not readonly: repartitionView() (see navigate()) replaces
    * this with a fresh WebContentsView whenever a navigation changes the
    * tab's origin -- Electron fixes a partition at construction, so

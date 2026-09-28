@@ -26,8 +26,8 @@ vi.mock('electron', () => ({
 vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: () => false }))
 
 const { wireView } = await import('../tab-view.js')
-type Host = Parameters<typeof wireView>[0]
-type Record_ = Parameters<typeof wireView>[2]
+type Record_ = Parameters<typeof wireView>[1]
+type Host = Record_['host']
 
 const APP = 'https://app.example'
 const APP_PARTITION = partitionFor(APP)
@@ -72,8 +72,8 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
   } as Host & Record<string, unknown>
 }
 
-function record (wc: FakeContents, partition?: string): Record_ {
-  return { view: { webContents: wc } as never, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, parkedViews: new Map() }
+function record (wc: FakeContents, partition?: string, host: Host = fakeHost()): Record_ {
+  return { host, view: { webContents: wc } as never, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, parkedViews: new Map() }
 }
 
 function openHandler (wc: FakeContents): (details: Partial<HandlerDetails>) => WindowOpenHandlerResponse {
@@ -91,7 +91,7 @@ describe('wireView -- HTML fullscreen', () => {
   it('reports a tab entering and leaving fullscreen to the window around it', () => {
     const wc = fakeContents()
     const host = fakeHost()
-    wireView(host, 'tab-1', record(wc))
+    wireView('tab-1', record(wc, undefined, host))
 
     wc.emit('enter-html-full-screen')
     wc.emit('leave-html-full-screen')
@@ -104,7 +104,7 @@ describe('wireView -- HTML fullscreen', () => {
 describe('wireView -- a beforeunload guard asks instead of silently blocking', () => {
   it('leaves the page when the person chooses Leave', () => {
     const wc = fakeContents()
-    wireView(fakeHost(), 'tab-1', record(wc))
+    wireView('tab-1', record(wc))
     showMessageBoxSync.mockReturnValue(0)
     const event = { preventDefault: vi.fn() }
 
@@ -116,7 +116,7 @@ describe('wireView -- a beforeunload guard asks instead of silently blocking', (
 
   it('stays on the page when the person chooses Stay', () => {
     const wc = fakeContents()
-    wireView(fakeHost(), 'tab-1', record(wc))
+    wireView('tab-1', record(wc))
     showMessageBoxSync.mockReturnValue(1)
     const event = { preventDefault: vi.fn() }
 
@@ -128,7 +128,7 @@ describe('wireView -- a beforeunload guard asks instead of silently blocking', (
   it('attaches the question to the window, so it cannot appear anywhere else on screen', () => {
     const wc = fakeContents()
     const window = { isDestroyed: () => false }
-    wireView(fakeHost({ window: window as never }), 'tab-1', record(wc))
+    wireView('tab-1', record(wc, undefined, fakeHost({ window: window as never })))
     showMessageBoxSync.mockReturnValue(1)
 
     wc.emit('will-prevent-unload', { preventDefault: vi.fn() })
@@ -141,7 +141,7 @@ describe('wireView -- window.open', () => {
   it('backs a same-session popup with a real tab built from Chromium\'s own webContents', () => {
     const wc = fakeContents()
     const host = fakeHost()
-    wireView(host, 'tab-1', record(wc))
+    wireView('tab-1', record(wc, undefined, host))
 
     const response = openHandler(wc)({ url: 'https://other.example/' })
     expect(response.action).toBe('allow')
@@ -159,7 +159,7 @@ describe('wireView -- window.open', () => {
 
   it('gives the popup a tab\'s own non-negotiable webPreferences and ordinary preload, and no partition of its own', () => {
     const wc = fakeContents()
-    wireView(fakeHost(), 'tab-1', record(wc))
+    wireView('tab-1', record(wc))
 
     const prefs = openHandler(wc)({ url: 'https://other.example/' }).overrideBrowserWindowOptions?.webPreferences
     expect(prefs).toMatchObject({ preload: '/preload/app.js', contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true })
@@ -169,7 +169,7 @@ describe('wireView -- window.open', () => {
 
   it('flags a popup onto a registered app\'s own origin as an app tab, exactly as a tab opened there would be', () => {
     const wc = fakeContents(`${APP}/`)
-    wireView(fakeHost(), 'tab-1', record(wc, APP_PARTITION))
+    wireView('tab-1', record(wc, APP_PARTITION))
 
     const prefs = openHandler(wc)({ url: `${APP}/popout` }).overrideBrowserWindowOptions?.webPreferences
     expect(prefs?.additionalArguments).toEqual(['--orivon-app-tab'])
@@ -178,7 +178,7 @@ describe('wireView -- window.open', () => {
   it('adopts the popup into its opener\'s partition, which is where Chromium created it', () => {
     const wc = fakeContents(`${APP}/`)
     const host = fakeHost()
-    wireView(host, 'tab-1', record(wc, 'persist:app'))
+    wireView('tab-1', record(wc, 'persist:app', host))
 
     const response = openHandler(wc)({ url: 'https://accounts.example/auth', disposition: 'new-window', features: 'width=500' })
     response.createWindow?.({ webContents: fakeContents(), webPreferences: {} } as never)
@@ -189,7 +189,7 @@ describe('wireView -- window.open', () => {
   it('opens noopener as today\'s disconnected tab', () => {
     const wc = fakeContents()
     const host = fakeHost()
-    wireView(host, 'tab-1', record(wc))
+    wireView('tab-1', record(wc, undefined, host))
 
     const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
 
@@ -200,7 +200,7 @@ describe('wireView -- window.open', () => {
   it('refuses outright at the tab ceiling', () => {
     const wc = fakeContents()
     const host = fakeHost({ atCapacity: () => true })
-    wireView(host, 'tab-1', record(wc))
+    wireView('tab-1', record(wc, undefined, host))
 
     expect(openHandler(wc)({ url: 'https://other.example/' }).action).toBe('deny')
     expect(host.openTab).not.toHaveBeenCalled()
@@ -215,8 +215,8 @@ describe('wireView -- a popup keeps its session while its opener holds it', () =
     const wc = fakeContents()
     wc.opener = {}
     const host = fakeHost()
-    const r = record(wc, APP_PARTITION)
-    wireView(host, 'tab-1', r)
+    const r = record(wc, APP_PARTITION, host)
+    wireView('tab-1', r)
 
     wc.emit('did-navigate', {}, 'https://accounts.example/consent')
 
@@ -230,7 +230,7 @@ describe('wireView -- a popup keeps its session while its opener holds it', () =
     const wc = fakeContents()
     wc.opener = {}
     const r = record(wc)
-    wireView(fakeHost(), 'tab-1', r)
+    wireView('tab-1', r)
 
     wc.emit('did-navigate', {}, `${APP}/callback`)
 
@@ -240,7 +240,7 @@ describe('wireView -- a popup keeps its session while its opener holds it', () =
   it('moves back to the default session like any other tab once the opener is gone', () => {
     const wc = fakeContents()
     const r = record(wc, APP_PARTITION)
-    wireView(fakeHost(), 'tab-1', r)
+    wireView('tab-1', r)
 
     wc.emit('did-navigate', {}, 'https://accounts.example/consent')
 
@@ -251,7 +251,7 @@ describe('wireView -- a popup keeps its session while its opener holds it', () =
 describe('wireView -- context menu', () => {
   it('builds a menu for a right-click in the tab', () => {
     const wc = fakeContents()
-    wireView(fakeHost(), 'tab-1', record(wc))
+    wireView('tab-1', record(wc))
 
     wc.emit('context-menu', {}, {
       x: 1, y: 1, linkURL: 'https://example.com/', srcURL: '', mediaType: 'none', hasImageContents: false,
@@ -260,5 +260,64 @@ describe('wireView -- context menu', () => {
     })
 
     expect(buildFromTemplate).toHaveBeenCalledTimes(1)
+  })
+})
+
+// A tab that moves to another window keeps the handlers wireView put on its
+// views, so each one must ask the record for its host when the event arrives.
+describe('wireView -- a tab that changes host', () => {
+  function movedTab (): { wc: FakeContents, before: Host & Record<string, unknown>, after: Host & Record<string, unknown> } {
+    const wc = fakeContents()
+    const before = fakeHost()
+    const after = fakeHost()
+    const r = record(wc, undefined, before)
+    wireView('tab-1', r)
+    r.host = after
+    return { wc, before, after }
+  }
+
+  it('reports title, loading and fullscreen events to the new host only', () => {
+    const { wc, before, after } = movedTab()
+
+    wc.emit('page-title-updated')
+    wc.emit('did-start-loading')
+    wc.emit('enter-html-full-screen')
+
+    expect(after.emitState).toHaveBeenCalledTimes(2)
+    expect(after.htmlFullscreenChanged).toHaveBeenCalledWith('tab-1', true)
+    expect(before.emitState).not.toHaveBeenCalled()
+    expect(before.htmlFullscreenChanged).not.toHaveBeenCalled()
+  })
+
+  it('forgets the tab in the new host when its view dies', () => {
+    const { wc, before, after } = movedTab()
+
+    wc.emit('destroyed')
+
+    expect(after.forgetTab).toHaveBeenCalledWith('tab-1')
+    expect(before.forgetTab).not.toHaveBeenCalled()
+  })
+
+  it('opens a page\'s popups in the new host, and honours its ceiling', () => {
+    const { wc, before, after } = movedTab()
+
+    openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
+
+    expect(after.openTab).toHaveBeenCalledWith('https://other.example/')
+    expect(before.openTab).not.toHaveBeenCalled()
+  })
+
+  it('asks the leave-page question in the new host\'s window', () => {
+    const wc = fakeContents()
+    const oldWindow = { isDestroyed: () => false }
+    const newWindow = { isDestroyed: () => false }
+    const r = record(wc, undefined, fakeHost({ window: oldWindow as never }))
+    wireView('tab-1', r)
+    r.host = fakeHost({ window: newWindow as never })
+    showMessageBoxSync.mockReturnValue(1)
+
+    wc.emit('will-prevent-unload', { preventDefault: vi.fn() })
+
+    expect(showMessageBoxSync.mock.calls[0]?.[0]).toBe(newWindow)
   })
 })

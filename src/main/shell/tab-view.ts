@@ -3,11 +3,11 @@
 // `## Design notes`, for why). Pure with respect to TabManager: neither
 // function here reads or writes any tab-collection state.
 import { WebContentsView } from 'electron'
-import type { BaseWindow, View, WebContents, WebPreferences } from 'electron'
+import type { WebContents, WebPreferences } from 'electron'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { shouldClearFavicon } from '../browsing/favicon.js'
-import type { Bounds, TabRecord } from './tab-types.js'
+import type { TabRecord } from './tab-types.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { showContextMenu } from './context-menu.js'
@@ -172,41 +172,6 @@ function reportAppFailures (view: WebContentsView): void {
   })
 }
 
-/** What the window around the tabs gives them: window.ts supplies it. */
-export interface TabShell {
-  /** The window a tab's dialogs and menus attach to. */
-  readonly window: BaseWindow
-  /** A tab's page entered or left HTML fullscreen. */
-  htmlFullscreenChanged: (id: string, entered: boolean) => void
-}
-
-/** What the per-view wiring below needs back from TabManager.
- *
- * An explicit surface rather than the class itself: these two functions are
- * about ONE view's lifetime, and keeping them honest about what they touch
- * is what lets them live outside the tab collection at all. `forgetTab` is
- * the crash path, `openTab` and `adoptPopup` the two ways a page opens a
- * tab -- all deliberately narrower than the methods behind them. */
-export interface TabViewHost {
-  readonly preloadPath: string
-  readonly contentView: View
-  readonly broker: Broker | undefined
-  /** Read only to tell "still showing the dashboard" from "navigated away", in `wireView`'s did-navigate below. Never used to decide that a tab IS the dashboard -- `TabRecord.isDashboardTab` owns that, and only creation sets it. */
-  readonly dashboardUrl: string
-  /** Undefined without a window around the tabs; a tab then shows no dialog or menu. */
-  readonly window: BaseWindow | undefined
-  isActive: (id: string) => boolean
-  emitState: () => void
-  captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
-  forgetTab: (id: string) => void
-  openTab: (url: string) => void
-  /** Makes Chromium's own popup webContents, already in `partition`, a tab. */
-  adoptPopup: (view: WebContentsView, partition: string | undefined) => void
-  atCapacity: () => boolean
-  htmlFullscreenChanged: (id: string, entered: boolean) => void
-  getTabBounds: () => Bounds
-}
-
 /** A popup whose opener still exists stays in its opener's session on the
  * open web: moving it to the default session would sever `window.opener`,
  * which is what the page opened it for. A move INTO an isolated app still
@@ -219,15 +184,18 @@ function keepsOpenerSession (wc: WebContents, swap: PartitionSwap): boolean {
  * repartitionView() and an adopted popup (Rule 3): each gets EXACTLY the
  * same favicon/title/loading/crash handling and the same popup handling
  * (T18), because as far as anything downstream (the chrome UI, a popup) can
- * tell, they are the same thing. */
-export function wireView (host: TabViewHost, id: string, record: TabRecord): void {
+ * tell, they are the same thing.
+ *
+ * Every handler reads `record.host` when it runs, never a host captured here:
+ * a tab that moves to another window keeps these handlers. */
+export function wireView (id: string, record: TabRecord): void {
   const view = record.view
   const wc = view.webContents
   // False while this view is swapped out or parked: its events are then
   // not the tab's. A parked view acting on a navigation would swap the tab
   // it no longer shows.
   const shown = (): boolean => record.view === view
-  wc.on('page-title-updated', () => { host.emitState() })
+  wc.on('page-title-updated', () => { record.host.emitState() })
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
     if (!shown()) return
     if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
@@ -251,21 +219,21 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
     // ONLY EVER CLEARED, NEVER SET, so no URL a page can influence can win
     // dashboard treatment -- the direction TabRecord.isDashboardTab's own
     // one-way rule exists to protect.
-    if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(host.dashboardUrl)) {
+    if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(record.host.dashboardUrl)) {
       record.isDashboardTab = false
     }
     if (!record.isDashboardTab) {
-      const swap = partitionChanged(navigatedUrl, record.partition, host.broker)
+      const swap = partitionChanged(navigatedUrl, record.partition, record.host.broker)
       if (swap !== undefined && !keepsOpenerSession(wc, swap)) {
-        repartitionView(host, id, record, navigatedUrl, swap.to)
+        repartitionView(id, record, navigatedUrl, swap.to)
         return
       }
     }
-    host.emitState()
+    record.host.emitState()
   })
-  wc.on('did-navigate-in-page', () => { host.emitState() })
-  wc.on('did-start-loading', () => { host.emitState() })
-  wc.on('did-stop-loading', () => { host.emitState() })
+  wc.on('did-navigate-in-page', () => { record.host.emitState() })
+  wc.on('did-start-loading', () => { record.host.emitState() })
+  wc.on('did-stop-loading', () => { record.host.emitState() })
   wc.on('page-favicon-updated', (_event, favicons: string[]) => {
     if (!shown()) return
     // captureFavicon resolves through favicon.ts, whose doc comment promises
@@ -273,7 +241,7 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
     // of that promise into an unhandled rejection, and index.ts deliberately
     // maps that to app.exit(1), so a favicon host controlled by any visited
     // page could kill the whole browser.
-    void host.captureFavicon(id, record, favicons).catch((error) => {
+    void record.host.captureFavicon(id, record, favicons).catch((error) => {
       console.error('[orivon] favicon capture failed:', error)
     })
   })
@@ -287,10 +255,10 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
   // actually reachable rather than theatre. Only for the view the tab
   // shows: repartitionView() closes a swapped-out view after the record has
   // moved on, and that close must not forget a tab that is not closing.
-  wc.on('destroyed', () => { if (shown()) host.forgetTab(id) })
+  wc.on('destroyed', () => { if (shown()) record.host.forgetTab(id) })
 
-  wc.on('enter-html-full-screen', () => { host.htmlFullscreenChanged(id, true) })
-  wc.on('leave-html-full-screen', () => { host.htmlFullscreenChanged(id, false) })
+  wc.on('enter-html-full-screen', () => { record.host.htmlFullscreenChanged(id, true) })
+  wc.on('leave-html-full-screen', () => { record.host.htmlFullscreenChanged(id, false) })
   // With no listener, Electron keeps the page and says nothing: a guard
   // meant as a question silently blocked the navigation instead.
   wc.on('will-prevent-unload', (event) => {
@@ -300,7 +268,8 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
       event.preventDefault()
       return
     }
-    if (host.window !== undefined && confirmLeavePage(host.window)) event.preventDefault()
+    const { window } = record.host
+    if (window !== undefined && confirmLeavePage(window)) event.preventDefault()
   })
   // Chromium knows no `ipfs:` scheme and would offer a link to one to the
   // OS; it loads here instead, from the URL its protocol serves it at.
@@ -311,21 +280,22 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
     void wc.loadURL(served)
   })
   wc.on('context-menu', (_event, params) => {
-    if (host.window === undefined) return
-    showContextMenu(wc, params, { window: host.window, openInNewTab: host.openTab, developerMode: devModeEnabled() })
+    const { window } = record.host
+    if (window === undefined) return
+    showContextMenu(wc, params, { window, openInNewTab: (url) => { record.host.openTab(url) }, developerMode: devModeEnabled() })
   })
 
   // T18: never a real OS popup window. A popup the page can talk to becomes
   // a tab (./popups.ts); everything else opens as a new tab.
   wc.setWindowOpenHandler(windowOpenHandler({
-    atCapacity: host.atCapacity,
-    openTab: host.openTab,
+    atCapacity: () => record.host.atCapacity(),
+    openTab: (url) => { record.host.openTab(url) },
     adoptPopup: (view, partition, url) => {
-      watchAppTab(view, appTabArgsFor(url, host.broker))
-      host.adoptPopup(view, partition)
+      watchAppTab(view, appTabArgsFor(url, record.host.broker))
+      record.host.adoptPopup(view, partition)
     },
-    partitionFor: (url) => partitionForTarget(url, host.broker),
-    webPreferencesFor: (url) => tabWebPreferences(host.preloadPath, undefined, appTabArgsFor(url, host.broker))
+    partitionFor: (url) => partitionForTarget(url, record.host.broker),
+    webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker))
   }, () => ({ url: wc.getURL(), partition: record.partition })))
 }
 
@@ -346,12 +316,12 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
  * leaving one for the open web, still costs the back button (A109; ADR-0018
  * for what swaps at all). */
 export function repartitionView (
-  host: TabViewHost,
   id: string,
   record: TabRecord,
   target: string,
   nextPartition: string | undefined
 ): void {
+  const { host } = record
   const oldView = record.view
   const oldPartition = record.partition
   const wasActive = host.isActive(id)
@@ -364,8 +334,8 @@ export function repartitionView (
   record.view = newView
   record.partition = nextPartition
   record.isDashboardTab = false
-  if (parked === undefined) wireView(host, id, record)
-  else keepOnlyOwnEntriesOnReturn(host, parked, target)
+  if (parked === undefined) wireView(id, record)
+  else keepOnlyOwnEntriesOnReturn(record, parked, target)
 
   // Only once the record shows the new view: the old one's handlers then
   // ignore it, so closing it here cannot reach forgetTab().
@@ -412,7 +382,7 @@ function takeParkedView (record: TabRecord, partition: string | undefined, appTa
  * that is not its app's own page: the page the app left for, which committed
  * here before the tab moved, and the blank page it waited on. Going back to
  * either would load it inside the app's session. */
-function keepOnlyOwnEntriesOnReturn (host: TabViewHost, view: WebContentsView, target: string): void {
+function keepOnlyOwnEntriesOnReturn (record: TabRecord, view: WebContentsView, target: string): void {
   const origin = originFromUrl(target)
   view.webContents.once('did-navigate', () => {
     const history = view.webContents.navigationHistory
@@ -421,7 +391,7 @@ function keepOnlyOwnEntriesOnReturn (host: TabViewHost, view: WebContentsView, t
     for (let index = history.length() - 1; index >= 0; index--) {
       if (index !== active && originFromUrl(history.getEntryAtIndex(index).url) !== origin) history.removeEntryAtIndex(index)
     }
-    host.emitState()
+    record.host.emitState()
   })
 }
 

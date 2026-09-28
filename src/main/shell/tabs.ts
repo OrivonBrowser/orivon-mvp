@@ -18,10 +18,9 @@ import { parseOmniboxInput, sanitizeDirectUrl } from '../browsing/omnibox.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
 import type { SubsystemContext } from '../registry.js'
 import { appTabArgsFor, closeParkedViews, makeTabView, partitionChanged, partitionForTarget, repartitionView, wireView } from './tab-view.js'
-import type { TabShell, TabViewHost } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
-import type { TabState, TabsSnapshot, Bounds, TabRecord } from './tab-types.js'
+import type { TabState, TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
@@ -194,6 +193,7 @@ export class TabManager {
       isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : appTabArgsFor(target, this.ctx.broker)
     )
     const record: TabRecord = {
+      host: this.viewHost,
       view,
       favicon: null,
       faviconOrigin: null,
@@ -202,7 +202,7 @@ export class TabManager {
       isDashboardTab: isDashboard,
       parkedViews: new Map()
     }
-    wireView(this.viewHost, id, record)
+    wireView(id, record)
 
     this.tabs.set(id, record)
     this.order.push(id)
@@ -223,8 +223,8 @@ export class TabManager {
    * session (./popups.ts). It navigates itself; nothing is loaded here. */
   private adoptPopup (view: WebContentsView, partition: string | undefined): void {
     const id = makeTabId()
-    const record: TabRecord = { view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, parkedViews: new Map() }
-    wireView(this.viewHost, id, record)
+    const record: TabRecord = { host: this.viewHost, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, parkedViews: new Map() }
+    wireView(id, record)
     this.tabs.set(id, record)
     this.order.push(id)
     this.activateTab(id)
@@ -336,7 +336,7 @@ export class TabManager {
 
     const swap = partitionChanged(target, record.partition, this.ctx.broker)
     if (swap !== undefined) {
-      repartitionView(this.viewHost, id, record, target, swap.to)
+      repartitionView(id, record, target, swap.to)
       return
     }
 
