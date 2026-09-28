@@ -17,6 +17,8 @@ type PopoverAnchor = { x: number, y: number, width: number, height: number }
 interface OrivonShell {
   newTab: (url?: string) => void
   newWindow: () => void
+  /** One of the shell's own pages, e.g. `'settings'`, optionally at a place inside it. */
+  openInternal: (page: string, path?: string) => void
   closeTab: (id: string) => void
   activateTab: (id: string) => void
   navigate: (id: string, input: string) => void

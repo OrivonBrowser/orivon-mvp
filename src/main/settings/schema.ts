@@ -5,7 +5,8 @@
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
 export type SettingSpec =
-  | { readonly kind: 'enum', readonly options: readonly string[], readonly default: string }
+  /** `labels` names options that are data, such as a search engine's own name; wording about an option is the page's. */
+  | { readonly kind: 'enum', readonly options: readonly string[], readonly default: string, readonly labels?: Readonly<Record<string, string>> }
   | { readonly kind: 'bool', readonly default: boolean }
   | { readonly kind: 'int', readonly default: number, readonly min: number, readonly max: number }
   | { readonly kind: 'text', readonly default: string, readonly maxLength: number, readonly check?: (value: string) => boolean }
@@ -14,7 +15,12 @@ const SPECS = {
   'appearance.theme': { kind: 'enum', options: ['system', 'light', 'dark'], default: 'system' },
   // 'auto' shows the bar when there is a bookmark to put in it.
   'appearance.bookmarksBar': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
-  'search.engine': { kind: 'enum', options: [...SEARCH_ENGINES.map((engine) => engine.id), CUSTOM_SEARCH_ENGINE], default: DEFAULT_SEARCH_ENGINE },
+  'search.engine': {
+    kind: 'enum',
+    options: [...SEARCH_ENGINES.map((engine) => engine.id), CUSTOM_SEARCH_ENGINE],
+    default: DEFAULT_SEARCH_ENGINE,
+    labels: { ...Object.fromEntries(SEARCH_ENGINES.map((engine) => [engine.id, engine.label])), [CUSTOM_SEARCH_ENGINE]: 'Custom' }
+  },
   'search.customUrl': { kind: 'text', default: '', maxLength: 2048, check: (value) => value === '' || isValidSearchTemplate(value) },
   'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' }
 } as const satisfies Record<string, SettingSpec>
@@ -52,7 +58,7 @@ export function validateSetting (spec: SettingSpec, value: unknown): SettingValu
 
 /** What the Settings page is told about one setting: no functions, so it can cross IPC. */
 export type SettingDescription =
-  | { readonly key: SettingKey, readonly kind: 'enum', readonly options: readonly string[], readonly default: string }
+  | { readonly key: SettingKey, readonly kind: 'enum', readonly options: readonly string[], readonly default: string, readonly labels: Readonly<Record<string, string>> }
   | { readonly key: SettingKey, readonly kind: 'bool', readonly default: boolean }
   | { readonly key: SettingKey, readonly kind: 'int', readonly default: number, readonly min: number, readonly max: number }
   | { readonly key: SettingKey, readonly kind: 'text', readonly default: string, readonly maxLength: number }
@@ -61,7 +67,7 @@ export function describeSettings (): SettingDescription[] {
   return (Object.keys(SPECS) as SettingKey[]).map((key): SettingDescription => {
     const spec = SETTINGS[key]
     switch (spec.kind) {
-      case 'enum': return { key, kind: 'enum', options: spec.options, default: spec.default }
+      case 'enum': return { key, kind: 'enum', options: spec.options, default: spec.default, labels: spec.labels ?? {} }
       case 'bool': return { key, kind: 'bool', default: spec.default }
       case 'int': return { key, kind: 'int', default: spec.default, min: spec.min, max: spec.max }
       case 'text': return { key, kind: 'text', default: spec.default, maxLength: spec.maxLength }

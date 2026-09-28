@@ -22,11 +22,14 @@ import { web3Score } from '../browsing/site-trust.js'
 import type { Web3Score } from '../browsing/site-trust.js'
 import type { PanelAnchor } from '../permissions/permissions-panel.js'
 import type { SiteInfoPage } from '../permissions/site-info-panel.js'
+import { isInternalPageId } from '../pages/internal-pages.js'
 
 export type ShellCommand =
   | { type: 'newTab'; url?: string }
   /** Another shell window in this process, on the same profile. */
   | { type: 'newWindow' }
+  /** One of the shell's own pages (Settings, History, ...), optionally at a place inside it. */
+  | { type: 'openInternal'; page: string; path?: string }
   | { type: 'closeTab'; id: string }
   | { type: 'activateTab'; id: string }
   | { type: 'navigate'; id: string; input: string }
@@ -104,6 +107,10 @@ export function registerShellIpc (
         return
       case 'newWindow':
         openWindow()
+        return
+      case 'openInternal':
+        // The page name comes from the chrome view, but is checked all the same.
+        if (isInternalPageId(command.page)) tabs.openInternal(command.page, typeof command.path === 'string' ? command.path : '/')
         return
       case 'closeTab':
         tabs.closeTab(command.id)

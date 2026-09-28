@@ -3,6 +3,7 @@ import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
 import { createShellServices } from './shell/shell-services.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
+import { startInternalPages } from './pages/start-internal-pages.js'
 import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
@@ -81,6 +82,7 @@ void app.whenReady().then(async () => {
   // bookmarks bar rather than changing after it is on screen.
   await shell.settings.load()
   applyThemeSetting(shell.settings, nativeTheme)
+  startInternalPages(shell)
   registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
   createShellWindow(ctx, shell, await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')))
   app.on('activate', () => {

@@ -142,6 +142,7 @@ export default defineConfig({
           shell: resolve(root, 'src/preload/shell.ts'),
           newtab: resolve(root, 'src/preload/newtab.ts'),
           permissions: resolve(root, 'src/preload/permissions.ts'),
+          internal: resolve(root, 'src/preload/internal.ts'),
           'site-info': resolve(root, 'src/preload/site-info.ts'),
           embed: resolve(root, 'src/preload/embed.ts')
         }
@@ -192,6 +193,7 @@ export default defineConfig({
           newtab: resolve(root, 'src/renderer/newtab/index.html'),
           intro: resolve(root, 'src/renderer/intro/index.html'),
           permissions: resolve(root, 'src/renderer/permissions/index.html'),
+          'page-settings': resolve(root, 'src/renderer/pages/settings/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html')
         }
       }

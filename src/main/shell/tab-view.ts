@@ -15,6 +15,7 @@ import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
  * again in preload/routed/fetch.ts rather than imported, for the reason
@@ -274,6 +275,7 @@ export function wireView (id: string, record: TabRecord): void {
   // Chromium knows no `ipfs:` scheme and would offer a link to one to the
   // OS; it loads here instead, from the URL its protocol serves it at.
   wc.on('will-navigate', (event) => {
+    if (record.internalPage !== null) return
     const served = BUILTIN_ADDRESSES.servedUrl(event.url)
     if (served === undefined) return
     event.preventDefault()
@@ -334,6 +336,7 @@ export function repartitionView (
   record.view = newView
   record.partition = nextPartition
   record.isDashboardTab = false
+  record.internalPage = null
   if (parked === undefined) wireView(id, record)
   else keepOnlyOwnEntriesOnReturn(record, parked, target)
 
@@ -354,9 +357,10 @@ function closeView (view: WebContentsView): void {
 }
 
 /** An app's view is parked on about:blank for the tab's return; any other
- * view is closed. */
+ * view is closed, an internal page's included: it is one per window and is
+ * opened again from the shell, not returned to. */
 function retireView (record: TabRecord, view: WebContentsView, partition: string | undefined): void {
-  if (partition === undefined || view.webContents.isDestroyed()) {
+  if (partition === undefined || partition === INTERNAL_PARTITION || view.webContents.isDestroyed()) {
     closeView(view)
     return
   }

@@ -82,3 +82,13 @@ export const LIGHT_CLIENT_STATUS_CHANNEL = 'orivon-permissions:light-client'
  * it), never from anything in the payload. See `src/main/embed/`.
  */
 export const EMBED_SCRIPT_CHANNEL = 'orivon-embed:page-script'
+
+/**
+ * An internal page (Settings, History, ...) -> main: `{ domain, command }`.
+ * One channel for all of them; which domains a page may reach is decided per
+ * call in `./pages/internal-ipc.ts`, never by the page.
+ */
+export const INTERNAL_COMMAND_CHANNEL = 'orivon-internal:command'
+
+/** Main -> an internal page: `{ topic, payload }`, for changes made elsewhere while the page is open. */
+export const INTERNAL_EVENT_CHANNEL = 'orivon-internal:event'

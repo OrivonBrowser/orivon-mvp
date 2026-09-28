@@ -73,7 +73,7 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
 }
 
 function record (wc: FakeContents, partition?: string, host: Host = fakeHost()): Record_ {
-  return { host, view: { webContents: wc } as never, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, parkedViews: new Map() }
+  return { host, view: { webContents: wc } as never, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, internalPage: null, parkedViews: new Map() }
 }
 
 function openHandler (wc: FakeContents): (details: Partial<HandlerDetails>) => WindowOpenHandlerResponse {

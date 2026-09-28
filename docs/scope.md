@@ -72,7 +72,7 @@ If these work, this version has done its job. None of them is yet named as the d
 | Item | Why it is essential |
 |---|---|
 | Shell: tabs, omnibox, back/forward | It has to be a browser, or the thesis is untested |
-| Address-bar search via DuckDuckGo | Added at build step 1, not in the original scope pass. Non-address input needs *some* resolution or the omnibox rejects plain text outright; DuckDuckGo chosen over a settings-based picker (no settings screen existed at build step 1) and over addresses-only. Known limitation, stated in-product: search text leaves the machine (`README.md` §Known limitations of v0) |
+| Address-bar search, DuckDuckGo by default and any of a short list or the person's own https address from Settings | Non-address input needs *some* resolution or the omnibox rejects plain text outright; DuckDuckGo is the default and over addresses-only. Known limitation, stated in-product: search text leaves the machine (`README.md` §Known limitations of v0) |
 | **Capability broker**: manifest, grants, per-origin enforcement | This *is* the product. `ADR-0002` |
 | **`orivon-node-shim`** | Load-bearing: without it a Node.js app cannot run from a URL. `ADR-0005` |
 | URL-addressed app fetch + cache + integrity check | The "apps are URLs" claim. `ADR-0005` |

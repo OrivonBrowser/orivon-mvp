@@ -167,7 +167,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const tabs = new TabManager(win.contentView, tabBounds, lastTabClosed, dashboardUrl, ctx, {
     window: win,
     htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) },
-    searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query)
+    searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query),
+    internalPages: services.internalPages
   })
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one

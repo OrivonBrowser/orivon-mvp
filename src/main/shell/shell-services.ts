@@ -3,11 +3,13 @@
 // would win.
 import { join } from 'node:path'
 import { BookmarkStore } from '../browsing/bookmarks.js'
+import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { WindowRegistry } from './window-registry.js'
 
 export interface ShellServices {
   readonly bookmarks: BookmarkStore
+  readonly internalPages: InternalPageRegistry
   readonly settings: SettingsStore
   readonly windows: WindowRegistry
 }
@@ -15,6 +17,7 @@ export interface ShellServices {
 export function createShellServices (userDataPath: string): ShellServices {
   return {
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
+    internalPages: new InternalPageRegistry(),
     settings: new SettingsStore(join(userDataPath, 'settings.json')),
     windows: new WindowRegistry()
   }

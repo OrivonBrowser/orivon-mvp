@@ -16,6 +16,10 @@ import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from '../browsing/omnibox.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
+import { INTERNAL_PARTITION, internalUrl, parseInternalUrl } from '../pages/internal-pages.js'
+import type { InternalPageId } from '../pages/internal-pages.js'
+import type { InternalPageRegistry } from '../pages/internal-registry.js'
+import { guardInternalView } from '../pages/internal-tab.js'
 import type { SubsystemContext } from '../registry.js'
 import { appTabArgsFor, closeParkedViews, makeTabView, partitionChanged, partitionForTarget, repartitionView, wireView } from './tab-view.js'
 
@@ -72,26 +76,20 @@ export class TabManager {
   /** The narrow surface tab-view.ts's per-view wiring calls back through. */
   private readonly viewHost: TabViewHost
   private readonly newTabPreloadPath: string
+  private readonly internalPreloadPath: string
+  private readonly internalPages: InternalPageRegistry | undefined
   private readonly searchUrl: ((query: string) => string) | undefined
 
   constructor (
     private readonly contentView: View,
     private readonly getTabBounds: () => Bounds,
-    /** Called at most once, when the last tab closes -- A16, owner
-     * decision 2026-08-28: closing the last tab closes the window
-     * (Firefox/Safari-shaped), not left open and empty (the prior,
-     * undecided default) or a fresh tab (Chrome/Edge-shaped, the doc's
-     * own superseded AI-REC). window.ts wires this to `win.close()`;
-     * TabManager itself never calls `app.quit()` -- src/main/index.ts's
-     * existing `window-all-closed` handler is already the correct,
-     * complete owner of whether the whole process then exits. */
+    /** Called when the last tab closes (A16): window.ts closes the window or
+     * opens a new tab, as the person set. TabManager never quits the app --
+     * index.ts's `window-all-closed` owns whether the process exits. */
     private readonly onEmpty: () => void,
-    /** The dashboard's own resolved URL (dev server or built file,
-     * decided once by window.ts the same way it resolves the chrome
-     * view's own URL) -- a genuinely fresh tab (createTab() with no
-     * `url` argument) loads this, with the dashboard's own preload
-     * below. Never reachable via a rejected navigation -- see
-     * BLANK_URL and resolveTarget(). */
+    /** The dashboard's resolved URL (dev server or built file): a fresh tab
+     * (createTab() with no `url`) loads this, with the dashboard's own
+     * preload. A rejected navigation never reaches it -- see BLANK_URL. */
     private readonly dashboardUrl: string,
     /** `ctx.broker` may be `undefined` (a run without the broker
      * subsystem), and `ctx.loader` is deliberately unused so far -- do not
@@ -121,6 +119,8 @@ export class TabManager {
       getTabBounds
     }
     this.searchUrl = shell?.searchUrl
+    this.internalPages = shell?.internalPages
+    this.internalPreloadPath = join(import.meta.dirname, '../preload/internal.js')
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
     this.newTabPreloadPath = join(import.meta.dirname, '../preload/newtab.js')
   }
@@ -202,6 +202,7 @@ export class TabManager {
       pendingFaviconUrl: null,
       partition,
       isDashboardTab: isDashboard,
+      internalPage: null,
       parkedViews: new Map()
     }
     wireView(id, record)
@@ -217,6 +218,44 @@ export class TabManager {
 
   /** True when no further tab may open: the ceiling is reached, or the
    * window is closing. Also what a page's popup handler asks. */
+  /** Shows one of the shell's own pages: the tab that already has it, or a new
+   * one. A page has one tab per window, so a second request finds the first
+   * (and takes it to `path` if it is elsewhere). Only the shell calls this: a
+   * website's `window.open` reaches `createTab`, which refuses an `orivon:` URL.
+   * Its view lives in the internal session with the internal preload, and it
+   * stays on its page (./pages/internal-tab.ts). */
+  openInternal (page: InternalPageId, path = '/'): void {
+    const url = internalUrl(page, path)
+    for (const [id, record] of this.tabs) {
+      if (record.internalPage !== page) continue
+      this.activateTab(id)
+      if (!record.view.webContents.isDestroyed() && record.view.webContents.getURL() !== url) void record.view.webContents.loadURL(url)
+      return
+    }
+    if (this.atCapacity()) return
+
+    const id = makeTabId()
+    const view = makeTabView(this.internalPreloadPath, INTERNAL_PARTITION, [`--orivon-internal-page=${page}`])
+    const record: TabRecord = {
+      host: this.viewHost,
+      view,
+      favicon: null,
+      faviconOrigin: null,
+      pendingFaviconUrl: null,
+      partition: INTERNAL_PARTITION,
+      isDashboardTab: false,
+      internalPage: page,
+      parkedViews: new Map()
+    }
+    wireView(id, record)
+    guardInternalView(view, page, (target) => { record.host.openTab(target) })
+    this.internalPages?.register(view.webContents, page)
+    this.tabs.set(id, record)
+    this.order.push(id)
+    void view.webContents.loadURL(url)
+    this.activateTab(id)
+  }
+
   private atCapacity (): boolean {
     return this.disposed || this.order.length >= MAX_TABS
   }
@@ -225,7 +264,7 @@ export class TabManager {
    * session (./popups.ts). It navigates itself; nothing is loaded here. */
   private adoptPopup (view: WebContentsView, partition: string | undefined): void {
     const id = makeTabId()
-    const record: TabRecord = { host: this.viewHost, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, parkedViews: new Map() }
+    const record: TabRecord = { host: this.viewHost, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, internalPage: null, parkedViews: new Map() }
     wireView(id, record)
     this.tabs.set(id, record)
     this.order.push(id)
@@ -334,6 +373,13 @@ export class TabManager {
   navigate (id: string, rawInput: string): void {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return
+    // The address bar and the dashboard's search box are the person typing:
+    // an address of one of the shell's own pages opens that page.
+    const internal = parseInternalUrl(rawInput)
+    if (internal !== null) {
+      this.openInternal(internal.page, internal.path)
+      return
+    }
     const target = this.resolveTarget(rawInput)
 
     const swap = partitionChanged(target, record.partition, this.ctx.broker)
@@ -436,7 +482,8 @@ export class TabManager {
       canGoForward: wc?.navigationHistory.canGoForward() ?? false,
       loading: wc?.isLoading() ?? false,
       favicon: record?.favicon ?? null,
-      isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === this.dashboardUrl)
+      isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === this.dashboardUrl),
+      isInternal: record?.internalPage != null
     }
   }
 

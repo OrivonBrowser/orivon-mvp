@@ -6,6 +6,8 @@
 import type { BaseWindow, View, WebContentsView } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { Bookmark } from '../browsing/bookmarks.js'
+import type { InternalPageId } from '../pages/internal-pages.js'
+import type { InternalPageRegistry } from '../pages/internal-registry.js'
 
 export interface TabState {
   id: string
@@ -38,6 +40,8 @@ export interface TabState {
    * creation, and only ever flipped false, one-way, by a real navigation
    * (repartitionView()), never from a URL a page can influence. */
   isNewTab: boolean
+  /** One of the shell's own pages (Settings, History, ...). It has no site: no shield, no permissions, nothing to bookmark. */
+  isInternal: boolean
 }
 
 /** What TabManager itself knows. Bookmarks are a separate store
@@ -70,6 +74,8 @@ export interface TabShell {
   htmlFullscreenChanged: (id: string, entered: boolean) => void
   /** The URL that searches for a query, under the chosen search engine. Absent in tests: the default engine. */
   searchUrl?: (query: string) => string
+  /** Where a tab opened as one of the shell's own pages is recorded. Absent in tests. */
+  internalPages?: InternalPageRegistry
 }
 
 /** What the per-view wiring in tab-view.ts needs back from the TabManager
@@ -136,6 +142,9 @@ export interface TabRecord {
    * dashboardUrl` is a plain http:// address in dev mode, which a page
    * could otherwise steer an unrelated tab's `wc.getURL()` to match). */
   isDashboardTab: boolean
+  /** The shell's own page this tab was opened as, or null. Set only by
+   * `TabManager.openInternal`; cleared when the tab navigates to a website. */
+  internalPage: InternalPageId | null
   /** The view of each app partition this tab has left, emptied to
    * about:blank and kept, keyed by partition. Coming back reuses it: a
    * page's sessionStorage lives in its view, and a fresh one would lose

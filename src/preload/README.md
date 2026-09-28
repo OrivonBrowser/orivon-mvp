@@ -1,7 +1,7 @@
 # `src/preload/`: the privilege boundary
 
 **What lives here.** Six preload scripts at six different privilege levels (`app.ts`,
-`shell.ts`, `newtab.ts` for the new-tab dashboard, `settings.ts` for the all-sites popup,
+`shell.ts`, `newtab.ts` for the new-tab dashboard, `permissions.ts` for the all-sites popup,
 `site-info.ts` for the per-site popup, and `embed.ts` for a page an app shows inside itself),
 the app-tab wiring they share
 (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`, `page-buffer.ts`), and
@@ -37,7 +37,8 @@ step 1, done).
 |---|---|---|
 | `app.ts` | **every ordinary tab** | `surface/orivon.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`/`readFileSync` (the last one ADR-0016's synchronous exception; see `surface/orivon.ts`'s own `fsReadFileSync`), `orivon.id.publicKey`/`sign`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `surface/main-world-socket.ts` |
 | `shell.ts` | **only** the chrome view | Tab commands |
-| `settings.ts` | **only** the all-sites popup's own view (`src/main/permissions/permissions-panel.ts`) | `orivonPermissions`: list each app's grants and revoke one, and list each site's notification answer and reset one, after checking `location.href` against its expected URL; `src/main/ipc/permissions-ipc.ts` re-verifies the sender on every call |
+| `permissions.ts` | **only** the all-sites popup's own view (`src/main/permissions/permissions-panel.ts`) | `orivonPermissions`: list each app's grants and revoke one, and list each site's notification answer and reset one, after checking `location.href` against its expected URL; `src/main/ipc/permissions-ipc.ts` re-verifies the sender on every call |
+| `internal.ts` | **only** a tab the shell opened as one of its own pages (`src/main/pages/`: Settings, History, ...) | `orivonInternal`: one `request(domain, command)` and one `onEvent`, after checking that the document's scheme and host are the page the shell named in an argument; `src/main/pages/internal-ipc.ts` decides on every call what the page may reach and trusts nothing this file says about the caller |
 | `site-info.ts` | **only** the site-info popup's own view (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info/trust/data, apply a staged set of switches, revoke a picked path, clear browser data, reload, open the all-sites popup — same `location.href` check as `settings.ts`; `src/main/ipc/site-info-ipc.ts` re-verifies the sender and fixes the origin, never trusting one from the page |
 | `embed.ts` | **only** a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest at attach, whatever `preload` the app named; ADR-0039) | Nothing on `window`. Runs the script the app set with `orivon.web.setEmbedScript`, before the page's own code and whatever its CSP says, handing it `orivonEmbed` (`sendToHost`/`on`, the element's own `ipc-message`/`send` channel) as an argument; no `orivon.*` at all, since a shown page is another site's document |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/shell/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |

@@ -6,7 +6,7 @@ tab strip (sharing its row with Electron's native window buttons), the toolbar (
 bookmark toggle, the omnibox, a right-hand icon cluster), and the bookmarks bar. Its look follows
 `orivon-browser-v2`'s chrome; see **Visual reference** below. [`newtab/`](newtab/) is the new-tab
 dashboard: ordinary tab content loaded into a fresh tab's own `WebContentsView`, not part of the
-chrome view at all; see `src/main/shell/tabs.ts`'s `createTab()`. [`settings/`](settings/) and
+chrome view at all; see `src/main/shell/tabs.ts`'s `createTab()`. [`permissions/`](permissions/) and
 [`site-info/`](site-info/) are the two toolbar popups (`src/main/permissions/popover-view.ts`):
 the all-sites permissions list, and the per-site popover (a connection row, this site's own
 capability switches, its Web3 Score page, its Cookies and site data page). [`intro/`](intro/) is
@@ -29,24 +29,27 @@ the welcome screen, a full-window view over the shell on a launch that opens on 
 | `newtab/index.html`, `newtab/main.ts`, `newtab/style.css` | The dashboard: a search box, then a grid of app-shortcut and bookmark tiles, with its own small entry, separate from the chrome view |
 | `intro/index.html`, `intro/main.ts`, `intro/style.css` | The welcome screen: headline, "Enter Orivon" button, ticker and two decorative shapes over a picture. Its entry animations are CSS keyframes and its fonts are bundled, so it loads nothing from the network |
 | `assets/intro-background.webp` | The welcome screen's picture, also the dashboard's default background; Vite emits it once for both |
-| `permissions/index.html`, `settings/main.ts`, `settings/permissions-view.ts`, `settings/style.css` | The all-sites popup: every app, all its grants, revoke-only |
+| `permissions/index.html`, `permissions/main.ts`, `permissions/permissions-view.ts`, `permissions/style.css` | The all-sites popup: every app, all its grants, revoke-only |
+| `pages/shared/` (`tokens.css`, `controls.css`, `dom.ts`, `bridge.ts`) | What every shell page shares: the design tokens, buttons and choices, a small typed element builder, and the typed line to main |
+| `pages/settings/` (`index.html`, `main.ts`, `state.ts`, `model.ts`, `rows.ts`, `search.ts`, `router.ts`, `style.css`, `sections/`) | The Settings page, served at `orivon://settings`: a list of sections, one section's rows, search, and a deep link per section. A section is data (rows with a label, help, keywords and a control), so the page draws it and search reads it from the same rows |
 | `site-info/index.html`, `site-info/main.ts`, `site-info/main-view.ts`, `site-info/web3-view.ts`, `site-info/data-view.ts`, `site-info/switch.ts`, `site-info/icons.ts`, `site-info/style.css` | The per-site popup: a client-side router over three pages, each its own render function |
 
 **What it depends on.** `src/preload/shell.ts`'s exposed commands, over IPC, for the chrome
-view; `newtab/main.ts` depends on `src/preload/newtab.ts`'s exposed commands the same way, and
+view; `pages/` depends on `src/preload/internal.ts`'s one `request` and `onEvent`, and holds no
+capability of its own (it is served with a CSP that allows no network); `newtab/main.ts` depends on `src/preload/newtab.ts`'s exposed commands the same way, and
 degrades to plain unprivileged markup (no `window.orivonNewTab`) rather than throwing when
 loaded outside a genuinely fresh tab; see that file's own header comment. `intro/` depends on no
 preload at all: it reports "Enter Orivon" to main by moving its own URL hash to `#leaving` and
 then `#entered`, which `src/main/shell/intro-view.ts` watches, so the page holds no capability
 beyond its own document.
-`settings/permissions-view.ts` also imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
+`permissions/permissions-view.ts` also imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
 to show a protocol's origin as its address (`ipfs://<cid>`): pure string work over data, with no
 Node and no protocol's code behind it.
 
 **What it must never import.** `electron`, `node:*`, or anything under
 [`src/main/`](../main/). This is a sandboxed renderer with `nodeIntegration: false`; there is
 no Node here, and reaching for it is a sign the logic belongs in main. (Type-only imports from
-`src/main/shell/tabs.ts` and `src/main/browsing/bookmarks.ts` are fine: they describe the shape of a state
+`src/main/shell/tabs.ts`, `src/main/browsing/bookmarks.ts` and `src/main/settings/schema.ts` are fine: they describe the shape of a state
 push and are erased at build time by `verbatimModuleSyntax`.)
 
 **Owner stream.** `shell`, build step 1, **done, maintenance only**.
@@ -132,7 +135,7 @@ for what it grants (`grant-icons.ts`), staged until a Confirm click
 **The all-sites popup moved to a tune icon in the right-hand cluster.** It lists every app this
 browser has ever granted anything to, revoke-only, and is reached either directly or from the
 site-info popup's own "Site settings" row. A URL belonging to no app is harmless there:
-`settings/main.ts` finds no card to scroll to and renders the list unscrolled, which is the
+`permissions/main.ts` finds no card to scroll to and renders the list unscrolled, which is the
 ordinary open.
 
 **Icons.** Hand-drawn inline SVG, no icon font, no library, no framework, matching the rest of

@@ -1,7 +1,7 @@
 # `src/main/`: the Electron main process
 
 **What lives here.** The browser shell: the window, tab management, the omnibox, shell IPC, and
-the subsystem registry every other stream plugs into. Fourteen directories, each named for the job
+the subsystem registry every other stream plugs into. Fifteen directories, each named for the job
 it does; `## The directories` below is the index.
 
 **What it depends on.** `electron`, [`src/contracts/`](../contracts/).
@@ -22,6 +22,7 @@ to no single job, and `registry.ts`/`channels.ts` are the seam other packages
 | Directory | Job | Holds state? | Imports `electron`? |
 |---|---|---|---|
 | [`shell/`](shell/) | **Compose**: the window and the views inside it | yes, the tab collection | yes |
+| [`pages/`](pages/) | **Serve**: the shell's own pages at `orivon://`, in a session only they can load, and the one channel they speak on | which webContents are which page | `internal-session.ts`, `internal-ipc.ts` and `pages-subsystem.ts` only |
 | [`settings/`](settings/) | **Choose**: what the person set, validated, persisted and told to whoever listens | yes, `settings.json` on disk | no |
 | [`storage/`](storage/) | **Write**: the debounced, single-flight disk write every small persisted file shares | no | no |
 | [`browsing/`](browsing/) | **Browse**: what the address bar and tab strip are made of | yes, bookmarks on disk | `favicon.ts` only |
