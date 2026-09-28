@@ -157,7 +157,7 @@ trusting an RPC's answer. Here, Helios, started at launch (`ADR-0031`).
 Shipped with each release, replaced by the newest one verified here, refused past 14 days.
 
 **Verifier host**: the utility process that runs the light client, fetches and hashes IPFS blocks,
-and serves `.eth` names on loopback (`src/verifier-host/`).
+and serves `.eth` names on loopback (`src/protocols/verifier-host/`).
 
 ## Compatibility tiers
 **Tier 1** already a web app · **Tier 2** Electron/Node · **Tier 3** native/JVM/Qt ·

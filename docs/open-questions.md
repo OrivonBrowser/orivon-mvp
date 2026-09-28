@@ -9348,7 +9348,7 @@ purely about which name a reader learns to expect.
 Filed 2026-09-26, found while adding a real-TLS-handshake test against this generator
 (`verifier-host/tests/direct-fetch.test.ts`, unrelated to this certificate itself). Vitest's own
 test run hit `error:068000DD:asn1 encoding routines::illegal padding` once inside
-`createEthServer` (`serve/server.ts`), from a certificate `createRunCertificate` (`serve/
+`createVerifierServer` (`serve/server.ts`), from a certificate `createRunCertificate` (`serve/
 certificate.ts`) had just generated moments earlier with a fresh random key and serial. Five
 immediate re-runs did not reproduce it -- a fresh keypair and a random serial (`randomBytes(16)`)
 are drawn every call, so this is intermittent by construction, not deterministic.
@@ -9382,7 +9382,21 @@ Every existing e2e suite closes its tabs before quitting (`closeElectronApp` in
 **Needs:** a reproduction by closing the real window, then a guard in `TabManager.activateTab` or
 its caller for a destroyed window, with a test that quits with two tabs open.
 
-### A260 -- `web.embed`'s two provisional rules: the per-app page ceiling, and what `"*"` reaches **[NEEDS OWNER]**
+### A260 -- `ipfs://` subresources inside a page do not load
+
+Filed 2026-09-28, with `ADR-0038`. An `ipfs://` or `ipns://` address loads when it is typed, linked
+or opened in a new window, because those are navigations the shell rewrites to the https origin
+serving it. A page that embeds one as a subresource (`<img src="ipfs://...">`, `fetch('ipfs://...')`,
+a `<script>` or stylesheet) gets nothing: Chromium knows no `ipfs:` scheme, and nothing rewrites a
+subresource request. IPFS sites mostly use relative paths or gateway URLs, so how often real content
+needs this is not known.
+
+**What would settle it:** a real site that breaks on it. The likely fix is to register each built-in
+scheme before `ready`, privileged as secure, with a `protocol.handle` that only redirects to the
+served origin; a scheme added while Orivon runs would get it at the next launch, since Electron fixes
+privileges before `ready`. Whether Chromium follows a redirect from a custom scheme to https for
+every subresource kind, CORS mode included, is unmeasured.
+### A261 -- `web.embed`'s two provisional rules: the per-app page ceiling, and what `"*"` reaches **[NEEDS OWNER]**
 
 Filed 2026-09-28, with `ADR-0039`. Two calls in that ADR are AI-chosen and await the owner:
 

@@ -12,6 +12,8 @@
 // (scope.md IN table, updated the same day -- this is a deliberate
 // scope addition, not a silent one).
 
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+
 export type OmniboxResult =
   | { kind: 'url'; url: string }
   | { kind: 'search'; url: string }
@@ -71,6 +73,11 @@ export function parseOmniboxInput (raw: string, isDevEthName: (host: string) => 
     return { kind: 'reject', reason: 'dangerous-scheme' }
   }
 
+  // A protocol's address (`ipfs://...`) loads from the https URL that
+  // protocol's pages are served at, which is all servedUrl ever returns.
+  const served = BUILTIN_ADDRESSES.servedUrl(trimmed)
+  if (served !== undefined) return { kind: 'url', url: served }
+
   // Already has an http(s) scheme -- pass through unchanged except for
   // URL normalisation (trailing slash on a bare origin, etc).
   if (/^https?:\/\//i.test(trimmed)) {
@@ -118,6 +125,8 @@ export function sanitizeDirectUrl (input: string): string | null {
   const trimmed = input.trim()
   if (trimmed.length === 0) return null
   if (hasDangerousScheme(trimmed)) return null
+  const served = BUILTIN_ADDRESSES.servedUrl(trimmed)
+  if (served !== undefined) return served
   if (!/^https?:\/\//i.test(trimmed)) return null
 
   try {

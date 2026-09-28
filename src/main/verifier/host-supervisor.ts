@@ -1,7 +1,7 @@
 // Keeps the verifier host running: forks it, hands it its config, answers
 // for it while it is down, and restarts it with backoff after it exits.
 
-import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientState } from '../../verifier-host/protocol.js'
+import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientState } from '../../protocols/verifier-host/protocol.js'
 
 /** The slice of Electron's UtilityProcess this file uses. */
 export interface HostProcess {

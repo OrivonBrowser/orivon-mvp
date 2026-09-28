@@ -7,7 +7,7 @@ import type { Fetch, FetchResponse } from '../fetch/bundle.js'
 import type { RequestHeaders } from '../fetch/budget.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
-import { servedByVerifier } from '../fetch/eth-origin.js'
+import { servedByVerifier } from '../fetch/verifier-origin.js'
 
 export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under

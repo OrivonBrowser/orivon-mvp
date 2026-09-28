@@ -31,7 +31,7 @@ import { maybeInstallDevServeHook } from './dev-serve.js'
 import { nodeLoaderStorage } from './cache/node-storage.js'
 import { UPDATE_CHECK_INTERVAL_MS, createLoader } from './index.js'
 import { publishLoader, type Subsystem } from '../main/registry.js'
-import { ethContentAddress } from '../main/verifier/verifier-subsystem.js'
+import { verifierContentAddress } from '../main/verifier/verifier-subsystem.js'
 
 export const loaderSubsystem: Subsystem = {
   name: 'loader',
@@ -60,7 +60,7 @@ export const loaderSubsystem: Subsystem = {
       // serves the app correctly, just with a narrower header.
       onInstalled: async (origin) => { await registerServingFor(storage, origin, ctx.broker) },
       updateCheckIntervalMs: UPDATE_CHECK_INTERVAL_MS,
-      contentAddress: ethContentAddress
+      contentAddress: verifierContentAddress
     })
     publishLoader(ctx, loader)
     maybeInstallDevServeHook(async (origin) => { await registerServingFor(storage, origin, ctx.broker) })

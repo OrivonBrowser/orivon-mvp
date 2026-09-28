@@ -22,6 +22,7 @@ import type { TabShell, TabViewHost } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabState, TabsSnapshot, Bounds, TabRecord } from './tab-types.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
  * a bad window.open() URL, empty input) -- never the dashboard. Keeping
@@ -400,6 +401,7 @@ export class TabManager {
     return {
       id,
       url,
+      displayUrl: BUILTIN_ADDRESSES.displayUrl(url),
       title: wc?.getTitle() ?? '',
       canGoBack: wc?.navigationHistory.canGoBack() ?? false,
       canGoForward: wc?.navigationHistory.canGoForward() ?? false,

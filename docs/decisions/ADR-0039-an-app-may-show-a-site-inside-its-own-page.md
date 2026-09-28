@@ -114,7 +114,7 @@ shown reaches what it names.
 - **Popups and downloads from a shown page do nothing, and the app hears nothing.** A `target`
   link opens nowhere. A later change may hand both to the app; nothing here forbids it.
 - **`LIMITS.embeds` (32) and the T12 rule for `"*"` are provisional**, AI-chosen
-  (`docs/open-questions.md` A260). The owner's confirmation settles them.
+  (`docs/open-questions.md` A261). The owner's confirmation settles them.
 - **A contracts change**, so the usual cost: permanent once an app ships against it (ADR-0002).
 
 ## Reversibility

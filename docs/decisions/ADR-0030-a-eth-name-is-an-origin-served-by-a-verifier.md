@@ -28,7 +28,7 @@ and served from its pin exactly as an HTTPS app is (`ADR-0005`, `ADR-0007`, `ADR
 - **Failure is closed.** Nothing unverified is ever served in place of what could not be checked:
   the tab gets an error page naming what failed instead. If the verifier host itself dies
   mid-load, its socket is gone and Chromium shows its own connection error.
-- **Both halves sit behind the canonical provider shapes** (`src/resolution/`): a name resolver per
+- **Both halves sit behind the canonical provider shapes** (`src/protocols/resolution/`): a name resolver per
   top-level domain and an ordered list of data gatherers, each with the canonical fallback to the
   next. Each list has one built-in entry in this build.
 - **Serving.** Every `.eth` host resolves, through one `--host-resolver-rules` value, to a TLS
@@ -74,7 +74,7 @@ larger attack surface than one loopback socket.
 would not be the name, and the page would not be a secure context without further exceptions.
 
 **Helia or `@helia/verified-fetch`.** Both pull in `node-datachannel`, a native module (Rule 8).
-The gatherer is built on the primitives beneath them instead (`src/ipfs/README.md`).
+The gatherer is built on the primitives beneath them instead (`src/protocols/ipfs/README.md`).
 
 **A public HTTP gateway's rendered responses, or eth.limo.** Fast, and nothing checked: the
 gateway, or the name service, would decide what the page is.
@@ -170,21 +170,21 @@ whose remaining gateway rate-limits under the burst one page's assets create, an
 light client that treated one bad refresh as fully unsynced.
 
 **Gateways are scheduled by recent health, not a fixed order shared globally.** Each gateway keeps
-its own concurrency limit (`src/ipfs/limits.ts`'s `perGatewayConcurrency`, 4) rather than one
+its own concurrency limit (`src/protocols/ipfs/limits.ts`'s `perGatewayConcurrency`, 4) rather than one
 limit shared by all of them (`gatewayConcurrency`, 8, before this amendment) -- a hung or
 rate-limited gateway no longer holds back requests to the others. A 429 (honouring `Retry-After`
 when given) or a transport failure cools that one gateway down for a while, doubling on repeat;
 two timeouts in a row without a success in between count the same way, one alone does not, since
 a gateway can hang on a block it does not have while answering everything else fine
-(`src/ipfs/gateway-health.ts`). A block fetch tries the least-loaded non-cooling gateway first,
+(`src/protocols/ipfs/gateway-health.ts`). A block fetch tries the least-loaded non-cooling gateway first,
 and hedges with a second after `hedgeDelayMs` (2 s) if nothing has verified yet -- the first
-verified answer wins, the loser is abandoned (`src/ipfs/block-fetch.ts`). In-flight fetches for
+verified answer wins, the loser is abandoned (`src/protocols/ipfs/block-fetch.ts`). In-flight fetches for
 the same block are shared per partition, the same way verified blocks already were, so two
-concurrent requests for one asset cost one fetch (`src/ipfs/blockstore.ts`'s `SharedFetch`). IPNS
+concurrent requests for one asset cost one fetch (`src/protocols/ipfs/blockstore.ts`'s `SharedFetch`). IPNS
 lookups go through the same per-gateway scheduling, sequentially, with no hedging.
 
 **A name past its two-minute freshness window keeps serving its last proven root, stale, for up
-to ten minutes (`STALE_SERVE_MS`, `src/verifier-host/serve/sites.ts`) while a single background
+to ten minutes (`STALE_SERVE_MS`, `src/protocols/verifier-host/serve/sites.ts`) while a single background
 re-prove runs**, rather than blocking every request on a fresh proof or failing the site outright
 on one re-prove's transient failure. A burst of requests past the window triggers one re-prove,
 not one each; a successful re-prove replaces the served root and resets the freshness window; a
@@ -194,7 +194,7 @@ of serving a root that old.
 
 **The light client tolerates one failed refresh.** A refresh that fails to read the chain's head
 no longer un-syncs the client while the last proven head is under two minutes old
-(`HEAD_GRACE_MS`, `src/verifier-host/light-client/light-client.ts`); past that window, or on a
+(`HEAD_GRACE_MS`, `src/protocols/verifier-host/light-client/light-client.ts`); past that window, or on a
 second failure with no success between, the client drops to syncing and the next request waits up
 to `SYNC_WAIT_MS` for a real answer, as before. A checkpoint read (a separate, non-essential RPC
 call) failing never affects sync state at all, and retries follow sooner (5 s) after a failure
@@ -207,9 +207,9 @@ HTTP status), and only for a gateway main found to have no proxy configured
 call Electron's own typing says "is used when attempting to make requests using Net in the
 utility process"), the verifier host compares the system resolver's addresses for that host
 against a DNS-over-HTTPS answer from the same resolvers already trusted for DNSLink
-(`src/verifier-host/doh.ts`'s `dohAddressResolver`, public-unicast answers only). Disjoint
+(`src/protocols/verifier-host/doh.ts`'s `dohAddressResolver`, public-unicast answers only). Disjoint
 addresses switch that gateway to a direct connection at the DoH address for ten minutes
-(`src/verifier-host/dns-fallback.ts`), reached over `node:https` with a pinned DNS lookup but TLS
+(`src/protocols/verifier-host/dns-fallback.ts`), reached over `node:https` with a pinned DNS lookup but TLS
 still verified against the real hostname -- neither of Electron's `net.fetch`/`net.request` can
 pin a connection to a chosen address while keeping the real hostname for SNI (confirmed against
 `electron.d.ts`, Electron 44, the same gap `loader/electron/fetch.ts` names for the install path)

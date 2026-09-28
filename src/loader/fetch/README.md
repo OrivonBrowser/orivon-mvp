@@ -2,7 +2,7 @@
 
 **What lives here.** `bundle.ts` (`fetchBundle`, the orchestration), `asset.ts` (the one-asset
 fetch and the bounded pool), `budget.ts` (the `Fetch` type, byte cap and idle deadline),
-`install-origin.ts` (T12/A46's public-unicast guard), `eth-origin.ts` (the `.eth` exception),
+`install-origin.ts` (T12/A46's public-unicast guard), `verifier-origin.ts` (the exception for hosts a protocol serves),
 `content-root.ts` (the root-CID request header), `update-check.ts` (the update-check interval
 and conditional-request validators) and `undeclared-assets.ts` (warning about subresources the
 manifest doesn't declare).

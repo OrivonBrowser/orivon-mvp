@@ -9,6 +9,8 @@ import type { Bookmark } from '../browsing/bookmarks.js'
 export interface TabState {
   id: string
   url: string
+  /** `url` as the address bar shows it: a protocol's address such as `ipfs://<cid>/` where `url` is the https URL serving it. */
+  displayUrl: string
   title: string
   canGoBack: boolean
   canGoForward: boolean

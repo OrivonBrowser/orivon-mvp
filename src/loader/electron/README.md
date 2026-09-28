@@ -6,7 +6,7 @@
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/),
 [`../cache/`](../cache/), [`../serve/`](../serve/), [`../reach/`](../reach/) and
-[`../fetch/`](../fetch/) (the `eth-origin.ts` exception, `fetch/budget.ts`'s type).
+[`../fetch/`](../fetch/) (the `verifier-origin.ts` exception, `fetch/budget.ts`'s type).
 
 **What it must never import.** [`../../shim/`](../../shim/) -- see the parent README's "What it
 must never import". This is the one folder in this directory that imports `electron` at all.
