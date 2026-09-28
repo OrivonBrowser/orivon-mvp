@@ -1,8 +1,12 @@
 # `src/main/shell/`: the window, and the views inside it
 
 **What lives here.** `window.ts` composes the frameless `BaseWindow`: a chrome view on top,
-whichever tab's `WebContentsView` below. `tabs.ts` owns the tab collection and what gets pushed
-to the chrome UI; `tab-view.ts` and `tab-types.ts` are its pure halves. `renderer-entry.ts`
+whichever tab's `WebContentsView` below; `window-frame.ts` is the native window itself (its
+title-bar overlay and the rule for when it first shows). A process holds any number of these
+windows, and `shell-services.ts` is what they share: the bookmark store, and the
+`window-registry.ts` through which a page's IPC finds the window holding it. `tabs.ts` owns the
+tab collection and what gets pushed to the chrome UI; `tab-view.ts` and `tab-types.ts` are its
+pure halves. `renderer-entry.ts`
 resolves electron-vite's dev-server/file-URL split for both this and
 [`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts). `user-agent.ts`
 derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide. `dev-switches.ts`
@@ -70,7 +74,19 @@ handler `wireView()` attaches acts only while its view is the one the tab shows
 (`record.view`), and `repartitionView()` retires the old view only after `record.view` has moved
 on. Retire it first and its `'destroyed'` calls `forgetTab()` on a tab that is not closing;
 `tests/tabs.test.ts` exercises this directly with a fake `webContents` that emits `'destroyed'`
-synchronously from `close()`, the same way real Electron destruction can.
+synchronously from `close()`, the same way real Electron destruction can. The same handlers read
+`record.host` when an event arrives and never a host captured at wiring, so a tab that moves to
+another window keeps them (`tests/tab-events.test.ts`).
+
+**One process, several windows: what is per window and what is shared.** Per window: the chrome
+view, the `TabManager`, both popovers, the fullscreen and notice state, and the IPC handlers on the
+chrome view and the popovers, which are registered on those views' own `ipc` so two windows never
+collide on a channel. Shared: the `BookmarkStore` (built once and read once: a second read would
+replace the list with the file and drop a change not yet flushed; its listeners return a removal
+each window runs when it closes), the `WindowRegistry`, and the new-tab page's `ipcMain` channel,
+registered once. A closing window closes every view it made: the tabs' (`TabManager.dispose()`), the
+chrome view's, and a welcome screen still open. Destroying a window destroys only what is attached
+to it.
 
 **[`tabs.ts`](tabs.ts): a closing window disposes its tabs before it is destroyed.** Destroying a
 window destroys the views attached to it and nothing else: a background tab's view and every parked

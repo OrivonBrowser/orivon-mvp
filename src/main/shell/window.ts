@@ -1,26 +1,14 @@
-// Composes the shell: a frameless BaseWindow holding a chrome
-// WebContentsView (tab strip + toolbar + bookmarks bar) on top and, below
-// it, whichever tab WebContentsView is active. See docs/architecture --
+// Composes the shell: a frameless BaseWindow (./window-frame.ts) holding a
+// chrome WebContentsView (tab strip + toolbar + bookmarks bar) on top and,
+// below it, whichever tab WebContentsView is active. See docs/architecture --
 // there is no shell doc, this file and its neighbours (tabs.ts, ipc.ts)
 // are the specification.
-//
-// Frameless, kept cheap (owner decision, 2026-08-26; this session's plan):
-// titleBarStyle: 'hidden' + titleBarOverlay lets Electron draw native
-// minimise/maximise/close on Windows/Linux; trafficLightPosition keeps
-// macOS's native traffic lights, just repositioned. Verified empirically
-// against this Electron version before writing this file (BaseWindow
-// accepts all three options; win.setTitleBarOverlay exists) -- context7's
-// docs only show these on BrowserWindow examples, and BaseWindow's own
-// constructor-options doc doesn't enumerate them, so this was checked
-// rather than assumed.
-import { app, BaseWindow, ipcMain, nativeTheme, WebContentsView, screen } from 'electron'
+import { app, WebContentsView, type BaseWindow } from 'electron'
 import { join } from 'node:path'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron/serve.js'
 import { verifierNameEvidence } from '../verifier/verifier-subsystem.js'
-import { BookmarkStore } from '../browsing/bookmarks.js'
-import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from '../channels.js'
-import { registerNewTabIpc } from '../ipc/newtab-ipc.js'
+import { STATE_CHANNEL } from '../channels.js'
 import { createPermissionsController, createSiteNotificationsController } from '../permissions/permissions.js'
 import { notificationDecisions } from '../sessions/permission-gate.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
@@ -39,6 +27,8 @@ import { showContextMenu } from './context-menu.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import type { IntroPlan } from './intro-state.js'
 import { showIntro } from './intro-view.js'
+import { createWindowFrame, showWhenReady } from './window-frame.js'
+import type { ShellServices } from './shell-services.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -47,98 +37,24 @@ import { showIntro } from './intro-view.js'
 // native window buttons. Height is the sum of three rows, mirrored
 // exactly in src/renderer/style.css so the native chrome view and the
 // CSS agree on where the tab content starts:
-//   tabrow      36px (matches titleBarOverlay.height below)
+//   tabrow      36px (matches the native overlay's height, window-frame.ts)
 // + toolbar     40px
 // + bookmarks   28px, only when the bar is rendered -- see chromeHeight()
 const CHROME_TOP_ROWS = 76
 const BOOKMARKS_BAR_HEIGHT = 28
 const CHROME_HEIGHT = CHROME_TOP_ROWS + BOOKMARKS_BAR_HEIGHT
 
-// Kept in sync with src/renderer/style.css's --wchrome/--wink tokens --
-// same dual-source-of-truth pattern as CHROME_HEIGHT above. The overlay
-// is native-drawn chrome outside the renderer's DOM, so CSS alone can't
-// theme it; nativeTheme.on('updated') below re-applies these on a
-// live OS theme change.
-const OVERLAY_DARK = { color: '#1e1f24', symbolColor: '#e6e7e8' }
-const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
+/** The new-tab page's own URL: the dev server's nested path, or the built file. */
+export function resolveDashboardUrl (): string {
+  return rendererEntryUrl(import.meta.dirname, process.env['ELECTRON_RENDERER_URL'], '/newtab/', '../renderer/newtab/index.html')
+}
 
-// Dev/test tooling only -- never gated on app.isPackaged or "is this a
-// production build" (run-from-source is a real shipping path on Windows and
-// macOS, build-plan.md; a real user's window must always take focus).
-// showInactive() shows the window without activating it, so a build or e2e
-// run started while the owner is typing elsewhere does not steal keystrokes.
-// Set by `npm run dev`, and by test/launch-electron.mjs for every Electron
-// launch it makes -- docs/development/setup.md.
-const NO_FOCUS = process.env['ORIVON_WINDOW_NO_FOCUS'] === '1'
-
-// Hands the app icon to the window. GNOME's dock does not read it -- the icon
-// shown for a running window comes from matching the window's WM_CLASS
-// ("orivon") against a .desktop entry's Icon=/StartupWMClass, and this
-// option's X11 _NET_WM_ICON property stays empty on this Electron build even
-// when set. Window managers that do read the property use it, so the line
-// stays; packaged builds get their .desktop from electron-builder.yml.
-// A packaged build loads resources/icon.png (extraResources there); a run
-// from source loads the repo's build/icon.png (out/main -> ../../build).
-const WINDOW_ICON_PATH = app.isPackaged
-  ? join(process.resourcesPath, 'icon.png')
-  : join(import.meta.dirname, '../../build/icon.png')
-
-/** `intro`: the process's first window on a launch that opens on the welcome screen (./intro-state.ts). */
-export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): BaseWindow {
-  // Centers on the OS's primary display. Not on whichever display holds the
-  // pointer: Wayland does not let an app control its own window position at
-  // all, so that buys nothing.
-  // Sized against bounds, not workArea. A display's workArea is the panel
-  // minus the desktop environment's reserved struts, and on a multi-monitor
-  // layout where the monitors have different heights and vertical offsets,
-  // GNOME reports a work area far shorter than the monitor itself -- a
-  // 1920x1080 primary can come back 328px tall. Clamping the window to that
-  // produces a letterbox slot with no way to grow it from here; bounds is
-  // the physical panel and is always right.
-  const { bounds } = screen.getPrimaryDisplay()
-  const winWidth = Math.min(1280, bounds.width)
-  const winHeight = Math.min(800, bounds.height)
-
-  const initialOverlay = nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT
-
-  const initialBounds = {
-    x: bounds.x + Math.round((bounds.width - winWidth) / 2),
-    y: bounds.y + Math.round((bounds.height - winHeight) / 2),
-    width: winWidth,
-    height: winHeight
-  }
-
-  const win = new BaseWindow({
-    ...initialBounds,
-    show: false,
-    icon: WINDOW_ICON_PATH,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      ...initialOverlay,
-      height: 36
-    },
-    // Matches orivon-browser-v2's own tab-row-height traffic-light
-    // position (visual reference only) -- macOS ignores titleBarOverlay
-    // entirely and uses this instead.
-    trafficLightPosition: { x: 20, y: 10 }
-  })
-
-  // titleBarOverlay is Windows/Linux only and has no live theme callback
-  // of its own -- re-push both colours whenever the OS scheme flips, or
-  // the native buttons freeze at whatever theme was active on launch.
-  // macOS ignores the call entirely (trafficLightPosition covers it), so
-  // skip it there rather than call a method on a platform it doesn't
-  // apply to. `nativeTheme` is a singleton shared by every window this
-  // process ever creates (macOS 'activate' can create more than one over
-  // a process's life) -- the listener is removed on 'closed', or a later
-  // theme change would call setTitleBarOverlay on an already-destroyed
-  // window.
-  function applyOverlayForTheme (): void {
-    if (process.platform === 'darwin') return
-    win.setTitleBarOverlay(nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT)
-  }
-  nativeTheme.on('updated', applyOverlayForTheme)
-  win.on('closed', () => { nativeTheme.removeListener('updated', applyOverlayForTheme) })
+/** One shell window. `services` are what every window of this process shares;
+ * `intro`: the process's first window on a launch that opens on the welcome
+ * screen (./intro-state.ts). */
+export function createShellWindow (ctx: SubsystemContext, services: ShellServices, intro?: IntroPlan): BaseWindow {
+  const frame = createWindowFrame(import.meta.dirname)
+  const { win } = frame
 
   const chrome = new WebContentsView({
     webPreferences: {
@@ -158,22 +74,17 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
     void chrome.webContents.loadFile(join(import.meta.dirname, '../renderer/index.html'))
   }
 
-  // The dashboard's own resolved URL -- a genuinely fresh tab loads this
-  // (src/main/tabs.ts's createTab()). Mirrors the branch immediately
-  // above: electron-vite's dev server serves every renderer entry off
-  // the SAME origin at a nested path (confirmed by reading its installed
-  // source, since this is the second entry added to a config that
-  // previously only had one); the built path matches
-  // electron.vite.config.ts's `newtab` entry.
-  const dashboardUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/newtab/', '../renderer/newtab/index.html')
+  // A genuinely fresh tab loads this (tabs.ts's createTab()). electron-vite's
+  // dev server serves every renderer entry off the SAME origin at a nested
+  // path; the built path matches electron.vite.config.ts's `newtab` entry.
+  const dashboardUrl = resolveDashboardUrl()
 
-  // Bookmarks: owner override, 2026-08-28 (scope.md, ADR-0003) -- not
-  // in the original scope pass, arrived bundled with the chrome restyle.
-  // A separate store, not folded into TabManager -- tabs and bookmarks
-  // change independently and neither needs to know the other exists;
-  // window.ts is what composes both into the one ShellState snapshot the
-  // chrome view receives.
-  const bookmarks = new BookmarkStore(join(app.getPath('userData'), 'bookmarks.json'))
+  // Bookmarks (scope.md, ADR-0003) are a store of their own, shared by every
+  // window of this process and not folded into TabManager -- tabs and
+  // bookmarks change independently and neither needs to know the other
+  // exists; window.ts is what composes both into the one ShellState snapshot
+  // the chrome view receives.
+  const bookmarks = services.bookmarks
 
   // The bookmarks bar is rendered only when there is something in it
   // (owner, 2026-09-15) -- it holds the real list and nothing else now, so
@@ -323,6 +234,7 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
   // would be visible.
   let laidOutHeight = chromeHeight()
   function onBookmarksChanged (): void {
+    if (win.isDestroyed()) return
     const height = chromeHeight()
     if (height !== laidOutHeight) {
       laidOutHeight = height
@@ -333,11 +245,13 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
   }
 
   tabs.onStateChange(pushState)
-  bookmarks.onChange(onBookmarksChanged)
+  const stopListeningToBookmarks = bookmarks.onChange(onBookmarksChanged)
   // Loading is non-blocking -- no bookmarks bar for one frame on a slow
   // disk beats delaying the whole window on a non-essential feature. It
   // goes through onBookmarksChanged, not pushState: a profile that HAS
-  // bookmarks grows the chrome by a row the moment they land.
+  // bookmarks grows the chrome by a row the moment they land. The store
+  // reads its file once for every window, so a later window's call settles
+  // at once.
   void bookmarks.load().then(onBookmarksChanged)
 
   // Without this, tabs.createTab() below pushes state before the chrome
@@ -398,25 +312,19 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
       lastSiteInfoOrigin = origin
       permissionsPanel.close() // only one popup open at a time
       siteInfoPanel.toggle(anchor, origin, page)
-    }
+    },
+    () => { createShellWindow(ctx, services) }
   )
-  registerNewTabIpc(dashboardUrl, tabs, bookmarks)
-  // A16 makes createShellWindow() re-run routinely now (close the last
-  // tab, then reopen from the macOS dock via app.on('activate')), and
-  // ipcMain.handle throws if the same channel is registered twice with
-  // no matching removeHandler in between -- confirmed there is none
-  // anywhere in this codebase. Latent before A16 (only reachable by
-  // closing the OS window directly); routine after it. All three channels
-  // registered above need the same cleanup.
+  const forgetWindow = services.windows.add({ window: win, chrome, tabs })
   win.on('close', () => { tabs.dispose() })
   win.on('closed', () => {
-    ipcMain.removeHandler(COMMAND_CHANNEL)
-    ipcMain.removeHandler(NEWTAB_COMMAND_CHANNEL)
-    // Also removes SETTINGS_COMMAND_CHANNEL/SITE_INFO_COMMAND_CHANNEL,
-    // which the popups register per open -- same reregistration trap this
-    // handler already exists for.
+    forgetWindow()
+    stopListeningToBookmarks()
     permissionsPanel.close()
     siteInfoPanel.close()
+    // Destroying a window leaves its views' renderers running: the chrome
+    // view's is closed here, as the tabs' are by `dispose`.
+    if (!chrome.webContents.isDestroyed()) chrome.webContents.close()
   })
 
   // win.getContentBounds() read SYNCHRONOUSLY inside 'resize' returns the
@@ -440,46 +348,7 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
   // After the first tab, so the view stacks above it.
   if (intro !== undefined) showIntro(win, tabs, intro)
 
-  // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
-  // typed event union; BaseWindow's own doc doesn't enumerate it either.
-  // Verified empirically that it fires on BaseWindow all the same -- a
-  // type-declaration gap, not a runtime one. Narrow cast, not a cast of
-  // `win` to the wrong class.
-  //
-  // 'ready-to-show' does not fire reliably -- or fires very late -- when
-  // the chrome view loads from electron-vite's dev server
-  // (`loadURL(devServerUrl)`) rather than the built file, which reads as
-  // "no window ever appears": the window exists the whole time, `show()`
-  // is just never called. A short fallback timer closes the gap; `shown`
-  // guards against calling `show()` twice if 'ready-to-show' fires late,
-  // after the fallback already ran.
-  let shown = false
-  function showOnce (): void {
-    if (shown) return
-    shown = true
-    if (NO_FOCUS) {
-      // The one thing a real launch under a virtual display CAN check --
-      // there is no window manager there to take OS focus FROM, so
-      // isFocused() cannot tell showInactive() apart from show(). See
-      // test/e2e-window-no-focus.test.ts, which asserts this line runs
-      // instead. Do not remove as "stray debug output".
-      console.log('[window] ORIVON_WINDOW_NO_FOCUS=1 -- showInactive()')
-      win.showInactive()
-    } else {
-      win.show()
-    }
-    // Re-asserted after show, not just passed to the constructor. A window
-    // manager may shrink a window to the display's work area as it maps it,
-    // and a work area can be reported far smaller than the monitor (GNOME
-    // does this on a multi-monitor layout with mixed heights and vertical
-    // offsets). The constructor size loses that argument; a setBounds once
-    // the window is mapped is honoured. Harmless where the first size
-    // already stuck -- it sets what is already set.
-    win.setBounds(initialBounds)
-  }
-  ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
-    .once('ready-to-show', showOnce)
-  setTimeout(showOnce, 1000)
+  showWhenReady(frame)
 
   return win
 }

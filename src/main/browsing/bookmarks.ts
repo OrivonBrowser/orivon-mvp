@@ -121,14 +121,11 @@ export const WRITE_DEBOUNCE_MS = 300
 
 export class BookmarkStore {
   // Every BookmarkStore ever constructed, for BookmarkStore.flushAll() --
-  // index.ts's quit path needs to flush every window's store and has no
-  // reference to any of them (each is a local inside window.ts's
-  // createShellWindow()); self-registration here is simpler than plumbing
-  // one through, and a closed window's store just becomes a permanent
-  // no-op flush (nothing left to write), which costs nothing to keep.
+  // index.ts's quit path flushes them without holding a reference to any.
   private static readonly instances = new Set<BookmarkStore>()
 
   private list: Bookmark[] = []
+  private loading: Promise<void> | null = null
   private readonly listeners = new Set<() => void>()
   private writeTimer: ReturnType<typeof setTimeout> | null = null
   private pendingWrite: Promise<void> | null = null
@@ -155,11 +152,18 @@ export class BookmarkStore {
     await Promise.allSettled([...BookmarkStore.instances].map((store) => store.flushPendingWrite()))
   }
 
-  /** Reads the file once at startup. Any failure -- missing (first
-   * launch), unreadable, or corrupt -- yields an empty list rather than
-   * throwing: a browser that refuses to start because its bookmarks file
-   * is damaged is a worse failure than one that lost them. */
-  async load (): Promise<void> {
+  /** Reads the file once, however many windows ask: a second read would
+   * replace the list with what is on disk and drop any change not yet
+   * flushed. Any failure -- missing (first launch), unreadable, or
+   * corrupt -- yields an empty list rather than throwing: a browser that
+   * refuses to start because its bookmarks file is damaged is a worse
+   * failure than one that lost them. */
+  load (): Promise<void> {
+    this.loading ??= this.readFromDisk()
+    return this.loading
+  }
+
+  private async readFromDisk (): Promise<void> {
     try {
       const raw = await readFile(this.filePath, 'utf8')
       this.list = parseBookmarksFile(raw)
@@ -214,8 +218,11 @@ export class BookmarkStore {
     this.emitChange()
   }
 
-  onChange (cb: () => void): void {
+  /** Returns the removal: a window that closes must stop listening, or the
+   * next change made in another window calls into the closed one. */
+  onChange (cb: () => void): () => void {
     this.listeners.add(cb)
+    return () => { this.listeners.delete(cb) }
   }
 
   /** Resolves once the on-disk file reflects every change made up to this

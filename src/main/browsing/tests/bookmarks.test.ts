@@ -273,6 +273,28 @@ describe('BookmarkStore', () => {
     expect(store.getAll()).toEqual([])
   })
 
+  it('reads the file once, so a second caller cannot replace an unflushed change', async () => {
+    const store = new BookmarkStore(filePath)
+    await store.load()
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
+
+    await store.load()
+
+    expect(store.getAll().map((b) => b.url)).toEqual(['https://a.example/'])
+  })
+
+  it('onChange returns its own removal', () => {
+    const store = new BookmarkStore(filePath)
+    const listener = vi.fn()
+    const stop = store.onChange(listener)
+
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
+    stop()
+    store.add({ url: 'https://b.example/', title: 'B', favicon: null })
+
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
   it('add() is rejected for a dangerous scheme and does not change the list', () => {
     const store = new BookmarkStore(filePath)
     store.add({ url: 'javascript:alert(1)', title: 'evil', favicon: null })

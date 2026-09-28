@@ -1,0 +1,147 @@
+// The native window around the shell: a frameless BaseWindow whose title-bar
+// overlay follows the OS theme, and the rule for when it first appears. What
+// goes inside it is window.ts's business.
+//
+// Frameless, kept cheap: titleBarStyle: 'hidden' + titleBarOverlay lets
+// Electron draw native minimise/maximise/close on Windows/Linux;
+// trafficLightPosition keeps macOS's native traffic lights, just repositioned.
+// BaseWindow accepts all three options and win.setTitleBarOverlay exists
+// (checked against electron.d.ts, not assumed).
+import { app, BaseWindow, nativeTheme, screen } from 'electron'
+import { join } from 'node:path'
+
+// Kept in sync with src/renderer/style.css's --wchrome/--wink tokens --
+// same dual-source-of-truth pattern as window.ts's CHROME_HEIGHT. The overlay
+// is native-drawn chrome outside the renderer's DOM, so CSS alone can't
+// theme it; nativeTheme.on('updated') below re-applies these on a
+// live OS theme change.
+const OVERLAY_DARK = { color: '#1e1f24', symbolColor: '#e6e7e8' }
+const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
+
+/** Height of the native overlay: the tab row's height, in src/renderer/style.css too. */
+const OVERLAY_HEIGHT = 36
+
+// Dev/test tooling only -- never gated on app.isPackaged or "is this a
+// production build" (run-from-source is a real shipping path on Windows and
+// macOS, build-plan.md; a real user's window must always take focus).
+// showInactive() shows the window without activating it, so a build or e2e
+// run started while the owner is typing elsewhere does not steal keystrokes.
+// Set by `npm run dev`, and by test/launch-electron.mjs for every Electron
+// launch it makes -- docs/development/setup.md.
+const NO_FOCUS = process.env['ORIVON_WINDOW_NO_FOCUS'] === '1'
+
+export interface WindowFrame {
+  readonly win: BaseWindow
+  /** Where the window was asked to open, re-asserted by `showWhenReady`. */
+  readonly initialBounds: { x: number, y: number, width: number, height: number }
+}
+
+/** `dirname`: the calling module's own `import.meta.dirname`, from which a run
+ * from source finds the repo's build/icon.png (out/main -> ../../build). */
+export function createWindowFrame (dirname: string): WindowFrame {
+  // Hands the app icon to the window. GNOME's dock does not read it -- the
+  // icon shown for a running window comes from matching the window's WM_CLASS
+  // ("orivon") against a .desktop entry's Icon=/StartupWMClass, and this
+  // option's X11 _NET_WM_ICON property stays empty on this Electron build even
+  // when set. Window managers that do read the property use it, so the line
+  // stays; packaged builds get their .desktop from electron-builder.yml.
+  // A packaged build loads resources/icon.png (extraResources there).
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(dirname, '../../build/icon.png')
+
+  // Centers on the OS's primary display. Not on whichever display holds the
+  // pointer: Wayland does not let an app control its own window position at
+  // all, so that buys nothing.
+  // Sized against bounds, not workArea. A display's workArea is the panel
+  // minus the desktop environment's reserved struts, and on a multi-monitor
+  // layout where the monitors have different heights and vertical offsets,
+  // GNOME reports a work area far shorter than the monitor itself -- a
+  // 1920x1080 primary can come back 328px tall. Clamping the window to that
+  // produces a letterbox slot with no way to grow it from here; bounds is
+  // the physical panel and is always right.
+  const { bounds } = screen.getPrimaryDisplay()
+  const width = Math.min(1280, bounds.width)
+  const height = Math.min(800, bounds.height)
+  const initialBounds = {
+    x: bounds.x + Math.round((bounds.width - width) / 2),
+    y: bounds.y + Math.round((bounds.height - height) / 2),
+    width,
+    height
+  }
+
+  const initialOverlay = nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT
+  const win = new BaseWindow({
+    ...initialBounds,
+    show: false,
+    icon: iconPath,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { ...initialOverlay, height: OVERLAY_HEIGHT },
+    // Matches orivon-browser-v2's own tab-row-height traffic-light
+    // position (visual reference only) -- macOS ignores titleBarOverlay
+    // entirely and uses this instead.
+    trafficLightPosition: { x: 20, y: 10 }
+  })
+
+  // titleBarOverlay is Windows/Linux only and has no live theme callback
+  // of its own -- re-push both colours whenever the OS scheme flips, or
+  // the native buttons freeze at whatever theme was active on launch.
+  // macOS ignores the call entirely (trafficLightPosition covers it), so
+  // skip it there rather than call a method on a platform it doesn't
+  // apply to. `nativeTheme` is a singleton shared by every window this
+  // process ever creates -- the listener is removed on 'closed', or a later
+  // theme change would call setTitleBarOverlay on an already-destroyed
+  // window.
+  function applyOverlayForTheme (): void {
+    if (process.platform === 'darwin') return
+    win.setTitleBarOverlay(nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT)
+  }
+  nativeTheme.on('updated', applyOverlayForTheme)
+  win.on('closed', () => { nativeTheme.removeListener('updated', applyOverlayForTheme) })
+
+  return { win, initialBounds }
+}
+
+/** Shows the window once it can paint, and once only. */
+export function showWhenReady ({ win, initialBounds }: WindowFrame): void {
+  // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
+  // typed event union; BaseWindow's own doc doesn't enumerate it either.
+  // Verified empirically that it fires on BaseWindow all the same -- a
+  // type-declaration gap, not a runtime one. Narrow cast, not a cast of
+  // `win` to the wrong class.
+  //
+  // 'ready-to-show' does not fire reliably -- or fires very late -- when
+  // the chrome view loads from electron-vite's dev server
+  // (`loadURL(devServerUrl)`) rather than the built file, which reads as
+  // "no window ever appears": the window exists the whole time, `show()`
+  // is just never called. A short fallback timer closes the gap; `shown`
+  // guards against calling `show()` twice if 'ready-to-show' fires late,
+  // after the fallback already ran.
+  let shown = false
+  function showOnce (): void {
+    if (shown || win.isDestroyed()) return
+    shown = true
+    if (NO_FOCUS) {
+      // The one thing a real launch under a virtual display CAN check --
+      // there is no window manager there to take OS focus FROM, so
+      // isFocused() cannot tell showInactive() apart from show(). See
+      // test/e2e-window-no-focus.test.ts, which asserts this line runs
+      // instead. Do not remove as "stray debug output".
+      console.log('[window] ORIVON_WINDOW_NO_FOCUS=1 -- showInactive()')
+      win.showInactive()
+    } else {
+      win.show()
+    }
+    // Re-asserted after show, not just passed to the constructor. A window
+    // manager may shrink a window to the display's work area as it maps it,
+    // and a work area can be reported far smaller than the monitor (GNOME
+    // does this on a multi-monitor layout with mixed heights and vertical
+    // offsets). The constructor size loses that argument; a setBounds once
+    // the window is mapped is honoured. Harmless where the first size
+    // already stuck -- it sets what is already set.
+    win.setBounds(initialBounds)
+  }
+  ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
+    .once('ready-to-show', showOnce)
+  setTimeout(showOnce, 1000)
+}

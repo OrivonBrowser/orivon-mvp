@@ -3,10 +3,10 @@
 // the panel's own webContents instead of the chrome view's: the panel's
 // WebContentsView never navigates anywhere else (no links, no address bar),
 // so an identity check is enough, the same reasoning ipc.ts's own header
-// gives for the chrome view. The panel is rebuilt on every open, so this is
-// registered and removed per open -- see permissions-panel.ts.
+// gives for the chrome view. The handler is registered on the panel's own
+// webContents, so it goes when the panel does -- see permissions-panel.ts.
 
-import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import { LIGHT_CLIENT_STATUS_CHANNEL, SETTINGS_COMMAND_CHANNEL } from '../channels.js'
 import type { LightClientView } from '../verifier/status-view.js'
 import type { AppPermissions, PermissionsController, SiteNotificationRow, SiteNotificationsController } from '../permissions/permissions.js'
@@ -54,7 +54,9 @@ export function registerSettingsIpc (
   const unsubscribe = lightClient?.subscribe(() => {
     if (!settingsWebContents.isDestroyed()) settingsWebContents.send(LIGHT_CLIENT_STATUS_CHANNEL, lightClient.view())
   })
-  ipcMain.handle(SETTINGS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: SettingsCommand): void | readonly SiteNotificationRow[] | LightClientView | null | Promise<void | readonly AppPermissions[]> => {
+  // On the panel's own webContents: the handler goes with it, and two windows
+  // can each have one open.
+  settingsWebContents.ipc.handle(SETTINGS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: SettingsCommand): void | readonly SiteNotificationRow[] | LightClientView | null | Promise<void | readonly AppPermissions[]> => {
     if (!isFromSettingsWindow(event, settingsWebContents)) return
 
     switch (command.type) {

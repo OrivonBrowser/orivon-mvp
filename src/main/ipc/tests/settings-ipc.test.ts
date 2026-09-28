@@ -10,19 +10,12 @@ import type { PermissionsController, SiteNotificationsController } from '../../p
 
 const handlers = new Map<string, (event: unknown, command: unknown) => unknown>()
 
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: vi.fn((channel: string, fn: (event: unknown, command: unknown) => unknown) => {
-      handlers.set(channel, fn)
-    })
-  }
-}))
-
 const { registerSettingsIpc } = await import('../settings-ipc.js')
 const { SETTINGS_COMMAND_CHANNEL } = await import('../../channels.js')
 
 const SETTINGS_FRAME = {}
-const settingsWebContents = { mainFrame: SETTINGS_FRAME } as unknown as import('electron').WebContents
+// The handler is registered on the panel's own webContents.
+const settingsWebContents = { mainFrame: SETTINGS_FRAME, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
 const OTHER_FRAME = {}
 
 function fakePermissions (overrides: Partial<PermissionsController> = {}): PermissionsController {
@@ -123,7 +116,7 @@ describe('registerSettingsIpc: the light client section', () => {
 
   it('pushes each change while open, and stops once the returned cleanup runs', async () => {
     const send = vi.fn()
-    const contents = { mainFrame: SETTINGS_FRAME, isDestroyed: () => false, send } as unknown as import('electron').WebContents
+    const contents = { mainFrame: SETTINGS_FRAME, isDestroyed: () => false, send, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
     let listener: (() => void) | undefined
     const cleanup = registerSettingsIpc(contents, fakePermissions(), () => {}, undefined, {
       view: () => VIEW,

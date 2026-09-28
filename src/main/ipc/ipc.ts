@@ -13,7 +13,7 @@
 // reference. Checked synchronously at the top of the handler, per
 // Electron's own warning that a WebFrameMain reference can go stale after
 // an await.
-import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL } from '../channels.js'
 import type { TabManager } from '../shell/tabs.js'
@@ -25,6 +25,8 @@ import type { SiteInfoPage } from '../permissions/site-info-panel.js'
 
 export type ShellCommand =
   | { type: 'newTab'; url?: string }
+  /** Another shell window in this process, on the same profile. */
+  | { type: 'newWindow' }
   | { type: 'closeTab'; id: string }
   | { type: 'activateTab'; id: string }
   | { type: 'navigate'; id: string; input: string }
@@ -82,9 +84,14 @@ export function registerShellIpc (
   bookmarks: BookmarkStore,
   siteInfo: SiteInfoController,
   openSettings: (anchor: PanelAnchor, url?: string) => void,
-  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
+  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void,
+  openWindow: () => void
 ): void {
-  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | Web3Score | null> => {
+  // On the chrome view's own webContents rather than the process-wide
+  // ipcMain: a second window registers its own without colliding, and the
+  // handler goes with the view. The frame check below stays: a webContents'
+  // handlers hear every frame in it.
+  chromeWebContents.ipc.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | Web3Score | null> => {
     if (!isFromChrome(event, chromeWebContents)) {
       // Not the chrome view's top frame -- refuse silently rather than
       // throwing a message back that confirms the channel exists.
@@ -94,6 +101,9 @@ export function registerShellIpc (
     switch (command.type) {
       case 'newTab':
         tabs.createTab(command.url)
+        return
+      case 'newWindow':
+        openWindow()
         return
       case 'closeTab':
         tabs.closeTab(command.id)

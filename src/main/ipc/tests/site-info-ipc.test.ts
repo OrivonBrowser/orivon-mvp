@@ -13,14 +13,6 @@ import type { SiteInfo } from '../../permissions/site-info.js'
 
 const handlers = new Map<string, (event: unknown, command: unknown) => unknown>()
 
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: vi.fn((channel: string, fn: (event: unknown, command: unknown) => unknown) => {
-      handlers.set(channel, fn)
-    })
-  }
-}))
-
 vi.mock('../../permissions/site-data-runner.js', () => ({
   orivonStorageFor: vi.fn(async () => ({ filesBytes: 10, filesQuotaBytes: 20, codeBytes: 30, codeVersion: '1.0.0' })),
   cookieCountFor: vi.fn(async () => 2),
@@ -31,7 +23,8 @@ const { registerSiteInfoIpc } = await import('../site-info-ipc.js')
 const { SITE_INFO_COMMAND_CHANNEL } = await import('../../channels.js')
 
 const SITE_INFO_FRAME = {}
-const siteInfoWebContents = { mainFrame: SITE_INFO_FRAME } as unknown as import('electron').WebContents
+// The handler is registered on the popup's own webContents.
+const siteInfoWebContents = { mainFrame: SITE_INFO_FRAME, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
 const OTHER_FRAME = {}
 const ORIGIN = 'https://app.example'
 

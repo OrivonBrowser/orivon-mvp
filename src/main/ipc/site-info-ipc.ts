@@ -10,7 +10,7 @@
 // before creating the popup, itself from the active tab, never from
 // anything the popup's own page could claim about itself.
 
-import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import { SITE_INFO_COMMAND_CHANNEL } from '../channels.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { SiteInfo } from '../permissions/site-info.js'
@@ -90,7 +90,9 @@ export function registerSiteInfoIpc (
   openAllSites: () => void,
   onContentHeight: (height: number) => void = () => {}
 ): void {
-  ipcMain.handle(SITE_INFO_COMMAND_CHANNEL, async (
+  // On the popup's own webContents: the handler goes with it, and two windows
+  // can each have one open.
+  siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
   ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult> => {

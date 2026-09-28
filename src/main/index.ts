@@ -1,5 +1,7 @@
 import { app, BaseWindow, dialog } from 'electron'
-import { createShellWindow } from './shell/window.js'
+import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
+import { createShellServices } from './shell/shell-services.js'
+import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { BookmarkStore } from './browsing/bookmarks.js'
@@ -73,9 +75,11 @@ void app.whenReady().then(async () => {
 
   // Only this first window can open on the welcome screen: the macOS
   // 'activate' below recreates a window in a process that has already shown it.
-  createShellWindow(ctx, await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')))
+  const shell = createShellServices(app.getPath('userData'))
+  registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
+  createShellWindow(ctx, shell, await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')))
   app.on('activate', () => {
-    if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx)
+    if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
   })
 })
 

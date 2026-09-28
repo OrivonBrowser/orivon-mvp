@@ -8,8 +8,7 @@
 // popover (./site-info-panel.js); this file owns only the grant-list
 // content on top of it.
 
-import { ipcMain, type BaseWindow, type View } from 'electron'
-import { SETTINGS_COMMAND_CHANNEL } from '../channels.js'
+import type { BaseWindow, View } from 'electron'
 import type { PermissionsController, SiteNotificationsController } from './permissions.js'
 import { registerSettingsIpc } from '../ipc/settings-ipc.js'
 import { createPopoverView } from './popover-view.js'
@@ -41,11 +40,7 @@ export function createPermissionsPanel (
     urlArgName: 'orivon-settings-url',
     align: 'right',
     registerIpc: (webContents, onContentHeight) => {
-      const unsubscribe = registerSettingsIpc(webContents, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange })
-      return () => {
-        unsubscribe()
-        ipcMain.removeHandler(SETTINGS_COMMAND_CHANNEL)
-      }
+      return registerSettingsIpc(webContents, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange })
     }
   })
 

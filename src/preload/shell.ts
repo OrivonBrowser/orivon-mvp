@@ -28,6 +28,7 @@ async function request<T> (command: ShellCommand): Promise<T> {
 
 contextBridge.exposeInMainWorld('orivonShell', {
   newTab: (url?: string) => { send(url === undefined ? { type: 'newTab' } : { type: 'newTab', url }) },
+  newWindow: () => { send({ type: 'newWindow' }) },
   closeTab: (id: string) => { send({ type: 'closeTab', id }) },
   activateTab: (id: string) => { send({ type: 'activateTab', id }) },
   navigate: (id: string, input: string) => { send({ type: 'navigate', id, input }) },

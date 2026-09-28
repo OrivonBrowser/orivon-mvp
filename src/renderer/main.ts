@@ -16,6 +16,7 @@ type PopoverAnchor = { x: number, y: number, width: number, height: number }
 
 interface OrivonShell {
   newTab: (url?: string) => void
+  newWindow: () => void
   closeTab: (id: string) => void
   activateTab: (id: string) => void
   navigate: (id: string, input: string) => void
