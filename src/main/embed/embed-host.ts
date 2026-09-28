@@ -13,7 +13,7 @@ import type { Session, WebContents } from 'electron'
 import { join } from 'node:path'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { embedPartitionFor, guestRequestAllowed, hardenGuest } from './embed-guard.js'
+import { embedPartitionFor, guestRequestAllowedAsync, hardenGuest } from './embed-guard.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 
 export interface EmbedHost {
@@ -52,6 +52,21 @@ function dequeueEmbedderOrigin (embedder: WebContents): string | undefined {
 }
 
 /**
+ * `embedSession`'s own resolver, wrapped to `guestRequestAllowedAsync`'s
+ * `resolve` shape -- the C-7/A286 fix's whole point. Resolving through
+ * THIS SPECIFIC session, not `net.resolveHost`/`dns`, is what shares
+ * Chromium's host cache with the load `onBeforeRequest` is about to admit
+ * or refuse: the same name, asked again moments later to actually connect,
+ * answers from that same cache rather than re-querying DNS a second time.
+ */
+function resolveViaSession (embedSession: Session): (host: string) => Promise<readonly string[]> {
+  return async (host) => {
+    const resolved = await embedSession.resolveHost(host)
+    return resolved.endpoints.map((endpoint) => endpoint.address)
+  }
+}
+
+/**
  * Wires one embed partition's session, once per process: no downloads, and
  * every document request judged against the app's LIVE grant, read fresh
  * per request so a revoke or a narrowed re-consent reaches the next load.
@@ -60,8 +75,14 @@ function dequeueEmbedderOrigin (embedder: WebContents): string | undefined {
  */
 function configureEmbedSession (embedSession: Session, appOrigin: string, broker: Broker): void {
   embedSession.on('will-download', (event) => { event.preventDefault() })
+  const resolve = resolveViaSession(embedSession)
   embedSession.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: !guestRequestAllowed(details.url, details.resourceType, broker.embed.originsSync(appOrigin)) })
+    guestRequestAllowedAsync(details.url, details.resourceType, broker.embed.originsSync(appOrigin), resolve)
+      .then((allowed) => { callback({ cancel: !allowed }) })
+      // guestRequestAllowedAsync never itself rejects (it catches `resolve`
+      // failing), but a callback Electron waits on must never go uncalled
+      // regardless -- fail closed the same way every refusal here does.
+      .catch(() => { callback({ cancel: true }) })
   })
 }
 

@@ -11,13 +11,32 @@ import type { Broker } from '../../../broker/broker-contracts.js'
 const fakeApp = Object.assign(new EventEmitter(), {})
 fakeApp.setMaxListeners(0)
 
-function fakeSession (): { on: ReturnType<typeof vi.fn>, webRequest: { onBeforeRequest: ReturnType<typeof vi.fn> } } {
-  return { on: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
+interface FakeSession {
+  on: ReturnType<typeof vi.fn>
+  webRequest: { onBeforeRequest: ReturnType<typeof vi.fn> }
+  resolveHost: ReturnType<typeof vi.fn>
+}
+
+/** Keyed by partition string, the way the real `session.fromPartition` reuses one Session per partition -- lets a test retrieve the exact fake session `configureEmbedSession` wired. */
+const sessionsByPartition = new Map<string, FakeSession>()
+
+function fakeSession (): FakeSession {
+  return {
+    on: vi.fn(),
+    webRequest: { onBeforeRequest: vi.fn() },
+    resolveHost: vi.fn(async () => ({ endpoints: [] }))
+  }
 }
 
 vi.mock('electron', () => ({
   app: fakeApp,
-  session: { fromPartition: vi.fn(() => fakeSession()) }
+  session: {
+    fromPartition: vi.fn((partition: string) => {
+      let s = sessionsByPartition.get(partition)
+      if (s === undefined) { s = fakeSession(); sessionsByPartition.set(partition, s) }
+      return s
+    })
+  }
 }))
 
 const { installEmbedHost } = await import('../embed-host.js')
@@ -49,7 +68,10 @@ describe('installEmbedHost -- the embedder origin captured at will-attach-webvie
   // fakeApp is one EventEmitter shared by the whole file (vi.mock runs
   // once); each test's own installEmbedHost() call must not leave its
   // 'web-contents-created' listener wired for the NEXT test's embedder.
-  beforeEach(() => { fakeApp.removeAllListeners() })
+  beforeEach(() => {
+    fakeApp.removeAllListeners()
+    sessionsByPartition.clear()
+  })
 
   it('attaches the guest under the origin admitted at will-attach-webview, even if the embedder navigates before did-attach-webview fires', () => {
     const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
@@ -108,5 +130,84 @@ describe('installEmbedHost -- the embedder origin captured at will-attach-webvie
     expect(attach.mock.calls.map((call) => call[0])).toEqual([ORIGIN_A, ORIGIN_A])
     expect(host.ownerOf(1)).toBe(ORIGIN_A)
     expect(host.ownerOf(2)).toBe(ORIGIN_A)
+  })
+})
+
+// C-7/A286: configureEmbedSession wires the guest session's OWN resolveHost
+// into guestRequestAllowedAsync (embed-guard.test.ts covers that function's
+// own decisions in isolation) -- this checks the WIRING: that resolveHost
+// is the one actually asked, that its `endpoints[].address` shape is read
+// correctly, and that onBeforeRequest's callback receives `cancel` built
+// from the async verdict rather than a synchronous one.
+describe('configureEmbedSession -- onBeforeRequest resolves through the guest session before admitting a "*" document', () => {
+  beforeEach(() => {
+    fakeApp.removeAllListeners()
+    sessionsByPartition.clear()
+  })
+
+  function attachAndGetSession (appOrigin: string): FakeSession {
+    const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
+    const broker = fakeBroker(new Set([appOrigin]), attach)
+    installEmbedHost(broker, '/preload/embed.js')
+    const embedder = fakeEmbedder(`${appOrigin}/tab`)
+    fakeApp.emit('web-contents-created', {}, embedder)
+    embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    // Exactly one session gets configured for this run.
+    const [session] = sessionsByPartition.values()
+    if (session === undefined) throw new Error('no session was configured')
+    return session
+  }
+
+  it('refuses a document whose host resolves (through THIS session) to a private address', async () => {
+    const session = attachAndGetSession(ORIGIN_A)
+    session.resolveHost.mockImplementation(async () => ({ endpoints: [{ address: '192.168.1.1', family: 'ipv4' }] }))
+    const onBeforeRequest = session.webRequest.onBeforeRequest.mock.calls[0]?.[0] as
+      (details: { url: string, resourceType: string }, callback: (r: { cancel: boolean }) => void) => void
+
+    const callback = vi.fn()
+    onBeforeRequest({ url: 'https://attacker.example/', resourceType: 'mainFrame' }, callback)
+    await new Promise((resolve) => { setImmediate(resolve) })
+
+    expect(session.resolveHost).toHaveBeenCalledWith('attacker.example')
+    expect(callback).toHaveBeenCalledWith({ cancel: true })
+  })
+
+  it('allows a document whose host resolves (through THIS session) to only public addresses', async () => {
+    const session = attachAndGetSession(ORIGIN_A)
+    session.resolveHost.mockImplementation(async () => ({ endpoints: [{ address: '93.184.216.34', family: 'ipv4' }] }))
+    const onBeforeRequest = session.webRequest.onBeforeRequest.mock.calls[0]?.[0] as
+      (details: { url: string, resourceType: string }, callback: (r: { cancel: boolean }) => void) => void
+
+    const callback = vi.fn()
+    onBeforeRequest({ url: 'https://good.example/', resourceType: 'mainFrame' }, callback)
+    await new Promise((resolve) => { setImmediate(resolve) })
+
+    expect(callback).toHaveBeenCalledWith({ cancel: false })
+  })
+
+  it('never calls resolveHost for a subresource, or when the grant is gone', async () => {
+    const session = attachAndGetSession(ORIGIN_A)
+    const onBeforeRequest = session.webRequest.onBeforeRequest.mock.calls[0]?.[0] as
+      (details: { url: string, resourceType: string }, callback: (r: { cancel: boolean }) => void) => void
+
+    const subresource = vi.fn()
+    onBeforeRequest({ url: 'https://cdn.example/lib.js', resourceType: 'script' }, subresource)
+    await new Promise((resolve) => { setImmediate(resolve) })
+
+    expect(session.resolveHost).not.toHaveBeenCalled()
+    expect(subresource).toHaveBeenCalledWith({ cancel: false })
+  })
+
+  it('cancels rather than leaving the callback uncalled when resolveHost itself rejects', async () => {
+    const session = attachAndGetSession(ORIGIN_A)
+    session.resolveHost.mockImplementation(async () => { throw new Error('DNS failed') })
+    const onBeforeRequest = session.webRequest.onBeforeRequest.mock.calls[0]?.[0] as
+      (details: { url: string, resourceType: string }, callback: (r: { cancel: boolean }) => void) => void
+
+    const callback = vi.fn()
+    onBeforeRequest({ url: 'https://attacker.example/', resourceType: 'mainFrame' }, callback)
+    await new Promise((resolve) => { setImmediate(resolve) })
+
+    expect(callback).toHaveBeenCalledWith({ cancel: true })
   })
 })

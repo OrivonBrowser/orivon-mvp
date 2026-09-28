@@ -1325,6 +1325,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
+### A286: A TTL-0 name can still rebind between the embed check and the connection **[OWNER]**
+
+- **Question:** A `"*"`-admitted document whose host is a name is resolved through the guest
+  session's own `resolveHost`, refused unless every address is public unicast. A name that
+  answers differently once Chromium actually connects still reaches it.
+- **Why it matters:** the same class of residual A196 accepts for `connectSecure`'s own wildcard
+  -- sharing the guest session's host cache narrows the window, it does not close it, since no
+  cancellable webRequest event carries the connected address.
+- **Options:** accept the residual, narrowed as it is (rec.); close it fully only if Electron
+  exposes a cancellable event carrying the connected address.
+- **Who decides:** owner
+- **Blocks:** nothing
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared
