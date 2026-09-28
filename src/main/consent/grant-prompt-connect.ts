@@ -154,22 +154,19 @@ function portsListPhrase (specs: readonly string[]): string {
   return portsPhrase(unique)
 }
 
-// A133, CORRECTED: a real 12-host feed-reader manifest tripped the first
-// version of this threshold (10 OTHER hosts, chosen by a single-digit vs
-// double-digit reading of English) -- proof the number was wrong, not just
-// unproven, since twelve individually-named feeds is a narrow declaration
-// by any sensible reading, not a breadth risk. Re-anchored on something a
-// count of hosts can actually be compared against: `MAX_PATTERNS`, the real,
-// already-enforced ceiling on how many patterns ONE capability's array may
-// declare at all (loader/manifest/capabilities.ts). This fires only once a
-// manifest names at least HALF of the hosts the format permits it to name
-// -- comfortably above any curated, human-reviewable list (a feed reader,
-// a CDN allowlist), and close enough to the format's own maximum that
-// naming individual hosts has stopped being a meaningfully narrower
-// declaration than not naming any. Presentation, not policy -- retune
-// freely; see this directory's README, Design notes, for the full
-// before/after and why a fraction of the real ceiling replaced the
-// original digit-count reasoning rather than just picking a bigger guess.
+// A133: anchored on something a count of hosts can actually be compared
+// against -- `MAX_PATTERNS`, the real, already-enforced ceiling on how many
+// patterns ONE capability's array may declare at all
+// (loader/manifest/capabilities.ts) -- rather than a guessed digit count: a
+// real 12-host feed-reader manifest is a narrow declaration by any sensible
+// reading, not a breadth risk, so the threshold must sit well above it. This
+// fires only once a manifest names at least HALF of the hosts the format
+// permits it to name -- comfortably above any curated, human-reviewable
+// list (a feed reader, a CDN allowlist), and close enough to the format's
+// own maximum that naming individual hosts has stopped being a meaningfully
+// narrower declaration than not naming any. Presentation, not policy --
+// retune freely; see this directory's README, Design notes, for the full
+// reasoning.
 const MANY_HOSTS_THRESHOLD = MAX_PATTERNS / 2
 
 // Matches the owner's own example register ("Connect to youtube.com and 3

@@ -9,8 +9,7 @@
 // what keeps app-install.ts's own logic testable under plain vitest with
 // no real dialog.
 //
-// manifest-hint.ts (S4-2) is now the real production caller of
-// ctx.installApp -- corrected here since S4-5 touched this file anyway;
+// manifest-hint.ts (S4-2) is the real production caller of ctx.installApp;
 // see docs/open-questions.md A146 for the one gap that caller still has.
 
 import { net } from 'electron'
