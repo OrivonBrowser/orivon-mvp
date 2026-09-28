@@ -42,7 +42,7 @@ function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoCon
 
 
 function actions (overrides: Partial<ShellActions> = {}): ShellActions {
-  return { openPermissions: vi.fn(), openSiteInfo: vi.fn(), runCommand: vi.fn(), openMenu: vi.fn(), dropTab: vi.fn(), showTabMenu: vi.fn(), ...overrides }
+  return { openPermissions: vi.fn(), openSiteInfo: vi.fn(), runCommand: vi.fn(), openMenu: vi.fn(), dragTab: vi.fn(), dropTab: vi.fn(), showTabMenu: vi.fn(), ...overrides }
 }
 
 function dispatch (command: unknown, senderFrame: unknown = CHROME_FRAME): unknown {
@@ -236,14 +236,30 @@ describe('registerShellIpc -- moving tabs', () => {
     const showTabMenu = vi.fn()
     registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ dropTab, showTabMenu }))
 
+    await dispatch({ type: 'dropTab', id: 'tab-1', x: 100, y: 200, clientX: 10, clientY: 20 })
+    await dispatch({ type: 'dropTab', id: 'tab-1', x: 'left', y: 200, clientX: 10, clientY: 20 })
     await dispatch({ type: 'dropTab', id: 'tab-1', x: 100, y: 200 })
-    await dispatch({ type: 'dropTab', id: 'tab-1', x: 'left', y: 200 })
-    await dispatch({ type: 'dropTab', id: 'tab-1', x: 100, y: 200 }, OTHER_FRAME)
+    await dispatch({ type: 'dropTab', id: 'tab-1', x: 100, y: 200, clientX: 10, clientY: 20 }, OTHER_FRAME)
     await dispatch({ type: 'tabMenu', id: 'tab-3' })
     await dispatch({ type: 'tabMenu', id: 3 })
     await dispatch({ type: 'tabMenu', id: 'tab-3' }, OTHER_FRAME)
 
-    expect(dropTab.mock.calls).toEqual([['tab-1', { x: 100, y: 200 }]])
+    expect(dropTab.mock.calls).toEqual([['tab-1', { x: 100, y: 200 }, { x: 10, y: 20 }]])
     expect(showTabMenu.mock.calls).toEqual([['tab-3']])
+  })
+})
+
+describe('registerShellIpc -- dragging a tab over the page', () => {
+  it('reports where it is, and that it is back in the strip when there is no place', async () => {
+    const dragTab = vi.fn()
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ dragTab }))
+
+    await dispatch({ type: 'dragTab', id: 'tab-1', x: 300, y: 400 })
+    await dispatch({ type: 'dragTab', id: 'tab-1' })
+    await dispatch({ type: 'dragTab', id: 'tab-1', x: 'far', y: 400 })
+    await dispatch({ type: 'dragTab', id: 4, x: 1, y: 2 })
+    await dispatch({ type: 'dragTab', id: 'tab-1', x: 1, y: 2 }, OTHER_FRAME)
+
+    expect(dragTab.mock.calls).toEqual([['tab-1', { x: 300, y: 400 }], ['tab-1', null], ['tab-1', null]])
   })
 })

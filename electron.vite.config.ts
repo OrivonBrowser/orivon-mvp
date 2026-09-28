@@ -145,6 +145,7 @@ export default defineConfig({
           internal: resolve(root, 'src/preload/internal.ts'),
           'site-info': resolve(root, 'src/preload/site-info.ts'),
           menu: resolve(root, 'src/preload/menu.ts'),
+          'split-frame': resolve(root, 'src/preload/split-frame.ts'),
           embed: resolve(root, 'src/preload/embed.ts')
         }
       },
@@ -197,7 +198,8 @@ export default defineConfig({
           'page-settings': resolve(root, 'src/renderer/pages/settings/index.html'),
           'page-history': resolve(root, 'src/renderer/pages/history/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),
-          menu: resolve(root, 'src/renderer/menu/index.html')
+          menu: resolve(root, 'src/renderer/menu/index.html'),
+          'split-frame': resolve(root, 'src/renderer/split-frame/index.html')
         }
       }
     },

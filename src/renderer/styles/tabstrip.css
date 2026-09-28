@@ -34,6 +34,11 @@
 /* The tab under the pointer during a drag: above its neighbours, and dimmed once letting go would take it out of the strip. */
 .tab.dragging { z-index: 2; opacity: 0.92; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); transition: none; }
 .tab.dragging.torn { opacity: 0.5; }
+/* Two tabs in a split are one pill: the same height, no gap between, and a hairline where they meet. The pane the person is in is the lit one. */
+.tab.joined { background: color-mix(in srgb, var(--wink) 9%, transparent); }
+.tab.joined.active { background: var(--wsurface); }
+.tab.joined-first { margin-right: 0; border-top-right-radius: 0; }
+.tab.joined-second { margin-left: 0; border-top-left-radius: 0; box-shadow: inset 1px 0 0 color-mix(in srgb, var(--wink) 16%, transparent); }
 .tab:hover:not(.active) {
   background: color-mix(in srgb, var(--wink) 6%, transparent);
 }

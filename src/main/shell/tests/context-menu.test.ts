@@ -94,6 +94,19 @@ describe('contextMenuTemplate -- what a right-click in a tab offers', () => {
     expect(a.copyImageAt).toHaveBeenCalledWith(10, 20)
   })
 
+  it('offers a link in a split view only where a split is offered, and only for a link a tab could load', () => {
+    const link = params({ linkURL: 'https://example.com/page' })
+    expect(labels(contextMenuTemplate(link, actions(), false))).not.toContain('Open Link in Split View')
+
+    const withSplit = { ...actions(), openInSplit: vi.fn() }
+    const template = contextMenuTemplate(link, withSplit, false)
+    expect(labels(template)).toContain('Open Link in Split View')
+    click(template, 'Open Link in Split View')
+    expect(withSplit.openInSplit).toHaveBeenCalledWith('https://example.com/page')
+
+    expect(labels(contextMenuTemplate(params({ linkURL: 'javascript:alert(1)' }), withSplit, false))).not.toContain('Open Link in Split View')
+  })
+
   it('offers Inspect Element only where developer tools are allowed', () => {
     const plain = params({ editFlags: { ...NO_EDIT, canSelectAll: true } })
     expect(labels(contextMenuTemplate(plain, actions(), false))).not.toContain('Inspect Element')

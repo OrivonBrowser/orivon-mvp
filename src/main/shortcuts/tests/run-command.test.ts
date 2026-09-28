@@ -11,7 +11,7 @@ interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInt
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, ...extra })
 
 function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
-  const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab'].map((name) => [name, vi.fn()]))
+  const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab', 'toggle', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
@@ -20,6 +20,7 @@ function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindo
     tabs: {
       getState: () => ({ tabs, activeTabId }),
       tabCount: tabs.length,
+      splits: { toggle: calls['toggle'], focusOther: calls['focusOther'], swap: calls['swap'], rotate: calls['rotate'] },
       faviconFor: () => 'data:icon',
       activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'] }),
       ...calls
@@ -170,5 +171,18 @@ describe('runCommand', () => {
     const alone = harness([tab('a')], 'a')
     runCommand('tab.moveToNewWindow', alone.target, alone.deps)
     expect(alone.deps.openWindow).not.toHaveBeenCalled()
+  })
+
+  it('works the split of the active tab', () => {
+    const { target, calls, deps } = harness([tab('a'), tab('b')], 'b')
+    runCommand('split.toggle', target, deps)
+    runCommand('split.focusOther', target, deps)
+    runCommand('split.swap', target, deps)
+    runCommand('split.rotate', target, deps)
+    for (const name of ['toggle', 'focusOther', 'swap', 'rotate']) expect(calls[name]).toHaveBeenCalledExactlyOnceWith('b')
+
+    const none = harness([], null)
+    for (const id of ['split.toggle', 'split.focusOther', 'split.swap', 'split.rotate'] as const) runCommand(id, none.target, none.deps)
+    for (const name of ['toggle', 'focusOther', 'swap', 'rotate']) expect(none.calls[name]).not.toHaveBeenCalled()
   })
 })

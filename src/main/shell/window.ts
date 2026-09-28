@@ -22,6 +22,7 @@ import { createPermissionsPanel } from '../permissions/permissions-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
 import { createMenuPanel } from './menu-panel.js'
 import { shellActions } from './window-actions.js'
+import { SplitFrame } from './split-frame.js'
 import type { SiteInfoMemory } from './window-actions.js'
 import type { ShellWindow } from './window-registry.js'
 import { HtmlFullscreen } from './fullscreen.js'
@@ -169,12 +170,19 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     else closeWindow()
   }
 
+  // Drawn behind the two panes of a split; made only when a window first splits.
+  const splitFrame = new SplitFrame({
+    dragTo: (at) => { const id = tabs.getState().activeTabId; if (id !== null) tabs.splits.dragTo(id, at) },
+    reset: () => { const id = tabs.getState().activeTabId; if (id !== null) tabs.splits.resetRatio(id) }
+  }, import.meta.dirname)
+
   const tabs = new TabManager(win.contentView, tabBounds, lastTabClosed, dashboardUrl, ctx, {
     window: win,
     htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) },
     searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query),
     internalPages: services.internalPages,
-    devtools: services.devtools
+    devtools: services.devtools,
+    backdrop: splitFrame
   })
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one
@@ -336,7 +344,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     panels: { permissions: permissionsPanel, siteInfo: siteInfoPanel, menu: menuPanel },
     memory: siteInfoMemory,
     openWindow: (options) => { createShellWindow(ctx, services, options) },
-    topHeight: CHROME_TOP_ROWS
+    topHeight: CHROME_TOP_ROWS,
+    area: tabBounds
   }))
   const forgetWindow = services.windows.add(entry)
   win.on('close', () => { tabs.dispose() })
@@ -348,6 +357,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     permissionsPanel.close()
     siteInfoPanel.close()
     menuPanel.close()
+    splitFrame.dispose()
     // Destroying a window leaves its views' renderers running: the chrome
     // view's is closed here, as the tabs' are by `dispose`.
     if (!chrome.webContents.isDestroyed()) chrome.webContents.close()

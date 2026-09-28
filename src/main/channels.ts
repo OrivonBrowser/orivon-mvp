@@ -96,5 +96,11 @@ export const INTERNAL_COMMAND_CHANNEL = 'orivon-internal:command'
 /** The main menu popover's own WebContentsView -> main: what it lists, and which entry was chosen. See ./ipc/menu-ipc.ts. */
 export const MENU_COMMAND_CHANNEL = 'orivon-menu:command'
 
+/** The split backdrop's own view -> main: the divider being dragged or reset. See ./shell/split-frame.ts. */
+export const SPLIT_FRAME_CHANNEL = 'orivon-split:command'
+
+/** Main -> the split backdrop: what to draw. */
+export const SPLIT_STATE_CHANNEL = 'orivon-split:state'
+
 /** Main -> an internal page: `{ topic, payload }`, for changes made elsewhere while the page is open. */
 export const INTERNAL_EVENT_CHANNEL = 'orivon-internal:event'

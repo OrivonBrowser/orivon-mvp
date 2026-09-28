@@ -1,6 +1,6 @@
 # `src/renderer/`: the browser chrome UI
 
-**What lives here.** Seven entries, all plain vanilla-TS pages, no framework. The main one is the
+**What lives here.** Eight entries, all plain vanilla-TS pages, no framework. The main one is the
 chrome view: three rows, rendered in a dedicated `WebContentsView` above the active tab: the
 tab strip (sharing its row with Electron's native window buttons), the toolbar (navigation, the
 bookmark toggle, the omnibox, a right-hand icon cluster), and the bookmarks bar. Its look follows
@@ -10,6 +10,7 @@ chrome view at all; see `src/main/shell/tabs.ts`'s `createTab()`. [`permissions/
 [`site-info/`](site-info/) and [`menu/`](menu/) are the three toolbar popups (`src/main/permissions/popover-view.ts`):
 the all-sites permissions list, the per-site popover (a connection row, this site's own
 capability switches, its Web3 Score page, its Cookies and site data page), and the main menu.
+[`split-frame/`](split-frame/) is the view behind the two panes of a split.
 [`pages/`](pages/) holds the shell's own pages, each a tab of its own (Settings so far). [`intro/`](intro/) is
 the welcome screen, a full-window view over the shell on a launch that opens on it
 (`src/main/shell/intro-view.ts`).
@@ -34,6 +35,7 @@ the welcome screen, a full-window view over the shell on a launch that opens on 
 | `permissions/index.html`, `permissions/main.ts`, `permissions/permissions-view.ts`, `permissions/style.css` | The all-sites popup: every app, all its grants, revoke-only |
 | `pages/shared/` (`tokens.css`, `controls.css`, `dom.ts`, `bridge.ts`) | What every shell page shares: the design tokens, buttons and choices, a small typed element builder, and the typed line to main |
 | `pages/settings/` (`index.html`, `main.ts`, `state.ts`, `shortcuts-state.ts`, `privacy-state.ts`, `clear-data.ts`, `model.ts`, `rows.ts`, `search.ts`, `router.ts`, `style.css`, `sections/`) | The Settings page, served at `orivon://settings`: a list of sections, one section's rows, search, and a deep link per section. A section is data (rows with a label, help, keywords and a control), so the page draws it and search reads it from the same rows |
+| `split-frame/index.html`, `split-frame/main.ts`, `split-frame/style.css` | The backdrop of a split: the divider (the gap between the panes, which the pointer grabs), the ring round the pane in use, and the place a dragged tab would go |
 | `menu/index.html`, `menu/main.ts`, `menu/style.css` | The main menu popup: the commands under the menu button, each with its keys |
 | `pages/history/` (`index.html`, `main.ts`, `days.ts`, `style.css`) | The History page, served at `orivon://history`: the pages visited under a heading for each day, a search, and a button to remove one page or all |
 | `site-info/index.html`, `site-info/main.ts`, `site-info/main-view.ts`, `site-info/web3-view.ts`, `site-info/data-view.ts`, `site-info/switch.ts`, `site-info/icons.ts`, `site-info/style.css` | The per-site popup: a client-side router over three pages, each its own render function |

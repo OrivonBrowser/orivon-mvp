@@ -12,6 +12,8 @@ export interface ContextMenuActions {
   selectAll: () => void
   copyText: (text: string) => void
   openInNewTab: (url: string) => void
+  /** Absent where a split is not offered. */
+  openInSplit?: (url: string) => void
   copyImageAt: (x: number, y: number) => void
   inspectAt: (x: number, y: number) => void
 }
@@ -42,7 +44,11 @@ export function contextMenuTemplate (params: MenuParams, actions: ContextMenuAct
     const link: MenuItemConstructorOptions[] = []
     // Only what a fresh tab can load: the same check window.open targets get.
     const openable = sanitizeDirectUrl(params.linkURL)
-    if (openable !== null) link.push({ label: 'Open Link in New Tab', click: () => { actions.openInNewTab(openable) } })
+    if (openable !== null) {
+      link.push({ label: 'Open Link in New Tab', click: () => { actions.openInNewTab(openable) } })
+      const inSplit = actions.openInSplit
+      if (inSplit !== undefined) link.push({ label: 'Open Link in Split View', click: () => { inSplit(openable) } })
+    }
     link.push({ label: 'Copy Link Address', click: () => { actions.copyText(params.linkURL) } })
     groups.push(link)
   }
@@ -60,6 +66,7 @@ export function contextMenuTemplate (params: MenuParams, actions: ContextMenuAct
 export interface ContextMenuHost {
   readonly window: BaseWindow
   openInNewTab: (url: string) => void
+  openInSplit?: (url: string) => void
   /** Opens developer tools at a point of the page. Absent where they are not allowed: the menu then has no Inspect. */
   readonly inspect?: (x: number, y: number) => void
 }
@@ -75,6 +82,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     selectAll: onTab(() => { wc.selectAll() }),
     copyText: (text) => { clipboard.writeText(text) },
     openInNewTab: host.openInNewTab,
+    ...(host.openInSplit === undefined ? {} : { openInSplit: host.openInSplit }),
     copyImageAt: (x, y) => { onTab(() => { wc.copyImageAt(x, y) })() },
     inspectAt: (x, y) => { onTab(() => { host.inspect?.(x, y) })() }
   }, host.inspect !== undefined)

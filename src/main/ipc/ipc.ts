@@ -81,8 +81,10 @@ export type ShellCommand =
   | { type: 'openMenu'; anchor: PanelAnchor }
   /** Puts a tab at a place in the strip. */
   | { type: 'moveTab'; id: string; index: number }
-  /** A tab was let go outside the strip, at this point of the screen: into another window's strip, or a window of its own. */
-  | { type: 'dropTab'; id: string; x: number; y: number }
+  /** A tab is being dragged, below the strip, at this point of the window (`x` and `y` absent: back in the strip). */
+  | { type: 'dragTab'; id: string; x?: number; y?: number }
+  /** A tab was let go outside the strip: `x`, `y` where on the screen, `clientX`, `clientY` where in this window. */
+  | { type: 'dropTab'; id: string; x: number; y: number; clientX: number; clientY: number }
   /** The right-click menu of a tab, which main shows (it lists the other windows). */
   | { type: 'tabMenu'; id: string }
 
@@ -97,7 +99,8 @@ export interface ShellActions {
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
   runCommand: (id: CommandId) => void
   openMenu: (anchor: PanelAnchor) => void
-  dropTab: (id: string, at: { x: number, y: number }) => void
+  dragTab: (id: string, at: { x: number, y: number } | null) => void
+  dropTab: (id: string, screen: { x: number, y: number }, client: { x: number, y: number }) => void
   showTabMenu: (id: string) => void
 }
 
@@ -185,8 +188,11 @@ export function registerShellIpc (
       case 'moveTab':
         if (typeof command.id === 'string' && Number.isFinite(command.index)) tabs.moveTab(command.id, command.index)
         return
+      case 'dragTab':
+        if (typeof command.id === 'string') actions.dragTab(command.id, Number.isFinite(command.x) && Number.isFinite(command.y) ? { x: command.x as number, y: command.y as number } : null)
+        return
       case 'dropTab':
-        if (typeof command.id === 'string' && Number.isFinite(command.x) && Number.isFinite(command.y)) actions.dropTab(command.id, { x: command.x, y: command.y })
+        if (typeof command.id === 'string' && [command.x, command.y, command.clientX, command.clientY].every(Number.isFinite)) actions.dropTab(command.id, { x: command.x, y: command.y }, { x: command.clientX, y: command.clientY })
         return
       case 'tabMenu':
         if (typeof command.id === 'string') actions.showTabMenu(command.id)

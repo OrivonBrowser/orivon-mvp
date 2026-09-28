@@ -145,7 +145,7 @@ it('moves a tab into another window when let go over its strip, and closes the w
       const bounds = older?.getBounds() ?? { x: 0, y: 0, width: 0, height: 0 }
       return { x: bounds.x + bounds.width / 2, y: bounds.y + 20 }
     })
-    await second.evaluate(([id, x, y]) => { (window as unknown as { orivonShell: { dropTab: (id: string, x: number, y: number) => void } }).orivonShell.dropTab(id as string, x as number, y as number) }, [travelling, point.x, point.y] as const)
+    await second.evaluate(([id, x, y]) => { (window as unknown as { orivonShell: { dropTab: (id: string, x: number, y: number, cx: number, cy: number) => void } }).orivonShell.dropTab(id as string, x as number, y as number, -50, -50) }, [travelling, point.x, point.y] as const)
 
     expect(await waitFor(async () => (await tabIds(first)).includes(travelling))).toBe(true)
     // The second window's only tab went, so the window went with it.
@@ -156,7 +156,7 @@ it('moves a tab into another window when let go over its strip, and closes the w
   }
 }, TEST_TIMEOUT_MS)
 
-it('takes a tab out into a window of its own when it is dragged well away from the strip', async () => {
+it('takes a tab out into a window of its own when it is dragged out of the window', async () => {
   const { app, chrome } = await launched()
   try {
     await openTabs(app, chrome, '/dragged')
@@ -165,7 +165,8 @@ it('takes a tab out into a window of its own when it is dragged well away from t
 
     await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await chrome.mouse.down()
-    await chrome.mouse.move(box.x + box.width / 2, box.y + 300, { steps: 10 })
+    // Beyond the window's own bottom edge: over the page it would only be a place to split.
+    await chrome.mouse.move(box.x + box.width / 2, box.y + 1500, { steps: 10 })
     await chrome.mouse.up()
 
     expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)

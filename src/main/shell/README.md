@@ -11,7 +11,12 @@ shell's own pages, a popup Chromium made). `tab-order.ts` is where a tab sits in
 `tab-move.ts` moves one between windows (keeping the same page: its view is taken out of one window
 and shown in another), `tab-menu.ts` is a tab's right-click menu, and `window-actions.ts` is what the
 chrome's buttons and menus ask of their window beyond the tab collection. `window-options.ts` says
-how a new window is to open (where, and with which tab). `renderer-entry.ts`
+how a new window is to open (where, and with which tab).
+
+Split view: `split-model.ts` is the arithmetic (two panes, the divider, which edge a drag is near) and
+the groups of joined tabs, `split-controller.ts` plans which views show where and works the strip, `pane-host.ts` puts
+the views on screen in that order, `split-frame.ts` is the view behind two panes (the divider and the
+ring round the pane in use), and `split-drop.ts` says where a dragged tab would split the page. `renderer-entry.ts`
 resolves electron-vite's dev-server/file-URL split for both this and
 [`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts). `user-agent.ts`
 derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide. `dev-switches.ts`

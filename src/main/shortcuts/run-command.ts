@@ -70,6 +70,10 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.moveLeft': case 'tab.moveRight':
       if (active !== undefined) tabs.moveTab(active.id, activeIndex + (id === 'tab.moveRight' ? 1 : -1))
       return
+    case 'split.toggle': if (active !== undefined) tabs.splits.toggle(active.id); return
+    case 'split.focusOther': if (active !== undefined) tabs.splits.focusOther(active.id); return
+    case 'split.swap': if (active !== undefined) tabs.splits.swap(active.id); return
+    case 'split.rotate': if (active !== undefined) tabs.splits.rotate(active.id); return
     case 'tab.moveToNewWindow':
       if (active !== undefined) moveToNewWindow(target, active.id, deps.openWindow, cascadeFrom(window.getBounds()))
       return

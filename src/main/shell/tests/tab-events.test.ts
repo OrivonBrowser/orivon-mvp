@@ -55,11 +55,15 @@ function fakeContents (url = 'https://news.example/'): FakeContents {
 function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown> {
   return {
     preloadPath: '/preload/app.js',
-    contentView: { addChildView: vi.fn(), removeChildView: vi.fn() } as never,
     broker: { app: { hasGrantsSync: (o: string) => o === APP, isRegisteredSync: (o: string) => o === APP } } as unknown as Broker,
     dashboardUrl: 'http://localhost:5999/newtab/',
     window: { isDestroyed: () => false } as never,
-    isActive: () => true,
+    isShown: () => true,
+    detachView: vi.fn(),
+    attachView: vi.fn(),
+    paneClicked: vi.fn(),
+    openInSplit: vi.fn(),
+    devtools: undefined,
     emitState: vi.fn(),
     captureFavicon: vi.fn(async () => {}),
     forgetTab: vi.fn(),
@@ -67,7 +71,6 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
     adoptPopup: vi.fn(),
     atCapacity: () => false,
     htmlFullscreenChanged: vi.fn(),
-    getTabBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }),
     ...overrides
   } as Host & Record<string, unknown>
 }

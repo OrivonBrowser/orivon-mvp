@@ -4,6 +4,7 @@
 // wire-format types with no logic of their own; tabs.ts re-exports them so
 // every existing `from './tabs.js'` import keeps working unchanged.
 import type { BaseWindow, View, WebContentsView } from 'electron'
+import type { FrameState } from './split-controller.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { Bookmark } from '../browsing/bookmarks.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
@@ -41,6 +42,8 @@ export interface TabState {
    * creation, and only ever flipped false, one-way, by a real navigation
    * (repartitionView()), never from a URL a page can influence. */
   isNewTab: boolean
+  /** The tab shown beside this one in a split, or null. */
+  splitWith: string | null
   /** One of the shell's own pages (Settings, History, ...). It has no site: no shield, no permissions, nothing to bookmark. */
   isInternal: boolean
 }
@@ -81,6 +84,15 @@ export interface TabShell {
   internalPages?: InternalPageRegistry
   /** Developer tools for a tab. Absent in tests: no "Inspect". */
   devtools?: DevToolsGate
+  /** What is drawn behind two panes. Absent in tests, and a window that never splits never makes it. */
+  backdrop?: SplitBackdrop
+}
+
+/** The view behind two panes: the divider, and an outline round the pane the person is in. */
+export interface SplitBackdrop {
+  /** Made when first asked for. */
+  readonly view: View
+  update: (state: FrameState) => void
 }
 
 /** What the per-view wiring in tab-view.ts needs back from the TabManager
@@ -93,13 +105,20 @@ export interface TabShell {
  * deliberately narrower than the methods behind them. */
 export interface TabViewHost {
   readonly preloadPath: string
-  readonly contentView: View
   readonly broker: Broker | undefined
   /** Read only to tell "still showing the dashboard" from "navigated away", in `wireView`'s did-navigate. Never used to decide that a tab IS the dashboard -- `TabRecord.isDashboardTab` owns that, and only creation sets it. */
   readonly dashboardUrl: string
   /** Undefined without a window around the tabs; a tab then shows no dialog or menu. */
   readonly window: BaseWindow | undefined
-  isActive: (id: string) => boolean
+  /** Whether the tab's view is on screen: it is the tab in front, or the other pane beside it. */
+  isShown: (id: string) => boolean
+  /** Takes a view off the screen, and puts another in its place: what a tab moving to another session does. */
+  detachView: (view: WebContentsView) => void
+  attachView: (id: string, view: WebContentsView) => void
+  /** The person pressed in the tab's page. In a split, that makes it the pane they are in. */
+  paneClicked: (id: string) => void
+  /** "Open Link in Split View": the link opens in a new tab beside this one. */
+  openInSplit: (id: string, url: string) => void
   emitState: () => void
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
   forgetTab: (id: string) => void
@@ -108,7 +127,6 @@ export interface TabViewHost {
   adoptPopup: (view: WebContentsView, partition: string | undefined) => void
   atCapacity: () => boolean
   htmlFullscreenChanged: (id: string, entered: boolean) => void
-  getTabBounds: () => Bounds
   readonly devtools: DevToolsGate | undefined
 }
 

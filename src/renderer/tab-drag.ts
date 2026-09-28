@@ -31,11 +31,13 @@ export function isTornOut (pointer: { x: number, y: number }, view: { width: num
 export interface TabDragHost {
   /** The strip's tab elements, in order, dragged one included. */
   tabs: () => HTMLElement[]
-  /** Where a tab element is put when it is not the last: before this one. Null puts it at the end. */
-  beforeLast: () => HTMLElement | null
+  /** The tab joined to this one in a split, which is dragged along with it. */
+  partnerOf: (el: HTMLElement) => HTMLElement | null
   stripHeight: () => number
   moveTab: (id: string, index: number) => void
-  dropTab: (id: string, screenX: number, screenY: number) => void
+  /** The pointer is below the strip, over the page, at this place of the window; no place: it is back in the strip. */
+  hover: (id: string, x?: number, y?: number) => void
+  dropTab: (id: string, screenX: number, screenY: number, clientX: number, clientY: number) => void
   /** The drag is over. `tornOut`: the tab is on its way to another window, so the strip is to go back to what main last said. */
   finished: (tornOut: boolean) => void
 }
@@ -48,8 +50,24 @@ export function isDraggingTab (): boolean {
 }
 
 export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost): void {
-  let start: { x: number, y: number, grab: number, pointerId: number } | null = null
+  let start: { x: number, grab: number, pointerId: number, y: number } | null = null
   let active = false
+  /** The tabs that move together: this one, and the one it is joined to, in the strip's order. */
+  let group: HTMLElement[] = [el]
+  /** The other tabs, and where they sit before anything moves. */
+  let others: HTMLElement[] = []
+  let natural: DOMRect[] = []
+  let elLeft = 0
+  let groupWidth = 0
+  let firstAt = 0
+  let target = 0
+
+  const clear = (): void => {
+    for (const tab of [...group, ...others]) {
+      tab.style.transform = ''
+      tab.style.transition = ''
+    }
+  }
 
   const end = (tornOut = false): void => {
     if (start !== null && el.hasPointerCapture(start.pointerId)) el.releasePointerCapture(start.pointerId)
@@ -57,14 +75,36 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     const wasActive = active
     active = false
     dragging = false
-    el.classList.remove('dragging', 'torn')
-    el.style.transform = ''
-    if (wasActive) host.finished(tornOut)
+    for (const member of group) member.classList.remove('dragging', 'torn')
+    clear()
+    if (wasActive) {
+      host.hover(id)
+      host.finished(tornOut)
+    }
+  }
+
+  // The strip is never rearranged while the pointer holds a tab: moving the element that has the
+  // pointer captured releases the capture and the drop would go astray. Tabs slide out of the way
+  // instead, and the strip is redrawn from main's word once the tab is let go.
+  const begin = (): void => {
+    const all = host.tabs()
+    others = all.filter((tab) => !group.includes(tab))
+    natural = others.map((tab) => tab.getBoundingClientRect())
+    elLeft = el.getBoundingClientRect().left
+    const rects = group.map((member) => member.getBoundingClientRect())
+    groupWidth = Math.max(...rects.map((rect) => rect.right)) - Math.min(...rects.map((rect) => rect.left))
+    firstAt = all.indexOf(group[0] ?? el)
+    target = firstAt
+    active = true
+    dragging = true
+    for (const member of group) member.classList.add('dragging')
   }
 
   el.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || (event.target as HTMLElement).closest('.close') !== null) return
     start = { x: event.clientX, y: event.clientY, grab: event.clientX - el.getBoundingClientRect().left, pointerId: event.pointerId }
+    const partner = host.partnerOf(el)
+    group = partner === null ? [el] : host.tabs().filter((tab) => tab === el || tab === partner)
     el.setPointerCapture(event.pointerId)
   })
 
@@ -72,17 +112,24 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     if (start === null) return
     if (!active) {
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < DRAG_THRESHOLD_PX) return
-      active = true
-      dragging = true
-      el.classList.add('dragging')
+      begin()
     }
-    const others = host.tabs().filter((tab) => tab !== el)
-    const index = dropIndex(others.map((tab) => { const box = tab.getBoundingClientRect(); return box.left + box.width / 2 }), event.clientX)
-    const next = others[index] ?? host.beforeLast()
-    if (next === null || next.previousElementSibling !== el) el.parentElement?.insertBefore(el, next)
-    el.style.transform = ''
-    el.style.transform = `translateX(${String(event.clientX - start.grab - el.getBoundingClientRect().left)}px)`
-    el.classList.toggle('torn', isTornOut({ x: event.clientX, y: event.clientY }, { width: window.innerWidth, stripHeight: host.stripHeight() }))
+    target = dropIndex(natural.map((box) => box.left + box.width / 2), event.clientX)
+    const offset = event.clientX - start.grab - elLeft
+    const torn = isTornOut({ x: event.clientX, y: event.clientY }, { width: window.innerWidth, stripHeight: host.stripHeight() })
+    for (const member of group) {
+      member.style.transform = `translateX(${String(offset)}px)`
+      member.classList.toggle('torn', torn)
+    }
+    others.forEach((tab, at) => {
+      // A tab the dragged ones have passed makes room on the side they left.
+      const shift = at < firstAt && at >= target ? groupWidth : at >= firstAt && at < target ? -groupWidth : 0
+      tab.style.transition = 'transform 120ms ease'
+      tab.style.transform = shift === 0 ? '' : `translateX(${String(shift)}px)`
+    })
+    // Over the page, main shows where the tab would go if it were let go at an edge.
+    if (event.clientY > host.stripHeight()) host.hover(id, event.clientX, event.clientY)
+    else host.hover(id)
   })
 
   el.addEventListener('pointerup', (event) => {
@@ -92,11 +139,11 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
       return
     }
     const torn = isTornOut({ x: event.clientX, y: event.clientY }, { width: window.innerWidth, stripHeight: host.stripHeight() })
-    const index = host.tabs().indexOf(el)
+    const index = target
     // The click that follows a drag must not also activate the tab.
     el.addEventListener('click', (click) => { click.stopImmediatePropagation() }, { capture: true, once: true })
     end(torn)
-    if (torn) host.dropTab(id, event.screenX, event.screenY)
+    if (torn) host.dropTab(id, event.screenX, event.screenY, event.clientX, event.clientY)
     else host.moveTab(id, index)
   })
 

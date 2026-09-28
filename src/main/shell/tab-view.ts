@@ -196,6 +196,8 @@ export function wireView (id: string, record: TabRecord): void {
   // it no longer shows.
   const shown = (): boolean => record.view === view
   wc.on('page-title-updated', () => { record.host.emitState() })
+  // A press in a pane is the person choosing it, in a split. Not focus, which a page loading in the other pane can take.
+  wc.on('input-event', (_event, input) => { if (input.type === 'mouseDown') record.host.paneClicked(id) })
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
     if (!shown()) return
     if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
@@ -287,6 +289,7 @@ export function wireView (id: string, record: TabRecord): void {
     showContextMenu(wc, params, {
       window,
       openInNewTab: (url) => { record.host.openTab(url) },
+      openInSplit: (url) => { record.host.openInSplit(id, url) },
       ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { devtools.inspect(wc, window, x, y) } } : {})
     })
   })
@@ -330,9 +333,9 @@ export function repartitionView (
   const { host } = record
   const oldView = record.view
   const oldPartition = record.partition
-  const wasActive = host.isActive(id)
+  const wasShown = host.isShown(id)
 
-  if (wasActive) host.contentView.removeChildView(oldView)
+  if (wasShown) host.detachView(oldView)
 
   const appTabArgs = appTabArgsFor(target, host.broker)
   const parked = takeParkedView(record, nextPartition, appTabArgs)
@@ -348,10 +351,7 @@ export function repartitionView (
   // ignore it, so closing it here cannot reach forgetTab().
   retireView(record, oldView, oldPartition)
 
-  if (wasActive) {
-    host.contentView.addChildView(newView)
-    newView.setBounds(host.getTabBounds())
-  }
+  if (wasShown) host.attachView(id, newView)
 
   void newView.webContents.loadURL(target)
 }

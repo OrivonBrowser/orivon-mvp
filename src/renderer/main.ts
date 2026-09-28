@@ -52,8 +52,10 @@ interface OrivonShell {
   openMenu: (anchor: PopoverAnchor) => void
   /** Puts a tab at a place in the strip. */
   moveTab: (id: string, index: number) => void
-  /** A tab was let go outside the strip, at this point of the screen. */
-  dropTab: (id: string, x: number, y: number) => void
+  /** A tab is being dragged below the strip, over this point of the window; no point: it is back in the strip. */
+  dragTab: (id: string, x?: number, y?: number) => void
+  /** A tab was let go outside the strip: where on the screen, and where in this window. */
+  dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => void
   /** Asks main for the right-click menu of a tab. */
   showTabMenu: (id: string) => void
   onState: (listener: (state: ShellState) => void) => () => void
@@ -174,6 +176,11 @@ function renderTabs (state: ShellState): void {
     el.setAttribute('role', 'tab')
     el.setAttribute('aria-selected', String(tab.id === state.activeTabId))
     el.dataset['id'] = tab.id
+    if (tab.splitWith !== null) {
+      // Joined tabs are one pill: the pane the person is not in is a shade lighter.
+      el.classList.add('joined', state.tabs.findIndex((other) => other.id === tab.splitWith) > state.tabs.findIndex((other) => other.id === tab.id) ? 'joined-first' : 'joined-second')
+      el.title = 'Split view'
+    }
 
     const title = document.createElement('span')
     title.className = 'title'
@@ -197,10 +204,11 @@ function renderTabs (state: ShellState): void {
     })
     makeTabDraggable(el, tab.id, {
       tabs: () => [...tabrow.querySelectorAll<HTMLElement>('.tab')],
-      beforeLast: () => newTabBtn,
+      partnerOf: () => tab.splitWith === null ? null : tabrow.querySelector<HTMLElement>(`.tab[data-id="${tab.splitWith}"]`),
       stripHeight: () => tabrow.getBoundingClientRect().height,
       moveTab: (id, index) => { shell.moveTab(id, index) },
-      dropTab: (id, x, y) => { shell.dropTab(id, x, y) },
+      hover: (id, x, y) => { shell.dragTab(id, x, y) },
+      dropTab: (id, x, y, clientX, clientY) => { shell.dropTab(id, x, y, clientX, clientY) },
       // Let go in the strip, the order on screen is already the order main is about to confirm.
       finished: (tornOut) => { if (tornOut || tabsRenderDeferred) renderTabs(currentState) }
     })

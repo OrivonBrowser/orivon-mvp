@@ -68,7 +68,8 @@ contextBridge.exposeInMainWorld('orivonShell', {
 
   openMenu: (anchor: PanelAnchor) => { send({ type: 'openMenu', anchor }) },
   moveTab: (id: string, index: number) => { send({ type: 'moveTab', id, index }) },
-  dropTab: (id: string, x: number, y: number) => { send({ type: 'dropTab', id, x, y }) },
+  dragTab: (id: string, x?: number, y?: number) => { send(x === undefined || y === undefined ? { type: 'dragTab', id } : { type: 'dragTab', id, x, y }) },
+  dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => { send({ type: 'dropTab', id, x, y, clientX, clientY }) },
   showTabMenu: (id: string) => { send({ type: 'tabMenu', id }) },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe

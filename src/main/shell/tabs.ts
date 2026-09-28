@@ -21,6 +21,8 @@ import type { InternalPageId } from '../pages/internal-pages.js'
 import type { SubsystemContext } from '../registry.js'
 import { BLANK_URL, TabFactory } from './tab-factory.js'
 import { moveInOrder } from './tab-order.js'
+import { PaneHost } from './pane-host.js'
+import { SplitController } from './split-controller.js'
 import { closeParkedViews, partitionChanged, repartitionView } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
@@ -59,10 +61,16 @@ export class TabManager {
   /** The narrow surface tab-view.ts's per-view wiring calls back through. */
   private readonly viewHost: TabViewHost
   private readonly factory: TabFactory
+  private readonly panes: PaneHost
+  /** The tabs shown two at a time. Public: split commands and the tab menu work it directly. */
+  readonly splits: SplitController
+  private readonly backdrop: TabShell['backdrop']
+  /** A page holding the whole area (HTML fullscreen): nothing else is shown. */
+  private fullscreenId: string | null = null
   private readonly searchUrl: ((query: string) => string) | undefined
 
   constructor (
-    private readonly contentView: View,
+    contentView: View,
     private readonly getTabBounds: () => Bounds,
     /** Called when the last tab closes (A16): window.ts closes the window or
      * opens a new tab, as the person set. TabManager never quits the app --
@@ -82,26 +90,41 @@ export class TabManager {
   ) {
     this.viewHost = {
       preloadPath: join(import.meta.dirname, '../preload/app.js'),
-      contentView,
       // A GETTER, not a captured value: ctx.broker may still be undefined
       // when TabManager is constructed and be published afterwards. Reading
       // it once here would pin 'no broker' for the process lifetime.
       get broker () { return ctx.broker },
       dashboardUrl,
       window: shell?.window,
-      isActive: (id) => this.activeId === id,
+      isShown: (id) => this.panes.isShown(id),
+      detachView: (view) => { this.panes.hide(this.idOfView(view)) },
+      attachView: (id, view) => { this.panes.replace(id, view, this.paneBounds(id)) },
+      paneClicked: (id) => { this.paneClicked(id) },
+      openInSplit: (id, url) => { this.splits.split(id, this.createTab(url), 'right') },
       emitState: () => { this.emitState() },
       captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },
       forgetTab: (id) => { this.forgetTab(id, false) },
       openTab: (url) => { this.createTab(url) },
       adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
       atCapacity: () => this.atCapacity(),
-      htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
-      getTabBounds,
+      htmlFullscreenChanged: (id, entered) => {
+        if (entered) this.fullscreenId = id
+        else if (this.fullscreenId === id) this.fullscreenId = null
+        shell?.htmlFullscreenChanged(id, entered)
+      },
       devtools: shell?.devtools
     }
     this.searchUrl = shell?.searchUrl
     this.factory = new TabFactory(this.viewHost, () => ctx.broker, dashboardUrl, shell?.internalPages)
+    this.panes = new PaneHost(contentView)
+    this.backdrop = shell?.backdrop
+    this.splits = new SplitController({
+      order: this.order,
+      activate: (id) => { this.activateTab(id) },
+      changed: () => { this.syncViews(); this.emitState() },
+      openTab: () => this.createTab(),
+      area: getTabBounds
+    })
   }
 
   private add (id: string, record: TabRecord): void {
@@ -205,7 +228,7 @@ export class TabManager {
 
   /** Puts a tab at `index` in the strip. */
   moveTab (id: string, index: number): void {
-    if (moveInOrder(this.order, id, index)) this.emitState()
+    if (this.splits.move(id, index) || moveInOrder(this.order, id, index)) this.emitState()
   }
 
   get tabCount (): number {
@@ -247,9 +270,8 @@ export class TabManager {
     const record = this.tabs.get(id)
     if (record === undefined) return
 
-    if (this.activeId === id && !this.disposed) {
-      this.contentView.removeChildView(record.view)
-    }
+    if (!this.disposed) this.panes.hide(id)
+    this.splits.groups.separate(id)
     if (closeView && !record.view.webContents.isDestroyed()) {
       record.view.webContents.close()
     }
@@ -291,27 +313,48 @@ export class TabManager {
     const record = this.tabs.get(id)
     if (this.disposed || record === undefined || record.view.webContents.isDestroyed()) return
 
-    if (this.activeId !== null && this.activeId !== id) {
-      const previous = this.tabs.get(this.activeId)
-      if (previous !== undefined) this.contentView.removeChildView(previous.view)
-    }
-
-    if (this.activeId !== id) {
-      this.contentView.addChildView(record.view)
-      record.view.setBounds(this.getTabBounds())
-    }
-
     this.activeId = id
+    this.syncViews()
     this.emitState()
   }
 
-  /** Re-applies the active tab's bounds -- called on window resize. */
-  layout (): void {
-    if (this.disposed || this.activeId === null) return
-    const record = this.tabs.get(this.activeId)
-    if (record !== undefined && !record.view.webContents.isDestroyed()) {
-      record.view.setBounds(this.getTabBounds())
+  /** Puts the views on screen as the plan says: the tab in front, or the two panes of a split, sized. */
+  private syncViews (): void {
+    if (this.disposed) return
+    const plan = this.splits.plan(this.activeId, this.getTabBounds(), this.fullscreenId)
+    const panes = plan.panes.flatMap(({ id, bounds }) => {
+      const view = this.tabs.get(id)?.view
+      return view === undefined || view.webContents.isDestroyed() ? [] : [{ id, view, bounds }]
+    })
+    if (plan.frame === null || this.backdrop === undefined) {
+      this.panes.show(panes)
+      return
     }
+    this.panes.show(panes, { id: 'backdrop', view: this.backdrop.view, bounds: plan.frame.area })
+    this.backdrop.update(plan.frame)
+  }
+
+  /** Where a tab's view goes now: its pane, or the whole area. */
+  private paneBounds (id: string): Bounds {
+    return this.splits.plan(this.activeId, this.getTabBounds(), this.fullscreenId).panes.find((pane) => pane.id === id)?.bounds ?? this.getTabBounds()
+  }
+
+  private idOfView (view: WebContentsView): string {
+    for (const [id, record] of this.tabs) if (record.view === view) return id
+    return ''
+  }
+
+  /** The person pressed in a page. Of two panes, that is the one they are in. */
+  private paneClicked (id: string): void {
+    if (id === this.activeId || this.splits.groups.partnerOf(id) !== this.activeId) return
+    this.activeId = id
+    this.syncViews()
+    this.emitState()
+  }
+
+  /** Re-applies the views' bounds -- called on window resize. */
+  layout (): void {
+    this.syncViews()
   }
 
   /** THE PRIMARY WAY A TAB EVER REACHES A REAL ORIGIN: the omnibox and the
@@ -437,6 +480,7 @@ export class TabManager {
       loading: wc?.isLoading() ?? false,
       favicon: record?.favicon ?? null,
       isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === this.dashboardUrl),
+      splitWith: this.splits.groups.partnerOf(id),
       isInternal: record?.internalPage != null
     }
   }
