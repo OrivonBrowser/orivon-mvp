@@ -9362,3 +9362,22 @@ is never checked by a standard TLS client in production (only by fingerprint,
 `certificate-check.ts`), so a certificate of this rare shape would still work for every real
 `.eth` page; it would only ever surface as a random handshake failure if it happened against a
 real gateway/direct-fetch connection rather than a test's own loopback server.
+### A259 -- closing a window that has two or more tabs throws in the main process **[STILL OPEN]**
+
+Found 2026-09-28, while testing the welcome screen; unrelated to it, and reproduced with it off.
+Launch with two tabs open, then close the app the way `test/launch-electron.mjs`'s `closeElectron`
+does: the main process logs `uncaught exception ... TypeError: Object has been destroyed`, from
+`TabManager.tabBounds` (the `getTabBounds` callback `src/main/shell/window.ts` passes it), reached
+through `activateTab` from `forgetTab`. On teardown the window is destroyed first, then its tabs'
+web contents fire `destroyed` one by one; forgetting the active tab activates the next one, which
+asks the already-destroyed window for its content bounds. `closeWindow` in `window.ts` guards the
+same ordering for a single tab, and nothing guards this path. `src/main/index.ts` turns an uncaught
+exception into `app.exit(1)`.
+
+Not checked: whether a person closing the window with two tabs open hits the same path, and what
+that costs on macOS, where the process is meant to stay resident after the last window closes.
+Every existing e2e suite closes its tabs before quitting (`closeElectronApp` in
+`test/e2e-helpers.ts`), which is why none has seen it.
+
+**Needs:** a reproduction by closing the real window, then a guard in `TabManager.activateTab` or
+its caller for a destroyed window, with a test that quits with two tabs open.

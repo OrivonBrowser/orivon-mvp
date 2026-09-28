@@ -193,6 +193,27 @@ than 14 days.
 
 ---
 
+## The welcome screen
+
+A launch can open on a full-window welcome screen ("The browser Web3 deserves.", an "Enter
+Orivon" button) over the dashboard; clicking through reveals the dashboard. `ORIVON_INTRO`
+picks when, and an unset variable means `once`.
+
+| `ORIVON_INTRO` | Behaviour |
+|---|---|
+| `once` | Shows until the person has clicked through, then never again for that profile: the click writes `<userData>/intro.json`. What `npm start` and a packaged build do |
+| `always` | Shows on every launch, and never writes `intro.json`, so a dev launch does not use up the showing a later `npm start` on the same profile is owed. What `npm run dev` does |
+| `off` | Never shows. `test/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+
+Any other value is treated as `once`, with a line on the console.
+
+`npm run dev -- --skip-intro` sets `off` for that launch. `npm run dev --skip-intro` does the same
+today, but npm warns that it will stop working, so use the first form. An `ORIVON_INTRO` already
+in the environment is used as it stands, and the flag beats it. To see the `once` showing again
+on a profile that has passed it, delete `intro.json` from the profile directory.
+
+---
+
 ## Platform notes
 
 **Linux is the packaged target**: AppImage and deb. No code-signing cost, and the audience

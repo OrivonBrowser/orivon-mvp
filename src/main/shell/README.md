@@ -9,6 +9,10 @@ derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide. 
 is the one command-line switch [`../index.ts`](../index.ts) appends before `app.whenReady()` in
 developer mode, split out so it is testable with no Electron process at all.
 
+The welcome screen: `intro-state.ts` decides, before the window exists, whether this launch opens
+on it (`ORIVON_INTRO`, and a seen flag in `<userData>/intro.json`), and `intro-view.ts` is the
+full-window view that shows it over the chrome and the first tab.
+
 What a page asks of its window: `popups.ts` turns `window.open()` and `target=_blank` into
 tabs; `fullscreen.ts` decides which tab, if any, fills the window; `window-notice.ts` is the
 window's one few-second notice ("Press Esc to exit full screen", "Press Esc to show your
@@ -150,6 +154,18 @@ video player's Space and arrow keys went to the notice. Each message's view is l
 detached and added on `did-finish-load`; changing the message swaps views instead of navigating
 the one on screen. [`../../test/e2e-shell-fidelity.test.ts`](../../test/e2e-shell-fidelity.test.ts)
 asserts the page keeps its focus in fullscreen.
+
+**[`intro-view.ts`](intro-view.ts): a view that starts opaque and turns transparent on the click.**
+The page fades in over the app's own dark, not over the dashboard loading beneath it. The page
+tells main it is leaving by moving its URL hash to `#leaving`, at which point the view becomes
+transparent so the fade-out reveals the dashboard, and to `#entered` once the fade is done, which
+removes the view. An opaque page background would fade to dark instead, so `intro/style.css` keeps
+`html` and `body` transparent. There is no preload: a page that can only change its own hash needs
+no capability. The view re-adds itself when the tab state changes, because switching tabs re-adds
+that tab's view above it, and it removes itself if its page fails to load or its renderer dies,
+so a launch that cannot draw the screen is not left covered. Only the process's first window can
+open on it (`../index.ts`). [`../../../test/e2e-intro.test.ts`](../../../test/e2e-intro.test.ts)
+covers the covering, the stacking and the click-through.
 
 **[`leave-page-prompt.ts`](leave-page-prompt.ts) blocks the main process while it is open.**
 Electron settles `will-prevent-unload` from the handler's return, with no way to answer later,

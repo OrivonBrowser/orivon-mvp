@@ -5,6 +5,7 @@ import { subsystems } from './subsystems.js'
 import { BookmarkStore } from './browsing/bookmarks.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
 import { chromeUserAgent } from './shell/user-agent.js'
+import { planIntro } from './shell/intro-state.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
 // this machine first -- the window-visibility bug it was chasing is really
@@ -70,7 +71,9 @@ void app.whenReady().then(async () => {
     return
   }
 
-  createShellWindow(ctx)
+  // Only this first window can open on the welcome screen: the macOS
+  // 'activate' below recreates a window in a process that has already shown it.
+  createShellWindow(ctx, await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')))
   app.on('activate', () => {
     if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx)
   })

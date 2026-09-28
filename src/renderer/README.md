@@ -1,6 +1,6 @@
 # `src/renderer/`: the browser chrome UI
 
-**What lives here.** Four entries, all plain vanilla-TS pages, no framework. The main one is the
+**What lives here.** Five entries, all plain vanilla-TS pages, no framework. The main one is the
 chrome view: three rows, rendered in a dedicated `WebContentsView` above the active tab: the
 tab strip (sharing its row with Electron's native window buttons), the toolbar (navigation, the
 bookmark toggle, the omnibox, a right-hand icon cluster), and the bookmarks bar. Its look follows
@@ -9,7 +9,9 @@ dashboard: ordinary tab content loaded into a fresh tab's own `WebContentsView`,
 chrome view at all; see `src/main/shell/tabs.ts`'s `createTab()`. [`settings/`](settings/) and
 [`site-info/`](site-info/) are the two toolbar popups (`src/main/permissions/popover-view.ts`):
 the all-sites permissions list, and the per-site popover (a connection row, this site's own
-capability switches, its Web3 Score page, its Cookies and site data page).
+capability switches, its Web3 Score page, its Cookies and site data page). [`intro/`](intro/) is
+the welcome screen, a full-window view over the shell on a launch that opens on it
+(`src/main/shell/intro-view.ts`).
 
 **Files.**
 
@@ -25,13 +27,18 @@ capability switches, its Web3 Score page, its Cookies and site data page).
 | `styles/web3-level.css` | The shield's level colours; the site-info popup's own stylesheet keeps a literal copy, matching this tree's cross-entry convention. The mark's own colours sit in `styles/toolbar.css`, the only place it is drawn |
 | `bookmarks-view.ts` | Renders the bookmarks bar's dynamic list |
 | `newtab/index.html`, `newtab/main.ts`, `newtab/style.css` | The dashboard: a search box, then a grid of app-shortcut and bookmark tiles, with its own small entry, separate from the chrome view |
+| `intro/index.html`, `intro/main.ts`, `intro/style.css` | The welcome screen: headline, "Enter Orivon" button, ticker and two decorative shapes over a picture. Its entry animations are CSS keyframes and its fonts are bundled, so it loads nothing from the network |
+| `assets/intro-background.webp` | The welcome screen's picture, also the dashboard's default background; Vite emits it once for both |
 | `settings/index.html`, `settings/main.ts`, `settings/permissions-view.ts`, `settings/style.css` | The all-sites popup: every app, all its grants, revoke-only |
 | `site-info/index.html`, `site-info/main.ts`, `site-info/main-view.ts`, `site-info/web3-view.ts`, `site-info/data-view.ts`, `site-info/switch.ts`, `site-info/icons.ts`, `site-info/style.css` | The per-site popup: a client-side router over three pages, each its own render function |
 
 **What it depends on.** `src/preload/shell.ts`'s exposed commands, over IPC, for the chrome
 view; `newtab/main.ts` depends on `src/preload/newtab.ts`'s exposed commands the same way, and
 degrades to plain unprivileged markup (no `window.orivonNewTab`) rather than throwing when
-loaded outside a genuinely fresh tab; see that file's own header comment.
+loaded outside a genuinely fresh tab; see that file's own header comment. `intro/` depends on no
+preload at all: it reports "Enter Orivon" to main by moving its own URL hash to `#leaving` and
+then `#entered`, which `src/main/shell/intro-view.ts` watches, so the page holds no capability
+beyond its own document.
 
 **What it must never import.** `electron`, `node:*`, or anything under
 [`src/main/`](../main/). This is a sandboxed renderer with `nodeIntegration: false`; there is

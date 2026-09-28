@@ -37,6 +37,8 @@ import { HtmlFullscreen } from './fullscreen.js'
 import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
+import type { IntroPlan } from './intro-state.js'
+import { showIntro } from './intro-view.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -81,7 +83,8 @@ const WINDOW_ICON_PATH = app.isPackaged
   ? join(process.resourcesPath, 'icon.png')
   : join(import.meta.dirname, '../../build/icon.png')
 
-export function createShellWindow (ctx: SubsystemContext): BaseWindow {
+/** `intro`: the process's first window on a launch that opens on the welcome screen (./intro-state.ts). */
+export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): BaseWindow {
   // Centers on the OS's primary display. Not on whichever display holds the
   // pointer: Wayland does not let an app control its own window position at
   // all, so that buys nothing.
@@ -429,6 +432,8 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
 
   layoutChrome()
   tabs.createTab()
+  // After the first tab, so the view stacks above it.
+  if (intro !== undefined) showIntro(win, tabs, intro)
 
   // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
   // typed event union; BaseWindow's own doc doesn't enumerate it either.

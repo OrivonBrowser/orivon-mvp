@@ -12,6 +12,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A welcome screen, and a picture on the new tab.** The first time Orivon opens on a profile it
+  shows a full-window screen ("The browser Web3 deserves.") with an "Enter Orivon" button;
+  clicking it reveals the new-tab page, and it does not come back. `npm run dev` shows it on every
+  launch, and `npm run dev -- --skip-intro` skips it. The same mountain-meadow picture is now the
+  new-tab page's background, under a dark wash in both colour schemes. The screen loads nothing
+  from the network: its font and picture ship with the browser.
 - **The identity seed survives a restart, and an app can hold its own encrypted secret.** The
   seed behind `orivon.id` now lives in the OS keyring (Electron `safeStorage`), not a placeholder
   that refused every call. A new `secrets` capability (`orivon.secrets.available`/`encrypt`/

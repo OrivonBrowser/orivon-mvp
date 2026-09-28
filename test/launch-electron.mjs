@@ -163,6 +163,10 @@ export async function launchElectron ({
   // so no test run contacts a mainnet RPC or beacon API. Every real `.eth`
   // name then fails closed; fixture names still load in a test build.
   if (env['ORIVON_ETH_LIGHT_CLIENT'] === undefined) env['ORIVON_ETH_LIGHT_CLIENT'] = 'off'
+  // And the welcome screen: off unless a test asks for it. Every launch here
+  // has a fresh profile, so the default would put it over every page a test
+  // drives, and the window count tests wait for would include its view.
+  if (env['ORIVON_INTRO'] === undefined) env['ORIVON_INTRO'] = 'off'
 
   // BUG (found 2026-09-01, real regression): with no --user-data-dir, Electron
   // defaults to this machine's actual `orivon` profile directory
