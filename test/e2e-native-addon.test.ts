@@ -12,7 +12,7 @@ import { afterAll, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './e2e-helpers.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { NativeAddonResults } from './native-addon-entry.js'
 import { napiAddon } from '../src/shim/addon/tests/support/napi-addons.js'
@@ -50,6 +50,7 @@ it('loads native addons as their WebAssembly builds on the page and in a forked 
       check('the fixture is granted and registered for serving', served.granted && served.registered, JSON.stringify(served))
 
       const view = await navigateToFixture(app, `${ORIGIN}/`, 'native addon fixture')
+      await waitForPageGlobal(view, 'nativeAddonE2e')
       const results = await evaluateRetrying(view, async () => await (globalThis as unknown as { nativeAddonE2e: { run: () => Promise<NativeAddonResults> } }).nativeAddonE2e.run(), 60_000)
       const detail = JSON.stringify(results)
 
