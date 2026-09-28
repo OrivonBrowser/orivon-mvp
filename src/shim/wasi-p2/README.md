@@ -28,7 +28,11 @@ promise, which the output must let suspend through JSPI. `spawn` refuses output 
 them synchronously, naming each.
 
 **Not served:** links and file times (`orivon.fs` has neither), terminals (a program here has
-none), and a second `stream()` of one UDP socket. WASI 0.2's `exit` carries only success or
+none), a second `stream()` of one UDP socket, and threads, so a Rust program runs tokio on its
+current-thread runtime. tokio's own name resolution (`lookup_host`, or `TcpStream::connect` given a
+name) runs on its blocking pool, which needs a thread, and traps: a program resolves with
+`std::net::ToSocketAddrs` and connects by address, and the broker still checks the connect against
+the name (`addresses.ts`'s `ResolvedNames`). WASI 0.2's `exit` carries only success or
 failure, so a program's non-zero code reaches Node as 1, unless the component calls
 `exit-with-code`, which passes its code. A listen or UDP bind asks `orivon.net` for the scope its
 address implies (loopback is `local`, anything else `network`), but the broker binds every
