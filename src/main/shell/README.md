@@ -72,6 +72,15 @@ on. Retire it first and its `'destroyed'` calls `forgetTab()` on a tab that is n
 `tests/tabs.test.ts` exercises this directly with a fake `webContents` that emits `'destroyed'`
 synchronously from `close()`, the same way real Electron destruction can.
 
+**[`tabs.ts`](tabs.ts): a closing window disposes its tabs before it is destroyed.** Destroying a
+window destroys the views attached to it and nothing else: a background tab's view and every parked
+view are detached, so their renderers would outlive the window. `window.ts` calls
+`TabManager.dispose()` on the window's `close` event, which closes every view and stops the manager
+reacting. Without it the views' `destroyed` events arrive after the window is gone, forgetting the
+active tab activates the next, and that asks the destroyed window for its bounds.
+[`../../../test/e2e-window-close.test.ts`](../../../test/e2e-window-close.test.ts) closes a real
+window that holds two tabs.
+
 **[`tab-view.ts`](tab-view.ts): a tab that leaves an app keeps the app's view, and gets it back
 on return.** A page's `sessionStorage` lives in its view, not its session partition, so a fresh
 view on the same partition starts empty (measured in Electron 44). An OIDC login keeps its state

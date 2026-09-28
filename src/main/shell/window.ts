@@ -199,12 +199,16 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
   })
 
   function layoutChrome (): void {
+    if (win.isDestroyed()) return
     const bounds = win.getContentBounds()
     chrome.setVisible(fullscreen.tabId === null)
     chrome.setBounds({ x: 0, y: 0, width: bounds.width, height: chromeHeight() })
   }
 
+  // A destroyed window has no bounds to give. Its tabs' `destroyed` events
+  // arrive after it, and each one can land here through activateTab.
   function tabBounds (): Bounds {
+    if (win.isDestroyed()) return { x: 0, y: 0, width: 0, height: 0 }
     const bounds = win.getContentBounds()
     const top = fullscreen.tabId === null ? chromeHeight() : 0
     return { x: 0, y: top, width: bounds.width, height: bounds.height - top }
@@ -404,6 +408,7 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
   // anywhere in this codebase. Latent before A16 (only reachable by
   // closing the OS window directly); routine after it. All three channels
   // registered above need the same cleanup.
+  win.on('close', () => { tabs.dispose() })
   win.on('closed', () => {
     ipcMain.removeHandler(COMMAND_CHANNEL)
     ipcMain.removeHandler(NEWTAB_COMMAND_CHANNEL)

@@ -62,6 +62,12 @@ export class TabManager {
    * require touching the Map. */
   private readonly order: string[] = []
   private activeId: string | null = null
+  /** Set once the window is closing: from then on no tab is activated, laid
+   * out or reported, because each of those asks the window for its bounds and
+   * a destroyed window throws. Teardown destroys the window first and its
+   * views' webContents after, so the views' `destroyed` events arrive here
+   * with the window already gone. */
+  private disposed = false
   private readonly listeners = new Set<(state: TabsSnapshot) => void>()
   private readonly preloadPath: string
   /** The narrow surface tab-view.ts's per-view wiring calls back through. */
@@ -120,6 +126,23 @@ export class TabManager {
 
   onStateChange (cb: (state: TabsSnapshot) => void): void {
     this.listeners.add(cb)
+  }
+
+  /** The window is closing: closes every tab's views and stops reacting, so
+   * the `destroyed` events that follow find no fallback tab to activate, no
+   * bounds to ask for, no state to push and no `onEmpty` to fire.
+   *
+   * The views must be closed here. Only the active tab's view is a child of
+   * the window; a background tab's view and every parked view are detached,
+   * so destroying the window leaves their renderers running. */
+  dispose (): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.listeners.clear()
+    for (const record of [...this.tabs.values()]) {
+      closeParkedViews(record)
+      if (!record.view.webContents.isDestroyed()) record.view.webContents.close()
+    }
   }
 
   getState (): TabsSnapshot {
@@ -190,8 +213,10 @@ export class TabManager {
     return id
   }
 
+  /** True when no further tab may open: the ceiling is reached, or the
+   * window is closing. Also what a page's popup handler asks. */
   private atCapacity (): boolean {
-    return this.order.length >= MAX_TABS
+    return this.disposed || this.order.length >= MAX_TABS
   }
 
   /** A popup Chromium already created, with its opener, in the opener's
@@ -227,7 +252,7 @@ export class TabManager {
     const record = this.tabs.get(id)
     if (record === undefined) return
 
-    if (this.activeId === id) {
+    if (this.activeId === id && !this.disposed) {
       this.contentView.removeChildView(record.view)
     }
     if (closeView && !record.view.webContents.isDestroyed()) {
@@ -240,6 +265,8 @@ export class TabManager {
 
     const idx = this.order.indexOf(id)
     if (idx !== -1) this.order.splice(idx, 1)
+
+    if (this.disposed) return
 
     if (this.activeId === id) {
       const fallback = this.order[Math.max(0, idx - 1)]
@@ -267,7 +294,7 @@ export class TabManager {
 
   activateTab (id: string): void {
     const record = this.tabs.get(id)
-    if (record === undefined || record.view.webContents.isDestroyed()) return
+    if (this.disposed || record === undefined || record.view.webContents.isDestroyed()) return
 
     if (this.activeId !== null && this.activeId !== id) {
       const previous = this.tabs.get(this.activeId)
@@ -285,7 +312,7 @@ export class TabManager {
 
   /** Re-applies the active tab's bounds -- called on window resize. */
   layout (): void {
-    if (this.activeId === null) return
+    if (this.disposed || this.activeId === null) return
     const record = this.tabs.get(this.activeId)
     if (record !== undefined && !record.view.webContents.isDestroyed()) {
       record.view.setBounds(this.getTabBounds())

@@ -1,0 +1,137 @@
+import { EventEmitter } from 'node:events'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SubsystemContext } from '../../registry.js'
+
+// A window that is closing destroys itself first and its views' webContents
+// after. The tab manager must not ask that window for anything in between.
+interface FakeContents extends EventEmitter {
+  loadURL: ReturnType<typeof vi.fn>
+  isDestroyed: ReturnType<typeof vi.fn>
+  isLoading: () => boolean
+  getURL: () => string
+  getTitle: () => string
+  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean }
+  setWindowOpenHandler: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+}
+
+interface RecordedView {
+  webContents: FakeContents
+  setBounds: ReturnType<typeof vi.fn>
+}
+const createdViews: RecordedView[] = []
+
+function makeFakeWebContents (): FakeContents {
+  const emitter = new EventEmitter() as FakeContents
+  let destroyed = false
+  emitter.loadURL = vi.fn(async () => {})
+  emitter.isDestroyed = vi.fn(() => destroyed)
+  emitter.isLoading = () => false
+  emitter.getURL = () => 'https://a.example/'
+  emitter.getTitle = () => ''
+  emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false }
+  emitter.setWindowOpenHandler = vi.fn()
+  // Electron can fire 'destroyed' synchronously from close().
+  emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })
+  return emitter
+}
+
+vi.mock('electron', () => ({
+  WebContentsView: vi.fn().mockImplementation(function (this: RecordedView) {
+    this.webContents = makeFakeWebContents()
+    this.setBounds = vi.fn()
+    createdViews.push(this)
+  })
+}))
+
+const { TabManager } = await import('../tabs.js')
+
+const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
+
+function managerOverAWindow (): { manager: InstanceType<typeof TabManager>, windowDestroyed: () => void, getBounds: ReturnType<typeof vi.fn>, onEmpty: ReturnType<typeof vi.fn> } {
+  let destroyed = false
+  const getBounds = vi.fn(() => {
+    if (destroyed) throw new TypeError('Object has been destroyed')
+    return { x: 0, y: 0, width: 800, height: 600 }
+  })
+  const onEmpty = vi.fn()
+  const manager = new TabManager(fakeContentView as never, getBounds, onEmpty, 'http://localhost:5999/newtab/', {} as SubsystemContext)
+  return { manager, windowDestroyed: () => { destroyed = true }, getBounds, onEmpty }
+}
+
+beforeEach(() => {
+  createdViews.length = 0
+  fakeContentView.addChildView.mockClear()
+  fakeContentView.removeChildView.mockClear()
+})
+
+describe('TabManager.dispose -- a closing window (A259)', () => {
+  it('closes every tab\'s view, the background ones included: only the active view is a child of the window', () => {
+    const { manager } = managerOverAWindow()
+    manager.createTab('https://a.example/')
+    manager.createTab('https://b.example/')
+    manager.createTab('https://c.example/')
+
+    manager.dispose()
+
+    for (const view of createdViews) expect(view.webContents.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('never asks a destroyed window for its bounds while its tabs are destroyed after it', () => {
+    const { manager, windowDestroyed, getBounds, onEmpty } = managerOverAWindow()
+    manager.createTab('https://a.example/')
+    manager.createTab('https://b.example/')
+    getBounds.mockClear()
+
+    windowDestroyed()
+
+    expect(() => { manager.dispose() }).not.toThrow()
+    expect(getBounds).not.toHaveBeenCalled()
+    expect(onEmpty).not.toHaveBeenCalled()
+  })
+
+  it('a tab that dies on its own after dispose does not bring a fallback tab up', () => {
+    const { manager, getBounds } = managerOverAWindow()
+    manager.createTab('https://a.example/')
+    manager.createTab('https://b.example/')
+    manager.dispose()
+    getBounds.mockClear()
+
+    createdViews[1]?.webContents.emit('destroyed')
+
+    expect(getBounds).not.toHaveBeenCalled()
+    expect(fakeContentView.addChildView).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops pushing state to its listeners', () => {
+    const { manager } = managerOverAWindow()
+    manager.createTab('https://a.example/')
+    const listener = vi.fn()
+    manager.onStateChange(listener)
+
+    manager.dispose()
+
+    expect(listener).not.toHaveBeenCalled()
+    manager.layout()
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('takes no new tab once the window is closing', () => {
+    const { manager } = managerOverAWindow()
+    manager.dispose()
+
+    manager.createTab('https://late.example/')
+
+    expect(createdViews).toHaveLength(0)
+  })
+
+  it('can be called twice', () => {
+    const { manager } = managerOverAWindow()
+    manager.createTab('https://a.example/')
+
+    manager.dispose()
+    manager.dispose()
+
+    expect(createdViews[0]?.webContents.close).toHaveBeenCalledTimes(1)
+  })
+})

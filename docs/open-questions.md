@@ -9362,25 +9362,19 @@ is never checked by a standard TLS client in production (only by fingerprint,
 `certificate-check.ts`), so a certificate of this rare shape would still work for every real
 `.eth` page; it would only ever surface as a random handshake failure if it happened against a
 real gateway/direct-fetch connection rather than a test's own loopback server.
-### A259 -- closing a window that has two or more tabs throws in the main process **[STILL OPEN]**
+### A259 -- closing a window that has two or more tabs threw in the main process **[RESOLVED 2026-09-28]**
 
-Found 2026-09-28, while testing the welcome screen; unrelated to it, and reproduced with it off.
-Launch with two tabs open, then close the app the way `test/launch-electron.mjs`'s `closeElectron`
-does: the main process logs `uncaught exception ... TypeError: Object has been destroyed`, from
-`TabManager.tabBounds` (the `getTabBounds` callback `src/main/shell/window.ts` passes it), reached
-through `activateTab` from `forgetTab`. On teardown the window is destroyed first, then its tabs'
-web contents fire `destroyed` one by one; forgetting the active tab activates the next one, which
-asks the already-destroyed window for its content bounds. `closeWindow` in `window.ts` guards the
-same ordering for a single tab, and nothing guards this path. `src/main/index.ts` turns an uncaught
-exception into `app.exit(1)`.
+Filed 2026-09-28, found while testing the welcome screen. Closing a window destroys it first and
+its tabs' web contents after; forgetting the active tab activated the next one, which asked the
+already-destroyed window for its content bounds, and `src/main/index.ts` turns an uncaught
+exception into `app.exit(1)`. Every suite closed its tabs before quitting, so none walked the path.
 
-Not checked: whether a person closing the window with two tabs open hits the same path, and what
-that costs on macOS, where the process is meant to stay resident after the last window closes.
-Every existing e2e suite closes its tabs before quitting (`closeElectronApp` in
-`test/e2e-helpers.ts`), which is why none has seen it.
-
-**Needs:** a reproduction by closing the real window, then a guard in `TabManager.activateTab` or
-its caller for a destroyed window, with a test that quits with two tabs open.
+**Resolved:** `TabManager.dispose()` runs when a window starts to close. It closes every tab's views
+(a background tab's view and every parked view are not children of the window, so destroying the
+window would leave their renderers running) and stops the manager reacting: no fallback tab, no
+bounds, no state push, no `onEmpty`. `window.ts` also answers the bounds callbacks with an empty
+rectangle once the window is gone. `test/e2e-window-close.test.ts` closes a real window that holds
+two tabs, and fails without the change.
 
 ### A260 -- `ipfs://` subresources inside a page do not load
 
