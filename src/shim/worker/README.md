@@ -43,7 +43,7 @@ isolated app has `SharedArrayBuffer`: elsewhere a Worker's `readFileSync` refuse
 addon's file calls refuse with `NOSYS`. The synchronous twin sits under
 `Symbol.for('orivon.synchronous')` on the Worker's `orivon`, a registered symbol so each bundle's
 shim finds the same one. It is not part of the contract, and `window.orivon` has none. A reply
-carries no stream, so a call returning one refuses. **Never make a synchronous call from the
+carries no stream, so a call returning one refuses, and the page closes what that call opened. **Never make a synchronous call from the
 thread that serves it**: it waits forever, which is why `tests/sync-channel.test.ts` runs the
 Worker end in a `worker_threads` thread.
 

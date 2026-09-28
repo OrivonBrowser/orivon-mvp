@@ -127,7 +127,8 @@ export function environmentFunctions (ctx: HostContext): ImportFamily {
         let ready = subscriptions.filter((sub) => sub.type !== EventType.CLOCK || sub.waitNs === 0n)
         if (ready.length === 0) {
           const soonest = subscriptions.reduce((min, sub) => sub.waitNs < min.waitNs ? sub : min)
-          yield * sleep(Number(soonest.waitNs / 1_000_000n))
+          const ms = Number(soonest.waitNs / 1_000_000n)
+          if (ms > 0) yield * sleep(ms)
           ready = [soonest]
         }
         ready.forEach((sub, index) => {

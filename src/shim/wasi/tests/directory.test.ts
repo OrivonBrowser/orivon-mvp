@@ -166,19 +166,3 @@ describe('stdio', () => {
     expect(await pending).toBe(Errno.SUCCESS)
   })
 })
-
-describe('the synchronous imports a native addon gets', () => {
-  it('write stdout to the synchronous sink, answer BADF for an unknown descriptor, and refuse a file call by name', async () => {
-    const written: string[] = []
-    const hh = await harness({ syncStdout: (bytes) => { written.push(new TextDecoder().decode(bytes)) } })
-    vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const sync = hh.host.syncFunctions as unknown as Record<string, (...args: Array<number | bigint>) => number>
-    hh.iovec(IOV, BUF, hh.put(BUF, 'from an addon'))
-    expect(sync.fd_write?.(1, IOV, 1, NUM)).toBe(Errno.SUCCESS)
-    expect(written).toEqual(['from an addon'])
-    expect(hh.u32(NUM)).toBe(13)
-    expect(sync.fd_write?.(99, IOV, 1, NUM)).toBe(Errno.BADF)
-    expect(sync.path_open?.(ROOT_FD, 0, PATH, hh.put(PATH, 'f'), 1, READ, 0n, 0, FD_OUT)).toBe(Errno.NOSYS)
-    expect(sync.sched_yield?.()).toBe(Errno.SUCCESS)
-  })
-})

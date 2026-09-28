@@ -20,12 +20,33 @@ export type Effect =
 
 export type Op<T> = Generator<Effect, T, unknown>
 
+/** In-flight and rate limits clear on their own; a program has no code path for EAGAIN on a file. */
+const LIMIT_RETRY_DELAYS_MS = [5, 20, 80] as const
+
+function isBareLimit (error: unknown): boolean {
+  const { code, platformCode } = typeof error === 'object' && error !== null ? error as { code?: unknown, platformCode?: unknown } : {}
+  return code === 'limit' && platformCode === undefined
+}
+
+/** One file call, retried while the broker reports a bare limit. */
+function * retried<T> (effect: Effect): Op<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return (yield effect) as T
+    } catch (error) {
+      const delay = LIMIT_RETRY_DELAYS_MS[attempt]
+      if (!isBareLimit(error) || delay === undefined) throw error
+      yield * sleep(delay)
+    }
+  }
+}
+
 export function * fsCall<T> (method: FsMethod, ...args: unknown[]): Op<T> {
-  return (yield { kind: 'fs', method, args }) as T
+  return yield * retried<T>({ kind: 'fs', method, args })
 }
 
 export function * handleCall<T> (handle: unknown, method: HandleMethod, ...args: unknown[]): Op<T> {
-  return (yield { kind: 'handle', handle, method, args }) as T
+  return yield * retried<T>({ kind: 'handle', handle, method, args })
 }
 
 export function * readStdin (max: number): Op<Uint8Array> {

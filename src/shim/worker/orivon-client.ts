@@ -107,8 +107,9 @@ export function createOrivonClient (port: MessagePort, activity?: ClientActivity
   let channel: SharedArrayBuffer | undefined
   const callSync = (body: CallBody): unknown => {
     if (channel === undefined) {
-      channel = createChannelBuffer()
-      send({ syncBuffer: channel })
+      const created = createChannelBuffer()
+      send({ syncBuffer: created })
+      channel = created
     }
     const buffer = channel
     const reply = decodeReply(awaitReply(buffer, () => { send({ ...body, id: nextId++, sync: true }) }, () => { send({ syncMore: true }) })) as ServerMessage

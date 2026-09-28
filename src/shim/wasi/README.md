@@ -29,9 +29,10 @@ names a checkout.
 `orivon.fs` call, a call on an open file, stdin, output, a pause), and runs under one of two
 drivers (`drivers.ts`). The asynchronous one awaits each effect while the program is suspended
 through JSPI. The synchronous one, for a module JavaScript calls directly (a native addon),
-answers each before returning, from the `syncFs` it was given. Without one, on a page's main
-thread, a file effect refuses with `NOSYS` and one console line, stdin reads as end of input, and
-a pause blocks the thread. A driver never throws a termination into an effect generator, where a
+answers each before returning, from the `syncFs` it was given. Without one (a page's main thread,
+or an app that is not cross-origin isolated), a file effect refuses with `NOSYS` and one console
+line. Under the synchronous driver stdin always reads as end of input, with a console line, and a
+pause blocks the thread. A driver never throws a termination into an effect generator, where a
 `catch` could swallow it.
 
 **Only imports that may await are wrapped in `WebAssembly.Suspending`** (`instantiate.ts`, the
@@ -51,8 +52,10 @@ keeps it. An error with no errno shape is a bug in the host and is rethrown, nev
 plausible `EIO`.
 
 **A revoked grant terminates the program; a bare `limit` is retried** three times before it is
-`ENOSPC` (`context.ts`). A program retrying against a root that no longer exists would spin, and
-the in-flight cap clears on its own while a program has no code path for `EAGAIN` on a file.
+`ENOSPC` (`drivers.ts`, `effects.ts`). A program retrying against a root that no longer exists
+would spin, and the in-flight cap clears on its own while a program has no code path for `EAGAIN`
+on a file. Under the synchronous driver a revoked grant is only that call's `EIO`: an addon's host
+outlives any one call, and its caller handles the error.
 
 **A reactor's exports must be called through `WebAssembly.promising`** if they can reach a file
 call; `initializeReactor` wraps only `_initialize`, and a `Suspending` import reached from an

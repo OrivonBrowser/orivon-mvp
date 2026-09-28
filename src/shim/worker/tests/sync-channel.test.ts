@@ -11,6 +11,18 @@ import { serveOrivon } from '../orivon-server.js'
 import { ReplyWriter, awaitReply, createChannelBuffer, decodeReply, encodeReply } from '../sync-channel.js'
 
 describe('the reply encoding', () => {
+  it('carries an ArrayBuffer as one, and leaves an object that merely looks like a marker alone', () => {
+    const reply = decodeReply(encodeReply({ buffer: new Uint8Array([7, 8]).buffer, lookalike: { __orivonBytes: 0, other: true } })) as { buffer: unknown, lookalike: unknown }
+    expect(reply.buffer).toBeInstanceOf(ArrayBuffer)
+    expect([...new Uint8Array(reply.buffer as ArrayBuffer)]).toEqual([7, 8])
+    expect(reply.lookalike).toEqual({ __orivonBytes: 0, other: true })
+  })
+
+  it('refuses a channel with no room for a reply', () => {
+    expect(() => new ReplyWriter(new SharedArrayBuffer(16))).toThrow(TypeError)
+    expect(() => new ReplyWriter(new ArrayBuffer(64))).toThrow(TypeError)
+  })
+
   it('carries byte arrays beside the JSON, whole and at any depth', () => {
     const reply = { id: 3, ok: true, value: { data: new Uint8Array([0, 1, 255]), nested: [new Uint8Array(0), 'text'], none: undefined } }
     expect(decodeReply(encodeReply(reply))).toEqual({ id: 3, ok: true, value: { data: new Uint8Array([0, 1, 255]), nested: [new Uint8Array(0), 'text'] } })

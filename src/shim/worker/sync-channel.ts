@@ -18,6 +18,7 @@ const DATA_BYTES = 1 << 20
 
 /** A reply with its byte arrays set apart, so a large read is copied, never spelled out in JSON. */
 const BYTES_KEY = '__orivonBytes'
+const BUFFER_KEY = '__orivonBuffer'
 
 export function hasSharedMemory (): boolean {
   return typeof SharedArrayBuffer === 'function'
@@ -27,9 +28,18 @@ export function createChannelBuffer (): SharedArrayBuffer {
   return new SharedArrayBuffer(HEADER_BYTES + DATA_BYTES)
 }
 
+/**
+ * A reply as JSON with its byte arrays and ArrayBuffers set apart. What an
+ * orivon call returns fits; a Date or NaN would not survive, and none is
+ * returned.
+ */
 export function encodeReply (reply: unknown): Uint8Array {
   const blobs: Uint8Array[] = []
   const json = JSON.stringify(reply, (_key, value: unknown) => {
+    if (value instanceof ArrayBuffer) {
+      blobs.push(new Uint8Array(value))
+      return { [BUFFER_KEY]: blobs.length - 1 }
+    }
     if (!ArrayBuffer.isView(value)) return value
     blobs.push(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))
     return { [BYTES_KEY]: blobs.length - 1 }
@@ -54,12 +64,15 @@ export function decodeReply (bytes: Uint8Array): unknown {
   const blobs: Uint8Array[] = []
   for (let offset = 4 + textLength; offset < bytes.length;) {
     const length = view.getUint32(offset)
-    blobs.push(bytes.slice(offset + 4, offset + 4 + length))
+    blobs.push(bytes.subarray(offset + 4, offset + 4 + length))
     offset += 4 + length
   }
   return JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + textLength)), (_key, value: unknown) => {
-    const index = (value as Record<string, unknown> | null)?.[BYTES_KEY]
-    return typeof index === 'number' ? blobs[index] : value
+    if (typeof value !== 'object' || value === null || Object.keys(value).length !== 1) return value
+    const { [BYTES_KEY]: view, [BUFFER_KEY]: buffer } = value as Record<string, unknown>
+    if (typeof view === 'number') return blobs[view]
+    if (typeof buffer === 'number') return blobs[buffer]?.slice().buffer
+    return value
   })
 }
 
@@ -70,7 +83,8 @@ export class ReplyWriter {
   #pending: Uint8Array = new Uint8Array(0)
   #offset = 0
 
-  constructor (buffer: SharedArrayBuffer) {
+  constructor (buffer: unknown) {
+    if (!(buffer instanceof SharedArrayBuffer) || buffer.byteLength <= HEADER_BYTES) throw new TypeError('a synchronous channel needs a SharedArrayBuffer with room for a reply')
     this.#header = new Int32Array(buffer, 0, HEADER_BYTES / 4)
     this.#data = new Uint8Array(buffer, HEADER_BYTES)
   }
@@ -87,6 +101,8 @@ export class ReplyWriter {
     this.#offset += length
     this.#header[CHUNK_LENGTH] = length
     this.#header[TOTAL_LENGTH] = this.#pending.length
+    // Released once written: a large reply must not stay pinned here until the next call.
+    if (this.#offset >= this.#pending.length) this.#pending = new Uint8Array(0)
     Atomics.store(this.#header, STATE, READY)
     Atomics.notify(this.#header, STATE)
   }

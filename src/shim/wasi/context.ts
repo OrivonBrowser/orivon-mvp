@@ -8,26 +8,13 @@ import { type Op, fsCall } from './effects.js'
 import { Filetype, type Filestat, GuestMemory } from './memory.js'
 import { FdTable, inodeFor } from './fds.js'
 import type { Sink, StdinSource } from './stdio.js'
-import { WasiTerminated, type WasiTerminationReason, isTermination } from './termination.js'
+import { WasiTerminated, type WasiTerminationReason } from './termination.js'
 
 /** The part of orivon.fs a WASI program can reach. A Worker's proxy provides the same shape. */
 export type WasiFs = Pick<OrivonFs, 'open' | 'stat' | 'readdir' | 'mkdir' | 'rm' | 'rename'>
 
-/** In-flight and rate limits clear on their own; a program has no code path for EAGAIN on a file. */
-const LIMIT_RETRY_DELAYS_MS = [5, 20, 80] as const
-
-/** setTimeout's largest delay; a longer wait is taken in slices of this. */
-const MAX_TIMER_MS = 2 ** 31 - 1
-
-async function delay (ms: number): Promise<void> {
-  for (let left = ms; left > 0; left -= MAX_TIMER_MS) {
-    await new Promise((resolve) => setTimeout(resolve, Math.min(left, MAX_TIMER_MS)))
-  }
-  if (ms <= 0) await new Promise((resolve) => setTimeout(resolve, 0))
-}
-
-function orivonCode (error: unknown): { code?: unknown, platformCode?: unknown } {
-  return typeof error === 'object' && error !== null ? error as { code?: unknown, platformCode?: unknown } : {}
+export function orivonCode (error: unknown): unknown {
+  return typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined
 }
 
 export class HostContext {
@@ -76,51 +63,6 @@ export class HostContext {
     return await Promise.race([work, this.#termination])
   }
 
-  /** One orivon.fs call: a transient limit is retried, a revoked grant stops the program. */
-  async fsCall<T> (run: () => Promise<T>, discard?: (value: T) => void): Promise<T> {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await this.untilTerminated(run(), discard)
-      } catch (error) {
-        if (isTermination(error)) throw error
-        const { code, platformCode } = orivonCode(error)
-        if (code === 'revoked') this.terminate('revoked')
-        this.throwIfTerminated()
-        const retryDelay = LIMIT_RETRY_DELAYS_MS[attempt]
-        if (code === 'limit' && platformCode === undefined && retryDelay !== undefined) {
-          await this.untilTerminated(delay(retryDelay))
-          continue
-        }
-        throw error
-      }
-    }
-  }
-
-  /** The synchronous driver's fsCall: the same retry of a bare limit and stop on a revoked grant. */
-  fsCallSync<T> (run: () => T, sleep: (ms: number) => void): T {
-    for (let attempt = 0; ; attempt++) {
-      this.throwIfTerminated()
-      try {
-        return run()
-      } catch (error) {
-        const { code, platformCode } = orivonCode(error)
-        if (code === 'revoked') this.terminate('revoked')
-        this.throwIfTerminated()
-        const retryDelay = LIMIT_RETRY_DELAYS_MS[attempt]
-        if (code === 'limit' && platformCode === undefined && retryDelay !== undefined) {
-          sleep(retryDelay)
-          continue
-        }
-        throw error
-      }
-    }
-  }
-
-  /** A pause the program can be stopped out of; zero yields once to the event loop. */
-  async sleep (ms: number): Promise<void> {
-    await delay(ms)
-  }
-
   /** The broker refuses the root itself; fs/root.ts answers it locally, as the Node shim does. */
   * stat (path: string): Op<FileStat> {
     if (isRootPath(path)) return rootStat()
@@ -132,7 +74,7 @@ export class HostContext {
     try {
       return yield * this.stat(path)
     } catch (error) {
-      if (orivonCode(error).code === 'notFound') return undefined
+      if (orivonCode(error) === 'notFound') return undefined
       throw error
     }
   }

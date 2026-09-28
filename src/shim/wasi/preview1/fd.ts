@@ -83,6 +83,17 @@ export function fdFunctions (ctx: HostContext): ImportFamily {
         if (file(fd) === undefined) return wrongKind(fds.get(fd))
         return advice > ADVICE_MAX ? Errno.INVAL : Errno.SUCCESS
       },
+      fd_renumber: (from: number, to: number) => {
+        const entry = fds.get(from)
+        const target = fds.get(to)
+        if (entry === undefined || target === undefined) return Errno.BADF
+        if (from === to) return Errno.SUCCESS
+        // dup2 closes the descriptor it replaces and ignores how that close went.
+        if (target.kind === 'file') closeQuietly(target.handle)
+        fds.set(to, entry)
+        fds.remove(from)
+        return Errno.SUCCESS
+      },
       fd_prestat_get: (fd: number, ptr: number) => {
         const entry = fds.get(fd)
         if (entry?.kind !== 'directory' || entry.preopenName === undefined) return Errno.BADF
@@ -101,17 +112,6 @@ export function fdFunctions (ctx: HostContext): ImportFamily {
     },
 
     ops: {
-      * fd_renumber (from: number, to: number) {
-        const entry = fds.get(from)
-        const target = fds.get(to)
-        if (entry === undefined || target === undefined) return Errno.BADF
-        if (from === to) return Errno.SUCCESS
-        fds.set(to, entry)
-        fds.remove(from)
-        // dup2 closes the descriptor it replaces and ignores how that close went.
-        if (target.kind === 'file') yield * closeQuietly(target)
-        return Errno.SUCCESS
-      },
       * fd_read (fd: number, iovsPtr: number, iovsLen: number, nreadPtr: number) {
         const entry = fds.get(fd)
         if (entry?.kind === 'stdin') {
@@ -223,8 +223,9 @@ function * syncDescriptor (entry: FdEntry | undefined): Op<number> {
   return isStdio(entry) ? Errno.INVAL : Errno.SUCCESS
 }
 
-function * closeQuietly (file: FileEntry): Op<void> {
+/** Starts a close without waiting for it: an open handle's close returns a promise, a synchronous one's returns once done. */
+function closeQuietly (handle: FileEntry['handle']): void {
   try {
-    yield * handleCall(file.handle, 'close')
+    void Promise.resolve(handle.close()).catch(() => {})
   } catch {}
 }

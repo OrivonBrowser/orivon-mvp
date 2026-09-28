@@ -114,8 +114,8 @@ describe('an addon\'s files', () => {
     const exports = loadAddon('/lib/nofiles.node') as { content: string, openErrno: number }
     expect(exports.openErrno).toBe(Errno.NOSYS)
     expect(exports.content).toBe('')
-    expect(warn).toHaveBeenCalledTimes(1)
-    expect(warn.mock.calls[0]?.[0]).toMatch(/cross-origin isolated/)
+    // Its read of the unopened descriptor reaches stdin, which warns separately.
+    expect(warn.mock.calls.filter(([line]) => /cross-origin isolated/.test(String(line)))).toHaveLength(1)
   })
 })
 
