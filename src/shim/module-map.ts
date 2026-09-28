@@ -51,6 +51,7 @@ export const SHIM_MODULE_MAP: readonly ShimModuleEntry[] = [
   { specifier: 'url', status: 'ready', kind: 'local', implementation: './polyfills/url.js', note: 'Hand-written: the platform URL/URLSearchParams, fileURLToPath/pathToFileURL, and the legacy parse/format/resolve, checked against node:url.' },
   { specifier: 'querystring', status: 'ready', kind: 'local', implementation: './polyfills/querystring.js', note: 'Hand-written, checked against node:querystring.' },
   { specifier: 'string_decoder', status: 'ready', kind: 'local', implementation: './polyfills/string-decoder.js', note: 'Hand-written over TextDecoder\'s streaming mode, checked against node:string_decoder.' },
+  { specifier: 'wasi', status: 'ready', kind: 'local', implementation: './wasi/node-wasi.js', note: 'Node\'s WASI class over the preview1 host in wasi/ (files, clocks, random, args/env, exit, over orivon.fs). start()/initialize() return promises (JSPI: the program suspends on each file call), and preopens name paths under the virtual root. Links, file times and sockets refuse by name. See wasi/README.md and src/shim/wasi/tests/.' },
   { specifier: 'assert', status: 'ready', kind: 'local', implementation: './polyfills/assert.js', note: 'Hand-written: ok/equal/strictEqual/deepEqual/deepStrictEqual/throws/rejects and their negations, AssertionError, assert.strict. Deep equality is polyfills/deep-equal.ts, shared with util.' }
 ]
 
