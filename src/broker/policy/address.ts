@@ -317,7 +317,8 @@ export function isPublicUnicast (addr: string): boolean {
  * DNS name that is not a literal at all.
  */
 export function isNonPublicAddressLiteral (addr: string): boolean {
-  return classifyAddress(addr) !== 'unparseable' && !isPublicUnicast(addr)
+  const kind = classifyAddress(addr)
+  return kind !== 'unparseable' && kind !== 'public'
 }
 
 export type { AddressClass }

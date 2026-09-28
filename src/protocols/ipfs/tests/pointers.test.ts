@@ -90,6 +90,27 @@ describe('resolveIpnsKey', () => {
     expect(sequences.highest(name)).toBe(5n)
   })
 
+  it('waits out a short cooldown when every gateway is cooling, instead of failing untried', async () => {
+    const { key, name } = await ipnsKey()
+    const gw = fakeGateways(new Map())
+    gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 5n))
+    const pool = new GatewayPool([A], 4)
+    pool.note(A, { kind: 'rate-limited', retryAfterMs: 50 })
+    expect(pool.candidates()).toEqual([])
+    const record = await resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), 5000, signal, () => {})
+    expect(record.sequence).toBe(5n)
+  })
+
+  it('asks a cooling gateway anyway once its cooldown outlasts the wait', async () => {
+    const { key, name } = await ipnsKey()
+    const gw = fakeGateways(new Map())
+    gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 5n))
+    const pool = new GatewayPool([A], 4)
+    pool.note(A, { kind: 'rate-limited', retryAfterMs: 15_000 })
+    const record = await resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), 50, signal, () => {})
+    expect(record.sequence).toBe(5n)
+  })
+
   it('refuses a record signed by another key, drops that gateway, and uses the next', async () => {
     const { key, name } = await ipnsKey()
     const { key: forger } = await ipnsKey()

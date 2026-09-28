@@ -203,4 +203,16 @@ describe('Sites -- stale-while-revalidate', () => {
     await sites.get('a.eth', P)
     expect(calls.n).toBe(2) // waited on this mount, not the (now too old) stale one
   })
+
+  it('past STALE_SERVE_MS, current() has nothing to show once the fresh mount fails', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+    clock.now = STALE_SERVE_MS + 1
+    expect(await sites.current('a.eth', P)).toBeUndefined() // get() would not serve it either
+    resolve.current = async () => { throw new Error('down') }
+    await expect(sites.get('a.eth', P)).rejects.toThrow()
+    expect(await sites.current('a.eth', P)).toBeUndefined()
+  })
 })

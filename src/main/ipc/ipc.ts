@@ -4,15 +4,14 @@
 //
 // Sender check, same pattern as the senderFrame -> origin check
 // build-plan.md's "Testing" section requires for the broker's T3 defense:
-// every handler verifies event.senderFrame is
-// EXACTLY the chrome view's top frame before doing anything. Without this,
-// any web page loaded in a tab could reach this channel too, if it were
-// ever exposed more broadly than the chrome preload by accident -- object
-// identity against a known frame is a stronger guard than a URL allowlist,
-// and it costs nothing here since main already holds the one true
-// reference. Checked synchronously at the top of the handler, per
-// Electron's own warning that a WebFrameMain reference can go stale after
-// an await.
+// every handler verifies event.senderFrame is EXACTLY the chrome view's top
+// frame, by identity, AND that it is still at the chrome's own URL, before
+// doing anything (`isFromChrome`). Identity keeps out every tab's page, if
+// the channel were ever exposed more broadly than the chrome preload by
+// accident; the URL keeps out whatever document the chrome view might be
+// navigated to, independently of lock-navigation.ts refusing that. Checked
+// synchronously at the top of the handler, per Electron's own warning that
+// a WebFrameMain reference can go stale after an await.
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL } from '../channels.js'

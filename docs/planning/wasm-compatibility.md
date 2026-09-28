@@ -4,7 +4,7 @@
 the agent that implements it, so it names files, tests and guards. The choices only the owner can
 make are collected in §8; nothing below should be built past step 1 of §7 until they are taken.
 
-> **Outcome, 2026-09-28 (`ADR-0040`, `d-0153`, `d-0154`).** The owner asked for native modules,
+> **Outcome, 2026-09-28 (`ADR-0040`, `d-0159`, `d-0160`).** The owner asked for native modules,
 > `spawn` and `fork`, each at the same broker allowance as any app with no added risk, which only
 > WebAssembly meets. §8's decisions 1, 2, 7 and 8 are taken: build now, JSPI, one mechanism for
 > both documents, the preview1 host written here. Decisions 3 and 4 were taken by `ADR-0039` and

@@ -1,10 +1,16 @@
 // Resolves one of electron-vite's multi-entry renderer outputs to a
-// loadable URL. Split out of window.ts's own dashboard-URL resolution
-// (queue item 4.4 adds a second caller, permissions-panel.ts, so this is now
-// a shared reason, not just a shared shape -- code-guidelines.md Rule 3).
+// loadable URL, for every view that loads one (window.ts, intro-view.ts,
+// permissions/popover-view.ts).
 
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+
+/** Chromium reports a Windows drive letter in upper case (`file:///C:/`)
+ * whatever case the path had, and a preload gate and `isFromChrome` compare
+ * this URL with the one Chromium reports character for character. */
+export function upperDriveLetter (href: string): string {
+  return href.replace(/^file:\/\/\/([a-z]):/, (_match, drive: string) => `file:///${drive.toUpperCase()}:`)
+}
 
 /**
  * `devServerUrl` is `process.env['ELECTRON_RENDERER_URL']`, read by the
@@ -23,5 +29,5 @@ export function rendererEntryUrl (
 ): string {
   return devServerUrl !== undefined
     ? `${devServerUrl}${devSubpath}`
-    : pathToFileURL(join(baseDir, builtFileRelativePath)).href
+    : upperDriveLetter(pathToFileURL(join(baseDir, builtFileRelativePath)).href)
 }

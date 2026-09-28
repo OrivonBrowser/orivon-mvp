@@ -11,7 +11,8 @@ entirely.
 | [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches, its Web3 Score and site data pages |
 | [`intro/`](intro/) | The welcome screen, a full-window view over the shell (`src/main/shell/intro-view.ts`) |
 
-**What it depends on.** The chrome view on `src/preload/shell.ts`'s commands, and `newtab/` on
+**What it depends on.** The chrome view on `src/preload/shell.ts`'s commands, typed by that file's
+`OrivonShell` so a dropped command fails the typecheck, and `newtab/` on
 `src/preload/newtab.ts`'s, degrading to plain markup outside a fresh tab. `intro/` has no
 preload: it reports "Enter Orivon" through its URL hash, which `intro-view.ts` watches.
 `settings/permissions-view.ts` imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
@@ -19,8 +20,12 @@ for pure string work (showing `ipfs://<cid>` as an address).
 
 **What it must never import.** `electron`, `node:*`, or anything under [`src/main/`](../main/).
 This is a sandboxed renderer with no Node; reaching for it means the logic belongs in main.
-Type-only imports from `src/main/shell/tabs.ts` and `src/main/browsing/bookmarks.ts` are fine:
-`verbatimModuleSyntax` erases them.
+Type-only imports from `src/main/shell/tabs.ts`, `src/main/browsing/bookmarks.ts` and
+`src/preload/shell.ts` are fine: `verbatimModuleSyntax` erases them.
+
+**The chrome document never changes its own URL, not even the fragment.** Main refuses every
+command from a sender whose URL is not exactly the chrome's (`src/main/ipc/ipc.ts`'s
+`isFromChrome`), so a hash change or `pushState` in `main.ts` would silence the chrome.
 
 ## Design notes
 

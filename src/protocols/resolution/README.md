@@ -6,8 +6,9 @@
 Apps, as internal TypeScript: a `NameResolver` returns a name's records for the namespaces it
 declares, and a `DataGatherer` loads a site from those records and reports DDOC. Plus
 [`pointer-chain.ts`](pointer-chain.ts), the one rule both an open page and an installed app use to
-judge a chain of pointers, and two helpers the providers and the verifier host share
-([`dns-name.ts`](dns-name.ts), [`slots.ts`](slots.ts)). Ordinary ICANN names never pass through
+judge a chain of pointers, and three helpers the providers, the verifier host and its supervisor
+share ([`dns-name.ts`](dns-name.ts), [`slots.ts`](slots.ts), and [`timing.ts`](timing.ts)'s
+timeouts and waits, which leave no timer or listener behind). Ordinary ICANN names never pass through
 here; Chromium resolves them. Opening these interfaces to third-party Apps would be a
 `src/contracts/` change, and is not part of this build.
 

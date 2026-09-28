@@ -39,7 +39,7 @@ chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review
 one import across the two sibling packages (`unimplemented.ts` says why not `src/shared/`;
 provisional until the owner confirms it, A160). Its npm dependencies are the polyfill packages
 and `@emnapi/core` and `@emnapi/runtime`, which `addon/` loads native addons' WebAssembly builds
-through (`d-0157`).
+through (`d-0163`).
 
 **What it must never import.** `electron`, or [`src/broker/`](../broker/). The shim runs in the
 renderer and reaches the broker only through `orivon.*`; importing the broker would hand it

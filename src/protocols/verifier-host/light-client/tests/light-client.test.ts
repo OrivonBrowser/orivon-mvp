@@ -77,9 +77,9 @@ describe('startHeliosLightClient -- one bad refresh does not fail every mount', 
     await expect(client.provider.request({ method: 'eth_chainId' })).resolves.toBeDefined()
   })
 
-  // The documented second trigger (ADR-0030's 2026-09-26 amendment, this
-  // directory's own README): two failures in a row downgrades even well
-  // within the grace window, since that reads as more than a single blip.
+  // The documented second trigger (ADR-0030, this directory's README): two
+  // failures in a row downgrade even well within the grace window, since
+  // that reads as more than a single blip.
   it('two consecutive failed refreshes downgrade, even minutes inside the grace window', async () => {
     const helios = fakeHelios()
     vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
@@ -148,6 +148,26 @@ describe('startHeliosLightClient -- one bad refresh does not fail every mount', 
     const requested = expect(client.provider.request({ method: 'eth_chainId' })).rejects.toMatchObject({ failure: 'not-synced' })
     await vi.advanceTimersByTimeAsync(SYNC_WAIT_MS + 100)
     await requested
+  })
+
+  it('wakes a request waiting while syncing as soon as a refresh recovers, not after SYNC_WAIT_MS', async () => {
+    const helios = fakeHelios()
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    const client = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {})
+    await synced(client)
+    helios.behavior.head = () => { throw new Error('down') }
+    await vi.advanceTimersByTimeAsync(60_000 + 100)
+    await vi.advanceTimersByTimeAsync(REFRESH_RETRY_MS + 100) // second failure: syncing
+    expect(client.status().state).toBe('syncing')
+
+    let settled: string | undefined
+    const waiting = client.provider.request({ method: 'eth_chainId' }).then(() => { settled = 'answered' }, (error: unknown) => { settled = `failed: ${(error as Error).message}` })
+    helios.behavior.head = () => ({ number: '0x2', timestamp: '0x658c9999' })
+    await vi.advanceTimersByTimeAsync(REFRESH_RETRY_MS + 100) // the retry succeeds
+    expect(client.status().state).toBe('synced')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(settled).toBe('answered')
+    await waiting
   })
 
   it('recovers to synced once a refresh succeeds again after the grace window passed', async () => {

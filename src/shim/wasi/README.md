@@ -50,7 +50,7 @@ unwrapped export traps. A reactor's files stay open after `_initialize`, since i
 
 **`path_remove_directory` has a window** between its emptiness check and the delete, because
 `orivon.fs.rm` removes a directory only recursively: a file created in that window is deleted too
-(A263). Provisional, until the broker can remove an empty directory in one call.
+(A273). Provisional, until the broker can remove an empty directory in one call.
 
 **Rights are reported per descriptor kind, never enforced**, since programs read them; the broker
 is the boundary, so `fd_fdstat_set_rights` answers `NOTSUP`, as current runtimes do. The
