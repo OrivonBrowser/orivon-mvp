@@ -54,10 +54,11 @@
    async-only `fs` costs is not speed but presence: `readFileSync`/`existsSync`-shaped calls
    are how a ported Node program reads its own configuration, typically from inside a
    dependency the porting developer does not control, and the app throws before it ever
-   renders rather than merely running a few milliseconds slower. The mechanism is the
-   runtime's synchronous renderer-to-main channel today; an `Atomics.wait`-in-a-Worker route
-   is deferred, not rejected, as a future swap for the identical interface, and an app calling
-   `readFileSync` cannot tell which one answered it, and never will be able to.
+   renders rather than merely running a few milliseconds slower. On the page the mechanism is
+   the runtime's synchronous renderer-to-main channel; in a forked child's Worker of a
+   cross-origin isolated app it is the Worker waiting in `Atomics.wait` on the page
+   (`src/shim/worker/sync-channel.ts`). An app calling `readFileSync` cannot tell which one
+   answered it, and never will be able to.
 
    This is not a general licence to add more synchronous calls where they would be
    convenient. `readFileSync` is the one call a ported app cannot do without at startup; the

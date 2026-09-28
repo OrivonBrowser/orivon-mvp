@@ -1,6 +1,6 @@
 # ADR-0040: Native modules and child processes run as WebAssembly in the app's tab, never as machine code
 
-- **Status:** accepted, **amended 2026-09-28**: `spawn` and `fork` are built (see the Amendment at the end)
+- **Status:** accepted, **amended 2026-09-28**: `spawn`, `fork` and the addon resolution are built, and an addon reaches files from a forked child (see the Amendments at the end)
 - **Date:** 2026-09-28
 - **Type:** architecture / security
 - **Decided by:** owner (the goal, and that it must keep every broker guard with no added risk);
@@ -30,7 +30,8 @@ The foundation lands with this ADR: a WASI preview1 host over `orivon.fs` in `sr
 and Node's `wasi` module over it. A WASI call is synchronous for the program and `orivon.fs` is
 asynchronous; the host suspends the program on each file call through WebAssembly JavaScript
 Promise Integration (JSPI). `spawn` and `fork` run their children in Web Workers
-(`src/shim/child-process/`, `src/shim/worker/`); the addon resolution is not built yet.
+(`src/shim/child-process/`, `src/shim/worker/`), and an addon loads as its WebAssembly build
+through emnapi (`src/shim/addon/`).
 
 ## Context
 
@@ -120,3 +121,17 @@ reached inside the renderer instead of in a separate host.
 and Consequences above are rewritten to say so. The addon resolution is decided (`d-0161`) and not
 built yet.
 
+## Amendment (2026-09-28): the addon resolution is built
+
+`process.dlopen` and `module.createRequire` load a `.node` path's WebAssembly build through
+emnapi, over the WASI host's synchronous imports. An addon cannot yet reach files or sockets, and
+a threaded build refuses by name. The Decision above is rewritten to say so.
+
+## Amendment (2026-09-28): an addon reaches files from a forked child
+
+An addon's file calls cannot suspend, since JavaScript calls its exports directly, so JSPI cannot
+serve them. In a forked child of a cross-origin isolated app they block on the page's `orivon.fs`
+through `Atomics.wait` (`src/shim/worker/sync-channel.ts`): Route B, rejected above for
+programs, is used for the one caller JSPI cannot serve, code called synchronously. It adds no
+authority, since each call is one the page could make. On a page's main thread, which may not
+block, an addon's file calls still refuse. A Worker's `readFileSync` takes the same route.

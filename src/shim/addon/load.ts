@@ -1,0 +1,157 @@
+// Loads a native addon's WebAssembly build through emnapi, Node-API for
+// WebAssembly, over the WASI host's synchronous imports. Node's dlopen is
+// synchronous, so this is too: the build is fetched and compiled on the
+// calling thread. A page's main thread refuses to compile a large module
+// synchronously; preloadAddon does it asynchronously first, and a forked
+// child, a Worker, has no such limit. The addon's file calls block on the
+// page's orivon.fs, which only a Worker with shared memory can do.
+
+import { instantiateNapiModule, instantiateNapiModuleSync, type InstantiateOptions } from '@emnapi/core'
+import { getDefaultContext } from '@emnapi/runtime'
+import { refuseShim } from '../errors.js'
+import { VIRTUAL_ROOT } from '../virtual-root.js'
+import { type SyncWasiFs, createWasiHost, type WasiFs } from '../wasi/host.js'
+import { synchronousWasi } from '../wasi/instantiate.js'
+import { SYNCHRONOUS } from '../worker/sync-channel.js'
+import { addonPath, addonUrls, isWasm } from './resolve.js'
+
+/** Exports by the addon's path on the origin, however it was spelled when asked for. */
+const loaded = new Map<string, unknown>()
+const preloading = new Map<string, Promise<void>>()
+
+/** A synchronous module's file calls go to `syncFs`; the asynchronous orivon.fs is never reached. */
+const NO_FS = new Proxy({}, { get: () => { throw new Error('a native addon has no file system here') } }) as WasiFs
+
+/** A forked child's orivon has a synchronous twin when the app is cross-origin isolated; a page's has none. */
+function synchronousFs (): SyncWasiFs | undefined {
+  const orivon = (globalThis as { orivon?: Record<PropertyKey, unknown> }).orivon
+  return (orivon?.[SYNCHRONOUS] as { fs?: SyncWasiFs } | undefined)?.fs
+}
+
+interface WritableStdio { write?: (chunk: Uint8Array) => unknown }
+type ShimProcess = { env?: Record<string, string | undefined>, stdout?: WritableStdio, stderr?: WritableStdio } | undefined
+
+function dlopenError (filename: string, detail: string): Error {
+  return Object.assign(new Error(`${filename}: ${detail}`), { code: 'ERR_DLOPEN_FAILED', reason: 'excluded' })
+}
+
+function notFound (filename: string, origin: string): Error {
+  const tried = addonUrls(filename, origin).map((url) => new URL(url).pathname).join(', ')
+  return dlopenError(filename, `no WebAssembly build found (${tried}); a native addon runs here only as WebAssembly`)
+}
+
+/** Synchronous GET of a binary resource. A document may not set responseType on a synchronous request, a Worker may. */
+function fetchSync (url: string): Uint8Array | undefined {
+  const request = new XMLHttpRequest()
+  request.open('GET', url, false)
+  const inDocument = typeof document !== 'undefined'
+  if (inDocument) request.overrideMimeType('text/plain; charset=x-user-defined')
+  else request.responseType = 'arraybuffer'
+  try {
+    request.send()
+  } catch {
+    return undefined
+  }
+  if (request.status !== 200) return undefined
+  if (!inDocument) return new Uint8Array(request.response as ArrayBuffer)
+  const text = request.responseText
+  const bytes = new Uint8Array(text.length)
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff
+  return bytes
+}
+
+/**
+ * Refuses by name what the loader cannot run: a threaded build needs
+ * Workers sharing its memory, and a command build (one exporting `_start`)
+ * is started through Node's own WASI internals, which emnapi reaches for.
+ */
+function assertLoadable (module: WebAssembly.Module, filename: string): void {
+  if (WebAssembly.Module.imports(module).some((entry) => entry.module === 'wasi' && entry.name === 'thread-spawn')) {
+    throw refuseShim('process.dlopen', 'not-built', `${filename} is a threaded WebAssembly build (wasm32-wasip1-threads); build it for wasm32-wasip1`)
+  }
+  if (WebAssembly.Module.exports(module).some((entry) => entry.name === '_start')) {
+    throw dlopenError(filename, 'its WebAssembly build is a command (it exports _start); build the addon as a reactor, as napi-rs does and -mexec-model=reactor asks')
+  }
+}
+
+/** Addon output goes where Node's does: the process's stdout and stderr, a forked child's pipes included. */
+function options (filename: string): InstantiateOptions {
+  const proc = (globalThis as { process?: ShimProcess }).process
+  const env = proc?.env ?? {}
+  const write = (stream: WritableStdio | undefined) => (bytes: Uint8Array): void => { stream?.write?.(bytes) }
+  const syncFs = synchronousFs()
+  const host = createWasiHost({
+    fs: NO_FS,
+    ...(syncFs === undefined ? {} : { syncFs }),
+    args: [filename],
+    env: Object.fromEntries(Object.entries(env).flatMap(([key, value]) => value === undefined ? [] : [[key, value]])),
+    preopens: { '/': VIRTUAL_ROOT },
+    ...(proc?.stdout?.write === undefined ? {} : { syncStdout: write(proc.stdout) }),
+    ...(proc?.stderr?.write === undefined ? {} : { syncStderr: write(proc.stderr) })
+  })
+  return { context: getDefaultContext(), filename, wasi: synchronousWasi(host), asyncWorkPoolSize: 0 }
+}
+
+function keyOf (filename: string, origin: string): string {
+  const path = addonPath(filename, origin)
+  if (path === undefined) throw dlopenError(filename, 'a native addon must come from the app\'s own origin')
+  return path
+}
+
+/** The addon's exports, loading it the first time. Throws ERR_DLOPEN_FAILED when no WebAssembly build is found. */
+export function loadAddon (filename: string, origin: string = globalThis.location.origin): unknown {
+  const key = keyOf(filename, origin)
+  if (loaded.has(key)) return loaded.get(key)
+  for (const url of addonUrls(key, origin)) {
+    const bytes = fetchSync(url)
+    if (bytes === undefined || !isWasm(bytes)) continue
+    let module: WebAssembly.Module
+    try {
+      module = new WebAssembly.Module(bytes as Uint8Array<ArrayBuffer>)
+    } catch (error) {
+      if (error instanceof RangeError) {
+        throw dlopenError(filename, `its WebAssembly build is too large to compile synchronously on the page: await preloadAddon('${filename}') before loading it, or load it in a forked child`)
+      }
+      throw dlopenError(filename, `its WebAssembly build is not valid: ${String(error)}`)
+    }
+    assertLoadable(module, filename)
+    const { napiModule } = instantiateNapiModuleSync(module, options(filename))
+    loaded.set(key, napiModule.exports)
+    return napiModule.exports
+  }
+  throw notFound(filename, origin)
+}
+
+async function preload (filename: string, key: string, origin: string): Promise<void> {
+  for (const url of addonUrls(key, origin)) {
+    const response = await fetch(url).catch(() => undefined)
+    if (response?.ok !== true) continue
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (!isWasm(bytes)) continue
+    let module: WebAssembly.Module
+    try {
+      module = await WebAssembly.compile(bytes)
+    } catch (error) {
+      throw dlopenError(filename, `its WebAssembly build is not valid: ${String(error)}`)
+    }
+    assertLoadable(module, filename)
+    // A synchronous load may have finished while this one was compiling: the first instance stays.
+    if (loaded.has(key)) return
+    const { napiModule } = await instantiateNapiModule(module, options(filename))
+    if (!loaded.has(key)) loaded.set(key, napiModule.exports)
+    return
+  }
+  throw notFound(filename, origin)
+}
+
+/** Fetches, compiles and instantiates the addon asynchronously, so a later synchronous load finds it ready. */
+export async function preloadAddon (filename: string, origin: string = globalThis.location.origin): Promise<void> {
+  const key = keyOf(filename, origin)
+  if (loaded.has(key)) return
+  let pending = preloading.get(key)
+  if (pending === undefined) {
+    pending = preload(filename, key, origin).finally(() => preloading.delete(key))
+    preloading.set(key, pending)
+  }
+  await pending
+}

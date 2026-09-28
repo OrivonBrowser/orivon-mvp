@@ -3,7 +3,8 @@
 **What lives here.** What a child needs to run in a Web Worker: the Worker's runtime
 (`runtime.ts`, with `runtime-spawn.ts` for a WASI program and `runtime-fork.ts` for an app
 module), the page-side server and Worker-side client that carry the Worker's `orivon.*` calls to
-the page (`orivon-server.ts`, `orivon-client.ts`), and `launch.ts`, which starts a Worker.
+the page (`orivon-server.ts`, `orivon-client.ts`), the shared-memory channel for its synchronous
+calls (`sync-channel.ts`), and `launch.ts`, which starts a Worker.
 [`../child-process/`](../child-process/) is the one user today. A Worker reaches exactly what its
 page could, since it is the app's own code
 ([`ADR-0040`](../../../docs/decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)).
@@ -33,8 +34,18 @@ cannot copy, so the server reads it one socket at a time (`HANDLE_STREAMS`). A n
 of handles must be added there, or its transfer fails.
 
 **A handle's plain fields are copied once**, when it crosses: a live counter such as
-`UdpSocket.droppedInbound` reads its value at that moment. `readFileSync` refuses in a Worker,
-which cannot block on the page without `SharedArrayBuffer`.
+`UdpSocket.droppedInbound` reads its value at that moment.
+
+**A Worker's synchronous calls block on the page through shared memory** (`sync-channel.ts`).
+The Worker posts the call as usual and waits in `Atomics.wait`; the page makes it on its own
+`orivon` and writes the reply into a `SharedArrayBuffer`, in 1 MiB chunks. Only a cross-origin
+isolated app has `SharedArrayBuffer`: elsewhere a Worker's `readFileSync` refuses by name, and an
+addon's file calls refuse with `NOSYS`. The synchronous twin sits under
+`Symbol.for('orivon.synchronous')` on the Worker's `orivon`, a registered symbol so each bundle's
+shim finds the same one. It is not part of the contract, and `window.orivon` has none. A reply
+carries no stream, so a call returning one refuses, and the page closes what that call opened. **Never make a synchronous call from the
+thread that serves it**: it waits forever, which is why `tests/sync-channel.test.ts` runs the
+Worker end in a `worker_threads` thread.
 
 **Disposing the server closes every handle the Worker still holds**, so a killed child leaves no
 slot open in the broker's per-app handle table.

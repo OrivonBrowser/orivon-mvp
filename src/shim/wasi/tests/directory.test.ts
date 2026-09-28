@@ -1,6 +1,6 @@
 // fd_readdir, the preopens, and the three stdio descriptors.
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Errno } from '../errno.js'
 import { createWasiHost } from '../host.js'
 import { createHostHarness, type HostHarness } from './support/host-harness.js'

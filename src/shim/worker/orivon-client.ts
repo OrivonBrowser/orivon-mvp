@@ -2,9 +2,12 @@
 // page (orivon-server.ts), and every handle that comes back becomes an
 // object whose methods call back by the handle's number. The shape matches
 // window.orivon, so the Node shim and the WASI host run unchanged on it.
+// Where shared memory exists, a synchronous twin of the same shape sits
+// under SYNCHRONOUS: each call blocks until the page answers.
 
 import type { CallBody, HandleDescriptor, Request, ServerMessage } from './orivon-server.js'
 import type { WireError } from './protocol.js'
+import { SYNCHRONOUS, awaitReply, createChannelBuffer, decodeReply, hasSharedMemory } from './sync-channel.js'
 
 interface Pending { resolve: (value: unknown) => void, reject: (error: unknown) => void }
 
@@ -20,9 +23,9 @@ function toError (wire: WireError & { platformCode?: string }): Error {
   })
 }
 
-/** readFileSync cannot block a Worker on the page without SharedArrayBuffer, so it refuses by name. */
+/** Without SharedArrayBuffer a Worker cannot block on the page, so readFileSync refuses by name. */
 function syncUnavailable (): never {
-  throw Object.assign(new Error('orivon.fs.readFileSync is not available in a Worker: use the asynchronous fs calls'), {
+  throw Object.assign(new Error('orivon.fs.readFileSync is not available in a Worker of an app that is not cross-origin isolated: use the asynchronous fs calls'), {
     name: 'OrivonShimError', api: 'orivon.fs.readFileSync', reason: 'not-applicable'
   })
 }
@@ -101,17 +104,52 @@ export function createOrivonClient (port: MessagePort, activity?: ClientActivity
     }
   }
 
+  let channel: SharedArrayBuffer | undefined
+  const callSync = (body: CallBody): unknown => {
+    if (channel === undefined) {
+      const created = createChannelBuffer()
+      send({ syncBuffer: created })
+      channel = created
+    }
+    const buffer = channel
+    const reply = decodeReply(awaitReply(buffer, () => { send({ ...body, id: nextId++, sync: true }) }, () => { send({ syncMore: true }) })) as ServerMessage
+    if (!('id' in reply)) throw new TypeError('a synchronous call was answered with something other than its reply')
+    if (!reply.ok) throw toError(reply.error)
+    return decodeSync(reply.value)
+  }
+
+  /** A handle returned synchronously: its methods block too. An open file keeps no child alive, as in Node. */
+  const decodeSync = (value: unknown): unknown => {
+    if (isDescriptor(value)) {
+      const handle: Record<string, unknown> = { ...(decodeSync(value.data) as Record<string, unknown>) }
+      for (const method of value.methods) handle[method] = (...args: unknown[]) => callSync({ handle: value.__orivonHandle, method, args })
+      return handle
+    }
+    if (Array.isArray(value)) return value.map(decodeSync)
+    if (typeof value !== 'object' || value === null || ArrayBuffer.isView(value)) return value
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decodeSync(item)]))
+  }
+
+  const synchronous = hasSharedMemory() ? namespaces((name, member) => (...args: unknown[]) => callSync({ path: [name, member], args })) : undefined
+
+  return namespaces((name, member) => {
+    if (name === 'fs' && member === 'readFileSync') return synchronous === undefined ? syncUnavailable : (path: string) => callSync({ path: ['fs', 'readFile'], args: [path] })
+    return async (...args: unknown[]) => await call({ path: [name, member], args })
+  }, synchronous)
+}
+
+/** An orivon-shaped object whose every `orivon.<name>.<member>` is `method(name, member)`. */
+function namespaces (method: (name: string, member: string) => unknown, synchronous?: object): Record<string, unknown> {
   const namespace = (name: string): object => new Proxy({}, {
     get: (_target, member) => {
       // Never a thenable, a primitive or anything awaited by accident.
       if (typeof member !== 'string' || member === 'then') return undefined
-      if (name === 'fs' && member === 'readFileSync') return syncUnavailable
-      return async (...args: unknown[]) => await call({ path: [name, member], args })
+      return method(name, member)
     }
   })
-
   return new Proxy({}, {
     get: (_target, name) => {
+      if (name === SYNCHRONOUS) return synchronous
       if (typeof name !== 'string' || name === 'then') return undefined
       if (name === 'version') return 0
       return namespace(name)

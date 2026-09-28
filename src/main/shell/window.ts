@@ -40,6 +40,7 @@ import { showContextMenu } from './context-menu.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import type { IntroPlan } from './intro-state.js'
 import { showIntro } from './intro-view.js'
+import { SHELL_PARTITION } from './shell-session.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -151,6 +152,7 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
   const chrome = new WebContentsView({
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/shell.js'),
+      partition: SHELL_PARTITION,
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,

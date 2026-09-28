@@ -5,12 +5,14 @@
 import { toConfinedPath } from '../fs/paths.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { HostContext, type WasiFs } from './context.js'
+import { type SyncIo, runAsync, runSync } from './drivers.js'
+import type { SyncWasiFs } from './effects.js'
 import { Errno, errnoFor } from './errno.js'
 import { PathError } from './fds.js'
 import { InvalidUtf8 } from './memory.js'
 import { directoryFunctions } from './preview1/directory.js'
 import { environmentFunctions } from './preview1/environment.js'
-import type { ImportFamily, WasiFunction } from './preview1/family.js'
+import type { ImportFamily, SyncSink, WasiFunction } from './preview1/family.js'
 import { fdFunctions } from './preview1/fd.js'
 import { pathFunctions } from './preview1/path.js'
 import { refusedFunctions } from './preview1/refused.js'
@@ -18,6 +20,7 @@ import { EMPTY_STDIN, type LineSink, type Sink, type StdinSource, lineSink } fro
 import { isTermination } from './termination.js'
 
 export type { WasiFs } from './context.js'
+export type { SyncFileHandle, SyncWasiFs } from './effects.js'
 
 export interface WasiHostOptions {
   readonly fs: WasiFs
@@ -30,6 +33,11 @@ export interface WasiHostOptions {
   /** Default: the page console, one entry per line. */
   readonly stdout?: Sink
   readonly stderr?: Sink
+  /** Where a synchronous module's stdout and stderr go (syncFunctions). Default: the page console. */
+  readonly syncStdout?: SyncSink
+  readonly syncStderr?: SyncSink
+  /** What a synchronous module's file calls reach. Without it, each refuses with NOSYS and a console line. */
+  readonly syncFs?: SyncWasiFs
 }
 
 export interface WasiHost {
@@ -37,6 +45,12 @@ export interface WasiHost {
   readonly functions: Readonly<Record<string, WasiFunction>>
   /** The functions that may suspend: instantiate.ts wraps exactly these in WebAssembly.Suspending. */
   readonly suspending: ReadonlySet<string>
+  /**
+   * The same functions for a module JavaScript calls synchronously, which
+   * cannot suspend: each file call is answered by `syncFs` before it
+   * returns, and output goes to `syncStdout` and `syncStderr`.
+   */
+  readonly syncFunctions: Readonly<Record<string, WasiFunction>>
   /** Called once the instance exists, before its entry export runs. */
   bindMemory (memory: WebAssembly.Memory): void
   /** Stops the program at its next import, which throws WasiTerminated('killed'). */
@@ -92,23 +106,22 @@ export function createWasiHost (options: WasiHostOptions): WasiHost {
   ]
   const functions: Record<string, WasiFunction> = {}
   const suspending = new Set<string>()
-  for (const family of families) {
-    for (const [name, fn] of Object.entries(family.sync)) {
-      functions[name] = (...args: never[]) => {
-        try {
-          ctx.throwIfTerminated()
-          return fn(...args)
-        } catch (error) {
-          return toErrno(error)
-        }
-      }
+  const guard = (fn: (...args: never[]) => number): WasiFunction => (...args: never[]) => {
+    try {
+      ctx.throwIfTerminated()
+      return fn(...args)
+    } catch (error) {
+      return toErrno(error)
     }
-    for (const [name, fn] of Object.entries(family.async)) {
+  }
+  for (const family of families) {
+    for (const [name, fn] of Object.entries(family.sync)) functions[name] = guard(fn)
+    for (const [name, op] of Object.entries(family.ops)) {
       suspending.add(name)
       functions[name] = async (...args: never[]) => {
         try {
           ctx.throwIfTerminated()
-          return await fn(...args)
+          return await runAsync(ctx, op(...args))
         } catch (error) {
           return toErrno(error)
         }
@@ -116,9 +129,34 @@ export function createWasiHost (options: WasiHostOptions): WasiHost {
     }
   }
 
+  // Built on first use: only a synchronous module (a native addon) reads them.
+  let syncFunctions: Record<string, WasiFunction> | undefined
+  const buildSyncFunctions = (): Record<string, WasiFunction> => {
+    const sinkOf = (given: SyncSink | undefined, emit: (line: string) => void): SyncSink => {
+      if (given !== undefined) return given
+      const line = lineSink(emit)
+      lineSinks.push(line)
+      return (bytes) => { void line.sink(bytes) }
+    }
+    const io: SyncIo = {
+      fs: options.syncFs,
+      stdout: sinkOf(options.syncStdout, (line) => console.log(line)),
+      stderr: sinkOf(options.syncStderr, (line) => console.error(line))
+    }
+    const table: Record<string, WasiFunction> = { ...functions }
+    for (const family of families) {
+      for (const [name, op] of Object.entries(family.ops)) table[name] = guard((...args) => runSync(ctx, op(...args), io))
+    }
+    return table
+  }
+
   return {
     functions,
     suspending,
+    get syncFunctions () {
+      syncFunctions ??= buildSyncFunctions()
+      return syncFunctions
+    },
     bindMemory: (memory) => ctx.memory.bind(memory),
     kill: () => ctx.terminate('killed'),
     finish: async () => {
