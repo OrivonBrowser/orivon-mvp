@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **An app can show a website inside its own page** (`web.embed`, ADR-0039), each shown page
+  sandboxed in the app's own session; a manifest can also ask for cross-origin isolation, which
+  turns on `SharedArrayBuffer` for WebAssembly threads.
 - **A welcome screen on first launch**, and its picture behind the new-tab page. Nothing loads
   from the network.
 - **`ipfs://` and `ipns://` addresses load, shown as themselves**, with every block checked;

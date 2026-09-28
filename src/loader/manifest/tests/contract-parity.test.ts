@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseManifest } from '../manifest.js'
 import type {
   Capabilities,
+  EmbedCapability,
   FsCapability,
   HttpsCapability,
   IdCapability,
@@ -28,10 +29,7 @@ import type {
 
 type Full<T> = Required<T>
 
-// 'crossOriginIsolated' excluded on the same deferred reasoning as the
-// capabilities below: the parser accepts it only once the stacked
-// implementation PR adds it to MANIFEST_KEYS, which restores it here.
-type FullManifest = Omit<Full<Manifest>, 'capabilities' | 'crossOriginIsolated'> & {
+type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
   // ADR-0032/ADR-0033: 'media', 'clipboard' and 'secrets' excluded with the
   // same deferred reasoning 'web' carried in the contracts-only PR that
   // added it -- the real parser does not accept any of the three yet
@@ -46,11 +44,7 @@ type FullManifest = Omit<Full<Manifest>, 'capabilities' | 'crossOriginIsolated'>
     }
     readonly fs: Full<FsCapability>
     readonly id: Full<IdCapability>
-    // ADR-0039: 'embed' excluded on the same deferred reasoning as the
-    // three capabilities above -- the parser accepts it only once the
-    // stacked implementation PR adds EMBED_CAPABILITY_KEYS, which restores
-    // it here.
-    readonly web: Omit<Full<WebCapability>, 'embed'>
+    readonly web: Omit<Full<WebCapability>, 'embed'> & { readonly embed: Full<EmbedCapability> }
   }
 }
 
@@ -68,6 +62,7 @@ const KITCHEN_SINK: FullManifest = {
   entry: 'index.html',
   assets: ['style.css', 'script.js'],
   consentGranularity: 'per-capability',
+  crossOriginIsolated: true,
   capabilities: {
     protocols: ['magnet'],
     net: {
@@ -78,7 +73,7 @@ const KITCHEN_SINK: FullManifest = {
     },
     fs: { quotaBytes: 104857600 },
     id: { curves: ['secp256k1'] },
-    web: { contexts: ['https://kitchen-sink.example'] }
+    web: { contexts: ['https://kitchen-sink.example'], embed: { origins: ['*'] } }
   }
 }
 

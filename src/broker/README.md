@@ -42,7 +42,9 @@ Top-level files belong to no single directory: [`index.ts`](index.ts) (`createBr
 [`errors.ts`](errors.ts) (constructs an `OrivonError`), [`io-errors.ts`](io-errors.ts)
 (translates a raw errno; kept apart from `errors.ts` while A39 is open), and
 [`broker-contracts.ts`](broker-contracts.ts) (the `Broker` interface and its dependency shape),
-which re-exports the four other `*-contracts.ts` files, so import from it.
+which re-exports the five other `*-contracts.ts` files, so import from it.
+[`embed-contracts.ts`](embed-contracts.ts) is what the shell's embed host asks before a
+`<webview>` attaches or loads a document (`ADR-0039`).
 
 **Reading order, cold:** [`src/contracts/`](../contracts/), then
 [`policy/connect.ts`](policy/connect.ts)'s header for how security is reasoned about here, then

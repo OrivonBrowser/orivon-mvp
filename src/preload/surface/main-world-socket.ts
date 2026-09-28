@@ -457,7 +457,8 @@ export function installOrivon (
       decrypt: async (ciphertext: Uint8Array) => await callRevived(bridge.secretsDecrypt(ciphertext))
     }),
     web: Object.freeze({
-      openContext: async (origin: string, options?: { width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext({ origin, ...options })))
+      openContext: async (origin: string, options?: { width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext({ origin, ...options }))),
+      setEmbedScript: async (source: string) => { await callRevived(bridge.webSetEmbedScript(source)) }
     }),
     net: Object.freeze({
       connect: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnect(opts))),

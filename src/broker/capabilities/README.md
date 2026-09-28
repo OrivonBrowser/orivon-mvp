@@ -1,8 +1,8 @@
 # `src/broker/capabilities/`: the `orivon.*` entry points
 
 **What lives here.** The entry points `createBroker` ([`../index.ts`](../index.ts)) returns, one
-file per capability (`net`, `fs`, `user-selected`, `id`, `secrets`, `web`), plus the helpers they
-share.
+file per capability (`net`, `fs`, `user-selected`, `id`, `secrets`, `web`, and `embed` for
+`web.embed`'s broker half, `ADR-0039`), plus the helpers they share.
 
 **What it depends on.** [`../broker-contracts.ts`](../broker-contracts.ts),
 [`../errors.ts`](../errors.ts), [`../io-errors.ts`](../io-errors.ts), [`../grants/`](../grants/),

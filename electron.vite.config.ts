@@ -119,7 +119,8 @@ export default defineConfig({
           shell: resolve(root, 'src/preload/shell.ts'),
           newtab: resolve(root, 'src/preload/newtab.ts'),
           settings: resolve(root, 'src/preload/settings.ts'),
-          'site-info': resolve(root, 'src/preload/site-info.ts')
+          'site-info': resolve(root, 'src/preload/site-info.ts'),
+          embed: resolve(root, 'src/preload/embed.ts')
         }
       },
       // Preloads share local imports (./channels.js, ./surface/orivon.js).

@@ -382,7 +382,7 @@ Ask them in one batch, before step 2.
 
 Owner answers to §5: standard model and effort `high` by default; keep adversarial-reviewer,
 named-persona-adversarial-review, usage-guard and humanizer; security-guidance stays on; a
-400-word PR ceiling (d-0143 to d-0146). Decision 6 is answered by the list in the PR body.
+400-word PR ceiling (d-0144 to d-0147). Decision 6 is answered by the list in the PR body.
 
 Where the application departed from §4:
 
@@ -391,7 +391,7 @@ Where the application departed from §4:
 - **Step 5.** Eight entries resolved in the 2026-09-03 decisions table were also open further
   down; seven resolved ("Not built yet" where the work is missing), and A47 stayed open as a
   narrower question. B5 names two different questions in live docs; the guard checks A-numbers
-  only, as before. Entries whose code already does what they asked were resolved (d-0148).
+  only, as before. Entries whose code already does what they asked were resolved (d-0149).
 - **Step 6.** The ten largest READMEs held 173 KB, so no cut to them alone could reach 200 KB;
   the pass covered every README except `src/contracts/` and `src/shared/` (408 KB to 162 KB).
 - **Step 10.** `electron.vite.config.ts` is also a root `*.config.ts`, so its comments were

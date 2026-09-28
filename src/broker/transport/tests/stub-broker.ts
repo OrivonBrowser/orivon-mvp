@@ -92,7 +92,9 @@ export function stubBroker (
   }> = {}
 ): Broker {
   const notStubbed = async (): Promise<never> => { throw new Error('this stub method was not configured for this test') }
+  const notStubbedSync = (): never => { throw new Error('this stub method was not configured for this test') }
   return {
+    embed: { originsSync: () => undefined, scriptSync: () => undefined, attach: notStubbedSync, setScript: notStubbed },
     app: {
       manifest: async (origin) => {
         calls.push({ method: 'app.manifest', origin, args: undefined })

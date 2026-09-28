@@ -64,6 +64,10 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   // fs/id's presence-only rows above.
   const contexts = capabilities.web?.contexts
   if (contexts !== undefined) set['web.context'] = contexts
+  // ADR-0039: web.embed.origins is the pattern list for 'web.embed', the
+  // same shape as web.contexts above.
+  const embedOrigins = capabilities.web?.embed?.origins
+  if (embedOrigins !== undefined) set['web.embed'] = embedOrigins
 
   // capabilities.protocols is deliberately not mapped: it is not a
   // CapabilityKind (contracts/manifest.ts's Capabilities.protocols is

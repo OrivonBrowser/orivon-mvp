@@ -42,6 +42,8 @@ export const TIMEOUT_MS = {
   webEvaluate: LIMITS.webContextEvaluateMs + 5_000,
   /** web.close -- a plain teardown, no I/O of its own beyond closing the host's view. */
   webClose: 10_000,
+  /** web.setEmbedScript (ADR-0039): stores a string in the broker, up to LIMITS.embedScriptBytes across IPC -- no I/O of its own. */
+  webSetEmbedScript: 15_000,
   /**
    * web.awaitClose -- ./web.ts's own long-poll loop (see that
    * file's header): each iteration waits this long for the context to

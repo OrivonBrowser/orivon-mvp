@@ -224,6 +224,10 @@ export class OriginTable {
     if (kind === 'webContext' && counts.webContexts >= LIMITS.webContexts) {
       throw fail('limit', `origin holds ${String(LIMITS.webContexts)} web contexts`)
     }
+    // ADR-0039's own budget, the same flat ceiling shape as webContexts.
+    if (kind === 'embed' && counts.embeds >= LIMITS.embeds) {
+      throw fail('limit', `origin holds ${String(LIMITS.embeds)} embedded pages`)
+    }
   }
 
   /** `grantId`, or the grant that replaced it and kept its handles. */
@@ -439,17 +443,19 @@ export class OriginTable {
    * that had to agree, one of them documented as being the other, and only one
    * of them enforcing anything.
    */
-  #census (): { sockets: number, files: number, identities: number, webContexts: number } {
+  #census (): { sockets: number, files: number, identities: number, webContexts: number, embeds: number } {
     let sockets = 0
     let files = 0
     let identities = 0
     let webContexts = 0
+    let embeds = 0
     for (const record of this.handles.values()) {
       if (SOCKET_KINDS.has(record.entry.kind)) sockets += 1
       else if (record.entry.kind === 'file') files += 1
       else if (record.entry.kind === 'webContext') webContexts += 1
+      else if (record.entry.kind === 'embed') embeds += 1
       else identities += 1
     }
-    return { sockets, files, identities, webContexts }
+    return { sockets, files, identities, webContexts, embeds }
   }
 }

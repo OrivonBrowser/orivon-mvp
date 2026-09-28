@@ -235,6 +235,11 @@ async function webOpenContext (origin: string, options?: { width?: number, heigh
   return await webOpenContextBridge(opts)
 }
 
+/** `orivon.web.setEmbedScript` (ADR-0039): a plain request/reply round trip, `idPublicKey`'s own shape. */
+async function webSetEmbedScript (source: string): Promise<void> {
+  await call('web.setEmbedScript', { source }, TIMEOUT_MS.webSetEmbedScript)
+}
+
 /**
  * The stream-less `net` surface: used both when `executeInMainWorld` is
  * absent and when it exists but throws -- one implementation, not two
@@ -293,7 +298,8 @@ function exposeFallback (): void {
     // rejected 'invalid'. `webOpenContext` above restores the contract's
     // own two-argument shape.
     web: {
-      openContext: webOpenContext
+      openContext: webOpenContext,
+      setEmbedScript: webSetEmbedScript
     }
   })
 }
@@ -342,6 +348,7 @@ export function exposeOrivon (): void {
     secretsEncrypt,
     secretsDecrypt,
     webOpenContext: webOpenContextBridge,
+    webSetEmbedScript,
     netConnect: netConnectBridge,
     netConnectSecure: netConnectSecureBridge,
     netUdpBind: netUdpBindBridge,
