@@ -1,0 +1,306 @@
+import { ExtensionDNR } from '../../../../vendor/firefox-dnr/src/extension-dnr.mjs'
+import { ExtensionDNRLimits } from '../../../../vendor/firefox-dnr/src/dnr-limits.mjs'
+import { FrameAncestryTracker } from './frame-ancestry.js'
+import type {
+  DnrDecision,
+  DnrMatchedRuleInfo,
+  DnrRequest,
+  DnrRule,
+  DnrStaticRuleset,
+  DnrUpdateRuleOptions,
+  DnrUpdateRulesetOptions,
+} from './types.js'
+
+// vendor/firefox-dnr/src/extension-dnr.mjs is plain JS (see its own header
+// for why): these two aliases give the classes this file calls into a name,
+// without claiming types the vendored file itself does not declare.
+type VendorRuleValidator = InstanceType<typeof ExtensionDNR.RuleValidator>
+type VendorRuleQuotaCounter = InstanceType<typeof ExtensionDNR.RuleQuotaCounter>
+type VendorMatchedRule = { rule: any; ruleset: any; ruleManager: any }
+
+const { RuleValidator, RuleQuotaCounter, RequestDetails, RequestEvaluator } = ExtensionDNR
+
+/** Chrome defaults an omitted rule priority to 1; the vendored validator expects it pre-filled. */
+function withDefaultPriority(rules: DnrRule[]): DnrRule[] {
+  return rules.map(rule => (rule.priority === undefined ? { ...rule, priority: 1 } : rule))
+}
+
+function validateOrThrow(
+  validator: VendorRuleValidator,
+  quotaCounter: VendorRuleQuotaCounter,
+  rulesetId: string
+): DnrRule[] {
+  const failures = validator.getFailures()
+  if (failures.length) {
+    throw new Error(failures[0].message)
+  }
+  const validated = validator.getValidatedRules()
+  quotaCounter.tryAddRules(rulesetId, validated)
+  return validated
+}
+
+/** Strips the vendored `Rule`/`RuleCondition` wrapper classes back to plain data. */
+function serializeRule(rule: { id: number; priority: number; condition: object; action: object }): DnrRule {
+  return {
+    id: rule.id,
+    priority: rule.priority,
+    condition: { ...rule.condition },
+    action: rule.action,
+  } as DnrRule
+}
+
+interface StaticRulesetEntry {
+  enabled: boolean
+  rules: DnrRule[]
+}
+
+/** Per-extension bookkeeping the vendored RuleManager does not retain: disabled rulesets' rules. */
+interface StaticState {
+  /** In manifest ("rule_resources") order. */
+  order: string[]
+  byId: Map<string, StaticRulesetEntry>
+}
+
+function computeRedirectUrl(matchedRule: VendorMatchedRule, requestURI: URL): string | null {
+  const redirect = matchedRule.rule.action.redirect
+  if (!redirect) {
+    return null
+  }
+  if (redirect.url) {
+    return redirect.url
+  }
+  if (redirect.extensionPath) {
+    // Orivon serves an extension's own resources at chrome-extension://<id>/,
+    // matching electron-chrome-extensions's convention (extensionId is the
+    // host). See this directory's README §Design notes.
+    return `chrome-extension://${matchedRule.ruleManager.extensionId}${redirect.extensionPath}`
+  }
+  if (redirect.transform) {
+    return ExtensionDNR.applyURLTransform(requestURI, redirect.transform).href
+  }
+  if (redirect.regexSubstitution) {
+    // A rule this far has already been validated; a failure here means the
+    // capture groups produced an unusable target for this particular URL.
+    // Treated as "no redirect" rather than surfaced, so one bad extension
+    // rule cannot fail an unrelated page load.
+    try {
+      return ExtensionDNR.applyRegexSubstitution(matchedRule, requestURI).href
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+function toMatchedRuleInfo(matchedRules: VendorMatchedRule[]): DnrMatchedRuleInfo[] {
+  return matchedRules.map(mr => ({
+    extensionId: mr.ruleManager.extensionId as string,
+    rulesetId: mr.ruleset.id as string,
+    ruleId: mr.rule.id as number,
+  }))
+}
+
+function buildDecision(matchedRules: VendorMatchedRule[], requestURI: URL): DnrDecision {
+  const matchedRuleInfo = toMatchedRuleInfo(matchedRules)
+  if (matchedRules.length === 1) {
+    const winner = matchedRules[0]!
+    switch (winner.rule.action.type) {
+      case 'block':
+        return { cancel: true, matchedRules: matchedRuleInfo }
+      case 'upgradeScheme':
+        return { upgradeToHttps: true, matchedRules: matchedRuleInfo }
+      case 'redirect': {
+        const redirectUrl = computeRedirectUrl(winner, requestURI)
+        return redirectUrl ? { redirectUrl, matchedRules: matchedRuleInfo } : { matchedRules: matchedRuleInfo }
+      }
+      default:
+        break
+    }
+  }
+  const decision: DnrDecision = { matchedRules: matchedRuleInfo }
+  const requestHeaders = ExtensionDNR.ModifyRequestHeaders.maybeApplyModifyHeaders(matchedRules)
+  const responseHeaders = ExtensionDNR.ModifyResponseHeaders.maybeApplyModifyHeaders(matchedRules)
+  if (requestHeaders.length) {
+    decision.requestHeaders = requestHeaders
+  }
+  if (responseHeaders.length) {
+    decision.responseHeaders = responseHeaders
+  }
+  return decision
+}
+
+function parseUrlOrNull(spec: string | null | undefined): URL | null {
+  if (!spec) {
+    return null
+  }
+  try {
+    return new URL(spec)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Creates a fresh, in-memory `declarativeNetRequest` engine. See this
+ * directory's README for what it does and does not own.
+ */
+export function createDnrEngine() {
+  const registry = ExtensionDNR.createRuleManagerRegistry()
+  const staticState = new Map<string, StaticState>()
+  const frameAncestry = new FrameAncestryTracker()
+
+  function applyEnabledStaticRulesets(extensionId: string, state: StaticState): void {
+    const ruleManager = registry.getRuleManager(extensionId)
+    const quotaCounter = new RuleQuotaCounter('GUARANTEED_MINIMUM_STATIC_RULES')
+    const enabled = state.order
+      .map(id => [id, state.byId.get(id)!] as const)
+      .filter(([, entry]) => entry.enabled)
+    if (enabled.length > ExtensionDNRLimits.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS) {
+      throw new Error(
+        `Enabled static rulesets exceed MAX_NUMBER_OF_ENABLED_STATIC_RULESETS (${ExtensionDNRLimits.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS}).`
+      )
+    }
+    const rulesets = enabled.map(([id, entry]) => {
+      const validator: VendorRuleValidator = new RuleValidator([])
+      validator.addRules(withDefaultPriority(entry.rules))
+      const rules = validateOrThrow(validator, quotaCounter, id)
+      return { id, rules, disabledRuleIds: null }
+    })
+    ruleManager.setEnabledStaticRulesets(rulesets)
+  }
+
+  return {
+    setStaticRulesets(extensionId: string, rulesets: DnrStaticRuleset[]): void {
+      if (rulesets.length > ExtensionDNRLimits.MAX_NUMBER_OF_STATIC_RULESETS) {
+        throw new Error(
+          `Static rulesets exceed MAX_NUMBER_OF_STATIC_RULESETS (${ExtensionDNRLimits.MAX_NUMBER_OF_STATIC_RULESETS}).`
+        )
+      }
+      const seen = new Set<string>()
+      for (const ruleset of rulesets) {
+        if (seen.has(ruleset.id)) {
+          throw new Error(`Duplicate static ruleset id: "${ruleset.id}"`)
+        }
+        seen.add(ruleset.id)
+      }
+      const state: StaticState = {
+        order: rulesets.map(r => r.id),
+        byId: new Map(rulesets.map(r => [r.id, { enabled: r.enabled, rules: r.rules }])),
+      }
+      staticState.set(extensionId, state)
+      applyEnabledStaticRulesets(extensionId, state)
+    },
+
+    updateEnabledRulesets(extensionId: string, options: DnrUpdateRulesetOptions): void {
+      const state = staticState.get(extensionId)
+      if (!state) {
+        return
+      }
+      for (const id of [...(options.enableRulesetIds ?? []), ...(options.disableRulesetIds ?? [])]) {
+        if (!state.byId.has(id)) {
+          throw new Error(`Invalid ruleset id: "${id}"`)
+        }
+      }
+      for (const id of options.disableRulesetIds ?? []) {
+        state.byId.get(id)!.enabled = false
+      }
+      for (const id of options.enableRulesetIds ?? []) {
+        state.byId.get(id)!.enabled = true
+      }
+      applyEnabledStaticRulesets(extensionId, state)
+    },
+
+    updateDynamicRules(extensionId: string, options: DnrUpdateRuleOptions): void {
+      const ruleManager = registry.getRuleManager(extensionId)
+      const validator: VendorRuleValidator = new RuleValidator(ruleManager.getDynamicRules())
+      if (options.removeRuleIds) {
+        validator.removeRuleIds(options.removeRuleIds)
+      }
+      if (options.addRules) {
+        validator.addRules(withDefaultPriority(options.addRules))
+      }
+      const quotaCounter = new RuleQuotaCounter('MAX_NUMBER_OF_DYNAMIC_RULES')
+      const validated = validateOrThrow(validator, quotaCounter, '_dynamic')
+      ruleManager.setDynamicRules(validated)
+    },
+
+    updateSessionRules(extensionId: string, options: DnrUpdateRuleOptions): void {
+      const ruleManager = registry.getRuleManager(extensionId)
+      const validator: VendorRuleValidator = new RuleValidator(ruleManager.getSessionRules(), {
+        isSessionRuleset: true,
+      })
+      if (options.removeRuleIds) {
+        validator.removeRuleIds(options.removeRuleIds)
+      }
+      if (options.addRules) {
+        validator.addRules(withDefaultPriority(options.addRules))
+      }
+      const quotaCounter = new RuleQuotaCounter('MAX_NUMBER_OF_SESSION_RULES')
+      const validated = validateOrThrow(validator, quotaCounter, '_session')
+      ruleManager.setSessionRules(validated)
+    },
+
+    getDynamicRules(extensionId: string): DnrRule[] {
+      const ruleManager = registry.getRuleManager(extensionId, false)
+      return ruleManager ? ruleManager.getDynamicRules().map(serializeRule) : []
+    },
+
+    getSessionRules(extensionId: string): DnrRule[] {
+      const ruleManager = registry.getRuleManager(extensionId, false)
+      return ruleManager ? ruleManager.getSessionRules().map(serializeRule) : []
+    },
+
+    removeExtension(extensionId: string): void {
+      staticState.delete(extensionId)
+      registry.removeRuleManager(extensionId)
+    },
+
+    evaluate(request: DnrRequest): DnrDecision {
+      frameAncestry.record(request)
+
+      const requestURI = new URL(request.url)
+      const initiatorURI = parseUrlOrNull(request.initiator)
+
+      const startFrameId =
+        request.resourceType === 'main_frame'
+          ? undefined
+          : request.resourceType === 'sub_frame'
+            ? request.parentFrameId
+            : request.frameId
+      const ancestorRequestDetails = frameAncestry
+        .buildAncestorChain(request.tabId, startFrameId)
+        .map(
+          ancestor =>
+            new RequestDetails({
+              requestURI: new URL(ancestor.url),
+              initiatorURI: parseUrlOrNull(ancestor.initiator),
+              type: ancestor.type,
+              method: ancestor.method,
+              tabId: request.tabId,
+            })
+        )
+
+      const requestDetails = new RequestDetails({
+        requestURI,
+        initiatorURI,
+        type: request.resourceType,
+        method: request.method.toLowerCase(),
+        tabId: request.tabId,
+        ancestorRequestDetails,
+      })
+
+      let ruleManagers = registry.getAllRuleManagersMostRecentFirst()
+      // Chrome/Firefox default: a request from an extension's own page is
+      // matched only against that extension's rules, not every extension's.
+      if (initiatorURI?.protocol === 'chrome-extension:') {
+        const initiatorExtensionId = initiatorURI.hostname
+        ruleManagers = ruleManagers.filter(rm => rm.extensionId === initiatorExtensionId)
+      }
+
+      const matched = RequestEvaluator.evaluateRequest(requestDetails, ruleManagers) as VendorMatchedRule[]
+      return buildDecision(matched, requestURI)
+    },
+  }
+}
+
+export type DnrEngine = ReturnType<typeof createDnrEngine>

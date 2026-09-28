@@ -1,0 +1,175 @@
+/**
+ * The `declarativeNetRequest` rule shape, mirroring
+ * `declarative_net_request.json` in the vendored Firefox source
+ * (`vendor/firefox-dnr/UPSTREAM.md` has the exact revision). Field names and
+ * meaning match Chrome's public schema; see
+ * https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest.
+ */
+
+export type DnrResourceType =
+  | 'main_frame'
+  | 'sub_frame'
+  | 'stylesheet'
+  | 'script'
+  | 'image'
+  | 'font'
+  | 'object'
+  | 'xmlhttprequest'
+  | 'ping'
+  | 'csp_report'
+  | 'media'
+  | 'websocket'
+  | 'webtransport'
+  | 'webbundle'
+  | 'other'
+
+export type DnrDomainType = 'firstParty' | 'thirdParty'
+export type DnrRequestMethod =
+  | 'connect'
+  | 'delete'
+  | 'get'
+  | 'head'
+  | 'options'
+  | 'patch'
+  | 'post'
+  | 'put'
+  | 'other'
+
+export interface DnrRuleCondition {
+  urlFilter?: string
+  regexFilter?: string
+  isUrlFilterCaseSensitive?: boolean
+  initiatorDomains?: string[]
+  excludedInitiatorDomains?: string[]
+  requestDomains?: string[]
+  excludedRequestDomains?: string[]
+  resourceTypes?: DnrResourceType[]
+  excludedResourceTypes?: DnrResourceType[]
+  requestMethods?: DnrRequestMethod[]
+  excludedRequestMethods?: DnrRequestMethod[]
+  domainType?: DnrDomainType
+  /** Session rules only; rejected by validation on dynamic/static rules. */
+  tabIds?: number[]
+  excludedTabIds?: number[]
+}
+
+export interface DnrQueryKeyValue {
+  key: string
+  value: string
+  replaceOnly?: boolean
+}
+
+export interface DnrQueryTransform {
+  addOrReplaceParams?: DnrQueryKeyValue[]
+  removeParams?: string[]
+}
+
+export interface DnrUrlTransform {
+  scheme?: 'http' | 'https'
+  username?: string
+  password?: string
+  host?: string
+  port?: string
+  path?: string
+  query?: string
+  queryTransform?: DnrQueryTransform
+  fragment?: string
+}
+
+export interface DnrRedirect {
+  url?: string
+  extensionPath?: string
+  transform?: DnrUrlTransform
+  regexSubstitution?: string
+}
+
+export type DnrModifyHeaderOperation = 'append' | 'set' | 'remove'
+
+export interface DnrModifyHeaderInfo {
+  header: string
+  operation: DnrModifyHeaderOperation
+  value?: string
+}
+
+export type DnrActionType =
+  | 'allow'
+  | 'allowAllRequests'
+  | 'block'
+  | 'upgradeScheme'
+  | 'redirect'
+  | 'modifyHeaders'
+
+export interface DnrRuleAction {
+  type: DnrActionType
+  redirect?: DnrRedirect
+  requestHeaders?: DnrModifyHeaderInfo[]
+  responseHeaders?: DnrModifyHeaderInfo[]
+}
+
+export interface DnrRule {
+  id: number
+  priority?: number
+  condition: DnrRuleCondition
+  action: DnrRuleAction
+}
+
+/** One entry of `setStaticRulesets`'s argument. */
+export interface DnrStaticRuleset {
+  id: string
+  enabled: boolean
+  rules: DnrRule[]
+}
+
+export interface DnrUpdateRuleOptions {
+  removeRuleIds?: number[]
+  addRules?: DnrRule[]
+}
+
+export interface DnrUpdateRulesetOptions {
+  enableRulesetIds?: string[]
+  disableRulesetIds?: string[]
+}
+
+/**
+ * A request to evaluate, shaped after `chrome.webRequest`'s
+ * `OnBeforeRequestListenerDetails` rather than Electron's own event (Chrome's
+ * `resourceType` names; `resource-types.ts` maps Electron's).
+ */
+export interface DnrRequest {
+  url: string
+  method: string
+  resourceType: DnrResourceType
+  /** The page or script that triggered the request, if any. */
+  initiator?: string
+  tabId: number
+  frameId: number
+  /** Absent for a main_frame request. */
+  parentFrameId?: number
+  /** The frame's own document URL, when already known (for ancestry). */
+  documentUrl?: string
+}
+
+export type DnrModifyOps = DnrModifyHeaderInfo[]
+
+export interface DnrMatchedRuleInfo {
+  extensionId: string
+  rulesetId: string
+  ruleId: number
+}
+
+/**
+ * The result of evaluating one request against every extension's rules.
+ * At most one of `cancel`, `redirectUrl`, `upgradeToHttps` is set, because
+ * they are mutually exclusive winning actions (see the README's Design
+ * notes on precedence). `requestHeaders`/`responseHeaders` can be set
+ * alongside an `allow`/`allowAllRequests` outcome (i.e. none of the three
+ * above), or alongside no outcome at all.
+ */
+export interface DnrDecision {
+  cancel?: true
+  redirectUrl?: string
+  upgradeToHttps?: true
+  requestHeaders?: DnrModifyOps
+  responseHeaders?: DnrModifyOps
+  matchedRules: DnrMatchedRuleInfo[]
+}

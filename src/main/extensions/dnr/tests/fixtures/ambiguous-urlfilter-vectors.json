@@ -1,0 +1,168 @@
+[
+  {
+    "urlFilter": "|",
+    "urls": [
+      "http://a/"
+    ],
+    "urlsNonMatching": []
+  },
+  {
+    "urlFilter": "||",
+    "urls": [
+      "http://a/"
+    ],
+    "urlsNonMatching": []
+  },
+  {
+    "urlFilter": "|||",
+    "urls": [],
+    "urlsNonMatching": [
+      "http://a./|||"
+    ]
+  },
+  {
+    "urlFilter": "^^^^",
+    "urls": [
+      "http://a/#frag^^^^",
+      "http://a/#frag^^^",
+      "http://a/?&#",
+      "http://a/#^"
+    ],
+    "urlsNonMatching": [
+      "http://a/?",
+      "http://a/____",
+      "http://a/----",
+      "http://a/...."
+    ]
+  },
+  {
+    "urlFilter": "^^^",
+    "urls": [
+      "https://a/"
+    ],
+    "urlsNonMatching": []
+  },
+  {
+    "urlFilter": "^|",
+    "urls": [
+      "http://a/",
+      "http://a/a"
+    ],
+    "urlsNonMatching": []
+  },
+  {
+    "urlFilter": "||^",
+    "urls": [
+      "http://a./"
+    ],
+    "urlsNonMatching": [
+      "http://a/",
+      "http://a/||"
+    ]
+  },
+  {
+    "urlFilter": "ps",
+    "urls": [
+      "https://example.com/",
+      "http://ps.example.com/",
+      "http://sub.ps.example.com/",
+      "http://ps/",
+      "http://example-ps.com/",
+      "http://ps@example.com/",
+      "http://user:ps@example.com/",
+      "http://ps:pass@example.com/",
+      "http://example.com/ps",
+      "http://example.com/#ps"
+    ],
+    "urlsNonMatching": [
+      "http://example.com/"
+    ]
+  },
+  {
+    "urlFilter": "||ps",
+    "urls": [
+      "http://ps.example.com/",
+      "http://sub.ps.example.com/",
+      "http://ps/"
+    ],
+    "urlsNonMatching": [
+      "http://example.com/",
+      "https://example.com/",
+      "http://example-ps.com/",
+      "http://ps@example.com/",
+      "http://user:ps@example.com/",
+      "http://ps:pass@example.com/",
+      "http://example.com/ps"
+    ]
+  },
+  {
+    "urlFilter": "||1",
+    "urls": [
+      "http://127.0.0.1/",
+      "http://2.0.0.1/",
+      "http://www.1example.com/"
+    ],
+    "urlsNonMatching": [
+      "http://[::1]/",
+      "http://[1::1]/",
+      "http://hostwithport:1/",
+      "http://host/1",
+      "http://fqdn.:1/",
+      "http://fqdn./1"
+    ]
+  },
+  {
+    "urlFilter": "||^1",
+    "urls": [
+      "http://[1::1]/",
+      "http://fqdn.:1/",
+      "http://fqdn./1"
+    ],
+    "urlsNonMatching": [
+      "http://127.0.0.1/",
+      "http://2.0.0.1/",
+      "http://www.1example.com/",
+      "http://[::1]/",
+      "http://hostwithport:1/",
+      "http://host/1"
+    ]
+  },
+  {
+    "urlFilter": "AbC",
+    "isUrlFilterCaseSensitive": true,
+    "urls": [
+      "http://true.example.com/AbC"
+    ],
+    "urlsNonMatching": [
+      "http://true.example.com/abc",
+      "http://true.example.com/ABC",
+      "http://true.example.com/???",
+      "http://true.AbC/"
+    ]
+  },
+  {
+    "urlFilter": "AbC",
+    "isUrlFilterCaseSensitive": false,
+    "urls": [
+      "http://false.example.com/AbC",
+      "http://false.example.com/abc",
+      "http://false.example.com/ABC",
+      "http://false.AbC/"
+    ],
+    "urlsNonMatching": [
+      "http://false.example.com/???"
+    ]
+  },
+  {
+    "urlFilter": "AbC",
+    "urls": [
+      "http://default.example.com/AbC",
+      "http://default.example.com/abc",
+      "http://default.example.com/ABC",
+      "http://default.AbC/"
+    ],
+    "urlsNonMatching": [
+      "http://default.example.com/???"
+    ]
+  }
+]

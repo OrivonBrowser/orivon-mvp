@@ -1,0 +1,570 @@
+[
+  {
+    "urlFilter": "*",
+    "url": "http://ex.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|",
+    "url": "http://ex.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||",
+    "url": "http://ex.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||^",
+    "url": "http://ex.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||.",
+    "url": "http://ex.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "^|",
+    "url": "http://ex.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": ".|",
+    "url": "http://ex.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "|||",
+    "url": "http://ex.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||com/|",
+    "url": "http://ex.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "xampl",
+    "url": "http://example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "example",
+    "url": "http://example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "/a?a",
+    "url": "http://ex.com/a?a",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "^abc",
+    "url": "http://ex.com/abc?a",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "^abc",
+    "url": "http://ex.com/a?abc",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "^abc",
+    "url": "http://ex.com/abc?abc",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "^abc^abc",
+    "url": "http://ex.com/abc?abc",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "^com^abc^abc",
+    "url": "http://ex.com/abc?abc",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "|http://ex",
+    "url": "http://example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "http://ex",
+    "url": "http://example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "mple.com/|",
+    "url": "http://example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "mple.com/",
+    "url": "http://example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||mple.com/",
+    "url": "http://example.com",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||ex.com",
+    "url": "http://hex.com",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||ex.com",
+    "url": "http://ex.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||ex.com",
+    "url": "http://hex.ex.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||ex.com",
+    "url": "http://hex.hex.com",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||example.com^",
+    "url": "http://www.example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|http://*mpl",
+    "url": "http://example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "mpl*com/|",
+    "url": "http://example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "example^com",
+    "url": "http://example.com",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "example^com",
+    "url": "http://example/com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "example.com^",
+    "url": "http://example.com:8080",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|http*.com/|",
+    "url": "http://example.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|http*.org/|",
+    "url": "http://example.com",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "/path?*&p1=*&p2=",
+    "url": "http://ex.com/aaa/path/bbb?k=v&p1=0&p2=1",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "/path?*&p1=*&p2=",
+    "url": "http://ex.com/aaa/path?k=v&p1=0&p2=1",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "/path?*&p1=*&p2=",
+    "url": "http://ex.com/aaa/path?k=v&k=v&p1=0&p2=1",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "/path?*&p1=*&p2=",
+    "url": "http://ex.com/aaa/path?k=v&p1=0&p3=10&p2=1",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "/path?*&p1=*&p2=",
+    "url": "http://ex.com/aaa/path&p1=0&p2=1",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "/path?*&p1=*&p2=",
+    "url": "http://ex.com/aaa/path?k=v&p2=0&p1=1",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "abc*def*ghijk*xyz",
+    "url": "http://example.com/abcdeffffghijkmmmxyzzz",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc*cdef",
+    "url": "http://example.com/abcdef",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "^^a^^",
+    "url": "http://ex.com/?a=/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "^^a^^",
+    "url": "http://ex.com/?a=/&b=0",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "^^a^^",
+    "url": "http://ex.com/?a=x",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "^^a^^",
+    "url": "http://ex.com/?a=",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "ex.com^path^*k=v^",
+    "url": "http://ex.com/path/?k1=v1&ak=v&kk=vv",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "ex.com^path^*k=v^",
+    "url": "http://ex.com/p/path/?k1=v1&ak=v&kk=vv",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "a^a&a^a&",
+    "url": "http://ex.com/a/a/a/a/?a&a&a&a&a",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc*def^",
+    "url": "http://ex.com/abc/a/ddef/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "https://example.com/",
+    "url": "http://example.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||example.com/",
+    "url": "http://example.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||examp",
+    "url": "http://example.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||xamp",
+    "url": "http://example.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||examp",
+    "url": "http://test.example.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||t.examp",
+    "url": "http://test.example.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||com^",
+    "url": "http://test.example.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||com^x|",
+    "url": "http://a.com/x",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||x.com",
+    "url": "http://ex.com/?url=x.com",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||ex.com/|",
+    "url": "http://ex.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||ex.com^|",
+    "url": "http://ex.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||ex.co|",
+    "url": "http://ex.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||ex.com|",
+    "url": "http://rex.com.ex.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||ex.com/|",
+    "url": "http://rex.com.ex.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||http|",
+    "url": "http://http.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||http",
+    "url": "http://http.com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||/example.com|",
+    "url": "http://example.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||/example.com/|",
+    "url": "http://example.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||.",
+    "url": "http://a..com/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||^",
+    "url": "http://a..com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||.",
+    "url": "http://a.com./",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||^",
+    "url": "http://a.com./",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||.",
+    "url": "http://a.com../",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||^",
+    "url": "http://a.com../",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||/path",
+    "url": "http://a.com./path/to/x",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||^path",
+    "url": "http://a.com./path/to/x",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||/path|",
+    "url": "http://a.com./path",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||^path|",
+    "url": "http://a.com./path",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||path|",
+    "url": "http://a.com./path",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "path",
+    "url": "http://a.com/PaTh",
+    "isUrlFilterCaseSensitive": false,
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "path",
+    "url": "http://a.com/PaTh",
+    "isUrlFilterCaseSensitive": true,
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "path",
+    "url": "http://a.com/path",
+    "isUrlFilterCaseSensitive": false,
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "path",
+    "url": "http://a.com/path",
+    "isUrlFilterCaseSensitive": true,
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc*def^",
+    "url": "http://a.com/abcxAdef/vo",
+    "isUrlFilterCaseSensitive": true,
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc*def^",
+    "url": "http://a.com/aBcxAdeF/vo",
+    "isUrlFilterCaseSensitive": true,
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "abc*def^",
+    "url": "http://a.com/aBcxAdeF/vo",
+    "isUrlFilterCaseSensitive": false,
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc*def^",
+    "url": "http://a.com/abcxAdef/vo",
+    "isUrlFilterCaseSensitive": false,
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc^",
+    "url": "https://xyz.com/abc/123",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc^",
+    "url": "https://xyz.com/abc",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc^",
+    "url": "https://abc.com",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "abc^|",
+    "url": "https://xyz.com/abc/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc^|",
+    "url": "https://xyz.com/abc",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc^|",
+    "url": "https://xyz.com/abc/123",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "|http://abc.com/x^",
+    "url": "http://abc.com/x",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|http://abc.com/x^",
+    "url": "http://abc.com/x/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|http://abc.com/x^",
+    "url": "http://abc.com/x/123",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|http://abc.com/x^|",
+    "url": "http://abc.com/x",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|http://abc.com/x^|",
+    "url": "http://abc.com/x/",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|http://abc.com/x^|",
+    "url": "http://abc.com/x/123",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||abc.com^",
+    "url": "http://xyz.abc.com/123",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||abc.com^",
+    "url": "http://xyz.abc.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||abc.com^",
+    "url": "http://abc.com.xyz.com?q=abc.com",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||abc.com^|",
+    "url": "http://xyz.abc.com/123",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "||abc.com^|",
+    "url": "http://xyz.abc.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "||abc.com^|",
+    "url": "http://abc.com.xyz.com?q=abc.com/",
+    "expectMatch": false
+  },
+  {
+    "urlFilter": "abc*^",
+    "url": "https://abc.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc*^",
+    "url": "https://abc.com?q=123",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc*^|",
+    "url": "https://abc.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc*^|",
+    "url": "https://abc.com?q=123",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "abc*|",
+    "url": "https://a.com/abcxyz",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|*google.com",
+    "url": "https://www.google.com",
+    "expectMatch": true
+  },
+  {
+    "urlFilter": "|*|",
+    "url": "https://example.com",
+    "expectMatch": true
+  }
+]
