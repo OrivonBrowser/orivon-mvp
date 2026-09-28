@@ -115,6 +115,7 @@ it('resizes with the divider, within limits, and goes back to half on a double c
     expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
     const frame = app.windows().find((w) => w.url().includes('/split-frame/')) as Page
     await frame.waitForSelector('#divider:not([hidden])')
+    await frame.locator('#divider').waitFor({ state: 'visible' })
     const divider = await frame.locator('#divider').boundingBox()
     if (divider === null) throw new Error('the divider has no box')
     const before = inWindow(await layout(app), origin)

@@ -160,7 +160,9 @@ it('takes a tab out into a window of its own when it is dragged out of the windo
   const { app, chrome } = await launched()
   try {
     await openTabs(app, chrome, '/dragged')
-    const box = await chrome.locator('.tab', { hasText: 'Page /dragged' }).boundingBox()
+    const dragged = chrome.locator('.tab', { hasText: 'Page /dragged' })
+    await dragged.waitFor({ state: 'visible' })
+    const box = await dragged.boundingBox()
     if (box === null) throw new Error('the tab has no box')
 
     await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
