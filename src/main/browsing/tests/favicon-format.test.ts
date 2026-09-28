@@ -100,6 +100,26 @@ describe('looksLikeSvg', () => {
     const doc = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg></svg>'
     expect(looksLikeSvg(doc)).toBe(true)
   })
+
+  // A SYSTEM literal may hold any character but its own quote, `>` included,
+  // so the first `>` in the document is not where the DOCTYPE ends.
+  it.each([
+    ['a `>` inside a double-quoted SYSTEM literal', '<!DOCTYPE svg SYSTEM "><svg " [<!ENTITY a "x"><!ENTITY b "&a;&a;">]><svg>&b;</svg>'],
+    ['the same behind a prolog and a comment', '<?xml version="1.0"?><!-- x --><!DOCTYPE svg SYSTEM "><svg/" [<!ENTITY a "x">]><svg/>'],
+    ['a single-quoted literal', "<!DOCTYPE svg SYSTEM '><svg ' [<!ENTITY a \"x\">]><svg>&a;</svg>"],
+    ['a PUBLIC id followed by a literal hiding `>`', '<!DOCTYPE svg PUBLIC "-//x//EN" "><svg " [<!ENTITY a "x">]><svg>&a;</svg>']
+  ])('rejects an internal subset hidden behind %s', (_label, doc) => {
+    expect(looksLikeSvg(doc)).toBe(false)
+    expect(sniffImageType(new TextEncoder().encode(doc))).toBeNull()
+  })
+
+  it('accepts a quoted literal that contains `>` or `[` when no internal subset follows', () => {
+    expect(looksLikeSvg('<!DOCTYPE svg SYSTEM "a>b[c]"><svg></svg>')).toBe(true)
+  })
+
+  it('rejects a doctype whose quoted literal never closes', () => {
+    expect(looksLikeSvg('<!DOCTYPE svg SYSTEM "never closed><svg></svg>')).toBe(false)
+  })
 })
 
 describe('decodeDataUrl', () => {

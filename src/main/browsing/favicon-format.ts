@@ -76,21 +76,39 @@ export function looksLikeSvg (text: string): boolean {
       continue
     }
     if (/^<!doctype/i.test(trimmed)) {
-      const end = trimmed.indexOf('>')
+      const end = doctypeEnd(trimmed)
       if (end === -1) return false
-      const subset = trimmed.indexOf('[')
-      // A DOCTYPE's internal subset (`<!DOCTYPE svg [ <!ENTITY ... > ]>`) is
-      // where a "billion laughs" entity bomb is declared -- nested entity
-      // references that expand to gigabytes during parsing, script or no
-      // script. A real favicon's DOCTYPE never needs one (a bare PUBLIC/
-      // SYSTEM reference, as every generator observed here emits, has none),
-      // so its mere presence is refused rather than parsed any further.
-      if (subset !== -1 && subset < end) return false
       rest = trimmed.slice(end + 1)
       continue
     }
     return /^<svg[\s>/]/i.test(trimmed)
   }
+}
+
+/** The index of the `>` closing the DOCTYPE `text` starts with, or -1 if it
+ * never closes or carries an internal subset. The subset
+ * (`<!DOCTYPE svg [ <!ENTITY ... > ]>`) is where a "billion laughs" entity
+ * bomb is declared -- nested references that expand to gigabytes during
+ * parsing, script or no script -- and a real favicon's DOCTYPE never needs
+ * one, so its presence alone is refused. Quoted literals are skipped: a
+ * SYSTEM literal may hold any character but its own quote, `>` and `[`
+ * included, so neither the first `>` nor the first `[` in the text can be
+ * trusted to be the DOCTYPE's own. */
+function doctypeEnd (text: string): number {
+  let quote: string | undefined
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (quote !== undefined) {
+      if (char === quote) quote = undefined
+    } else if (char === '"' || char === '\'') {
+      quote = char
+    } else if (char === '[') {
+      return -1
+    } else if (char === '>') {
+      return i
+    }
+  }
+  return -1
 }
 
 /** How much of a candidate is even looked at for the SVG text check --
