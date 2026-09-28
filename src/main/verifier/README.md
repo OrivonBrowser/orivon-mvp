@@ -90,6 +90,6 @@ stand in for all of them) and folding the result into `unproxiedGateways`
 one of them directly lives in the host itself
 ([`../../protocols/verifier-host/dns-fallback.ts`](../../protocols/verifier-host/dns-fallback.ts)).
 [`host-supervisor.ts`](host-supervisor.ts)'s `start()` posts a synchronous config in the same
-tick as before, and only awaits when `config()` genuinely returns a promise -- a request made
+tick, and only awaits when `config()` genuinely returns a promise -- a request made
 right after `start()` awaits that same resolution first, so it can never reach a host that has
 not been told to start yet.
