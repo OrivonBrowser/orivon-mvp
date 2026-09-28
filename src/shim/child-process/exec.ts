@@ -105,9 +105,10 @@ export function exec (command: string, ...rest: unknown[]): ChildProcess {
   return child
 }
 
-Object.defineProperty(execFile, PROMISIFY_CUSTOM, {
-  value: (file: string, ...rest: unknown[]) => promiseForm((callback) => (execFile as (file: string, ...args: unknown[]) => ChildProcess)(file, ...rest, callback))
-})
-Object.defineProperty(exec, PROMISIFY_CUSTOM, {
-  value: (command: string, ...rest: unknown[]) => promiseForm((callback) => (exec as (command: string, ...args: unknown[]) => ChildProcess)(command, ...rest, callback))
-})
+type Variadic = (first: string, ...rest: unknown[]) => ChildProcess
+
+// util.promisify reads this symbol; a plain assignment, as Node's own is replaceable.
+;(execFile as unknown as Record<symbol, unknown>)[PROMISIFY_CUSTOM] = (file: string, ...rest: unknown[]) =>
+  promiseForm((callback) => (execFile as Variadic)(file, ...rest, callback))
+;(exec as unknown as Record<symbol, unknown>)[PROMISIFY_CUSTOM] = (command: string, ...rest: unknown[]) =>
+  promiseForm((callback) => (exec as Variadic)(command, ...rest, callback))
