@@ -5,9 +5,11 @@
 // session removes it when the process exits, and the next start of any browser
 // sweeps what a crash left.
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, uptime } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { copyPublicSeed } from './public-seed.js'
+import { bootTimeMs, isPidRecordAlive, processIsAlive } from './pid-liveness.js'
+import type { PidRecord } from './pid-liveness.js'
 
 export const PRIVATE_PREFIX = 'orivon-private-'
 const MARKER = '.orivon-private.json'
@@ -31,11 +33,13 @@ export function createPrivateDir (from: string, home: string, tmp = tmpdir()): s
   return dir
 }
 
-/** The session says it is running, and which process it is. */
-export function markPrivate (dir: string, pid: number, now = Date.now()): void {
+/** The session says it is running, and which process it is. The boot time
+ * recorded beside the pid is what lets a later sweep tell this process from
+ * one the OS has since reused the pid for (pid-liveness.ts). */
+export function markPrivate (dir: string, pid: number, now = Date.now(), uptimeSec = uptime()): void {
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 })
-    writeFileSync(join(dir, MARKER), JSON.stringify({ pid, startedAt: now }))
+    writeFileSync(join(dir, MARKER), JSON.stringify({ pid, startedAt: now, bootTime: bootTimeMs(now, uptimeSec) }))
   } catch {
     // The sweep then treats it as a directory whose process has not said, and waits out the grace.
   }
@@ -60,6 +64,8 @@ export function removePrivateDir (dir: string, tmp = tmpdir()): boolean {
 export interface SweepOptions {
   readonly tmp?: string
   readonly now?: number
+  /** The machine's uptime, for the boot-time check pid-liveness.ts does before trusting `isAlive`. */
+  readonly uptimeSec?: number
   readonly isAlive?: (pid: number) => boolean
   /** The user id that must own a directory for it to be removed. Absent where there is none (Windows). */
   readonly uid?: number | undefined
@@ -70,6 +76,7 @@ export interface SweepOptions {
 export function sweepPrivateDirs (options: SweepOptions = {}): string[] {
   const tmp = options.tmp ?? tmpdir()
   const now = options.now ?? Date.now()
+  const uptimeSec = options.uptimeSec ?? uptime()
   const isAlive = options.isAlive ?? processIsAlive
   const uid = 'uid' in options ? options.uid : process.getuid?.()
   const removed: string[] = []
@@ -85,8 +92,8 @@ export function sweepPrivateDirs (options: SweepOptions = {}): string[] {
     try {
       const stat = lstatSync(dir)
       if (!stat.isDirectory() || (uid !== undefined && stat.uid !== uid)) continue
-      const pid = readPid(dir)
-      if (pid === null ? now - stat.mtimeMs < GRACE_MS : isAlive(pid)) continue
+      const record = readMarker(dir)
+      if (record === null ? now - stat.mtimeMs < GRACE_MS : isPidRecordAlive(record, isAlive, now, uptimeSec)) continue
       if (removePrivateDir(dir, tmp)) removed.push(name)
     } catch {
       // Gone already, or not ours to look at.
@@ -95,20 +102,12 @@ export function sweepPrivateDirs (options: SweepOptions = {}): string[] {
   return removed
 }
 
-function readPid (dir: string): number | null {
+function readMarker (dir: string): PidRecord | null {
   try {
-    const marker = JSON.parse(readFileSync(join(dir, MARKER), 'utf8')) as { pid?: unknown }
-    return typeof marker.pid === 'number' ? marker.pid : null
+    const marker = JSON.parse(readFileSync(join(dir, MARKER), 'utf8')) as { pid?: unknown, bootTime?: unknown }
+    if (typeof marker.pid !== 'number') return null
+    return typeof marker.bootTime === 'number' ? { pid: marker.pid, bootTime: marker.bootTime } : { pid: marker.pid }
   } catch {
     return null
-  }
-}
-
-function processIsAlive (pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
   }
 }

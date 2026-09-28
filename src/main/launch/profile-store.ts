@@ -6,8 +6,10 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { uptime } from 'node:os'
 import { DEFAULT_PROFILE_ID, PROFILE_ID } from './launch-context.js'
 import { copyPublicSeed } from './public-seed.js'
+import { bootTimeMs, isPidRecordAlive, processIsAlive } from './pid-liveness.js'
 
 const DELETING_PREFIX = '.deleting-'
 
@@ -45,7 +47,8 @@ export class ProfileStore {
     /** The default profile's directory. */
     private readonly home: string,
     private readonly now: () => number = Date.now,
-    private readonly isAlive: (pid: number) => boolean = processIsAlive
+    private readonly isAlive: (pid: number) => boolean = processIsAlive,
+    private readonly uptimeSec: () => number = uptime
   ) {}
 
   /** The directory of a profile, or null for an id that could not be one: no path is built from anything else. */
@@ -147,20 +150,23 @@ export class ProfileStore {
     const dir = this.dirOf(id)
     if (dir === null) return false
     try {
-      const marker = JSON.parse(readFileSync(join(dir, RUNNING_FILE), 'utf8')) as { pid?: unknown }
-      return typeof marker.pid === 'number' && this.isAlive(marker.pid)
+      const marker = JSON.parse(readFileSync(join(dir, RUNNING_FILE), 'utf8')) as { pid?: unknown, bootTime?: unknown }
+      if (typeof marker.pid !== 'number') return false
+      const record = typeof marker.bootTime === 'number' ? { pid: marker.pid, bootTime: marker.bootTime } : { pid: marker.pid }
+      return isPidRecordAlive(record, this.isAlive, this.now(), this.uptimeSec())
     } catch {
       return false
     }
   }
 
-  /** This process is using the profile: written at start, removed at quit. A marker left by a crash names a process that is gone. */
+  /** This process is using the profile: written at start, removed at quit. A marker left by a crash
+   * names a process that is gone, or one the OS has since reused the pid for (pid-liveness.ts). */
   markRunning (id: string, pid: number): void {
     const dir = this.dirOf(id)
     if (dir === null) return
     try {
       mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, RUNNING_FILE), JSON.stringify({ pid }))
+      writeFileSync(join(dir, RUNNING_FILE), JSON.stringify({ pid, bootTime: bootTimeMs(this.now(), this.uptimeSec()) }))
     } catch {
       // Not being able to say so must not stop the browser starting.
     }
@@ -185,16 +191,5 @@ export class ProfileStore {
 
   private write (dir: string, profile: Profile): void {
     writeFileSync(join(dir, PROFILE_FILE), JSON.stringify({ version: FILE_VERSION, name: profile.name, color: profile.color, created: profile.created }, null, 2))
-  }
-}
-
-
-function processIsAlive (pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    // EPERM: it exists and is not ours to signal.
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
   }
 }

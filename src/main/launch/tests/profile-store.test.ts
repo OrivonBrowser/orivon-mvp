@@ -189,6 +189,19 @@ describe('the running marker', () => {
     expect(s.isRunning('../x')).toBe(false)
     expect(existsSync(join(home, '..', 'x'))).toBe(false)
   })
+
+  it('is not running after a reboot, even if the OS has already reused the pid (process.kill(pid, 0) alone cannot tell)', () => {
+    let uptimeSec = 3600
+    const s = new ProfileStore(home, () => 1_700_000_000_000, () => true, () => uptimeSec)
+    const made = s.create('Work', 'green')
+    if (!made.ok) throw new Error('not created')
+    s.markRunning(made.profile.id, 4242)
+    expect(s.isRunning(made.profile.id)).toBe(true)
+
+    uptimeSec = 60 // a reboot since the marker was written
+    expect(s.isRunning(made.profile.id)).toBe(false)
+    expect(s.remove(made.profile.id)).toEqual({ ok: true })
+  })
 })
 
 describe('cleanName', () => {

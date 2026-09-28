@@ -5,6 +5,8 @@ private session (`ADR-0041`), and what follows from that. `launch-context.ts` re
 `start-launch.ts` runs first of all, points the data directory at the right place and steps aside if that profile
 is already open; `profile-store.ts` is the profiles (one directory each, with a `profile.json`);
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions;
+`pid-liveness.ts` is the one check both it and `profile-store.ts` use to tell a marker's process from one
+the OS has since reused its pid for;
 `public-seed.ts` is the one list of what a new profile or a private session is given from the default profile;
 `peer-spawn.ts` starts another Orivon process; `profiles-service.ts` is what the rest of the shell asks:
 this process's own profile, the list, changes to it, and "open"; `profiles-domain.ts` is what the Profiles,

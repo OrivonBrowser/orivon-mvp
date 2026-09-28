@@ -107,6 +107,28 @@ describe('sweeping what a crash left', () => {
     expect(existsSync(running)).toBe(true)
   })
 
+  it('removes a directory whose pid was reused after a reboot, even though the probe says it is alive', async () => {
+    const dir = createPrivateDir(home, home, tmp)
+    // Marked in one boot (an arbitrary now/uptime pair)...
+    markPrivate(dir, 111, 1_700_000_000_000, 3600)
+    // ...swept in a later one: the same pid now belongs to something else,
+    // and process.kill(pid, 0) -- alive(111) here -- cannot tell the difference.
+    const removed = sweepPrivateDirs({ tmp, now: 1_700_100_000_000, uptimeSec: 60, isAlive: alive(111), uid: undefined })
+
+    expect(removed).toEqual([dir.slice(tmp.length + 1)])
+    expect(existsSync(dir)).toBe(false)
+  })
+
+  it('keeps a directory whose marker and the sweep agree on the boot, whatever the probe says', async () => {
+    const dir = createPrivateDir(home, home, tmp)
+    markPrivate(dir, 111, 1_700_000_000_000, 3600)
+
+    const removed = sweepPrivateDirs({ tmp, now: 1_700_000_010_000, uptimeSec: 3610, isAlive: alive(111), uid: undefined })
+
+    expect(removed).toEqual([])
+    expect(existsSync(dir)).toBe(true)
+  })
+
   it('waits out a grace for a directory whose process has not written its marker yet, and removes it after', async () => {
     const dir = createPrivateDir(home, home, tmp)
     const now = Date.now()
