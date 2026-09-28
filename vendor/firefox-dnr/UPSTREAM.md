@@ -4,11 +4,8 @@
   `toolkit/components/extensions/`
 - Revision: `b333202cd8d8385cb382c42404a03995dbc126ec`
 - Date fetched: 2026-09-29
-- License: MPL-2.0 (see `LICENSE`), file-level copyleft, combinable with Orivon's
-  AGPL-3.0-only: neither license requires the other's terms to propagate to
-  the rest of the tree, and MPL-2.0 §3.3 permits distribution under a
-  different license for the *combined* work as long as this directory's
-  files stay under MPL-2.0.
+- License: MPL-2.0 (see `LICENSE`) is file-level copyleft. These files stay
+  MPL-2.0 inside Orivon's AGPL-3.0-only tree, which MPL-2.0 §3.3 permits.
 - Vendored from:
   - `toolkit/components/extensions/ExtensionDNR.sys.mjs` → `src/extension-dnr.mjs`
   - `toolkit/components/extensions/ExtensionDNRLimits.sys.mjs` → `src/dnr-limits.mjs`
@@ -33,17 +30,18 @@
 Firefox's `ExtensionDNR.sys.mjs` is one piece of a browser: it wires into
 `WebRequest.sys.mjs`'s `ChannelWrapper`, Firefox's own extension-permission
 model, and an on-disk rule store. This package is "a pure
-`declarativeNetRequest` rule engine" only (see the build plan, package 8):
-validate rules, hold rulesets, evaluate a request to a decision. Everything
-below is either wired in by a later package or is out of scope entirely, and
-none of it was ported:
+`declarativeNetRequest` rule engine" only: validate rules, hold rulesets,
+evaluate a request to a decision. Everything below is out of scope for this
+package, and none of it was ported:
 
 - `NetworkIntegration` and its `ChannelWrapper`/`nsIURI` glue, `handleRequest`,
-  `beforeWebRequestEvent`, `isRestrictedPrincipalURI`: wiring into a real
-  session's `webRequest` is package 9's job, per the build plan.
+  `beforeWebRequestEvent`, `isRestrictedPrincipalURI`: nothing in Orivon calls
+  `evaluate()` from a real session's `webRequest` yet; this engine has no
+  `session` and does not know it is running inside Electron (see
+  `src/main/extensions/dnr/README.md`'s "What it must never import").
 - `validateManifestEntry`, `ensureInitialized`, `initExtension`: manifest
-  parsing and boot-time loading belong to `src/main/extensions/` (package 3),
-  not this pure engine.
+  parsing and boot-time loading are not this pure engine's job; they belong
+  wherever Orivon reads an extension's manifest (`src/main/extensions/`).
 - Host-permission gating (`canExtensionModify`, `hasBlockPermission`,
   `RequestDetails#canExtensionModify`, `RequestEvaluator#isRuleActionAllowed`):
   whether an extension is *allowed* to act on a given request is a broker/
@@ -79,11 +77,15 @@ patch.
    through this engine to watch for.
 
 3. **`Services.eTLD.getBaseDomain` → `adapters/dnr-domain.mjs`.** Firefox
-   reads a compiled-in public suffix list; this is a small fixed-list
-   heuristic instead (provisional — see that file's own doc comment for
-   what it gets wrong and what would fix it). Used only by the `domainType`
-   (`firstParty`/`thirdParty`) condition; `requestDomains`/`initiatorDomains`
-   do not use it and are unaffected.
+   reads a compiled-in public suffix list; this reads `tldts` (MIT, pure JS,
+   no install script), a real public-suffix-list lookup, with
+   `allowPrivateDomains: true` so a shared-hosting suffix like `github.io`
+   is graded per-user the way Firefox's own eTLD service does — see that
+   file's own doc comment for the one class of host (a scheme not on the
+   PSL, such as `<cid>.ipfs.orivon`) `tldts` cannot place precisely, and why
+   that is acceptable. Used only by the `domainType` (`firstParty`/
+   `thirdParty`) condition; `requestDomains`/`initiatorDomains` do not use
+   it and are unaffected.
 
 4. **`ExtensionDNRLimits.sys.mjs`'s `XPCOMUtils.declareLazy` pref indirection
    → plain constants in `src/dnr-limits.mjs`, set to Chrome's published
@@ -157,6 +159,32 @@ patch.
    precedence, same caveat upstream states (`TODO bug 1786059`): this is not
    a true install-time ordering, just the order `getRuleManager` was first
    called for each extension.
+
+10. **A candidate index on `Ruleset`, not present upstream.** Firefox's own
+    `#collectMatchInRuleset` tests every rule in a ruleset against every
+    request (this file's top comment says so); `Ruleset#getCandidateRules`
+    narrows that to a subset before `#matchesRuleCondition` runs, because
+    Orivon calls `evaluate()` once per network request in the main process,
+    and a real ad-block ruleset is large enough (uBlock Origin Lite's
+    default rulesets: ~18,700 rules) for the full scan to cost low-single-
+    digit milliseconds per request (`src/main/extensions/dnr/tests/perf.test.ts`).
+    A rule whose condition has `requestDomains`, or a `urlFilter` of exactly
+    `||<domain>^` or `||<domain>/...`, is indexed under each such domain;
+    every other rule (bare `||<domain>` with nothing after it, `urlFilter`
+    without a domain anchor, `regexFilter`, `initiatorDomains`-only, or no
+    domain-shaped condition at all) goes in a generic list tested for every
+    request, same as before this patch. `getCandidateRules` returns the
+    matched buckets merged with the generic list, sorted back into the same
+    relative order a full scan of `ruleset.rules` would produce, so it
+    cannot change which rule wins a precedence comparison or reorder a
+    `modifyHeaders` result; `src/main/extensions/dnr/tests/index-equivalence.test.ts`
+    asserts this by running the same rules and requests through both an
+    indexed and an unindexed evaluator (`ExtensionDNR.__setRuleIndexEnabledForTesting`,
+    called only by that test) and comparing every decision. See
+    `src/main/extensions/dnr/README.md`'s Design notes for the measured
+    effect and its limit: uBOL's default rulesets still leave close to 40%
+    of all rules in the generic list, because that many have no domain-
+    shaped condition at all.
 
 Nothing else changed: class/function bodies, the top-of-file design comment,
 and every doc comment not touched by a patch above are upstream's own words,

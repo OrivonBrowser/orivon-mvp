@@ -98,6 +98,43 @@ describe('domainType', () => {
       blocksWithCondition('http://a.example.co.uk/', { domainType: 'firstParty' }, 'http://a.other.co.uk/')
     ).toBe(false)
   })
+
+  // vendor/firefox-dnr/adapters/dnr-domain.mjs's getBaseDomain is now a real
+  // public-suffix-list lookup (tldts), which the old fixed two-label-suffix
+  // heuristic could not do: "github.io" is on the PSL's PRIVATE section, so
+  // two different users' sites under it are correctly thirdParty.
+  it('recognizes a PSL private suffix (github.io) as one base domain per user', () => {
+    expect(
+      blocksWithCondition('http://a.example.github.io/', { domainType: 'thirdParty' }, 'http://other.github.io/')
+    ).toBe(true)
+    expect(
+      blocksWithCondition(
+        'http://a.example.github.io/',
+        { domainType: 'firstParty' },
+        'http://sub.example.github.io/'
+      )
+    ).toBe(true)
+  })
+
+  // .orivon/.eth/<cid>.ipfs.orivon are not on the public suffix list;
+  // dnr-domain.mjs's doc comment says exactly what tldts returns for them
+  // and why. These lock that documented behavior in as a test.
+  it('treats an unlisted custom TLD (.orivon, .eth) like a normal one', () => {
+    expect(
+      blocksWithCondition('http://a.example.orivon/', { domainType: 'firstParty' }, 'http://b.example.orivon/')
+    ).toBe(true)
+    expect(blocksWithCondition('http://app.eth/', { domainType: 'thirdParty' }, 'http://other.eth/')).toBe(true)
+  })
+
+  it('grades every <cid>.ipfs.orivon host firstParty with every other one (documented, provisional)', () => {
+    expect(
+      blocksWithCondition(
+        'http://cid-one.ipfs.orivon/',
+        { domainType: 'firstParty' },
+        'http://cid-two.ipfs.orivon/'
+      )
+    ).toBe(true)
+  })
 })
 
 describe('requestMethods / excludedRequestMethods', () => {

@@ -16,9 +16,9 @@ to read one from. The actual matching algorithm is
 `Set` -- no `node:*`, no third-party package).
 
 **What it must never import.** `electron` (this engine has no `session`, no `webRequest`
-listener, and does not know it is running inside Electron at all -- wiring it into a real
-session's `webRequest` and into extensions' `chrome.declarativeNetRequest` API surface is a
-later package, per `docs/planning/extensions-build-plan.md`'s package 8/9 split).
+listener, and does not know it is running inside Electron at all). Nothing in Orivon wires
+`evaluate()` into a real session's `webRequest`, or into extensions' `chrome.declarativeNetRequest`
+API surface, yet.
 [`src/renderer/`](../../../renderer/): main-process code, same rule as the rest of `src/main/`
 (`../../README.md`).
 
@@ -55,22 +55,43 @@ document does. A frame never recorded (including every request before the first 
 load a caller feeds this engine) yields no ancestry, the same fallback Firefox uses when its own
 frame tree is not "current" for a request.
 
-**`domainType` (`firstParty`/`thirdParty`) is a fixed-list heuristic, not a public suffix
-list.** `vendor/firefox-dnr/adapters/dnr-domain.mjs` replaces `Services.eTLD.getBaseDomain`
-(Firefox's compiled-in PSL) with a short list of common two-label ccTLD suffixes (`co.uk`,
-`com.au`, ...). **Provisional**: a host under an unlisted multi-label suffix (e.g.
-`example.github.io`) is graded one label too broad. `requestDomains`/`initiatorDomains`/
-`excludedRequestDomains`/`excludedInitiatorDomains` do not use this heuristic and are
-unaffected; only the `domainType` condition can be wrong, and only for a host outside the fixed
-list. What would settle it: vendoring an actual public-suffix-list data file, if a real
-ruleset's `domainType` accuracy on such a host turns out to matter.
+**`domainType` (`firstParty`/`thirdParty`) reads a real public suffix list.**
+`vendor/firefox-dnr/adapters/dnr-domain.mjs` replaces `Services.eTLD.getBaseDomain` (Firefox's
+compiled-in PSL) with `tldts` (MIT, pure JS, no install script), including its PRIVATE-section
+entries (`github.io` and similar), the same choice Firefox's own eTLD service makes. `.orivon`,
+`.eth` and `<cid>.ipfs.orivon` are not on the PSL at all; that file's own doc comment says what
+`tldts` returns for each and why it is acceptable (in short: sensible for `.orivon`/`.eth`,
+one label too broad for `<cid>.ipfs.orivon`, same failure shape the old fixed-list heuristic
+had for `github.io`, and only the `domainType` condition can be affected --
+`requestDomains`/`initiatorDomains`/`excludedRequestDomains`/`excludedInitiatorDomains` do not
+call `getBaseDomain` at all).
+
+**A per-`Ruleset` index pre-selects candidate rules, instead of testing every rule against
+every request.** `vendor/firefox-dnr/UPSTREAM.md` patch 10 has the exact mechanism
+(`Ruleset#getCandidateRules`, built from `Rule#condition.requestDomains` and a strict subset of
+`urlFilter` shapes: exactly `||<domain>^` or `||<domain>/...`) and why a rule that is not
+domain-shaped this way must stay in the always-tested generic list. Two things make the index
+safe to add without re-deriving the matching algorithm: `compareRule` is a total order (rule
+`id` is unique within a ruleset, and `rulesetPrecedence` differs across rulesets, so no two
+distinct rules ever compare equal), so the winning rule for a request does not depend on scan
+order, only on the *set* of rules scanned; and `getMatchingModifyHeadersRules` sorts its output
+before returning it. `getCandidateRules` still preserves the unindexed scan's relative order
+(merging matched domain buckets with the generic list by original array position), so the
+result is not just correct but structurally identical to a full scan restricted to the same
+rules. `tests/index-equivalence.test.ts` proves this over the Chrome/Firefox test vectors and
+(opt-in, same gate as the performance test) uBlock Origin Lite's full default ruleset: every
+request evaluated once with the index on and once with `ExtensionDNR.__setRuleIndexEnabledForTesting(false)`,
+decisions asserted identical. **Measured limit**: uBOL's own default rulesets are ~38% rules
+with no domain-shaped condition at all (a plain substring or wildcard `urlFilter`, or a
+`regexFilter`), which the index cannot narrow; see the performance test paragraph below for
+what that leaves the median/p99 at.
 
 **`redirect.extensionPath` resolves against `chrome-extension://<extensionId>/`.** Chrome/Firefox
 resolve it against the calling extension's own origin. This engine has no origin registry of its
 own, so it assumes Orivon serves each extension's resources at `chrome-extension://<extensionId>/`,
 matching `vendor/electron-chrome-extensions`'s own convention of using the extension id as the
-host. If a later package gives extensions a different origin scheme, `dnr-engine.ts`'s
-`computeRedirectUrl` is the one place to change.
+host. If extensions ever get a different origin scheme, `dnr-engine.ts`'s `computeRedirectUrl`
+is the one place to change.
 
 **Rule limits are Chrome's published numbers, not Firefox's pref defaults, and do not model
 Chrome's dynamic-rule "safe"/"unsafe" split.** `vendor/firefox-dnr/src/dnr-limits.mjs` has the
@@ -103,9 +124,20 @@ this engine (like Firefox's own DNR) only operates on http(s) requests. The rema
 because those tests drive a real extension through Firefox's WebExtensions test harness and have
 no vector table to mine.
 
-**The performance test (`tests/perf.test.ts`) is gated on `ORIVON_DNR_PERF`** and needs a real,
-unpacked uBlock Origin Lite build (not committed; download `uBOLite_*.chromium.zip` from
+**The performance test (`tests/perf.test.ts`) and the uBOL half of
+`tests/index-equivalence.test.ts` are gated on `ORIVON_DNR_PERF`** and need a real, unpacked
+uBlock Origin Lite build (not committed; download `uBOLite_*.chromium.zip` from
 [uBlockOrigin/uBOL-home releases](https://github.com/uBlockOrigin/uBOL-home/releases) and point
-`ORIVON_DNR_PERF_UBOL_DIR` at the unzipped folder) -- see that file's top comment for the exact
-command. It is excluded from `npm test` because loading ~18,700 real rules and evaluating 10,000
-requests takes several seconds, well past this package's default-run budget.
+`ORIVON_DNR_PERF_UBOL_DIR` at the unzipped folder) -- see `perf.test.ts`'s top comment for the
+exact command. Both are excluded from `npm test` because loading ~18,700 real rules and
+evaluating thousands of requests takes several seconds, well past this package's default-run
+budget.
+
+Measured on the machine this index was built on (10,000 `evaluate()` calls over uBOL's six
+default-enabled rulesets, 18,664 rules): a full scan (index disabled) runs median 2.1ms, p99
+5.6ms per request; with the index, median 0.69ms, p99 1.3ms -- roughly a 3x/4x improvement, not
+the low-double-digit-microsecond figure a fully domain-anchored ruleset would allow, because
+close to 40% of uBOL's own rules (plain substring or wildcard `urlFilter`, `regexFilter`) have
+no domain-shaped condition for the index to use and stay in the generic, always-tested list (see
+the Design notes entry above). Narrowing that further -- e.g. a token/substring index over the
+generic `urlFilter` set -- is out of scope here and would need its own equivalence proof.

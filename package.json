@@ -60,6 +60,7 @@
     "path-browserify": "^1.0.1",
     "pbf": "4.0.2",
     "stream-browserify": "^3.0.0",
+    "tldts": "7.4.16",
     "util": "^0.12.5",
     "viem": "^2.56.8"
   },

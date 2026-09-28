@@ -162,6 +162,103 @@ export class Rule {
   }
 }
 
+// Patch 10 (UPSTREAM.md): a per-Ruleset candidate index for
+// #collectMatchInRuleset, not present upstream (Firefox's own engine also
+// tests every rule in the ruleset, per this file's top comment). Added
+// because Orivon runs this matcher in the main process for every network
+// request, where a full scan of an 18,000-rule ad-block ruleset costs
+// low-single-digit milliseconds per request (measured in
+// src/main/extensions/dnr/tests/perf.test.ts). The index only narrows which
+// rules #matchesRuleCondition runs against; every candidate it returns is
+// still tested by that same, unmodified method, so it cannot change which
+// rule wins, only how many are tested. src/main/extensions/dnr/README.md's
+// Design notes has the equivalence argument this relies on.
+
+/** Set false only by tests, to compare indexed and unindexed evaluation. */
+let ruleIndexEnabled = true
+
+// A urlFilter of exactly "||<domain>^" (nothing after the "^") or
+// "||<domain>/..." can only match a request whose host is <domain> or a
+// subdomain of it: CompiledUrlFilter's domain anchors are computed from the
+// URL's host only (#getDomainAnchors), and both "^" as the pattern's last
+// character and "/" force a label boundary immediately after <domain> ("."
+// is not a "^" separator character, so "||example.com^" cannot match
+// "example.com.evil.net", and "m" is not one either, so it cannot match
+// "example.community"). A bare "||<domain>" with nothing after it, or a "^"
+// that is not the pattern's last character (a one-character separator, not
+// an anchor), does not have that guarantee and is left generic.
+function extractIndexDomain(urlFilter) {
+  if (urlFilter[0] !== '|' || urlFilter[1] !== '|') {
+    return null
+  }
+  let cut = -1
+  for (let i = 2; i < urlFilter.length; ++i) {
+    const ch = urlFilter[i]
+    if (ch === '^' || ch === '/') {
+      cut = i
+      break
+    }
+    if (ch === '*' || ch === '|') {
+      // A wildcard or another anchor inside the domain part: not a plain
+      // "||<domain>..." pattern.
+      return null
+    }
+  }
+  if (cut === -1 || (urlFilter[cut] === '^' && cut !== urlFilter.length - 1)) {
+    return null
+  }
+  const domain = urlFilter.slice(2, cut)
+  return DOMAIN_LABEL_RE.test(domain) ? domain.toLowerCase() : null
+}
+
+const DOMAIN_LABEL_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i
+
+/**
+ * @param {Rule} rule
+ * @returns {string[] | null} Domains this rule can be indexed under, or null
+ *   if it belongs in the generic (always-tested) list.
+ */
+function indexDomainsForRule(rule) {
+  const cond = rule.condition
+  if (cond.requestDomains && cond.requestDomains.length) {
+    // requestDomains is itself an exact precondition for a match (AND'ed
+    // with any other condition on the same rule, including a urlFilter), so
+    // it alone decides candidacy; a urlFilter on the same rule is still
+    // fully re-checked by #matchesRuleCondition for every candidate.
+    return cond.requestDomains
+  }
+  if (cond.urlFilter && !cond.regexFilter && !cond.isUrlFilterCaseSensitive) {
+    const domain = extractIndexDomain(cond.urlFilter)
+    if (domain) {
+      return [domain]
+    }
+  }
+  return null
+}
+
+/** @param {Rule[]} rules @returns {{byDomain: Map<string, object[]>, generic: object[]}} */
+function buildRuleIndex(rules) {
+  const byDomain = new Map()
+  const generic = []
+  rules.forEach((rule, order) => {
+    const domains = indexDomainsForRule(rule)
+    if (!domains) {
+      generic.push({ rule, order })
+      return
+    }
+    for (const domain of domains) {
+      const key = domain.toLowerCase()
+      let bucket = byDomain.get(key)
+      if (!bucket) {
+        bucket = []
+        byDomain.set(key, bucket)
+      }
+      bucket.push({ rule, order })
+    }
+  })
+  return { byDomain, generic }
+}
+
 class Ruleset {
   /**
    * @param {string} rulesetId - extension-defined ruleset ID.
@@ -177,6 +274,54 @@ class Ruleset {
     this.disabledRuleIds = disabledRuleIds
     // For use by MatchedRule.
     this.ruleManager = ruleManager
+  }
+
+  #indexRulesRef
+  #index
+
+  /**
+   * @param {string[] | null} requestDomains - the request's host and every
+   *   parent domain (RequestDetails#allRequestDomains).
+   * @returns {Rule[]} A subset of |this.rules|, in the same relative order
+   *   a full scan of |this.rules| would visit them in. Always a superset of
+   *   the rules that can match: every rule not returned here is provably
+   *   excluded by indexDomainsForRule's own domain condition, which
+   *   #matchesRuleCondition would also have rejected.
+   */
+  getCandidateRules(requestDomains) {
+    if (this.#indexRulesRef !== this.rules) {
+      this.#index = buildRuleIndex(this.rules)
+      this.#indexRulesRef = this.rules
+    }
+    const { byDomain, generic } = this.#index
+    if (byDomain.size === 0 || !requestDomains) {
+      return this.rules
+    }
+    const seenOrder = new Set()
+    const picked = []
+    for (const entry of generic) {
+      picked.push(entry)
+      seenOrder.add(entry.order)
+    }
+    let matchedAnyDomain = false
+    for (const domain of requestDomains) {
+      const bucket = byDomain.get(domain)
+      if (!bucket) {
+        continue
+      }
+      matchedAnyDomain = true
+      for (const entry of bucket) {
+        if (!seenOrder.has(entry.order)) {
+          seenOrder.add(entry.order)
+          picked.push(entry)
+        }
+      }
+    }
+    if (!matchedAnyDomain) {
+      return generic.map(entry => entry.rule)
+    }
+    picked.sort((a, b) => a.order - b.order)
+    return picked.map(entry => entry.rule)
   }
 }
 
@@ -1308,7 +1453,10 @@ class RequestEvaluator {
 
   /** @param {Ruleset} ruleset */
   #collectMatchInRuleset(ruleset) {
-    for (const rule of ruleset.rules) {
+    // Patch 10 (UPSTREAM.md): candidate pre-selection via the ruleset's
+    // index, instead of always scanning every rule.
+    const rules = ruleIndexEnabled ? ruleset.getCandidateRules(this.req.allRequestDomains) : ruleset.rules
+    for (const rule of rules) {
       if (ruleset.disabledRuleIds?.has(rule.id)) {
         continue
       }
@@ -1557,4 +1705,10 @@ export const ExtensionDNR = {
   applyURLTransform,
   ModifyRequestHeaders,
   ModifyResponseHeaders,
+  // Test-only: forces #collectMatchInRuleset back to a full scan of
+  // ruleset.rules, so a test can compare indexed and unindexed evaluation
+  // over the same rules and requests. Never called by dnr-engine.ts.
+  __setRuleIndexEnabledForTesting(enabled) {
+    ruleIndexEnabled = enabled
+  },
 }
