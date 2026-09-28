@@ -29,6 +29,9 @@ const SPECS = {
     labels: { ...Object.fromEntries(SEARCH_ENGINES.map((engine) => [engine.id, engine.label])), [CUSTOM_SEARCH_ENGINE]: 'Custom' }
   },
   'search.customUrl': { kind: 'text', default: '', maxLength: 2048, check: (value) => value === '' || isValidSearchTemplate(value) },
+  // Every tab's page can be inspected unless the person turns it off; where the tools open is theirs too.
+  'developer.tools': { kind: 'bool', default: true },
+  'developer.dock': { kind: 'enum', options: ['right', 'bottom', 'undocked'], default: 'right' },
   'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' }
 } as const satisfies Record<string, SettingSpec>
 

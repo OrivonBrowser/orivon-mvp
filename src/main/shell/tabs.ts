@@ -116,7 +116,8 @@ export class TabManager {
       adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
-      getTabBounds
+      getTabBounds,
+      devtools: shell?.devtools
     }
     this.searchUrl = shell?.searchUrl
     this.internalPages = shell?.internalPages

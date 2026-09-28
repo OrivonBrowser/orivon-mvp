@@ -16,6 +16,8 @@ export const MENU_LAYOUT: readonly (CommandId | '-')[] = [
   'zoom.out',
   'zoom.reset',
   '-',
+  'devtools.toggle',
+  '-',
   'settings.open',
   '-',
   'app.quit'

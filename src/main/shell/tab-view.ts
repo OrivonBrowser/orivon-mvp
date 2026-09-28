@@ -11,7 +11,6 @@ import type { TabRecord } from './tab-types.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { showContextMenu } from './context-menu.js'
-import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
@@ -284,7 +283,12 @@ export function wireView (id: string, record: TabRecord): void {
   wc.on('context-menu', (_event, params) => {
     const { window } = record.host
     if (window === undefined) return
-    showContextMenu(wc, params, { window, openInNewTab: (url) => { record.host.openTab(url) }, developerMode: devModeEnabled() })
+    const { devtools } = record.host
+    showContextMenu(wc, params, {
+      window,
+      openInNewTab: (url) => { record.host.openTab(url) },
+      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { devtools.inspect(wc, window, x, y) } } : {})
+    })
   })
 
   // T18: never a real OS popup window. A popup the page can talk to becomes
@@ -360,6 +364,7 @@ function closeView (view: WebContentsView): void {
  * view is closed, an internal page's included: it is one per window and is
  * opened again from the shell, not returned to. */
 function retireView (record: TabRecord, view: WebContentsView, partition: string | undefined): void {
+  record.host.devtools?.closeFor(view.webContents)
   if (partition === undefined || partition === INTERNAL_PARTITION || view.webContents.isDestroyed()) {
     closeView(view)
     return

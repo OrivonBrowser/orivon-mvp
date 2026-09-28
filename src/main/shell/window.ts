@@ -171,7 +171,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     window: win,
     htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) },
     searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query),
-    internalPages: services.internalPages
+    internalPages: services.internalPages,
+    devtools: services.devtools
   })
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one
@@ -297,7 +298,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   chrome.webContents.on('did-finish-load', pushState)
   // The address bar's Cut/Copy/Paste: the same menu a tab gets.
   chrome.webContents.on('context-menu', (_event, params) => {
-    showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, developerMode: devModeEnabled() })
+    showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, ...(devModeEnabled() ? { inspect: (x: number, y: number) => { chrome.webContents.inspectElement(x, y) } } : {}) })
   })
 
   // Queue item 4.4's permissions surface, now a panel inside this window

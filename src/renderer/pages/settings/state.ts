@@ -13,6 +13,7 @@ export interface AboutInfo {
   readonly node: string
   readonly platform: string
   readonly userAgent: string
+  readonly developerMode: boolean
 }
 
 interface GetReply {

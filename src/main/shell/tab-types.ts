@@ -8,6 +8,7 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import type { Bookmark } from '../browsing/bookmarks.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
+import type { DevToolsGate } from '../devtools/devtools-service.js'
 
 export interface TabState {
   id: string
@@ -78,6 +79,8 @@ export interface TabShell {
   searchUrl?: (query: string) => string
   /** Where a tab opened as one of the shell's own pages is recorded. Absent in tests. */
   internalPages?: InternalPageRegistry
+  /** Developer tools for a tab. Absent in tests: no "Inspect". */
+  devtools?: DevToolsGate
 }
 
 /** What the per-view wiring in tab-view.ts needs back from the TabManager
@@ -106,6 +109,7 @@ export interface TabViewHost {
   atCapacity: () => boolean
   htmlFullscreenChanged: (id: string, entered: boolean) => void
   getTabBounds: () => Bounds
+  readonly devtools: DevToolsGate | undefined
 }
 
 /** One live tab, as TabManager and the per-view wiring in tab-view.ts both

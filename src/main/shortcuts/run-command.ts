@@ -4,12 +4,14 @@ import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
+import type { DevToolsService } from '../devtools/devtools-service.js'
 import type { ZoomService } from '../zoom/zoom-service.js'
 import type { CommandId } from './commands.js'
 
 export interface CommandDeps {
   readonly bookmarks: BookmarkStore
   readonly zoom: ZoomService
+  readonly devtools: DevToolsService
   readonly openWindow: () => void
   readonly quit: () => void
 }
@@ -53,6 +55,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       else deps.zoom.step(origin, id === 'zoom.in' ? 'in' : 'out')
       return
     }
+    case 'devtools.toggle': deps.devtools.toggle(tabs.activeWebContents(), window); return
     case 'bookmark.toggle':
       // The same rule as the star in the toolbar: a page with a site, and no other.
       if (active === undefined || active.isNewTab || active.isInternal) return

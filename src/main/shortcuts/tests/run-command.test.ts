@@ -4,12 +4,13 @@ import type { ShellWindow } from '../../shell/window-registry.js'
 import { COMMANDS } from '../commands.js'
 import { runCommand } from '../run-command.js'
 import type { CommandDeps } from '../run-command.js'
+import type { DevToolsService } from '../../devtools/devtools-service.js'
 import type { ZoomService } from '../../zoom/zoom-service.js'
 
 interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean }
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, ...extra })
 
-function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
+function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
   const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false) }
@@ -26,7 +27,8 @@ function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindo
   } as unknown as ShellWindow
   const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn() }
   const zoom = { step: vi.fn(), reset: vi.fn() }
-  return { target, zoom, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never }, bookmarks, deps: { bookmarks: bookmarks as unknown as BookmarkStore, zoom: zoom as unknown as ZoomService, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
+  const devtools = { toggle: vi.fn() }
+  return { target, zoom, devtools, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never }, bookmarks, deps: { bookmarks: bookmarks as unknown as BookmarkStore, zoom: zoom as unknown as ZoomService, devtools: devtools as unknown as DevToolsService, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
 }
 
 describe('runCommand', () => {
@@ -147,5 +149,11 @@ describe('runCommand', () => {
     for (const id of ['zoom.in', 'zoom.out', 'zoom.reset'] as const) runCommand(id, blank.target, blank.deps)
     expect(blank.zoom.step).not.toHaveBeenCalled()
     expect(blank.zoom.reset).not.toHaveBeenCalled()
+  })
+
+  it('toggles developer tools on the active tab\'s page', () => {
+    const { target, deps, devtools } = harness([tab('a')], 'a')
+    runCommand('devtools.toggle', target, deps)
+    expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith({ reloadIgnoringCache: expect.anything() }, target.window)
   })
 })

@@ -146,6 +146,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0153` | 2026-09-28 | Closing the last tab closes the window by default, or opens a new tab if the person chooses. Owner | `../../src/main/settings/schema.ts` |
 | `d-0154` | 2026-09-28 | Every keyboard shortcut is a command in one table that a person can remap, swap, clear and reset in Settings; keys are read on `before-input-event` in every view rather than through a menu, and none run while a page holds the screen. Owner | `../../src/main/shortcuts/README.md` |
 | `d-0155` | 2026-09-28 | A page's zoom is chosen per site (its origin), remembered across launches, and stepped through the usual preset levels; the browser's own zoom is off in tabs so the level shown is the level stored, and the new-tab and shell pages are never zoomed. Owner | `../../src/main/zoom/README.md` |
+| `d-0156` | 2026-09-28 | Developer tools open on every tab (F12, Ctrl+Shift+I, or Inspect) and are a setting a person can turn off; on an app that holds permissions the first opening per app per run asks once, and the shell's own pages stay closed to them outside developer mode. Owner | `../architecture/security-model.md` (T44) |
 
 ## Directives
 

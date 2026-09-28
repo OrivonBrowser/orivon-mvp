@@ -1,6 +1,7 @@
 // Brings the shell's own pages to life once the shared services exist: the
 // channel they speak on, and the changes they hear about while open.
 import { app, session } from 'electron'
+import { devModeEnabled } from '../dev/dev-mode.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { settingsDomain } from '../settings/settings-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
@@ -18,7 +19,8 @@ function aboutDomain (): InternalDomain {
       chromium: process.versions.chrome,
       node: process.versions.node,
       platform: process.platform,
-      userAgent: session.defaultSession.getUserAgent()
+      userAgent: session.defaultSession.getUserAgent(),
+      developerMode: devModeEnabled()
     })
   }
 }

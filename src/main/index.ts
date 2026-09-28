@@ -77,13 +77,13 @@ void app.whenReady().then(async () => {
     return
   }
 
-  const shell = createShellServices(app.getPath('userData'))
+  const shell = createShellServices(app.getPath('userData'), ctx)
   // Before the first window, so it opens in the chosen theme with the chosen
   // bookmarks bar rather than changing after it is on screen.
   await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])
   applyThemeSetting(shell.settings, nativeTheme)
   startInternalPages(shell)
-  shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, openWindow: () => { createShellWindow(ctx, shell) }, quit: () => { app.quit() } })
+  shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, openWindow: () => { createShellWindow(ctx, shell) }, quit: () => { app.quit() } })
   installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
   installZoom(app, shell.windows, shell.zoom)
   registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
