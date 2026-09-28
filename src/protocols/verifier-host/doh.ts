@@ -7,7 +7,7 @@
 
 import type { ResolveTxt } from '../ipfs/dnslink.js'
 import { readCapped } from '../ipfs/gateways.js'
-import { isPublicUnicast } from '../../broker/policy/address.js'
+import { canonicalAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import type { WebFetch } from './egress.js'
 
 const TXT = 16
@@ -95,7 +95,11 @@ export function dohAddressResolver (endpoints: readonly string[], fetch: WebFetc
     for (const [result, type] of [[a, A_RECORD], [aaaa, AAAA_RECORD]] as const) {
       if (result.status !== 'fulfilled') continue
       for (const answer of result.value) {
-        if (answer.type === type && typeof answer.data === 'string' && isPublicUnicast(answer.data)) addresses.push(answer.data)
+        if (answer.type !== type || typeof answer.data !== 'string' || !isPublicUnicast(answer.data)) continue
+        // The canonical spelling, or nothing: it is compared with the system
+        // resolver's answer and may be dialled, and a zone id has no canonical form.
+        const address = canonicalAddress(answer.data)
+        if (address !== null) addresses.push(address)
       }
     }
     return addresses
