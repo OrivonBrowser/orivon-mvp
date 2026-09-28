@@ -148,6 +148,7 @@ export class TabManager {
     this.listeners.clear()
     for (const record of [...this.tabs.values()]) {
       closeParkedViews(record)
+      record.host.devtools?.closeFor(record.view.webContents)
       if (!record.view.webContents.isDestroyed()) record.view.webContents.close()
     }
   }
@@ -278,6 +279,11 @@ export class TabManager {
     this.tabs.delete(id)
     const idx = this.order.indexOf(id)
     if (idx !== -1) this.order.splice(idx, 1)
+    // Covers both closeView paths: a normal close and the crash path, where
+    // the webContents is already gone but closeFor() still needs to drop it
+    // from DevToolsService's tracked set. takeTab() closes it earlier, before
+    // the record's own webContents changes host, so this is a harmless no-op there.
+    record.host.devtools?.closeFor(record.view.webContents)
     if (closeView && !record.view.webContents.isDestroyed()) {
       record.view.webContents.close()
     }

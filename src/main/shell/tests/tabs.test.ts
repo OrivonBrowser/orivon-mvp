@@ -711,6 +711,46 @@ describe('TabManager -- a tab coming back to an app it left gets the app\'s own 
   })
 })
 
+// DevToolsService tracks every WebContents it opened tools on until closeFor()
+// runs; a teardown path that skips it leaks a destroyed WebContents for the
+// rest of the process's life. takeTab() already calls closeFor() before
+// handing a tab to another window -- these prove the two paths that did
+// not: a tab closing normally, and a tab's view dying unexpectedly.
+describe('TabManager -- DevTools do not outlive the tab they were opened on', () => {
+  function managerWithDevtools (): { manager: InstanceType<typeof TabManager>, closeFor: ReturnType<typeof vi.fn> } {
+    const closeFor = vi.fn()
+    const manager = new TabManager(
+      fakeContentView as never,
+      () => fakeBounds,
+      vi.fn(),
+      DASHBOARD_URL,
+      fakeCtx,
+      { window: {} as never, htmlFullscreenChanged: vi.fn(), devtools: { allowed: vi.fn(), inspect: vi.fn(), closeFor } }
+    )
+    return { manager, closeFor }
+  }
+
+  it('closes DevTools for a tab closed normally', () => {
+    const { manager, closeFor } = managerWithDevtools()
+    const id = manager.createTab('https://a.example/')
+    const wc = (createdViews[0] as RecordedView).webContents
+
+    manager.closeTab(id)
+
+    expect(closeFor).toHaveBeenCalledWith(wc)
+  })
+
+  it('closes DevTools for a tab whose view dies unexpectedly', () => {
+    const { manager, closeFor } = managerWithDevtools()
+    manager.createTab('https://a.example/')
+    const wc = (createdViews[0] as RecordedView).webContents
+
+    wc.emit('destroyed')
+
+    expect(closeFor).toHaveBeenCalledWith(wc)
+  })
+})
+
 // wireView() launches captureFavicon with a .catch, not a bare `void`: a
 // rejection there would be an unhandledRejection, which index.ts
 // deliberately maps to app.exit(1), killing every open tab. This exercises

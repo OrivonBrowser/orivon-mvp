@@ -48,15 +48,17 @@ const { TabManager } = await import('../tabs.js')
 
 const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
 
-function managerOverAWindow (): { manager: InstanceType<typeof TabManager>, windowDestroyed: () => void, getBounds: ReturnType<typeof vi.fn>, onEmpty: ReturnType<typeof vi.fn> } {
+function managerOverAWindow (): { manager: InstanceType<typeof TabManager>, windowDestroyed: () => void, getBounds: ReturnType<typeof vi.fn>, onEmpty: ReturnType<typeof vi.fn>, devtoolsCloseFor: ReturnType<typeof vi.fn> } {
   let destroyed = false
   const getBounds = vi.fn(() => {
     if (destroyed) throw new TypeError('Object has been destroyed')
     return { x: 0, y: 0, width: 800, height: 600 }
   })
   const onEmpty = vi.fn()
-  const manager = new TabManager(fakeContentView as never, getBounds, onEmpty, 'http://localhost:5999/newtab/', {} as SubsystemContext)
-  return { manager, windowDestroyed: () => { destroyed = true }, getBounds, onEmpty }
+  const devtoolsCloseFor = vi.fn()
+  const shell = { window: {} as never, htmlFullscreenChanged: vi.fn(), devtools: { allowed: vi.fn(), inspect: vi.fn(), closeFor: devtoolsCloseFor } }
+  const manager = new TabManager(fakeContentView as never, getBounds, onEmpty, 'http://localhost:5999/newtab/', {} as SubsystemContext, shell)
+  return { manager, windowDestroyed: () => { destroyed = true }, getBounds, onEmpty, devtoolsCloseFor }
 }
 
 beforeEach(() => {
@@ -133,5 +135,18 @@ describe('TabManager.dispose -- a closing window (A259)', () => {
     manager.dispose()
 
     expect(createdViews[0]?.webContents.close).toHaveBeenCalledTimes(1)
+  })
+
+  // DevToolsService tracks every WebContents it opened tools on until closeFor()
+  // runs; skipping it here leaks a destroyed WebContents for the rest of the
+  // process's life.
+  it('closes DevTools for every tab\'s view', () => {
+    const { manager, devtoolsCloseFor } = managerOverAWindow()
+    manager.createTab('https://a.example/')
+    manager.createTab('https://b.example/')
+
+    manager.dispose()
+
+    for (const view of createdViews) expect(devtoolsCloseFor).toHaveBeenCalledWith(view.webContents)
   })
 })
