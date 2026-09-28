@@ -1277,7 +1277,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A272: A second profile counts as a second install in usage statistics **[OWNER]**
+### A274: A second profile counts as a second install in usage statistics **[OWNER]**
 
 - **Question:** Should a second profile send its own usage statistics, or share the default's install id?
 - **Why it matters:** telemetry's install id is kept in the data directory, so each profile reports its
@@ -1287,7 +1287,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A273: The update check is off until the owner decides **[OWNER]**
+### A275: The update check is off until the owner decides **[OWNER]**
 
 - **Question:** Should looking for a newer release be on by default, and should Settings link to it?
 - **Why it matters:** the check asks GitHub once a day and installs nothing (`update-check.ts`); a
@@ -1297,7 +1297,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A274: What happens to a download is not settled **[RESEARCH]**
+### A276: What happens to a download is not settled **[RESEARCH]**
 
 - **Question:** Where does a download go, does it ask, and what may an app tab download?
 - **Why it matters:** Settings has no downloads section because none of it was checked against a real
@@ -1307,7 +1307,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** a downloads section in Settings
 
-### A275: Dragging a tab into another window is best effort on Wayland **[RESEARCH]**
+### A277: Dragging a tab into another window is best effort on Wayland **[RESEARCH]**
 
 - **Question:** Can a tab dropped over another window find it under Wayland?
 - **Why it matters:** where the pointer let go is read from the screen. Wayland tells an application
@@ -1317,26 +1317,26 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A276: A development run and an installed one share a data directory **[OWNER]**
+### A278: A development run and an installed one share a data directory **[OWNER]**
 
 - **Question:** Should a development run and an installed browser use different directories by default?
 - **Why it matters:** both use the operating system's directory, and a profile allows one browser at a
-  time, so starting one while the other runs hands over to it (`ADR-0041`). Both at once needs
+  time, so starting one while the other runs hands over to it (`ADR-0042`). Both at once needs
   `--user-data-dir`.
 - **Options:** keep sharing and document the switch (rec.); separate them by default.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A277: Sweeping a private session's directory on Windows is unmeasured **[RESEARCH]**
+### A279: Sweeping a private session's directory on Windows is unmeasured **[RESEARCH]**
 
 - **Question:** Does the sweep remove a crashed private session's directory on Windows?
 - **Why it matters:** the sweep checks this user owns the directory; Windows has no owner id to compare
-  and refuses to delete a file another process holds open, so it may survive a start (`ADR-0041`).
+  and refuses to delete a file another process holds open, so it may survive a start (`ADR-0042`).
 - **Options:** run a private session's start, crash and sweep on Windows (rec.).
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A278: History's defaults are provisional, and it feeds nothing yet **[AI-REC]**
+### A280: History's defaults are provisional, and it feeds nothing yet **[AI-REC]**
 
 - **Question:** Is 90 days the right retention, and should the address bar suggest from history?
 - **Why it matters:** 90 is a guess at what a person expects, and nothing else reads history. It is one
@@ -1345,7 +1345,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A279: Clearing app data reaches the apps that hold permissions **[AI-REC]**
+### A281: Clearing app data reaches the apps that hold permissions **[AI-REC]**
 
 - **Question:** Should "Clear browsing data" also reach an app that is installed but holds none?
 - **Why it matters:** it clears the browser storage of every app that holds a permission; an app whose
@@ -1355,7 +1355,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A280: The first-run usage statistics screen is not built **[OWNER]**
+### A282: The first-run usage statistics screen is not built **[OWNER]**
 
 - **Question:** Where in the welcome flow does the usage statistics question sit?
 - **Why it matters:** `ADR-0004` calls for a first-run screen with the exact text and two buttons,

@@ -31,7 +31,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   permissions and apps, made and managed at `orivon://profiles`; each runs as a process of its own, and a
   second start of one already open hands over to it. A private window (Ctrl+Shift+N) starts empty on a
   directory of its own, keeps no history, statistics or identity, asks for every permission again and is
-  deleted when its last window closes. `ADR-0041`.
+  deleted when its last window closes. `ADR-0042`.
 - **An app can show a website inside its own page** (`web.embed`, ADR-0039), each shown page
   sandboxed in the app's own session; a manifest can also ask for cross-origin isolation, which
   turns on `SharedArrayBuffer` for WebAssembly threads.

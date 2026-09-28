@@ -1,4 +1,4 @@
-# ADR-0040: The shell's own pages live at `orivon://` in a session only they can load
+# ADR-0041: The shell's own pages live at `orivon://` in a session only they can load
 
 - **Status:** accepted
 - **Date:** 2026-09-28

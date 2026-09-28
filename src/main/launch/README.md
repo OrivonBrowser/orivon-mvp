@@ -1,7 +1,7 @@
 # `src/main/launch/`: which browser this process is
 
 **What lives here.** How a process finds out whether it is the default profile, another profile or a
-private session (`ADR-0041`), and what follows from that. `launch-context.ts` reads the command line;
+private session (`ADR-0042`), and what follows from that. `launch-context.ts` reads the command line;
 `start-launch.ts` runs first of all, points the data directory at the right place and steps aside if that profile
 is already open; `profile-store.ts` is the profiles (one directory each, with a `profile.json`);
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions;

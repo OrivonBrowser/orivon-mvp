@@ -1,7 +1,7 @@
 # `src/main/pages/`: the shell's own pages
 
 **What lives here.** How Settings, History, Profiles and Private exist as pages in tabs
-(`ADR-0040`). `internal-pages.ts` names them and reads an `orivon://<page>[/path]` address.
+(`ADR-0041`). `internal-pages.ts` names them and reads an `orivon://<page>[/path]` address.
 `route.ts` decides which file such a request may read, and `serve.ts` answers it (with the CSP)
 from the built renderer or the dev server; both are pure. `internal-session.ts` is the one
 in-memory session that serves the scheme, and registers it before the app is ready. `internal-registry.ts`

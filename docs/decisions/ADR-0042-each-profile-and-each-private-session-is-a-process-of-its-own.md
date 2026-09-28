@@ -1,4 +1,4 @@
-# ADR-0041: Each profile and each private session is a process of its own
+# ADR-0042: Each profile and each private session is a process of its own
 
 - **Status:** accepted
 - **Date:** 2026-09-28
