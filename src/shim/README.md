@@ -17,6 +17,7 @@
 | [`net/`](net/) | `net`, `tls`, `dgram` and `dns` over `orivon.net` |
 | [`http/`](http/) | `http` and `https`, over `net/`'s real socket |
 | [`polyfills/`](polyfills/) | The core polyfills |
+| [`wasi/`](wasi/) | A WASI preview1 host over `orivon.fs`, and Node's `wasi` module over it |
 
 **A bundler must alias each specifier exactly** (`module-map.ts`'s `aliasPattern`). A prefix
 alias also captures subpaths and sends the shim's own imports back into the shim

@@ -123,10 +123,17 @@ WebAssembly build (`sql.js` for `better-sqlite3`), which is the usual substitute
 **Not as a way to reach tier 3.** Those apps would need full recompilation plus threads plus a
 GUI toolkit, so WebAssembly does not turn a Qt or JVM app into a tier-2 app.
 
-**Not as a host, in this build.** `orivon-runtime`, a WASI host that would run WebAssembly with no
-JavaScript around it, is not built yet (ADR-0002). Its real jobs are narrower: containment for
-untrusted third-party code, and portability to mobile. A standalone WASI program has nothing to
-host it today (`compatibility-matrix.md` Table 4).
+**A standalone WASI program, inside the app's tab.** WebAssembly that imports WASI instead of
+calling JavaScript runs against a host in the Node shim (`src/shim/wasi/`), reached through
+Node's `wasi` module: each file call it makes is an `orivon.fs` call under the app's grants, so it
+gains nothing the app's JavaScript lacks (ADR-0040). Files work; sockets do not yet
+(`compatibility-matrix.md` Table 4 row 12). The same shape is what native modules and child
+processes become for a ported app: an addon's WebAssembly build, a WASI program for `spawn`, a Web
+Worker for `fork`. Native machine code never runs for an app.
+
+**Not `orivon-runtime`.** The Wasmtime host `ADR-0002` defers is a separate thing, still not
+built. Its real jobs are narrower: containment for untrusted third-party code, and portability to
+mobile.
 
 ## Licensing caution
 

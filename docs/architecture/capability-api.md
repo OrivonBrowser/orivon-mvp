@@ -432,7 +432,9 @@ extension; the *data* is what sits behind consent (`security-model.md` T16).
 
 ### Deliberately **not** in v0
 - **`subprocess`.** No tier-3 app is in this version (Bisq is cut), so it buys nothing and costs
-  the largest attack surface in the design.
+  the largest attack surface in the design. A ported app's child processes and native modules run
+  as WebAssembly in its own tab instead, under the grants it already holds, so they need no
+  capability of their own (`ADR-0040`).
 - **`hid` / USB.** No wallet app in this version.
 - **Raw sockets / ICMP.** No use case, and unreachable from WASM later anyway.
 

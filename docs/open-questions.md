@@ -1288,6 +1288,28 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
+### A272: Resolving a native addon to its WebAssembly build has no consumer yet **[OWNER]**
+
+- **Question:** Build ADR-0040's addon resolution now, against a published napi-rs
+  `wasm32-wasi` package as a fixture, or wait for the first app that needs it?
+- **Why it matters:** no current port's addon publishes a WebAssembly build (Seshat, `node-hid`,
+  `usb`, `pkcs11js`), and a build must also add that package to a port's install; a threaded one
+  needs `crossOriginIsolated` and a Worker that reaches `orivon.*`.
+- **Options:** wait, and build `spawn` and `fork` first (rec.); build it now against a fixture.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A273: `orivon.fs.rm` cannot remove an empty directory in one call **[AI-REC]**
+
+- **Question:** Should the broker remove a directory with a non-recursive `rm` when it is empty,
+  and fail `ENOTEMPTY` otherwise, as POSIX `rmdir` does?
+- **Why it matters:** `rm` removes a directory only recursively, so the WASI host's
+  `path_remove_directory` checks emptiness and then deletes; a file created in between is lost.
+- **Options:** map a non-recursive `rm` on a directory to `rmdir` in `src/broker/` (rec.), no
+  contract type change; add an `rmdir` method, a contracts change; keep the window.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared

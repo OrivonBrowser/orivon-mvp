@@ -194,6 +194,14 @@ the page), and [`e2e-wasm-threads.test.ts`](../../test/e2e-wasm-threads.test.ts)
 declaring `crossOriginIsolated` and one without, and measures `SharedArrayBuffer`, a shared
 `WebAssembly.Memory` and `Atomics.wait` in a worker in each.
 
+[`e2e-wasi-host.test.ts`](../../test/e2e-wasi-host.test.ts) pins an app whose page runs a WASI
+program through Node's `wasi` module: its file calls reach the real broker through JSPI, the bytes
+it wrote are read back through `orivon.fs`, and its attempt to leave its preopen comes back
+`NOTCAPABLE`. The WASI host also has an opt-in conformance run against the official preview1
+suite, [`src/shim/wasi/tests/conformance.test.ts`](../../src/shim/wasi/tests/conformance.test.ts),
+which skips unless `ORIVON_WASI_TESTSUITE` names a checkout of the suite's prebuilt branch; the
+suite's binaries are not in this repository.
+
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
 pull request (see §How to run above).

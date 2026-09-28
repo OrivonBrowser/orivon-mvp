@@ -177,7 +177,10 @@ build step explain why.
 ## Capabilities excluded from v0, on security grounds
 `subprocess` and `hid` are absent from the v0 API entirely, for signed apps too, not merely
 unsigned ones (`capability-api.md`). No app in this version needs them, and they are the largest
-available attack surface. Adding either requires an ADR.
+available attack surface. Adding either requires an ADR. `ADR-0040` keeps `subprocess` out: a
+ported app's native modules and child processes run as WebAssembly inside its own tab, where a
+WASI program's every file call is an `orivon.fs` call under the app's grants. That adds no threat
+row: the host translates errnos and keeps a descriptor table, and holds no authority of its own.
 
 ## Cross-platform note
 `safeStorage` is Keychain on macOS and DPAPI on Windows, but on Linux requires an available

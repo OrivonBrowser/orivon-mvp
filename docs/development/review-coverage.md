@@ -110,3 +110,9 @@ scan, a clean-checkout run) add one row naming the PR or range it covered, what 
 outcome. This is not filled in per ordinary PR; most PRs here merge on their author's own
 verification, and recording that would not tell a later reader anything they could not already
 see in the PR itself.
+
+### `stream/wasi-host`: the WASI host (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | The branch against `main`: `src/shim/wasi/`, the `wasi` module row, its tests and e2e, and the docs | 10 findings, with no verify pass. Eight were correctness defects: a kill that could not end a pending read or sleep, a handle leaked by a kill, a reactor whose memory was never bound, a reactor's files closed after `_initialize`, a sleep over 24.8 days firing at once, a readdir cookie at or above 2^63 trapping, a path decoded from shared memory, and a window in `path_remove_directory`. The other two were a Rule 2 phrase in `scope.md` and serial stats in `fd_readdir`. Nine fixed in the same PR, with a test where one applies; the window needs a broker change and is filed as A273 |

@@ -1,0 +1,140 @@
+{
+  "plain": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.54 Electron/44.0.0 Safari/537.36",
+    "crossOriginIsolated": false,
+    "sharedArrayBuffer": "undefined",
+    "suspending": "function",
+    "promising": "function",
+    "waitAsync": "function",
+    "wasmTag": "function",
+    "wasmJSTag": "object",
+    "sharedWasmMemory": "ok",
+    "jspi": 42,
+    "jspiOverhead": {
+      "calls": 20000,
+      "totalMs": 23,
+      "perCallUs": 1
+    },
+    "plainOverhead": {
+      "calls": 20000,
+      "totalMs": 1,
+      "perCallUs": 0,
+      "acc": 840000
+    },
+    "workerAtomicsWait": "workerAtomicsWait threw ReferenceError: SharedArrayBuffer is not defined",
+    "workerWithoutCoepHeader": "post threw ReferenceError: SharedArrayBuffer is not defined",
+    "crossOriginImageNoCorp": "loaded 1x1",
+    "crossOriginScriptNoCorp": "loaded ran=true",
+    "jspiInWorkerLocal": {
+      "mode": "local",
+      "suspending": "function",
+      "first": 42,
+      "calls": 20000,
+      "totalMs": 21,
+      "perCallUs": 1
+    },
+    "jspiInWorkerRpc": {
+      "mode": "rpc",
+      "suspending": "function",
+      "first": 42,
+      "calls": 5000,
+      "totalMs": 148,
+      "perCallUs": 30
+    },
+    "workerSeesOrivon": "undefined/undefined",
+    "noCorsCrossOriginFetch": "opaque/0",
+    "corsCrossOriginFetch": "basic/200"
+  },
+  "coop-coep-require-corp": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.54 Electron/44.0.0 Safari/537.36",
+    "crossOriginIsolated": true,
+    "sharedArrayBuffer": "function",
+    "suspending": "function",
+    "promising": "function",
+    "waitAsync": "function",
+    "wasmTag": "function",
+    "wasmJSTag": "object",
+    "sharedWasmMemory": "ok",
+    "jspi": 42,
+    "jspiOverhead": {
+      "calls": 20000,
+      "totalMs": 22,
+      "perCallUs": 1
+    },
+    "plainOverhead": {
+      "calls": 20000,
+      "totalMs": 3,
+      "perCallUs": 0,
+      "acc": 840000
+    },
+    "workerAtomicsWait": "Atomics.wait -> ok",
+    "workerWithoutCoepHeader": "failed to load (undefined)",
+    "crossOriginImageNoCorp": "loaded 1x1",
+    "crossOriginScriptNoCorp": "loaded ran=true",
+    "jspiInWorkerLocal": {
+      "mode": "local",
+      "suspending": "function",
+      "first": 42,
+      "calls": 20000,
+      "totalMs": 26,
+      "perCallUs": 1
+    },
+    "jspiInWorkerRpc": {
+      "mode": "rpc",
+      "suspending": "function",
+      "first": 42,
+      "calls": 5000,
+      "totalMs": 100,
+      "perCallUs": 20
+    },
+    "workerSeesOrivon": "undefined/undefined",
+    "noCorsCrossOriginFetch": "opaque/0",
+    "corsCrossOriginFetch": "basic/200"
+  },
+  "coop-coep-credentialless": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.54 Electron/44.0.0 Safari/537.36",
+    "crossOriginIsolated": true,
+    "sharedArrayBuffer": "function",
+    "suspending": "function",
+    "promising": "function",
+    "waitAsync": "function",
+    "wasmTag": "function",
+    "wasmJSTag": "object",
+    "sharedWasmMemory": "ok",
+    "jspi": 42,
+    "jspiOverhead": {
+      "calls": 20000,
+      "totalMs": 14,
+      "perCallUs": 1
+    },
+    "plainOverhead": {
+      "calls": 20000,
+      "totalMs": 1,
+      "perCallUs": 0,
+      "acc": 840000
+    },
+    "workerAtomicsWait": "Atomics.wait -> ok",
+    "workerWithoutCoepHeader": "failed to load (undefined)",
+    "crossOriginImageNoCorp": "loaded 1x1",
+    "crossOriginScriptNoCorp": "loaded ran=true",
+    "jspiInWorkerLocal": {
+      "mode": "local",
+      "suspending": "function",
+      "first": 42,
+      "calls": 20000,
+      "totalMs": 16,
+      "perCallUs": 1
+    },
+    "jspiInWorkerRpc": {
+      "mode": "rpc",
+      "suspending": "function",
+      "first": 42,
+      "calls": 5000,
+      "totalMs": 184,
+      "perCallUs": 37
+    },
+    "workerSeesOrivon": "undefined/undefined",
+    "noCorsCrossOriginFetch": "opaque/0",
+    "corsCrossOriginFetch": "basic/200"
+  }
+}
