@@ -83,6 +83,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **A routed `fetch()` to a dead host names the real failure**, and is replaceable like the
   platform's own.
 - **The window appears under `npm run dev`.**
+- **`.eth` pages keep their gateways through a lost race, a cooldown and a hostile answer**: the
+  verifier host no longer crashes on a 999 status or stalls on a 101, and every run certificate
+  parses.
 
 ### Resolved
 
