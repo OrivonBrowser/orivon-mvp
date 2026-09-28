@@ -29,8 +29,15 @@ dependency on tab-collection state, which keeps it importable under plain vitest
 chrome view's CSP (`img-src 'self' data:`) is a one-line guarantee that the one privileged,
 cookie-bearing view makes zero outbound requests. Letting it `<img src>` a page-chosen `https://`
 URL would open that CSP and hand every page a silent tracking request from the chrome origin.
-An SVG favicon is safe only because the chrome shows it as an `<img>`, which runs no script and
-fetches nothing: never render one any other way.
+
+**An SVG favicon is shown only as an `<img>`: never render one any other way.** In the tab strip,
+the bookmarks bar and the new-tab page, an `<img>`-loaded SVG runs no script and makes no network
+request. That is the whole guarantee, and it is narrower than inert: `data:` URLs inside the
+SVG load (an icon embedding a raster relies on it), SMIL and CSS animations run, and `<use>`,
+filters and `<foreignObject>` all reach Chromium's SVG engine inside the privileged chrome
+renderer and the new-tab page. The sniffer refuses a DOCTYPE with an internal subset, where an
+entity-expansion bomb is declared; everything else rests on Chromium. SVG bytes also persist, in
+`bookmarks.json`, sniffed again on every load. Whether to refuse more is `open-questions.md` A270.
 
 **The fetch is T12-gated per hop** (`isSafeFaviconUrl`, whose doc comment has the rules and the
 loopback-page carve-out). It is the one main-process network call that fires on ordinary
@@ -42,6 +49,7 @@ classification and the loader's resolver rather than a second copy (code-guideli
 event by `MAX_FAVICON_CANDIDATES`, and only public hosts pass the gate; a real bound needs
 per-tab state in `../shell/tabs.ts`).
 
-**`faviconCache` is bounded**, because a page can name any number of icon URLs: 256 icons and
-16 MiB, least recently used dropped first, both provisional. It stores only an icon its capture
-kept, never one that landed after the tab moved to another origin or a newer icon set.
+**`faviconCache` is bounded** by entry count and total size, least recently used dropped first
+(`favicon.ts` holds the provisional numbers), because a page can name any number of icon URLs.
+It stores only an icon its capture kept, never one that landed after the tab moved to another
+origin or a newer icon set.

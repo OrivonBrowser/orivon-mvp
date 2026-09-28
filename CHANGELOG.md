@@ -83,6 +83,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **A routed `fetch()` to a dead host names the real failure**, and is replaceable like the
   platform's own.
 - **The window appears under `npm run dev`.**
+- **Favicons survive a hash change or a same-origin page**, a failed icon fetch no longer holds a
+  socket, the icon cache is bounded, and an SVG entity bomb behind a quoted DOCTYPE literal is
+  refused.
 
 ### Resolved
 
