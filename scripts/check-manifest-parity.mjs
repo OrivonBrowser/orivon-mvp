@@ -46,6 +46,7 @@ export const PARITY_MAP = [
   { interfaceName: 'FsCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'FS_KEYS' },
   { interfaceName: 'IdCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'ID_CAPABILITY_KEYS' },
   { interfaceName: 'WebCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'WEB_CAPABILITY_KEYS' },
+  { interfaceName: 'EmbedCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'EMBED_CAPABILITY_KEYS' },
   { interfaceName: 'MediaCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'MEDIA_CAPABILITY_KEYS' },
   { interfaceName: 'ClipboardCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'CLIPBOARD_CAPABILITY_KEYS' },
   // SecretsCapability declares zero fields today (ADR-0033, "presence alone
@@ -71,11 +72,21 @@ export const PARITY_MAP = [
  * loader array did not exist yet -- land in a contracts-only PR without
  * tripping this check: its two fields were named here, with a reason, until
  * the implementation PR that followed added `WEB_CAPABILITY_KEYS` and
- * removed them. Empty today -- nothing is currently deferred -- but the
- * whole-interface logic above stays, for the next capability that ships
- * contracts-first the same way.
+ * removed them. Each entry below is a capability in that same state.
  */
 export const DELIBERATELY_DEFERRED = [
+  {
+    interfaceName: 'WebCapability',
+    field: 'embed',
+    reason: 'ADR-0039: web.embed is declared in this contracts-only PR. The loader starts ' +
+      'accepting `embed` in the implementation PR that follows, which removes this entry.'
+  },
+  {
+    interfaceName: 'EmbedCapability',
+    field: 'origins',
+    reason: 'ADR-0039: EMBED_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
+      'PR that follows this one, which removes this entry.'
+  },
   {
     interfaceName: 'Capabilities',
     field: 'media',
@@ -109,6 +120,13 @@ export const DELIBERATELY_DEFERRED = [
     field: 'read',
     reason: 'ADR-0032: CLIPBOARD_CAPABILITY_KEYS does not exist yet -- added by the ' +
       'implementation PR that follows this one, which removes this entry.'
+  },
+  {
+    interfaceName: 'Manifest',
+    field: 'crossOriginIsolated',
+    reason: 'ADR-0036: declared in this contracts-only PR. The loader starts accepting ' +
+      '`crossOriginIsolated`, and the served bundle carries the two isolation headers, in the ' +
+      'implementation PR that follows, which removes this entry.'
   }
 ]
 

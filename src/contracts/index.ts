@@ -47,6 +47,7 @@ export type {
   FsCapability,
   IdCapability,
   WebCapability,
+  EmbedCapability,
   MediaCapability,
   ClipboardCapability,
   SecretsCapability,

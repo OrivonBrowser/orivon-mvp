@@ -28,7 +28,10 @@ import type {
 
 type Full<T> = Required<T>
 
-type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
+// 'crossOriginIsolated' excluded on the same deferred reasoning as the
+// capabilities below: the parser accepts it only once the stacked
+// implementation PR adds it to MANIFEST_KEYS, which restores it here.
+type FullManifest = Omit<Full<Manifest>, 'capabilities' | 'crossOriginIsolated'> & {
   // ADR-0032/ADR-0033: 'media', 'clipboard' and 'secrets' excluded with the
   // same deferred reasoning 'web' carried in the contracts-only PR that
   // added it -- the real parser does not accept any of the three yet
@@ -43,7 +46,11 @@ type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
     }
     readonly fs: Full<FsCapability>
     readonly id: Full<IdCapability>
-    readonly web: Full<WebCapability>
+    // ADR-0039: 'embed' excluded on the same deferred reasoning as the
+    // three capabilities above -- the parser accepts it only once the
+    // stacked implementation PR adds EMBED_CAPABILITY_KEYS, which restores
+    // it here.
+    readonly web: Omit<Full<WebCapability>, 'embed'>
   }
 }
 

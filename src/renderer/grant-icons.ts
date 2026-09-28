@@ -142,6 +142,7 @@ const BUILDERS: Record<GrantIconKind, () => SVGSVGElement> = {
   fs: hardDriveIcon,
   id: fingerprintIcon,
   'web.context': appWindowIcon,
+  'web.embed': appWindowIcon,
   secrets: lockKeyholeIcon,
   'media.camera': cameraIcon,
   'media.microphone': micIcon,
