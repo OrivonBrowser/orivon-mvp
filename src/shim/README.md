@@ -18,6 +18,8 @@
 | [`http/`](http/) | `http` and `https`, over `net/`'s real socket |
 | [`polyfills/`](polyfills/) | The core polyfills |
 | [`wasi/`](wasi/) | A WASI preview1 host over `orivon.fs`, and Node's `wasi` module over it |
+| [`worker/`](worker/) | What a child needs to run in a Web Worker, its `orivon.*` calls carried to the page |
+| [`child-process/`](child-process/) | Node's `child_process` over those Workers |
 
 **A bundler must alias each specifier exactly** (`module-map.ts`'s `aliasPattern`). A prefix
 alias also captures subpaths and sends the shim's own imports back into the shim

@@ -4,9 +4,9 @@
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type esbuild from 'esbuild'
-import { aliasPattern, buildAliasEntries } from '../src/shim/module-map.js'
+import { aliasPattern, buildAliasEntries } from '../../module-map.js'
 
-const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url))
+const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 
 /** electron.vite.config.ts's own renderer alias, generated from the SAME
  * table (src/shim/module-map.ts) and matched the SAME way (aliasPattern:
