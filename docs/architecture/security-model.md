@@ -39,7 +39,7 @@ arbitrary hosts) · identity seed and derived keys · other apps' data · attent
 | T1 | Hostile app reads or writes outside its directory | `fs` rooted per origin; resolve then verify prefix; reject `..`. **Unit-tested**, because a silent bug here is a full compromise |
 | T2 | Hostile app obtains a capability it never declared | Grants are checked against the *pinned* manifest, not a runtime-supplied one. Absence means denial; there is no default-allow |
 | T3 | Compromised renderer forges IPC to impersonate another app | The broker derives origin from **`event.senderFrame`, captured synchronously at message receipt**: per *frame*, never per `WebContents`, and re-derived on every call. It reads **both `url` and `origin`, and denies when they disagree** (see the T3/T13b note below). **An origin in the IPC *payload* is never trusted**, since that is the renderer-supplied identity this threat is about |
-| T4 | Ordinary website reaches `orivon.*` | **Two separate preload files**, chosen by the broker from the app registry and never from anything renderer-supplied. The ordinary-tab preload exposes `window.nostr` only and does not reference `orivon.*` at all. The privileged views' own preloads (the chrome, its two popups, a fresh tab's dashboard) expose their bridge only when `location.href` is the URL main passed them, the chrome view and the popups are locked to that document (`src/main/shell/lock-navigation.ts`), and main re-checks the sender of every command, the chrome's by frame identity and URL. See the T4 note below |
+| T4 | Ordinary website reaches privileged `orivon.*` | Every ordinary tab gets the same locked `window.orivon` (`src/preload/ordinary-tab.ts`); an extension's own page opened in a tab gets none. What a call may do is decided in the broker from the frame that sent it (`event.senderFrame`, `src/broker/transport/ipc.ts`) and that origin's grants, never from anything the renderer supplies, so an origin with no grant can only ask for one. The privileged views' own preloads (the chrome, its popovers, the split-view frame, a fresh tab's dashboard, the `orivon://` pages) expose their bridge only when the document is the one main passed them, those views are locked to that document (`src/main/shell/lock-navigation.ts`), and main re-checks the sender of every command, the chrome's by frame identity and URL. See the T4 note below |
 | T5 | Renderer escape into Node | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, no remote module. Non-negotiable |
 | T6 | Compromised host silently swaps app code that already holds grants | Bundle hash pinned at install; any change re-prompts before running (`ADR-0005`, `ADR-0006`). The hash tree a site publishes (DDOC, `ADR-0029`) is evidence, not a defence here: it sits on the same host, so a host that swaps the code can swap the tree too |
 | T7 | App escapes its manifest by rewriting its own code | Code cache is **read-only to the app**; only the broker writes it (`ADR-0003`) |
@@ -144,11 +144,12 @@ async handler can resolve after the frame is detached or navigated).
 > canonicalisation, because A14 strips the trailing DNS root label and Chromium does not, so a raw
 > string comparison would deny every trailing-dot app by way of our own deviation.
 
-**T4, why the invariant is two preload files.** Ordinary tabs are not preload-free:
-`window.nostr` is injected into them by design (`capability-api.md`). The invariant that
-actually holds is two distinct preload files. A single wrong
-`webPreferences.preload` path, or one shared preload branching on renderer-influenced state,
-would turn every website into a fully capable Orivon app.
+**T4, why the boundary is the broker, not the preload.** The ordinary-tab preload is one file
+for every website, so nothing a page controls can choose a more privileged one, and
+`window.orivon` being present grants nothing: the broker derives the caller from the frame that
+sent each message and answers from that origin's grants. What would hand a website the shell's
+own commands is a privileged view loading the wrong preload, or a privileged preload exposing its
+bridge without checking its document; the URL checks and the navigation locks exist for that.
 
 **T22, why CSP is derived from grants rather than the manifest.**
 `src/broker/policy/connect-src.ts` derives `connect-src` from the origin's
