@@ -18,8 +18,13 @@ import { fileURLToPath } from 'node:url'
 import esbuild from 'esbuild'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
+<<<<<<< HEAD
 import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
 import { shimEsbuildPlugin } from '../src/shim/tests/support/shim-esbuild-plugin.js'
+=======
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './e2e-helpers.js'
+import { shimEsbuildPlugin } from './shim-esbuild-plugin.js'
+>>>>>>> stream/wasi-host
 import type { WasiRunResult } from './wasi-host-entry.js'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
 import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
@@ -133,6 +138,7 @@ it('a pinned app runs a WASI program whose file calls reach the real broker thro
       check('the dev-only serve-registration hook registered the fixture', registered)
 
       const view = await navigateToFixture(app, `${ORIGIN}/`, 'WASI host fixture')
+      await waitForPageGlobal(view, 'wasiE2e')
       const outcome = await evaluateRetrying(view, async (): Promise<{ run: WasiRunResult, jspi: boolean, readBack: string }> => {
         const jspi = typeof (WebAssembly as unknown as { Suspending?: unknown }).Suspending === 'function'
         const run = await (globalThis as unknown as { wasiE2e: { run: () => Promise<WasiRunResult> } }).wasiE2e.run()
