@@ -178,7 +178,7 @@ describe('decideGrantRequest -- a request may never declare a shape the manifest
 describe('isCapabilityKind', () => {
   it.each([
     'tcp.connect', 'tcp.listen.local', 'tcp.listen.network', 'udp.bind.local', 'udp.bind.network',
-    'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'secrets'
+    'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'web.embed', 'secrets'
   ])(
     'accepts %s',
     (kind) => { expect(isCapabilityKind(kind)).toBe(true) }

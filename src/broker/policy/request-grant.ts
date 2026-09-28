@@ -14,7 +14,7 @@ import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js
 
 const CAPABILITY_KINDS: readonly CapabilityKind[] = [
   'tcp.connect', 'tcp.listen.local', 'tcp.listen.network', 'udp.bind.local', 'udp.bind.network',
-  'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'secrets'
+  'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'web.embed', 'secrets'
   // media.camera / media.microphone / clipboard.read (ADR-0032) are a
   // separate, stacked implementation PR (docs/planning/compatibility-
   // matrix.md); adding them here is that PR's own job, alongside its

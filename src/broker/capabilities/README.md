@@ -4,7 +4,9 @@
 (`connectSecure`, split out of `net.ts` by the same Rule 2 seam), `fs.ts` (`orivon.fs`'s nine
 entry points), `fs-handle-wrapper.ts` (the shared handle-scoped-sibling wrapper `fs.ts` and
 `user-selected.ts` both use), `user-selected.ts` (`fs.userSelected`), `id.ts` (`orivon.id`'s
-`publicKey`/`sign`), `secrets.ts` (`orivon.secrets`), `web.ts` (`orivon.web`) and `socket-room.ts`
+`publicKey`/`sign`), `secrets.ts` (`orivon.secrets`), `web.ts` (`orivon.web`), `embed.ts`
+(`web.embed`'s broker half, `ADR-0039`: what the shell's embed host reads, and
+`orivon.web.setEmbedScript`) and `socket-room.ts`
 (a cheap socket-count check `net.ts` uses before dialling).
 
 Each was lifted out of [`../index.ts`](../index.ts) under the same Rule 2 seam, once adding a

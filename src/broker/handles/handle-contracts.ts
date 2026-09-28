@@ -14,7 +14,7 @@ import type { Datagram, DirectoryHandle, FileHandle, GrantId, Handle, OrivonErro
  * than in src/contracts/ because it is an implementation concern -- an app
  * never names a kind, it calls `orivon.net.connect` and receives a TcpSocket.
  */
-export type HandleKind = 'tcpSocket' | 'tcpServer' | 'udpSocket' | 'file' | 'identity' | 'webContext'
+export type HandleKind = 'tcpSocket' | 'tcpServer' | 'udpSocket' | 'file' | 'identity' | 'webContext' | 'embed'
 
 /**
  * What authorises a handle to exist.

@@ -15,7 +15,7 @@
 
 import { fail } from '../../errors.js'
 import type { Broker } from '../../broker-contracts.js'
-import { isWebCloseParams, isWebEvaluateParams, isWebOpenContextParams } from '../ipc-validation.js'
+import { isWebCloseParams, isWebEvaluateParams, isWebOpenContextParams, isWebSetEmbedScriptParams } from '../ipc-validation.js'
 import type { ControlMethod } from '../ipc-validation.js'
 
 /** The `web.*` slice of `ControlMethod` -- see ./app.ts's own `AppControlMethod` for why this is derived rather than retyped. */
@@ -65,6 +65,14 @@ export async function dispatchWeb (
       // WebCloseParams).
       if (!isWebCloseParams(payload)) throw fail('invalid', 'web.awaitClose requires { id: string }')
       await broker.web.awaitClose(origin, { id: payload.id })
+      return undefined
+    }
+    case 'web.setEmbedScript': {
+      // ADR-0039: `orivon.web.setEmbedScript`, keyed by THIS caller's origin
+      // like every other method here; the broker half lives under
+      // `broker.embed`, beside what the shell's embed host reads.
+      if (!isWebSetEmbedScriptParams(payload)) throw fail('invalid', 'web.setEmbedScript requires { source: string }')
+      await broker.embed.setScript(origin, { source: payload.source })
       return undefined
     }
     default: {

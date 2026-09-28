@@ -185,6 +185,15 @@ the *next datagram* on an already-bound socket). The shared harness (the fixture
 children, the address-bar navigation dance, the per-phase reporter) lives in
 [`test/e2e-helpers.ts`](../../test/e2e-helpers.ts).
 
+Two suites cover what an app's page is served with and what it may put inside itself:
+[`e2e-embed.test.ts`](../../test/e2e-embed.test.ts) drives a `<webview>` under a `web.embed`
+grant (the shown site loads in the app's own embed partition with no `orivon.*`, the app's
+script runs first under a strict page CSP and talks to the element both ways, a site outside
+the grant and a `file:` URL are refused, an ordinary tab's element is inert, and a revoke closes
+the page), and [`e2e-wasm-threads.test.ts`](../../test/e2e-wasm-threads.test.ts) pins one bundle
+declaring `crossOriginIsolated` and one without, and measures `SharedArrayBuffer`, a shared
+`WebAssembly.Memory` and `Atomics.wait` in a worker in each.
+
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
 pull request (see §How to run above).

@@ -18,6 +18,20 @@ const LOCAL_SCHEMES = ['data:', 'blob:'] as const
  */
 const SCRIPT_SOURCES = ["'self'", "'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'"] as const
 
+/**
+ * What a manifest's `crossOriginIsolated: true` asks for: the two headers
+ * that make a document cross-origin isolated, so `SharedArrayBuffer` and a
+ * shared `WebAssembly.Memory` exist in it. `credentialless` rather than
+ * `require-corp`, so a cross-origin subresource the CSP already admits still
+ * loads, without credentials, instead of needing a CORP header the app does
+ * not control. On every served asset, like the CSP: a worker's own response
+ * must carry them too, or the worker is not isolated.
+ */
+export const ISOLATION_HEADERS = {
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-embedder-policy': 'credentialless'
+} as const
+
 function directive (name: string, sources: readonly string[]): string {
   return `${name} ${sources.join(' ')}`
 }

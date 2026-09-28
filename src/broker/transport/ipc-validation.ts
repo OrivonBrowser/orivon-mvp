@@ -37,7 +37,7 @@ export type ControlMethod =
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
-  | 'web.openContext' | 'web.evaluate' | 'web.close' | 'web.awaitClose'
+  | 'web.openContext' | 'web.evaluate' | 'web.close' | 'web.awaitClose' | 'web.setEmbedScript'
   | 'secrets.available' | 'secrets.encrypt' | 'secrets.decrypt'
 
 export function isControlMethod (method: string): method is ControlMethod {
@@ -57,6 +57,7 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
     method === 'net.lookup' ||
     method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close' || method === 'web.awaitClose' ||
+    method === 'web.setEmbedScript' ||
     method === 'secrets.available' || method === 'secrets.encrypt' || method === 'secrets.decrypt'
 }
 
@@ -108,6 +109,8 @@ export interface WebOpenContextParams { readonly origin: string, readonly width?
 export interface WebEvaluateParams { readonly id: string, readonly script: string, readonly timeoutMs?: number }
 /** Shared by web.close and web.awaitClose -- both take exactly `{ id }` (code-guidelines.md Rule 3: same shape, same reason, `NetConnectParams`'s own precedent). Structurally identical to `NetCloseParams`/`FsHandleIdParams` too, but kept as its own name -- one name per surface even where payload shapes happen to coincide. */
 export interface WebCloseParams { readonly id: string }
+/** `web.setEmbedScript` (ADR-0039). The byte cap is the broker's check (capabilities/embed.ts); the length bound here is shape hygiene against a payload no honest caller sends. */
+export interface WebSetEmbedScriptParams { readonly source: string }
 /** net.connect's payload. net.connectSecure's adds TLS options and has its own validator, ./secure-connect-params.ts. */
 export interface NetConnectParams { readonly host: string, readonly port: number }
 /**
@@ -332,6 +335,14 @@ export function isWebEvaluateParams (payload: unknown): payload is WebEvaluatePa
 export function isWebCloseParams (payload: unknown): payload is WebCloseParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { id?: unknown }).id === 'string'
+}
+
+export function isWebSetEmbedScriptParams (payload: unknown): payload is WebSetEmbedScriptParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { source } = payload as { source?: unknown }
+  // A UTF-16 length is never more than the UTF-8 byte count, so this cannot
+  // refuse a script the broker's own byte check would accept.
+  return typeof source === 'string' && source.length <= LIMITS.embedScriptBytes
 }
 
 export function isNetConnectParams (payload: unknown): payload is NetConnectParams {

@@ -98,7 +98,12 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
 
 /** Every tab's webPreferences, with the standard, non-negotiable ones
  * (contextIsolation/sandbox/no Node integration/webSecurity) -- shared by
- * makeTabView() and a popup's own, so no tab can drift from them (Rule 3). */
+ * makeTabView() and a popup's own, so no tab can drift from them (Rule 3).
+ *
+ * `webviewTag` only for a registered app's tab (ADR-0039): the element is
+ * inert everywhere else, and even there every attach is decided by
+ * `../embed/embed-host.ts` against the live `web.embed` grant, so turning
+ * the tag on grants nothing by itself. */
 export function tabWebPreferences (preload: string, partition: string | undefined, additionalArguments?: string[]): WebPreferences {
   return {
     preload,
@@ -107,7 +112,8 @@ export function tabWebPreferences (preload: string, partition: string | undefine
     contextIsolation: true,
     sandbox: true,
     nodeIntegration: false,
-    webSecurity: true
+    webSecurity: true,
+    webviewTag: additionalArguments?.includes(APP_TAB_FLAG) === true
   }
 }
 

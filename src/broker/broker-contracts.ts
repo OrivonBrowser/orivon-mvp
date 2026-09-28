@@ -11,6 +11,7 @@ import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
 import type { BrokerFs, BrokerFsMethods } from './fs-contracts.js'
 import type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
+import type { BrokerEmbedMethods } from './embed-contracts.js'
 import type { BrokerSecretsMethods, Keychain } from './secrets-contracts.js'
 import type { PickedPath } from './grants/picked-path-ledger.js'
 import type { DialSecure, FailableSecureTcpSocket } from './secure-dial-contracts.js'
@@ -34,6 +35,7 @@ import type {
 // needs to change.
 export type { BrokerFs, BrokerFsMethods, OpenedFile, RawFileStat } from './fs-contracts.js'
 export type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
+export type { BrokerEmbedMethods } from './embed-contracts.js'
 export type { BrokerSecretsMethods, Keychain } from './secrets-contracts.js'
 export type { PickedPath } from './grants/picked-path-ledger.js'
 
@@ -360,6 +362,8 @@ export interface Broker {
   }
   /** `BrokerWebMethods` -- ./web-context-contracts.js, alongside `WebContextHost`. */
   readonly web: BrokerWebMethods
+  /** `BrokerEmbedMethods` -- ./embed-contracts.js. ADR-0039: what the shell's embed host asks, and `orivon.web.setEmbedScript`'s broker half. */
+  readonly embed: BrokerEmbedMethods
   /** `BrokerSecretsMethods` -- ./secrets-contracts.js, alongside `Keychain`. ADR-0033. */
   readonly secrets: BrokerSecretsMethods
   /**

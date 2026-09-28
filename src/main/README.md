@@ -1,7 +1,7 @@
 # `src/main/`: the Electron main process
 
 **What lives here.** The browser shell: the window, tab management, the omnibox, shell IPC, and
-the subsystem registry every other stream plugs into. Eleven directories, each named for the job
+the subsystem registry every other stream plugs into. Twelve directories, each named for the job
 it does; `## The directories` below is the index.
 
 **What it depends on.** `electron`, [`src/contracts/`](../contracts/).
@@ -32,6 +32,7 @@ to no single job, and `registry.ts`/`channels.ts` are the seam other packages
 | [`self-update/`](self-update/) | **Update itself**: check, notify, never install | last-check timestamp | `-runner` only |
 | [`dev/`](dev/) | **Dev only**: inert or compiled out of an ordinary build | no | no |
 | [`verifier/`](verifier/) | **Verify names**: start the `.eth` verifier, trust its certificate, choose its checkpoint | the host process, stored checkpoint and IPNS sequences | `verifier-subsystem.ts` only |
+| [`embed/`](embed/) | **Show**: the pages an app shows inside itself, in a `<webview>` (`ADR-0039`) | which app owns which guest | `embed-host.ts` and `embed-subsystem.ts` only |
 
 Each directory carries its own `README.md` on this same template, plus its own `## Design notes`
 for the rationale specific to the files it holds.

@@ -72,3 +72,13 @@ export const SITE_INFO_COMMAND_CHANNEL = 'orivon-site-info:command'
  * it changes while the panel is open, so the page never polls for it.
  */
 export const LIGHT_CLIENT_STATUS_CHANNEL = 'orivon-settings:light-client'
+
+/**
+ * A page an app shows inside itself -> main (ADR-0039): the shell's own
+ * preload in that page asks for the script its app set with
+ * `orivon.web.setEmbedScript`, over `ipcRenderer.sendSync`, so the script
+ * runs before the page's own code. Main answers from the guest's own
+ * identity (`event.sender`, a webview guest, and the app tab that hosts
+ * it), never from anything in the payload. See `src/main/embed/`.
+ */
+export const EMBED_SCRIPT_CHANNEL = 'orivon-embed:page-script'
