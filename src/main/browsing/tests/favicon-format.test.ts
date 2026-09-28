@@ -1,5 +1,14 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { decodeDataUrl, looksLikeSvg, sniffImageType } from '../favicon-format.js'
+
+// A byte-order mark is invisible in an editor and in a diff, so one written
+// literally into the sniffer or its tests cannot be reviewed.
+it('spells U+FEFF as an escape, never as a literal character', () => {
+  for (const file of ['../favicon-format.ts', './favicon-format.test.ts']) {
+    expect(readFileSync(new URL(file, import.meta.url), 'utf8')).not.toContain(String.fromCharCode(0xfeff))
+  }
+})
 
 function bytes (...values: number[]): Uint8Array {
   return new Uint8Array(values)
@@ -53,7 +62,7 @@ describe('sniffImageType', () => {
   })
 
   it('recognises SVG behind an XML prolog, a doctype and comments', () => {
-    const doc = '﻿ <?xml version="1.0"?>\n<!-- generated -->\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x">\n<svg></svg>'
+    const doc = '\uFEFF <?xml version="1.0"?>\n<!-- generated -->\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x">\n<svg></svg>'
     expect(sniffImageType(new TextEncoder().encode(doc))).toBe('image/svg+xml')
   })
 

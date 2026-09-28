@@ -60,9 +60,9 @@ function isAvif (bytes: Uint8Array): boolean {
  * ASCII-safe UTF-8 for this much of the file. */
 export function looksLikeSvg (text: string): boolean {
   let rest = text
-  if (rest.charCodeAt(0) === 0xfeff) rest = rest.slice(1) // UTF-8 BOM, decoded
   for (;;) {
-    const trimmed = rest.replace(/^[\s﻿]+/, '')
+    // trimStart drops a decoded byte-order mark (U+FEFF) along with whitespace.
+    const trimmed = rest.trimStart()
     if (trimmed.startsWith('<?xml')) {
       const end = trimmed.indexOf('?>')
       if (end === -1) return false
