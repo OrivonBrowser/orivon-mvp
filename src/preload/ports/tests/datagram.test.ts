@@ -80,6 +80,31 @@ describe('createDatagramPort -- inbound', () => {
 
     expect(seen).toEqual([[9, 0]])
   })
+
+  it('a message for a different handleId is ignored (R7-05, matching socket.ts\'s own guard)', () => {
+    const port = fakePort()
+    const dp = createDatagramPort({ handleId: 'h1', port })
+    const received: WireDatagram[] = []
+    dp.onDatagram((d) => { received.push(d) })
+
+    port.emit({
+      kind: 'datagram', handleId: 'someone-else', data: new Uint8Array([9]),
+      address: '10.0.0.9', port: 1234, family: 'IPv4', dropped: 0
+    })
+
+    expect(received).toEqual([])
+  })
+
+  it('a malformed message (not an object, or null) is ignored rather than throwing', () => {
+    const port = fakePort()
+    const dp = createDatagramPort({ handleId: 'h1', port })
+    const received: WireDatagram[] = []
+    dp.onDatagram((d) => { received.push(d) })
+
+    expect(() => { port.emit(null) }).not.toThrow()
+    expect(() => { port.emit('not an object') }).not.toThrow()
+    expect(received).toEqual([])
+  })
 })
 
 describe('createDatagramPort -- credit', () => {

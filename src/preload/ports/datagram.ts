@@ -160,6 +160,10 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
   port.onMessage((raw) => {
     if (disposed) return
     const message = raw as BrokerToRendererMessage
+    // Same guard socket.ts/server.ts's own onMessage already applies: a
+    // malformed message, or one carrying a different handle's id, is
+    // ignored rather than acted on or thrown at (R7-05).
+    if (message == null || typeof message !== 'object' || message.handleId !== handleId) return
     switch (message.kind) {
       case 'datagram':
         if (message.dropped > droppedInbound) { droppedInbound = message.dropped; noteDrops() }
