@@ -2,6 +2,7 @@
 // by cookie. The cookie is an index into a snapshot taken at cookie 0.
 
 import { type HostContext, filestatOf } from '../context.js'
+import { type Op, all, fsCall } from '../effects.js'
 import { Errno } from '../errno.js'
 import { type DirectoryEntry, type ListingEntry, inodeFor } from '../fds.js'
 import { Filetype, encodeDirent, encodeUtf8, unsigned } from '../memory.js'
@@ -12,15 +13,15 @@ function childPath (dir: DirectoryEntry, name: string): string {
 }
 
 /** `.` and `..` first, as POSIX readdir returns them, then each name with its type from a stat. */
-async function snapshot (ctx: HostContext, dir: DirectoryEntry): Promise<readonly ListingEntry[]> {
-  const names = await ctx.fsCall(() => ctx.fs.readdir(dir.path))
+function * snapshot (ctx: HostContext, dir: DirectoryEntry): Op<readonly ListingEntry[]> {
+  const names = yield * fsCall<readonly string[]>('readdir', dir.path)
   const entries: ListingEntry[] = [
     { name: '.', filetype: Filetype.DIRECTORY, ino: inodeFor(dir.path) },
     { name: '..', filetype: Filetype.DIRECTORY, ino: 0n }
   ]
-  const children = await Promise.all(names.map(async (name): Promise<ListingEntry> => {
+  const children = yield * all(names.map(function * (name): Op<ListingEntry> {
     const path = childPath(dir, name)
-    const stat = await ctx.statIfExists(path)
+    const stat = yield * ctx.statIfExists(path)
     return { name, filetype: stat === undefined ? Filetype.UNKNOWN : filestatOf(path, stat).filetype, ino: inodeFor(path) }
   }))
   return [...entries, ...children]
@@ -29,14 +30,14 @@ async function snapshot (ctx: HostContext, dir: DirectoryEntry): Promise<readonl
 export function directoryFunctions (ctx: HostContext): ImportFamily {
   return {
     sync: {},
-    async: {
-      fd_readdir: async (fd: number, rawBufPtr: number, rawBufLen: number, cookie: bigint, bufUsedPtr: number) => {
+    ops: {
+      * fd_readdir (fd: number, rawBufPtr: number, rawBufLen: number, cookie: bigint, bufUsedPtr: number) {
         const bufPtr = unsigned(rawBufPtr)
         const bufLen = unsigned(rawBufLen)
         const dir = ctx.fds.get(fd)
         if (dir === undefined) return Errno.BADF
         if (dir.kind !== 'directory') return Errno.NOTDIR
-        if (cookie === 0n || dir.listing === undefined) dir.listing = await snapshot(ctx, dir)
+        if (cookie === 0n || dir.listing === undefined) dir.listing = yield * snapshot(ctx, dir)
         const listing = dir.listing
         // A record cut off by the end of the buffer is still written: filling
         // the buffer exactly is how wasi-libc knows to call again with a larger one.

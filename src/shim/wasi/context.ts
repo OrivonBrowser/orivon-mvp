@@ -4,6 +4,7 @@
 import type { OrivonFs } from '../../contracts/capability-api.js'
 import type { FileStat } from '../../contracts/handles.js'
 import { isRootPath, rootStat } from '../fs/root.js'
+import { type Op, fsCall } from './effects.js'
 import { Filetype, type Filestat, GuestMemory } from './memory.js'
 import { FdTable, inodeFor } from './fds.js'
 import type { Sink, StdinSource } from './stdio.js'
@@ -15,8 +16,14 @@ export type WasiFs = Pick<OrivonFs, 'open' | 'stat' | 'readdir' | 'mkdir' | 'rm'
 /** In-flight and rate limits clear on their own; a program has no code path for EAGAIN on a file. */
 const LIMIT_RETRY_DELAYS_MS = [5, 20, 80] as const
 
-function delay (ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+/** setTimeout's largest delay; a longer wait is taken in slices of this. */
+const MAX_TIMER_MS = 2 ** 31 - 1
+
+async function delay (ms: number): Promise<void> {
+  for (let left = ms; left > 0; left -= MAX_TIMER_MS) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(left, MAX_TIMER_MS)))
+  }
+  if (ms <= 0) await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 function orivonCode (error: unknown): { code?: unknown, platformCode?: unknown } {
@@ -89,16 +96,41 @@ export class HostContext {
     }
   }
 
+  /** The synchronous driver's fsCall: the same retry of a bare limit and stop on a revoked grant. */
+  fsCallSync<T> (run: () => T, sleep: (ms: number) => void): T {
+    for (let attempt = 0; ; attempt++) {
+      this.throwIfTerminated()
+      try {
+        return run()
+      } catch (error) {
+        const { code, platformCode } = orivonCode(error)
+        if (code === 'revoked') this.terminate('revoked')
+        this.throwIfTerminated()
+        const retryDelay = LIMIT_RETRY_DELAYS_MS[attempt]
+        if (code === 'limit' && platformCode === undefined && retryDelay !== undefined) {
+          sleep(retryDelay)
+          continue
+        }
+        throw error
+      }
+    }
+  }
+
+  /** A pause the program can be stopped out of; zero yields once to the event loop. */
+  async sleep (ms: number): Promise<void> {
+    await delay(ms)
+  }
+
   /** The broker refuses the root itself; fs/root.ts answers it locally, as the Node shim does. */
-  async stat (path: string): Promise<FileStat> {
+  * stat (path: string): Op<FileStat> {
     if (isRootPath(path)) return rootStat()
-    return await this.fsCall(() => this.fs.stat(path))
+    return yield * fsCall<FileStat>('stat', path)
   }
 
   /** `stat`, or undefined when nothing is there. */
-  async statIfExists (path: string): Promise<FileStat | undefined> {
+  * statIfExists (path: string): Op<FileStat | undefined> {
     try {
-      return await this.stat(path)
+      return yield * this.stat(path)
     } catch (error) {
       if (orivonCode(error).code === 'notFound') return undefined
       throw error

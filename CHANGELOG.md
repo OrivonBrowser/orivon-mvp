@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A native addon reaches the app's files from a forked child** of a cross-origin isolated app,
+  each call blocking on the page's `orivon.fs`; that child's `fs.readFileSync` works too
+  (ADR-0040).
 - **A native addon loads as its WebAssembly build**: `process.dlopen` and `createRequire` take
   the `.node` path and load the build beside it through Node-API for WebAssembly; the `.node`
   machine code never runs (ADR-0040).

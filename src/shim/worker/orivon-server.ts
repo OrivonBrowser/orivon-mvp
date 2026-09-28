@@ -6,9 +6,11 @@
 // A handle a call returns stays here, named by a number; the Worker calls
 // its methods by that number. Its byte streams are transferred to the
 // Worker whole. A stream whose chunks are themselves handles
-// (TcpServer.connections) is pumped instead, one handle per chunk.
+// (TcpServer.connections) is pumped instead, one handle per chunk. A call
+// marked `sync` is answered through sync-channel.ts instead of a message.
 
 import { type WireError, toWireError } from './protocol.js'
+import { ReplyWriter, encodeReply } from './sync-channel.js'
 
 /** Streams whose chunks are handles, which structured clone cannot carry. */
 const HANDLE_STREAMS = new Set(['connections'])
@@ -17,9 +19,14 @@ export type CallBody =
   | { readonly path: readonly string[], readonly args: readonly unknown[] }
   | { readonly handle: number, readonly method: string, readonly args: readonly unknown[] }
 
-export type CallRequest = CallBody & { readonly id: number }
+export type CallRequest = CallBody & { readonly id: number, readonly sync?: true }
 
-export type Request = CallRequest | { readonly pull: number } | { readonly cancel: number }
+export type Request =
+  | CallRequest
+  | { readonly pull: number }
+  | { readonly cancel: number }
+  | { readonly syncBuffer: SharedArrayBuffer }
+  | { readonly syncMore: true }
 
 export interface HandleDescriptor {
   readonly __orivonHandle: number
@@ -65,22 +72,33 @@ function wireErrorOf (error: unknown): WireError & { platformCode?: string } {
   return { ...toWireError(error), ...(typeof platformCode === 'string' ? { platformCode } : {}) }
 }
 
+function notSynchronous (): Error {
+  return Object.assign(new Error('a stream cannot be returned by a synchronous call'), { name: 'OrivonShimError', reason: 'not-applicable' })
+}
+
 export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
   const handles = new Map<number, LiveHandle>()
   const readers = new Map<number, ReadableStreamDefaultReader<unknown>>()
+  let replies: ReplyWriter | undefined
   let nextId = 1
 
   const post = (message: ServerMessage, transfer: Transferable[] = []): void => { port.postMessage(message, transfer) }
 
-  const encode = (value: unknown, transfer: Transferable[]): unknown => {
-    if (isStream(value)) { transfer.push(value as unknown as Transferable); return value }
+  /** `transfer` is undefined for a synchronous reply, which can carry no stream. */
+  const encode = (value: unknown, transfer: Transferable[] | undefined): unknown => {
+    if (isStream(value)) {
+      if (transfer === undefined) throw notSynchronous()
+      transfer.push(value as unknown as Transferable)
+      return value
+    }
     if (isHandle(value)) return describe(value, transfer)
     if (Array.isArray(value)) return value.map((item) => encode(item, transfer))
     if (typeof value !== 'object' || value === null || ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return value
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, encode(item, transfer)]))
   }
 
-  const describe = (handle: Record<string, unknown>, transfer: Transferable[]): HandleDescriptor => {
+  const describe = (handle: Record<string, unknown>, transfer: Transferable[] | undefined): HandleDescriptor => {
+    if (transfer === undefined && propertyNames(handle).some((name) => HANDLE_STREAMS.has(name))) throw notSynchronous()
     const id = nextId++
     handles.set(id, { handle })
     const methods: string[] = []
@@ -137,21 +155,26 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
   }
 
   const call = async (request: CallRequest): Promise<void> => {
+    const transfer: Transferable[] | undefined = request.sync === true ? undefined : []
+    let reply: ServerMessage
     try {
       const { fn, self } = target(request)
       if (typeof fn !== 'function') throw new TypeError(`orivon has no method ${'path' in request ? request.path.join('.') : request.method}`)
       const value: unknown = await (fn as (...args: unknown[]) => unknown).apply(self, [...request.args])
-      const transfer: Transferable[] = []
-      post({ id: request.id, ok: true, value: encode(value, transfer) }, transfer)
+      reply = { id: request.id, ok: true, value: encode(value, transfer) }
     } catch (error) {
-      post({ id: request.id, ok: false, error: wireErrorOf(error) })
+      reply = { id: request.id, ok: false, error: wireErrorOf(error) }
     }
+    if (transfer !== undefined) post(reply, transfer)
+    else replies?.send(encodeReply(reply))
   }
 
   port.onmessage = (event: MessageEvent<Request>) => {
     const request = event.data
     if ('pull' in request) void pull(request.pull)
     else if ('cancel' in request) { void readers.get(request.cancel)?.cancel(); readers.delete(request.cancel) }
+    else if ('syncBuffer' in request) replies = new ReplyWriter(request.syncBuffer)
+    else if ('syncMore' in request) replies?.more()
     else void call(request)
   }
 

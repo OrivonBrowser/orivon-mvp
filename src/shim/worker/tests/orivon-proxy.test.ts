@@ -48,9 +48,12 @@ describe('calls', () => {
     await expect(client.fs.toString()).rejects.toThrow(/orivon has no method fs.toString/)
   })
 
-  it('refuses readFileSync by name, and is never mistaken for a promise', async () => {
+  it('refuses readFileSync by name without shared memory, and is never mistaken for a promise', async () => {
+    // A Worker of an app that is not cross-origin isolated has no SharedArrayBuffer to block on.
+    vi.stubGlobal('SharedArrayBuffer', undefined)
     const client = connect({ fs: {} })
-    expect(() => (client.fs.readFileSync as unknown as () => void)()).toThrow(/not available in a Worker/)
+    vi.unstubAllGlobals()
+    expect(() => (client.fs.readFileSync as unknown as () => void)()).toThrow(/not available in a Worker of an app that is not cross-origin isolated/)
     expect((client as { then?: unknown }).then).toBeUndefined()
     expect(await Promise.resolve(client.fs)).toBeDefined()
   })

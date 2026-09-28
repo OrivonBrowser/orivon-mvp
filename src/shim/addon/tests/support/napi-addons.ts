@@ -51,6 +51,51 @@ export function napiAddon (padding = 0): Uint8Array<ArrayBuffer> {
   })
 }
 
+/**
+ * Reads `data.txt` from the files root (its first 64 bytes become the export
+ * `content`, path_open's errno `openErrno`) and writes "from addon" to
+ * `out.txt`, all through WASI during registration.
+ */
+export function fileAddon (): Uint8Array<ArrayBuffer> {
+  const pathOpen = { module: 'wasi_snapshot_preview1', name: 'path_open', params: [I32, I32, I32, I32, I32, TYPE.I64, TYPE.I64, I32, I32], results: [I32] }
+  const wasi = (name: string, params: number) => ({ module: 'wasi_snapshot_preview1', name, params: Array<number>(params).fill(I32), results: [I32] })
+  const open = (path: number, length: number, oflags: number, rights: bigint, fdAt: number): number[][] =>
+    [op.i32(3), op.i32(0), op.i32(path), op.i32(length), op.i32(oflags), op.i64(rights), op.i64(0n), op.i32(0), op.i32(fdAt)]
+  return buildModule({
+    imports: [
+      napi('napi_create_int32', 3), napi('napi_create_string_utf8', 4), napi('napi_set_named_property', 4),
+      pathOpen, wasi('fd_read', 4), wasi('fd_write', 4), wasi('fd_close', 1)
+    ],
+    exportName: 'napi_register_wasm_v1',
+    params: [I32, I32],
+    results: [I32],
+    locals: 1,
+    table: true,
+    extra: ALLOCATOR,
+    data: [HEAP_TOP, { offset: 600, text: 'data.txt' }, { offset: 620, text: 'out.txt' }, { offset: 640, text: 'content\0' },
+      { offset: 660, text: 'openErrno\0' }, { offset: 680, text: 'from addon' }],
+    body: (call) => {
+      const exportValue = (name: number, valueAt: number): number[][] =>
+        [op.localGet(0), op.localGet(1), op.i32(name), op.load(valueAt), call('napi_set_named_property'), op.drop]
+      return [
+        ...open(600, 8, 0, 2n, 700), call('path_open'), op.localSet(2),
+        op.localGet(0), op.localGet(2), op.i32(728), call('napi_create_int32'), op.drop,
+        ...exportValue(660, 728),
+        op.store(710, 800), op.store(714, 64),
+        op.load(700), op.i32(710), op.i32(1), op.i32(720), call('fd_read'), op.drop,
+        op.localGet(0), op.i32(800), op.load(720), op.i32(724), call('napi_create_string_utf8'), op.drop,
+        ...exportValue(640, 724),
+        ...open(620, 7, 9, 64n, 704), call('path_open'), op.drop,
+        op.store(740, 680), op.store(744, 10),
+        op.load(704), op.i32(740), op.i32(1), op.i32(750), call('fd_write'), op.drop,
+        op.load(704), call('fd_close'), op.drop,
+        op.load(700), call('fd_close'), op.drop,
+        op.localGet(1)
+      ]
+    }
+  })
+}
+
 export function threadedAddon (): Uint8Array<ArrayBuffer> {
   return buildModule({
     imports: [{ module: 'wasi', name: 'thread-spawn', params: [I32], results: [I32] }],
