@@ -51,6 +51,8 @@ export interface TabsSnapshot {
 
 export interface ShellState extends TabsSnapshot {
   bookmarks: Bookmark[]
+  /** Whether the bookmarks bar is shown: main decides (it sizes the chrome view to match) and the page follows. */
+  bookmarksBar: boolean
 }
 
 export interface Bounds {
@@ -66,6 +68,8 @@ export interface TabShell {
   readonly window: BaseWindow
   /** A tab's page entered or left HTML fullscreen. */
   htmlFullscreenChanged: (id: string, entered: boolean) => void
+  /** The URL that searches for a query, under the chosen search engine. Absent in tests: the default engine. */
+  searchUrl?: (query: string) => string
 }
 
 /** What the per-view wiring in tab-view.ts needs back from the TabManager

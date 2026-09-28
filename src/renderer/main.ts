@@ -284,11 +284,11 @@ function render (state: ShellState): void {
   // main sizes this whole view from the same fact (window.ts's
   // chromeHeight), so the row and the space reserved for it appear and
   // disappear together.
-  document.documentElement.dataset['bookmarks'] = state.bookmarks.length > 0 ? 'some' : 'none'
+  document.documentElement.dataset['bookmarks'] = state.bookmarksBar ? 'some' : 'none'
   bookmarksView.render(state.bookmarks)
 }
 
-let currentState: ShellState = { tabs: [], activeTabId: null, bookmarks: [] }
+let currentState: ShellState = { tabs: [], activeTabId: null, bookmarks: [], bookmarksBar: false }
 shell.onState((state) => {
   currentState = state
   render(state)

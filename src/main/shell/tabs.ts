@@ -72,6 +72,7 @@ export class TabManager {
   /** The narrow surface tab-view.ts's per-view wiring calls back through. */
   private readonly viewHost: TabViewHost
   private readonly newTabPreloadPath: string
+  private readonly searchUrl: ((query: string) => string) | undefined
 
   constructor (
     private readonly contentView: View,
@@ -119,6 +120,7 @@ export class TabManager {
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       getTabBounds
     }
+    this.searchUrl = shell?.searchUrl
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
     this.newTabPreloadPath = join(import.meta.dirname, '../preload/newtab.js')
   }
@@ -386,7 +388,7 @@ export class TabManager {
    * silently doing nothing, so a bad paste has a visible, safe result.
    * Never the dashboard -- see BLANK_URL's own comment for why. */
   private resolveTarget (rawInput: string): string {
-    const result = parseOmniboxInput(rawInput, isDevEthName)
+    const result = parseOmniboxInput(rawInput, isDevEthName, this.searchUrl)
     if (result.kind === 'reject') return BLANK_URL
     return result.url
   }

@@ -29,6 +29,7 @@ import type { IntroPlan } from './intro-state.js'
 import { showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady } from './window-frame.js'
 import type { ShellServices } from './shell-services.js'
+import { searchUrlFor } from '../browsing/search-engines.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -92,8 +93,15 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // tab view starts where the chrome view ends, so a row the renderer
   // hides without main shrinking these bounds leaves a 28px band of empty
   // chrome above the page instead of giving it back to the page.
+  // Set by the person: 'auto' is the rule above, the others ignore whether the
+  // list is empty.
+  function bookmarksBarShown (): boolean {
+    const mode = services.settings.get('appearance.bookmarksBar')
+    return mode === 'always' || (mode === 'auto' && bookmarks.getAll().length > 0)
+  }
+
   function chromeHeight (): number {
-    return bookmarks.getAll().length > 0 ? CHROME_HEIGHT : CHROME_TOP_ROWS
+    return bookmarksBarShown() ? CHROME_HEIGHT : CHROME_TOP_ROWS
   }
 
   // A page in HTML fullscreen gets the whole window and the chrome is hidden;
@@ -149,10 +157,17 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // keeps the process alive forever, so the window never goes away and the
   // process tree orphans. Same class as pushState()'s guard below.
   const closeWindow = (): void => { if (!win.isDestroyed()) win.close() }
+  // The person chose what closing the last tab does; closing the window is
+  // the default.
+  const lastTabClosed = (): void => {
+    if (services.settings.get('tabs.lastTabClosed') === 'newTab') tabs.createTab()
+    else closeWindow()
+  }
 
-  const tabs = new TabManager(win.contentView, tabBounds, closeWindow, dashboardUrl, ctx, {
+  const tabs = new TabManager(win.contentView, tabBounds, lastTabClosed, dashboardUrl, ctx, {
     window: win,
-    htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) }
+    htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) },
+    searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query)
   })
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one
@@ -225,7 +240,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       siteInfoPanel.close()
     }
     fullscreen.tabsChanged(state.activeTabId, (id) => state.tabs.some((tab) => tab.id === id))
-    chrome.webContents.send(STATE_CHANNEL, { ...state, bookmarks: bookmarks.getAll() })
+    chrome.webContents.send(STATE_CHANNEL, { ...state, bookmarks: bookmarks.getAll(), bookmarksBar: bookmarksBarShown() })
   }
 
   // Only the first and last bookmark change the chrome's height, so the
@@ -246,6 +261,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
 
   tabs.onStateChange(pushState)
   const stopListeningToBookmarks = bookmarks.onChange(onBookmarksChanged)
+  const stopListeningToSettings = services.settings.onChange(({ key }) => {
+    if (key === 'appearance.bookmarksBar') onBookmarksChanged()
+  })
   // Loading is non-blocking -- no bookmarks bar for one frame on a slow
   // disk beats delaying the whole window on a non-essential feature. It
   // goes through onBookmarksChanged, not pushState: a profile that HAS
@@ -320,6 +338,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   win.on('closed', () => {
     forgetWindow()
     stopListeningToBookmarks()
+    stopListeningToSettings()
     permissionsPanel.close()
     siteInfoPanel.close()
     // Destroying a window leaves its views' renderers running: the chrome

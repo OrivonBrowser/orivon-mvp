@@ -743,3 +743,29 @@ describe('TabManager -- a rejecting captureFavicon must not escape as an unhandl
     expect(onUnhandledRejection).not.toHaveBeenCalled()
   })
 })
+
+describe('TabManager -- the search engine the person chose', () => {
+  function urlLoadedBy (input: string, searchUrl?: (query: string) => string): string {
+    const manager = new TabManager(fakeContentView as never, () => fakeBounds, vi.fn(), DASHBOARD_URL, fakeCtx,
+      searchUrl === undefined ? undefined : { window: {} as never, htmlFullscreenChanged: vi.fn(), searchUrl })
+    const id = manager.createTab('https://start.example/')
+    const view = createdViews.at(-1) as RecordedView
+    view.webContents.loadURL.mockClear()
+
+    manager.navigate(id, input)
+
+    return view.webContents.loadURL.mock.calls.at(-1)?.[0] as string
+  }
+
+  it('searches with the default engine when none was chosen', () => {
+    expect(urlLoadedBy('hello world')).toBe('https://duckduckgo.com/?q=hello+world')
+  })
+
+  it('searches with the chosen one', () => {
+    expect(urlLoadedBy('hello world', (query) => `https://search.example/?text=${encodeURIComponent(query)}`)).toBe('https://search.example/?text=hello%20world')
+  })
+
+  it('still opens an address as an address', () => {
+    expect(urlLoadedBy('example.com', () => 'https://never.example/')).toBe('https://example.com/')
+  })
+})
