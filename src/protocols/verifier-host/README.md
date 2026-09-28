@@ -31,5 +31,6 @@ and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
 proxy applies. A CCIP-Read URL, which a name's resolver contract chooses, gets the loader's install
 guard, but `net` cannot pin a request to the address that was checked: a name that re-resolves in
 between is a residual window (`open-questions.md` A66). The one path around `net` is
-[`dns-fallback.ts`](dns-fallback.ts), only for a gateway with no proxy configured (ADR-0030's
-2026-09-26 amendment); taking it for a proxied gateway would silently bypass that proxy.
+[`dns-fallback.ts`](dns-fallback.ts), only for a gateway that had no proxy configured when the
+host started (ADR-0030's 2026-09-26 amendment); taking it for a proxied gateway would silently
+bypass that proxy, and the check being a snapshot is `security-model.md` T40's residual.

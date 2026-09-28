@@ -1,10 +1,11 @@
 import { createServer } from 'node:https'
 import type { Server } from 'node:https'
+import { createServer as createTlsServer } from 'node:tls'
 import type { TLSSocket } from 'node:tls'
 import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createRunCertificate } from '../serve/certificate.js'
-import { createDirectFetch } from '../direct-fetch.js'
+import { DirectAnswerRefused, createDirectFetch } from '../direct-fetch.js'
 
 // An EXACT SAN, not the real run certificate's own `*.eth` wildcard: Node's
 // default checkServerIdentity refuses that wildcard for any name at all
@@ -37,13 +38,34 @@ async function startFixture (handler: (req: import('node:http').IncomingMessage,
   return { server, port: address.port, seenServername, seenPath }
 }
 
+/** A TLS server that answers the first bytes of a request with `reply`
+ * verbatim (or nothing at all), for answers no well-behaved HTTP server
+ * would send. */
+async function startRawFixture (reply: string | undefined): Promise<number> {
+  const server = createTlsServer({ key: cert.keyPem, cert: cert.certPem }, (socket) => {
+    rawSockets.add(socket)
+    if (reply !== undefined) socket.once('data', () => { socket.write(reply) })
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  rawServer = server
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('no port')
+  return address.port
+}
+
 let fixture: Fixture | undefined
+let rawServer: import('node:tls').Server | undefined
+const rawSockets = new Set<TLSSocket>()
 afterEach(async () => {
   if (fixture !== undefined) await new Promise<void>((resolve) => { fixture!.server.close(() => { resolve() }) })
   fixture = undefined
+  for (const socket of rawSockets) socket.destroy()
+  rawSockets.clear()
+  if (rawServer !== undefined) await new Promise<void>((resolve) => { rawServer!.close(() => { resolve() }) })
+  rawServer = undefined
 })
 
-const fetch = createDirectFetch({ ca: cert.certPem })
+const fetch = createDirectFetch({ fixture: { ca: cert.certPem } })
 
 describe('createDirectFetch', () => {
   it('connects to the pinned address although the hostname never resolves to it at all', async () => {
@@ -119,6 +141,72 @@ describe('createDirectFetch', () => {
     const promise = fetch(url.toString(), { signal: controller.signal }, ['127.0.0.1'])
     queueMicrotask(() => { controller.abort() })
     await expect(promise).rejects.toThrow()
+  })
+
+  it('sends its own Host, framing and accept-encoding, whatever the caller passes', async () => {
+    let seen: import('node:http').IncomingHttpHeaders = {}
+    fixture = await startFixture((req, res) => { seen = req.headers; res.writeHead(200).end('ok') })
+    const url = new URL(`https://${HOST}/`)
+    url.port = String(fixture.port)
+    await fetch(url.toString(), { headers: { host: 'elsewhere.example', 'accept-encoding': 'gzip', accept: 'application/vnd.ipld.raw' } }, ['127.0.0.1'])
+    expect(seen.host).toBe(`${HOST}:${String(fixture.port)}`)
+    expect(seen['accept-encoding']).toBe('identity')
+    expect(seen.accept).toBe('application/vnd.ipld.raw')
+  })
+})
+
+describe('createDirectFetch -- a gateway answering what no honest one would', () => {
+  function uncaughtDuring (): { readonly errors: unknown[], readonly stop: () => void } {
+    const errors: unknown[] = []
+    const listener = (error: unknown): void => { errors.push(error) }
+    process.on('uncaughtException', listener)
+    return { errors, stop: () => { process.off('uncaughtException', listener) } }
+  }
+
+  it('rejects a status outside 200-599 instead of throwing uncaught', async () => {
+    const port = await startRawFixture('HTTP/1.1 999 Nope\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+    const uncaught = uncaughtDuring()
+    try {
+      await expect(fetch(`https://${HOST}:${String(port)}/ipfs/x`, undefined, ['127.0.0.1'])).rejects.toBeInstanceOf(DirectAnswerRefused)
+    } finally {
+      uncaught.stop()
+    }
+    expect(uncaught.errors).toEqual([])
+  })
+
+  it('rejects 101 Switching Protocols rather than never settling', async () => {
+    const port = await startRawFixture('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n')
+    await expect(fetch(`https://${HOST}:${String(port)}/ipfs/x`, undefined, ['127.0.0.1'])).rejects.toBeInstanceOf(DirectAnswerRefused)
+  })
+
+  it('gives up on a connection that carries nothing, even with no signal', async () => {
+    const port = await startRawFixture(undefined)
+    const quick = createDirectFetch({ fixture: { ca: cert.certPem }, idleTimeoutMs: 200 })
+    await expect(quick(`https://${HOST}:${String(port)}/ipfs/x`, undefined, ['127.0.0.1'])).rejects.toThrow(/carried no bytes/)
+  })
+
+  it('gives up after an informational answer followed by silence', async () => {
+    const port = await startRawFixture('HTTP/1.1 103 Early Hints\r\nLink: </x>; rel=preload\r\n\r\n')
+    const quick = createDirectFetch({ fixture: { ca: cert.certPem }, idleTimeoutMs: 200 })
+    await expect(quick(`https://${HOST}:${String(port)}/ipfs/x`, undefined, ['127.0.0.1'])).rejects.toThrow(/carried no bytes/)
+  })
+})
+
+describe('createDirectFetch -- what it will dial', () => {
+  const real = createDirectFetch()
+
+  it('refuses a loopback, private or zone-scoped address', async () => {
+    for (const address of ['127.0.0.1', '10.0.0.1', '::ffff:127.0.0.1', '2606:4700::1%eth0', '169.254.169.254']) {
+      await expect(real(`https://${HOST}/`, undefined, [address])).rejects.toThrow(/refuses to dial/)
+    }
+  })
+
+  it('refuses a public address not written in its canonical form', async () => {
+    await expect(real(`https://${HOST}/`, undefined, ['2606:4700:0:0:0:0:0:1'])).rejects.toThrow(/refuses to dial/)
+  })
+
+  it('refuses any port but 443', async () => {
+    await expect(real(`https://${HOST}:8443/`, undefined, ['93.184.216.34'])).rejects.toThrow(/port 443/)
   })
 
   it('refuses anything but https', async () => {

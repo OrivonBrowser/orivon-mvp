@@ -112,16 +112,22 @@ export async function readCapped (response: Response, max: number): Promise<Uint
   return out
 }
 
-/** One request to one gateway, classified into a `GatewayOutcome` and
- * recorded against it -- shared by block fetches and IPNS lookups (both go
- * through exactly one place that decides "was this gateway's fault", Rule
- * 3), so a 429 backs a gateway off the same way regardless of who asked. */
+/** How one request to one gateway failed: a `GatewayOutcome` recorded
+ * against it, or `cancelled`, which never is (the caller stopped wanting the
+ * answer, which says nothing about the gateway). */
+type RecordedFailure = Exclude<GatewayOutcome, { readonly kind: 'ok' }>
+export type GatewayFailureOutcome = RecordedFailure | { readonly kind: 'cancelled' }
+
+/** Shared by block fetches and IPNS lookups, so a 429 backs a gateway off
+ * the same way whoever asked. */
 export class GatewayFailure extends Error {
   override readonly name = 'GatewayFailure'
-  constructor (readonly outcome: GatewayOutcome | { readonly kind: 'cancelled' }, message: string) {
+  constructor (readonly outcome: GatewayFailureOutcome, message: string) {
     super(message)
   }
 }
+
+const CANCELLED = 'the caller no longer needs this attempt'
 
 function message (error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -158,15 +164,15 @@ export async function askGateway<T> (
     try {
       response = await fetch(req.url, { headers: { accept: req.accept }, signal: AbortSignal.any([signal, timeout]) })
     } catch (error) {
-      if (signal.aborted) throw new GatewayFailure({ kind: 'cancelled' }, 'the caller no longer needs this attempt')
-      const outcome: GatewayOutcome = { kind: timeout.aborted ? 'timeout' : 'unreachable' }
+      if (signal.aborted) throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
+      const outcome: RecordedFailure = { kind: timeout.aborted ? 'timeout' : 'unreachable' }
       pool.note(gateway, outcome)
       throw new GatewayFailure(outcome, `${gateway}: ${message(error)}`)
     }
     const retryAfter = response.headers.get('retry-after')
     if (response.status === 429 || (response.status === 503 && retryAfter !== null)) {
       await response.body?.cancel()
-      const outcome: GatewayOutcome = { kind: 'rate-limited', retryAfterMs: retryAfterMs(retryAfter, pool.now()) }
+      const outcome: RecordedFailure = { kind: 'rate-limited', retryAfterMs: retryAfterMs(retryAfter, pool.now()) }
       pool.note(gateway, outcome)
       throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`)
     }
@@ -180,11 +186,12 @@ export async function askGateway<T> (
       pool.note(gateway, { kind: 'ok' })
       return value
     } catch (error) {
+      // A hedge loser abandoned mid-body lands here as an abort too, and
+      // must not cool down an honest gateway for losing a race.
+      if (signal.aborted) throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
       // TooLarge is the gateway sending something outside the block/record
-      // spec, not an outage; anything else here is a body that started
-      // (2xx headers) and then broke mid-read, which is the shape a
-      // connection genuinely dying partway through takes.
-      const outcome: GatewayOutcome = error instanceof TooLarge ? { kind: 'miss' } : { kind: 'unreachable' }
+      // spec, not an outage; anything else is a body that broke mid-read.
+      const outcome: RecordedFailure = error instanceof TooLarge ? { kind: 'miss' } : { kind: timeout.aborted ? 'timeout' : 'unreachable' }
       pool.note(gateway, outcome)
       throw new GatewayFailure(outcome, `${gateway}: ${message(error)}`)
     }
