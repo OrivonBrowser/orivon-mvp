@@ -61,11 +61,21 @@ export interface RunCertificate {
   readonly fingerprint: string
 }
 
-export function createRunCertificate (now = new Date(), validDays = 30): RunCertificate {
+/**
+ * `sanDnsName` defaults to this run's own `*.eth`; a test fixture (a real
+ * TLS handshake against a chosen name, direct-fetch.test.ts) passes an
+ * exact one instead, since Node's default `checkServerIdentity` refuses a
+ * wildcard this shallow for ANY name under it -- confirmed directly:
+ * `tls.checkServerIdentity('vitalik.eth', { subjectaltname: 'DNS:*.eth' })`
+ * refuses even the real thing. That is not a defect here: this run's own
+ * certificate is never checked that way, only by fingerprint
+ * (`certificate-check.ts`, `rejectUnauthorized: false` in every test that
+ * completes a real handshake against it, this file's own included). */
+export function createRunCertificate (now = new Date(), validDays = 30, sanDnsName = '*.eth'): RunCertificate {
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' })
   const algorithm = der(SEQUENCE, oid(ECDSA_WITH_SHA256))
   const name = commonName('Orivon .eth verifier')
-  const sanDnsName = Buffer.concat([Buffer.from([0x82, 5]), Buffer.from('*.eth')])
+  const sanEntry = der(0x82, Buffer.from(sanDnsName))
   const tbs = der(SEQUENCE,
     der(0xa0, der(INTEGER, Buffer.from([2]))),
     positiveInteger(randomBytes(16)),
@@ -74,7 +84,7 @@ export function createRunCertificate (now = new Date(), validDays = 30): RunCert
     der(SEQUENCE, time(new Date(now.getTime() - 60_000)), time(new Date(now.getTime() + validDays * 86_400_000))),
     name,
     publicKey.export({ type: 'spki', format: 'der' }),
-    der(0xa3, der(SEQUENCE, der(SEQUENCE, oid(SUBJECT_ALT_NAME), der(OCTET_STRING, der(SEQUENCE, sanDnsName)))))
+    der(0xa3, der(SEQUENCE, der(SEQUENCE, oid(SUBJECT_ALT_NAME), der(OCTET_STRING, der(SEQUENCE, sanEntry)))))
   )
   const signature = sign('sha256', tbs, { key: privateKey, dsaEncoding: 'der' })
   const certificate = der(SEQUENCE, tbs, algorithm, der(BIT_STRING, Buffer.from([0]), signature))
