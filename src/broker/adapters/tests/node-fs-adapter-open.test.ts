@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs'
-import { mkdtemp, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -296,18 +296,5 @@ describe('nodeFs(...).open -- destroy() teardown is conditional on the close rea
     await opened.destroy('closed')
 
     await expect(opened.read({ position: 0, length: 1 })).rejects.toBeTruthy()
-  })
-})
-
-describe('open refuses a leaf symlink planted after confinement, rather than following it (R6-01)', () => {
-  it('refuses to open a leaf symlink, in any flags mode', async () => {
-    const fs = await tempRoot()
-    const root = fs.rootFor(APP)
-    const outside = join(root, '..', 'outside-secret.bin')
-    await writeFile(outside, 'do-not-follow-me')
-    const leaf = join(root, 'evidence.bin')
-    await symlink(outside, leaf)
-
-    await expect(fs.open(leaf, 'r')).rejects.toMatchObject({ code: 'ELOOP' })
   })
 })

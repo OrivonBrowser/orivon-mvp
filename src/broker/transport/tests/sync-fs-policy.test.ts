@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -180,24 +180,6 @@ describe('createSyncFsPolicy (real Broker.fs.confineSync)', () => {
     const resolved = policy.confine(APP, 'missing.txt')
 
     expect(() => policy.readFileSync(resolved)).toThrow(/ENOENT/)
-  })
-
-  it('readFileSync refuses a leaf symlink planted after confinement, rather than returning the outside target\'s bytes (R6b-01)', async () => {
-    const { broker, userData } = await realBroker()
-    await broker.registerApp(APP, testManifest())
-    await broker.grant(APP, 'fs', [])
-    await broker.fs.writeFile(APP, 'evidence.txt', new Uint8Array([1]))
-    const policy = createSyncFsPolicy(broker)
-    const resolved = policy.confine(APP, 'evidence.txt')
-    // Simulates the race policy/paths.ts's own doc comment describes:
-    // confineSync already approved `resolved` while it was a real file;
-    // something swaps it for a symlink before readFileSync's own open runs.
-    const outside = join(userData, 'outside-secret.txt')
-    await writeFile(outside, 'TOP-SECRET-OUTSIDE-ROOT')
-    await rm(resolved)
-    await symlink(outside, resolved)
-
-    expect(() => policy.readFileSync(resolved)).toThrow(/ELOOP/)
   })
 
   // R5-03: the size cap. `maxReadBytes` is injected here rather than relying

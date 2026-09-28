@@ -8,110 +8,24 @@
 // test that exercised them keeps exercising the same code, imported from
 // here instead.
 
-import { constants as fsConstants, createReadStream, createWriteStream, mkdirSync, realpathSync } from 'node:fs'
+import { createReadStream, createWriteStream, mkdirSync, realpathSync } from 'node:fs'
 import type { WriteStream } from 'node:fs'
 import {
   lstat,
   mkdir,
   open as fsOpen,
   readdir as fsReaddir,
+  readFile as fsReadFile,
   rename as fsRename,
-  rm as fsRm
+  rm as fsRm,
+  stat as fsStat,
+  writeFile as fsWriteFile
 } from 'node:fs/promises'
-import type { FileHandle } from 'node:fs/promises'
 import { Readable, Writable } from 'node:stream'
 import { dirname, join } from 'node:path'
 import type { BrokerFs, OpenedFile } from '../broker-contracts.js'
 import type { CloseReason } from '../handles/handle-contracts.js'
 import { originHash } from '../grants/origin-hash.js'
-
-/**
- * `node:fs`'s own numeric equivalent of every flags string
- * `fs-handle-wrapper.ts`'s `VALID_OPEN_FLAGS` accepts -- Node's docs list
- * these; there is no exported function that does the string-to-number
- * conversion, so it is reproduced here (verified against the real `open`
- * for every string in that set: same accept/refuse outcome, same resulting
- * bytes, for both a missing and an already-existing leaf). Needed so
- * `O_NOFOLLOW` (below) can be OR'd in -- `fs.open`'s string form has no way
- * to add a flag to it.
- */
-const OPEN_FLAG_BITS: Readonly<Record<string, number>> = {
-  r: fsConstants.O_RDONLY,
-  rs: fsConstants.O_RDONLY | fsConstants.O_SYNC,
-  'r+': fsConstants.O_RDWR,
-  'rs+': fsConstants.O_RDWR | fsConstants.O_SYNC,
-  w: fsConstants.O_TRUNC | fsConstants.O_CREAT | fsConstants.O_WRONLY,
-  wx: fsConstants.O_TRUNC | fsConstants.O_CREAT | fsConstants.O_WRONLY | fsConstants.O_EXCL,
-  'w+': fsConstants.O_TRUNC | fsConstants.O_CREAT | fsConstants.O_RDWR,
-  'wx+': fsConstants.O_TRUNC | fsConstants.O_CREAT | fsConstants.O_RDWR | fsConstants.O_EXCL,
-  a: fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_WRONLY,
-  ax: fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_WRONLY | fsConstants.O_EXCL,
-  'a+': fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_RDWR,
-  'ax+': fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_RDWR | fsConstants.O_EXCL
-}
-
-/** Undefined on Windows -- node:fs's own docs list it as POSIX-only. */
-const NOFOLLOW: number | undefined = fsConstants.O_NOFOLLOW
-
-/**
- * `OPEN_FLAG_BITS[flags]`, asserted defined. Every external caller of
- * `open` validates `flags` against `VALID_OPEN_FLAGS` first (this file's
- * own `openFile` doc), and `readFile`/`writeFile` below only ever pass
- * their own fixed `'r'`/`'w'` -- both always present in the table above, so
- * this throw is unreachable in practice, matching `openFile`'s own
- * fail-closed shape for the same case.
- */
-function flagBits (flags: string): number {
-  const bits = OPEN_FLAG_BITS[flags]
-  if (bits === undefined) throw new Error(`node-fs-adapter: unrecognised open flags '${flags}'`)
-  return bits
-}
-
-/**
- * The error a leaf symlink refusal raises, shaped exactly like the real
- * `ELOOP` `O_NOFOLLOW` itself produces (verified directly: opening a leaf
- * symlink with `O_NOFOLLOW` set throws `Error: ELOOP: too many symbolic
- * links encountered, code: 'ELOOP'`) -- so the Windows lstat-first fallback
- * below and the POSIX kernel refusal reach ../io-errors.ts's `mapIoError`
- * as the same errno and map to the same `'denied'` this broker already
- * uses for `policy/paths.ts`'s own `symlink-escape` (paths.ts's own doc
- * comment, and this function's own doc, explain why: closing the confinement
- * TOCTOU window this way, not by re-running `confinePath`, since the path
- * string alone cannot see what changed underneath it since the check).
- */
-export function leafSymlinkError (path: string): NodeJS.ErrnoException {
-  const error = new Error(`ELOOP: too many symbolic links encountered, open '${path}'`) as NodeJS.ErrnoException
-  error.code = 'ELOOP'
-  return error
-}
-
-/**
- * `fs.open`, refusing a leaf that is a symlink rather than following it --
- * closes `policy/paths.ts`'s own documented TOCTOU (confinePath proves the
- * leaf is safe at THAT instant; only the open, not a second path check, can
- * prove it still is). `O_NOFOLLOW` where the platform defines it (every
- * platform this repository ships to except Windows): the kernel itself
- * refuses atomically, so there is no window at all between the check and
- * the refusal. On Windows: `O_NOFOLLOW` does not exist, so this lstats the
- * leaf immediately before the open and refuses a symlink there -- a real
- * but narrower window than the POSIX path, and the residual this function
- * does NOT close (a parent directory swapped mid-walk, not the leaf) is
- * `docs/open-questions.md` A283 on both platforms.
- */
-async function openNoFollow (path: string, flags: string, bits: number): Promise<FileHandle> {
-  if (NOFOLLOW !== undefined) return await fsOpen(path, bits | NOFOLLOW)
-  let leaf
-  try {
-    leaf = await lstat(path)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    // Does not exist yet -- nothing to follow. The real open below still
-    // runs, and creates it (or fails ENOENT itself for a read-only flag).
-    return await fsOpen(path, flags)
-  }
-  if (leaf.isSymbolicLink()) throw leafSymlinkError(path)
-  return await fsOpen(path, flags)
-}
 
 /**
  * `OpenedFile` over a real `fs.promises.FileHandle`. `readable`/`writable`
@@ -133,12 +47,7 @@ async function openNoFollow (path: string, flags: string, bits: number): Promise
  * notes for the full reasoning.
  */
 function openFile (path: string, flags: string): Promise<OpenedFile> {
-  // `flagBits` inside the chain, not before it: a caller relies on THIS
-  // function never throwing synchronously (matching `fsOpen`'s own
-  // contract, which openFile wrapped before this fix), only ever rejecting.
-  return Promise.resolve().then(() => flagBits(flags))
-    .then((bits) => openNoFollow(path, flags, bits))
-    .then((handle) => {
+  return fsOpen(path, flags).then((handle) => {
     const fd = handle.fd
     const liveWriteStreams = new Set<WriteStream>()
 
@@ -301,34 +210,20 @@ export function nodeFs (userDataPath: string): BrokerFs {
     // errors.ts's uniformity rule exists to close. One implementation of
     // this idea (code-guidelines.md Rule 3), and every method below follows
     // the same no-catch rule for the same reason.
-    //
-    // BOTH open the leaf via `openNoFollow` and read/write through the
-    // returned handle, never a second path-taking call -- paths.ts's own
-    // doc comment for why (the TOCTOU `confinePath` cannot close itself).
     readFile: async (path) => {
-      const handle = await openNoFollow(path, 'r', flagBits('r'))
-      try {
-        const buffer = await handle.readFile()
-        // A COPY, not a zero-copy view over `buffer.buffer`. A Node Buffer is
-        // a Uint8Array, but it can be a window into Node's shared allocation
-        // pool (an 8KB slab holding unrelated data), and structured clone --
-        // the path this value takes to the renderer -- serialises an
-        // ArrayBufferView by serialising its WHOLE backing ArrayBuffer. See
-        // README.md, Design notes, for why this is worth the memcpy even
-        // though nothing observable leaks today.
-        return new Uint8Array(buffer)
-      } finally {
-        await handle.close()
-      }
+      const buffer = await fsReadFile(path)
+      // A COPY, not a zero-copy view over `buffer.buffer`. A Node Buffer is
+      // a Uint8Array, but it can be a window into Node's shared allocation
+      // pool (an 8KB slab holding unrelated data), and structured clone --
+      // the path this value takes to the renderer -- serialises an
+      // ArrayBufferView by serialising its WHOLE backing ArrayBuffer. See
+      // README.md, Design notes, for why this is worth the memcpy even
+      // though nothing observable leaks today.
+      return new Uint8Array(buffer)
     },
     writeFile: async (path, data) => {
       await mkdir(dirname(path), { recursive: true })
-      const handle = await openNoFollow(path, 'w', flagBits('w'))
-      try {
-        await handle.writeFile(data)
-      } finally {
-        await handle.close()
-      }
+      await fsWriteFile(path, data)
     },
     mkdir: async (path, opts) => { await mkdir(path, { recursive: opts?.recursive ?? false }) },
     // Names only, never full paths -- capability-api.ts's `readdir` returns
@@ -336,15 +231,8 @@ export function nodeFs (userDataPath: string): BrokerFs {
     // nothing above this layer needs entry kinds yet (that is `stat`'s job,
     // called per entry by the shim if it needs one).
     readdir: async (path) => await fsReaddir(path),
-    // `lstat`, never `stat`: reports the leaf itself, so a symlink planted
-    // there since confinement reads as neither a file nor a directory
-    // rather than silently handing back a target outside the root's own
-    // size/mtime -- paths.ts's own doc comment. Free of the TOCTOU the
-    // other methods close with `O_NOFOLLOW`: `lstat` is already one syscall
-    // that never follows the leaf, on every platform, with no open to add
-    // a flag to.
     stat: async (path) => {
-      const s = await lstat(path)
+      const s = await fsStat(path)
       return { size: s.size, isFile: s.isFile(), isDirectory: s.isDirectory(), mtimeMs: s.mtimeMs }
     },
     // NO `force`: ../broker-contracts.js's `BrokerFs` doc records that a

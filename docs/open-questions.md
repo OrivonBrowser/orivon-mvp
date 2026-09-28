@@ -1299,16 +1299,16 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A283: A parent-directory swap between confinement and the open still escapes **[AI-REC]**
+### A283: Fs confinement checks a path, then the adapter opens it by name **[AI-REC]**
 
-- **Question:** `confinePath`'s callers now open the leaf with `O_NOFOLLOW` (or lstat it first
-  where the platform has none), closing the leaf-symlink race. `O_NOFOLLOW` covers only the last
-  component: a parent directory swapped mid-walk still escapes, and Node exposes no
-  `openat2`/`RESOLVE_BENEATH` to confine the whole walk atomically.
-- **Why it matters:** a concurrent writer to a shared root (a user-picked folder, T1/T10) could
-  still redirect a path by replacing an ancestor directory, not just the leaf.
-- **Options:** accept the residual, scoped to this narrower window (rec.); reopen once Node
-  exposes an atomic beneath-root resolve.
+- **Question:** `confinePath` proves a path stays inside its root, then the fs adapter and the
+  synchronous `readFileSync` path open the joined path by name, so a symlink planted at the leaf,
+  or a directory swapped for one, in between still escapes. How is the open tied to the check?
+- **Why it matters:** `src/contracts/handles.ts` promises an escaping symlink is refused. No app
+  can create a symlink through the broker, so the writer is another local process sharing a root.
+- **Options:** open the canonical path the check resolved, with `O_NOFOLLOW`, for open, read,
+  write and stat, and act on the joined path for rm and rename (rec.; a blanket `O_NOFOLLOW` on
+  the joined path refuses in-root symlinks the check allows); wait for an atomic beneath-root open.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
