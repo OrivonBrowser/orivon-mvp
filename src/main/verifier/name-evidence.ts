@@ -56,9 +56,10 @@ function contentOf (provenance: SiteProvenance, pointersVerified: boolean): Cont
 }
 
 function liveLine (provenance: SiteProvenance, now: number): string {
-  const viaDns = provenance.pointers.find((step) => step.step === 'dnslink')
-  if (viaDns !== undefined) return `Name not verified: it points through DNS (${viaDns.domain})`
   const named = provenance.pointers[0]
+  const viaDns = provenance.pointers.find((step) => step.step === 'dnslink')
+  const term = named?.step === 'contenthash' && named.provenance.via === 'address' ? 'Address' : 'Name'
+  if (viaDns !== undefined) return `${term} not verified: it points through DNS (${viaDns.domain})`
   if (named?.step === 'contenthash' && named.provenance.via === 'address') {
     const how = named.pointer.kind === 'ipns-key' ? 'names a key whose signed record was checked' : "is the content's own hash"
     return `Address verified: it ${how}, ${ago(now - provenance.mountedAt)}`

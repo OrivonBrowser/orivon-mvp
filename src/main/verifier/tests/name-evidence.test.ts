@@ -77,6 +77,14 @@ describe('liveNameEvidence', () => {
     }), NOW)
     expect(byKey.nameProven).toBe(true)
     expect(byKey.line).toBe('Address verified: it names a key whose signed record was checked, 3 minutes ago')
+    const byDnslink = liveNameEvidence(provenance({
+      pointers: [
+        { step: 'contenthash', name: 'docs.ipfs.tech', pointer: { kind: 'dnslink', domain: 'docs.ipfs.tech' }, provenance: { via: 'address' } },
+        { step: 'dnslink', domain: 'docs.ipfs.tech', target: `/ipfs/${CID}` }
+      ]
+    }), NOW)
+    expect(byDnslink.nameProven).toBe(false)
+    expect(byDnslink.line).toBe('Address not verified: it points through DNS (docs.ipfs.tech)')
   })
 })
 
