@@ -80,6 +80,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A native addon built with napi-rs loads**: its WebAssembly build gets Node-API and memory the way
+  napi-rs's own loaders provide them, which a real napi-rs 3 addon needs.
 - **An app that listens for TCP connections receives them**: the broker now hands each accepted
   connection's port over by transfer alone, which Electron requires.
 - **The toolbar no longer creates a session partition for every website visited.**
