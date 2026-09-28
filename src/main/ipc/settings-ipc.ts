@@ -1,10 +1,10 @@
 // The permissions panel's own command channel -- list every app's grants,
-// revoke one. Mirrors ipc.ts's `isFromChrome` sender check exactly, against
-// the panel's own webContents instead of the chrome view's: the panel's
-// WebContentsView never navigates anywhere else (no links, no address bar),
-// so an identity check is enough, the same reasoning ipc.ts's own header
-// gives for the chrome view. The panel is rebuilt on every open, so this is
-// registered and removed per open -- see permissions-panel.ts.
+// revoke one. The sender must be the panel's own top frame, by identity;
+// unlike ipc.ts's `isFromChrome` its URL is not compared too, and whether it
+// should be is open-questions.md A269. The panel's view is locked to its
+// document (lock-navigation.ts) and its preload gates on the URL. The panel
+// is rebuilt on every open, so this is registered and removed per open --
+// see permissions-panel.ts.
 
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { LIGHT_CLIENT_STATUS_CHANNEL, SETTINGS_COMMAND_CHANNEL } from '../channels.js'

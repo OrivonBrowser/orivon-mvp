@@ -1180,6 +1180,18 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing until a real app reaches either limit
 
+### A269: The toolbar popups' commands are checked by sender identity, not URL **[OWNER]**
+
+- **Question:** Should `settings-ipc.ts` and `site-info-ipc.ts` also compare the sender frame's
+  URL, as `ipc.ts`'s `isFromChrome` does for the chrome?
+- **Why it matters:** the settings channel revokes grants. A popup has two layers today: its view
+  is locked to its document, and its preload exposes nothing at another URL. The chrome has a
+  third, the URL check in main.
+- **Options:** pass the popup's URL to `PopoverSpec.registerIpc` and compare `senderFrame.url`
+  there too, so the three privileged views agree (rec.); keep two layers and say why they suffice.
+- **Who decides:** owner
+- **Blocks:** nothing
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared
