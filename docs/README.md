@@ -112,7 +112,7 @@ Four reversals worth knowing about, because they are the ones people still repea
 | How much does integrating app X cost? | [`architecture/app-compatibility.md`](architecture/app-compatibility.md) |
 | What are we defending against? | [`architecture/security-model.md`](architecture/security-model.md) |
 | I am about to review the privilege boundary. What should I know first? | [`development/security-review-briefing.md`](development/security-review-briefing.md) |
-| What is undecided or contradictory? | [`open-questions.md`](open-questions.md) |
+| What is undecided or contradictory? | [`open-questions.md`](open-questions.md); settled ones are in [`decisions/resolved-questions.md`](decisions/resolved-questions.md) |
 | How do I write a pull request here? | [`development/pr-blueprint.md`](development/pr-blueprint.md) |
 | What does a term mean? | [`glossary.md`](glossary.md) |
 | What prior material exists, and where? | [`inventory.md`](inventory.md) |
@@ -126,7 +126,7 @@ in words rather than leaning on the token alone.
 | Token | Resolves to | Example |
 |---|---|---|
 | `T<n>` | [`architecture/security-model.md`](architecture/security-model.md)'s threat table | `T12`: DNS rebinding |
-| `A<n>` | [`open-questions.md`](open-questions.md) §A | `A18`: pass the granted pattern list, not the manifest |
+| `A<n>` | [`open-questions.md`](open-questions.md) while open, [`decisions/resolved-questions.md`](decisions/resolved-questions.md) once settled | `A18`: pass the granted pattern list, not the manifest |
 | `ADR-NNNN` | [`decisions/`](decisions/) | `ADR-0008`: handles are WHATWG streams |
 | `d-NNNN` | [`decisions/decision-log.md`](decisions/decision-log.md) | `d-0025`: consent is asked once, before the app's code runs |
 | `F<n>`, `B-F<n>`, `P-F<n>`, `AR-F<n>` | **Nothing.** Per-review-round finding IDs, meaningful only for the duration of the review that assigned them, and not to be written into source (`development/code-guidelines.md` Rule 1) | n/a |

@@ -6,27 +6,20 @@ and `rpc-failover.ts` (trying execution RPCs in turn per request).
 **What it depends on.** [`../egress.ts`](../egress.ts), [`../protocol.ts`](../protocol.ts) and
 `@a16z/helios`.
 
-**What it must never import.** [`../../../main/`](../../../main/) beyond type-only imports -- see the
-parent README's "What it must never import".
+**What it must never import.** [`../../../main/`](../../../main/) beyond type-only imports, as the
+parent README says.
 
 **Owner stream.** `ens-ipfs`.
 
 ## Design notes
 
-**The light client needs four wrappers** ([`light-client.ts`](light-client.ts),
-[`helios-errors.ts`](helios-errors.ts), [`rpc-failover.ts`](rpc-failover.ts)). A
-`WorkerGlobalScope` shim, or its WebAssembly timer panics on the first failed consensus request.
-A URL on every response, because Electron's `net.fetch` leaves it empty and Helios throws from
-inside its WebAssembly when it parses one. Its revert text turned into `{ code: 3, data }`, or
-viem never sees a CCIP-Read `OffchainLookup`. And execution RPCs tried in turn per request: one
-RPC per instance, as Helios takes, fails whenever that RPC's proof window is short, and since
-every answer is verified, which RPC gives it changes nothing about trust.
+**Helios needs four wrappers**
+([`ADR-0031`](../../../../docs/decisions/ADR-0031-helios-is-the-light-client.md) §Decision): a
+`WorkerGlobalScope` shim, or its WebAssembly timer panics on the first failed consensus request; a
+URL on every response, since Electron's `net.fetch` leaves it empty and Helios throws parsing it;
+its revert text as `{ code: 3, data }`, or viem never sees a CCIP-Read `OffchainLookup`; and
+execution RPCs tried in turn, or one RPC's short proof window fails the name.
 
-**One failed refresh does not un-sync the client** ([`light-client.ts`](light-client.ts)). The
-head is re-read on a timer; a failed read leaves the client reporting `synced` while the last
-proven head is under two minutes old, since that head is still a real, usable proof, and a single
-bad RPC call must not fail every `.eth` mount for up to a minute. Past two minutes, or on a second
-failure with no success between, the client drops to `syncing`. A request that arrives then waits
-up to `SYNC_WAIT_MS` (8 s) and is answered the moment a refresh succeeds, or fails with
-`not-synced` when none does in time. Reading the finalized-block checkpoint (a separate RPC call, kept
-only so the shell can persist a newer one) never affects sync state either way.
+**One failed head refresh leaves the client `synced`; a second in a row, or a proven head over two
+minutes old, does not** (ADR-0030's 2026-09-26 amendment). A checkpoint read never changes sync
+state.

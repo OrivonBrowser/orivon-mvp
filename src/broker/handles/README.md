@@ -8,94 +8,54 @@ and [`../policy/origin.ts`](../policy/origin.ts).
 
 **What it must never import.** `electron`, any `node:*` builtin, or anything that owns a real
 resource. Everything with a real socket or file descriptor behind it arrives as an **injected
-`destroy` callback**. That is what keeps the table testable without a network, and it is why
-the table itself depends on no engine primitive; only the callbacks do.
+`destroy` callback**, which keeps the table testable without a network.
+
+**Durable.** The table depends on no engine primitive; only the injected callbacks do.
 
 **Owner stream.** `broker`, build step 2.
 
 ## The four properties this directory guarantees
 
-Each is a failure that is silent when it goes wrong; see
-[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) for the specification and
-this file's own Design notes below for the full reasoning behind each.
+Each fails silently when it goes wrong. The specification and the reasoning are
+[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §Common shape,
+§Revocation and §Limits.
 
-1. **Every operation re-checks ownership** (security-model.md T11c). A handle id issued to one
-   origin and presented by another is rejected, never ignored. Capability is checked once at
-   acquisition; ownership is checked every time.
-2. **Every handle records the grant that authorised it**, captured at acquisition, and that is what
-   revocation walks. A derived handle (e.g. a socket accepted from a server's `connections`
-   stream) takes its grant from its parent and cannot be given another by the caller.
-3. **Revocation is immediate and abrupt.** Waiting for in-flight work would make the revoke
-   button mean "once the app finishes", and completion time is entirely under the app's control:
-   a hostile app keeps a connection alive indefinitely by never finishing.
-4. **Limits are never enforced by an unbounded queue** (T11, T11b). An unbounded queue on the
-   broker's thread is how one misbehaving origin freezes every tab. Resource counts (sockets,
-   files) refuse at once; the in-flight cap lets an operation wait briefly, in a bounded queue,
-   for a slot (see the design note on [`in-flight.ts`](in-flight.ts)).
+1. **Every operation re-checks ownership** (T11c). A handle id presented by another origin is
+   rejected, never ignored.
+2. **Every handle records the grant that authorised it**, and revocation walks that. A derived
+   handle takes its parent's grant and cannot be given another.
+3. **Revocation is immediate and abrupt**, never waiting for in-flight work.
+4. **Limits are never enforced by an unbounded queue** (T11, T11b). Resource counts refuse at
+   once; the in-flight cap lets an operation wait briefly in a bounded queue.
 
 ## Design notes
 
-Why the code here has the shape it has. This is the destination
-[`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
-source comment protects a specific line from a specific mistake; the case for a file's overall
-shape belongs here instead.
+**Why this directory holds state, unlike [`../policy/`](../policy/).** A handle table is the
+state a capability check is re-run against, and `policy/` is pure by rule. The split across
+files is by concern; each file's header says which.
 
-**Why this directory holds state, unlike [`../policy/`](../policy/).** A handle table is, by
-definition, the state a capability check is re-run against, and `policy/` is pure by structural
-rule, so it cannot be the home for it. [`handles.ts`](handles.ts) still imports no `electron` and
-touches no socket, file or fd directly: everything that owns a real resource arrives as an
-injected `destroy` callback, which is what keeps the table testable and is why it depends on no
-engine primitive; only the callbacks do. `ADR-0002`'s amendment is explicit that the migration
-ladder is Node → Mojo, and that Wasmtime would be a different app model rather than a swap
-beneath a stable API, and that ladder lives in the ADR rather than being restated here.
+**A handle that has ended answers its owner with how it ended**: `'revoked'` when a grant, pick
+or session was withdrawn, `'closed'` with `platformCode: 'EBADF'` otherwise. Every other origin
+still gets the uniform `'denied'`, so this reveals nothing about ids an origin never held.
 
-**Split across files** ([`code-guidelines.md`](../../../docs/development/code-guidelines.md)
-Rule 2): [`handle-contracts.ts`](handle-contracts.ts) (types), [`../errors.ts`](../errors.ts)
-(`OrivonError`), [`handle-store.ts`](handle-store.ts) (`OriginTable`, one origin's state),
-[`tombstones.ts`](tombstones.ts) (what a table remembers about handles and grants that are
-gone), [`grant-replacement.ts`](grant-replacement.ts) (one grant replaced by another),
-[`in-flight.ts`](in-flight.ts) (the in-flight budget and its wait queue),
-[`origin-registry.ts`](origin-registry.ts) (the map of origins), and [`handles.ts`](handles.ts)
-itself (the operations run against that map).
+**The in-flight cap queues briefly instead of refusing** ([`in-flight.ts`](in-flight.ts)).
+Node never refuses work for being concurrent, so ported code that fires a few hundred reads or
+connects at once treated `'limit'` as a hard error. T11b needs the queue bounded, not absent: it
+is bounded in length and in time, a waiting call runs nothing, and the queue is per origin, so
+one origin's queue never delays another's. A waiting call is registered with the handle or grant
+it needs, so a close or revoke cancels it like a running one.
 
-**A handle that has ended answers its owner with how it ended.** `OriginTable.record` remembers,
-per recently-ended id, whether it was revoked (a grant, pick or session withdrawn: `'revoked'`) or
-closed (by the app, or by dying: `'closed'` with `platformCode: 'EBADF'`, the errno Node code
-expects for a closed descriptor). Every other origin still gets the uniform `'denied'`, so this
-reveals nothing about ids an origin never held.
+**Replacing a grant is not revoking it** ([`grant-replacement.ts`](grant-replacement.ts)). A
+wider `app.requestGrant`, or install consent after an update, replaces a capability's one live
+grant, and revoking every handle then reset every connection an app held the moment it asked for
+*more*. Each handle is judged instead by its `stillCovered` predicate: the policy decision that
+authorised it, re-run on what it actually reached, never resolving again. An acquisition still in
+flight has nothing to judge, so it follows the new grant only when that covers the old one
+entirely (the old id becomes an alias; aliases are bounded by the number of replacements and
+dropped with the table); otherwise it is cancelled as a revoke would, which fails closed.
 
-**The in-flight cap queues briefly instead of refusing** ([`in-flight.ts`](in-flight.ts)). At most
-`LIMITS.inFlightOperations` of one origin's operations run at once. Past that an operation waits
-for a slot, first come first served, instead of failing with `'limit'`: Node never refuses work
-for being concurrent (it queues behind its own thread pool), so ported code that fires a few
-hundred reads or connects at once treated that `'limit'` as a hard error. What T11b needs is that
-the queue is bounded, not that it is absent, and it is bounded twice: at most
-`IN_FLIGHT_QUEUE_LIMIT` waiting per origin (past it a call is refused at once), and at most
-`IN_FLIGHT_WAIT_MS` each (then `'limit'`). A waiting call runs nothing and holds only its own
-arguments; the number *running* is exactly what it was. The cap and the queue are per origin, so
-one origin's queue never delays another's (conformance item 13). A waiting call is registered with
-the handle or grant it needs, so a close or revoke cancels it like any running one, and a slot
-freed while calls are waiting passes straight to the oldest, so a later call cannot overtake them.
-An operation with a free slot still starts in the same turn it was asked for.
+**The unlink hook** (`HandleTable.onUnlink`) exists for the socket relay:
+[`../transport/README.md`](../transport/README.md), "The unlink hook".
 
-**Replacing a grant is not revoking it** ([`grant-replacement.ts`](grant-replacement.ts),
-`HandleTable.replaceGrant`). A capability has at most one live grant, so a wider
-`app.requestGrant`, or install consent after an update, replaces it, and the old grant's handles
-must go somewhere. Revoking all of them reset every connection an app held the moment it asked for
-*more*. Instead each handle is judged against the new patterns by its own `stillCovered`
-predicate, which the acquiring capability supplies (the same policy decision that authorised it,
-re-run on what it actually reached, never resolving again); a covered handle is re-filed under the
-new grant, and only the rest are revoked. A derived handle is judged by its parent. A handle with
-no predicate (a file handle, a web context) survives only when the new patterns cover the old ones
-entirely.
-
-*Acquisitions still in flight* have no resource to judge yet. When the new grant covers the old one
-entirely they were authorised by patterns it still grants, so the old id becomes an alias: a late
-registration files under the new grant, and revoking the new grant also cancels work still scoped
-to the old one. Otherwise the old grant is tombstoned and its in-flight work is cancelled exactly as
-a revoke would, which fails closed. Aliases are bounded by the number of replacements and dropped
-with the table.
-
-**A deviation from the spec is recorded in `handle-contracts.md` and in `open-questions.md`, not
-only in source comments**: a code comment is the one place a reader of the specification will
-not look ([`CLAUDE.md`](../../../CLAUDE.md) rules 1 and 3).
+**A deviation from the spec is recorded in `handle-contracts.md` and `open-questions.md`**, not
+only in a source comment, which is the one place a reader of the specification will not look.
