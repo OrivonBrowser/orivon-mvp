@@ -18,76 +18,12 @@
 // Run with `npm run test:e2e`, or directly:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-load.test.ts
 import { afterAll, expect, it } from 'vitest'
-import { createServer, type Server } from 'node:http'
-import { cpSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import type { Server } from 'node:http'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
-import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
-import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
-import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
-import { generateId } from '../vendor/electron-chrome-web-store/src/browser/id.js'
+import { seedExtensions, startFixtureServer } from './extensions-fixtures.js'
 import { SHELL_PARTITION } from '../src/main/shell/shell-session.js'
-
-const FIXTURES_DIR = fileURLToPath(new URL('./apps/extensions/', import.meta.url)).replace(/[/\\]$/, '')
-const FIXTURES = ['content-marker', 'network-perms'] as const
-
-/**
- * Copies each fixture folder into `<userData>/extensions/<slot>/<version>/`,
- * with `loadableManifest`'s stripped copy -- plus a `key` from
- * `resolveSlotKey`, the same per-slot key `install-runner.ts` itself
- * generates and persists at `<slot>/key.pub` -- in place of `manifest.json`,
- * and writes `extensions/registry.json` through `registry.ts`'s own
- * serialiser -- exactly what `install-runner.ts` would have produced, so the
- * boot path under test (`extensions-subsystem.ts` reading the registry and
- * calling `session.defaultSession.extensions.loadExtension`) is the real
- * one, never a shortcut through `installFromFolder` itself.
- */
-function seedExtensions (userDataDir: string): void {
-  const entries: InstalledExtension[] = []
-  for (const slot of FIXTURES) {
-    const sourceDir = join(FIXTURES_DIR, slot)
-    const rawManifest: unknown = JSON.parse(readFileSync(join(sourceDir, 'manifest.json'), 'utf8'))
-    const parsed = readExtensionManifest(rawManifest)
-    if (!parsed.ok) throw new Error(`fixture ${slot}'s own manifest.json was refused: ${parsed.reason}`)
-    const { manifest, stripped } = loadableManifest(rawManifest as Record<string, unknown>)
-    const key = resolveSlotKey(userDataDir, slot)
-    manifest.key = key
-    const targetDir = join(userDataDir, 'extensions', slot, parsed.facts.version)
-    cpSync(sourceDir, targetDir, { recursive: true })
-    writeFileSync(join(targetDir, 'manifest.json'), JSON.stringify(manifest))
-    const now = Date.now()
-    entries.push({
-      id: generateId(key),
-      name: parsed.facts.name,
-      version: parsed.facts.version,
-      enabled: true,
-      installedAt: now,
-      updatedAt: now,
-      source: { kind: 'unpacked', from: sourceDir },
-      updater: { kind: 'none', reason: 'e2e fixture, seeded directly' },
-      path: targetDir,
-      stripped
-    })
-  }
-  writeFileSync(join(userDataDir, 'extensions', 'registry.json'), serializeRegistry(entries))
-}
-
-/** A plain, single-page HTTP origin on an EPHEMERAL port -- see this
- * file's header for why never a fixed one. Mirrors
- * test/e2e-session-partitions.test.ts's own `startOriginServer`. */
-async function startFixtureServer (): Promise<{ server: Server, origin: string }> {
-  const server = createServer((_req, res) => {
-    res.writeHead(200, { 'content-type': 'text/html' })
-    res.end('<title>extensions-load-fixture</title><body>fixture</body>')
-  })
-  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
-  const address = server.address()
-  if (address === null || typeof address === 'string') throw new Error('fixture server did not report a port')
-  return { server, origin: `http://127.0.0.1:${String(address.port)}` }
-}
 
 let server: Server | undefined
 

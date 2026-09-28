@@ -39,7 +39,9 @@ const SPECS = {
   // Every tab's page can be inspected unless the person turns it off; where the tools open is theirs too.
   'developer.tools': { kind: 'bool', default: true },
   'developer.dock': { kind: 'enum', options: ['right', 'bottom', 'undocked'], default: 'right' },
-  'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' }
+  'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' },
+  // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
+  'extensions.developerMode': { kind: 'bool', default: false }
 } as const satisfies Record<string, SettingSpec>
 
 export type SettingKey = keyof typeof SPECS

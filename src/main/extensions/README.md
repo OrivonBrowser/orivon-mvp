@@ -2,14 +2,22 @@
 
 **What lives here.** The CRX3 verifier, the zip unpacker, the installed-extension registry
 (`<userData>/extensions/registry.json`), the install/uninstall/enable runner, the install prompt,
-and the subsystem that loads every enabled entry into `session.defaultSession` at boot.
+the subsystem that loads every enabled entry into `session.defaultSession` at boot, and the
+`orivon://extensions` page's main-side half: `extensions-view.ts` (the row and details view
+model: name/description resolution, icon choice), `extensions-view-runner.ts` (reads a manifest,
+icon and locale catalogue off a loaded entry's own folder), `extensions-picker-runner.ts` (the
+native folder/file pickers Developer mode's buttons open), and `extensions-domain.ts` (the
+`InternalDomain` the page's requests go through -- `../pages/README.md`).
 
-**What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`, `registry.ts`
-and `unpack-runner.ts`'s pure `checkZipEntryPath`), `node:crypto`, `node:fs`, `node:path`,
-`adm-zip`, `pbf`, [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
-(durable: the manifest facts, the stripped-manifest copy, the install prompt's words),
+**What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`, `registry.ts`,
+`extensions-view.ts` and `unpack-runner.ts`'s pure `checkZipEntryPath`), `node:crypto`, `node:fs`,
+`node:path`, `adm-zip`, `pbf`, [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
+(durable: the manifest facts, the stripped-manifest copy, the install prompt's words, and the
+words `extensions-view.ts` reuses for the page's Site access and "where it runs" fields),
 [`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
-`writeFileAtomic`, and, for `crx.ts` and `install-runner.ts`,
+`writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`
+(`extensions-domain.ts`), [`../settings/`](../settings/) (Developer mode is a setting there), and,
+for `crx.ts` and `install-runner.ts`,
 [`vendor/electron-chrome-web-store`](../../../vendor/electron-chrome-web-store)'s `id.ts`
 (`convertHexadecimalToIDAlphabet`, `generateId`).
 
@@ -25,10 +33,11 @@ same rule as the rest of `src/main/` (`../README.md`). Nothing under `vendor/` b
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts` | The decision -- no `electron`, unit-tested under plain vitest |
-| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts` | The real I/O |
-| `extension-install-prompt.ts` | The native `dialog.showMessageBox` |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `extensions-view-runner.ts` | The real I/O |
+| `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
 | `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts` |
+| `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
 
 ## Design notes
 
@@ -71,3 +80,14 @@ beneath it is what changes on an update.
 **`allowFileAccess` is never `true`, anywhere in this directory.** An extension with file access
 could read `file://` pages, including a page-cache-served or dashboard `file://` URL the shell
 itself never grants an ordinary web page.
+
+**The extensions page reads an entry's own loaded folder for what a list needs, never the
+registry alone.** A name or description can be a `__MSG_...` reference into `_locales/<default_locale>/messages.json`,
+and an icon is a path inside the same folder -- `extensions-view-runner.ts` resolves both, the
+same way Chrome does, from the manifest actually loaded (`entry.path`), confined to that folder
+(`readInside`, the same shape `src/main/pages/serve.ts` uses for a page's own assets).
+
+**"Where it runs" and the install prompt's Web3 line share one clause** (`NOT_GRANTED_APPS_CLAUSE`,
+`../../broker/policy/extension-manifest.ts`), so a person reading the details view after
+installing sees the same fact in the same words, not a second description that could drift from
+the first.

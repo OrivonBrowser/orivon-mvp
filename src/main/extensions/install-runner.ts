@@ -169,7 +169,9 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   // under the same id at once. A load failure below is recovered by
   // reloading that same previous version back from its own path, so a
   // person never ends up with neither.
-  const wasLoaded = ctx.session.extensions.getExtension(id) !== undefined
+  // Electron answers null for an id it does not hold; the tests' fake answers undefined.
+  const loadedNow = ctx.session.extensions.getExtension(id)
+  const wasLoaded = loadedNow !== null && loadedNow !== undefined
   if (wasLoaded) ctx.session.extensions.removeExtension(id)
 
   let loaded: Awaited<ReturnType<Session['extensions']['loadExtension']>>

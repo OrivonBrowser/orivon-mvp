@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  describeExtensionInstall, loadableManifest, readExtensionManifest, updateRequiresConsent,
-  type ExtensionManifestFacts
+  describeExtensionInstall, describeHostAccess, describeStrippedPermissions, loadableManifest,
+  NOT_GRANTED_APPS_CLAUSE, readExtensionManifest, updateRequiresConsent,
+  type ExtensionManifestFacts, type StrippedRecord
 } from '../extension-manifest.js'
 
 describe('readExtensionManifest', () => {
@@ -302,6 +303,62 @@ describe('describeExtensionInstall', () => {
   ] as const)('titles a %s install as %s', (source, title) => {
     const facts = factsOf({ manifest_version: 3, name: 'x', version: '1.0.0' })
     expect(describeExtensionInstall(facts, source).title).toBe(title)
+  })
+
+  it('builds its Web3 line from the same clause describeHostAccess-adjacent callers reuse', () => {
+    const facts = factsOf({ manifest_version: 3, name: 'x', version: '1.0.0', host_permissions: ['<all_urls>'] })
+    expect(describeExtensionInstall(facts, 'unpacked').detail).toContain(`but not on ${NOT_GRANTED_APPS_CLAUSE}.`)
+  })
+})
+
+describe('describeHostAccess', () => {
+  it('is undefined with no host access', () => {
+    expect(describeHostAccess(factsOf({ manifest_version: 3, name: 'x', version: '1.0.0' }))).toBeUndefined()
+  })
+
+  it('matches describeExtensionInstall\'s own all-sites line, word for word', () => {
+    const facts = factsOf({ manifest_version: 3, name: 'x', version: '1.0.0', host_permissions: ['<all_urls>'] })
+    const line = describeHostAccess(facts)
+    expect(line).toBe('Read and change all your data on all websites')
+    expect(describeExtensionInstall(facts, 'unpacked').detail).toContain(line as string)
+  })
+
+  it('matches describeExtensionInstall\'s own specific-hosts line, word for word', () => {
+    const facts = factsOf({ manifest_version: 3, name: 'x', version: '1.0.0', host_permissions: ['https://example.com/*'] })
+    const line = describeHostAccess(facts)
+    expect(line).toBe('Read and change your data on these sites: example.com')
+    expect(describeExtensionInstall(facts, 'unpacked').detail).toContain(line as string)
+  })
+})
+
+describe('describeStrippedPermissions', () => {
+  const EMPTY: StrippedRecord = { permissions: [], optionalPermissions: [], declarativeNetRequest: undefined }
+
+  it('is empty when nothing was stripped', () => {
+    expect(describeStrippedPermissions(EMPTY)).toEqual([])
+  })
+
+  it('names network blocking rules for a webRequest or declarativeNetRequest permission, from either list', () => {
+    expect(describeStrippedPermissions({ ...EMPTY, permissions: ['webRequest'] })).toEqual(['Network blocking rules: Orivon does not run these yet'])
+    expect(describeStrippedPermissions({ ...EMPTY, optionalPermissions: ['declarativeNetRequestWithHostAccess'] }))
+      .toEqual(['Network blocking rules: Orivon does not run these yet'])
+  })
+
+  it('names network blocking rules when only the declarative_net_request key was stripped', () => {
+    expect(describeStrippedPermissions({ ...EMPTY, declarativeNetRequest: { rule_resources: [] } }))
+      .toEqual(['Network blocking rules: Orivon does not run these yet'])
+  })
+
+  it('names native messaging for a stripped nativeMessaging permission', () => {
+    expect(describeStrippedPermissions({ ...EMPTY, permissions: ['nativeMessaging'] }))
+      .toEqual(['Talking to programs on your computer: not available in Orivon'])
+  })
+
+  it('names both, in order, when both were stripped', () => {
+    expect(describeStrippedPermissions({ ...EMPTY, permissions: ['webRequest', 'nativeMessaging'] })).toEqual([
+      'Network blocking rules: Orivon does not run these yet',
+      'Talking to programs on your computer: not available in Orivon'
+    ])
   })
 })
 
