@@ -136,6 +136,16 @@ export const LIMITS = {
   /** The largest result `WebContext.evaluate` returns, measured as JSON text. */
   webContextResultBytes: 1024 * 1024,
   /**
+   * Pages one origin may show inside itself at once (ADR-0039), each a
+   * `<webview>` element with a renderer process of its own. PROVISIONAL:
+   * AI-chosen, awaiting owner confirmation -- `docs/decisions/decision-log.md`.
+   * Sized for an app with a tab strip of its own; the shell's own tab ceiling
+   * is only three times this.
+   */
+  embeds: 32,
+  /** The largest script `orivon.web.setEmbedScript` accepts, in UTF-8 bytes. */
+  embedScriptBytes: 4 * 1024 * 1024,
+  /**
    * The largest plaintext `orivon.secrets.encrypt` accepts, in bytes
    * (ADR-0033). PROVISIONAL: AI-chosen, awaiting owner confirmation --
    * `docs/decisions/decision-log.md`. Sized for a wallet's seed material,

@@ -126,6 +126,12 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
     },
     "fs": { "quotaBytes": 53687091200 },
     "id": { "curves": ["secp256k1"] },
+    "web": {
+      "contexts": ["https://www.youtube.com"],  // ADR-0019: run code as that site, in a private, empty
+                                                 // session that is never displayed; exact origins only
+      "embed": { "origins": ["*"] }             // ADR-0039: show a site inside the app's own page, in a
+                                                 // <webview>; exact origins, or "*" for any site on the web
+    },
     "media": { "camera": true, "microphone": true },  // ADR-0032; omit a flag to not ask for it
     "clipboard": { "read": true },                    // ADR-0032
     "secrets": {},                                    // ADR-0033; presence alone is the ask
@@ -264,7 +270,22 @@ orivon.id.requestIdentity({ kind })  // => Promise<IdentityHandle | null> — co
 orivon.secrets.available()           // => Promise<boolean>  false if ungranted, or the seed is session-only
 orivon.secrets.encrypt(plaintext)    // => Promise<Uint8Array>  bytes in, bytes out, no encoding option
 orivon.secrets.decrypt(ciphertext)   // => Promise<Uint8Array>  'invalid' for bytes this origin's key did not produce
+
+// --- web: other sites' documents ---
+orivon.web.openContext(origin)       // => Promise<WebContext>  an empty, never-displayed document AS that
+                                      //   site (ADR-0019); .evaluate(script) runs one script in it
+orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs first in every page the app
+                                      //   shows inside itself (ADR-0039); the pages themselves are
+                                      //   <webview> elements in the app's own page, under `web.embed`
 ```
+
+> **`web.embed` (ADR-0039) is granted like any other capability and used through an element,
+> not a call.** An app holding it puts a `<webview>` in its page, with the element's interface as
+> Electron defines it (`src`, `loadURL`, `executeJavaScript`, `insertCSS`, `findInPage`, `send`
+> and `ipc-message`, muting). The shell decides what the element attaches: the page it shows runs
+> in a `persist:` partition of the app's own, sandboxed, with the shell's preload, no `orivon.*`,
+> no popups, no downloads and no `<webview>` of its own, and it may load documents only from the
+> granted origins. `setEmbedScript` above is the one `orivon.*` call the capability adds.
 
 > **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0032) have no `orivon.*` entry
 > point of their own.** They are Chromium platform permissions (`getUserMedia`,

@@ -128,10 +128,12 @@ export interface Capabilities {
   readonly fs?: FsCapability
   readonly id?: IdCapability
   /**
-   * Isolated contexts (ADR-0019): an empty document at an origin the app
-   * names, for running that site's own script as that site would -- with
-   * none of the person's data there, and no network beyond this app's own
-   * `https.connect` grant. See `capability-api.ts`'s `OrivonWeb`.
+   * Other sites' documents, two ways. Isolated contexts (ADR-0019): an empty
+   * document at an origin the app names, for running that site's own script
+   * as that site would -- with none of the person's data there, and no
+   * network beyond this app's own `https.connect` grant. Embedded pages
+   * (ADR-0039): a site shown inside the app's own page, in a `<webview>`
+   * element the app controls. See `capability-api.ts`'s `OrivonWeb`.
    */
   readonly web?: WebCapability
   /**
@@ -313,8 +315,10 @@ export interface IdCapability {
 }
 
 /**
- * ADR-0019. The prompt names every origin listed here, in words that say what
- * it means: "run code as www.youtube.com, in a private, empty session".
+ * ADR-0019 and ADR-0039. The prompt names every origin listed here, in words
+ * that say what it means: "run code as www.youtube.com, in a private, empty
+ * session"; "show any website inside itself, and read and change what those
+ * pages show".
  */
 export interface WebCapability {
   /**
@@ -325,6 +329,48 @@ export interface WebCapability {
    * `web.context` are these strings, compared exactly.
    */
   readonly contexts?: readonly string[]
+  /**
+   * Sites the app may show inside its own page (ADR-0039). Its own
+   * capability kind, `web.embed`, granted and revoked apart from
+   * `web.context`: showing a person a page and running a script as that
+   * page's site are different powers, and a person may want one without the
+   * other.
+   */
+  readonly embed?: EmbedCapability
+}
+
+/**
+ * ADR-0039. An app holding a `web.embed` grant may put a `<webview>` element
+ * in its page: a browser view inside its own layout, showing a site of its
+ * choosing, with the element's interface as Electron defines it (`src`,
+ * `loadURL`, `reload`, `executeJavaScript`, `insertCSS`, `findInPage`,
+ * `send` and the `ipc-message` event, `setAudioMuted`, ...). The element is
+ * the web platform's own idea of an embedded browser, older than this
+ * project, and an engine beneath Orivon that lacks it would supply one to
+ * keep apps written against this working (ADR-0002).
+ *
+ * Every page the app shows runs in a storage partition of this app's own:
+ * apart from the person's ordinary browsing, apart from the app's own
+ * partition, and kept across restarts, so a site the app shows can keep the
+ * person signed in. The page's renderer is sandboxed, gets the shell's own
+ * preload and never the app's, has no `orivon.*` and no path to the app's
+ * grants, cannot open windows or download, and cannot itself embed. The
+ * app can read what those pages show and change it -- the element's own
+ * methods already allow that -- so the prompt says exactly that, with a
+ * warning, and a person who declines keeps every other grant.
+ */
+export interface EmbedCapability {
+  /**
+   * Which sites: exact `http://host[:port]` or `https://host[:port]`
+   * origins, compared exactly, or the single entry `"*"` for any site on the
+   * web. `"*"` never reaches an address literal outside public unicast or a
+   * `localhost` name (security-model.md T12); an origin named exactly may be
+   * one, and the person granting it sees that address. A page the app shows
+   * may load a document, in its top frame or a frame inside it, only from
+   * these origins; a subresource is the page's own business. A grant's
+   * `patterns` for `web.embed` are these strings.
+   */
+  readonly origins: readonly string[]
 }
 
 /**
@@ -389,6 +435,8 @@ export type CapabilityKind =
   | 'fs'
   | 'id'
   | 'web.context'
+  /** A site shown inside the app's own page (ADR-0039); its patterns are `EmbedCapability.origins`. */
+  | 'web.embed'
   | 'media.camera'
   | 'media.microphone'
   | 'clipboard.read'

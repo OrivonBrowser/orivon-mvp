@@ -32,7 +32,7 @@ function fakeOrivon (): Orivon {
       userSelected: unused
     },
     id: { publicKey: async () => new Uint8Array(), sign: async () => new Uint8Array(), requestIdentity: async () => null },
-    web: { openContext: unused },
+    web: { openContext: unused, setEmbedScript: unused },
     secrets: { available: unused, encrypt: unused, decrypt: unused }
   }
 }

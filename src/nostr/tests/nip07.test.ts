@@ -48,7 +48,8 @@ function fakeOrivon (requestIdentity: Orivon['id']['requestIdentity']): Orivon {
       requestIdentity
     },
     web: {
-      openContext: notImplemented('web.openContext')
+      openContext: notImplemented('web.openContext'),
+      setEmbedScript: notImplemented('web.setEmbedScript')
     },
     secrets: {
       available: notImplemented('secrets.available'),

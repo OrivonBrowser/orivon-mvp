@@ -43,7 +43,11 @@ type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
     }
     readonly fs: Full<FsCapability>
     readonly id: Full<IdCapability>
-    readonly web: Full<WebCapability>
+    // ADR-0039: 'embed' excluded on the same deferred reasoning as the
+    // three capabilities above -- the parser accepts it only once the
+    // stacked implementation PR adds EMBED_CAPABILITY_KEYS, which restores
+    // it here.
+    readonly web: Omit<Full<WebCapability>, 'embed'>
   }
 }
 

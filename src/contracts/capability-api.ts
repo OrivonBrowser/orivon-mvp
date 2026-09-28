@@ -367,6 +367,25 @@ export interface OrivonWeb {
    * the two failed); 'limit' past `LIMITS.webContexts` open at once.
    */
   openContext(origin: string, options?: WebContextOptions): Promise<WebContext>
+  /**
+   * ADR-0039. Sets the script that runs first in every page this app shows
+   * inside itself (`manifest.js`'s `EmbedCapability`): before that page's
+   * own code, in the page's main world, whatever the page's own
+   * Content-Security-Policy says. A classic script, called with one
+   * argument, `orivonEmbed`, a bridge to the app's own `<webview>` element:
+   * `orivonEmbed.sendToHost(channel, ...args)` reaches the element's
+   * `ipc-message` event, and `orivonEmbed.on(channel, listener)` hears the
+   * element's `send(channel, ...args)`. Nothing else is placed on the page's
+   * `window`; what the script exposes there is its own choice.
+   *
+   * Replaces any script set earlier, and the empty string clears it. Reaches
+   * pages loaded after the call, never one already showing, and a page's top
+   * frame only, never a frame inside it.
+   *
+   * Rejects 'denied' without a live `web.embed` grant; 'invalid' unless
+   * `source` is a string; 'limit' past `LIMITS.embedScriptBytes`.
+   */
+  setEmbedScript(source: string): Promise<void>
 }
 
 export interface WebContextOptions {

@@ -9381,3 +9381,19 @@ Every existing e2e suite closes its tabs before quitting (`closeElectronApp` in
 
 **Needs:** a reproduction by closing the real window, then a guard in `TabManager.activateTab` or
 its caller for a destroyed window, with a test that quits with two tabs open.
+
+### A260 -- `web.embed`'s two provisional rules: the per-app page ceiling, and what `"*"` reaches **[NEEDS OWNER]**
+
+Filed 2026-09-28, with `ADR-0039`. Two calls in that ADR are AI-chosen and await the owner:
+
+1. **`LIMITS.embeds` is 32.** Each page an app shows inside itself is a renderer process, so
+   the number bounds memory the way the shell's own `MAX_TABS` (100) does. An app with a tab
+   strip of its own is the case that would reach it; nothing measured it.
+2. **`"*"` never reaches an address literal outside public unicast or a `localhost` name**,
+   while an origin named exactly in the manifest may be one, mirroring `tcp.connect`'s own
+   rule for a wildcard against a literal. The alternative is `"*"` reaching anything a person
+   could type into the address bar, on the reasoning that the person granted "any website" and
+   a router's admin page is one; it loses because the app's own script runs inside the shown
+   page, which is T12 with a page around it.
+
+**What would settle it:** the owner's confirmation of both, or a real app reaching either limit.

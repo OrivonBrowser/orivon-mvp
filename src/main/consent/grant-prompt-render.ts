@@ -160,6 +160,13 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
       return { warning: false, message: 'Create a digital identity for you to use with this app' }
     case 'web.context':
       return describeWebContextGrant(patterns)
+    case 'web.embed':
+      // ADR-0039: contract-only so far -- the loader does not parse
+      // WebCapability.embed yet (check-manifest-parity.mjs's own
+      // DELIBERATELY_DEFERRED entries), so no live grant can reach this
+      // switch. Thrown, not rendered, until the implementation PR gives it
+      // its real copy.
+      throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0039)`)
     case 'secrets':
       // ADR-0033: the app never sees the identity seed, only ciphertext its
       // own key produced -- say what the grant actually gives, not "your
