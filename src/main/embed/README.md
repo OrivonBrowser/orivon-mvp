@@ -12,7 +12,7 @@ host, and answers `EMBED_SCRIPT_CHANNEL`, the one thing a shown page's preload
 (`src/preload/embed.ts`) asks: which script its app set with `orivon.web.setEmbedScript`.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`broker-contracts.ts`
-types, `policy/embed-origin.ts`'s document gate, `policy/origin.ts`, `grants/origin-hash.ts`);
+types, `policy/embed-origin.ts`'s document gate, `policy/address.ts`'s address classes, `policy/origin.ts`, `grants/origin-hash.ts`);
 [`../dev/dev-mode.ts`](../dev/dev-mode.ts) (DevTools in a guest, developer mode only); the
 top-level `channels.ts` and `registry.ts`.
 
