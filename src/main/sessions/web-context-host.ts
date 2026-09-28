@@ -83,6 +83,10 @@ function partitionName (opener: string, slot: number): string {
 }
 
 interface OpenContextRecord {
+  /** Never read: held so it is not garbage collected while the context is
+   * open. Collecting the view destroys its webContents, so an evaluate in
+   * flight never settles and the next one throws. */
+  readonly view: WebContentsView
   readonly webContents: WebContents
   readonly session: Session
   readonly opener: string
@@ -289,7 +293,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
         void handleRenderProcessGone(id, details.reason)
       })
 
-      contexts.set(id, { webContents, session: contextSession, opener, slot })
+      contexts.set(id, { view, webContents, session: contextSession, opener, slot })
       return id
     } catch (error) {
       try {
