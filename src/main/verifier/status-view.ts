@@ -67,7 +67,7 @@ function checkpointLine (choice: CheckpointChoice | undefined): string {
 function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView['state'], summary: string } {
   // A dead verifier outranks everything: with it down, no .eth page loads at all.
   if (facts.hostDown !== undefined) return { state: 'down', summary: `The verifier is not running: ${facts.hostDown}.` }
-  if (facts.switchedOff) return { state: 'off', summary: 'Switched off for this run. No .eth name can be verified, so none loads.' }
+  if (facts.switchedOff) return { state: 'off', summary: 'Switched off. No .eth name can be verified, so none loads.' }
   if (facts.checkpoint !== undefined && !facts.checkpoint.ok) return { state: 'failed', summary: 'Not started: it needs a recent checkpoint to start from.' }
   const s = facts.lightClient
   switch (s.state) {

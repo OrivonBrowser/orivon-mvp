@@ -16,6 +16,27 @@ export const about: Section = {
       control: { type: 'info', text: (state) => state.about?.userAgent ?? '' }
     },
     {
+      id: 'updates-check',
+      label: 'Look for updates',
+      help: 'Once a day Orivon asks GitHub whether a newer release exists, and tells you if one does. It never downloads or installs anything, and sends nothing about you but the request itself. It is off until you turn it on.',
+      keywords: ['update', 'upgrade', 'release', 'version', 'new', 'automatic'],
+      control: { type: 'toggle', key: 'updates.check' }
+    },
+    {
+      id: 'updates-now',
+      label: 'Check now',
+      keywords: ['update', 'upgrade', 'latest'],
+      control: { type: 'action', label: 'Check for an update', run: async (state) => { await state.updates.check() } },
+      visible: (state) => state.profiles?.isPrivate !== true
+    },
+    {
+      id: 'updates-result',
+      label: 'Latest release',
+      keywords: ['update', 'latest', 'version'],
+      control: { type: 'info', text: (state) => state.updates.words() },
+      visible: (state) => state.updates.words() !== ''
+    },
+    {
       id: 'reset-all',
       label: 'Reset every setting',
       help: 'Puts every setting back to its default. Your bookmarks, permissions and site data are not touched.',

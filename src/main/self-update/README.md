@@ -19,6 +19,6 @@ outside a real Electron process), `node:fs/promises`, `node:path`, the top-level
 and an app-capability grant are different questions asked in different dialogs, decided by
 different rules (ADR-0005 vs. the update decision's own semver floor).
 
-**Owner stream.** `shell`. Maintenance only. `update-check-runner.ts`'s own
-`updateCheckSubsystem` is not currently listed in `../subsystems.ts` and has no importer
-anywhere in the repo; its own header documents the opt-in as intentional.
+**Owner stream.** `shell`. Maintenance only. Nothing looks unless the person turned `updates.check` on in Settings
+(it is off by default): `index.ts` then calls `runUpdateCheck` once at start, and "Check now" (`updates-domain.ts`, through
+`checkUpdateNow`) asks at once and only reports. A private session looks at nothing.

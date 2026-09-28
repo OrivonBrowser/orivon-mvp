@@ -9,7 +9,9 @@ what the light client is doing and how a `.eth` name or an address led to the pa
 ([`name-evidence.ts`](name-evidence.ts), for the site-info popover). It also stamps every page's
 request to the verifier with the top-level page origin it belongs to ([`partition.ts`](partition.ts)), so
 the verifier keeps one cache per site, and checks which configured gateway has no proxy in front
-of it ([`proxy-check.ts`](proxy-check.ts)), for the DNS-tamper fallback the host itself runs.
+of it ([`proxy-check.ts`](proxy-check.ts)), for the DNS-tamper fallback the host itself runs. The person can switch the
+light client off in Settings (`web3.lightClient`, read when the host starts, through `configureVerifier`); the
+environment switch still forces it off, and [`web3-domain.ts`](web3-domain.ts) is what the Settings page reads.
 
 **Tied to Electron.** Disposable. [`verifier-subsystem.ts`](verifier-subsystem.ts) is the one file
 that imports `electron`; the rest are decisions, unit-tested under plain vitest, on this

@@ -72,6 +72,9 @@ If these work, this version has done its job. None of them is yet named as the d
 | Item | Why it is essential |
 |---|---|
 | Shell: tabs, omnibox, back/forward | It has to be a browser, or the thesis is untested |
+| **Settings** (`orivon://settings`): every implemented feature has its controls in one place, with search, a link to each section, and changes that apply at once | A person can only trust what they can see and change. Each feature that lands adds its section here |
+| **Keyboard shortcuts, a main menu, zoom per site, history and developer tools** | What a person expects of a browser they live in. Shortcuts are remappable, zoom is remembered per site, history is kept locally and can be cleared, and F12 opens developer tools on any page, asking once before it does on an app that holds permissions |
+| **Movable tabs, split view, profiles and private windows** | Tabs reorder, move between windows and tear off; two tabs show side by side; a profile is a separate browser; a private window starts empty and is deleted when closed. `ADR-0041` |
 | Address-bar search, DuckDuckGo by default and any of a short list or the person's own https address from Settings | Non-address input needs *some* resolution or the omnibox rejects plain text outright; DuckDuckGo is the default and over addresses-only. Known limitation, stated in-product: search text leaves the machine (`README.md` §Known limitations of v0) |
 | **Capability broker**: manifest, grants, per-origin enforcement | This *is* the product. `ADR-0002` |
 | **`orivon-node-shim`** | Load-bearing: without it a Node.js app cannot run from a URL. `ADR-0005` |
@@ -113,7 +116,7 @@ Real parts of Orivon, not in this version yet. Each lands when a need calls for 
 ## LATER: useful, further out
 
 `orivon-runtime` (Wasmtime; arrives when untrusted third-party apps or mobile do) ·
-mobile · Web3 search · Tor / proxy chains · client profiles ·
+mobile · Web3 search · Tor / proxy chains ·
 wallet Crypto and Address-book layers plus `CapabilityDescriptor` · cross-device sync ·
 Windows and macOS packaging with code signing.
 

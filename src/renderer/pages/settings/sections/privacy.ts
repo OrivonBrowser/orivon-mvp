@@ -34,6 +34,13 @@ export const privacy: Section = {
       control: { type: 'action', label: 'Open history', run: async (state) => { await state.openPage('history') } }
     },
     {
+      id: 'usage-statistics',
+      label: 'Usage statistics',
+      help: 'How long Orivon is open and in use, counted by the month and by app. Nothing else: no address, no page, no search. This is the exact text, and you can change your mind at any time.',
+      keywords: ['telemetry', 'analytics', 'statistics', 'usage', 'send', 'report', 'measure', 'consent'],
+      control: { type: 'usage' }
+    },
+    {
       id: 'clear-data',
       label: 'Clear browsing data',
       help: 'Choose what to forget. Bookmarks, permissions you gave and the files apps saved are not touched.',

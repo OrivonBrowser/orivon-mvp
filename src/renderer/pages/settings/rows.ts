@@ -2,7 +2,9 @@
 // state, which asks main; main's answer, not the control, decides what the
 // value is.
 import { h } from '../shared/dom.js'
+import { renderApps } from './apps-view.js'
 import { renderClearData } from './clear-data.js'
+import { renderUsage } from './usage-view.js'
 import type { Control, Row } from './model.js'
 import type { SettingsState } from './state.js'
 
@@ -113,6 +115,8 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'action': field = renderAction(control, state); break
     case 'shortcut': field = renderShortcut(control, state); break
     case 'clearData': field = renderClearData(state); break
+    case 'apps': field = renderApps(state); break
+    case 'usage': field = renderUsage(state); break
     case 'info': field = h('span', { className: 'value', textContent: control.text(state) }); break
   }
 
@@ -127,7 +131,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     })
     : null
   const labelsControl = control.type === 'choice' || control.type === 'toggle' || control.type === 'text'
-  return h('div', { className: 'row', id: `row-${row.id}` },
+  return h('div', { className: control.type === 'apps' || control.type === 'usage' ? 'row wide' : 'row', id: `row-${row.id}` },
     h('div', { className: 'row-text' },
       labelsControl
         ? h('label', { className: 'row-label', htmlFor: controlId, textContent: row.label })

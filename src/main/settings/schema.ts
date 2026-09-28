@@ -32,6 +32,10 @@ const SPECS = {
   // Whether pages are written down, and for how long. 90 days is provisional: what a person expects a browser to remember is not yet measured.
   'history.remember': { kind: 'bool', default: true },
   'history.retentionDays': { kind: 'enum', options: ['7', '30', '90', 'forever'], default: '90', labels: { 7: '7 days', 30: '30 days', 90: '90 days', forever: 'Forever' } },
+  // Whether Orivon asks GitHub, once a day, if a newer release exists. It never installs anything. Off until the owner decides.
+  'updates.check': { kind: 'bool', default: false },
+  // Whether `.eth` names are proven by a light client that runs on this computer. Read when Orivon starts.
+  'web3.lightClient': { kind: 'bool', default: true },
   // Every tab's page can be inspected unless the person turns it off; where the tools open is theirs too.
   'developer.tools': { kind: 'bool', default: true },
   'developer.dock': { kind: 'enum', options: ['right', 'bottom', 'undocked'], default: 'right' },

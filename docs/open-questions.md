@@ -586,7 +586,7 @@ posting a notice. Three options were weighed on what a person actually experienc
 | | What the user sees | Why not |
 |---|---|---|
 | Silent refusal | An app that quietly stops being able to save, with whatever message the app chooses and no indication a limit was involved | Rejected: indistinguishable from the app being broken, and there is nothing the user can do about it |
-| A passive notice | "This app has filled its storage", with a settings screen to raise the limit | Rejected for v0: needs a settings surface that does not exist, and quiet notices are ignored |
+| A passive notice | "This app has filled its storage", with a settings screen to raise the limit | Rejected for v0: quiet notices are ignored, and raising a limit would need a screen to do it from |
 | **A prompt** | "*App* has used all the space it asked for. Give it more?" | **Chosen.** The user stays in control, learns which apps are storage-hungry, and can say no |
 
 **The consequence that makes part 1 non-optional:** the prompt states a number. If the counter
@@ -2600,11 +2600,11 @@ contacting the address first, which is the exact thing being guarded against. Th
 design intent, not an open question about the mechanism's shape.
 
 **Why not built now, an AI scope call rather than something the owner was asked to sequence:**
-the mechanism needs a genuinely new kind of UI surface — nothing like a settings page or a
-persisted, user-editable address allowlist exists anywhere in this shell today — and
+the mechanism needs a genuinely new kind of UI surface — nothing like a persisted, user-editable
+list of addresses a person adds to exists in this shell, which holds choices and not lists — and
 `build-plan.md`'s own Sequence already reserves this territory for build step 9, "Developer mode
 — unpacked loader, plainly-worded opt-in, unsigned marking, developer docs." Building a
-first-of-its-kind settings surface as a side effect of the discovery-trigger work risked exactly
+first-of-its-kind editable-list surface as a side effect of the discovery-trigger work risked exactly
 the scope creep `CLAUDE.md` Rule 4 warns about.
 
 **Needed by:** before build step 9 ships, if a real developer workflow for testing a local app's
@@ -9405,3 +9405,81 @@ Filed 2026-09-28, with `ADR-0039`. Two calls in that ADR are AI-chosen and await
    page, which is T12 with a page around it.
 
 **What would settle it:** the owner's confirmation of both, or a real app reaching either limit.
+
+### A262 -- a second profile counts as a second install in usage statistics **[NEEDS OWNER]**
+
+Filed 2026-09-28, with `ADR-0041`. Telemetry's install id is kept in the data directory, so each profile
+has its own and reports its own time, and a person with two profiles counts as two installs. The success
+metric counts people, so this over-counts them by the number of profiles in use. Nothing measured how many
+people will have more than one.
+
+**What would settle it:** the owner choosing one install id for the default profile's directory and having
+other profiles send nothing, or share its id. Either is a small change to `src/telemetry/`.
+
+### A263 -- the update check is off until the owner decides **[NEEDS OWNER]**
+
+Filed 2026-09-28. Looking for a newer release asks GitHub once a day and installs nothing (`update-check.ts`);
+it ships off, with "Check now" in Settings, because a request to a third party on every start is a decision
+about what the browser tells one. The check also only tells a person, with a system notification, and gives no
+way from Settings to the release page.
+
+**What would settle it:** the owner choosing the default, and whether Settings should link to the release.
+
+### A264 -- what happens to a download is not settled
+
+Filed 2026-09-28. Settings has no downloads section because how the shell handles a download (where it goes,
+whether it asks, what an app tab may download) has not been checked against a real page, so a control would
+promise behaviour nobody measured. A private window keeps downloaded files, and its page says so.
+
+**What would settle it:** a test that downloads from a website tab and from an app tab in each of the browser's
+kinds of window, and a decision about the folder.
+
+### A265 -- dragging a tab into another window is best effort on Wayland
+
+Filed 2026-09-28. Where the pointer let go is read from its position on the screen. Under Wayland an
+application cannot learn where its windows are or move them, so a tab dropped over another window may not find
+it, and a torn-off window opens where the compositor puts it. Moving a tab to a window or a new window from its
+right-click menu, and by a command, never depends on position and works everywhere.
+
+**What would settle it:** measuring drag and drop on a real Wayland session, and whether the compositor's own
+protocol for it is worth using.
+
+### A266 -- a development run and an installed one share a data directory
+
+Filed 2026-09-28, with `ADR-0041`. Both use the operating system's directory for the app, and a profile allows
+one browser at a time, so starting one while the other runs hands over to it. A developer wanting both must pass
+`--user-data-dir`. Whether the two should be different directories by default has not been decided.
+
+**What would settle it:** the owner's view on sharing versus separating them.
+
+### A267 -- sweeping a private session's directory on Windows is unmeasured
+
+Filed 2026-09-28, with `ADR-0041`. The sweep removes the directory of a private session whose process is gone, checking
+that this user owns it. Windows has no owner id to compare, and refuses to delete a file another process still
+has open, so a directory may survive a start and be removed at a later one. Nothing has run it on Windows.
+
+**What would settle it:** running a private session's start, crash and sweep on Windows.
+
+### A268 -- history's defaults are provisional, and it feeds nothing yet
+
+Filed 2026-09-28. History is kept 90 days, off by choice; the number is a guess at what a person expects. The
+address bar does not suggest from it and nothing else reads it. History is in one SQLite file through Node's
+experimental `node:sqlite`, behind an interface, so a change of file format or engine is one class.
+
+**What would settle it:** what people ask for after using it, and whether `node:sqlite` leaves experimental status.
+
+### A269 -- clearing app data reaches the apps that hold permissions
+
+Filed 2026-09-28. "Clear browsing data" can clear the browser storage of every app that holds a permission. An app
+that is installed (its code pinned) but holds none keeps its own session, and is not reached by it.
+
+**What would settle it:** listing apps from what is pinned as well as what is granted, once a real app is installed
+without a grant.
+
+### A270 -- the first-run usage statistics screen is not built
+
+Filed 2026-09-28. `ADR-0004` calls for a screen on first run with the exact text and two buttons, neither
+preselected. Settings has the same choice, undecided until made, and nothing is sent before it, but no screen asks
+on first run.
+
+**What would settle it:** building the screen on the welcome flow, once the owner decides where in it the question sits.

@@ -63,7 +63,7 @@
 .row-label { font-weight: 500; }
 .row-help { margin-top: 2px; color: var(--wink-dim); font-size: 13px; max-width: 520px; }
 .row-control { display: flex; align-items: center; gap: 12px; flex: none; max-width: 55%; }
-.row-control .value { color: var(--wink-dim); user-select: text; overflow-wrap: anywhere; text-align: right; }
+.row-control .value { color: var(--wink-dim); user-select: text; overflow-wrap: anywhere; text-align: right; white-space: pre-line; }
 .text-control { display: grid; gap: 6px; width: 340px; }
 .problem { color: var(--wdanger); font-size: 12.5px; }
 .problem:empty { display: none; }
@@ -132,6 +132,25 @@
   background: color-mix(in srgb, var(--wsurface) 45%, transparent);
 }
 .card > .group:first-child { border-top: none; }
+
+.usage { display: grid; gap: 10px; width: 100%; }
+.usage-buttons { display: flex; gap: 10px; }
+.json { margin: 8px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--wsurface); overflow-x: auto; font-size: 12px; user-select: text; }
+.usage-sent { margin-top: 8px; }
+details > summary { cursor: pointer; }
+
+.row.wide { flex-direction: column; align-items: stretch; }
+.row.wide .row-control { max-width: none; }
+.apps { display: grid; gap: 12px; width: 100%; }
+.app-card { padding: 12px 14px; border: 1px solid var(--wborder); border-radius: 8px; background: var(--wsurface); }
+.app-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.app-origin { overflow-wrap: anywhere; }
+.perms { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 6px; }
+.perm { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.perm.warning .perm-text { color: var(--wwarn); }
+.perm-text { overflow-wrap: anywhere; }
+.btn.small { padding: 3px 10px; font-size: 12.5px; flex: none; }
+.app-stored { margin: 6px 0 0; font-size: 12.5px; }
 
 .clear-data { display: grid; gap: 10px; width: 420px; max-width: 100%; }
 .clear-history { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

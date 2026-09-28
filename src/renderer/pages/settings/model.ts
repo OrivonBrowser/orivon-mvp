@@ -12,6 +12,10 @@ export type Control =
   | { readonly type: 'toggle', readonly key: SettingKey }
   /** A keyboard shortcut: its keys, and the buttons that change it. */
   | { readonly type: 'shortcut', readonly id: string }
+  /** Usage statistics: the choice, the exact text that would be sent, and what has been. */
+  | { readonly type: 'usage' }
+  /** The apps that hold permissions, each with what it may do and a way to take it back. */
+  | { readonly type: 'apps' }
   /** What to forget, and the button that forgets it. */
   | { readonly type: 'clearData' }
   /** A value shown, not changed. */
