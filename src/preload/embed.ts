@@ -37,11 +37,13 @@ function runPageScript (source: string): void {
       ipcRenderer.on(channel, (_event, ...args) => { listener(...args) })
     }
   }
+  // The literal name, twice: `executeInMainWorld` serialises this function
+  // alone, and the page-globals guard reads only a literal property name.
   contextBridge.executeInMainWorld({
-    func: (name: string, api: EmbedBridge) => {
-      Object.defineProperty(globalThis, name, { value: api, writable: true, configurable: true, enumerable: false })
+    func: (api: EmbedBridge) => {
+      Object.defineProperty(globalThis, '__orivonEmbedBridge', { value: api, writable: true, configurable: true, enumerable: false })
     },
-    args: [BRIDGE_GLOBAL, bridge]
+    args: [bridge]
   })
   const wrapper = `(function () {
   var orivonEmbed = globalThis[${JSON.stringify(BRIDGE_GLOBAL)}];
