@@ -20,6 +20,7 @@
 | [`wasi/`](wasi/) | A WASI preview1 host over `orivon.fs`, and Node's `wasi` module over it |
 | [`worker/`](worker/) | What a child needs to run in a Web Worker, its `orivon.*` calls carried to the page |
 | [`child-process/`](child-process/) | Node's `child_process` over those Workers |
+| [`addon/`](addon/) | Native addons, loaded as their WebAssembly builds through emnapi |
 
 **A bundler must alias each specifier exactly** (`module-map.ts`'s `aliasPattern`). A prefix
 alias also captures subpaths and sends the shim's own imports back into the shim
@@ -36,7 +37,9 @@ chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review
 **What it depends on.** [`src/contracts/`](../contracts/), and
 [`src/shim-electron/unimplemented.ts`](../shim-electron/unimplemented.ts)'s `refusingProxy`, the
 one import across the two sibling packages (`unimplemented.ts` says why not `src/shared/`;
-provisional until the owner confirms it, A160).
+provisional until the owner confirms it, A160). Its npm dependencies are the polyfill packages
+and `@emnapi/core` and `@emnapi/runtime`, which `addon/` loads native addons' WebAssembly builds
+through (`d-0157`).
 
 **What it must never import.** `electron`, or [`src/broker/`](../broker/). The shim runs in the
 renderer and reaches the broker only through `orivon.*`; importing the broker would hand it
