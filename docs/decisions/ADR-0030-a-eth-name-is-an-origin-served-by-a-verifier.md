@@ -216,7 +216,10 @@ pin a connection to a chosen address while keeping the real hostname for SNI (co
 `electron.d.ts`, Electron 44, the same gap `loader/electron/fetch.ts` names for the install path)
 -- GET/HEAD only, no redirect ever followed, `accept-encoding: identity` only (a compressed body
 would fail its own hash check and wrongly frame an honest gateway as a liar). A direct attempt
-that itself fails resets that gateway to the ordinary path. Agreeing addresses, or no proxy-free
+that fails in transport resets that gateway to the ordinary path; one its caller abandoned, or one
+that reached the gateway and refused its answer, keeps the route. A system resolver that fails
+other than with "name not resolved" is no answer to compare, so it never leads to the direct route
+(`d-0154`). Agreeing addresses, or no proxy-free
 gateway to try at all, leave every request exactly as before this amendment.
 
 What remains:
