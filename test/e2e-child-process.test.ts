@@ -55,6 +55,9 @@ const SOCKET_FILES: Record<string, Uint8Array> = {
   ...Object.fromEntries([...socket.cores].map(([name, bytes]) => [`/bin/socket.p2/${name}`, bytes]))
 }
 const SOCKET_ADDRESS = `${SOCKET_TARGET.address.join('.')}:${SOCKET_TARGET.port}`
+/** Granted to the second socket fixture instead of SOCKET_ADDRESS: nothing listens there, and it is never reached. */
+const OTHER_ADDRESS = `${SOCKET_TARGET.address.join('.')}:${SOCKET_TARGET.port + 10}`
+const REFUSED_ORIGIN = 'https://component-socket-refused-e2e.orivon.test'
 const SOCKET_MANIFEST: Manifest = {
   orivonApiVersion: 0,
   id: 'app.orivon.component-socket-e2e',
@@ -147,6 +150,18 @@ it('spawns a WASI program and forks an app module in Workers, refuses a native p
         check('the page ran the component without throwing', results.error === undefined, detail)
         check('the component connected through the broker, and its message came back from the echo server to its stdout', results.stdout === SOCKET_TARGET.message, detail)
         check('the component exited 0', JSON.stringify(results.events) === JSON.stringify(['spawn', 'exit 0 null']), detail)
+
+        const refused = await serveApp(app, REFUSED_ORIGIN, { ...SOCKET_MANIFEST, id: 'app.orivon.component-socket-refused-e2e', capabilities: { net: { tcp: { connect: [OTHER_ADDRESS] } } } }, 'tcp.connect', {
+          '/index.html': new TextEncoder().encode(html),
+          '/app.js': await bundleForApp(fileURLToPath(new URL('./child-process-socket-entry.ts', import.meta.url))),
+          ...SOCKET_FILES
+        }, [OTHER_ADDRESS])
+        check('a second fixture is granted tcp.connect to another address only', refused.granted && refused.registered, JSON.stringify(refused))
+        const refusedView = await navigateToFixture(app, `${REFUSED_ORIGIN}/`, 'component socket fixture')
+        await waitForPageGlobal(refusedView, 'componentSocketE2e')
+        const outcome = await evaluateRetrying(refusedView, async () => await (globalThis as unknown as { componentSocketE2e: { run: () => Promise<ComponentSocketResults> } }).componentSocketE2e.run(), 30_000)
+        check(`the same component, spawned by an app not granted ${SOCKET_ADDRESS}, has its connect refused by the broker: no reply, exit 1, while the echo server still listens`,
+          outcome.stdout === '' && JSON.stringify(outcome.events) === JSON.stringify(['spawn', 'exit 1 null']), JSON.stringify(outcome))
       } finally {
         await new Promise((resolve) => { echo.close(resolve) })
       }

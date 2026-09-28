@@ -2,7 +2,7 @@
 // convert, driven the way jco's glue calls them.
 
 import { describe, expect, it } from 'vitest'
-import { formatAddress, parseAddress, socketErrorCode } from '../addresses.js'
+import { ResolvedNames, formatAddress, parseAddress, socketErrorCode } from '../addresses.js'
 import { ComponentExit, exit, monotonicClock } from '../basics.js'
 import { CLOSED, InputStream, IoError, OutputStream, poll } from '../io.js'
 
@@ -106,5 +106,18 @@ describe('socket addresses', () => {
     expect(socketErrorCode({ code: 'denied' })).toBe('access-denied')
     expect(socketErrorCode({ code: 'notFound' })).toBe('name-unresolvable')
     expect(socketErrorCode(new Error('?'))).toBe('unknown')
+  })
+})
+
+describe('resolved names', () => {
+  it('stay bounded however many names a long-lived program resolves, forgetting the least recent first', () => {
+    const names = new ResolvedNames()
+    const address = (index: number): { tag: 'ipv4', val: [number, number, number, number] } => ({ tag: 'ipv4', val: [10, (index >> 16) & 255, (index >> 8) & 255, index & 255] })
+    for (let index = 0; index < 5_000; index++) names.remember(`host-${index}.test`, address(index))
+    expect(names.hostFor(address(0))).toBe('10.0.0.0')
+    expect(names.hostFor(address(4_999))).toBe('host-4999.test')
+    names.remember('other.test', address(4_999))
+    names.remember('host-4999.test', address(4_999))
+    expect(names.hostFor(address(4_999))).toBe(formatAddress(address(4_999)))
   })
 })

@@ -89,22 +89,28 @@ export function scopeOf (address: IpAddress): 'local' | 'network' {
   return isLoopback(address) ? 'local' : 'network'
 }
 
-/** The names a program resolved, by the address each resolved to. */
+/** Addresses remembered at once; past this, the least recently resolved is forgotten and reached by address. */
+const REMEMBERED_ADDRESSES = 1024
+/** An address two or more resolved names share: reached by address, so only that fact is kept. */
+const SHARED = Symbol('shared')
+
+/** The names a program resolved, by the address each resolved to, the most recent first to be kept. */
 export class ResolvedNames {
-  readonly #names = new Map<string, Set<string>>()
+  readonly #names = new Map<string, string | typeof SHARED>()
 
   remember (name: string, address: IpAddress): void {
     const text = formatAddress(address)
-    const names = this.#names.get(text) ?? new Set<string>()
-    names.add(name)
-    this.#names.set(text, names)
+    const known = this.#names.get(text)
+    this.#names.delete(text)
+    this.#names.set(text, known === undefined || known === name ? name : SHARED)
+    if (this.#names.size > REMEMBERED_ADDRESSES) this.#names.delete(this.#names.keys().next().value as string)
   }
 
   /** What orivon.net is asked to reach for `address`: the one name the program resolved it from, else the address. */
   hostFor (address: IpAddress): string {
     const text = formatAddress(address)
-    const names = this.#names.get(text)
-    return names?.size === 1 ? [...names][0] as string : text
+    const name = this.#names.get(text)
+    return typeof name === 'string' ? name : text
   }
 }
 
