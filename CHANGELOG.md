@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A WASI program runs inside an app's tab** through Node's `wasi` module, its every file call an
+  `orivon.fs` call under the app's grant; native modules and child processes will come as
+  WebAssembly too, never as machine code (ADR-0040).
 - **An app can show a website inside its own page** (`web.embed`, ADR-0039), each shown page
   sandboxed in the app's own session; a manifest can also ask for cross-origin isolation, which
   turns on `SharedArrayBuffer` for WebAssembly threads.
