@@ -90,6 +90,7 @@ it('loads native addons as their WebAssembly builds on the page and in a forked 
       check('the isolated fixture is granted and registered for serving', served.granted && served.registered, JSON.stringify(served))
 
       const view = await navigateToFixture(app, `${ISOLATED_ORIGIN}/`, 'native addon files fixture')
+      await waitForPageGlobal(view, 'nativeAddonFilesE2e')
       const results = await evaluateRetrying(view, async () => await (globalThis as unknown as { nativeAddonFilesE2e: { run: () => Promise<NativeAddonFileResults> } }).nativeAddonFilesE2e.run(), 60_000)
       const detail = JSON.stringify(results)
 
