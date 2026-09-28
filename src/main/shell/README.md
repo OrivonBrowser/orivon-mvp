@@ -5,7 +5,9 @@ whichever tab's `WebContentsView` below. `tabs.ts` owns the tab collection and w
 to the chrome UI; `tab-view.ts` and `tab-types.ts` are its pure halves. `renderer-entry.ts`
 resolves electron-vite's dev-server/file-URL split for both this and
 [`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts). `user-agent.ts`
-derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide.
+derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide. `dev-switches.ts`
+is the one command-line switch [`../index.ts`](../index.ts) appends before `app.whenReady()` in
+developer mode, split out so it is testable with no Electron process at all.
 
 What a page asks of its window: `popups.ts` turns `window.open()` and `target=_blank` into
 tabs; `fullscreen.ts` decides which tab, if any, fills the window; `window-notice.ts` is the

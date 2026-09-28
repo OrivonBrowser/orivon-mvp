@@ -66,6 +66,9 @@ export interface TabRecord {
    * changing it is only possible by swapping the whole view. */
   view: WebContentsView
   favicon: string | null
+  /** The origin of the PAGE that declared `favicon` -- never the favicon
+   * resource's own origin (a CDN, commonly), which shouldClearFavicon
+   * (favicon.ts) compares this against on every navigation. */
   faviconOrigin: string | null
   /** Guards a fetch that resolves after the tab already closed or
    * navigated again -- only the record's own most recent request may
