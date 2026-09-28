@@ -45,6 +45,8 @@ export interface SiteTrustSources {
   readonly levelOverrideFor: (origin: string) => ScoreLevel | undefined
   /** The same, for the Delivery level. */
   readonly deliveryOverrideFor: (origin: string) => DeliveryLevel | undefined
+  /** Whether a local origin in developer mode serves a readable DDOC hash tree (`../dev/local-ddoc.ts`). */
+  readonly localDdocFor: (origin: string) => Promise<boolean>
 }
 
 export interface StorageDeclaration {
@@ -103,10 +105,13 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       if (loader === undefined || origin === null) return null
       const [pin, published] = await Promise.all([loader.pinFor(origin), loader.ddocFor(origin)])
       const servedFromCache = trustSources.isOriginServedFromCacheSync(origin)
-      const name = await trustSources.nameEvidenceFor(origin, pin, servedFromCache)
+      const [name, localDevTree] = await Promise.all([
+        trustSources.nameEvidenceFor(origin, pin, servedFromCache),
+        pin === null ? trustSources.localDdocFor(origin) : false
+      ])
       return buildSiteTrust(
         origin, pin, servedFromCache, trustSources.pinCoverageFor(origin), published, Date.now(), name,
-        trustSources.levelOverrideFor(origin), trustSources.deliveryOverrideFor(origin)
+        trustSources.levelOverrideFor(origin), trustSources.deliveryOverrideFor(origin), localDevTree
       )
     },
 

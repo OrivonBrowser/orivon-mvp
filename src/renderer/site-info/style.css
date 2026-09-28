@@ -6,11 +6,10 @@
    logic). --waccent is the SAME value style.css defines.
    --wlevel1..4 (Web3 Score shield colours) and the .web3-shield* rules
    below are the SAME literal copy of ../styles/web3-level.css, for the
-   identical reason -- see that file's own header. The shield no longer
-   varies by connection state (`connectionRow`'s secure/insecure/cached
-   class stays, for the text label only -- see main-view.ts's
-   connectionLabel), so --wok/--winsecure are gone from here; the toolbar's
-   own style.css still defines them for its OTHER uses. */
+   identical reason -- see that file's own header. The shield is coloured
+   by level, never by connection state: `connectionRow`'s secure/insecure/
+   cached class is for the text label only (main-view.ts's
+   connectionLabel). */
 
 :root {
   --wbg: #e5e5ec;
@@ -30,20 +29,10 @@
 }
 
 .web3-shield { transition: color 500ms ease; }
-.web3-shield.leveled { width: 28px; height: 20px; }
-.web3-shield-fill { stroke: none; }
-.web3-shield-fill[data-level='1'] { fill: var(--wlevel1); }
-.web3-shield-fill[data-level='2'] { fill: var(--wlevel2); }
-.web3-shield-fill[data-level='3'] { fill: var(--wlevel3); }
-.web3-shield-fill[data-level='4'] { fill: var(--wlevel4); }
-.web3-shield-label {
-  fill: #fff;
-  font-weight: 700;
-  font-size: 8px;
-  text-anchor: middle;
-  dominant-baseline: central;
-  font-family: inherit;
-}
+.web3-shield[data-level='1'] { color: var(--wlevel1); }
+.web3-shield[data-level='2'] { color: var(--wlevel2); }
+.web3-shield[data-level='3'] { color: var(--wlevel3); }
+.web3-shield[data-level='4'] { color: var(--wlevel4); }
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -126,7 +115,8 @@ hr {
   text-align: left;
   width: 100%;
 }
-.connection-row .web3-shield { flex: none; }
+.connection-row .web3-shield { width: 20px; height: 20px; flex: none; }
+.connection-row .web3-shield:not([data-level]) { color: var(--wink-dim); }
 .connection-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
 .connection-label { font-weight: 500; }
 .connection-glance { color: var(--wink-dim); font-size: 11px; }
@@ -258,6 +248,16 @@ hr {
 .rung.unknown .rung-label { color: var(--wink-dim); }
 .rung-mark { margin-left: auto; color: var(--wink-dim); font-weight: 700; }
 .level-because { margin: 0; font-size: 12px; }
+.dev-note {
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--waccent);
+  background: color-mix(in srgb, var(--waccent) 10%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.dev-note strong { font-weight: 600; }
 .assessable { margin: 0; font-size: 12px; color: var(--wink-dim); overflow-wrap: anywhere; }
 .name-line { margin: 0; padding: 0 2px; color: var(--wink-dim); font-size: 11px; }
 

@@ -89,6 +89,14 @@ describe('buildSiteTrust -- DDOC', () => {
   it('not published when the site published nothing', () => {
     expect(buildSiteTrust(ORIGIN, pin(tree), true, undefined, undefined, 2_000).ddoc).toEqual({ status: 'not-published' })
   })
+
+  it('local-dev, Website Level 2, for an unpinned local origin serving a tree in developer mode; Delivery stays Level 1', () => {
+    const trust = buildSiteTrust('http://127.0.0.1:8875', null, false, undefined, undefined, 2_000, undefined, undefined, undefined, true)
+    expect(trust.ddoc).toEqual({ status: 'local-dev' })
+    expect(trust.level.level).toBe(2)
+    expect(trust.displayedLevel).toBe(2)
+    expect(trust.delivery.level).toBe(1)
+  })
 })
 
 describe('buildSiteTrust -- the Website level and a .eth name', () => {
@@ -137,12 +145,17 @@ describe('web3Score -- the toolbar shield IPC\'s reply, the smallest slice of Si
 
   it('carries the displayed level and delivery, and whether each is overridden', () => {
     const trust = buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000, undefined, 4, 3)
-    expect(web3Score(trust)).toEqual({ level: 4, overridden: true, delivery: 3, deliveryOverridden: true })
+    expect(web3Score(trust)).toEqual({ level: 4, overridden: true, delivery: 3, deliveryOverridden: true, localDev: false })
   })
 
   it('overridden is false on each axis when nothing was overridden', () => {
     const trust = buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000)
-    expect(web3Score(trust)).toEqual({ level: 1, overridden: false, delivery: 1, deliveryOverridden: false })
+    expect(web3Score(trust)).toEqual({ level: 1, overridden: false, delivery: 1, deliveryOverridden: false, localDev: false })
+  })
+
+  it('localDev names a level that rests on a developer-mode local DDOC', () => {
+    const trust = buildSiteTrust('http://127.0.0.1:8875', null, false, undefined, undefined, 2_000, undefined, undefined, undefined, true)
+    expect(web3Score(trust)).toEqual({ level: 2, overridden: false, delivery: 1, deliveryOverridden: false, localDev: true })
   })
 })
 

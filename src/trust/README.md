@@ -111,7 +111,10 @@ beside it, so a tree left from an earlier bundle can only fail, never verify. Bo
 every leaf must match: a right root beside a wrong leaf table would mislead a provider that reads
 the table. Its wording states what was compared, "files match the hash tree this site publishes",
 and never that the domain's owner published them. The tree sits on the same host as the files
-(`ADR-0029`), and saying more would be the overclaim this component exists to prevent.
+(`ADR-0029`), and saying more would be the overclaim this component exists to prevent. The one
+verdict that compares nothing, `local-dev`, is a developer-mode stand-in for a local origin that
+has no record to anchor a tree (`../main/dev/local-ddoc.ts`), and every surface that shows it
+names developer mode.
 
 **The Website level's `ObservedLevel` stops at 2, and 2 means DDOC holds**
 ([`website-level.ts`](website-level.ts)). Levels 1 and 2 are observations: does DDOC hold. Level

@@ -52,6 +52,8 @@ export interface Web3Score {
   readonly overridden: boolean
   readonly delivery: DeliveryLevel
   readonly deliveryOverridden: boolean
+  /** The level rests on a DDOC counted only because a local origin is running in developer mode. */
+  readonly localDev: boolean
 }
 
 export function web3Score (trust: SiteTrust | null): Web3Score | null {
@@ -60,7 +62,8 @@ export function web3Score (trust: SiteTrust | null): Web3Score | null {
     level: trust.displayedLevel,
     overridden: trust.levelOverride !== undefined,
     delivery: trust.displayedDelivery,
-    deliveryOverridden: trust.deliveryOverride !== undefined
+    deliveryOverridden: trust.deliveryOverride !== undefined,
+    localDev: trust.ddoc.status === 'local-dev'
   }
 }
 
@@ -83,9 +86,10 @@ export function web3Score (trust: SiteTrust | null): Web3Score | null {
  * either way -- callers must not render this field (no rung reads it; see
  * `deliveryLadder` in `delivery-ladder.js`).
  *
- * `levelOverride`/`deliveryOverride` come from `../dev/score-levels.ts`, read
- * by the caller so this function stays free of `devModeEnabled()` --
- * matching every other optional fact here, supplied rather than fetched.
+ * `levelOverride`/`deliveryOverride` come from `../dev/score-levels.ts`, and
+ * `localDevTree` from `../dev/local-ddoc.ts`, read by the caller so this
+ * function stays free of `devModeEnabled()` -- matching every other optional
+ * fact here, supplied rather than fetched.
  */
 export function buildSiteTrust (
   origin: string,
@@ -96,7 +100,8 @@ export function buildSiteTrust (
   now: number,
   name?: NameEvidence,
   levelOverride?: ScoreLevel,
-  deliveryOverride?: DeliveryLevel
+  deliveryOverride?: DeliveryLevel,
+  localDevTree = false
 ): SiteTrust {
   const connection: ConnectionState = servedFromCache ? 'cached' : origin.startsWith('https://') ? 'secure' : 'insecure'
 
@@ -115,7 +120,7 @@ export function buildSiteTrust (
     ...(pinCoverage !== undefined ? { pinCoverage } : {})
   })
 
-  const ddoc = ddocVerdict(pin, published)
+  const ddoc = ddocVerdict(pin, published, localDevTree)
   const level = websiteLevel(name?.content, ddoc, pin?.bundleHash, servedFromCache)
   return {
     connection,

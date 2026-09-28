@@ -25,6 +25,7 @@ import { createPermissionsController, createSiteNotificationsController } from '
 import { notificationDecisions } from '../sessions/permission-gate.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
 import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-levels.js'
+import { localDdocFor } from '../dev/local-ddoc.js'
 import { rendererEntryUrl } from './renderer-entry.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabManager, type Bounds } from './tabs.js'
@@ -248,9 +249,10 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // are the real implementations `SiteTrustSources` asks for -- injected here
   // rather than imported by the controller itself, so it stays testable
   // against a fake session (that file's own doc).
-  // `scoreLevelOverrideFor`/`deliveryLevelOverrideFor` are the developer-only
-  // preview path (`../dev/score-levels.ts`): a no-op outside developer mode.
-  const siteInfo = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: ethNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor })
+  // `scoreLevelOverrideFor`/`deliveryLevelOverrideFor` (`../dev/score-levels.ts`)
+  // and `localDdocFor` (`../dev/local-ddoc.ts`) are developer-only: no-ops
+  // outside developer mode.
+  const siteInfo = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: ethNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocFor })
 
   /** Previous push's active tab, so pushState() can tell a genuine tab
    * SWITCH from the many other reasons state is pushed (a title, a favicon,

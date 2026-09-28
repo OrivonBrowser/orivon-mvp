@@ -5,7 +5,7 @@ import type { Web3Score } from '../main/browsing/site-trust.js'
 import type { ShellState, TabState } from '../main/shell/tabs.js'
 import { createBookmarksView } from './bookmarks-view.js'
 import { closeIcon, faviconElement } from './icons.js'
-import { paintShield, shieldLabel, web3Shield } from './web3-shield.js'
+import { paintMark, paintShield, shieldLabel, web3Shield } from './web3-shield.js'
 
 // The chrome view's whole job: render ShellState, turn clicks/typing into
 // orivonShell.* commands. Main holds truth (src/main/tabs.ts,
@@ -86,6 +86,7 @@ const web3ScoreBtn = must(document.querySelector<HTMLButtonElement>('#web3-score
 // rather than replacing the button's whole content on every state push.
 const web3ScoreShieldEl = web3Shield()
 web3ScoreBtn.append(web3ScoreShieldEl)
+const web3MarkEl = must(document.querySelector<HTMLSpanElement>('#web3-mark'), '#web3-mark missing')
 const sitePermissionsBtn = must(document.querySelector<HTMLButtonElement>('#site-permissions-btn'), '#site-permissions-btn missing')
 const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#permissions-btn'), '#permissions-btn missing')
 const bookmarksList = must(document.querySelector<HTMLDivElement>('#bookmarks-list'), '#bookmarks-list missing')
@@ -177,33 +178,50 @@ function renderTabs (state: ShellState): void {
 
 function applyShield (score: Web3Score | null): void {
   paintShield(web3ScoreShieldEl, score?.level ?? null)
+  paintMark(web3MarkEl, score?.level ?? null)
   const label = shieldLabel(score)
   web3ScoreBtn.title = label
   web3ScoreBtn.setAttribute('aria-label', label)
+  web3MarkEl.title = label
+}
+
+function originOf (url: string): string | null {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
 }
 
 /** The shield's own displayed-level query, resolved the same lagging,
  * per-active-tab way `updateSitePermissionsBadge` below already is
  * (`shieldRequestUrl` guards against a stale response the same way
- * `permissionsRequestUrl` does). Paints the empty, grey "no level yet"
- * state first, synchronously, then replaces it with whatever
- * `web3ScoreFor` answers. */
+ * `permissionsRequestUrl` does). A new origin clears the shield and mark
+ * first; a push for the SAME origin (a title, a favicon, a load finishing)
+ * keeps the level it already shows while re-asking, or every push would
+ * flash it grey. */
 let shieldRequestUrl: string | null = null
+let shieldOrigin: string | null = null
 
 function updateWeb3ScoreShield (active: TabState | undefined): void {
-  applyShield(null)
-
   // Skip isNewTab: in dev mode the dashboard's own URL is a plain
   // http://localhost:... address (electron-vite's dev server), which has
   // no Website level to show -- an internal page, not a real signal about
   // anything the user visited.
   if (active === undefined || active.isNewTab) {
     shieldRequestUrl = null
+    shieldOrigin = null
+    applyShield(null)
     return
   }
 
   const url = active.url
   shieldRequestUrl = url
+  const origin = originOf(url)
+  if (origin !== shieldOrigin) {
+    shieldOrigin = origin
+    applyShield(null)
+  }
 
   void shell.web3ScoreFor(url).then((score) => {
     if (shieldRequestUrl !== url) return // the active tab moved on; this answer is stale

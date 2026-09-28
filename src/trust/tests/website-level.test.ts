@@ -38,6 +38,12 @@ describe('websiteLevel', () => {
     expect(live.because).toMatch(/not served from them/)
   })
 
+  it('is Level 2 for a local origin in developer mode that serves a tree, and names developer mode as the reason', () => {
+    const local = websiteLevel(undefined, { status: 'local-dev' }, undefined, false)
+    expect(local).toMatchObject({ level: 2, assessable: undefined })
+    expect(local.because).toMatch(/developer mode/)
+  })
+
   it('is Level 1 for an HTTPS site whose tree fails, is not published, or was never checked', () => {
     for (const ddoc of [{ status: 'failed', differing: ['/a.js'], differingCount: 1 }, { status: 'not-published' }, NOT_CHECKED] as DdocVerdict[]) {
       expect(websiteLevel(undefined, ddoc, HASH, true).level).toBe(1)

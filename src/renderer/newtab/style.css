@@ -70,8 +70,10 @@ input:focus-visible {
   align-items: center;
   gap: 12px;
 }
-/* Same reasoning as the chrome view's .mark-badge (styles/toolbar.css): the
-   logo carries its own circular shape and gradient, so it sits on nothing. */
+/* The logo carries its own circular shape and gradient, so it sits on no
+   plate. Drawn from CSS rather than an <img> so Vite rewrites the URL: the
+   built app loads this page over file://, where a root-relative /logo.png
+   would resolve to the filesystem root. */
 .mark {
   width: 40px;
   height: 40px;

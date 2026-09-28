@@ -157,7 +157,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
     const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
     expect(siteInfo.siteTrustFor).toHaveBeenCalledWith('https://app.example/page')
-    expect(result).toEqual({ level: 4, overridden: true, delivery: 1, deliveryOverridden: false })
+    expect(result).toEqual({ level: 4, overridden: true, delivery: 1, deliveryOverridden: false, localDev: false })
   })
 
   it('is null when siteTrustFor has nothing to report', async () => {

@@ -18,7 +18,8 @@ const NO_TRUST: SiteTrustSources = {
   pinCoverageFor: () => undefined,
   nameEvidenceFor: async () => undefined,
   levelOverrideFor: () => undefined,
-  deliveryOverrideFor: () => undefined
+  deliveryOverrideFor: () => undefined,
+  localDdocFor: async () => false
 }
 
 function fakeLoader (overrides: Partial<Loader> = {}): Loader {
@@ -114,7 +115,8 @@ describe('createSiteInfoController -- siteTrustFor', () => {
       pinCoverageFor: () => ({ pinnedRequests: 1, thirdPartyRequests: 0, deniedRequests: 0, pinnedBytes: 5, thirdPartyBytes: 0, bytesIncomplete: false }),
       nameEvidenceFor: async () => undefined,
       levelOverrideFor: () => undefined,
-      deliveryOverrideFor: () => undefined
+      deliveryOverrideFor: () => undefined,
+      localDdocFor: async () => false
     }
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), loader), trustSources)
 
@@ -169,6 +171,35 @@ describe('createSiteInfoController -- siteTrustFor', () => {
     expect(trust?.displayedDelivery).toBe(3)
     // The observed level is untouched by the override.
     expect(trust?.level.level).toBe(1)
+  })
+
+  it('asks the local-DDOC source for an unpinned origin, and shows its answer as DDOC', async () => {
+    const LOCAL = 'http://127.0.0.1:8875'
+    const asked: string[] = []
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), {
+      ...NO_TRUST,
+      localDdocFor: async (origin) => { asked.push(origin); return origin === LOCAL }
+    })
+
+    const trust = await controller.siteTrustFor(`${LOCAL}/app/`)
+
+    expect(asked).toEqual([LOCAL])
+    expect(trust?.ddoc).toEqual({ status: 'local-dev' })
+    expect(trust?.displayedLevel).toBe(2)
+  })
+
+  it('never asks the local-DDOC source for a pinned origin: its pin is compared instead', async () => {
+    const asked: string[] = []
+    const loader = fakeLoader({ pinFor: async () => ({ schema: 1, origin: APP, bundleHash: 'a'.repeat(64), assets: [], version: '1.0.0', pinnedAt: 10 }) })
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), loader), {
+      ...NO_TRUST,
+      localDdocFor: async (origin) => { asked.push(origin); return true }
+    })
+
+    const trust = await controller.siteTrustFor(APP)
+
+    expect(asked).toEqual([])
+    expect(trust?.ddoc).toEqual({ status: 'not-published' })
   })
 })
 

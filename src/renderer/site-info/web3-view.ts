@@ -90,6 +90,16 @@ function paragraph (className: string, text: string): HTMLParagraphElement {
   return p
 }
 
+/** In place of the level's "because" line when it rests on `local-dev` DDOC, so nobody reads it as something a real site could show. */
+function localDevNote (): HTMLParagraphElement {
+  const p = document.createElement('p')
+  p.className = 'dev-note'
+  const label = document.createElement('strong')
+  label.textContent = 'Developer mode. '
+  p.append(label, 'DDOC is marked only because Orivon is running in developer mode on a local origin. A local address has no domain record to anchor a hash tree, so the tree this origin serves is assumed to hold, and no file is compared against it.')
+  return p
+}
+
 function levelSection (trust: SiteTrust): HTMLElement[] {
   const { level, because, assessable } = trust.level
   const displayed = trust.displayedLevel
@@ -110,7 +120,7 @@ function levelSection (trust: SiteTrust): HTMLElement[] {
   return [
     paragraph('section-heading', `Website level ${String(displayed)}`),
     list,
-    paragraph('level-because', becauseText),
+    trust.ddoc.status === 'local-dev' ? localDevNote() : paragraph('level-because', becauseText),
     paragraph('disclaimer', disclaimer),
     paragraph('assessable', `A provider would assess: ${assessed}`)
   ]
@@ -142,6 +152,7 @@ function deliverySection (trust: SiteTrust): HTMLElement[] {
 function ddocLabel (ddoc: DdocVerdict): string {
   switch (ddoc.status) {
     case 'not-checked': return 'Not checked: this site is not installed'
+    case 'local-dev': return 'Served by this local origin, counted in developer mode only'
     case 'not-published': return 'Not published by this site'
     case 'verified': return 'Files match the hash tree this site publishes (same host)'
     case 'failed': {
@@ -202,7 +213,8 @@ export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null,
   container.append(document.createElement('hr'))
 
   const unknownRows: Array<[string, string]> = [['Connections', 'Not observed yet'], ['Operations', 'Not observed yet']]
-  if (trust.pin === undefined && trust.name === undefined) unknownRows.unshift(['DDOC', ddocLabel(trust.ddoc)])
+  if (trust.ddoc.status === 'local-dev') container.append(evidenceList([['DDOC', ddocLabel(trust.ddoc)]]))
+  else if (trust.pin === undefined && trust.name === undefined) unknownRows.unshift(['DDOC', ddocLabel(trust.ddoc)])
   container.append(evidenceList(unknownRows, 'unknown'))
 
   container.append(paragraph('disclaimer', 'Observed by this browser, never guaranteed.'))

@@ -60,12 +60,11 @@
       <form id="address-form" class="addressbar-form">
         <div id="address-pill" class="addressbar-pill">
           <div class="addressbar-leading">
-            <!-- The Web3 Score shield: leads with the site's Website level
-                 (red/orange/yellow/green, Web2/Web3 lettering at the ends
-                 of the scale), grey outline until one is known -- see
-                 web3-shield.ts, which main.ts paints this button's content
-                 through. Clickable: opens the site-info popup straight to
-                 the Web3 Score page. -->
+            <!-- The Web3 Score shield: its outline takes the site's Website
+                 level colour (red/orange/yellow/green), grey until one is
+                 known -- see web3-shield.ts, which main.ts paints this
+                 button's content through. Clickable: opens the site-info
+                 popup straight to the Web3 Score page. -->
             <button id="web3-score-btn" class="pillbtn" type="button" title="Web3 Score" aria-label="Web3 Score"></button>
             <!-- The site-info popup's other entry point: this site's own
                  permission switches. Hidden until main.ts's siteSummaryFor
@@ -89,7 +88,9 @@
             placeholder="Search or enter address"
           />
           <div class="addressbar-trailing">
-            <span class="mark-badge" role="img" aria-label="Orivon"></span>
+            <!-- The same level as a word: Web2, Web2.5 or Web3. Hidden
+                 until a level is known (web3-shield.ts's paintMark). -->
+            <span id="web3-mark" class="web3-mark" hidden></span>
           </div>
         </div>
       </form>

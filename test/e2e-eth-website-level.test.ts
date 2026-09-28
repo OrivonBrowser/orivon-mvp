@@ -12,7 +12,7 @@ import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, readShield, runPhase } from './e2e-helpers.js'
 import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
 
 const SITES = {
@@ -35,11 +35,10 @@ interface Web3Page {
   deliveryUnknown: string[]
   text: string
   /** The toolbar shield's own `data-level` (Website level), read from the
-   * CHROME window at the moment the popup is opened -- `null` while no
-   * level has resolved yet. */
+   * CHROME window at the moment the popup is opened. */
   shieldLevel: string | null
-  /** The wide shield's own "Web2"/"Web3" text, '' at L2/L3. */
-  shieldText: string
+  /** The address pill's Web2/Web2.5/Web3 mark. */
+  shieldMark: string
 }
 
 function findPopup (app: ElectronApplication): Page | undefined {
@@ -50,16 +49,7 @@ function findPopup (app: ElectronApplication): Page | undefined {
  * shield's own painted state) and closes it again. */
 async function readWeb3Page (app: ElectronApplication): Promise<Web3Page> {
   const chrome = findChrome(app)
-  // updateWeb3ScoreShield paints the empty "no level yet" state synchronously
-  // on navigation, then replaces it once the async web3ScoreFor round trip
-  // resolves -- wait for that resolution rather than reading mid-flight.
-  if (!await waitFor(async () => await chrome.evaluate(() => document.querySelector('#web3-score-btn .web3-shield-fill') !== null), 8_000)) {
-    throw new Error('the toolbar shield never painted a level')
-  }
-  const shield = await chrome.evaluate(() => ({
-    shieldLevel: document.querySelector('#web3-score-btn .web3-shield-fill')?.getAttribute('data-level') ?? null,
-    shieldText: document.querySelector('#web3-score-btn .web3-shield-label')?.textContent ?? ''
-  }))
+  const { level: shieldLevel, mark: shieldMark } = await readShield(chrome)
   await chrome.click('#web3-score-btn')
   if (!await waitFor(() => findPopup(app) !== undefined, 5_000)) throw new Error('the Web3 Score popup did not open')
   const popup = findPopup(app)!
@@ -80,7 +70,7 @@ async function readWeb3Page (app: ElectronApplication): Promise<Web3Page> {
   await waitFor(() => findPopup(app) === undefined, 5_000)
   // Past popover-view.ts's reopen debounce, so the next click reads as a fresh open.
   await chrome.waitForTimeout(400)
-  return { ...page, ...shield }
+  return { ...page, shieldLevel, shieldMark }
 }
 
 it('shows Website Level 2 for a .eth name, through a DNSLink too, Level 1 for an ordinary page, and never Level 3 or above; Delivery Level 2 only for the proven name, and the shield paints each', async () => {
@@ -112,7 +102,7 @@ it('shows Website Level 2 for a .eth name, through a DNSLink too, Level 1 for an
       // A directly-named ipfs:// pointer's one contenthash hop verifies --
       // Delivery Level 2 (a proven name, content checked against its CID).
       check(`level.eth is Delivery level 2 (${level.deliveryHeading}; met ${level.deliveryMet.join(',')})`, level.deliveryHeading === 'Delivery level D2' && level.deliveryMet.join(',') === 'D1,D2')
-      check(`the shield paints level 2, plain -- no Web2/Web3 text (shield=${String(level.shieldLevel)}/${level.shieldText})`, level.shieldLevel === '2' && level.shieldText === '')
+      check(`the shield paints level 2, marked "Web2.5" (shield=${String(level.shieldLevel)}/${level.shieldMark})`, level.shieldLevel === '2' && level.shieldMark === 'Web2.5')
 
       await navigateToFixture(app, 'https://linked.eth/', 'linked fixture')
       const linked = await readWeb3Page(app)
@@ -129,7 +119,7 @@ it('shows Website Level 2 for a .eth name, through a DNSLink too, Level 1 for an
       check(`an ordinary page is Website level 1 (${plain.heading})`, plain.heading === 'Website level 1' && plain.met.join(',') === 'L1')
       check('it names nothing for a provider to assess', plain.text.includes('Nothing: this page has neither a CID nor a bundle hash.'))
       check(`it is Delivery level 1 too (${plain.deliveryHeading})`, plain.deliveryHeading === 'Delivery level D1' && plain.deliveryMet.join(',') === 'D1')
-      check(`the shield paints level 1, "Web2" (shield=${String(plain.shieldLevel)}/${plain.shieldText})`, plain.shieldLevel === '1' && plain.shieldText === 'Web2')
+      check(`the shield paints level 1, marked "Web2" (shield=${String(plain.shieldLevel)}/${plain.shieldMark})`, plain.shieldLevel === '1' && plain.shieldMark === 'Web2')
 
       for (const [name, page] of [['level.eth', level], ['linked.eth', linked], ['ordinary', plain]] as const) {
         check(`${name} shows Website Levels 3 and 4 only as unknown`, page.unknown.join(',') === 'L3,L4' && !page.met.includes('L3') && !page.met.includes('L4'))

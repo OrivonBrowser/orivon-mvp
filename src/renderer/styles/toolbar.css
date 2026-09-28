@@ -80,11 +80,8 @@
   flex: none;
 }
 
-/* The Web3 Score shield's own sizing -- web3-level.css (imported by
-   style.css) carries its colours and shape rules, shared with the
-   site-info popup's connection row so the two can never draw it
-   differently. Grey outline until a level is known keeps the .pillbtn
-   default 16px box; `.leveled` widens it once one is painted. */
+/* The Web3 Score shield keeps the .pillbtn 16px box at every level;
+   web3-level.css (imported by style.css) colours its outline. */
 #web3-score-btn .web3-shield { flex: none; }
 
 /* The site-info popup's other entry point -- an unlimited grant among its
@@ -125,17 +122,48 @@
   color: var(--wink);
   background: var(--whover-soft);
 }
-/* The product mark. The logo is already a circle with its own gradient, so
-   no border-radius and no --wmark plate behind it -- a rounded square tinted
-   orange under a round logo just reads as a rendering mistake. Drawn from
-   CSS rather than an <img> so Vite rewrites the URL per entry: the built app
-   loads these pages over file://, where a root-relative /logo.png would
-   resolve to the filesystem root. */
-.mark-badge {
-  width: 16px;
-  height: 16px;
+/* The Web2 / Web2.5 / Web3 mark at the pill's right end (web3-shield.ts's
+   paintMark): orange, yellow, green. --tone draws the dot and tints the
+   plate; --ink is the text, one step darker in light mode and one lighter
+   in dark, since the raw tone (yellow above all) is too faint as small text
+   on either surface. */
+.web3-mark {
+  --tone: var(--wink-dim);
+  --ink: var(--wink-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  border-radius: 999px;
   flex: none;
-  background: url('../assets/logo.png') center / contain no-repeat;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 30%, transparent);
+  transition: color 300ms ease, background-color 300ms ease, box-shadow 300ms ease;
+}
+/* display above would otherwise override the attribute's own display: none. */
+.web3-mark[hidden] { display: none; }
+.web3-mark::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tone);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+.web3-mark[data-mark='Web2'] { --tone: #f97316; --ink: #c2410c; }
+.web3-mark[data-mark='Web2.5'] { --tone: #eab308; --ink: #a16207; }
+.web3-mark[data-mark='Web3'] { --tone: #22c55e; --ink: #15803d; }
+@media (prefers-color-scheme: dark) {
+  .web3-mark[data-mark='Web2'] { --ink: #fdba74; }
+  .web3-mark[data-mark='Web2.5'] { --ink: #fde047; }
+  .web3-mark[data-mark='Web3'] { --ink: #86efac; }
 }
 
 .toolbar-cluster {

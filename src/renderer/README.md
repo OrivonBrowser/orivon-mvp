@@ -20,9 +20,9 @@ capability switches, its Web3 Score page, its Cookies and site data page).
 | `styles/tabstrip.css`, `styles/toolbar.css`, `styles/bookmarks.css` | One row each |
 | `main.ts` | Renders `ShellState`, turns clicks/typing into `orivonShell.*` commands |
 | `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button), and the shared `svg`/`path`/`circle`/`rect`/`line` primitives every other icon file in this tree builds on; also imported by `newtab/main.ts` for its bookmark tiles |
-| `web3-shield.ts` | The Web3 Score shield element, shared by the toolbar and the site-info popup's connection row so the two can never draw it differently |
+| `web3-shield.ts` | The Web3 Score shield element, shared by the toolbar and the site-info popup's connection row so the two can never draw it differently, and the address pill's Web2/Web2.5/Web3 mark |
 | `grant-icons.ts` | One icon per capability kind, picked-path kind or site notification, for the left side of a permission row (the site-info popup and the all-sites panel) |
-| `styles/web3-level.css` | The shield's colour tokens and shape rules; the site-info popup's own stylesheet keeps a literal copy, matching this tree's cross-entry convention |
+| `styles/web3-level.css` | The shield's level colours; the site-info popup's own stylesheet keeps a literal copy, matching this tree's cross-entry convention. The mark's own colours sit in `styles/toolbar.css`, the only place it is drawn |
 | `bookmarks-view.ts` | Renders the bookmarks bar's dynamic list |
 | `newtab/index.html`, `newtab/main.ts`, `newtab/style.css` | The dashboard: a search box, then a grid of app-shortcut and bookmark tiles, with its own small entry, separate from the chrome view |
 | `settings/index.html`, `settings/main.ts`, `settings/permissions-view.ts`, `settings/style.css` | The all-sites popup: every app, all its grants, revoke-only |
@@ -90,20 +90,22 @@ on `null` or a load failure; it never fetches a favicon itself. `src/main/browsi
 actual fetching, capped and re-encoded to `data:`, specifically so this privileged view's CSP
 can stay `img-src 'self' data:` rather than opening it to arbitrary third-party hosts.
 
-**The Web3 Score shield leads the address pill, and shows the site's displayed Website level.**
-`web3-shield.ts`'s `web3Shield`/`paintShield` draw one element, used unchanged by both this
-toolbar and the site-info popup's connection row: a plain grey outline with no level yet, or a
-wide filled badge once one resolves -- red (Level 1, labelled "Web2"), orange (2), yellow (3),
-green (Level 4, labelled "Web3"). `main.ts`'s `updateWeb3ScoreShield` paints the empty state
-first, synchronously, then asks main via `shell.web3ScoreFor` (a separate round trip from the
-pill's own `siteSummaryFor`, because the two answer different questions: how trustless this site
-is, versus what it has asked to do) and paints whichever level comes back, naming a developer
-override in the tooltip when one applies (`ADR-0006`'s 2026-09-26 amendment) rather than ever
-showing it as observed. The shield no longer signals whether a page is served from Orivon's own
-pinned cache -- `ADR-0007`'s own amendment records that as a real narrowing, deferred to a future
-"store this Web3site locally" affordance. Clicking the shield opens the site-info popup straight
-to its Web3 Score page (`src/main/browsing/site-trust.ts`), which renders the level's own
-evidence in full, plus the Delivery level -- never a grade
+**The Web3 Score shield leads the address pill, and a mark at its right end names the site's
+displayed Website level.** `web3-shield.ts`'s `web3Shield`/`paintShield` draw one element, used
+unchanged by both this toolbar and the site-info popup's connection row: the same outline at
+every level, grey with no level yet, then stroked red (Level 1), orange (2), yellow (3) or green
+(4). `paintMark` fills the pill's right end, where Orivon's logo would carry no information:
+Web2 in orange for Level 1, Web2.5 in yellow for Levels 2 and 3, Web3 in green for Level 4, and
+hidden with no level. `main.ts`'s `updateWeb3ScoreShield` clears both when the active origin
+changes, then asks main via `shell.web3ScoreFor` (a separate round trip from the pill's own
+`siteSummaryFor`, because the two answer different questions: how trustless this site is, versus
+what it has asked to do) and paints whichever level comes back; a push for the same origin keeps
+the level showing while it re-asks. The tooltip names a developer override, or a DDOC counted only
+in developer mode, rather than ever showing either as observed (`ADR-0006`, `ADR-0029`). The
+shield does not signal whether a page is served from Orivon's own pinned cache; `ADR-0007`'s
+amendment defers that to a future "store this Web3site locally" affordance. Clicking the shield
+opens the site-info popup straight to its Web3 Score page (`src/main/browsing/site-trust.ts`),
+which renders the level's own evidence in full, plus the Delivery level -- never a grade
 (`ARCHITECTURE.md`: "trust is shown as observed behaviour, never as a grade").
 
 **The site-info key sits right after the shield, and is absent until the site has asked for

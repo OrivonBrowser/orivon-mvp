@@ -59,6 +59,7 @@ function hostedLevel (ddoc: DdocVerdict, servedFromPin: boolean): { level: Obser
     case 'failed': return { level: 1, because: 'Its installed files differ from the hash tree this site publishes. Someone may have altered them.' }
     case 'not-published': return { level: 1, because: 'This site publishes no hash tree, so nothing ties its files to what its owner published.' }
     case 'not-checked': return { level: 1, because: 'This site is not installed, so its files have not been checked against any hash tree.' }
+    case 'local-dev': return { level: 2, because: 'This local origin serves a DDOC hash tree. It counts only because Orivon is running in developer mode.' }
   }
 }
 
