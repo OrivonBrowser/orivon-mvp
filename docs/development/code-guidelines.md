@@ -3,21 +3,22 @@
 How code is written here. [`parallel-work.md`](parallel-work.md) covers where it is written and
 by whom.
 
-Three rules:
+Four rules:
 
 1. **Comments earn their place**, and rationale goes in the README, not the file header.
 2. **No source file over 500 lines**, or 800 for tests.
 3. **One implementation per idea**: search before writing a helper.
+4. **One home per fact**: a fact lives in one page and is linked from the others.
 
 Written for a human contributor arriving cold and for a smaller model working here without
-holding the whole tree in its head. Both are served by the same three things: short files,
-honest comments, and one implementation per idea.
+holding the whole tree in its head. Both are served by the same four things: short files,
+honest comments, one implementation per idea, and one home per fact.
 
-**Read §Rules 1-3 to write code here. Everything below them is background**: why each rule is
+**Read §Rules 1-4 to write code here. Everything below them is background**: why each rule is
 shaped the way it is, and what is still open. It is there so a settled argument is not reopened,
 not because you need it to start.
 
-> The three rules and every exception stated with them are settled. §Status is what is still
+> The four rules and every exception stated with them are settled. §Status is what is still
 > open. No ADR was written: none of this is architecture, and the one structural piece,
 > `src/shared/`, is freely reversible while it is small.
 
@@ -102,7 +103,9 @@ Keep the durable half: write the **constraint**, not the episode.
 
 **A source file may open with at most 25 lines of comment**, enforced in CI by
 `npm run check:comments` ([`scripts/check-comments.mjs`](../../scripts/check-comments.mjs)).
-Only the *leading* block is measured; comment density is not.
+Only the *leading* block is measured; comment density is not. CI workflows
+(`.github/workflows/*.yml`) and root `*.config.ts` files also hold **every** comment block to 10
+lines: each states the constraint its step or option enforces, and its history stays in git.
 
 **What you can and cannot do:**
 
@@ -245,6 +248,23 @@ change touching every stream at once):
 **It is not a dumping ground.** A helper earns its place by being needed on both sides of a
 boundary. One caller means it stays where it is. See
 [`src/shared/README.md`](../../src/shared/README.md).
+
+---
+
+## Rule 4: One home per fact
+
+**A fact lives in one page and is linked from the others.** Rule 3, applied to prose. When a
+README, an ADR, the decision log and a PR body each restate one fact, a change updates one copy
+and the others go stale while still reading as true.
+
+- **Before writing a paragraph, find the page that already holds the fact and link it.** If none
+  does, write it once, where a reader would look first.
+- **A directory README** says what the directory is for, what it may and must never import,
+  whether it is tied to Electron, and the traps a reader would otherwise walk into. It links an
+  ADR rather than restating it, and does not walk through the files one by one.
+- **A change is recorded once per audience**: the page it governs states the behaviour, the
+  decision log says who decided it, `CHANGELOG.md` gives it at most three lines, and the PR
+  body carries the rest.
 
 ---
 
