@@ -176,8 +176,6 @@ export class TabManager {
     return id
   }
 
-  /** True when no further tab may open: the ceiling is reached, or the
-   * window is closing. Also what a page's popup handler asks. */
   /** Shows one of the shell's own pages: the tab that already has it, or a new
    * one. A page has one tab per window, so a second request finds the first
    * (and takes it to `path` if it is elsewhere). Only the shell calls this: a
@@ -243,6 +241,7 @@ export class TabManager {
   /** Lets go of a tab without closing it, so another window can show it. When this was the last tab the
    * window is left empty and NOT told so (`onEmpty` is for closing a tab): whoever moved it closes the window. */
   takeTab (id: string): TabRecord | null {
+    if (this.disposed) return null
     const record = this.tabs.get(id)
     if (record === undefined) return null
     // Tools left open would inspect a page this window no longer shows.
@@ -254,6 +253,7 @@ export class TabManager {
   /** Shows a tab another window let go of, at `index` (the end by default). Its views' handlers read `record.host`
    * when they run, so from here on they act for this window. */
   giveTab (id: string, record: TabRecord, index?: number): void {
+    if (this.disposed) return
     record.host = this.viewHost
     this.tabs.set(id, record)
     const wanted = Math.min(Math.max(0, index ?? this.order.length), this.order.length)

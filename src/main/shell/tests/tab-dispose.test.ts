@@ -149,4 +149,28 @@ describe('TabManager.dispose -- a closing window (A259)', () => {
 
     for (const view of createdViews) expect(devtoolsCloseFor).toHaveBeenCalledWith(view.webContents)
   })
+
+  // Every other mutator that matters after teardown checks disposed itself;
+  // takeTab/giveTab did not, relying entirely on tab-move.ts's own hasRoom()
+  // check on the TARGET window rather than enforcing their own invariant.
+  it('takeTab refuses on a disposed manager, even if a record is still tracked', () => {
+    const { manager } = managerOverAWindow()
+    const id = manager.createTab('https://a.example/')
+    // dispose()'s own close() would otherwise fire 'destroyed' and drop the
+    // record via forgetTab() before takeTab() runs, masking whether ITS OWN
+    // guard is what refuses -- overriding close() keeps the record tracked.
+    createdViews[0]!.webContents.close = vi.fn()
+
+    manager.dispose()
+
+    expect(manager.takeTab(id)).toBeNull()
+  })
+
+  it('giveTab refuses on a disposed manager', () => {
+    const { manager } = managerOverAWindow()
+    manager.dispose()
+
+    expect(() => { manager.giveTab('x', {} as never) }).not.toThrow()
+    expect(manager.getState().tabs).toHaveLength(0)
+  })
 })
