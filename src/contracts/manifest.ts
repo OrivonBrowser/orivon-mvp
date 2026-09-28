@@ -121,6 +121,22 @@ export interface Manifest {
    * (`docs/open-questions.md` A138.)
    */
   readonly consentGranularity?: ConsentGranularity
+  /**
+   * Asks for the app's documents to be served cross-origin isolated
+   * (`Cross-Origin-Opener-Policy: same-origin` and
+   * `Cross-Origin-Embedder-Policy: credentialless`), which is what turns on
+   * `SharedArrayBuffer`, a shared `WebAssembly.Memory` and `Atomics.wait` in
+   * a worker: everything a WebAssembly component built with threads needs
+   * (ADR-0036). `true` is the only accepted value; omit it to not ask.
+   *
+   * OPT-IN, because isolation costs the app two things the web platform
+   * charges every isolated page: a window it opens can no longer reach it
+   * through `window.opener` (a sign-in popup that reports back that way
+   * breaks), and a cross-origin subresource loads without credentials. An
+   * app that needs neither loses nothing by declaring it; one that needs
+   * either must not.
+   */
+  readonly crossOriginIsolated?: true
 }
 
 export interface Capabilities {

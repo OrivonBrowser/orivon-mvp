@@ -120,6 +120,13 @@ export const DELIBERATELY_DEFERRED = [
     field: 'read',
     reason: 'ADR-0032: CLIPBOARD_CAPABILITY_KEYS does not exist yet -- added by the ' +
       'implementation PR that follows this one, which removes this entry.'
+  },
+  {
+    interfaceName: 'Manifest',
+    field: 'crossOriginIsolated',
+    reason: 'ADR-0036: declared in this contracts-only PR. The loader starts accepting ' +
+      '`crossOriginIsolated`, and the served bundle carries the two isolation headers, in the ' +
+      'implementation PR that follows, which removes this entry.'
   }
 ]
 

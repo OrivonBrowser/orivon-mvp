@@ -139,9 +139,14 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
                                        // (first registrant is default; conflicts → user chooses)
   },
 
-  "consentGranularity": "all-or-nothing"  // omitting this line has the same effect; see below.
-                                           // "per-capability" lets the person accept some of the
-                                           // capabilities above and refuse others.
+  "consentGranularity": "all-or-nothing",  // omitting this line has the same effect; see below.
+                                            // "per-capability" lets the person accept some of the
+                                            // capabilities above and refuse others.
+  "crossOriginIsolated": true              // serve the app's documents cross-origin isolated, which
+                                            // turns on SharedArrayBuffer for a WebAssembly component
+                                            // built with threads (ADR-0036); omit it unless needed,
+                                            // since an isolated page loses window.opener from its
+                                            // popups and sends no credentials with cross-origin loads
 }
 ```
 
