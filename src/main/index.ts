@@ -4,7 +4,7 @@ import { createShellServices } from './shell/shell-services.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
-import { BookmarkStore } from './browsing/bookmarks.js'
+import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
@@ -83,25 +83,24 @@ void app.whenReady().then(async () => {
   })
 })
 
-// A bookmark starred within the debounce window of the browser closing must
-// not be silently lost -- that is precisely the failure BookmarkStore's
-// flushPendingWrite() exists to prevent, so quit needs to wait for it.
-// Bounded, not indefinite: BookmarkStore.flushAll() itself never rejects
-// (a slow or failed store is reported via console.error in bookmarks.ts and
-// does not stop the others), and the race below caps the wait so a stuck
-// disk turns into a bookmark loss on that one store rather than a browser
-// that will not close. The bound is generous relative to the 300ms debounce
+// A change made within the debounce window of the browser closing (a starred
+// page, a setting) must not be silently lost -- that is precisely what
+// DebouncedWriter.flushAll() exists to prevent, so quit waits for it.
+// Bounded, not indefinite: flushAll() itself never rejects (a slow or failed
+// store reports its own failure), and the race below caps the wait so a stuck
+// disk turns into a lost change in that one store rather than a browser that
+// will not close. The bound is generous relative to the 300ms debounce
 // (WRITE_DEBOUNCE_MS) plus ordinary disk latency, and short enough that a
 // user closing the window does not perceive a hang.
 const QUIT_FLUSH_TIMEOUT_MS = 2000
 
-async function flushBookmarksBeforeQuit (): Promise<void> {
+async function flushStoresBeforeQuit (): Promise<void> {
   await Promise.race([
-    BookmarkStore.flushAll(),
+    DebouncedWriter.flushAll(),
     new Promise<void>((resolve) => setTimeout(resolve, QUIT_FLUSH_TIMEOUT_MS))
   ])
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') void flushBookmarksBeforeQuit().then(() => app.quit())
+  if (process.platform !== 'darwin') void flushStoresBeforeQuit().then(() => app.quit())
 })
