@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { hasJspi, jspiWebAssembly } from '../../wasi/tests/support/jspi.js'
-import { echoProgram, failingProgram, trappingProgram } from '../../wasi/tests/support/programs.js'
+import { echoProgram, failingProgram, reportWrittenProgram, trappingProgram } from '../../wasi/tests/support/programs.js'
 import { type OrivonServer, serveOrivon } from '../orivon-server.js'
 import type { ParentChannel } from '../parent.js'
 import type { FromWorker, ToWorker } from '../protocol.js'
@@ -27,13 +27,18 @@ interface FakeParent extends ParentChannel {
   send (message: ToWorker): void
 }
 
-/** A parent that acknowledges every chunk of output as it arrives, as an ever-reading page would. */
+/**
+ * A parent that acknowledges every chunk of output as it arrives, as an
+ * ever-reading page would. Each message is cloned with its transfer list, as
+ * postMessage does, so a transferred buffer is detached on the sending side.
+ */
 function fakeParent (): FakeParent {
   const posts: FromWorker[] = []
   let handler: (message: ToWorker) => void = () => {}
   return {
     posts,
-    post: (message) => {
+    post: (sent, transfer = []) => {
+      const message = structuredClone(sent, { transfer })
       posts.push(message)
       if (message.type === 'output') queueMicrotask(() => { handler({ type: 'ack', stream: message.stream }) })
     },
@@ -94,6 +99,13 @@ describe.skipIf(!hasJspi)('runSpawn', () => {
     expect(posts.at(-1)).toEqual({ type: 'exit', code: 0, signal: null })
   })
 
+  it('tells the program how many bytes fd_write wrote, which a real libc checks before writing again', async () => {
+    const parent = fakeParent()
+    await runSpawn(await spawnStart(reportWrittenProgram('hello')), parent, jspiWebAssembly)
+    expect(output(parent, 'stdout')).toBe('hello')
+    expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 5, signal: null })
+  })
+
   it('passes a program\'s own exit code and stderr through', async () => {
     const parent = fakeParent()
     await runSpawn(await spawnStart(failingProgram('bad input\n', 3)), parent, jspiWebAssembly)
@@ -121,6 +133,10 @@ describe('runFork', () => {
     const target = new EventTarget()
     let closed = false
     return Object.assign(target, {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      setInterval: globalThis.setInterval.bind(globalThis),
+      clearInterval: globalThis.clearInterval.bind(globalThis),
       close: () => { closed = true },
       closed: () => closed,
       dispatch: (event: Event) => target.dispatchEvent(event)
@@ -157,6 +173,51 @@ describe('runFork', () => {
     release()
     await running
     expect(parent.posts).toContainEqual({ type: 'ipc', message: { got: 'early' } })
+  })
+
+  it('delivers a message to a module still loading once it listens, as a top-level await on the first message needs', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    const running = runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const proc = scope.process as unknown as { once: (event: string, listener: (m: unknown) => void) => void, send: (m: unknown) => boolean }
+      const first = await new Promise((resolve) => { proc.once('message', resolve) })
+      proc.send({ configuredWith: first })
+    })
+    parent.send({ type: 'ipc', message: 'config' })
+    await running
+    expect(parent.posts).toContainEqual({ type: 'ipc', message: { configuredWith: 'config' } })
+  })
+
+  it('ends on its own with code 0 once the parent disconnects and nothing is pending, after beforeExit', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    const seen: string[] = []
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const proc = scope.process as unknown as { on: (event: string, listener: (code: unknown) => void) => void }
+      proc.on('beforeExit', () => seen.push('beforeExit'))
+      proc.on('exit', () => seen.push('exit'))
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(parent.posts.some((post) => post.type === 'exit')).toBe(false)
+    parent.send({ type: 'disconnect' })
+    await vi.waitFor(() => { expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 0, signal: null }) })
+    expect(seen).toEqual(['beforeExit', 'exit'])
+    expect(scope.closed()).toBe(true)
+  })
+
+  it('stays alive after disconnecting while a timer is pending, and ends when it fires', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    let fired = false
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const proc = scope.process as unknown as { disconnect: () => void }
+      scope.setTimeout?.(() => { fired = true }, 40)
+      proc.disconnect()
+    })
+    await new Promise((resolve) => setTimeout(resolve, 15))
+    expect(parent.posts.some((post) => post.type === 'exit')).toBe(false)
+    await vi.waitFor(() => { expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 0, signal: null }) })
+    expect(fired).toBe(true)
   })
 
   it('serialises messages as JSON by default, dropping what JSON drops', async () => {

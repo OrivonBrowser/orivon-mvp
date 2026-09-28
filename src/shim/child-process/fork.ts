@@ -30,7 +30,7 @@ export function fork (modulePath: string | URL, argsOrOptions?: readonly string[
     throw codedError(TypeError, 'ERR_INVALID_ARG_TYPE', `The "modulePath" argument must be of type string or an instance of URL. Received ${typeof modulePath}`)
   }
   const args = (Array.isArray(argsOrOptions) ? argsOrOptions as readonly string[] : []).map(String)
-  const options: ForkOptions = (Array.isArray(argsOrOptions) ? maybeOptions : argsOrOptions as ForkOptions | undefined) ?? {}
+  const options: ForkOptions = (Array.isArray(argsOrOptions) || argsOrOptions === undefined || argsOrOptions === null ? maybeOptions : argsOrOptions as ForkOptions) ?? {}
   const execPath = (globalThis as { process?: { execPath?: string } }).process?.execPath
   if (options.execPath !== undefined && options.execPath !== execPath) {
     throw refuseShim('child_process.fork options.execPath', 'not-applicable',

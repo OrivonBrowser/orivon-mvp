@@ -73,9 +73,17 @@ export function applyLifetime (child: ChildProcess, options: SpawnOptions): void
 
 /** Starts the Worker. The start message goes first, then whatever was written to the child meanwhile. */
 export function launch (child: ChildProcess, name: string, start: (orivon: MessagePort) => ToWorker): void {
-  const worker = createChildWorker(name)
+  let worker: Worker
+  let server: ReturnType<typeof serveOrivon>
   const channel = new MessageChannel()
-  const server = serveOrivon(channel.port1, getOrivon())
+  try {
+    worker = createChildWorker(name)
+    server = serveOrivon(channel.port1, getOrivon())
+  } catch (error) {
+    // A page whose CSP refuses the Worker, or that has no orivon: a spawn failure, reported as one.
+    child.fail(Object.assign(new Error(`the child cannot start: ${String((error as Error)?.message ?? error)}`), { code: 'ENOEXEC', errno: -8 }))
+    return
+  }
   worker.postMessage(start(channel.port2), [channel.port2])
   child.attach(worker, server)
 }
@@ -101,7 +109,7 @@ async function start (child: ChildProcess, command: string, args: readonly strin
     child.fail(error as Error)
     return
   }
-  if (child.exitCode !== null || child.signalCode !== null) return
+  if (child.stopped) return
   const env = environmentOf(options.env)
   launch(child, `child_process ${command}`, (orivon) => ({ type: 'spawn', module, args: child.spawnargs, env, preopens, orivon }))
 }
@@ -110,7 +118,7 @@ export function spawn (command: string, argsOrOptions?: readonly string[] | Spaw
   if (typeof command !== 'string') throw invalidArg('file', 'of type string', command)
   if (command.length === 0) throw codedError(TypeError, 'ERR_INVALID_ARG_VALUE', "The argument 'file' cannot be empty. Received ''")
   const args = Array.isArray(argsOrOptions) ? argsOrOptions as readonly string[] : []
-  const options: SpawnOptions = (Array.isArray(argsOrOptions) ? maybeOptions : argsOrOptions as SpawnOptions | undefined) ?? {}
+  const options: SpawnOptions = (Array.isArray(argsOrOptions) || argsOrOptions === undefined || argsOrOptions === null ? maybeOptions : argsOrOptions as SpawnOptions) ?? {}
   if (options.shell !== undefined && options.shell !== false) {
     throw refuseShim('child_process.spawn options.shell', 'not-applicable', 'an app has no shell: pass the program and its arguments directly')
   }

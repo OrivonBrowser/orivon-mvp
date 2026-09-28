@@ -5,7 +5,7 @@
 
 import { refuseShim } from '../errors.js'
 
-/** Characters with a meaning to the shell outside quotes. */
+/** Characters with a meaning to the shell outside quotes; `#` also starts a comment at a word's start. */
 const SHELL_SYNTAX = new Set(['|', '&', ';', '<', '>', '(', ')', '$', '`', '*', '?', '[', ']', '{', '}', '~', '\n'])
 
 export function splitCommand (command: string): string[] {
@@ -33,7 +33,7 @@ export function splitCommand (command: string): string[] {
       if (inWord) words.push(word)
       word = ''
       inWord = false
-    } else if (SHELL_SYNTAX.has(char)) {
+    } else if (SHELL_SYNTAX.has(char) || (char === '#' && !inWord)) {
       throw shellRequired(command)
     } else {
       word += char

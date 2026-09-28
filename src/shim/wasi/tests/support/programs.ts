@@ -38,3 +38,16 @@ export function failingProgram (text: string, code: number): Uint8Array<ArrayBuf
 export function trappingProgram (): Uint8Array<ArrayBuffer> {
   return wasiModule({ imports: [], body: () => [op.unreachable] })
 }
+
+/** Writes `text` to stdout and exits with the byte count fd_write reported, which a real libc checks. */
+export function reportWrittenProgram (text: string): Uint8Array<ArrayBuffer> {
+  return wasiModule({
+    imports: ['fd_write', 'proc_exit'],
+    data: [{ offset: 100, text }],
+    body: (call) => [
+      op.store(0, 100), op.store(4, text.length),
+      op.i32(1), op.i32(0), op.i32(1), op.i32(20), call('fd_write'), op.drop,
+      op.load(20), call('proc_exit')
+    ]
+  })
+}

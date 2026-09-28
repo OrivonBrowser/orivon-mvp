@@ -43,9 +43,11 @@ export async function runSpawn (start: SpawnStart, parent: ParentChannel, wasm: 
     else if (message.type === 'stdin-end') stdin.end()
     else if (message.type === 'ack') acks.ack(message.stream)
   })
+  // A copy crosses, never `data` itself: the host still reads `data.length` for nwritten.
   const sink = (stream: StreamName) => async (data: Uint8Array): Promise<void> => {
     const acked = acks.wait(stream)
-    parent.post({ type: 'output', stream, data }, [data.buffer as ArrayBuffer])
+    const copy = data.slice()
+    parent.post({ type: 'output', stream, data: copy }, [copy.buffer])
     await acked
   }
   const orivon = createOrivonClient(start.orivon)

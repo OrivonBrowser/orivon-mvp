@@ -32,8 +32,8 @@ export interface HandleDescriptor {
 export type ServerMessage =
   | { readonly id: number, readonly ok: true, readonly value: unknown }
   | { readonly id: number, readonly ok: false, readonly error: WireError & { readonly platformCode?: string } }
-  | { readonly closed: number, readonly error?: WireError }
-  | { readonly stream: number, readonly chunk?: unknown, readonly done?: true, readonly error?: WireError }
+  | { readonly closed: number, readonly error?: WireError & { readonly platformCode?: string } }
+  | { readonly stream: number, readonly chunk?: unknown, readonly done?: true, readonly error?: WireError & { readonly platformCode?: string } }
 
 interface LiveHandle { readonly handle: Record<string, unknown> }
 
@@ -96,7 +96,7 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
     const closed = handle.closed as Promise<void> | undefined
     void closed?.then(
       () => { handles.delete(id); post({ closed: id }) },
-      (error: unknown) => { handles.delete(id); post({ closed: id, error: toWireError(error) }) }
+      (error: unknown) => { handles.delete(id); post({ closed: id, error: wireErrorOf(error) }) }
     )
     return { __orivonHandle: id, methods, data, pumped }
   }
@@ -117,7 +117,7 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
       post({ stream: id, chunk: encode(value, transfer) }, transfer)
     } catch (error) {
       readers.delete(id)
-      post({ stream: id, error: toWireError(error) })
+      post({ stream: id, error: wireErrorOf(error) })
     }
   }
 

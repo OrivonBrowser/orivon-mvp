@@ -94,6 +94,15 @@ describe('handles', () => {
     expect((await reader.read()).done).toBe(true)
   })
 
+  it('keeps a handle\'s platformCode when its closed rejects, as a socket reset carries it', async () => {
+    let fail: (error: unknown) => void = () => {}
+    const socket = { id: 's2', closed: new Promise<void>((_resolve, reject) => { fail = reject }), close: async () => {} }
+    const client = connect({ net: { connect: async () => socket } })
+    const remote = await client.net.connect({}) as { closed: Promise<void> }
+    fail(Object.assign(new Error('reset'), { name: 'OrivonError', code: 'reset', platformCode: 'ECONNRESET' }))
+    await expect(remote.closed).rejects.toMatchObject({ code: 'reset', platformCode: 'ECONNRESET' })
+  })
+
   it('closes every handle the Worker still holds when it is disposed', async () => {
     const file = fakeHandle('f2')
     const client = connect({ fs: { open: async () => file } })

@@ -10,7 +10,7 @@ import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk
 import { hasJspi } from '../../wasi/tests/support/jspi.js'
 import { echoProgram, failingProgram } from '../../wasi/tests/support/programs.js'
 import childProcess, { type ChildProcess, exec, execFile, execFileSync, fork, spawn } from '../index.js'
-import { forkModules, workers } from './support/in-process-worker.js'
+import { failNext, forkModules, workers } from './support/in-process-worker.js'
 
 vi.mock('../../worker/launch.js', async () => ({ createChildWorker: (await import('./support/in-process-worker.js')).createInProcessWorker }))
 
@@ -88,6 +88,23 @@ describe.skipIf(!hasJspi)('spawn', () => {
     expect(child.kill()).toBe(false)
   })
 
+  it('answers kill(0) with whether the child runs, and emits exit only after kill() returns, as Node does', async () => {
+    const child = spawn('/bin/echo')
+    await new Promise((resolve) => child.once('spawn', resolve))
+    expect(child.kill(0)).toBe(true)
+    child.kill()
+    const exit = new Promise((resolve) => child.once('exit', (_code, signal) => resolve(signal)))
+    expect(await exit).toBe('SIGTERM')
+    expect(child.kill(0)).toBe(false)
+  })
+
+  it('reports a Worker that cannot be created as a spawn failure: error, then close', async () => {
+    failNext.worker = true
+    const child = spawn('/bin/echo')
+    const order = events(child)
+    expect(await order).toEqual(['error ENOEXEC', 'close -8 null'])
+  })
+
   it('refuses a shell, an IPC channel and a uid by name', () => {
     expect(() => spawn('/bin/echo', [], { shell: true })).toThrow(OrivonShimError)
     expect(() => spawn('/bin/echo', [], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })).toThrow(OrivonShimError)
@@ -114,6 +131,14 @@ describe.skipIf(!hasJspi)('execFile and exec', () => {
   it('rejects through util.promisify for a missing program, so an "is it installed" check takes its branch', async () => {
     const run = promisify(execFile) as unknown as (file: string, args: string[]) => Promise<unknown>
     await expect(run('git', ['--version'])).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('reads the options that follow an undefined args, as Node\'s execFile does', async () => {
+    const error = await new Promise<unknown>((resolve) => {
+      const child = execFile('/bin/echo', undefined, { maxBuffer: 2 }, (failure) => resolve(failure))
+      child.stdin?.end('over two bytes')
+    })
+    expect(error).toMatchObject({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' })
   })
 
   it('stops a child whose output passes maxBuffer', async () => {

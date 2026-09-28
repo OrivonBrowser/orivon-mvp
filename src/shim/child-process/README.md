@@ -40,3 +40,8 @@ reports a crashed child; a revoked grant is `SIGKILL`. `kill()` terminates the W
 signal named, and `signalCode` reports the name passed.
 
 **`fork`'s `execArgv` is accepted and ignored**: Node flags have nothing to configure in a Worker.
+
+**`kill()` stops the Worker at once and emits `'exit'` a turn later**, as Node's arrives after the
+operating system reaps the child; code that calls `kill()` and then listens for `'exit'` sees it.
+`kill(0)` answers whether the child still runs. A Worker the page cannot create (a CSP without
+`blob:` workers, no `window.orivon`) is a spawn failure: `'error'`, then `'close'`.

@@ -14,6 +14,9 @@ export const forkModules = new Map<string, (scope: ForkScope) => void | Promise<
 
 export const workers: InProcessWorker[] = []
 
+/** Set to make the next Worker fail to construct, as a page whose CSP refuses one does. */
+export const failNext = { worker: false }
+
 export class InProcessWorker {
   onmessage: ((event: { data: FromWorker }) => void) | null = null
   onerror: ((event: { preventDefault: () => void }) => void) | null = null
@@ -48,5 +51,6 @@ export class InProcessWorker {
 
 export function createInProcessWorker (): InProcessWorker {
   if (!hasJspi) throw new Error('this Node has no JSPI behind --experimental-wasm-jspi')
+  if (failNext.worker) { failNext.worker = false; throw new DOMException('Refused to create a worker', 'SecurityError') }
   return new InProcessWorker()
 }

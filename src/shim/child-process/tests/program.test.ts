@@ -62,10 +62,11 @@ describe('splitCommand', () => {
     expect(splitCommand('git  clone "a b" \'c d\' e\\ f')).toEqual(['git', 'clone', 'a b', 'c d', 'e f'])
     expect(splitCommand('say "quote \\" inside"')).toEqual(['say', 'quote " inside'])
     expect(splitCommand('empty ""')).toEqual(['empty', ''])
+    expect(splitCommand('issue#42 "#quoted"')).toEqual(['issue#42', '#quoted'])
   })
 
   it('refuses by name a command that needs a shell: pipes, redirects, variables, globs', () => {
-    for (const command of ['a | b', 'a > out', 'echo $HOME', 'ls *.txt', 'a && b', 'echo "$HOME"', 'unterminated "quote']) {
+    for (const command of ['a | b', 'a > out', 'echo $HOME', 'ls *.txt', 'a && b', 'echo "$HOME"', 'unterminated "quote', 'tool --flag # a comment']) {
       expect(() => splitCommand(command)).toThrow(OrivonShimError)
     }
   })

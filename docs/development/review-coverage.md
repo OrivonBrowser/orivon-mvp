@@ -87,3 +87,10 @@ see in the PR itself.
 | Mechanism | Scope | Outcome |
 |---|---|---|
 | `/code-review`, high effort, run by a forked reviewer | The branch against `main`: `src/shim/wasi/`, the `wasi` module row, its tests and e2e, and the docs | 10 findings, with no verify pass. Eight were correctness defects: a kill that could not end a pending read or sleep, a handle leaked by a kill, a reactor whose memory was never bound, a reactor's files closed after `_initialize`, a sleep over 24.8 days firing at once, a readdir cookie at or above 2^63 trapping, a path decoded from shared memory, and a window in `path_remove_directory`. The other two were a Rule 2 phrase in `scope.md` and serial stats in `fd_readdir`. Nine fixed in the same PR, with a test where one applies; the window needs a broker change and is filed as A263 |
+
+### `stream/child-process`: `child_process` over Web Workers (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | `src/shim/worker/` and `src/shim/child-process/` against the WASI-host branch | 10 findings, all fixed in the same branch with a test each: the stdout sink transferred the buffer the WASI host then measured, so `fd_write` reported 0 bytes and a real libc would rewrite forever (the hand-assembled test programs ignored the count); a forked child never ended on its own; `kill()` emitted `exit` synchronously and `kill(0)` threw; a Worker that could not be created was an unhandled rejection; a load failure after a kill emitted a second `error`; held IPC deadlocked a top-level `await` on the first message; a handle's `closed` lost its `platformCode`; `execFile(file, undefined, options)` dropped its options; and `#` was not refused as a shell comment |
+

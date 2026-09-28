@@ -73,6 +73,7 @@ export class ChildProcess extends EventEmitter {
   #server: OrivonServer | undefined
   #queued: ToWorker[] = []
   #ended = false
+  #killing = false
   #started = false
   readonly #inherit: Record<StreamName, ReturnType<typeof lineSink>>
 
@@ -111,19 +112,26 @@ export class ChildProcess extends EventEmitter {
   /** The child never started: Node's order is 'error', then 'close'. */
   fail (error: Error): void {
     queueMicrotask(() => {
+      if (this.#ended) return
       this.emit('error', error)
       this.#finish((error as { errno?: number }).errno ?? -1, null, false)
     })
   }
 
+  /** Stops the child now; 'exit' follows asynchronously, as it does in Node. */
   kill (signal?: string | number): boolean {
+    if (signal === 0) return !this.#ended && !this.#killing
     const name = signalName(signal)
-    if (this.#ended || this.exitCode !== null || this.signalCode !== null) return false
-    if (signal === 0) return true
+    if (this.#ended || this.#killing) return false
+    this.#killing = true
     this.killed = true
-    this.#finish(null, name)
+    this.#worker?.terminate()
+    queueMicrotask(() => { this.#finish(null, name) })
     return true
   }
+
+  /** True once the child has ended or is being killed: nothing more should start it. */
+  get stopped (): boolean { return this.#ended || this.#killing }
 
   send (message: unknown, ...rest: unknown[]): boolean {
     const callback = rest.find((arg): arg is (error: Error | null) => void => typeof arg === 'function')

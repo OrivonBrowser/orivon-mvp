@@ -30,7 +30,9 @@ const DEFAULT_MAX_BUFFER = 1024 * 1024
 
 function parseArguments (rest: unknown[]): { args: string[], options: ExecOptions, callback: ExecCallback | undefined } {
   const callback = typeof rest[rest.length - 1] === 'function' ? rest.pop() as ExecCallback : undefined
-  const args = Array.isArray(rest[0]) ? (rest.shift() as unknown[]).map(String) : []
+  // `args` may be an array, or undefined or null standing in for one before `options`.
+  const leading = rest[0]
+  const args = Array.isArray(leading) || leading === undefined || leading === null ? ((rest.shift() as unknown[] | null | undefined) ?? []).map(String) : []
   const options = (rest[0] ?? {}) as ExecOptions
   return { args, options, callback }
 }

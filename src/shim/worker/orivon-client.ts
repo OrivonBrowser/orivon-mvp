@@ -27,7 +27,13 @@ function syncUnavailable (): never {
   })
 }
 
-export function createOrivonClient (port: MessagePort): Record<string, unknown> {
+/** A forked child's liveness: a pending call or an open handle keeps it running. */
+export interface ClientActivity {
+  ref (): void
+  unref (): void
+}
+
+export function createOrivonClient (port: MessagePort, activity?: ClientActivity): Record<string, unknown> {
   const pending = new Map<number, Pending>()
   const closedHandles = new Map<number, { resolve: () => void, reject: (error: unknown) => void }>()
   const streams = new Map<number, ReadableStreamDefaultController<unknown>>()
@@ -37,10 +43,15 @@ export function createOrivonClient (port: MessagePort): Record<string, unknown> 
 
   const call = async (body: CallBody): Promise<unknown> => {
     const id = nextId++
-    return await new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
-      send({ ...body, id })
-    })
+    activity?.ref()
+    try {
+      return await new Promise((resolve, reject) => {
+        pending.set(id, { resolve, reject })
+        send({ ...body, id })
+      })
+    } finally {
+      activity?.unref()
+    }
   }
 
   const decode = (value: unknown): unknown => {
@@ -63,7 +74,9 @@ export function createOrivonClient (port: MessagePort): Record<string, unknown> 
       handle[method] = async (...args: unknown[]) => await call({ handle: descriptor.__orivonHandle, method, args })
     }
     for (const [name, id] of Object.entries(descriptor.pumped)) handle[name] = pumpedStream(id)
+    activity?.ref()
     handle.closed = new Promise<void>((resolve, reject) => { closedHandles.set(descriptor.__orivonHandle, { resolve, reject }) })
+      .finally(() => { activity?.unref() })
     ;(handle.closed as Promise<void>).catch(() => {})
     return handle
   }
