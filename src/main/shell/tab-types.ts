@@ -72,9 +72,9 @@ export interface TabRecord {
    * resource's own origin (a CDN, commonly), which shouldClearFavicon
    * (favicon.ts) compares this against on every navigation. */
   faviconOrigin: string | null
-  /** Guards a fetch that resolves after the tab already closed or
-   * navigated again -- only the record's own most recent request may
-   * write `favicon`. */
+  /** The candidate the newest favicon capture is trying: a capture that
+   * finds another value here lost to a newer icon set and must not write
+   * `favicon` (favicon.ts's captureFaviconInto). */
   pendingFaviconUrl: string | null
   /** The partition currently assigned to `view`, or undefined for the
    * shell's own default session -- kept alongside `view` so navigate()

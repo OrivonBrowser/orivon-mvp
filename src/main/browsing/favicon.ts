@@ -384,35 +384,23 @@ function decodedDataUrlCandidate (candidate: string): string | null {
 
 /** Tries each candidate from `page-favicon-updated`, in order, and stores
  * the first one that actually decodes to a recognised image, unless the
- * tab has since closed or a newer icon set has arrived.
+ * tab has since closed, a newer icon set has arrived, or the tab has moved
+ * to another origin.
  *
- * `pageUrl` is read exactly ONCE, at the start -- it names the document
- * that fired this very `page-favicon-updated` event, which is both what
- * decides whether a loopback candidate may be fetched at all
- * (isSafeFaviconUrl) and whose origin gets recorded on a hit
- * (`faviconOrigin`, below). Re-reading it later, after a same-tab
- * navigation that didn't itself change the icon set, would attribute the
- * icon to the wrong page.
+ * `pageUrl` is read ONCE, at the start, for the document that fired the
+ * event: it decides whether a loopback candidate may be fetched at all
+ * (isSafeFaviconUrl), and its origin is what `faviconOrigin` records -- the
+ * DECLARING PAGE's origin, never the icon resource's own (a CDN, commonly),
+ * which shouldClearFavicon depends on.
  *
- * `isStillCurrent`, `target.pendingFaviconUrl` AND `pageUrl()` are all
- * re-checked AFTER every await, never before: that is the whole point of
- * them. A fetch resolving once the tab has closed, once a newer icon set
- * has arrived (pendingFaviconUrl then points at a later candidate this same
- * call never chose), or once the tab has navigated on to a different page
- * that never fired its own `page-favicon-updated` (Chromium only fires it
- * when the favicon SET changes, so a page with no icon at all, or the same
- * icon, leaves `pendingFaviconUrl` untouched) -- must not win. Sequentially
- * trying up to MAX_FAVICON_CANDIDATES, each with its own fetch timeout and
- * redirect chain, made this last case a real window rather than a
- * theoretical one: a still-running call from the PREVIOUS page must never
- * write a favicon attributed to that old page onto a tab now showing a new
- * one, so `pageUrl()` -- read fresh, not the `declaringPage` captured at
- * the start -- has to still match before every write.
- *
- * `faviconOrigin` records the DECLARING PAGE's origin, never the icon
- * resource's own origin (a CDN, commonly) -- shouldClearFavicon and its own
- * test suite are built on that assumption: a same-origin navigation must
- * not clear an icon whose bytes happen to live elsewhere.
+ * After every await, all three are re-checked against `pageUrl()` read
+ * fresh. Chromium fires `page-favicon-updated` only when a page's icon set
+ * differs from the last one (a page declaring none gets `/favicon.ico`), so
+ * a newer set moves `pendingFaviconUrl` on, while a hash change, a
+ * pushState, or a same-origin page with the same set fires nothing: the
+ * icon being fetched is that page's icon too, so a same-origin change must
+ * not drop it. Another origin is what shouldClearFavicon clears, and the
+ * same rule stops a still-running call from writing onto it.
  */
 export async function captureFaviconInto (
   target: FaviconTarget,
@@ -425,7 +413,13 @@ export async function captureFaviconInto (
   if (candidates.length === 0) return
 
   const declaringPage = pageUrl()
-  const stillTheSamePage = (): boolean => isStillCurrent() && pageUrl() === declaringPage
+  let declaringOrigin: string
+  try {
+    declaringOrigin = new URL(declaringPage).origin
+  } catch {
+    return
+  }
+  const stillTheSamePage = (): boolean => isStillCurrent() && !shouldClearFavicon(declaringOrigin, pageUrl())
 
   for (const candidate of candidates) {
     if (!stillTheSamePage()) return
@@ -444,11 +438,7 @@ export async function captureFaviconInto (
     if (dataUrl === null) continue
 
     target.favicon = dataUrl
-    try {
-      target.faviconOrigin = new URL(declaringPage).origin
-    } catch {
-      target.faviconOrigin = null
-    }
+    target.faviconOrigin = declaringOrigin
     onUpdated()
     return
   }

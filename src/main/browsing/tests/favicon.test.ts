@@ -608,13 +608,12 @@ describe('captureFaviconInto', () => {
     expect(target.favicon).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}`)
   })
 
-  // The race three independent reviews of this diff converged on: a
-  // sequential, multi-candidate loop with its own timeout and redirect
-  // budget per candidate can still be running well after the tab has moved
-  // on to a different page that never fired its own page-favicon-updated
-  // (no icon, or an unchanged one) -- pendingFaviconUrl alone does not
-  // catch that, since nothing overwrote it.
-  it('never writes a favicon once the tab has navigated to a different page mid-fetch', async () => {
+  // A sequential, multi-candidate loop with a timeout and redirect budget per
+  // candidate can still be running after the tab has moved to another origin
+  // whose page never fired its own page-favicon-updated (an unchanged icon
+  // set) -- pendingFaviconUrl alone does not catch that, since nothing
+  // overwrote it.
+  it('never writes a favicon once the tab has navigated to another origin mid-fetch', async () => {
     let currentPage = 'https://a.example/page1'
     mockRequestOnce((request) => {
       // The tab commits a navigation while this request is still in flight.
@@ -632,5 +631,29 @@ describe('captureFaviconInto', () => {
     expect(target.favicon).toBeNull()
     expect(target.faviconOrigin).toBeNull()
     expect(updated).toBe(false)
+  })
+
+  // page-favicon-updated does not fire again for a hash change, a
+  // pushState/replaceState, or a same-origin page declaring the same icon
+  // set (measured on Electron 44), so dropping the icon here would leave the
+  // globe for the rest of the visit.
+  it.each([
+    ['a hash change', 'https://a.example/page', 'https://a.example/page#section'],
+    ['a replaceState to a sibling path', 'https://a.example/', 'https://a.example/home'],
+    ['a same-origin navigation', 'https://a.example/one', 'https://a.example/two?x=1']
+  ])('still stores the icon after %s mid-fetch', async (_label, declaringPage, laterPage) => {
+    let currentPage = declaringPage
+    mockRequestOnce((request) => {
+      currentPage = laterPage
+      request.emit('response', respondOk(200, [PNG_BYTES]))
+    })
+    const target = makeTarget()
+    let updated = false
+
+    await captureFaviconInto(target, [`https://93.184.216.98/${encodeURIComponent(laterPage)}.png`], () => currentPage, () => true, () => { updated = true })
+
+    expect(target.favicon).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}`)
+    expect(target.faviconOrigin).toBe('https://a.example')
+    expect(updated).toBe(true)
   })
 })
