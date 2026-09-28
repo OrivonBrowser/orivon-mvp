@@ -1,7 +1,7 @@
 // The site-info popup's own command channel -- one page of Orivon
 // capability switches, a Web3 Score page, and a Cookies and site data
-// page, all for the ONE origin this popup was opened for. Mirrors
-// ./settings-ipc.ts's sender-identity check exactly, against the site-info
+// page, all for the ONE origin this popup was opened for. The same
+// sender-identity check as ./settings-ipc.ts, against the site-info
 // popup's own webContents instead of the all-sites panel's.
 //
 // THE ORIGIN IS FIXED AT CONSTRUCTION, NEVER A COMMAND FIELD. Every

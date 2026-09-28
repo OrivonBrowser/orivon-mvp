@@ -117,6 +117,6 @@ reached inside the renderer instead of in a separate host.
 
 `child_process` now runs every child in a Web Worker: `spawn` a WASI program from the app's bundle,
 `fork` an app module with an IPC channel, each reaching `orivon.*` through the page. The Decision
-and Consequences above are rewritten to say so. The addon resolution is decided (`d-0155`) and not
+and Consequences above are rewritten to say so. The addon resolution is decided (`d-0161`) and not
 built yet.
 

@@ -14,13 +14,9 @@ import { devModeEnabled } from '../dev/dev-mode.js'
  * what would otherwise mask a code change to the verifier that touches
  * nothing about the site's own content. `npm start`, the real application,
  * is untouched: it keeps a real browser's caching, dev and start sharing the
- * same on-disk `userData` regardless.
- *
- * Nothing else needs resetting here: the verifier's in-memory mount and
- * block caches already start empty every process launch, and the light
- * client's checkpoint, the IPNS sequence floor and installed app bundles
- * under `userData` are state, not cache -- resetting those on every dev
- * restart would be a regression, not a fix.
+ * same on-disk `userData` regardless. What else lives under `userData` (the
+ * light client's checkpoint, the IPNS sequence floor, installed bundles) is
+ * state, not cache, and must survive a dev restart.
  */
 export function devOnlySwitches (): readonly string[] {
   return devModeEnabled() ? ['disable-http-cache'] : []

@@ -162,10 +162,12 @@ it(
           ;(window as unknown as { __orivonE2eContext: unknown }).__orivonE2eContext = await orivon.web.openContext('https://example.com')
           return true
         }, OPEN_TIMEOUT_MS)
+        // getBuiltinModule, not require or import(): main may be bundled as
+        // ESM, where there is no require, and vitest rewrites import() in a
+        // function it hands to app.evaluate.
         await app.evaluate(() => {
-          const load = (process as unknown as { mainModule: { require: (id: string) => unknown } }).mainModule.require
-          ;(load('node:v8') as typeof import('node:v8')).setFlagsFromString('--expose-gc')
-          ;((load('node:vm') as typeof import('node:vm')).runInNewContext('gc') as () => void)()
+          process.getBuiltinModule('node:v8').setFlagsFromString('--expose-gc')
+          ;(process.getBuiltinModule('node:vm').runInNewContext('gc') as () => void)()
         })
         const afterGc = await evaluateRetrying(view, async () => {
           const context = (window as unknown as { __orivonE2eContext: {

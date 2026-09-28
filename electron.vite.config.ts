@@ -109,8 +109,10 @@ export default defineConfig({
       // and loads electron via require (see src/main/index.ts).
       //
       // One entry per privilege level: `app` for every ordinary tab, `shell`
-      // for the chrome view only, `newtab` for a fresh tab only (it re-checks
-      // its own URL), `settings`/`site-info` for the toolbar popups. Keys are
+      // for the chrome view only, `newtab` for a fresh tab only,
+      // `settings`/`site-info` for the toolbar popups (those four re-check
+      // their own URL before exposing anything), `embed` for a page an app
+      // shows inside itself. Keys are
       // the output filenames src/main/ loads (`../preload/<key>.js`). APPEND
       // POINT: one line per entry (docs/development/parallel-work.md).
       rollupOptions: {

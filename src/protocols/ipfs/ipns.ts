@@ -8,11 +8,14 @@ import { CID } from 'multiformats/cid'
 import { base36 } from 'multiformats/bases/base36'
 import { ResolutionError } from '../resolution/records.js'
 import type { Refusal } from '../resolution/providers.js'
+import { sleepOrAbort } from '../resolution/timing.js'
 import { GatewayFailure, TooLarge, askGateway, readCapped } from './gateways.js'
 import type { Fetch, GatewayPool } from './gateways.js'
 
 /** The IPNS spec's own ceiling. */
 const MAX_RECORD_BYTES = 10 * 1024
+/** Longest a lookup waits for a cooling gateway, well inside a mount's own deadline. */
+const MAX_COOLDOWN_WAIT_MS = 5_000
 
 /** A record whose signature failed was forged or corrupted on the way; one that merely expired was not. */
 const FORGED = new Set(['SignatureVerificationError', 'InvalidEmbeddedPublicKeyError'])
@@ -76,6 +79,18 @@ async function readSource (
   }
 }
 
+/** Gateways that are not cooling. When every usable one is, waits once for
+ * the soonest (bounded), then asks the cooling ones anyway: there is one
+ * lookup per mount, so skipping them all would fail the mount untried. */
+async function gatewaysToAsk (pool: GatewayPool, timeoutMs: number, signal: AbortSignal): Promise<string[]> {
+  const ready = pool.candidates()
+  if (ready.length > 0 || pool.usable().length === 0) return ready
+  const waitMs = Math.min((pool.nextReadyAt() ?? pool.now()) - pool.now(), timeoutMs, MAX_COOLDOWN_WAIT_MS)
+  if (waitMs > 0) await sleepOrAbort(waitMs, signal)
+  const after = pool.candidates()
+  return after.length > 0 ? after : pool.usable()
+}
+
 export async function resolveIpnsKey (key: string, fetch: Fetch, sources: IpnsSources, sequences: SequenceStore, timeoutMs: number, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<VerifiedIpnsRecord> {
   const multihash = CID.parse(key, base36).multihash
   // A key is an inlined public key (identity) or a hash of one (sha2-256); nothing else names an IPNS key.
@@ -84,12 +99,10 @@ export async function resolveIpnsKey (key: string, fetch: Fetch, sources: IpnsSo
   const floor = sequences.highest(key)
   const reasons: string[] = []
   let lied = false
-  // pool.candidates(), not usable(): a cooling gateway (a recent 429 or
-  // outage against a block fetch, say) is skipped here too, the same
-  // scheduling a block fetch gets. Sequential, with no hedging -- there is
-  // at most one IPNS lookup per mount.
+  // Sequential, with no hedging: there is at most one IPNS lookup per mount.
+  const gateways = await gatewaysToAsk(sources.pool, timeoutMs, signal)
   const candidates: Array<{ name: string, kind: 'gateway' | 'name-service' }> =
-    [...sources.pool.candidates().map((g) => ({ name: g, kind: 'gateway' as const })), ...sources.nameServices.map((n) => ({ name: n, kind: 'name-service' as const }))]
+    [...gateways.map((g) => ({ name: g, kind: 'gateway' as const })), ...sources.nameServices.map((n) => ({ name: n, kind: 'name-service' as const }))]
   for (const source of candidates) {
     const bytes = await readSource(source.name, source.kind, sources, key, fetch, timeoutMs, signal, reasons)
     if (bytes === undefined) continue

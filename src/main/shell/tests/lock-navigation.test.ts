@@ -1,9 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { lockNavigation } from '../lock-navigation.js'
-
-// Listener-fake pattern lifted from
-// ../../sessions/tests/web-context-host.test.ts, the one place this exact
-// shape was tested before it moved into its own function.
 
 interface FakeWebContents {
   setWindowOpenHandler: ReturnType<typeof vi.fn>
@@ -22,6 +18,8 @@ function fakeWebContents (): FakeWebContents {
   }
 }
 
+afterEach(() => { vi.restoreAllMocks() })
+
 describe('lockNavigation', () => {
   it('denies every popup unconditionally', () => {
     const wc = fakeWebContents()
@@ -32,7 +30,7 @@ describe('lockNavigation', () => {
     expect(handler()).toEqual({ action: 'deny' })
   })
 
-  describe('with no allowedUrl (a popup or an isolated context)', () => {
+  describe('with no allowedUrl (an isolated context)', () => {
     it('prevents will-navigate, will-redirect and a main-frame will-frame-navigate', () => {
       const wc = fakeWebContents()
       lockNavigation(wc as unknown as Parameters<typeof lockNavigation>[0])
@@ -77,7 +75,7 @@ describe('lockNavigation', () => {
   describe('with an allowedUrl (the chrome view or a popup)', () => {
     const ALLOWED = 'https://chrome.orivon.example/index.html'
 
-    it('lets a will-navigate/will-redirect to exactly allowedUrl through (Vite HMR\'s own reload)', () => {
+    it('lets a navigation to exactly allowedUrl through: the page loading its own document again', () => {
       const wc = fakeWebContents()
       lockNavigation(wc as unknown as Parameters<typeof lockNavigation>[0], ALLOWED)
 
@@ -105,6 +103,17 @@ describe('lockNavigation', () => {
       const redirectEvent = { preventDefault: vi.fn(), url: 'https://attacker.example' }
       wc.listeners['will-redirect']?.[0]?.(redirectEvent)
       expect(redirectEvent.preventDefault).toHaveBeenCalledTimes(1)
+    })
+
+    it('logs each refusal, and nothing for the allowed URL', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const wc = fakeWebContents()
+      lockNavigation(wc as unknown as Parameters<typeof lockNavigation>[0], ALLOWED)
+
+      wc.listeners['will-navigate']?.[0]?.({ preventDefault: vi.fn(), url: ALLOWED })
+      expect(warn).not.toHaveBeenCalled()
+      wc.listeners['will-redirect']?.[0]?.({ preventDefault: vi.fn(), url: 'https://attacker.example' })
+      expect(warn).toHaveBeenCalledWith('[lock-navigation] refused', 'https://attacker.example')
     })
   })
 })

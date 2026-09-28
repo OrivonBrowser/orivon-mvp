@@ -354,6 +354,12 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
   // registers onState before that), so this re-sync is guaranteed to
   // land, not timing-dependent.
   chrome.webContents.on('did-finish-load', pushState)
+  // The preload's gate and isFromChrome compare `chromeUrl` exactly; a
+  // mismatch would leave the chrome dead with no other sign.
+  chrome.webContents.on('did-finish-load', () => {
+    const loaded = chrome.webContents.getURL()
+    if (loaded !== chromeUrl) console.error(`[window] the chrome loaded ${loaded}, not ${chromeUrl}; its commands will be refused`)
+  })
   // The address bar's Cut/Copy/Paste: the same menu a tab gets.
   chrome.webContents.on('context-menu', (_event, params) => {
     showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, developerMode: devModeEnabled() })
@@ -451,8 +457,8 @@ export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): Ba
   // `win` to the wrong class.
   //
   // 'ready-to-show' does not fire reliably -- or fires very late -- when
-  // the chrome view loads from electron-vite's dev server
-  // (`loadURL(devServerUrl)`) rather than the built file, which reads as
+  // the chrome view loads `chromeUrl` from electron-vite's dev server
+  // rather than the built file, which reads as
   // "no window ever appears": the window exists the whole time, `show()`
   // is just never called. A short fallback timer closes the gap; `shown`
   // guards against calling `show()` twice if 'ready-to-show' fires late,

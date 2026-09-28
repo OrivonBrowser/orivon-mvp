@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { X509Certificate, createHash, createPrivateKey } from 'node:crypto'
 import { connect, createServer } from 'node:tls'
 import type { AddressInfo } from 'node:net'
-import { createRunCertificate } from '../certificate.js'
+import { createRunCertificate, positiveInteger } from '../certificate.js'
 
 describe('createRunCertificate', () => {
   const run = createRunCertificate(new Date('2026-09-24T12:00:00Z'))
@@ -28,6 +28,19 @@ describe('createRunCertificate', () => {
   it('uses GeneralizedTime past 2049', () => {
     const late = new X509Certificate(createRunCertificate(new Date('2049-12-20T00:00:00Z'), 30).certPem)
     expect(new Date(late.validTo).getUTCFullYear()).toBe(2050)
+  })
+
+  it('encodes a serial minimally, whatever its leading bytes', () => {
+    const hex = (bytes: number[]): string => positiveInteger(Buffer.from(bytes)).toString('hex')
+    expect(hex([0x00, 0x05, 0xaa])).toBe('020205aa') // leading zero stripped
+    expect(hex([0x00, 0x00, 0x90])).toBe('02020090') // stripped, then one put back for the high bit
+    expect(hex([0x90, 0x01])).toBe('0203009001') // a high first bit gains one zero
+    expect(hex([0x00, 0x00])).toBe('020100') // zero keeps one byte
+    expect(hex([0x7f])).toBe('02017f')
+  })
+
+  it('parses every one of 2000 fresh certificates', () => {
+    for (let i = 0; i < 2_000; i++) expect(() => new X509Certificate(createRunCertificate().certPem)).not.toThrow()
   })
 
   it('is different every run', () => {
