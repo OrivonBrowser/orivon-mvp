@@ -26,11 +26,12 @@ function fakeZoom (levels: Record<string, number>): { zoom: ZoomService, step: R
   return { zoom, step, change: () => { for (const listener of listeners) listener() } }
 }
 
-function attached (levels: Record<string, number>, isTab = true): { contents: FakeContents, step: ReturnType<typeof vi.fn>, change: () => void } {
+function attached (levels: Record<string, number>, isTab = true): { contents: FakeContents, step: ReturnType<typeof vi.fn>, change: () => void, clock: { now: number } } {
   const contents = new FakeContents()
   const { zoom, step, change } = fakeZoom(levels)
-  attachZoom(contents as unknown as WebContents, zoom, { isTab: () => isTab })
-  return { contents, step, change }
+  const clock = { now: 1000 }
+  attachZoom(contents as unknown as WebContents, zoom, { isTab: () => isTab, now: () => clock.now })
+  return { contents, step, change, clock }
 }
 
 describe('attachZoom', () => {
@@ -62,6 +63,26 @@ describe('attachZoom', () => {
     contents.url = 'orivon://settings/'
     contents.emit('zoom-changed', {}, 'out')
     expect(step).toHaveBeenCalledExactlyOnceWith('https://a.example', 'in')
+  })
+
+  it('takes the two events one turn of the wheel makes as one step, and a later turn, or the other way, as another', () => {
+    const { contents, step, clock } = attached({})
+    contents.url = 'https://a.example/page'
+    contents.emit('zoom-changed', {}, 'in')
+    clock.now += 0.3
+    contents.emit('zoom-changed', {}, 'in')
+    expect(step).toHaveBeenCalledTimes(1)
+
+    clock.now += 60
+    contents.emit('zoom-changed', {}, 'in')
+    clock.now += 0.3
+    contents.emit('zoom-changed', {}, 'in')
+    expect(step).toHaveBeenCalledTimes(2)
+
+    clock.now += 0.3
+    contents.emit('zoom-changed', {}, 'out')
+    expect(step).toHaveBeenCalledTimes(3)
+    expect(step).toHaveBeenLastCalledWith('https://a.example', 'out')
   })
 
   it('leaves a view that is not a tab at normal size, and does nothing once destroyed', () => {

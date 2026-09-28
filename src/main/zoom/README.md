@@ -37,5 +37,9 @@ oldest choice dropped first.
 nothing more, and other modes apply their own change on top of ours. In manual mode the report is
 the only effect, so one step in the wheel is one step in the list.
 
+**One turn of the wheel is one step.** Electron reports a turn as two `zoom-changed` events a fraction of a
+millisecond apart (measured), so two in the same direction within 12 ms are taken as one; a wheel cannot turn
+faster than that, so no real step is lost.
+
 **A page with no origin is not zoomed.** The new-tab page and the shell's own pages have none, so
 they are always shown at normal size and a default larger than 100% does not enlarge them.

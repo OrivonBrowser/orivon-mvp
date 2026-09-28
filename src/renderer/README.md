@@ -22,6 +22,7 @@ the welcome screen, a full-window view over the shell on a launch that opens on 
 | `style.css` | Entry point: colour/size tokens, both themes, page-wide base rules, `@import`s the three below |
 | `styles/tabstrip.css`, `styles/toolbar.css`, `styles/bookmarks.css` | One row each |
 | `main.ts` | Renders `ShellState`, turns clicks/typing into `orivonShell.*` commands |
+| `tab-drag.ts` | Dragging a tab in the strip, with pointer events and the pointer captured: a new place in the strip, or out of it to another window |
 | `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button), and the shared `svg`/`path`/`circle`/`rect`/`line` primitives every other icon file in this tree builds on; also imported by `newtab/main.ts` for its bookmark tiles |
 | `web3-shield.ts` | The Web3 Score shield element, shared by the toolbar and the site-info popup's connection row so the two can never draw it differently, and the address pill's Web2/Web2.5/Web3 mark |
 | `grant-icons.ts` | One icon per capability kind, picked-path kind or site notification, for the left side of a permission row (the site-info popup and the all-sites panel) |

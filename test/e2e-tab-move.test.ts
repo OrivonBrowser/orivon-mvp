@@ -1,0 +1,179 @@
+// Moving tabs: along the strip with the keys and with the pointer, into a
+// window of their own, and into another window, each time keeping the same
+// page (its scroll, its script state) rather than loading it again.
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import type { ElectronApplication, Page } from 'playwright'
+import { afterAll, beforeAll, expect, it } from 'vitest'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
+import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
+import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
+
+let server: Server
+let origin = ''
+
+beforeAll(async () => {
+  server = createServer((request, response) => {
+    response.setHeader('content-type', 'text/html')
+    response.end(`<!doctype html><title>Page ${request.url ?? ''}</title><p>${request.url ?? ''}</p>`)
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  origin = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
+})
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+  expect(await assertNoElectronSurvivors()).toEqual([])
+})
+
+const TEST_TIMEOUT_MS = 70_000
+const chromePages = (app: ElectronApplication): Page[] => app.windows().filter((w) => w.url().endsWith('/renderer/index.html'))
+
+async function launched (): Promise<{ app: ElectronApplication, chrome: Page }> {
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+  expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
+  return { app, chrome: findChrome(app) }
+}
+
+/** Opens `paths` as tabs, one after the other; the dashboard tab the window starts with stays first. */
+async function openTabs (app: ElectronApplication, chrome: Page, ...paths: string[]): Promise<string[]> {
+  for (const path of paths) {
+    await chrome.click('#new-tab')
+    await clickAddressBarRetrying(chrome, `${origin}${path}`)
+    expect((await waitForTab(chrome, { address: `${origin}${path}` })).ok).toBe(true)
+  }
+  return await tabIds(chrome)
+}
+
+const runCommand = async (chrome: Page, id: string): Promise<void> => {
+  await chrome.evaluate((command) => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand(command) }, id)
+}
+
+const titles = async (chrome: Page): Promise<string[]> => await chrome.locator('.tab .title').allTextContents()
+
+it('moves the active tab along the strip with the keys', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const [first, a, b] = await openTabs(app, chrome, '/a', '/b') as [string, string, string]
+    // /b is active and last.
+    await pressKey(app, `${origin}/b`, 'PageUp', ['control', 'shift'])
+    expect(await waitFor(async () => (await tabIds(chrome)).join() === [first, b, a].join())).toBe(true)
+    await pressKey(app, `${origin}/b`, 'PageUp', ['control', 'shift'])
+    await pressKey(app, `${origin}/b`, 'PageUp', ['control', 'shift'])
+    expect(await waitFor(async () => (await tabIds(chrome)).join() === [b, first, a].join())).toBe(true)
+    await pressKey(app, `${origin}/b`, 'PageDown', ['control', 'shift'])
+    expect(await waitFor(async () => (await tabIds(chrome)).join() === [first, b, a].join())).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('drags a tab to a new place in the strip', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const [first, a, b] = await openTabs(app, chrome, '/a', '/b') as [string, string, string]
+    const boxes = async (): Promise<Array<{ x: number, y: number, width: number, height: number }>> =>
+      await chrome.evaluate(() => [...document.querySelectorAll('.tab')].map((el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } }))
+    const [from, , last] = await boxes() as [{ x: number, y: number, width: number, height: number }, unknown, { x: number, y: number, width: number, height: number }]
+
+    await chrome.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await chrome.mouse.down()
+    await chrome.mouse.move(last.x + last.width * 0.9, from.y + from.height / 2, { steps: 12 })
+    await chrome.mouse.up()
+
+    expect(await waitFor(async () => (await tabIds(chrome)).join() === [a, b, first].join())).toBe(true)
+    // A drag is not a click: the tab that was dragged did not become the active one by being let go.
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('moves a tab to a window of its own, still the same page', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await openTabs(app, chrome, '/moving', '/staying')
+    const movingPage = app.windows().find((w) => w.url() === `${origin}/moving`) as Page
+    await movingPage.evaluate(() => { (window as unknown as { __marker: string }).__marker = 'kept' })
+    const tabsBefore = await tabIds(chrome)
+    // The tab to move is the one showing /moving.
+    await chrome.locator('.tab', { hasText: 'Page /moving' }).click()
+    expect((await waitForTab(chrome, { address: `${origin}/moving` })).ok).toBe(true)
+
+    await runCommand(chrome, 'tab.moveToNewWindow')
+
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== chrome) as Page
+    expect(await waitFor(async () => (await tabIds(second)).length === 1)).toBe(true)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === tabsBefore.length - 1)).toBe(true)
+    expect(await titles(second)).toEqual(['Page /moving'])
+    expect(await titles(chrome)).not.toContain('Page /moving')
+    // The page was not loaded again: what its script set is still there.
+    expect(await movingPage.evaluate(() => (window as unknown as { __marker?: string }).__marker)).toBe('kept')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('does not move a window\'s only tab into a window of its own', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await runCommand(chrome, 'tab.moveToNewWindow')
+    await delay(600)
+    expect(chromePages(app)).toHaveLength(1)
+    expect(await tabIds(chrome)).toHaveLength(1)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('moves a tab into another window when let go over its strip, and closes the window it leaves empty', async () => {
+  const { app, chrome: first } = await launched()
+  try {
+    await first.evaluate(() => { (window as unknown as { orivonShell: { newWindow: () => void } }).orivonShell.newWindow() })
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== first) as Page
+    await clickAddressBarRetrying(second, `${origin}/travelling`)
+    expect((await waitForTab(second, { address: `${origin}/travelling` })).ok).toBe(true)
+    const travelling = (await tabIds(second))[0] as string
+
+    // Where the first window's strip is, in screen coordinates.
+    const point = await app.evaluate(({ BaseWindow }) => {
+      const [older] = [...BaseWindow.getAllWindows()].sort((a, b) => a.id - b.id)
+      const bounds = older?.getBounds() ?? { x: 0, y: 0, width: 0, height: 0 }
+      return { x: bounds.x + bounds.width / 2, y: bounds.y + 20 }
+    })
+    await second.evaluate(([id, x, y]) => { (window as unknown as { orivonShell: { dropTab: (id: string, x: number, y: number) => void } }).orivonShell.dropTab(id as string, x as number, y as number) }, [travelling, point.x, point.y] as const)
+
+    expect(await waitFor(async () => (await tabIds(first)).includes(travelling))).toBe(true)
+    // The second window's only tab went, so the window went with it.
+    expect(await waitFor(() => chromePages(app).length === 1)).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('takes a tab out into a window of its own when it is dragged well away from the strip', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await openTabs(app, chrome, '/dragged')
+    const box = await chrome.locator('.tab', { hasText: 'Page /dragged' }).boundingBox()
+    if (box === null) throw new Error('the tab has no box')
+
+    await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await chrome.mouse.down()
+    await chrome.mouse.move(box.x + box.width / 2, box.y + 300, { steps: 10 })
+    await chrome.mouse.up()
+
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== chrome) as Page
+    expect(await waitFor(async () => (await titles(second)).join() === 'Page /dragged')).toBe(true)
+    expect(await titles(chrome)).not.toContain('Page /dragged')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)

@@ -6,9 +6,15 @@ import type { WebContents } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ZoomService } from './zoom-service.js'
 
+/** Electron reports one turn of the wheel as two `zoom-changed` events a fraction of a millisecond apart (measured). Two in the same
+ * direction closer together than a wheel can turn are one step. */
+export const SAME_TURN_MS = 12
+
 export interface ZoomHost {
   /** Whether `contents` is a tab. The chrome, popovers and shell pages are not zoomed. */
   isTab: (contents: WebContents) => boolean
+  /** Milliseconds, from any starting point. */
+  now?: () => number
 }
 
 export function attachZoom (contents: WebContents, zoom: ZoomService, host: ZoomHost): void {
@@ -23,8 +29,13 @@ export function attachZoom (contents: WebContents, zoom: ZoomService, host: Zoom
 
   // Applied at commit, not once the document is ready, so a page does not paint at the wrong size first.
   contents.on('did-navigate', (_event, url) => { apply(url) })
+  const now = host.now ?? (() => performance.now())
+  let lastStep: { direction: string, at: number } | null = null
   contents.on('zoom-changed', (_event, direction) => {
     if (!host.isTab(contents)) return
+    const at = now()
+    if (lastStep?.direction === direction && at - lastStep.at < SAME_TURN_MS) return
+    lastStep = { direction, at }
     const origin = originFromUrl(contents.getURL())
     if (origin !== null) zoom.step(origin, direction)
   })

@@ -5,6 +5,7 @@ import type { Web3Score } from '../main/browsing/site-trust.js'
 import type { ShellState, TabState } from '../main/shell/tabs.js'
 import { createBookmarksView } from './bookmarks-view.js'
 import { closeIcon, faviconElement } from './icons.js'
+import { isDraggingTab, makeTabDraggable } from './tab-drag.js'
 import { paintMark, paintShield, shieldLabel, web3Shield } from './web3-shield.js'
 
 // The chrome view's whole job: render ShellState, turn clicks/typing into
@@ -49,6 +50,12 @@ interface OrivonShell {
   openSiteInfo: (anchor: PopoverAnchor, page: SiteInfoPage, url?: string) => void
   /** Opens (or closes) the main menu under the toolbar's menu button; same anchor contract as openPermissions. */
   openMenu: (anchor: PopoverAnchor) => void
+  /** Puts a tab at a place in the strip. */
+  moveTab: (id: string, index: number) => void
+  /** A tab was let go outside the strip, at this point of the screen. */
+  dropTab: (id: string, x: number, y: number) => void
+  /** Asks main for the right-click menu of a tab. */
+  showTabMenu: (id: string) => void
   onState: (listener: (state: ShellState) => void) => () => void
   /** Commands main asks the chrome to carry out itself. */
   onCommand: (listener: (command: { type: 'focusAddress' }) => void) => () => void
@@ -142,7 +149,15 @@ function renderFavicon (tab: TabState): HTMLSpanElement {
   return fav
 }
 
+let tabsRenderDeferred = false
+
 function renderTabs (state: ShellState): void {
+  // A tab held by the pointer is not rebuilt under it; the strip is redrawn when it is let go.
+  if (isDraggingTab()) {
+    tabsRenderDeferred = true
+    return
+  }
+  tabsRenderDeferred = false
   // Rebuilds the whole strip on every push rather than diffing -- simple,
   // and tab counts in v0 are small enough that this never shows up as jank.
   const items = tabrow.querySelectorAll('.tab')
@@ -176,6 +191,19 @@ function renderTabs (state: ShellState): void {
 
     el.append(renderFavicon(tab), title, close)
     el.addEventListener('click', () => shell.activateTab(tab.id))
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      shell.showTabMenu(tab.id)
+    })
+    makeTabDraggable(el, tab.id, {
+      tabs: () => [...tabrow.querySelectorAll<HTMLElement>('.tab')],
+      beforeLast: () => newTabBtn,
+      stripHeight: () => tabrow.getBoundingClientRect().height,
+      moveTab: (id, index) => { shell.moveTab(id, index) },
+      dropTab: (id, x, y) => { shell.dropTab(id, x, y) },
+      // Let go in the strip, the order on screen is already the order main is about to confirm.
+      finished: (tornOut) => { if (tornOut || tabsRenderDeferred) renderTabs(currentState) }
+    })
     // Middle-click closes a tab, matching every other browser. Guarded on
     // mousedown too: Windows arms Blink's middle-click autoscroll on
     // mousedown, before 'auxclick' fires, so preventDefault() there alone

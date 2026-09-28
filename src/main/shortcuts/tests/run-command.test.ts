@@ -11,14 +11,15 @@ interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInt
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, ...extra })
 
 function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
-  const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache'].map((name) => [name, vi.fn()]))
+  const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
-  const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false) }
+  const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
     window,
     chrome: { webContents: { focus: vi.fn(), send } },
     tabs: {
       getState: () => ({ tabs, activeTabId }),
+      tabCount: tabs.length,
       faviconFor: () => 'data:icon',
       activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'] }),
       ...calls
@@ -130,7 +131,7 @@ describe('runCommand', () => {
     runCommand('app.quit', target, deps)
 
     expect(deps.quit).toHaveBeenCalledTimes(1)
-    expect(deps.openWindow).toHaveBeenCalledTimes(1)
+    expect(deps.openWindow).toHaveBeenCalledExactlyOnceWith({ place: { x: 38, y: 48, width: 800, height: 600 } })
     expect(calls['close']).toHaveBeenCalledTimes(1)
     expect(calls['setFullScreen']).toHaveBeenCalledWith(true)
     expect(calls['openInternal']).toHaveBeenCalledWith('settings')
@@ -155,5 +156,19 @@ describe('runCommand', () => {
     const { target, deps, devtools } = harness([tab('a')], 'a')
     runCommand('devtools.toggle', target, deps)
     expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith({ reloadIgnoringCache: expect.anything() }, target.window)
+  })
+
+  it('moves the active tab along the strip, and opens a window for it only when it has company', () => {
+    const { target, calls, deps } = harness([tab('a'), tab('b'), tab('c')], 'b')
+    runCommand('tab.moveLeft', target, deps)
+    runCommand('tab.moveRight', target, deps)
+    expect(calls['moveTab']?.mock.calls).toEqual([['b', 0], ['b', 2]])
+
+    runCommand('tab.moveToNewWindow', target, deps)
+    expect(deps.openWindow).toHaveBeenCalledWith(expect.objectContaining({ place: { x: 38, y: 48, width: 800, height: 600 }, first: expect.any(Function) }))
+
+    const alone = harness([tab('a')], 'a')
+    runCommand('tab.moveToNewWindow', alone.target, alone.deps)
+    expect(alone.deps.openWindow).not.toHaveBeenCalled()
   })
 })

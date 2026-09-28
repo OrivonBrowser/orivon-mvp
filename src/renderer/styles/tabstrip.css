@@ -31,6 +31,9 @@
   user-select: none;
   overflow: hidden;
 }
+/* The tab under the pointer during a drag: above its neighbours, and dimmed once letting go would take it out of the strip. */
+.tab.dragging { z-index: 2; opacity: 0.92; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); transition: none; }
+.tab.dragging.torn { opacity: 0.5; }
 .tab:hover:not(.active) {
   background: color-mix(in srgb, var(--wink) 6%, transparent);
 }

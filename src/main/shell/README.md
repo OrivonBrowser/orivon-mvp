@@ -6,7 +6,12 @@ title-bar overlay and the rule for when it first shows). A process holds any num
 windows, and `shell-services.ts` is what they share: the bookmark store, and the
 `window-registry.ts` through which a page's IPC finds the window holding it. `tabs.ts` owns the
 tab collection and what gets pushed to the chrome UI; `tab-view.ts` and `tab-types.ts` are its
-pure halves. `renderer-entry.ts`
+pure halves, and `tab-factory.ts` builds the three kinds of tab (a website or app, one of the
+shell's own pages, a popup Chromium made). `tab-order.ts` is where a tab sits in the strip;
+`tab-move.ts` moves one between windows (keeping the same page: its view is taken out of one window
+and shown in another), `tab-menu.ts` is a tab's right-click menu, and `window-actions.ts` is what the
+chrome's buttons and menus ask of their window beyond the tab collection. `window-options.ts` says
+how a new window is to open (where, and with which tab). `renderer-entry.ts`
 resolves electron-vite's dev-server/file-URL split for both this and
 [`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts). `user-agent.ts`
 derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide. `dev-switches.ts`

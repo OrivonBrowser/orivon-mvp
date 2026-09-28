@@ -9,6 +9,7 @@
 // (checked against electron.d.ts, not assumed).
 import { app, BaseWindow, nativeTheme, screen } from 'electron'
 import { join } from 'node:path'
+import type { Placement } from './window-options.js'
 
 // Kept in sync with src/renderer/style.css's --wchrome/--wink tokens --
 // same dual-source-of-truth pattern as window.ts's CHROME_HEIGHT. The overlay
@@ -38,7 +39,7 @@ export interface WindowFrame {
 
 /** `dirname`: the calling module's own `import.meta.dirname`, from which a run
  * from source finds the repo's build/icon.png (out/main -> ../../build). */
-export function createWindowFrame (dirname: string): WindowFrame {
+export function createWindowFrame (dirname: string, place: Placement = {}): WindowFrame {
   // Hands the app icon to the window. GNOME's dock does not read it -- the
   // icon shown for a running window comes from matching the window's WM_CLASS
   // ("orivon") against a .desktop entry's Icon=/StartupWMClass, and this
@@ -67,7 +68,8 @@ export function createWindowFrame (dirname: string): WindowFrame {
     x: bounds.x + Math.round((bounds.width - width) / 2),
     y: bounds.y + Math.round((bounds.height - height) / 2),
     width,
-    height
+    height,
+    ...place
   }
 
   const initialOverlay = nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT

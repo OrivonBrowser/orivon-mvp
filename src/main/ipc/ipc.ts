@@ -79,10 +79,26 @@ export type ShellCommand =
   | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
   /** Opens, or closes, the main menu under the toolbar's menu button. Same `anchor` contract as `openPermissions`. */
   | { type: 'openMenu'; anchor: PanelAnchor }
+  /** Puts a tab at a place in the strip. */
+  | { type: 'moveTab'; id: string; index: number }
+  /** A tab was let go outside the strip, at this point of the screen: into another window's strip, or a window of its own. */
+  | { type: 'dropTab'; id: string; x: number; y: number }
+  /** The right-click menu of a tab, which main shows (it lists the other windows). */
+  | { type: 'tabMenu'; id: string }
 
 function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents): boolean {
   return event.senderFrame !== null &&
     event.senderFrame === chromeWebContents.mainFrame
+}
+
+/** What the chrome's commands do that is the window's own business rather than the tab collection's. */
+export interface ShellActions {
+  openPermissions: (anchor: PanelAnchor, url?: string) => void
+  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
+  runCommand: (id: CommandId) => void
+  openMenu: (anchor: PanelAnchor) => void
+  dropTab: (id: string, at: { x: number, y: number }) => void
+  showTabMenu: (id: string) => void
 }
 
 export function registerShellIpc (
@@ -90,10 +106,7 @@ export function registerShellIpc (
   tabs: TabManager,
   bookmarks: BookmarkStore,
   siteInfo: SiteInfoController,
-  openPermissions: (anchor: PanelAnchor, url?: string) => void,
-  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void,
-  runCommand: (id: CommandId) => void,
-  openMenu: (anchor: PanelAnchor) => void
+  actions: ShellActions
 ): void {
   // On the chrome view's own webContents rather than the process-wide
   // ipcMain: a second window registers its own without colliding, and the
@@ -111,7 +124,7 @@ export function registerShellIpc (
         tabs.createTab(command.url)
         return
       case 'runCommand':
-        if (isCommandId(command.id)) runCommand(command.id)
+        if (isCommandId(command.id)) actions.runCommand(command.id)
         return
       case 'openInternal':
         // The page name comes from the chrome view, but is checked all the same.
@@ -161,13 +174,22 @@ export function registerShellIpc (
       case 'web3ScoreFor':
         return siteInfo.siteTrustFor(command.url).then(web3Score)
       case 'openPermissions':
-        openPermissions(command.anchor, command.url)
+        actions.openPermissions(command.anchor, command.url)
         return
       case 'openSiteInfo':
-        openSiteInfo(command.anchor, command.page, command.url)
+        actions.openSiteInfo(command.anchor, command.page, command.url)
         return
       case 'openMenu':
-        openMenu(command.anchor)
+        actions.openMenu(command.anchor)
+        return
+      case 'moveTab':
+        if (typeof command.id === 'string' && Number.isFinite(command.index)) tabs.moveTab(command.id, command.index)
+        return
+      case 'dropTab':
+        if (typeof command.id === 'string' && Number.isFinite(command.x) && Number.isFinite(command.y)) actions.dropTab(command.id, { x: command.x, y: command.y })
+        return
+      case 'tabMenu':
+        if (typeof command.id === 'string') actions.showTabMenu(command.id)
         return
     }
   })

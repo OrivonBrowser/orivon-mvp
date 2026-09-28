@@ -67,6 +67,9 @@ contextBridge.exposeInMainWorld('orivonShell', {
   },
 
   openMenu: (anchor: PanelAnchor) => { send({ type: 'openMenu', anchor }) },
+  moveTab: (id: string, index: number) => { send({ type: 'moveTab', id, index }) },
+  dropTab: (id: string, x: number, y: number) => { send({ type: 'dropTab', id, x, y }) },
+  showTabMenu: (id: string) => { send({ type: 'tabMenu', id }) },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe
    * function; the listener is a closure, not the raw ipcRenderer, so the

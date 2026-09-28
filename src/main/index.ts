@@ -85,14 +85,14 @@ void app.whenReady().then(async () => {
   applyThemeSetting(shell.settings, nativeTheme)
   shell.history.prune()
   startInternalPages(shell, ctx)
-  shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, openWindow: () => { createShellWindow(ctx, shell) }, quit: () => { app.quit() } })
+  shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
   installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
   installZoom(app, shell.windows, shell.zoom)
   installHistory(app, shell.windows, shell.internalPages, shell.history)
   registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
   // Only this first window can open on the welcome screen: the macOS
   // 'activate' below recreates a window in a process that has already shown it.
-  createShellWindow(ctx, shell, await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')))
+  createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')) })
   app.on('activate', () => {
     if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
   })

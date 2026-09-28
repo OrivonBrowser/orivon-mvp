@@ -3,6 +3,9 @@
 import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
 import type { ShellWindow } from '../shell/window-registry.js'
+import { moveToNewWindow } from '../shell/tab-move.js'
+import { cascadeFrom } from '../shell/window-options.js'
+import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { DevToolsService } from '../devtools/devtools-service.js'
 import type { ZoomService } from '../zoom/zoom-service.js'
@@ -12,7 +15,7 @@ export interface CommandDeps {
   readonly bookmarks: BookmarkStore
   readonly zoom: ZoomService
   readonly devtools: DevToolsService
-  readonly openWindow: () => void
+  readonly openWindow: (options?: ShellWindowOptions) => void
   readonly quit: () => void
 }
 
@@ -63,7 +66,13 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       if (deps.bookmarks.has(active.url)) deps.bookmarks.remove(active.url)
       else deps.bookmarks.add({ url: active.url, title: active.title.length > 0 ? active.title : active.url, favicon: tabs.faviconFor(active.id) })
       return
-    case 'window.new': deps.openWindow(); return
+    case 'window.new': deps.openWindow({ place: cascadeFrom(window.getBounds()) }); return
+    case 'tab.moveLeft': case 'tab.moveRight':
+      if (active !== undefined) tabs.moveTab(active.id, activeIndex + (id === 'tab.moveRight' ? 1 : -1))
+      return
+    case 'tab.moveToNewWindow':
+      if (active !== undefined) moveToNewWindow(target, active.id, deps.openWindow, cascadeFrom(window.getBounds()))
+      return
     case 'window.close': window.close(); return
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
     case 'settings.open': tabs.openInternal('settings'); return

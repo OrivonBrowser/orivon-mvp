@@ -106,10 +106,15 @@ it('steps a site with Ctrl and the mouse wheel', async () => {
     await clickAddressBarRetrying(chrome, `${siteOrigin}/wheel`)
     expect((await waitForTab(chrome, { address: `${siteOrigin}/wheel` })).ok).toBe(true)
 
-    await app.evaluate(({ webContents }, part) => {
-      const target = webContents.getAllWebContents().find((contents) => contents.getURL().includes(part))
-      target?.sendInputEvent({ type: 'mouseWheel', x: 200, y: 200, deltaX: 0, deltaY: -120, wheelTicksY: 1, modifiers: ['control'] })
-    }, `${siteOrigin}/wheel`)
+    // A wheel event sent before the page has painted is dropped, so it is sent again until one is heard. One that
+    // was heard but is slow shows the chip before the second is sent.
+    for (let attempt = 0; attempt < 4 && await chip(chrome) === null; attempt += 1) {
+      await app.evaluate(({ webContents }, part) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL().includes(part))
+        target?.sendInputEvent({ type: 'mouseWheel', x: 200, y: 200, deltaX: 0, deltaY: -120, wheelTicksY: 1, modifiers: ['control'] })
+      }, `${siteOrigin}/wheel`)
+      await waitFor(async () => await chip(chrome) !== null, 2500)
+    }
 
     expect(await waitFor(async () => await chip(chrome) === '110%')).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')

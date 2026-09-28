@@ -21,13 +21,14 @@ import { registerShellIpc } from '../ipc/ipc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
 import { createMenuPanel } from './menu-panel.js'
+import { shellActions } from './window-actions.js'
+import type { SiteInfoMemory } from './window-actions.js'
 import type { ShellWindow } from './window-registry.js'
-import type { PopoverAnchor } from '../permissions/popover-view.js'
 import { HtmlFullscreen } from './fullscreen.js'
 import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
-import type { IntroPlan } from './intro-state.js'
+import type { ShellWindowOptions } from './window-options.js'
 import { showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady } from './window-frame.js'
 import type { ShellServices } from './shell-services.js'
@@ -55,8 +56,9 @@ export function resolveDashboardUrl (): string {
 /** One shell window. `services` are what every window of this process shares;
  * `intro`: the process's first window on a launch that opens on the welcome
  * screen (./intro-state.ts). */
-export function createShellWindow (ctx: SubsystemContext, services: ShellServices, intro?: IntroPlan): BaseWindow {
-  const frame = createWindowFrame(import.meta.dirname)
+export function createShellWindow (ctx: SubsystemContext, services: ShellServices, options: ShellWindowOptions = {}): BaseWindow {
+  const { intro, first, place } = options
+  const frame = createWindowFrame(import.meta.dirname, place)
   const { win } = frame
 
   const chrome = new WebContentsView({
@@ -309,8 +311,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // with, so its own "Site settings" row (./site-info-panel.js's
   // `openAllSites` parameter) has somewhere sensible to open the all-sites
   // popup -- that row has no anchor of its own to measure.
-  let lastSiteInfoAnchor: PopoverAnchor | null = null
-  let lastSiteInfoOrigin: string | undefined
+  const siteInfoMemory: SiteInfoMemory = { anchor: null, origin: undefined }
 
   const siteInfoPanel = createSiteInfoPanel(
     win, win.contentView, siteInfo, app.getPath('userData'),
@@ -321,7 +322,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     },
     () => {
       siteInfoPanel.close()
-      permissionsPanel.toggle(lastSiteInfoAnchor ?? { x: 0, y: chromeHeight(), width: 0, height: 0 }, lastSiteInfoOrigin)
+      permissionsPanel.toggle(siteInfoMemory.anchor ?? { x: 0, y: chromeHeight(), width: 0, height: 0 }, siteInfoMemory.origin)
     },
     import.meta.dirname
   )
@@ -329,35 +330,14 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const entry: ShellWindow = { window: win, chrome, tabs, shortcutsSuspended: () => fullscreen.tabId !== null }
   const menuPanel = createMenuPanel(win, win.contentView, services.shortcuts, (id) => { services.commands.run(id, entry) }, import.meta.dirname)
 
-  registerShellIpc(
-    chrome.webContents, tabs, bookmarks, siteInfo,
-    (anchor, url) => {
-      // The chrome view sends the active TAB's url, not an origin -- same
-      // `originFromUrl` tab-view.ts's own appTabArgsFor already uses for
-      // the identical derivation. undefined (no tab, or the dashboard) and
-      // an unparseable url both mean "no particular app to scroll to", not
-      // an error.
-      const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
-      siteInfoPanel.close() // only one popup open at a time
-      menuPanel.close()
-      permissionsPanel.toggle(anchor, focusOrigin)
-    },
-    (anchor, page, url) => {
-      const origin = url === undefined ? undefined : originFromUrl(url) ?? undefined
-      if (origin === undefined) return // no canonical origin -- nothing this popup can show
-      lastSiteInfoAnchor = anchor
-      lastSiteInfoOrigin = origin
-      permissionsPanel.close() // only one popup open at a time
-      menuPanel.close()
-      siteInfoPanel.toggle(anchor, origin, page)
-    },
-    (id) => { services.commands.run(id, entry) },
-    (anchor) => {
-      permissionsPanel.close() // only one popup open at a time
-      siteInfoPanel.close()
-      menuPanel.toggle(anchor)
-    }
-  )
+  registerShellIpc(chrome.webContents, tabs, bookmarks, siteInfo, shellActions({
+    entry,
+    services,
+    panels: { permissions: permissionsPanel, siteInfo: siteInfoPanel, menu: menuPanel },
+    memory: siteInfoMemory,
+    openWindow: (options) => { createShellWindow(ctx, services, options) },
+    topHeight: CHROME_TOP_ROWS
+  }))
   const forgetWindow = services.windows.add(entry)
   win.on('close', () => { tabs.dispose() })
   win.on('closed', () => {
@@ -390,7 +370,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   })
 
   layoutChrome()
-  tabs.createTab()
+  if (first === undefined) tabs.createTab()
+  else first(tabs)
   // After the first tab, so the view stacks above it.
   if (intro !== undefined) showIntro(win, tabs, intro)
 
