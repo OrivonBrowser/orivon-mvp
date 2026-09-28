@@ -13,6 +13,14 @@ const RANDOM_CHUNK = 65_536
 const SUBSCRIPTION_SIZE = 48
 const EVENT_SIZE = 32
 const RESOLUTION_NS = 1_000n
+/** setTimeout's largest delay; a longer wait is taken in slices of this. */
+const MAX_TIMER_MS = 2 ** 31 - 1
+
+async function sleepMs (ms: number): Promise<void> {
+  for (let left = ms; left > 0; left -= MAX_TIMER_MS) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(left, MAX_TIMER_MS)))
+  }
+}
 
 function msToNs (ms: number): bigint {
   const whole = Math.trunc(ms)
@@ -127,8 +135,7 @@ export function environmentFunctions (ctx: HostContext): ImportFamily {
         let ready = subscriptions.filter((sub) => sub.type !== EventType.CLOCK || sub.waitNs === 0n)
         if (ready.length === 0) {
           const soonest = subscriptions.reduce((min, sub) => sub.waitNs < min.waitNs ? sub : min)
-          await new Promise((resolve) => setTimeout(resolve, Number(soonest.waitNs / 1_000_000n)))
-          ctx.throwIfTerminated()
+          await ctx.untilTerminated(sleepMs(Number(soonest.waitNs / 1_000_000n)))
           ready = [soonest]
         }
         ready.forEach((sub, index) => {

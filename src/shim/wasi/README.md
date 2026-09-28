@@ -44,6 +44,14 @@ plausible `EIO`.
 `ENOSPC` (`context.ts`). A program retrying against a root that no longer exists would spin, and
 the in-flight cap clears on its own while a program has no code path for `EAGAIN` on a file.
 
+**A reactor's exports must be called through `WebAssembly.promising`** if they can reach a file
+call; `initializeReactor` wraps only `_initialize`, and a `Suspending` import reached from an
+unwrapped export traps. A reactor's files stay open after `_initialize`, since it lives on.
+
+**`path_remove_directory` has a window** between its emptiness check and the delete, because
+`orivon.fs.rm` removes a directory only recursively: a file created in that window is deleted too
+(A263). Provisional, until the broker can remove an empty directory in one call.
+
 **Rights are reported per descriptor kind, never enforced**, since programs read them; the broker
 is the boundary, so `fd_fdstat_set_rights` answers `NOTSUP`, as current runtimes do. The
 synchronous-write fdflags are refused rather than accepted and not honoured.

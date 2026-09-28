@@ -1,10 +1,10 @@
 // Real modules through JSPI: the program's stack suspends on each file
 // call and resumes with the result.
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { createWasiHost, type WasiHost, type WasiHostOptions } from '../host.js'
-import { WasiJspiUnavailable, runEntry, suspendingImports } from '../instantiate.js'
+import { WasiJspiUnavailable, initializeReactor, runCommand, suspendingImports } from '../instantiate.js'
 import { WasiTerminated } from '../termination.js'
 import { hasJspi, jspiWebAssembly } from './support/jspi.js'
 import { op, wasiModule } from './support/wasm-module.js'
@@ -24,7 +24,7 @@ async function start (bytes: Uint8Array<ArrayBuffer>, options: Omit<WasiHostOpti
   const host = createWasiHost({ fs: disk.orivon.fs, ...options })
   const module = new jspiWebAssembly.Module(bytes)
   const instance = new jspiWebAssembly.Instance(module, { wasi_snapshot_preview1: suspendingImports(host, jspiWebAssembly) } as WebAssembly.Imports)
-  return { host, run: runEntry(instance, host, '_start', jspiWebAssembly) }
+  return { host, run: runCommand(instance, host, jspiWebAssembly) }
 }
 
 /** Writes `text` (placed at 100) to fd 1, then exits with `code`. */
@@ -40,7 +40,7 @@ function hello (text: string, code: number): Uint8Array<ArrayBuffer> {
   })
 }
 
-describe.skipIf(!hasJspi)('runEntry, with JSPI', () => {
+describe.skipIf(!hasJspi)('runCommand and initializeReactor, with JSPI', () => {
   it('runs a command to proc_exit and resolves with its code, stdout delivered', async () => {
     const out: string[] = []
     const { run } = await start(hello('hello\n', 7), { stdout: (bytes) => { out.push(new TextDecoder().decode(bytes)) } })
@@ -95,11 +95,35 @@ describe.skipIf(!hasJspi)('runEntry, with JSPI', () => {
     await expect(run).rejects.toEqual(new WasiTerminated('killed'))
   })
 
-  it('names an entry export the module does not have', async () => {
+  it('ends a program suspended on a stdin read that never delivers, when killed', async () => {
+    const bytes = wasiModule({
+      imports: ['fd_read', 'proc_exit'],
+      body: (call) => [op.store(0, 100), op.store(4, 8), op.i32(0), op.i32(0), op.i32(1), op.i32(16), call('fd_read'), call('proc_exit')]
+    })
+    const { host, run } = await start(bytes, { stdin: { read: async () => await new Promise<Uint8Array>(() => {}) } })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    host.kill()
+    await expect(run).rejects.toEqual(new WasiTerminated('killed'))
+  })
+
+  it('names a command with no _start', async () => {
     disk = await createRealDiskFs()
     const host = createWasiHost({ fs: disk.orivon.fs })
-    const instance = new jspiWebAssembly.Instance(new jspiWebAssembly.Module(hello('x', 0)), { wasi_snapshot_preview1: suspendingImports(host, jspiWebAssembly) } as WebAssembly.Imports)
-    await expect(runEntry(instance, host, '_initialize', jspiWebAssembly)).rejects.toThrow(/does not export "_initialize"/)
+    const reactor = wasiModule({ imports: [], body: () => [], entry: '_initialize' })
+    const instance = new jspiWebAssembly.Instance(new jspiWebAssembly.Module(reactor), { wasi_snapshot_preview1: suspendingImports(host, jspiWebAssembly) } as WebAssembly.Imports)
+    await expect(runCommand(instance, host, jspiWebAssembly)).rejects.toThrow(/does not export "_start"/)
+  })
+
+  it('initializes a reactor, binding its memory even with no _initialize, and leaves its files open', async () => {
+    disk = await createRealDiskFs()
+    const host = createWasiHost({ fs: disk.orivon.fs })
+    const finish = vi.spyOn(host, 'finish')
+    const library = wasiModule({ imports: [], body: () => [], entry: 'compute' })
+    const instance = new jspiWebAssembly.Instance(new jspiWebAssembly.Module(library), { wasi_snapshot_preview1: suspendingImports(host, jspiWebAssembly) } as WebAssembly.Imports)
+    await initializeReactor(instance, host, jspiWebAssembly)
+    const argsSizes = host.functions.args_sizes_get as unknown as (count: number, size: number) => number
+    expect(argsSizes(0, 4)).toBe(0)
+    expect(finish).not.toHaveBeenCalled()
   })
 })
 

@@ -50,22 +50,39 @@ export function bindInstanceMemory (instance: WebAssembly.Instance, host: WasiHo
   host.bindMemory(memory as WebAssembly.Memory)
 }
 
-/**
- * Runs `entry` (a command's `_start`, a reactor's `_initialize`) to its end.
- * Resolves with the exit code: 0 when the entry returns, the argument of
- * proc_exit when the program calls it.
- */
-export async function runEntry (instance: WebAssembly.Instance, host: WasiHost, entry: string, wasm: object = WebAssembly): Promise<number> {
+async function callEntry (instance: WebAssembly.Instance, entry: string, wasm: object): Promise<number> {
   const fn = exportedFunction(instance, entry)
   if (fn === undefined) throw new TypeError(`The WASI program does not export "${entry}"`)
-  bindInstanceMemory(instance, host)
   try {
     await jspi(wasm).promising(fn)()
     return 0
   } catch (error) {
     if (error instanceof WasiExit) return error.code
     throw error
+  }
+}
+
+/**
+ * Runs a command's `_start` to its end, then closes every file it left
+ * open. Resolves with the exit code: 0 when `_start` returns, the argument
+ * of proc_exit when the program calls it.
+ */
+export async function runCommand (instance: WebAssembly.Instance, host: WasiHost, wasm: object = WebAssembly): Promise<number> {
+  bindInstanceMemory(instance, host)
+  try {
+    return await callEntry(instance, '_start', wasm)
   } finally {
     await host.finish()
   }
+}
+
+/**
+ * Binds a reactor's memory and runs its `_initialize`, when it has one. Its
+ * files stay open: a reactor lives on after `_initialize` returns. An export
+ * JavaScript calls later reaches a suspending import only if it is called
+ * through `WebAssembly.promising`.
+ */
+export async function initializeReactor (instance: WebAssembly.Instance, host: WasiHost, wasm: object = WebAssembly): Promise<void> {
+  bindInstanceMemory(instance, host)
+  if (exportedFunction(instance, '_initialize') !== undefined) await callEntry(instance, '_initialize', wasm)
 }

@@ -113,8 +113,7 @@ export function fdFunctions (ctx: HostContext): ImportFamily {
         const entry = fds.get(fd)
         if (entry?.kind === 'stdin') {
           const iovecs = memory.iovecs(iovsPtr, iovsLen)
-          const chunk = await ctx.stdin.read(iovecs.reduce((sum, iov) => sum + iov.len, 0))
-          ctx.throwIfTerminated()
+          const chunk = await ctx.untilTerminated(ctx.stdin.read(iovecs.reduce((sum, iov) => sum + iov.len, 0)))
           memory.u32(nreadPtr, memory.scatter(iovecs, chunk))
           return Errno.SUCCESS
         }
@@ -138,8 +137,7 @@ export function fdFunctions (ctx: HostContext): ImportFamily {
         const entry = fds.get(fd)
         if (entry?.kind === 'stdout' || entry?.kind === 'stderr') {
           const data = memory.gather(memory.iovecs(iovsPtr, iovsLen))
-          await (entry.kind === 'stdout' ? ctx.stdout : ctx.stderr)(data)
-          ctx.throwIfTerminated()
+          await ctx.untilTerminated(Promise.resolve((entry.kind === 'stdout' ? ctx.stdout : ctx.stderr)(data)))
           memory.u32(nwrittenPtr, data.length)
           return Errno.SUCCESS
         }

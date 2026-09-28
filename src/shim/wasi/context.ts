@@ -7,7 +7,7 @@ import { isRootPath, rootStat } from '../fs/root.js'
 import { Filetype, type Filestat, GuestMemory } from './memory.js'
 import { FdTable, inodeFor } from './fds.js'
 import type { Sink, StdinSource } from './stdio.js'
-import { WasiTerminated, type WasiTerminationReason } from './termination.js'
+import { WasiTerminated, type WasiTerminationReason, isTermination } from './termination.js'
 
 /** The part of orivon.fs a WASI program can reach. A Worker's proxy provides the same shape. */
 export type WasiFs = Pick<OrivonFs, 'open' | 'stat' | 'readdir' | 'mkdir' | 'rm' | 'rename'>
@@ -33,6 +33,8 @@ export class HostContext {
   readonly stdout: Sink
   readonly stderr: Sink
   #terminated: WasiTerminationReason | undefined
+  readonly #termination: Promise<never>
+  #rejectTermination: (error: WasiTerminated) => void = () => {}
   readonly #warned = new Set<string>()
 
   constructor (fs: WasiFs, args: readonly string[], env: readonly string[], stdin: StdinSource, stdout: Sink, stderr: Sink) {
@@ -42,31 +44,44 @@ export class HostContext {
     this.stdin = stdin
     this.stdout = stdout
     this.stderr = stderr
+    this.#termination = new Promise<never>((_resolve, reject) => { this.#rejectTermination = reject })
+    this.#termination.catch(() => {})
   }
 
   terminate (reason: WasiTerminationReason): void {
-    this.#terminated ??= reason
+    if (this.#terminated !== undefined) return
+    this.#terminated = reason
+    this.#rejectTermination(new WasiTerminated(reason))
   }
 
   throwIfTerminated (): void {
     if (this.#terminated !== undefined) throw new WasiTerminated(this.#terminated)
   }
 
+  /**
+   * Awaits `work` unless the program is stopped first, so kill() also ends a
+   * program suspended on a read that never resolves. A value that arrives
+   * after the stop goes to `discard`: an open handle is closed, not leaked.
+   */
+  async untilTerminated<T> (work: Promise<T>, discard?: (value: T) => void): Promise<T> {
+    this.throwIfTerminated()
+    work.then((value) => { if (this.#terminated !== undefined) discard?.(value) }, () => {})
+    return await Promise.race([work, this.#termination])
+  }
+
   /** One orivon.fs call: a transient limit is retried, a revoked grant stops the program. */
-  async fsCall<T> (run: () => Promise<T>): Promise<T> {
+  async fsCall<T> (run: () => Promise<T>, discard?: (value: T) => void): Promise<T> {
     for (let attempt = 0; ; attempt++) {
-      this.throwIfTerminated()
       try {
-        const result = await run()
-        this.throwIfTerminated()
-        return result
+        return await this.untilTerminated(run(), discard)
       } catch (error) {
+        if (isTermination(error)) throw error
         const { code, platformCode } = orivonCode(error)
         if (code === 'revoked') this.terminate('revoked')
         this.throwIfTerminated()
         const retryDelay = LIMIT_RETRY_DELAYS_MS[attempt]
         if (code === 'limit' && platformCode === undefined && retryDelay !== undefined) {
-          await delay(retryDelay)
+          await this.untilTerminated(delay(retryDelay))
           continue
         }
         throw error

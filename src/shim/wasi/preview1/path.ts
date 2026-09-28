@@ -39,12 +39,13 @@ function openFlags (intent: OpenIntent, exists: boolean): string {
  * O_CREAT, not O_EXCL, so it must not see EEXIST.
  */
 async function openFile (ctx: HostContext, path: string, intent: OpenIntent, exists: boolean): Promise<FileHandle> {
+  const closeLate = (handle: FileHandle): void => { void handle.close().catch(() => {}) }
   try {
-    return await ctx.fsCall(() => ctx.fs.open(path, openFlags(intent, exists)))
+    return await ctx.fsCall(() => ctx.fs.open(path, openFlags(intent, exists)), closeLate)
   } catch (error) {
     const raced = !exists && !intent.excl && (error as { code?: unknown } | null)?.code === 'exists'
     if (!raced) throw error
-    return await ctx.fsCall(() => ctx.fs.open(path, openFlags({ ...intent, trunc: false }, true)))
+    return await ctx.fsCall(() => ctx.fs.open(path, openFlags({ ...intent, trunc: false }, true)), closeLate)
   }
 }
 

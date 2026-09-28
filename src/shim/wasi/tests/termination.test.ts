@@ -52,6 +52,26 @@ describe('kill()', () => {
   })
 })
 
+describe('a file opened just as the program is killed', () => {
+  it('is closed when its open resolves, rather than leaked out of the descriptor table', async () => {
+    const hh = await harness()
+    let release: () => void = () => {}
+    let closed = false
+    const handle = { id: 'late', closed: new Promise<void>(() => {}), close: async () => { closed = true } }
+    vi.spyOn(hh.disk.orivon.fs, 'open').mockImplementation(async () => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return handle as unknown as Awaited<ReturnType<typeof hh.disk.orivon.fs.open>>
+    })
+    const pending = hh.call('path_open', 3, 0, PATH, hh.put(PATH, 'new.txt'), 1, (1n << 1n) | (1n << 6n), 0n, 0, STAT)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    hh.host.kill()
+    await expect(pending).rejects.toEqual(new WasiTerminated('killed'))
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(closed).toBe(true)
+  })
+})
+
 describe('failed orivon.fs calls', () => {
   it('a revoked grant terminates the program rather than returning an errno it would retry', async () => {
     const hh = await harness()

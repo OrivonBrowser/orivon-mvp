@@ -78,9 +78,11 @@ export interface WasiProgram {
   readonly data?: ReadonlyArray<{ readonly offset: number, readonly text: string }>
   /** i32 locals `_start` declares. */
   readonly locals?: number
+  /** The entry's export name, `_start` unless a test needs a reactor's `_initialize`. */
+  readonly entry?: string
 }
 
-/** A command module exporting `memory` (one page) and `_start`. */
+/** A module exporting `memory` (one page) and its entry, `_start` by default. */
 export function wasiModule (program: WasiProgram): Uint8Array<ArrayBuffer> {
   const types: number[][] = program.imports.map((name) => {
     const signature = SIGNATURES[name]
@@ -107,7 +109,7 @@ export function wasiModule (program: WasiProgram): Uint8Array<ArrayBuffer> {
     ...section(5, vector([[0x00, 0x01]])),
     ...section(7, vector([
       [...bytes('memory'), 0x02, 0x00],
-      [...bytes('_start'), 0x00, ...uleb(startIndex)]
+      [...bytes(program.entry ?? '_start'), 0x00, ...uleb(startIndex)]
     ])),
     ...section(10, vector([[...uleb(code.length), ...code]])),
     ...section(11, vector(data))

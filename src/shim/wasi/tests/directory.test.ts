@@ -74,6 +74,14 @@ describe('fd_readdir', () => {
     expect(parseDirents(hh, hh.u32(NUM)).map((entry) => entry.name)).toEqual(['a-rather-long-file-name'])
   })
 
+  it('reads a cookie past the end, a u64 at or above 2^63 included, as nothing left to list', async () => {
+    const hh = await harness()
+    await hh.call('path_create_directory', ROOT_FD, PATH, hh.put(PATH, 'd'))
+    const { fd } = await openAt(hh, ROOT_FD, 'd', DIRECTORY, READ)
+    expect(await hh.call('fd_readdir', fd, BUF, 4096, -1n, NUM)).toBe(Errno.SUCCESS)
+    expect(hh.u32(NUM)).toBe(0)
+  })
+
   it('cannot list the app root itself, which the broker refuses', async () => {
     const hh = await harness()
     expect(await hh.call('fd_readdir', ROOT_FD, BUF, 4096, 0n, NUM)).toBe(Errno.ACCES)

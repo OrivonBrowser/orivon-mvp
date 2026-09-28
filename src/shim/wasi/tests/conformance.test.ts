@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createRealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { createWasiHost } from '../host.js'
-import { runEntry, suspendingImports } from '../instantiate.js'
+import { runCommand, suspendingImports } from '../instantiate.js'
 import { hasJspi, jspiWebAssembly } from './support/jspi.js'
 
 const SUITE = process.env.ORIVON_WASI_TESTSUITE
@@ -71,7 +71,7 @@ async function run (program: Program): Promise<{ code: number, stdout: string }>
     })
     const module = new jspiWebAssembly.Module(readFileSync(join(program.dir, program.file)))
     const instance = new jspiWebAssembly.Instance(module, { wasi_snapshot_preview1: suspendingImports(host, jspiWebAssembly) } as WebAssembly.Imports)
-    return { code: await runEntry(instance, host, '_start', jspiWebAssembly), stdout }
+    return { code: await runCommand(instance, host, jspiWebAssembly), stdout }
   } finally {
     await disk.cleanup()
   }

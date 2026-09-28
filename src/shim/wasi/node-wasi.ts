@@ -9,7 +9,7 @@ import { codedError } from '../node-errors.js'
 import { refuseShim } from '../errors.js'
 import { nodeModule } from '../polyfills/module-proxy.js'
 import { createWasiHost, type WasiHost } from './host.js'
-import { runEntry, suspendingImports } from './instantiate.js'
+import { initializeReactor, runCommand, suspendingImports } from './instantiate.js'
 
 export interface WASIOptions {
   readonly version: 'preview1' | 'unstable'
@@ -67,13 +67,13 @@ export class WASI {
   /** Runs a command's `_start`; resolves with its exit code. */
   async start (instance: WebAssembly.Instance): Promise<number> {
     this.#claim(instance, '_initialize')
-    return await runEntry(instance, this.#host, '_start')
+    return await runCommand(instance, this.#host)
   }
 
   /** Runs a reactor's `_initialize`, if it exports one. */
   async initialize (instance: WebAssembly.Instance): Promise<void> {
     this.#claim(instance, '_start')
-    if (typeof instance.exports._initialize === 'function') await runEntry(instance, this.#host, '_initialize')
+    await initializeReactor(instance, this.#host)
   }
 
   #claim (instance: WebAssembly.Instance, forbidden: string): void {

@@ -70,7 +70,8 @@ export class GuestMemory {
 
   string (ptr: number, len: number): string {
     try {
-      return utf8.decode(this.bytes(ptr, len))
+      // A copy: TextDecoder refuses a view over a shared memory, which a threaded build's is.
+      return utf8.decode(this.bytes(ptr, len).slice())
     } catch (error) {
       if (error instanceof RangeError) throw error
       throw new InvalidUtf8('path is not valid UTF-8')

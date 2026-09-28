@@ -43,7 +43,7 @@ export interface WasiHost {
   kill (): void
   /**
    * Closes every file the program left open and emits any half-written
-   * console line. runEntry calls it when the program ends, however it ends:
+   * console line. runCommand calls it when the program ends, however it ends:
    * an open handle holds a slot in the broker's per-app handle table.
    */
   finish (): Promise<void>

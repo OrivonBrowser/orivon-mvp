@@ -126,6 +126,23 @@ describe('poll_oneoff', () => {
     expect(hh.u64(EVENTS)).toBe(42n)
   })
 
+  it('does not fire early on a wait longer than setTimeout can hold, and ends it when killed', async () => {
+    vi.useFakeTimers()
+    try {
+      const hh = await harness()
+      clockSubscription(hh, SUBS, 9n, 30n * 24n * 3_600n * 1_000_000_000n)
+      let settled = false
+      const pending = hh.call('poll_oneoff', SUBS, EVENTS, 1, NEVENTS).then(() => { settled = true }, () => { settled = true })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(settled).toBe(false)
+      hh.host.kill()
+      await pending
+      expect(settled).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('returns a ready descriptor at once rather than waiting for the clock', async () => {
     const hh = await harness()
     clockSubscription(hh, SUBS, 1n, 5_000_000_000n)
