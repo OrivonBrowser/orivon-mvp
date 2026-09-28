@@ -1,5 +1,5 @@
 // Whether a local origin serves a readable DDOC hash tree, in developer mode
-// only (`ADR-0029`'s 2026-09-28 amendment). A loopback address or a developer
+// only (`ADR-0029`). A loopback address or a developer
 // `.eth` name has no domain record, neither DNS nor an ENS contenthash, that
 // could anchor its tree, so the tree it serves is taken as its DDOC
 // (`../../trust/ddoc.ts`'s `local-dev`) and no file is compared against it.
