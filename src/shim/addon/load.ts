@@ -3,22 +3,30 @@
 // synchronous, so this is too: the build is fetched and compiled on the
 // calling thread. A page's main thread refuses to compile a large module
 // synchronously; preloadAddon does it asynchronously first, and a forked
-// child, a Worker, has no such limit.
+// child, a Worker, has no such limit. The addon's file calls block on the
+// page's orivon.fs, which only a Worker with shared memory can do.
 
 import { instantiateNapiModule, instantiateNapiModuleSync, type InstantiateOptions } from '@emnapi/core'
 import { getDefaultContext } from '@emnapi/runtime'
 import { refuseShim } from '../errors.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
-import { createWasiHost, type WasiFs } from '../wasi/host.js'
+import { type SyncWasiFs, createWasiHost, type WasiFs } from '../wasi/host.js'
 import { synchronousWasi } from '../wasi/instantiate.js'
+import { SYNCHRONOUS } from '../worker/sync-channel.js'
 import { addonPath, addonUrls, isWasm } from './resolve.js'
 
 /** Exports by the addon's path on the origin, however it was spelled when asked for. */
 const loaded = new Map<string, unknown>()
 const preloading = new Map<string, Promise<void>>()
 
-/** A synchronous module never reaches the file system (sync-fallbacks.ts), so its host needs none. */
+/** A synchronous module's file calls go to `syncFs`; the asynchronous orivon.fs is never reached. */
 const NO_FS = new Proxy({}, { get: () => { throw new Error('a native addon has no file system here') } }) as WasiFs
+
+/** A forked child's orivon has a synchronous twin when the app is cross-origin isolated; a page's has none. */
+function synchronousFs (): SyncWasiFs | undefined {
+  const orivon = (globalThis as { orivon?: Record<PropertyKey, unknown> }).orivon
+  return (orivon?.[SYNCHRONOUS] as { fs?: SyncWasiFs } | undefined)?.fs
+}
 
 interface WritableStdio { write?: (chunk: Uint8Array) => unknown }
 type ShimProcess = { env?: Record<string, string | undefined>, stdout?: WritableStdio, stderr?: WritableStdio } | undefined
@@ -71,8 +79,10 @@ function options (filename: string): InstantiateOptions {
   const proc = (globalThis as { process?: ShimProcess }).process
   const env = proc?.env ?? {}
   const write = (stream: WritableStdio | undefined) => (bytes: Uint8Array): void => { stream?.write?.(bytes) }
+  const syncFs = synchronousFs()
   const host = createWasiHost({
     fs: NO_FS,
+    ...(syncFs === undefined ? {} : { syncFs }),
     args: [filename],
     env: Object.fromEntries(Object.entries(env).flatMap(([key, value]) => value === undefined ? [] : [[key, value]])),
     preopens: { '/': VIRTUAL_ROOT },

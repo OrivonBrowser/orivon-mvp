@@ -5,20 +5,22 @@
 import { toConfinedPath } from '../fs/paths.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { HostContext, type WasiFs } from './context.js'
+import { type SyncIo, runAsync, runSync } from './drivers.js'
+import type { SyncWasiFs } from './effects.js'
 import { Errno, errnoFor } from './errno.js'
 import { PathError } from './fds.js'
 import { InvalidUtf8 } from './memory.js'
 import { directoryFunctions } from './preview1/directory.js'
 import { environmentFunctions } from './preview1/environment.js'
-import type { ImportFamily, WasiFunction } from './preview1/family.js'
+import type { ImportFamily, SyncSink, WasiFunction } from './preview1/family.js'
 import { fdFunctions } from './preview1/fd.js'
 import { pathFunctions } from './preview1/path.js'
 import { refusedFunctions } from './preview1/refused.js'
-import { type SyncSink, syncFallbacks } from './preview1/sync-fallbacks.js'
 import { EMPTY_STDIN, type LineSink, type Sink, type StdinSource, lineSink } from './stdio.js'
 import { isTermination } from './termination.js'
 
 export type { WasiFs } from './context.js'
+export type { SyncFileHandle, SyncWasiFs } from './effects.js'
 
 export interface WasiHostOptions {
   readonly fs: WasiFs
@@ -34,6 +36,8 @@ export interface WasiHostOptions {
   /** Where a synchronous module's stdout and stderr go (syncFunctions). Default: the page console. */
   readonly syncStdout?: SyncSink
   readonly syncStderr?: SyncSink
+  /** What a synchronous module's file calls reach. Without it, each refuses with NOSYS and a console line. */
+  readonly syncFs?: SyncWasiFs
 }
 
 export interface WasiHost {
@@ -43,8 +47,8 @@ export interface WasiHost {
   readonly suspending: ReadonlySet<string>
   /**
    * The same functions for a module JavaScript calls synchronously, which
-   * cannot suspend: stdout and stderr go to the page console, and every call
-   * that would wait on orivon.fs refuses by name (sync-fallbacks.ts).
+   * cannot suspend: each file call is answered by `syncFs` before it
+   * returns, and output goes to `syncStdout` and `syncStderr`.
    */
   readonly syncFunctions: Readonly<Record<string, WasiFunction>>
   /** Called once the instance exists, before its entry export runs. */
@@ -102,7 +106,7 @@ export function createWasiHost (options: WasiHostOptions): WasiHost {
   ]
   const functions: Record<string, WasiFunction> = {}
   const suspending = new Set<string>()
-  const guardSync = (fn: (...args: never[]) => number): WasiFunction => (...args: never[]) => {
+  const guard = (fn: (...args: never[]) => number): WasiFunction => (...args: never[]) => {
     try {
       ctx.throwIfTerminated()
       return fn(...args)
@@ -111,13 +115,13 @@ export function createWasiHost (options: WasiHostOptions): WasiHost {
     }
   }
   for (const family of families) {
-    for (const [name, fn] of Object.entries(family.sync)) functions[name] = guardSync(fn)
-    for (const [name, fn] of Object.entries(family.async)) {
+    for (const [name, fn] of Object.entries(family.sync)) functions[name] = guard(fn)
+    for (const [name, op] of Object.entries(family.ops)) {
       suspending.add(name)
       functions[name] = async (...args: never[]) => {
         try {
           ctx.throwIfTerminated()
-          return await fn(...args)
+          return await runAsync(ctx, op(...args))
         } catch (error) {
           return toErrno(error)
         }
@@ -134,12 +138,15 @@ export function createWasiHost (options: WasiHostOptions): WasiHost {
       lineSinks.push(line)
       return (bytes) => { void line.sink(bytes) }
     }
-    const fallbacks = syncFallbacks(ctx, suspending, {
+    const io: SyncIo = {
+      fs: options.syncFs,
       stdout: sinkOf(options.syncStdout, (line) => console.log(line)),
       stderr: sinkOf(options.syncStderr, (line) => console.error(line))
-    })
+    }
     const table: Record<string, WasiFunction> = { ...functions }
-    for (const [name, fn] of Object.entries(fallbacks)) table[name] = guardSync(fn as (...args: never[]) => number)
+    for (const family of families) {
+      for (const [name, op] of Object.entries(family.ops)) table[name] = guard((...args) => runSync(ctx, op(...args), io))
+    }
     return table
   }
 

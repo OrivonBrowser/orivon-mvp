@@ -2,6 +2,7 @@
 // calls that touch no file.
 
 import type { HostContext } from '../context.js'
+import { sleep } from '../effects.js'
 import { Errno } from '../errno.js'
 import { encodeUtf8, unsigned } from '../memory.js'
 import { WasiExit } from '../termination.js'
@@ -13,15 +14,6 @@ const RANDOM_CHUNK = 65_536
 const SUBSCRIPTION_SIZE = 48
 const EVENT_SIZE = 32
 const RESOLUTION_NS = 1_000n
-/** setTimeout's largest delay; a longer wait is taken in slices of this. */
-const MAX_TIMER_MS = 2 ** 31 - 1
-
-async function sleepMs (ms: number): Promise<void> {
-  for (let left = ms; left > 0; left -= MAX_TIMER_MS) {
-    await new Promise((resolve) => setTimeout(resolve, Math.min(left, MAX_TIMER_MS)))
-  }
-}
-
 function msToNs (ms: number): bigint {
   const whole = Math.trunc(ms)
   return BigInt(whole) * 1_000_000n + BigInt(Math.round((ms - whole) * 1_000_000))
@@ -122,12 +114,12 @@ export function environmentFunctions (ctx: HostContext): ImportFamily {
         throw new WasiExit(code)
       }
     },
-    async: {
-      sched_yield: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0))
+    ops: {
+      * sched_yield () {
+        yield * sleep(0)
         return Errno.SUCCESS
       },
-      poll_oneoff: async (inPtr: number, outPtr: number, count: number, eventCountPtr: number) => {
+      * poll_oneoff (inPtr: number, outPtr: number, count: number, eventCountPtr: number) {
         if (unsigned(count) === 0) return Errno.INVAL
         const subscriptions = readSubscriptions(ctx, unsigned(inPtr), unsigned(count))
         if (typeof subscriptions === 'number') return subscriptions
@@ -135,7 +127,8 @@ export function environmentFunctions (ctx: HostContext): ImportFamily {
         let ready = subscriptions.filter((sub) => sub.type !== EventType.CLOCK || sub.waitNs === 0n)
         if (ready.length === 0) {
           const soonest = subscriptions.reduce((min, sub) => sub.waitNs < min.waitNs ? sub : min)
-          await ctx.untilTerminated(sleepMs(Number(soonest.waitNs / 1_000_000n)))
+          const ms = Number(soonest.waitNs / 1_000_000n)
+          if (ms > 0) yield * sleep(ms)
           ready = [soonest]
         }
         ready.forEach((sub, index) => {

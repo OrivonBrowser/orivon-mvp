@@ -129,3 +129,9 @@ see in the PR itself.
 |---|---|---|
 | `/code-review`, high effort, run by a forked reviewer | `src/shim/addon/`, the `module` target, and the WASI host's synchronous imports | 10 findings, all fixed in the same branch, with a test where one applies: a concurrent preload could instantiate an addon twice; `createRequire(import.meta.url)` misread an https URL; a command build crashed inside emnapi instead of refusing; addon output bypassed a forked child's stdout and a line without a newline was lost; the synchronous `fd_write` answered NOSYS for a bad descriptor; a preload's errors were not wrapped; the cache key was not normalised; every host built the synchronous imports eagerly; and the polyfills README missed the new module |
 
+### `stream/addon-files`: an addon's files through a Worker's synchronous calls (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | The WASI host's effect generators and drivers, `src/shim/worker/sync-channel.ts` with the server and client changes, and the addon loader's synchronous fs | 9 findings, all fixed in the same branch with a test where one applies: a refused synchronous reply left what it opened open on the page; a reply that failed to encode left the Worker waiting forever; `fd_renumber` became a suspending import; one revoked call disabled an addon for good; the reply writer pinned the last reply; an invalid reply channel threw on the page; stdin read end of input silently under the synchronous driver; sub-millisecond `poll_oneoff` waits began yielding; and the limit retry and the driver loop existed twice |
+

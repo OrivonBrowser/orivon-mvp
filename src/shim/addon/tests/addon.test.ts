@@ -2,10 +2,15 @@
 // Node-API module (no toolchain, ADR-0002) whose napi_register_wasm_v1 sets
 // two exports and prints through WASI.
 
+import { writeFileSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OrivonShimError } from '../../errors.js'
 import { createRequire } from '../../polyfills/module.js'
-import { commandAddon, napiAddon, threadedAddon } from './support/napi-addons.js'
+import { createRealDiskFs } from '../../tests/support/real-disk-fs.js'
+import { Errno } from '../../wasi/errno.js'
+import { SYNCHRONOUS } from '../../worker/sync-channel.js'
+import { commandAddon, fileAddon, napiAddon, threadedAddon } from './support/napi-addons.js'
 import { dlopen, loadAddon, preloadAddon } from '../index.js'
 import { addonUrls } from '../resolve.js'
 
@@ -84,6 +89,33 @@ describe('loadAddon', () => {
   it('refuses a threaded build by name, since it needs Workers sharing its memory', () => {
     serveSync({ '/lib/threaded.wasm': threadedAddon() })
     expect(() => loadAddon('/lib/threaded.node')).toThrow(OrivonShimError)
+  })
+})
+
+describe('an addon\'s files', () => {
+  it('reads and writes the app\'s files through a Worker\'s synchronous orivon', async () => {
+    const disk = await createRealDiskFs()
+    try {
+      writeFileSync(join(disk.root, 'data.txt'), 'written by the page')
+      serveSync({ '/lib/files.wasm': fileAddon() })
+      vi.stubGlobal('orivon', { [SYNCHRONOUS]: { fs: disk.syncFs } })
+      const exports = loadAddon('/lib/files.node') as { content: string, openErrno: number }
+      expect(exports.openErrno).toBe(Errno.SUCCESS)
+      expect(exports.content).toBe('written by the page')
+      expect(readFileSync(join(disk.root, 'out.txt'), 'utf8')).toBe('from addon')
+    } finally {
+      await disk.cleanup()
+    }
+  })
+
+  it('refuse with NOSYS and one console line where the thread cannot block on the page', () => {
+    serveSync({ '/lib/nofiles.wasm': fileAddon() })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const exports = loadAddon('/lib/nofiles.node') as { content: string, openErrno: number }
+    expect(exports.openErrno).toBe(Errno.NOSYS)
+    expect(exports.content).toBe('')
+    // Its read of the unopened descriptor reaches stdin, which warns separately.
+    expect(warn.mock.calls.filter(([line]) => /cross-origin isolated/.test(String(line)))).toHaveLength(1)
   })
 })
 

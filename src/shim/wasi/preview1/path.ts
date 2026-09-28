@@ -1,11 +1,12 @@
 // The path_* functions: opening, describing, creating, removing and
 // renaming a name under a directory descriptor.
 
-import type { FileHandle, FileStat } from '../../../contracts/handles.js'
+import type { FileStat } from '../../../contracts/handles.js'
 import { isRootPath } from '../../fs/root.js'
 import { type HostContext, filestatOf } from '../context.js'
+import { type Op, fsCall } from '../effects.js'
 import { Errno } from '../errno.js'
-import { type DirectoryEntry, PathError, type ResolvedPath, resolveGuestPath } from '../fds.js'
+import { type DirectoryEntry, type FileEntry, PathError, type ResolvedPath, resolveGuestPath } from '../fds.js'
 import type { ImportFamily } from './family.js'
 import { Oflags, Rights, SYNC_FDFLAGS } from './flags.js'
 
@@ -38,14 +39,13 @@ function openFlags (intent: OpenIntent, exists: boolean): string {
  * `stat` and a create without EXCL is simply opened: the program asked for
  * O_CREAT, not O_EXCL, so it must not see EEXIST.
  */
-async function openFile (ctx: HostContext, path: string, intent: OpenIntent, exists: boolean): Promise<FileHandle> {
-  const closeLate = (handle: FileHandle): void => { void handle.close().catch(() => {}) }
+function * openFile (path: string, intent: OpenIntent, exists: boolean): Op<FileEntry['handle']> {
   try {
-    return await ctx.fsCall(() => ctx.fs.open(path, openFlags(intent, exists)), closeLate)
+    return yield * fsCall<FileEntry['handle']>('open', path, openFlags(intent, exists))
   } catch (error) {
     const raced = !exists && !intent.excl && (error as { code?: unknown } | null)?.code === 'exists'
     if (!raced) throw error
-    return await ctx.fsCall(() => ctx.fs.open(path, openFlags({ ...intent, trunc: false }, true)), closeLate)
+    return yield * fsCall<FileEntry['handle']>('open', path, openFlags({ ...intent, trunc: false }, true))
   }
 }
 
@@ -65,9 +65,9 @@ export function pathFunctions (ctx: HostContext): ImportFamily {
 
   return {
     sync: {},
-    async: {
-      path_open: async (dirFd: number, _dirflags: number, pathPtr: number, pathLen: number, oflags: number,
-        rightsBase: bigint, _rightsInheriting: bigint, fdflags: number, openedFdPtr: number) => {
+    ops: {
+      * path_open (dirFd: number, _dirflags: number, pathPtr: number, pathLen: number, oflags: number,
+        rightsBase: bigint, _rightsInheriting: bigint, fdflags: number, openedFdPtr: number) {
         const resolved = resolve(dirFd, pathPtr, pathLen)
         if ((fdflags & SYNC_FDFLAGS) !== 0) return Errno.NOTSUP
         const trunc = (oflags & Oflags.TRUNC) !== 0
@@ -80,7 +80,7 @@ export function pathFunctions (ctx: HostContext): ImportFamily {
           trunc
         }
         const wantsDirectory = (oflags & Oflags.DIRECTORY) !== 0
-        const existing = await ctx.statIfExists(resolved.path)
+        const existing = yield * ctx.statIfExists(resolved.path)
         assertTrailingSlashFits(resolved, existing)
         if (intent.creat && intent.excl && existing !== undefined) return Errno.EXIST
         if (existing?.isDirectory === true) {
@@ -92,7 +92,7 @@ export function pathFunctions (ctx: HostContext): ImportFamily {
         if (wantsDirectory) return existing === undefined ? Errno.NOENT : Errno.NOTDIR
         if (existing === undefined && !intent.creat) return Errno.NOENT
         if (existing === undefined && resolved.trailingSlash) return Errno.ISDIR
-        const handle = await openFile(ctx, resolved.path, intent, existing !== undefined)
+        const handle = yield * openFile(resolved.path, intent, existing !== undefined)
         const fd = fds.add({
           kind: 'file',
           path: resolved.path,
@@ -105,54 +105,54 @@ export function pathFunctions (ctx: HostContext): ImportFamily {
         memory.u32(openedFdPtr, fd)
         return Errno.SUCCESS
       },
-      path_filestat_get: async (dirFd: number, _flags: number, pathPtr: number, pathLen: number, bufPtr: number) => {
+      * path_filestat_get (dirFd: number, _flags: number, pathPtr: number, pathLen: number, bufPtr: number) {
         const resolved = resolve(dirFd, pathPtr, pathLen)
-        const stat = await ctx.stat(resolved.path)
+        const stat = yield * ctx.stat(resolved.path)
         assertTrailingSlashFits(resolved, stat)
         memory.filestat(bufPtr, filestatOf(resolved.path, stat))
         return Errno.SUCCESS
       },
-      path_create_directory: async (dirFd: number, pathPtr: number, pathLen: number) => {
+      * path_create_directory (dirFd: number, pathPtr: number, pathLen: number) {
         const resolved = resolve(dirFd, pathPtr, pathLen)
         refuseRoot(resolved, Errno.EXIST)
-        await ctx.fsCall(() => ctx.fs.mkdir(resolved.path))
+        yield * fsCall('mkdir', resolved.path)
         return Errno.SUCCESS
       },
-      path_remove_directory: async (dirFd: number, pathPtr: number, pathLen: number) => {
+      * path_remove_directory (dirFd: number, pathPtr: number, pathLen: number) {
         const resolved = resolve(dirFd, pathPtr, pathLen)
         refuseRoot(resolved, Errno.INVAL)
-        const stat = await ctx.stat(resolved.path)
+        const stat = yield * ctx.stat(resolved.path)
         if (!stat.isDirectory) return Errno.NOTDIR
-        const entries = await ctx.fsCall(() => ctx.fs.readdir(resolved.path))
+        const entries = yield * fsCall<readonly string[]>('readdir', resolved.path)
         if (entries.length > 0) return Errno.NOTEMPTY
         // orivon.fs.rm is Node's fs.rm, which refuses any directory without
         // `recursive`; emptiness was checked above, as rmdir requires.
-        await ctx.fsCall(() => ctx.fs.rm(resolved.path, { recursive: true }))
+        yield * fsCall('rm', resolved.path, { recursive: true })
         return Errno.SUCCESS
       },
-      path_unlink_file: async (dirFd: number, pathPtr: number, pathLen: number) => {
+      * path_unlink_file (dirFd: number, pathPtr: number, pathLen: number) {
         const resolved = resolve(dirFd, pathPtr, pathLen)
         refuseRoot(resolved, Errno.ISDIR)
-        const stat = await ctx.stat(resolved.path)
+        const stat = yield * ctx.stat(resolved.path)
         if (stat.isDirectory) return Errno.ISDIR
         assertTrailingSlashFits(resolved, stat)
-        await ctx.fsCall(() => ctx.fs.rm(resolved.path))
+        yield * fsCall('rm', resolved.path)
         return Errno.SUCCESS
       },
-      path_rename: async (oldFd: number, oldPtr: number, oldLen: number, newFd: number, newPtr: number, newLen: number) => {
+      * path_rename (oldFd: number, oldPtr: number, oldLen: number, newFd: number, newPtr: number, newLen: number) {
         const from = resolve(oldFd, oldPtr, oldLen)
         const to = resolve(newFd, newPtr, newLen)
         refuseRoot(from, Errno.ACCES)
         refuseRoot(to, Errno.ACCES)
-        const source = await ctx.stat(from.path)
+        const source = yield * ctx.stat(from.path)
         assertTrailingSlashFits(from, source)
         if (to.trailingSlash && !source.isDirectory) return Errno.NOTDIR
-        await ctx.fsCall(() => ctx.fs.rename(from.path, to.path))
+        yield * fsCall('rename', from.path, to.path)
         return Errno.SUCCESS
       },
-      path_readlink: async (dirFd: number, pathPtr: number, pathLen: number) => {
+      * path_readlink (dirFd: number, pathPtr: number, pathLen: number) {
         // orivon.fs has no symbolic links, so an existing name is never one: POSIX's EINVAL.
-        await ctx.stat(resolve(dirFd, pathPtr, pathLen).path)
+        yield * ctx.stat(resolve(dirFd, pathPtr, pathLen).path)
         return Errno.INVAL
       }
     }

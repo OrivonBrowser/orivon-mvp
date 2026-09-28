@@ -9,6 +9,7 @@ imports. The `.node` file itself is never fetched: machine code does not run her
 Durable: no Electron API.
 
 **What it depends on.** `@emnapi/core` and `@emnapi/runtime`, [`../wasi/`](../wasi/),
+`../worker/sync-channel.ts` (the symbol a Worker's synchronous `orivon` sits under),
 `../errors.ts` and `../virtual-root.ts`.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
@@ -20,8 +21,13 @@ README.
 `<file>.node.wasm`, `<file>.wasm` (emnapi) or `<file>.wasm32-wasi.wasm` (napi-rs). None found is
 `ERR_DLOPEN_FAILED` with `reason: 'excluded'`, naming the three paths.
 
-**What an addon cannot do yet:** reach files (its imports cannot wait on `orivon.fs`, so those
-calls refuse by name), run a threaded build (`wasm32-wasip1-threads` refuses by name,
+**Where an addon reaches files:** in a forked child of a cross-origin isolated app (manifest
+`crossOriginIsolated: true`), where each file call blocks on the page's `orivon.fs`
+([`../worker/`](../worker/)'s synchronous calls). On a page's main thread, which may not block,
+they refuse with `NOSYS` and one console line: an addon that needs files is loaded in a forked
+child.
+
+**What an addon cannot do yet:** run a threaded build (`wasm32-wasip1-threads` refuses by name,
 `not-built`), or open sockets. A command build, one exporting `_start`, refuses too: emnapi starts
 one through Node's own WASI internals, so an addon is built as a reactor, as napi-rs builds it.
 Its stdout and stderr go to `process.stdout` and `process.stderr`, as Node's do: the page console,
@@ -36,8 +42,8 @@ document may not set `responseType` on one, so it reads the bytes as `x-user-def
 asynchronously first, and the later synchronous load returns the cached exports. A forked child
 runs in a Worker, which has no such limit, so it loads any addon on the fly.
 
-**An addon's imports never suspend** (`../wasi/preview1/sync-fallbacks.ts`): JavaScript calls its
-exports synchronously, and a `Suspending` import reached without a `promising` entry traps.
+**An addon's imports never suspend** (`../wasi/drivers.ts`'s synchronous driver): JavaScript calls
+its exports synchronously, and a `Suspending` import reached without a `promising` entry traps.
 
 **Each addon is loaded once per page or Worker**, keyed by its path on the origin however it was
 spelled (a path, an https or `file:` URL, `.` segments), as Node caches a dlopen by resolved path.

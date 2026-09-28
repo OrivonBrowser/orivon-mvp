@@ -38,6 +38,6 @@ export function refusedFunctions (ctx: HostContext): ImportFamily {
       sock_send: socketCall,
       sock_shutdown: socketCall
     },
-    async: {}
+    ops: {}
   }
 }

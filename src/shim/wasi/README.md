@@ -18,19 +18,30 @@ README. The host reaches files only through the `WasiFs` it is handed.
 
 **Not served:** links and file times (`orivon.fs` has neither), sockets (preview1 cannot dial),
 and listing the app root itself, which the broker refuses as it does for `fs/`. Against the
-preview1 conformance suite, 63 of 72 programs pass; the nine that fail need links or file times.
+preview1 conformance suite, 63 of 72 programs pass under each driver; the nine that fail need
+links or file times.
 [`tests/conformance.test.ts`](tests/conformance.test.ts) runs it when `ORIVON_WASI_TESTSUITE`
 names a checkout.
 
 ## Design notes
 
+**Each call that may wait is written once, as a generator of effects** (`effects.ts`: an
+`orivon.fs` call, a call on an open file, stdin, output, a pause), and runs under one of two
+drivers (`drivers.ts`). The asynchronous one awaits each effect while the program is suspended
+through JSPI. The synchronous one, for a module JavaScript calls directly (a native addon),
+answers each before returning, from the `syncFs` it was given. Without one (a page's main thread,
+or an app that is not cross-origin isolated), a file effect refuses with `NOSYS` and one console
+line. Under the synchronous driver stdin always reads as end of input, with a console line, and a
+pause blocks the thread. A driver never throws a termination into an effect generator, where a
+`catch` could swallow it.
+
 **Only imports that may await are wrapped in `WebAssembly.Suspending`** (`instantiate.ts`, the
 one file that touches JSPI). Chromium refuses a `Suspending` import reached through an export not
 wrapped in `promising`, and never calls it, so clocks, randomness, arguments and `proc_exit` stay
-plain imports in each family's `sync` half. Moving one to `async` breaks every module whose
+plain imports in each family's `sync` half. Moving one to `ops` breaks every module whose
 exports JavaScript calls directly.
 
-**Never hold a view of guest memory across an `await`.** While a program is suspended another
+**Never hold a view of guest memory across a `yield`.** While a program is suspended another
 export may grow its memory, which detaches the buffer. `memory.ts` builds a fresh view on each
 access, and reads every pointer through `unsigned()`: an i32 above 2 GiB reaches JavaScript
 negative.
@@ -41,8 +52,10 @@ keeps it. An error with no errno shape is a bug in the host and is rethrown, nev
 plausible `EIO`.
 
 **A revoked grant terminates the program; a bare `limit` is retried** three times before it is
-`ENOSPC` (`context.ts`). A program retrying against a root that no longer exists would spin, and
-the in-flight cap clears on its own while a program has no code path for `EAGAIN` on a file.
+`ENOSPC` (`drivers.ts`, `effects.ts`). A program retrying against a root that no longer exists
+would spin, and the in-flight cap clears on its own while a program has no code path for `EAGAIN`
+on a file. Under the synchronous driver a revoked grant is only that call's `EIO`: an addon's host
+outlives any one call, and its caller handles the error.
 
 **A reactor's exports must be called through `WebAssembly.promising`** if they can reach a file
 call; `initializeReactor` wraps only `_initialize`, and a `Suspending` import reached from an

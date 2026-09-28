@@ -3,6 +3,7 @@
 
 import { normalize } from 'path'
 import type { FileHandle } from '../../contracts/handles.js'
+import type { SyncFileHandle } from './effects.js'
 import { Errno } from './errno.js'
 
 export interface StdioEntry {
@@ -22,7 +23,8 @@ export interface DirectoryEntry {
 export interface FileEntry {
   readonly kind: 'file'
   readonly path: string
-  readonly handle: FileHandle
+  /** A SyncFileHandle when the host runs a synchronous module over a SyncWasiFs. */
+  readonly handle: FileHandle | SyncFileHandle
   readonly readable: boolean
   readonly writable: boolean
   /** preview1 fdflags; APPEND is the one that changes what a write does. */

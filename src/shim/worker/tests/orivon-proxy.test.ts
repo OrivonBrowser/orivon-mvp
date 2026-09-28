@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createOrivonClient } from '../orivon-client.js'
 import { type OrivonServer, serveOrivon } from '../orivon-server.js'
+import { createChannelBuffer, decodeReply } from '../sync-channel.js'
 
 interface FakeHandle { id: string, closed: Promise<void>, close: () => Promise<void>, closedCount: () => number }
 
@@ -48,9 +49,12 @@ describe('calls', () => {
     await expect(client.fs.toString()).rejects.toThrow(/orivon has no method fs.toString/)
   })
 
-  it('refuses readFileSync by name, and is never mistaken for a promise', async () => {
+  it('refuses readFileSync by name without shared memory, and is never mistaken for a promise', async () => {
+    // A Worker of an app that is not cross-origin isolated has no SharedArrayBuffer to block on.
+    vi.stubGlobal('SharedArrayBuffer', undefined)
     const client = connect({ fs: {} })
-    expect(() => (client.fs.readFileSync as unknown as () => void)()).toThrow(/not available in a Worker/)
+    vi.unstubAllGlobals()
+    expect(() => (client.fs.readFileSync as unknown as () => void)()).toThrow(/not available in a Worker of an app that is not cross-origin isolated/)
     expect((client as { then?: unknown }).then).toBeUndefined()
     expect(await Promise.resolve(client.fs)).toBeDefined()
   })
@@ -110,5 +114,47 @@ describe('handles', () => {
     await server?.dispose()
     server = undefined
     expect(file.closedCount()).toBe(1)
+  })
+})
+
+/**
+ * One synchronous call answered by the server, read without blocking: this
+ * thread serves it too. The header is sync-channel.ts's: a state word
+ * (1 once written), the chunk's length, and the data after 16 bytes.
+ */
+async function syncReply (orivon: object, path: string[]): Promise<unknown> {
+  channel = new MessageChannel()
+  server = serveOrivon(channel.port1, orivon)
+  const buffer = createChannelBuffer()
+  const header = new Int32Array(buffer, 0, 4)
+  channel.port2.postMessage({ syncBuffer: buffer })
+  channel.port2.postMessage({ path, args: [], id: 1, sync: true })
+  await vi.waitFor(() => { expect(Atomics.load(header, 0)).toBe(1) })
+  return decodeReply(new Uint8Array(buffer, 16, header[1]).slice())
+}
+
+describe('synchronous calls', () => {
+  it('refuse a value holding a stream, and cancel it rather than leave it open on the page', async () => {
+    const cancel = vi.fn(async () => {})
+    const stream = new ReadableStream({ cancel })
+    expect(await syncReply({ net: { stream: async () => stream } }, ['net', 'stream'])).toMatchObject({ ok: false, error: { name: 'OrivonShimError' } })
+    expect(cancel).toHaveBeenCalled()
+  })
+
+  it('refuse a handle whose streams are pumped, and close it', async () => {
+    const server = fakeHandle('listener', { connections: new ReadableStream() })
+    expect(await syncReply({ net: { listen: async () => server } }, ['net', 'listen'])).toMatchObject({ ok: false })
+    expect(server.closedCount()).toBe(1)
+  })
+
+  it('answer a value that cannot be encoded with an error, never silence the Worker is waiting on', async () => {
+    expect(await syncReply({ app: { big: async () => 1n } }, ['app', 'big'])).toMatchObject({ ok: false, error: { name: 'TypeError' } })
+  })
+
+  it('ignore a reply channel the page cannot write into', () => {
+    channel = new MessageChannel()
+    server = serveOrivon(channel.port1, {})
+    expect(() => { (channel?.port1.onmessage as (event: { data: unknown }) => void)({ data: { syncBuffer: new SharedArrayBuffer(16) } }) }).not.toThrow()
+    expect(() => { (channel?.port1.onmessage as (event: { data: unknown }) => void)({ data: { syncBuffer: new ArrayBuffer(64) } }) }).not.toThrow()
   })
 })
