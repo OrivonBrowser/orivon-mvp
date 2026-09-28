@@ -98,9 +98,15 @@ Five required sections, two optional. In order:
 > Goal, what it achieves and how it works are asked *per change*, inside `## Changes`, one
 > entry each. **A PR with one change has one entry.**
 
+**Length.** An ordinary PR body is **at most 400 words**, and each `## Changes` entry at most
+six lines. The ceiling lifts for the critical path: a PR that touches `src/contracts/`,
+`src/broker/`, `src/loader/`, `src/shim/` or `src/main/consent/`, or carries `type:security`,
+takes the room it needs. A body nobody reads records nothing, so the default is the length a
+reader finishes.
+
 ### `## Changes`
 
-**One `###` entry per major change, each titled like a PR**: imperative, naming a change. Under each, in as much room as it needs:
+**One `###` entry per major change, each titled like a PR**: imperative, naming a change. Under each, in at most six lines outside the critical path:
 
 - **Goal**. One sentence of *intent*. What is this for?
 - **What it achieves**. A short list of *outcome*. What is now true that was not?
@@ -213,8 +219,9 @@ Four short lines. This is the block that makes parallel work safe, so it stays t
 Mark anything provisional as provisional. Presenting an unconfirmed call as settled is how a
 project ends up defending a choice nobody made.
 
-If the change files anything in [`open-questions.md`](../open-questions.md), **list the
-A-numbers here**. Take them from `main`'s highest, not your branch's: on 2026-08-27 four
+If the change files anything in [`open-questions.md`](../open-questions.md), in its fixed
+shape, or resolves an entry into [`resolved-questions.md`](../decisions/resolved-questions.md),
+**list the A-numbers here**. Take them from `main`'s highest, not your branch's: on 2026-08-27 four
 branches each claimed A15, and a merged renumber left `origin.ts` citing a stranger's question.
 [`parallel-work.md`](parallel-work.md) §Open-question numbers has the one-liner that prevents it.
 Taking the number from `main`'s highest reduces the collision, but two branches opened at the
@@ -229,7 +236,8 @@ check.
 
 ### `## How it was verified`
 
-**The commands you ran, and what they actually said.** Paste the numbers.
+**The commands you ran, and what they actually said.** Paste the summary lines each one
+printed (`Tests 1265 passed (1265)`, a guard's one-line verdict), never the full output.
 
 ```
 npm run typecheck && npm test && npm run check:natives && npm run check:contracts && npm run check:vectors && npm run check:secrets && npm run check:comments && npm run check:size
@@ -350,19 +358,16 @@ subsections for three unrelated things, that is three PRs.
 
 ## Applying the blueprint
 
-### The short form
+### The short form is the default
 
-**A PR that genuinely stands alone and is small (a revert, a hotfix, a `type:chore`) may
-collapse to three sections:** `## What changes for the user`, `## Changes` with a single entry,
+**Every PR keeps the five required sections within the 400-word ceiling** of §The body. A PR
+that genuinely stands alone and is small (a revert, a hotfix, a `type:chore`) may collapse
+further, to three sections: `## What changes for the user`, `## Changes` with a single entry,
 and `## How it was verified`.
 
-> A `src/contracts/` PR is never a candidate for the short form: it is on the critical path and
-> takes the full form.
-
-The carve-out is deliberate and narrow. A blueprint that demands the full form for a typo fix
-is a blueprint that gets skipped on small PRs, and then on medium ones. Everything on the
-critical path (`src/broker/`, `src/contracts/`, `src/shared/`, `src/loader/`, `src/shim/`, and
-anything labelled `type:security`) takes the full form regardless of size.
+Everything on the critical path (`src/broker/`, `src/contracts/`, `src/shared/`, `src/loader/`,
+`src/shim/`, `src/main/consent/`, and anything labelled `type:security`) takes the long form
+regardless of size: no ceiling, and never the three-section collapse.
 
 ### Nothing enforces this mechanically
 
