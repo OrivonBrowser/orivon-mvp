@@ -324,9 +324,13 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     const loaded = chrome.webContents.getURL()
     if (loaded !== chromeUrl) console.error(`[window] the chrome loaded ${loaded}, not ${chromeUrl}; its commands will be refused`)
   })
-  // The address bar's Cut/Copy/Paste: the same menu a tab gets.
+  // The address bar's Cut/Copy/Paste: the same menu a tab gets. Inspect on
+  // the chrome's own page goes through DevToolsService like every other
+  // opener, so the developer.tools setting and the tracked-open set both
+  // apply to it too; devModeEnabled() keeps it out of reach outside dev mode.
   chrome.webContents.on('context-menu', (_event, params) => {
-    showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, ...(devModeEnabled() ? { inspect: (x: number, y: number) => { chrome.webContents.inspectElement(x, y) } } : {}) })
+    const canInspect = devModeEnabled() && services.devtools?.allowed(chrome.webContents) === true
+    showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, ...(canInspect ? { inspect: (x: number, y: number) => { services.devtools?.inspect(chrome.webContents, win, x, y) } } : {}) })
   })
 
   // Queue item 4.4's permissions surface, now a panel inside this window
