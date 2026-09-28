@@ -103,6 +103,15 @@ Not run: `ca:review` and `ca:security-reviewer`, which need an initialised `.cod
 asked only for exploitable vulnerabilities, passed all three PRs; the defects it set aside as
 denial of service are the ones that would have failed `.eth` pages and favicons for real users.
 
+### The browser-grade shell branch: Settings, profiles, history, zoom, tabs, split view, private windows, DevTools (2026-09-28)
+
+Reviewed once the branch was complete and before it merged. The fixes are in the same PR.
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Correctness review by a subagent, read-only, with throwaway probes for the findings it could reproduce | The tab, split and window code | 10 findings, none a crash in main: a listener leaked per tab per redraw, a split's survivor left half-size, a fullscreen claim that outlived its tab, a close reported twice, a joined pair split by a move. All fixed with a test each |
+| Adversarial security review by a subagent, read-only | The new IPC, internal-page, launch and history surface | 9 findings and a dev-only nit, none a way for a page to reach a domain it should not. Availability and privacy: a failed peer start ended the browser, a failed prune ended it at every start, the visit list of IPNS names was copied into private sessions, history could grow without bound and kept cleared addresses in its file, DevTools' question was asked by address and not by session. All fixed with a test each |
+
 ## Adding an entry
 
 When an independent review event finishes (a hand-review, an adversarial pass, a security
