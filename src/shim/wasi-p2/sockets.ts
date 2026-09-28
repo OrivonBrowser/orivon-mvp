@@ -6,7 +6,7 @@
 import { type IpAddress, type IpAddressFamily, ResolvedNames, type SocketNet, parseAddress, socketFailure } from './addresses.js'
 import { type IoError, Pollable } from './io.js'
 import { TcpSocket } from './tcp.js'
-import { UdpSocket } from './udp.js'
+import { IncomingDatagramStream, OutgoingDatagramStream, UdpSocket } from './udp.js'
 
 /** wasi:sockets/network's `network`: the one this host hands out stands for the app's own grants. */
 export class Network {}
@@ -56,7 +56,7 @@ export function socketInterfaces (net: SocketNet): Record<string, Record<string,
     'wasi:sockets/instance-network': { instanceNetwork: (): Network => network },
     'wasi:sockets/tcp': { TcpSocket },
     'wasi:sockets/tcp-create-socket': { createTcpSocket: (family: IpAddressFamily): TcpSocket => new TcpSocket(context, family) },
-    'wasi:sockets/udp': { UdpSocket },
+    'wasi:sockets/udp': { UdpSocket, IncomingDatagramStream, OutgoingDatagramStream },
     'wasi:sockets/udp-create-socket': { createUdpSocket: (family: IpAddressFamily): UdpSocket => new UdpSocket(net, names, family) },
     'wasi:sockets/ip-name-lookup': {
       ResolveAddressStream,

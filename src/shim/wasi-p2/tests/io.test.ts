@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { ResolvedNames, formatAddress, parseAddress, socketErrorCode } from '../addresses.js'
 import { ComponentExit, exit, monotonicClock } from '../basics.js'
+import { componentImports } from '../imports.js'
 import { CLOSED, InputStream, IoError, OutputStream, poll } from '../io.js'
 
 function source (chunks: Uint8Array[]): () => Promise<Uint8Array> {
@@ -119,5 +120,27 @@ describe('resolved names', () => {
     names.remember('other.test', address(4_999))
     names.remember('host-4999.test', address(4_999))
     expect(names.hostFor(address(4_999))).toBe(formatAddress(address(4_999)))
+  })
+})
+
+describe('the imports object', () => {
+  it('carries every resource class WASI 0.2 declares in each interface, since a real program imports them all', () => {
+    const resources: Record<string, string[]> = {
+      'wasi:io/error': ['Error'],
+      'wasi:io/poll': ['Pollable'],
+      'wasi:io/streams': ['InputStream', 'OutputStream'],
+      'wasi:filesystem/types': ['Descriptor', 'DirectoryEntryStream'],
+      'wasi:sockets/network': ['Network'],
+      'wasi:sockets/tcp': ['TcpSocket'],
+      'wasi:sockets/udp': ['UdpSocket', 'IncomingDatagramStream', 'OutgoingDatagramStream'],
+      'wasi:sockets/ip-name-lookup': ['ResolveAddressStream'],
+      'wasi:cli/terminal-input': ['TerminalInput'],
+      'wasi:cli/terminal-output': ['TerminalOutput']
+    }
+    const stream = { stdin: new InputStream(async () => new Uint8Array(0)), stdout: new OutputStream(async () => {}), stderr: new OutputStream(async () => {}) }
+    const imports = componentImports({ fs: {} as never, net: {} as never, preopens: {}, args: [], env: {}, ...stream })
+    for (const [iface, names] of Object.entries(resources)) {
+      for (const name of names) expect(typeof imports[iface]?.[name], `${iface} ${name}`).toBe('function')
+    }
   })
 })

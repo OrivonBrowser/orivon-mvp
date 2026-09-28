@@ -18,6 +18,8 @@ export interface Transpiled {
 }
 
 export interface Jco {
+  /** A component, transpiled as a port is told to. */
+  transpile (component: Uint8Array, name: string): Transpiled
   /** A preview1 command made a WASI 0.2 component with the preview1 adapter, then transpiled as a port is told to. */
   adaptAndTranspile (program: Uint8Array, name: string): Promise<Transpiled>
   /** A core module written against `world` in `wit` (which may use the WASI 0.2.12 packages) made a component, then transpiled. */
@@ -51,6 +53,7 @@ export async function loadJco (): Promise<Jco> {
     }
   }
   return {
+    transpile,
     adaptAndTranspile: async (program, name) => transpile(await componentNew(program, [['wasi_snapshot_preview1', adapter]]), name),
     embedAndTranspile: async (module, wit, world, name) => {
       const dir = mkdtempSync(join(tmpdir(), 'orivon-wit-'))
