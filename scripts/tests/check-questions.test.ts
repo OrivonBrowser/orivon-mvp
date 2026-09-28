@@ -1,123 +1,97 @@
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkQuestionNumbers, findHeadingNumbers, QUESTIONS_FILE } from '../check-questions.mjs'
+import {
+  checkQuestionNumbers, findHeadingNumbers, findLongEntries, MAX_ENTRY_LINES, QUESTIONS_FILE, RESOLVED_FILE
+} from '../check-questions.mjs'
 
-/** A scratch directory holding only docs/open-questions.md, with the given body. */
-const fixture = (body: string): string => {
+const TABLE = '| ID | Question | Resolution | Record |\n|---|---|---|---|\n'
+
+/** A scratch repository holding both question files, with the given bodies. */
+const fixture = (open: string, resolved = TABLE): string => {
   const root = mkdtempSync(join(tmpdir(), 'orivon-questions-'))
-  const full = join(root, QUESTIONS_FILE)
-  mkdirSync(join(full, '..'), { recursive: true })
-  writeFileSync(full, body)
+  for (const [file, body] of [[QUESTIONS_FILE, open], [RESOLVED_FILE, resolved]] as const) {
+    const full = join(root, file)
+    mkdirSync(join(full, '..'), { recursive: true })
+    writeFileSync(full, body)
+  }
   return root
 }
 
+/** An entry `lines` long, heading included. */
+const entry = (id: string, lines: number): string =>
+  [`### ${id}: a question **[AI-REC]**`, ...Array.from({ length: lines - 1 }, (_, i) => `- line ${i}`)].join('\n')
+
 describe('checkQuestionNumbers', () => {
-  it('passes a file whose entry numbers are all distinct', () => {
-    const body = [
-      '### A1 -- first question **[STILL OPEN]**',
-      '',
-      'Body text.',
-      '',
-      '### A2 — second question, em dash this time',
-      '',
-      'More body text.',
-      ''
-    ].join('\n')
-    const result = checkQuestionNumbers(fixture(body))
-    expect(result.ok).toBe(true)
-    expect(result.duplicates).toEqual([])
+  it('passes when every number is used once across both files', () => {
+    const result = checkQuestionNumbers(fixture(`${entry('A2', 3)}\n`, `${TABLE}| A1 | q | r | - |\n`))
+    expect(result).toEqual({ ok: true, duplicates: [], long: [] })
   })
 
-  it('fails when the same number headings twice, naming every line it appears on', () => {
-    const body = [
-      '### A115 -- first claim to this number',
-      '',
-      'Body one.',
-      '',
-      '### A116 -- an unrelated entry in between',
-      '',
-      'Body two.',
-      '',
-      '### A115 — a second, colliding claim to the same number',
-      '',
-      'Body three.',
-      ''
-    ].join('\n')
-    const result = checkQuestionNumbers(fixture(body))
+  it('fails when an open entry reuses a resolved number, naming both places', () => {
+    const result = checkQuestionNumbers(fixture(`${entry('A7', 3)}\n`, `${TABLE}| A7 | q | r | - |\n`))
     expect(result.ok).toBe(false)
     expect(result.duplicates).toEqual([
-      { number: '115', lines: [1, 9] }
+      { number: '7', places: [`${QUESTIONS_FILE}:1`, `${RESOLVED_FILE}:3`] }
     ])
   })
 
-  it('reports every duplicated number, not just the first', () => {
-    const body = [
-      '### A1 -- one',
-      '### A2 -- two',
-      '### A1 -- one again',
-      '### A2 -- two again'
-    ].join('\n')
-    const result = checkQuestionNumbers(fixture(body))
+  it('reports every duplicated number, within one file too, sorted by number', () => {
+    const open = [entry('A12', 2), entry('A3', 2), entry('A12', 2), entry('A3', 2)].join('\n\n')
+    expect(checkQuestionNumbers(fixture(open)).duplicates.map((d) => d.number)).toEqual(['3', '12'])
+  })
+
+  it('does not require numeric order: two branches merging can interleave their entries', () => {
+    const open = [entry('A142', 2), entry('A140', 2)].join('\n\n')
+    expect(checkQuestionNumbers(fixture(open)).ok).toBe(true)
+  })
+
+  it('ignores an example inside a fenced block, such as the shape shown in the header', () => {
+    const open = ['```', '### A123: <title>', '```', '', entry('A123', 2)].join('\n')
+    expect(checkQuestionNumbers(fixture(open)).ok).toBe(true)
+  })
+
+  it('fails an open entry over the line ceiling', () => {
+    const result = checkQuestionNumbers(fixture(`${entry('A9', MAX_ENTRY_LINES + 1)}\n`))
     expect(result.ok).toBe(false)
-    expect(result.duplicates).toEqual([
-      { number: '1', lines: [1, 3] },
-      { number: '2', lines: [2, 4] }
-    ])
-  })
-
-  it('does not require entries to be in numeric order -- that is this file\'s real convention, not a defect', () => {
-    // Entries are grouped by the session that filed them, so a later-numbered
-    // entry legitimately sits before an earlier one (A142 before A140 on
-    // main today). A check that demanded sorted numbers would be wrong.
-    const body = [
-      '### A142 -- filed in a later session, appears first in the file',
-      '',
-      '### A140 -- filed earlier, but appended after A142 in this file',
-      ''
-    ].join('\n')
-    const result = checkQuestionNumbers(fixture(body))
-    expect(result.ok).toBe(true)
-    expect(result.duplicates).toEqual([])
-  })
-
-  it('matches the file\'s real heading shapes: bare number, "--", an em dash, a status tag, and a word right after the number', () => {
-    const body = [
-      '### A1',
-      '',
-      '### A2 -- ascii double hyphen **[RESOLVED 2026-09-01 -- owner decision]**',
-      '',
-      '### A3 — em dash, no status tag',
-      '',
-      '### A4 addendum — a word right after the number, no separator',
-      ''
-    ].join('\n')
-    expect(findHeadingNumbers(body)).toEqual([
-      { number: '1', line: 1 },
-      { number: '2', line: 3 },
-      { number: '3', line: 5 },
-      { number: '4', line: 7 }
-    ])
-  })
-
-  it('ignores a heading that starts with "A" but has no number, such as a section titled Advertising', () => {
-    const body = '### Advertising priced by trustlessity level\n\nNo number here at all.\n'
-    const result = checkQuestionNumbers(fixture(body))
-    expect(result.ok).toBe(true)
-    expect(result.duplicates).toEqual([])
+    expect(result.long).toEqual([{ id: 'A9', line: 1, lines: MAX_ENTRY_LINES + 1 }])
   })
 
   it('reports a missing file as an error, not a silent pass', () => {
     const root = mkdtempSync(join(tmpdir(), 'orivon-questions-'))
+    mkdirSync(join(root, 'docs'), { recursive: true })
+    writeFileSync(join(root, QUESTIONS_FILE), '')
     const result = checkQuestionNumbers(root)
     expect(result.ok).toBe(false)
-    expect(result.error).toBeDefined()
+    expect(result.error).toMatch(/resolved-questions\.md/)
   })
 
-  it('passes the real docs/open-questions.md as it stands on main', () => {
-    const result = checkQuestionNumbers(process.cwd())
-    expect(result.ok).toBe(true)
-    expect(result.duplicates).toEqual([])
+  it('passes the real files as they stand', () => {
+    expect(checkQuestionNumbers(process.cwd())).toEqual({ ok: true, duplicates: [], long: [] })
+  })
+})
+
+describe('findHeadingNumbers', () => {
+  it('reads the number from every heading shape, and ignores a heading with no number', () => {
+    const body = [
+      '### A1',
+      '### A2: colon **[OWNER]**',
+      '### A3 -- double hyphen',
+      '### A4a letter suffix',
+      '### Advertising priced by level'
+    ].join('\n')
+    expect(findHeadingNumbers(body).map((h: { number: string }) => h.number)).toEqual(['1', '2', '3', '4a'])
+  })
+})
+
+describe('findLongEntries', () => {
+  it('passes an entry of exactly the ceiling, ignoring trailing blank lines', () => {
+    expect(findLongEntries(`${entry('A1', MAX_ENTRY_LINES)}\n\n\n`)).toEqual([])
+  })
+
+  it('ends an entry at the next entry of any series, or at a section heading', () => {
+    const body = [entry('A1', 10), entry('B4', 10), '## Section', 'prose '.repeat(3), entry('C2', 13)].join('\n')
+    expect(findLongEntries(body)).toEqual([{ id: 'C2', line: 23, lines: 13 }])
   })
 })

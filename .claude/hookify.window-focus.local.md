@@ -8,26 +8,15 @@ action: block
 
 **Electron launch blocked: it can put a window on the owner's real desktop.**
 
-Owner, 2026-09-15, after this happened repeatedly in one session and was called out three
-times: **never open a window in focus, and never interrupt the owner's work with one.**
+Never open a window on the owner's screen or take focus from them. Every Electron launch goes
+through `node scripts/run-headless.mjs <command>`, which uses a virtual display.
+`ORIVON_WINDOW_NO_FOCUS=1` (the default in `test/launch-electron.mjs`) only stops focus theft; a
+window still appears without the virtual display. Use instead:
 
-Every Electron launch this repository makes must go through
-`node scripts/run-headless.mjs <command>`, which runs it under `xvfb-run` — a virtual
-display, nothing on screen at all. `test/launch-electron.mjs` additionally defaults
-`ORIVON_WINDOW_NO_FOCUS=1`, which makes `window.ts` call `showInactive()` instead of
-`show()`, but **that only stops the keyboard being stolen — it does not stop a window
-appearing.** The virtual display is what does.
-
-Use instead:
-
-- `npm run smoke` / `npm run test:e2e` — already wrapped, safe.
+- `npm run smoke` / `npm run test:e2e`: already wrapped.
 - Anything ad hoc: `node scripts/run-headless.mjs node <your-script>.mjs`.
 
-**`npm run dev` and `electron-vite dev` are the owner's to start, never an agent's.** If you
-need to see a change in the running app, ask the owner to restart their own dev server; do not
-start one. Related, and the reason this rule exists at all: `electron-vite dev --watch`
-restarts the whole app on every `src/main/` or `src/preload/` edit, so an agent editing
-main-process files while a dev server runs repeatedly pops the window back onto the owner's
-screen. `scripts/dev.mjs` deliberately does not pass `--watch` — do not add it back.
-
-If a launch genuinely must be visible, stop and ask the owner first.
+**`npm run dev` and `electron-vite dev` are the owner's to start, never an agent's.** To see a
+change in the running app, ask the owner to restart their dev server. Do not add `--watch` to
+`scripts/dev.mjs`: it relaunches the window on every `src/main/` or `src/preload/` edit. If a
+launch must be visible, ask the owner first.

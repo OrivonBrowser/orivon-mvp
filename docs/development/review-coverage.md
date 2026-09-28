@@ -16,9 +16,9 @@ independent meaning a second reader, human or agent, checking work that was not 
 - a conductor's hand-review of a diff (the standing carve-out for `src/broker/` and `src/main/`,
   from `.claude/unattended-run-protocol.md`'s "Which model runs what": those two
   directories are hand-reviewed personally, never trusted from a lane's own report alone);
-- an `adversarial-reviewer` or `named-persona-adversarial-review` pass (`CLAUDE.md`'s tooling
-  table: run after each build step lands, on the broker and the app loader at minimum);
-- a `/claude-security` scan (`CLAUDE.md`'s tooling table: end of build step 2, and before
+- an `adversarial-reviewer` or `named-persona-adversarial-review` pass (the `orivon-workflow` skill's
+  review shape: run at the end of a build step, on the broker and the app loader at minimum);
+- a `/claude-security` scan (the `orivon-workflow` skill's tooling table: end of build step 2, and before
   packaging);
 - a clean-checkout verification: a fresh clone and install, run to catch what a shared
   `node_modules` symlink across worktrees cannot.
