@@ -4,9 +4,9 @@
 // file's own fetch must clear T12 before it runs.
 //
 // Structure mirrors update-check.ts/update-check-runner.ts: pure parts
-// exported and tested (faviconCandidates, isSafeFaviconUrl, readCapped,
-// toDataUrl), the one real network call (fetchFaviconDataUrl) thin and
-// defensive around it. net.request, not net.fetch -- redirects need
+// exported and tested (faviconCandidates, isSafeFaviconUrl, readCapped), and
+// the network reached only through fetchFaviconDataUrlCached, thin and
+// defensive around them. net.request, not net.fetch -- redirects need
 // per-hop T12 checks, the same reason loader/electron/fetch.ts's netFetch
 // avoids net.fetch's own redirect handling -- imported dynamically -- same
 // reasoning as update-check-runner.ts's file header: outside a real
@@ -20,12 +20,8 @@ import type { Resolver } from '../../broker/policy/connect.js'
 import { isLoopbackHost } from '../../broker/policy/origin.js'
 import { electronResolveHost } from '../../loader/electron/resolve.js'
 import { FaviconCache } from './favicon-cache.js'
-import { decodeDataUrl, sniffImageType } from './favicon-format.js'
+import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 
-/** Generous enough for an SVG that embeds a raster image inline -- a real
- * shape (web3compass.net's own icons run 57 KiB doing exactly this), and
- * several times what any bitmap favicon format needs. */
-export const MAX_FAVICON_BYTES = 128 * 1024
 export const FAVICON_TIMEOUT_MS = 5_000
 /** Real sites redirect a bare-domain icon URL to a `www` host, or move
  * `/favicon.ico` behind a CDN -- both cross-origin, both legitimate. Each
@@ -128,17 +124,6 @@ export async function readCapped (
   return result
 }
 
-/** `null` for anything sniffImageType doesn't recognise -- a favicon this
- * shell can't identify is treated the same as one that failed to load. The
- * type comes from the BYTES (favicon-format.ts), never from a server's own
- * `content-type` header: a mislabelled `.ico` or an SVG served with any
- * label at all both decode correctly once the header is no longer trusted. */
-export function toDataUrl (bytes: Uint8Array): string | null {
-  const type = sniffImageType(bytes)
-  if (type === null) return null
-  return `data:${type};base64,${Buffer.from(bytes).toString('base64')}`
-}
-
 /** Whether the PAGE declaring a favicon is itself running on this machine.
  * `file:` and every other scheme is not -- only a real http(s) page on
  * loopback counts, so a local HTML file cannot be the lever either. */
@@ -175,10 +160,9 @@ function isLoopbackPage (pageUrl: string): boolean {
  * steers at 127.0.0.1 by a name like `bisq.eth` -- would otherwise never show
  * its own icon.
  *
- * **Loopback is allowed, for a page that is itself on loopback** -- owner's
- * decision, 2026-09-16, replacing the blanket refusal this had before. A
- * local dev server is a real thing to browse here, and refusing its icon
- * bought nothing. `http` is allowed on that path too, because a local dev
+ * **Loopback is allowed, for a page that is itself on loopback.** A local
+ * dev server is a real thing to browse here, and refusing its icon buys
+ * nothing. `http` is allowed on that path too, because a local dev
  * server is almost never https and an https-only carve-out would refuse
  * exactly the case the carve-out exists for.
  *
@@ -304,21 +288,10 @@ async function requestOnce (url: string, signal: AbortSignal): Promise<HopResult
   })
 }
 
-/**
- * The one function here that touches the network. Returns null on any
- * failure (offline, timeout, oversized, wrong type, T12 refusal on the
- * first hop or on any redirect target) -- never throws by contract,
- * matching update-check-runner.ts's fetchLatestGithubRelease.
- */
-export async function fetchFaviconDataUrl (url: string, pageUrl: string): Promise<string | null> {
-  if (!(await isSafeFaviconUrl(url, pageUrl, electronResolveHost))) return null
-  return await fetchUnchecked(url, pageUrl)
-}
-
 /** The fetch itself, with the T12 gate already cleared by the caller for
- * `url` (its first hop). Split out so the cached path can run that gate
- * exactly once per call instead of either skipping it on a cache hit or
- * resolving the same hostname twice. One timeout budget covers the whole
+ * `url` (its first hop), so the cached path runs that gate exactly once
+ * per call instead of either skipping it on a cache hit or resolving the
+ * same hostname twice. One timeout budget covers the whole
  * redirect chain, not each hop separately -- a chain of fast redirects to a
  * slow final host should not get MAX_FAVICON_REDIRECTS times the budget. */
 async function fetchUnchecked (url: string, pageUrl: string): Promise<string | null> {
@@ -352,9 +325,13 @@ const MAX_CACHED_FAVICON_CHARS = 16 * 1024 * 1024
  * `page-favicon-updated` fires with a changed candidate list. */
 const faviconCache = new FaviconCache(MAX_CACHED_FAVICONS, MAX_CACHED_FAVICON_CHARS)
 
-/** fetchFaviconDataUrl, answered from faviconCache when it can be. A result
- * is cached only if `stillWanted()` holds when it lands: a capture that has
- * already been dropped must not fill the cache. */
+/** The one function here that reaches the network, answered from
+ * faviconCache when it can be. Returns null on any failure (offline,
+ * timeout, oversized, wrong type, T12 refusal on the first hop or on any
+ * redirect target) -- never throws by contract, matching
+ * update-check-runner.ts's fetchLatestGithubRelease. A result is cached only
+ * if `stillWanted()` holds when it lands: a capture that has already been
+ * dropped must not fill the cache. */
 export async function fetchFaviconDataUrlCached (url: string, pageUrl: string, stillWanted: () => boolean): Promise<string | null> {
   // The gate runs BEFORE the cache is consulted, not just on a miss: whether
   // a favicon may be fetched now depends on which page is asking (a loopback

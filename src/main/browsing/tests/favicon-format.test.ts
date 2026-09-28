@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { decodeDataUrl, looksLikeSvg, sniffImageType } from '../favicon-format.js'
+import { decodeDataUrl, looksLikeSvg, sniffImageType, toDataUrl } from '../favicon-format.js'
 
 // A byte-order mark is invisible in an editor and in a diff, so one written
 // literally into the sniffer or its tests cannot be reviewed.
@@ -79,6 +79,28 @@ describe('sniffImageType', () => {
   })
 })
 
+describe('toDataUrl', () => {
+  it('builds a data: URL, typed from the bytes, for a PNG', () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2])
+    expect(toDataUrl(bytes)).toBe(`data:image/png;base64,${Buffer.from(bytes).toString('base64')}`)
+  })
+
+  it('builds a data: URL for a real SVG document', () => {
+    const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+    expect(toDataUrl(svg)).toBe(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
+  })
+
+  it('builds a data: URL for an ICO, whatever a server might have labelled it', () => {
+    const ico = new Uint8Array([0x00, 0x00, 0x01, 0x00, 1, 2, 3])
+    expect(toDataUrl(ico)).toBe(`data:image/x-icon;base64,${Buffer.from(ico).toString('base64')}`)
+  })
+
+  it('rejects bytes that are not a recognised image at all', () => {
+    expect(toDataUrl(new TextEncoder().encode('<!DOCTYPE html><html></html>'))).toBeNull()
+    expect(toDataUrl(new Uint8Array(0))).toBeNull()
+  })
+})
+
 describe('looksLikeSvg', () => {
   it('rejects a doctype missing its closing >', () => {
     expect(looksLikeSvg('<!DOCTYPE svg')).toBe(false)
@@ -144,9 +166,7 @@ describe('decodeDataUrl', () => {
   })
 
   // A percent-encoded payload is rejected by LENGTH alone before it is ever
-  // decodeURIComponent'd or re-encoded -- the same "reject before the
-  // potentially huge decode" guarantee the base64 branch's own pre-check
-  // gives, since a page's own data: candidate is attacker-controlled.
+  // decoded -- a page's own data: candidate is attacker-controlled.
   it('rejects an oversized percent-encoded payload without decoding it', () => {
     const huge = '%41'.repeat(10_000) // each triple decodes to one byte
     expect(decodeDataUrl(`data:image/svg+xml,${huge}`, 10)).toBeNull()
@@ -173,6 +193,23 @@ describe('decodeDataUrl', () => {
 
   it('rejects a malformed percent-escape', () => {
     expect(decodeDataUrl('data:image/svg+xml,%', 1024)).toBeNull()
+    expect(decodeDataUrl('data:image/svg+xml,%zz', 1024)).toBeNull()
+  })
+
+  // A data: URL's body is percent-decoded before base64 decoding, per the
+  // fetch spec's data: URL processor, and a `+` or `/` is often escaped.
+  it('percent-decodes a base64 payload before decoding it', () => {
+    const png = bytes(0x89, 0x50, 0x4e, 0x47, 0xfb, 0xff, 0xbf)
+    const base64 = Buffer.from(png).toString('base64')
+    expect(base64).toMatch(/[+/]/)
+    const escaped = base64.replace(/\+/g, '%2B').replace(/\//g, '%2F')
+    expect(decodeDataUrl(`data:image/png;base64,${escaped}`, 1024)).toEqual(png)
+  })
+
+  it('decodes a percent-encoded binary payload byte for byte', () => {
+    const png = bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff)
+    const escaped = Array.from(png, (b) => `%${b.toString(16).padStart(2, '0')}`).join('')
+    expect(decodeDataUrl(`data:image/png,${escaped}`, 1024)).toEqual(png)
   })
 
   it('rejects a non-data URL', () => {
