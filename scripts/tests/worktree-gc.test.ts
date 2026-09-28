@@ -37,13 +37,14 @@ describe('classify', () => {
     ({ path, head, branch, detached: false, locked: false })
   const main = entry('/repo', 'main', 'tip')
 
-  const run = (entries: ReturnType<typeof entry>[], opts: { merged?: string[], dirty?: string[], cwd?: string } = {}) =>
+  const run = (entries: ReturnType<typeof entry>[], opts: { merged?: string[], dirty?: string[], fresh?: string[], cwd?: string } = {}) =>
     classify({
       entries: [main, ...entries],
       baseHead: 'tip',
       cwd: opts.cwd ?? '/elsewhere',
       isMerged: (branch: string) => (opts.merged ?? []).includes(branch),
-      isDirty: (path: string) => (opts.dirty ?? []).includes(path)
+      isDirty: (path: string) => (opts.dirty ?? []).includes(path),
+      isFresh: (branch: string) => (opts.fresh ?? []).includes(branch)
     })
 
   it('removes a clean worktree whose branch is merged, and never offers the main worktree', () => {
@@ -71,6 +72,12 @@ describe('classify', () => {
     expect(kept[0].reason).toMatch(/possibly just started/)
   })
 
+  it('keeps a branch with no commit since it was created, even once main has moved past it', () => {
+    const { removable, kept } = run([entry('/wt/started', 'started')], { merged: ['started'], fresh: ['started'] })
+    expect(removable).toEqual([])
+    expect(kept[0].reason).toMatch(/no commit since it was created/)
+  })
+
   it('keeps locked and detached worktrees without asking git about them', () => {
     const locked = { ...entry('/wt/l', 'l'), locked: true }
     const detached = { path: '/wt/d', head: 'x', detached: true, locked: false }
@@ -79,7 +86,8 @@ describe('classify', () => {
       baseHead: 'tip',
       cwd: '/elsewhere',
       isMerged: () => { throw new Error('not consulted') },
-      isDirty: () => { throw new Error('not consulted') }
+      isDirty: () => { throw new Error('not consulted') },
+      isFresh: () => { throw new Error('not consulted') }
     })
     expect(removable).toEqual([])
     expect(kept.map((e) => e.reason)).toEqual(['locked', 'detached HEAD'])
