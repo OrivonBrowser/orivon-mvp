@@ -18,13 +18,8 @@ import { fileURLToPath } from 'node:url'
 import esbuild from 'esbuild'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-<<<<<<< HEAD
-import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
-import { shimEsbuildPlugin } from '../src/shim/tests/support/shim-esbuild-plugin.js'
-=======
 import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './e2e-helpers.js'
-import { shimEsbuildPlugin } from './shim-esbuild-plugin.js'
->>>>>>> stream/wasi-host
+import { shimEsbuildPlugin } from '../src/shim/tests/support/shim-esbuild-plugin.js'
 import type { WasiRunResult } from './wasi-host-entry.js'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
 import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
