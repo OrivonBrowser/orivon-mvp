@@ -5,8 +5,8 @@
 //
 // Structure mirrors update-check.ts/update-check-runner.ts: pure parts
 // exported and tested (faviconCandidates, isSafeFaviconUrl, readCapped), and
-// the network reached only through fetchFaviconDataUrlCached, thin and
-// defensive around them. net.request, not net.fetch -- redirects need
+// one network entry point, fetchFaviconDataUrlCached, thin and defensive
+// around them. net.request, not net.fetch -- redirects need
 // per-hop T12 checks, the same reason loader/electron/fetch.ts's netFetch
 // avoids net.fetch's own redirect handling -- imported dynamically -- same
 // reasoning as update-check-runner.ts's file header: outside a real
@@ -325,7 +325,7 @@ const MAX_CACHED_FAVICON_CHARS = 16 * 1024 * 1024
  * `page-favicon-updated` fires with a changed candidate list. */
 const faviconCache = new FaviconCache(MAX_CACHED_FAVICONS, MAX_CACHED_FAVICON_CHARS)
 
-/** The one function here that reaches the network, answered from
+/** The one exported function that reaches the network, answered from
  * faviconCache when it can be. Returns null on any failure (offline,
  * timeout, oversized, wrong type, T12 refusal on the first hop or on any
  * redirect target) -- never throws by contract, matching
@@ -376,8 +376,8 @@ function decodedDataUrlCandidate (candidate: string): string | null {
  * DECLARING PAGE's origin, never the icon resource's own (a CDN, commonly),
  * which shouldClearFavicon depends on.
  *
- * After every await, all three are re-checked against `pageUrl()` read
- * fresh. Chromium fires `page-favicon-updated` only when a page's icon set
+ * All three are re-checked after every await, with `pageUrl()` read fresh.
+ * Chromium fires `page-favicon-updated` only when a page's icon set
  * differs from the last one (a page declaring none gets `/favicon.ico`), so
  * a newer set moves `pendingFaviconUrl` on, while a hash change, a
  * pushState, or a same-origin page with the same set fires nothing: the
