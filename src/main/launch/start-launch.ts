@@ -31,7 +31,7 @@ export interface Runtime {
 /** Where the data is, and whether the sandbox is on: what a peer must be told the way this process was. Nothing else on the command line is passed on (a debugger's port would collide). */
 const INHERITED_SWITCHES = ['--user-data-dir=', '--no-sandbox']
 
-type LaunchApp = Pick<App, 'getPath' | 'setPath' | 'exit' | 'requestSingleInstanceLock' | 'isPackaged' | 'getAppPath'>
+type LaunchApp = Pick<App, 'getPath' | 'setPath' | 'exit' | 'requestSingleInstanceLock' | 'isPackaged' | 'getAppPath' | 'commandLine'>
 
 /** Null when this process is not to go on: a launch that could not be understood, or a profile that is already open. */
 export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJS.ProcessEnv = process.env, execPath = process.execPath, tmp = tmpdir()): Runtime | null {
@@ -75,5 +75,8 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
   // not in use, and Delete would remove it from under a browser that is starting.
   if (launch.kind !== 'private') profiles.markRunning(profileId, process.pid)
   const inherit = argv.filter((argument) => INHERITED_SWITCHES.some((switchName) => argument === switchName || argument.startsWith(switchName)))
+  // Chromium's own command line as well: a launcher can take a switch back off argv once it has taken effect, and a
+  // peer started with the sandbox where this one runs without it aborts on a machine that has none.
+  if (!inherit.includes('--no-sandbox') && app.commandLine.hasSwitch('no-sandbox')) inherit.push('--no-sandbox')
   return { launch, dir, profiles, source, isPrivate: launch.kind === 'private', profileId, inherit }
 }
