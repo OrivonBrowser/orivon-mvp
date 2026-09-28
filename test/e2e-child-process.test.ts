@@ -4,20 +4,24 @@
 // another, whose `fs` calls reach the real broker through the page; a native
 // program in the bundle is refused by name and a missing one is ENOENT;
 // `kill()` ends a running child; and a WASI 0.2 component runs from the jco
-// output beside it, its glue imported by the Worker under the served CSP.
+// output beside it, its glue imported by the Worker under the served CSP. A
+// second app, granted one TCP address, spawns a component whose socket
+// reaches a real echo server through the broker.
 //
 // Run with `npm run test:e2e`, or directly:
 //   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-child-process.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ConsoleMessage, Worker } from 'playwright'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:net'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './e2e-helpers.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { ChildProcessResults } from './child-process-entry.js'
+import type { ComponentSocketResults } from './child-process-socket-entry.js'
 import { echoProgram } from '../src/shim/wasi/tests/support/programs.js'
-import { tourFixture } from '../src/shim/wasi-p2/tests/support/component-fixture.js'
+import { SOCKET_TARGET, socketFixture, tourFixture } from '../src/shim/wasi-p2/tests/support/component-fixture.js'
 import type { Manifest } from '../src/contracts/index.js'
 
 const ORIGIN = 'https://child-process-e2e.orivon.test'
@@ -39,6 +43,24 @@ const MANIFEST: Manifest = {
   entry: 'index.html',
   assets: ['app.js', 'child.js', 'bin/echo.wasm', 'bin/native', ...Object.keys(COMPONENT_FILES).map((path) => path.slice(1))],
   capabilities: { fs: { quotaBytes: 1_048_576 } }
+}
+
+const SOCKET_ORIGIN = 'https://component-socket-e2e.orivon.test'
+const socket = socketFixture()
+const SOCKET_FILES: Record<string, Uint8Array> = {
+  '/bin/socket.wasm': COMPONENT_HEADER,
+  '/bin/socket.p2/socket.js': new TextEncoder().encode(socket.glue),
+  ...Object.fromEntries([...socket.cores].map(([name, bytes]) => [`/bin/socket.p2/${name}`, bytes]))
+}
+const SOCKET_ADDRESS = `${SOCKET_TARGET.address.join('.')}:${SOCKET_TARGET.port}`
+const SOCKET_MANIFEST: Manifest = {
+  orivonApiVersion: 0,
+  id: 'app.orivon.component-socket-e2e',
+  name: 'component socket e2e fixture',
+  version: '1.0.0',
+  entry: 'index.html',
+  assets: ['app.js', ...Object.keys(SOCKET_FILES).map((path) => path.slice(1))],
+  capabilities: { net: { tcp: { connect: [SOCKET_ADDRESS] } } }
 }
 
 afterAll(async () => {
@@ -84,6 +106,29 @@ it('spawns a WASI program and forks an app module in Workers, refuses a native p
       check('a WASI 0.2 component ran from its jco output: spawn, exit 1 for its code 3, close', JSON.stringify(results.component?.events) === JSON.stringify(['spawn', 'exit 1 null']), detail)
       check('the component echoed stdin to stdout and wrote stderr', results.component?.stdout === 'from a component\n' && results.component.stderr === 'done\n', detail)
       check('the component\'s file write reached the app\'s files through the broker', results.component?.fileText === 'written by a component\n', detail)
+    })
+
+    await runPhase('a component\'s socket', async (check) => {
+      const echo = createServer((connection) => { connection.pipe(connection) })
+      await new Promise<void>((resolve) => { echo.listen(SOCKET_TARGET.port, SOCKET_TARGET.address.join('.'), resolve) })
+      try {
+        const html = '<!doctype html><html><head><title>component socket fixture</title><script src="/app.js"></script></head><body><h1>component socket fixture</h1></body></html>'
+        const served = await serveApp(app, SOCKET_ORIGIN, SOCKET_MANIFEST, 'tcp.connect', {
+          '/index.html': new TextEncoder().encode(html),
+          '/app.js': await bundleForApp(fileURLToPath(new URL('./child-process-socket-entry.ts', import.meta.url))),
+          ...SOCKET_FILES
+        }, [SOCKET_ADDRESS])
+        check('the socket fixture is granted tcp.connect to one address and registered', served.granted && served.registered, JSON.stringify(served))
+        const view = await navigateToFixture(app, `${SOCKET_ORIGIN}/`, 'component socket fixture')
+        await waitForPageGlobal(view, 'componentSocketE2e')
+        const results = await evaluateRetrying(view, async () => await (globalThis as unknown as { componentSocketE2e: { run: () => Promise<ComponentSocketResults> } }).componentSocketE2e.run(), 30_000)
+        const detail = JSON.stringify(results)
+        check('the page ran the component without throwing', results.error === undefined, detail)
+        check('the component connected through the broker, and its message came back from the echo server to its stdout', results.stdout === SOCKET_TARGET.message, detail)
+        check('the component exited 0', JSON.stringify(results.events) === JSON.stringify(['spawn', 'exit 0 null']), detail)
+      } finally {
+        await new Promise((resolve) => { echo.close(resolve) })
+      }
     })
   } finally {
     await closeElectronApp(app)

@@ -5,13 +5,14 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { hasJspi, jspiWebAssembly } from '../../wasi/tests/support/jspi.js'
 import { componentImports } from '../imports.js'
 import { InputStream, OutputStream } from '../io.js'
 import { runComponent, transpileCommand, unmarkedAsyncImports } from '../run.js'
-import { coreModules, instantiateFrom, tourFixture } from './support/component-fixture.js'
+import { createFakeTcpSocket } from '../../tests/support/fake-tcp-socket.js'
+import { SOCKET_TARGET, coreModules, instantiateFrom, socketFixture, tourFixture } from './support/component-fixture.js'
 
 let disk: RealDiskFs | undefined
 
@@ -55,5 +56,43 @@ describe.skipIf(!hasJspi)('a command component', () => {
     expect(stderr).toBe('done\n')
     expect(readFileSync(join(disk.root, 'from-component.txt'), 'utf8')).toBe('written by a component\n')
     expect(code).toBe(1)
+  })
+})
+
+describe.skipIf(!hasJspi)('a component that opens a socket', () => {
+  function run (connect: (target: { host: string, port: number }) => Promise<unknown>): { code: Promise<number>, stdout: () => string } {
+    const fixture = socketFixture()
+    let stdout = ''
+    const imports = componentImports({
+      fs: {} as never,
+      net: { connect, listen: vi.fn(), udpBind: vi.fn(), lookup: vi.fn() } as never,
+      preopens: {},
+      args: ['socket'],
+      env: {},
+      stdin: new InputStream(async () => new Uint8Array(0)),
+      stdout: new OutputStream(async (bytes) => { stdout += new TextDecoder().decode(bytes) }),
+      stderr: new OutputStream(async () => {})
+    })
+    return { code: runComponent(instantiateFrom(fixture.glue, jspiWebAssembly), coreModules(fixture, jspiWebAssembly), imports), stdout: () => stdout }
+  }
+
+  it('connects through orivon.net, sends, and prints the reply, every call lowered by jco\'s glue', async () => {
+    const fake = createFakeTcpSocket({ remoteAddress: '127.0.0.1', remotePort: SOCKET_TARGET.port })
+    const connect = vi.fn(async () => {
+      // An echo server: what the component writes comes back.
+      const echo = setInterval(() => { const sent = fake.written.shift(); if (sent !== undefined) fake.push(sent) }, 1)
+      setTimeout(() => { clearInterval(echo) }, 2_000)
+      return fake.socket
+    })
+    const { code, stdout } = run(connect)
+    expect(await code).toBe(0)
+    expect(connect).toHaveBeenCalledWith({ host: '127.0.0.1', port: SOCKET_TARGET.port })
+    expect(stdout()).toBe(SOCKET_TARGET.message)
+  })
+
+  it('ends with 1 when orivon.net refuses the connection', async () => {
+    const { code, stdout } = run(async () => { throw Object.assign(new Error('outside the grant'), { name: 'OrivonError', code: 'denied' }) })
+    expect(await code).toBe(1)
+    expect(stdout()).toBe('')
   })
 })

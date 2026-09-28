@@ -34,8 +34,8 @@ export async function bundleForApp (entry: string, format: 'iife' | 'esm' = 'iif
   return output.contents
 }
 
-/** Pins `files` (paths from the origin's root) with the manifest, grants `capability`, and registers the origin. */
-export async function serveApp (app: ElectronApplication, origin: string, manifest: Manifest, capability: CapabilityKind, files: Record<string, Uint8Array>): Promise<{ granted: boolean, registered: boolean }> {
+/** Pins `files` (paths from the origin's root) with the manifest, grants `capability` over `patterns`, and registers the origin. */
+export async function serveApp (app: ElectronApplication, origin: string, manifest: Manifest, capability: CapabilityKind, files: Record<string, Uint8Array>, patterns: readonly string[] = []): Promise<{ granted: boolean, registered: boolean }> {
   const userDataDir = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
   const storage = nodeLoaderStorage(userDataDir)
   const entries: BundleEntry[] = [
@@ -50,7 +50,7 @@ export async function serveApp (app: ElectronApplication, origin: string, manife
     if (typeof hook !== 'function') return false
     await hook(request)
     return true
-  }, { origin, manifest, capability, patterns: [] } satisfies DevGrantRequest)
+  }, { origin, manifest, capability, patterns: [...patterns] } satisfies DevGrantRequest)
   const registered = await app.evaluate(async (_electron, target: string) => {
     const hook = (globalThis as unknown as { __orivonDevRegisterServing?: (origin: string) => Promise<void> }).__orivonDevRegisterServing
     if (typeof hook !== 'function') return false

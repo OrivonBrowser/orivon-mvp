@@ -7,15 +7,27 @@ import { join } from 'node:path'
 import type { GetCoreModule, Instantiate } from '../../run.js'
 
 export const TOUR_FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'tour.generated.json')
+export const SOCKET_FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'socket.generated.json')
+
+/** Where the socket fixture connects, and what it sends: it prints what comes back and exits 0, or 1 if a step fails. */
+export const SOCKET_TARGET = { address: [127, 0, 0, 1] as const, port: 8911, message: 'ping through a component socket\n' }
 
 export interface ComponentFixture {
   readonly glue: string
   readonly cores: ReadonlyMap<string, Uint8Array>
 }
 
-export function tourFixture (): ComponentFixture {
-  const { glue, cores } = JSON.parse(readFileSync(TOUR_FIXTURE, 'utf8')) as { glue: string, cores: Record<string, string> }
+function fixture (path: string): ComponentFixture {
+  const { glue, cores } = JSON.parse(readFileSync(path, 'utf8')) as { glue: string, cores: Record<string, string> }
   return { glue, cores: new Map(Object.entries(cores).map(([name, base64]) => [name, new Uint8Array(Buffer.from(base64, 'base64'))])) }
+}
+
+export function tourFixture (): ComponentFixture {
+  return fixture(TOUR_FIXTURE)
+}
+
+export function socketFixture (): ComponentFixture {
+  return fixture(SOCKET_FIXTURE)
 }
 
 type GlueInstantiate = (getCoreModule: GetCoreModule, imports: Record<string, unknown>, instantiateCore: (module: WebAssembly.Module, imports?: WebAssembly.Imports) => Promise<WebAssembly.Instance>) => Promise<Record<string, unknown>>

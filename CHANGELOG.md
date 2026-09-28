@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A spawned program can open sockets**: `spawn` runs a WASI 0.2 component from the jco output
+  shipped beside it, its files and sockets reaching `orivon.fs` and `orivon.net` under the app's
+  grants (ADR-0040).
 - **A native addon reaches the app's files from a forked child** of a cross-origin isolated app,
   each call blocking on the page's `orivon.fs`; that child's `fs.readFileSync` works too
   (ADR-0040).
