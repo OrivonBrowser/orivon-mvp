@@ -14,7 +14,7 @@ import { writeFileSync } from 'node:fs'
 import esbuild from 'esbuild'
 import { describe, expect, it } from 'vitest'
 import { TYPE, buildModule, op, wasiModule } from '../../wasi/tests/support/wasm-module.js'
-import { SOCKET_FIXTURE, SOCKET_TARGET, TOUR_FIXTURE } from './support/component-fixture.js'
+import { LISTENER_FIXTURE, LISTENER_TARGET, SOCKET_FIXTURE, SOCKET_TARGET, TOUR_FIXTURE } from './support/component-fixture.js'
 import { JCO_DIR, loadJco } from './support/jco.js'
 
 /** Echoes stdin to stdout, writes `from-component.txt` under the first preopen, says "done" on stderr, and exits 3. */
@@ -121,6 +121,67 @@ function socketModule (): Uint8Array<ArrayBuffer> {
   })
 }
 
+/**
+ * A listener written against the canonical ABI: binds and listens on
+ * LISTENER_TARGET, says so on stdout, accepts one connection, and echoes its
+ * first read back to the peer and to stdout. The same layout as socketModule.
+ */
+function listenerModule (): Uint8Array<ArrayBuffer> {
+  const i32s = (count: number): number[] => Array<number>(count).fill(I32)
+  const tcp = (name: string, params: number, results: number[] = []): { module: string, name: string, params: number[], results: number[] } =>
+    ({ module: 'wasi:sockets/tcp@0.2.12', name: `[method]tcp-socket.${name}`, params: i32s(params), results })
+  const imports = [
+    { module: 'wasi:sockets/instance-network@0.2.12', name: 'instance-network', params: [], results: [I32] },
+    { module: 'wasi:sockets/tcp-create-socket@0.2.12', name: 'create-tcp-socket', params: i32s(2), results: [] },
+    tcp('start-bind', 15), tcp('finish-bind', 2), tcp('start-listen', 2), tcp('finish-listen', 2), tcp('accept', 2), tcp('subscribe', 1, [I32]),
+    { module: 'wasi:io/poll@0.2.12', name: '[method]pollable.block', params: [I32], results: [] },
+    { module: 'wasi:io/streams@0.2.12', name: '[method]output-stream.blocking-write-and-flush', params: i32s(4), results: [] },
+    { module: 'wasi:io/streams@0.2.12', name: '[method]input-stream.blocking-read', params: [I32, I64, I32], results: [] },
+    { module: 'wasi:cli/stdout@0.2.12', name: 'get-stdout', params: [], results: [I32] }
+  ]
+  const [a, b, c, d] = LISTENER_TARGET.address
+  const waitOn = (call: (name: string) => number[]): number[][] => [op.localGet(1), call('[method]tcp-socket.subscribe'), call('[method]pollable.block')]
+  return buildModule({
+    imports,
+    exportName: 'wasi:cli/run@0.2.12#run',
+    params: [],
+    results: [I32],
+    locals: 5,
+    data: [{ offset: 2000, text: '\u0000\u0010\u0000\u0000' }, { offset: 3000, text: LISTENER_TARGET.ready }],
+    extra: [{
+      name: 'cabi_realloc',
+      params: i32s(4),
+      results: [I32],
+      locals: 1,
+      body: [
+        op.load(2000), op.localGet(2), op.i32Add, op.i32(1), SUB, op.i32(0), op.localGet(2), SUB, op.i32And, op.localSet(4),
+        op.i32(2000), op.localGet(4), op.localGet(3), op.i32Add, op.storeAt,
+        op.localGet(4)
+      ]
+    }],
+    body: (call) => [
+      call('instance-network'), op.localSet(0),
+      op.i32(0), op.i32(1000), call('create-tcp-socket'), ...failOnError,
+      op.load(1004), op.localSet(1),
+      op.localGet(1), op.localGet(0), op.i32(0), op.i32(LISTENER_TARGET.port), op.i32(a), op.i32(b), op.i32(c), op.i32(d),
+      ...Array.from({ length: 6 }, () => op.i32(0)), op.i32(1000), call('[method]tcp-socket.start-bind'), ...failOnError,
+      op.localGet(1), op.i32(1000), call('[method]tcp-socket.finish-bind'), ...failOnError,
+      op.localGet(1), op.i32(1000), call('[method]tcp-socket.start-listen'), ...failOnError,
+      ...waitOn(call),
+      op.localGet(1), op.i32(1000), call('[method]tcp-socket.finish-listen'), ...failOnError,
+      call('get-stdout'), op.localSet(4),
+      op.localGet(4), op.i32(3000), op.i32(LISTENER_TARGET.ready.length), op.i32(1100), call('[method]output-stream.blocking-write-and-flush'),
+      ...waitOn(call),
+      op.localGet(1), op.i32(1000), call('[method]tcp-socket.accept'), ...failOnError,
+      op.load(1008), op.localSet(2), op.load(1012), op.localSet(3),
+      op.localGet(2), op.i64(64n), op.i32(1000), call('[method]input-stream.blocking-read'), ...failOnError,
+      op.localGet(3), op.load(1004), op.load(1008), op.i32(1100), call('[method]output-stream.blocking-write-and-flush'),
+      op.localGet(4), op.load(1004), op.load(1008), op.i32(1100), call('[method]output-stream.blocking-write-and-flush'),
+      op.i32(0)
+    ]
+  })
+}
+
 async function writeFixture (path: string, glue: string, files: ReadonlyMap<string, Uint8Array>): Promise<void> {
   const minified = (await esbuild.transform(glue, { minify: true, format: 'esm' })).code
   writeFileSync(path, `${JSON.stringify({ glue: minified, cores: Object.fromEntries([...files].map(([name, bytes]) => [name, Buffer.from(bytes).toString('base64')])) })}\n`)
@@ -130,6 +191,12 @@ describe.skipIf(JCO_DIR === undefined)('the WASI 0.2 component fixtures', () => 
   it('regenerates the socket client from its canonical-ABI module and WIT world', async () => {
     const { glue, cores } = await (await loadJco()).embedAndTranspile(socketModule(), SOCKET_WIT, 'client', 'socket')
     await writeFixture(SOCKET_FIXTURE, glue, cores)
+    expect(cores.size).toBeGreaterThan(0)
+  })
+
+  it('regenerates the listener from its canonical-ABI module and WIT world', async () => {
+    const { glue, cores } = await (await loadJco()).embedAndTranspile(listenerModule(), SOCKET_WIT, 'client', 'listener')
+    await writeFixture(LISTENER_FIXTURE, glue, cores)
     expect(cores.size).toBeGreaterThan(0)
   })
 

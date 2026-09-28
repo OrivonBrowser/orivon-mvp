@@ -9,8 +9,13 @@ import type { GetCoreModule, Instantiate } from '../../run.js'
 export const TOUR_FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'tour.generated.json')
 export const SOCKET_FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'socket.generated.json')
 
+export const LISTENER_FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'listener.generated.json')
+
 /** Where the socket fixture connects, and what it sends: it prints what comes back and exits 0, or 1 if a step fails. */
 export const SOCKET_TARGET = { address: [127, 0, 0, 1] as const, port: 8911, message: 'ping through a component socket\n' }
+
+/** Where the listener fixture listens: it prints `listening`, echoes one connection's first read back and to stdout, and exits 0. */
+export const LISTENER_TARGET = { address: [127, 0, 0, 1] as const, port: 8912, ready: 'listening\n' }
 
 export interface ComponentFixture {
   readonly glue: string
@@ -28,6 +33,10 @@ export function tourFixture (): ComponentFixture {
 
 export function socketFixture (): ComponentFixture {
   return fixture(SOCKET_FIXTURE)
+}
+
+export function listenerFixture (): ComponentFixture {
+  return fixture(LISTENER_FIXTURE)
 }
 
 type GlueInstantiate = (getCoreModule: GetCoreModule, imports: Record<string, unknown>, instantiateCore: (module: WebAssembly.Module, imports?: WebAssembly.Imports) => Promise<WebAssembly.Instance>) => Promise<Record<string, unknown>>

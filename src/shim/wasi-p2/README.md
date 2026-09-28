@@ -30,9 +30,10 @@ them synchronously, naming each.
 **Not served:** links and file times (`orivon.fs` has neither), terminals (a program here has
 none), and a second `stream()` of one UDP socket. WASI 0.2's `exit` carries only success or
 failure, so a program's non-zero code reaches Node as 1, unless the component calls
-`exit-with-code`, which passes its code. A bind to one address other than loopback binds every
-interface, since `orivon.net` binds loopback or all of them: still within the app's grant, but
-wider than the program asked.
+`exit-with-code`, which passes its code. A listen or UDP bind asks `orivon.net` for the scope its
+address implies (loopback is `local`, anything else `network`), but the broker binds every
+interface and requires the `network` grant for either today (ADR-0034): within the app's grant,
+but wider than a program binding loopback asked.
 
 ## Design notes
 

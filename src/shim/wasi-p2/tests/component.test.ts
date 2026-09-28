@@ -12,7 +12,8 @@ import { componentImports } from '../imports.js'
 import { InputStream, OutputStream } from '../io.js'
 import { runComponent, transpileCommand, unmarkedAsyncImports } from '../run.js'
 import { createFakeTcpSocket } from '../../tests/support/fake-tcp-socket.js'
-import { SOCKET_TARGET, coreModules, instantiateFrom, socketFixture, tourFixture } from './support/component-fixture.js'
+import { createFakeTcpServer } from '../../tests/support/fake-tcp-server.js'
+import { LISTENER_TARGET, SOCKET_TARGET, coreModules, instantiateFrom, listenerFixture, socketFixture, tourFixture } from './support/component-fixture.js'
 
 let disk: RealDiskFs | undefined
 
@@ -101,5 +102,34 @@ describe.skipIf(!hasJspi)('a component that opens a socket', () => {
     const { code, stdout } = run(async () => { throw Object.assign(new Error('outside the grant'), { name: 'OrivonError', code: 'denied' }) })
     expect(await code).toBe(1)
     expect(stdout()).toBe('')
+  })
+})
+
+describe.skipIf(!hasJspi)('a component that listens', () => {
+  it('binds, listens, accepts one connection, and echoes it back through orivon.net', async () => {
+    const fixture = listenerFixture()
+    const server = createFakeTcpServer({ localAddress: '127.0.0.1', localPort: LISTENER_TARGET.port })
+    const listen = vi.fn(async () => server.server)
+    let stdout = ''
+    const imports = componentImports({
+      fs: {} as never,
+      net: { connect: vi.fn(), listen, udpBind: vi.fn(), lookup: vi.fn() } as never,
+      preopens: {},
+      args: ['listener'],
+      env: {},
+      stdin: new InputStream(async () => new Uint8Array(0)),
+      stdout: new OutputStream(async (bytes) => { stdout += new TextDecoder().decode(bytes) }),
+      stderr: new OutputStream(async () => {})
+    })
+    const code = runComponent(instantiateFrom(fixture.glue, jspiWebAssembly), coreModules(fixture, jspiWebAssembly), imports)
+    await vi.waitFor(() => { expect(stdout).toBe(LISTENER_TARGET.ready) })
+    expect(listen).toHaveBeenCalledWith({ port: LISTENER_TARGET.port, scope: 'local' })
+    const peer = createFakeTcpSocket({ remoteAddress: '127.0.0.1', remotePort: 50_000 })
+    await vi.waitFor(() => { expect(server.pullCount()).toBeGreaterThan(0) })
+    server.deliver(peer.socket)
+    peer.push(new TextEncoder().encode('hello listener\n'))
+    expect(await code).toBe(0)
+    expect(new TextDecoder().decode(peer.written[0])).toBe('hello listener\n')
+    expect(stdout).toBe(`${LISTENER_TARGET.ready}hello listener\n`)
   })
 })

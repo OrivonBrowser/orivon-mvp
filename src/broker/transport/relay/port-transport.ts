@@ -63,8 +63,14 @@ export interface TcpServerDescriptor {
  * renderer -> main path, only here). Every other message this module posts
  * carries no transferable and omits it.
  */
+/**
+ * What goes over a port: a message, with any port it hands over in `transfer`
+ * alone (AcceptedMessage's `port` is set back on it by the preload).
+ */
+export type PortMessageOnTheWire = BrokerToRendererMessage extends infer M ? M extends { port: unknown } ? Omit<M, 'port'> : M : never
+
 export interface PortLike {
-  postMessage: (message: BrokerToRendererMessage, transfer?: readonly unknown[]) => void
+  postMessage: (message: PortMessageOnTheWire, transfer?: readonly unknown[]) => void
   onMessage: (listener: (message: unknown) => void) => void
   /**
    * Fires when the OTHER side of the port closes -- a real
