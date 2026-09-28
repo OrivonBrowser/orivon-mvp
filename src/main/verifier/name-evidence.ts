@@ -4,10 +4,10 @@
 // IPFS and served from its pin.
 
 import type { ContentAddress } from '../../broker/policy/pin.js'
-import { pointerChainVerdict } from '../../resolution/pointer-chain.js'
-import type { PointerStep, Provenance } from '../../resolution/records.js'
+import { pointerChainVerdict } from '../../protocols/resolution/pointer-chain.js'
+import type { PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { ContentEvidence } from '../../trust/website-level.js'
-import type { SiteProvenance } from '../../verifier-host/protocol.js'
+import type { SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import { ago } from './status-view.js'
 
 export interface EvidenceRow {

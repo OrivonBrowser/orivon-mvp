@@ -3,8 +3,8 @@
 // contract gets `guardedCcipRequest`. Anything else throws.
 
 import type { Hex } from 'viem'
-import { classifyAddress, isPublicUnicast } from '../broker/policy/address.js'
-import { redirectRefusal } from '../loader/electron/fetch.js'
+import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
+import { redirectRefusal } from '../../loader/electron/fetch.js'
 import { readCapped } from '../ipfs/gateways.js'
 import type { CcipRequestParameters } from '../ens/resolver.js'
 

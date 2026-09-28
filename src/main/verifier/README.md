@@ -2,7 +2,7 @@
 
 **What lives here.** Everything the main process does for `.eth` names: the resolver rules that
 send every `.eth` host to the verifier's loopback port, the certificate check each session applies,
-starting and restarting the verifier host ([`../../verifier-host/`](../../verifier-host/)), choosing
+starting and restarting the verifier host ([`../../verifier-host/`](../../protocols/verifier-host/)), choosing
 the light client's checkpoint, keeping what the host verified between runs, and saying in words
 what the light client is doing and how a `.eth` name led to the page a tab shows
 ([`name-evidence.ts`](name-evidence.ts), for the site-info popover). It also stamps every page's
@@ -14,12 +14,12 @@ of it ([`proxy-check.ts`](proxy-check.ts)), for the DNS-tamper fallback the host
 that imports `electron`; the rest are decisions, unit-tested under plain vitest, on this
 directory's `<name>.ts` / `<name>-subsystem.ts` convention ([`../README.md`](../README.md)).
 
-**What it depends on.** [`../../verifier-host/protocol.ts`](../../verifier-host/protocol.ts) for the
+**What it depends on.** [`../../verifier-host/protocol.ts`](../../protocols/verifier-host/protocol.ts) for the
 messages it exchanges with the host, [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts) for this
 run's developer names, the broker's atomic file write and pin types
 ([`../../broker/policy/pin.ts`](../../broker/policy/pin.ts)), the loader's test for a `.eth` origin
 ([`../../loader/fetch/eth-origin.ts`](../../loader/fetch/eth-origin.ts)), and the pointer-chain verdict and
-Website level types ([`../../resolution/`](../../resolution/), [`../../trust/`](../../trust/)).
+Website level types ([`../../resolution/`](../../protocols/resolution/), [`../../trust/`](../../trust/)).
 
 **What it must never import.** The verifier host's code, as opposed to its protocol types: it runs
 in another process, and only [`host-supervisor.ts`](host-supervisor.ts) talks to it.
@@ -83,9 +83,9 @@ verifier host's own `net.fetch` never has a `session` to ask the equivalent ques
 `utilityProcess.fork` gives it none. `hostConfig()` is therefore async, checking every configured
 gateway once per host start (a PAC script can answer differently per URL, so one check does not
 stand in for all of them) and folding the result into `unproxiedGateways`
-([`../../verifier-host/protocol.ts`](../../verifier-host/protocol.ts)); the fallback that reaches
+([`../../verifier-host/protocol.ts`](../../protocols/verifier-host/protocol.ts)); the fallback that reaches
 one of them directly lives in the host itself
-([`../../verifier-host/dns-fallback.ts`](../../verifier-host/dns-fallback.ts)).
+([`../../verifier-host/dns-fallback.ts`](../../protocols/verifier-host/dns-fallback.ts)).
 [`host-supervisor.ts`](host-supervisor.ts)'s `start()` posts a synchronous config in the same
 tick as before, and only awaits when `config()` genuinely returns a promise -- a request made
 right after `start()` awaits that same resolution first, so it can never reach a host that has

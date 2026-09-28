@@ -3,7 +3,7 @@
 // here. The newer of the two is used, and neither past MAX_CHECKPOINT_AGE:
 // the light client itself only warns about an old one.
 
-import { BLOCK_ROOT_PATTERN } from '../../verifier-host/protocol.js'
+import { BLOCK_ROOT_PATTERN } from '../../protocols/verifier-host/protocol.js'
 
 export const MAINNET_GENESIS_SECONDS = 1_606_824_023
 export const SECONDS_PER_SLOT = 12

@@ -7,7 +7,7 @@
 
 import type { ResolveTxt } from '../ipfs/dnslink.js'
 import { readCapped } from '../ipfs/gateways.js'
-import { isPublicUnicast } from '../broker/policy/address.js'
+import { isPublicUnicast } from '../../broker/policy/address.js'
 import type { WebFetch } from './egress.js'
 
 const TXT = 16

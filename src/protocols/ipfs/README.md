@@ -1,4 +1,4 @@
-# `src/ipfs/`: the IPFS gatherer
+# `src/protocols/ipfs/`: the IPFS gatherer
 
 **What lives here.** The `DataGatherer` ([`../resolution/`](../resolution/)) that loads a site
 from an IPFS CID, an IPNS key or a DNSLink domain, over trustless HTTP gateways that are trusted
@@ -22,7 +22,7 @@ and a TXT resolver.
 ## Design notes
 
 Why the code here has the shape it has. This is the destination
-[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+[`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
 source comment warns about a trap a maintainer would otherwise fall into, and the argument for
 a design belongs here instead.
 

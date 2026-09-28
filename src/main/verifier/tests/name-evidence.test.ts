@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SiteProvenance } from '../../../verifier-host/protocol.js'
+import type { SiteProvenance } from '../../../protocols/verifier-host/protocol.js'
 import { chooseNameEvidence, liveNameEvidence, pinnedNameEvidence } from '../name-evidence.js'
 
 const CID = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'

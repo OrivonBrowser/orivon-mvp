@@ -1,4 +1,4 @@
-# `src/resolution/`: name resolvers and data gatherers
+# `src/protocols/resolution/`: name resolvers and data gatherers
 
 **What lives here.** The two provider shapes the canonical
 [DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution) and
@@ -10,8 +10,8 @@ chain of pointers, and two helpers the providers and the verifier host share: DN
 ([`dns-name.ts`](dns-name.ts)) and a concurrency limit, abortable per waiter
 ([`slots.ts`](slots.ts)).
 
-In this build each list has one built-in entry: the ENS resolver ([`src/ens/`](../ens/)) for
-`.eth`, and the IPFS gatherer ([`src/ipfs/`](../ipfs/)). Ordinary ICANN names never pass through
+In this build each list has one built-in entry: the ENS resolver ([`src/protocols/ens/`](../ens/)) for
+`.eth`, and the IPFS gatherer ([`src/protocols/ipfs/`](../ipfs/)). Ordinary ICANN names never pass through
 here; Chromium resolves them. Opening these interfaces to third-party Apps would be a
 `src/contracts/` change, and is not part of this build.
 
@@ -20,7 +20,7 @@ here; Chromium resolves them. Opening these interfaces to third-party Apps would
 **What it depends on.** Nothing outside this directory.
 
 **What it must never import.** `electron`, `node:*`, any package, and every other `src/`
-directory. It is imported by [`src/ens/`](../ens/), [`src/ipfs/`](../ipfs/), the verifier host
+directory. It is imported by [`src/protocols/ens/`](../ens/), [`src/protocols/ipfs/`](../ipfs/), the verifier host
 and the shell, so an edge out of it would reach all of them.
 
 **Owner stream.** `ens-ipfs`.
@@ -28,7 +28,7 @@ and the shell, so an edge out of it would reach all of them.
 ## Design notes
 
 Why the code here has the shape it has. This is the destination
-[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+[`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
 source comment warns about a trap a maintainer would otherwise fall into, and the argument for
 a design belongs here instead.
 

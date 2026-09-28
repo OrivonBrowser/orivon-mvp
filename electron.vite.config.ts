@@ -94,12 +94,12 @@ export default defineConfig({
     },
     build: {
       // Two processes: the shell, and the verifier host it forks as a
-      // utility process (src/verifier-host/). Keys are the output names in
+      // utility process (src/protocols/verifier-host/). Keys are the output names in
       // out/main/, which src/main/verifier/ forks by name.
       rollupOptions: {
         input: {
           index: resolve(root, 'src/main/index.ts'),
-          'verifier-host': resolve(root, 'src/verifier-host/entry.ts')
+          'verifier-host': resolve(root, 'src/protocols/verifier-host/entry.ts')
         }
       },
       // Dependencies stay external, loaded from node_modules at run time,

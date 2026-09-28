@@ -1,4 +1,4 @@
-# `src/ens/`: the ENS resolver
+# `src/protocols/ens/`: the ENS resolver
 
 **What lives here.** The `NameResolver` ([`../resolution/`](../resolution/)) for `.eth`: a
 host checked against ENSIP-15 normalisation, the name's contenthash read through ENS's Universal
@@ -21,7 +21,7 @@ function that decides where an offchain lookup may go.
 ## Design notes
 
 Why the code here has the shape it has. This is the destination
-[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+[`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
 source comment warns about a trap a maintainer would otherwise fall into, and the argument for
 a design belongs here instead.
 

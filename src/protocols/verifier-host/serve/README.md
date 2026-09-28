@@ -1,14 +1,14 @@
-# `src/verifier-host/serve/`: the loopback TLS server
+# `src/protocols/verifier-host/serve/`: the loopback TLS server
 
 **What lives here.** `server.ts` (the loopback TLS server itself), `certificate.ts` (its
 per-run self-signed DER certificate), `sites.ts` (the per-name mount cache) and
 `error-pages.ts`.
 
 **What it depends on.** [`../protocol.ts`](../protocol.ts), [`../egress.ts`](../egress.ts) and
-[`../../loader/`](../../loader/)'s range parser, content-type map and redirect rule, reused
+[`../../loader/`](../../../loader/)'s range parser, content-type map and redirect rule, reused
 rather than copied.
 
-**What it must never import.** [`../../main/`](../../main/) beyond type-only imports -- see the
+**What it must never import.** [`../../main/`](../../../main/) beyond type-only imports -- see the
 parent README's "What it must never import".
 
 **Owner stream.** `ens-ipfs`.

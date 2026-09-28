@@ -71,10 +71,10 @@ have to be rewritten? It is a measure of where care is worth spending.
 | [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the site's published hash tree, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
 | [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer over `orivon.*` |
 | [`src/renderer/`](src/renderer/) | Browser chrome UI | **Entirely** |
-| [`src/resolution/`](src/resolution/) | The name-resolver and data-gatherer interfaces, and the registry that orders them | **No.** Pure types and decisions |
-| [`src/ens/`](src/ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | **No** |
-| [`src/ipfs/`](src/ipfs/) | Loading IPFS content from trustless gateways, every block hashed against its CID | **No** |
-| [`src/verifier-host/`](src/verifier-host/) | The utility process that runs the light client and serves `.eth` names on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` (one narrow, gated exception: `dns-fallback.ts`'s direct connection to a gateway a resolver appears to be lying about) |
+| [`src/protocols/resolution/`](src/protocols/resolution/) | The name-resolver and data-gatherer interfaces, and the registry that orders them | **No.** Pure types and decisions |
+| [`src/protocols/ens/`](src/protocols/ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | **No** |
+| [`src/protocols/ipfs/`](src/protocols/ipfs/) | Loading IPFS content from trustless gateways, every block hashed against its CID | **No** |
+| [`src/protocols/verifier-host/`](src/protocols/verifier-host/) | The utility process that runs the light client and serves `.eth` names on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` (one narrow, gated exception: `dns-fallback.ts`'s direct connection to a gateway a resolver appears to be lying about) |
 | [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
 | [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
 
