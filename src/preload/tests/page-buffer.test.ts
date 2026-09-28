@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import bufferPackage from 'buffer/'
 import { installPageBuffer } from '../page-buffer.js'
-import { reserialised } from './routed.test-helpers.js'
+import { reserialised } from '../routed/tests/routed.test-helpers.js'
 import { BUFFER_PACKAGE_PLACEHOLDER, pageBufferPackage } from '../../../electron.vite.config.js'
 
 const PAGE_BUFFER_SOURCE = new URL('../page-buffer.ts', import.meta.url).pathname

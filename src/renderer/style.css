@@ -11,6 +11,14 @@
 @import './styles/tabstrip.css';
 @import './styles/toolbar.css';
 @import './styles/bookmarks.css';
+/* Same-entry import, unlike site-info/style.css's copy of these same
+   tokens/rules below: this file already @imports its other rows the same
+   way, and web3-shield.ts is the one module both this chrome view and the
+   site-info popup build the shield from, so its colours living in one file
+   here (and a literal copy there, matching this codebase's established
+   cross-entry convention -- newtab/style.css's own header) keeps the two
+   surfaces from ever drawing it differently. */
+@import './styles/web3-level.css';
 
 :root {
   /* Light is DERIVED, not measured -- orivon-browser-v2's light theme is

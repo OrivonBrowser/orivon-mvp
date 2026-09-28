@@ -1,4 +1,4 @@
-// A fake TcpSocket (src/contracts/handles.ts) for exercising node-http-client.ts
+// A fake TcpSocket (src/contracts/handles.ts) for exercising http/client.ts
 // without a broker, a preload or an Electron launch -- exactly the "fake
 // orivon.net.connectSecure returning a real in-memory TcpSocket-shaped
 // duplex" the queue item's own instructions describe as fully unit-testable.

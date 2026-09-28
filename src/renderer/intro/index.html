@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- The welcome screen: a full-window view above the shell on a launch that
+         opens on it (src/main/shell/intro-view.ts). No preload and no network:
+         it reports "Enter Orivon" to the shell through the URL hash alone. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'"
+    />
+    <title>Orivon</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="overlay" id="overlay">
+      <div class="scrim"></div>
+      <div class="drag-strip"></div>
+
+      <main class="welcome">
+        <header class="top-bar">
+          <div class="brand">
+            <img class="brand-logo" src="../assets/logo.png" alt="Orivon" />
+            <span class="brand-name">Orivon</span>
+          </div>
+          <p class="blurb">
+            The fastest Web3 browser. Open .eth domains, run Bitcoin nodes, and browse with trustless confidence.
+          </p>
+        </header>
+
+        <section class="hero">
+          <h1 class="headline" aria-label="The browser Web3 deserves.">
+            <span class="line line-1" aria-hidden="true"><span class="line-text">THE BROWSER</span></span>
+            <span class="line line-2" aria-hidden="true"><span class="line-text accent">WEB3</span></span>
+            <span class="line line-3" aria-hidden="true"><span class="line-text">DESERVES.</span></span>
+          </h1>
+
+          <div class="cta">
+            <button class="enter" id="enter" type="button">
+              Enter Orivon
+              <span class="enter-arrow" aria-hidden="true">→</span>
+            </button>
+            <span class="cta-note">No extensions · No setup · Free</span>
+          </div>
+        </section>
+
+        <div class="ticker" aria-hidden="true">
+          <div class="ticker-track">
+            <span class="ticker-item">OPEN .ETH DOMAINS</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">RUN BITCOIN NODES</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">TRUSTLESS BROWSING</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">WEB3 NATIVE</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">DECENTRALIZED WEB</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">NO EXTENSIONS NEEDED</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">OPEN .ETH DOMAINS</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">RUN BITCOIN NODES</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">TRUSTLESS BROWSING</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">WEB3 NATIVE</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">DECENTRALIZED WEB</span><span class="ticker-dash">—</span>
+            <span class="ticker-item">NO EXTENSIONS NEEDED</span><span class="ticker-dash">—</span>
+          </div>
+        </div>
+
+        <div class="prism" aria-hidden="true"><div class="prism-face"></div></div>
+        <div class="discs" aria-hidden="true">
+          <div class="disc disc-4"></div>
+          <div class="disc disc-3"></div>
+          <div class="disc disc-2"></div>
+          <div class="disc disc-1"></div>
+          <div class="disc disc-0"></div>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

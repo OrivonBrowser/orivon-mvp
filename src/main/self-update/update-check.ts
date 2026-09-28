@@ -6,7 +6,7 @@
 // channel keyed to a GitHub token -- weaker than what ADR-0005 demands of
 // third-party apps, which is the wrong way round for the browser's own
 // binary. v0 checks and notifies, linking to the release. Signing the
-// update manifest with an offline key is the post-MVP upgrade.
+// update manifest with an offline key is the next upgrade.
 //
 // This file therefore contains no download, no signature/hash verification,
 // and no install step, anywhere. The only network call it makes is a read of

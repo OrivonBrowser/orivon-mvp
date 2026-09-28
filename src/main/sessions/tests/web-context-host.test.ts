@@ -133,7 +133,7 @@ function fakeSessionFactory (partition: string): FakeSession {
   return fakeSession(partition)
 }
 
-vi.mock('../../../loader/electron-serve.js', () => ({
+vi.mock('../../../loader/electron/serve.js', () => ({
   reachOnlyHandlerFor: vi.fn(() => async (_request: Request) => new Response('reach-ok'))
 }))
 

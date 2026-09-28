@@ -35,29 +35,32 @@ actually made.
 it to be right rather than leaving a correction under the wrong text, and record the change in
 the decision log. The page states what is true now; the log remembers that it changed.
 
-**4. Scope discipline.** Anything absent from the IN table in
-[`docs/mvp-scope.md`](docs/mvp-scope.md) is out by default. The long-term vision is large
-and coherent and seductive; scope creep out of it is the single biggest risk to this project.
+**4. Build a feature when a need calls for it.** Any feature of the long-term vision may be
+picked up once a real app, a user or the success metric needs it, and
+[`docs/scope.md`](docs/scope.md) records it as it lands. The vision is large and coherent and
+seductive, and the developer is solo: name the need before building.
 
-**5. Label every component disposable or durable.** For each component, state whether it is
-tied to Electron or would outlive it. [`ARCHITECTURE.md`](ARCHITECTURE.md) has the current
-table. This is about spending care in the right place, and it is not a planned migration: a
-WASM runtime and a browser-engine fork are out of scope, nobody is working on either, and
-nothing here depends on them.
+**5. Label every component durable or tied to Electron.** For each component, state whether it
+would outlive a change of the engine beneath it. [`ARCHITECTURE.md`](ARCHITECTURE.md) has the
+current table. This is about spending care in the right place.
 
 **6. Prefer mature components.** Per subsystem, decide: build / library / fork / embed /
 interface. Do not reinvent without a written reason.
 
 **7. Don't over-document trivia**, and don't create abstractions for elegance alone. Prefer self explanatory code over long comment sections.
 
-**8. Pure-JS dependencies only.** No native modules requiring compilation. Windows and macOS
-are supported by running from source, and an `npm install` that needs `node-gyp` is a worse
-wall than the code-signing certificate it was meant to avoid. Enforced by `npm run
-check:natives`, which runs automatically on every install.
+**8. No native modules in Orivon's own dependencies.** No native modules requiring
+compilation; JavaScript and WebAssembly both pass. Windows and macOS are supported by running
+from source, and an `npm install` that needs `node-gyp` is a worse wall than the code-signing
+certificate it was meant to avoid. Enforced by `npm run check:natives`, which runs
+automatically on every install. This bounds this repository's dependencies, not the apps
+Orivon runs: an app qualifies by running in the Node environment, WebAssembly included
+([`ADR-0036`](docs/decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)).
 
 Two more that are less philosophical and more immediate:
 
-**TypeScript only.** No Rust, no C++ ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
+**This repository's code is TypeScript only.** No Rust, no C++
+([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
 
 **`src/contracts/` references nothing outside itself.** Not `electron`, not `node:*`, not any
 package. It is the interface every part of the system agrees on, and tying it to the engine

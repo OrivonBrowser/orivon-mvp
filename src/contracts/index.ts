@@ -42,10 +42,12 @@ export type {
   NetCapability,
   TcpCapability,
   UdpCapability,
+  BindScopes,
   HttpsCapability,
   FsCapability,
   IdCapability,
   WebCapability,
+  EmbedCapability,
   MediaCapability,
   ClipboardCapability,
   SecretsCapability,
@@ -66,7 +68,8 @@ export type {
   WebContextOptions,
   OrivonSecrets,
   CapabilityRequest,
-  SecureConnectOptions
+  SecureConnectOptions,
+  BindScope
 } from './capability-api.js'
 
 export type { Limits } from './limits.js'

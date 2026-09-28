@@ -28,7 +28,7 @@ export interface PortRange {
  * an app map exactly which ports its grant excludes.
  *
  * The three `*-pattern` reasons are worth distinguishing precisely because
- * they should be UNREACHABLE: `src/loader/manifest-capabilities.ts` rejects
+ * they should be UNREACHABLE: `src/loader/manifest/capabilities.ts` rejects
  * all three at manifest-parse time, so one arriving here means a corrupt
  * ledger or a grant path that skipped validation. Logging which one is how
  * that gets noticed.

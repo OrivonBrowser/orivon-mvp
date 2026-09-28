@@ -26,7 +26,7 @@ sits on the site's own host, a `.eth` name's contenthash anchors its content off
 ICANN domains without DNSSEC, so *Certification* would oversell precisely the weakest link.
 
 **Action outstanding:** correct the other two documents (`Posts/Technical Specifications`,
-`Old-Private-Plan/Glossario`) to match. Not blocking the MVP.
+`Old-Private-Plan/Glossario`) to match. Not blocking any build step.
 
 ### `+Privacy` attaches to the top rung of each ladder
 
@@ -52,8 +52,8 @@ Orivon itself is not owned by it.
 interfaces to *read and write* Web1 (`OrivonBook/Web3 Potential.md`).
 
 **WASM Orivon Execution Layer**: current name for what earlier documents called "Advanced
-WASM" or "programs on-fly". In the MVP this capability is delivered by the broker, not by
-WASM (`ADR-0002`).
+WASM" or "programs on-fly". Today this capability is delivered by the broker, not by
+a WASM runtime (`ADR-0002`).
 
 **Web3 Accounts**: the no-setup identity system. Silent per-origin app keys, plus
 named identities (e.g. the Nostr identity) that are cross-origin by explicit consent
@@ -64,7 +64,7 @@ inverse of the yellow "you are in Web2" badge.
 
 ## Architecture
 
-**Shell**: the Electron browser UI (tabs, omnibox, navigation). Explicitly disposable
+**Shell**: the Electron browser UI (tabs, omnibox, navigation). Tied to Electron
 (`ADR-0002`).
 
 **Broker**: the main-process component enforcing manifests and grants, and the sole path from
@@ -93,8 +93,8 @@ Electron apps port mechanically. Load-bearing for every Node.js app (`ADR-0005`)
 **`orivon-runtime`**: the deferred Wasmtime host. Purpose: containment for untrusted code, and
 mobile portability. Not cancelled (`ADR-0002`).
 
-**`orivon-core`**: in the published docs, the client wrapping `orivon-runtime`. The MVP's
-broker occupies this role; the name is not yet used in the MVP codebase.
+**`orivon-core`**: in the published docs, the client wrapping `orivon-runtime`. Orivon
+Browser's broker occupies this role; the name is not yet used in this codebase.
 
 **Developer mode**: off by default; loads unpacked, unsigned apps at the user's risk, with a
 reduced capability set.
@@ -110,23 +110,26 @@ much trust it requires. Levels remain unspecified (`web3-score.md`: "Work in pro
 **Web3 Score**: the umbrella for Trustlessity plus Security.
 
 **Website level**: a site's place on the canonical Web3 scores page's site ladder. Level 1 is a
-standard site; Level 2 a site that meets DDOC, which the browser detects itself; Level 3 and above
-are judged, and only a Web3 Score provider gives them. The Web3 Score page leads with it
-(`ADR-0006`).
+standard site ("Web2"); Level 2 a site that meets DDOC, which the browser detects itself; Level 3
+and above are judged, and only a Web3 Score provider gives them, or, in this build, a
+developer-only override previewing one (`src/main/dev/score-levels.ts`). The address bar's Web3
+Score shield leads with it, coloured red/orange/yellow/green, a mark at the pill's right end
+names it Web2 (Level 1), Web2.5 (Levels 2-3) or Web3 (Level 4), and the Web3 Score page the
+shield opens leads with it too (`ADR-0006`).
 
 **Web3 Score provider**: an entity issuing judged scores. The user may choose several. Never
 required for the automatic ladders. In this build a provider need not be trustless, and may run
-locally (`ADR-0006`).
+locally (`ADR-0006`); which provider ships is open (`open-questions.md` A250).
 
 **Attestation**: a provider's signed statement over a content identifier, a bundle hash or a CID
 ("hash X is Level 4").
 Verified locally and offline, so a provider cannot track users (`ADR-0006`).
 
-**Observed behaviour**: what the broker actually saw an app do. The basis of the MVP's
+**Observed behaviour**: what the broker actually saw an app do. The basis of this version's
 indicator. Always reported as *observed*, never *guaranteed*.
 
 **TOFU**: trust on first use. The delivery host is trusted once at install; the bundle is then
-pinned, so later host compromise cannot silently swap code (`ADR-0006` D2).
+pinned, so later host compromise cannot silently swap code (`ADR-0006`).
 
 ## Names and content
 
@@ -154,7 +157,7 @@ trusting an RPC's answer. Here, Helios, started at launch (`ADR-0031`).
 Shipped with each release, replaced by the newest one verified here, refused past 14 days.
 
 **Verifier host**: the utility process that runs the light client, fetches and hashes IPFS blocks,
-and serves `.eth` names on loopback (`src/verifier-host/`).
+and serves `.eth` names on loopback (`src/protocols/verifier-host/`).
 
 ## Compatibility tiers
 **Tier 1** already a web app · **Tier 2** Electron/Node · **Tier 3** native/JVM/Qt ·
@@ -166,4 +169,4 @@ and serves `.eth` names on loopback (`src/verifier-host/`).
 - **"Special extensions"** (`orivon.mdx`) → say **apps**.
 - **"Wallet"** for the no-setup identity → say **Web3 Account**; reserve *wallet* for
   funds-bearing, setup-requiring accounts.
-- **"Advanced WASM"** → say **execution layer**; in the MVP it is not WASM.
+- **"Advanced WASM"** → say **execution layer**; today it is the broker, not a WASM runtime.

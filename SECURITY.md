@@ -25,7 +25,7 @@ programme; this project has no money.
 
 ## What you should know before you start looking
 
-### The MVP's security model is authorisation, not containment
+### This version's security model is authorisation, not containment
 
 This is stated plainly because it changes what counts as a vulnerability.
 

@@ -283,7 +283,7 @@ export function couldAnyPatternMatch (
 
 /** Why a host may not be DECLARED (in a manifest, or requested via
  * `app.requestGrant`) -- narrower than what `hostMatches` will authorise at
- * connect time, matching `src/loader/manifest-capabilities.ts`'s own
+ * connect time, matching `src/loader/manifest/capabilities.ts`'s own
  * doc: every reason below is one where `hostMatches` would deny on EVERY
  * call, so rejecting it up front can never refuse a pattern the runtime
  * would otherwise have honoured. */
@@ -300,7 +300,7 @@ export type ConnectHostRejection =
  * `null` means `host` may be declared as-is. Shared by two callers on
  * opposite sides of a boundary neither may cross to reach the other's file
  * directly (`src/broker/README.md`: `src/broker/` may never import
- * `src/loader/`): `src/loader/manifest-capabilities.ts`'s `validateConnectHost`
+ * `src/loader/`): `src/loader/manifest/capabilities.ts`'s `validateConnectHost`
  * wraps this in the developer-facing `reject(...)` messages a manifest author
  * sees, and `./request-grant.ts`'s `isDeclarableConnectPattern` (below) uses
  * it to refuse an `app.requestGrant` call asking for a pattern shape no
@@ -332,7 +332,7 @@ export function declarableConnectHostRejection (host: string, wholePattern: stri
  * subset check, so a request can never carry authority a manifest was never
  * allowed to declare in the first place -- see `declarableConnectHostRejection`'s
  * own doc for why this lives here rather than duplicating
- * `src/loader/manifest-capabilities.ts`'s `validateConnectPattern`.
+ * `src/loader/manifest/capabilities.ts`'s `validateConnectPattern`.
  */
 export function isDeclarableConnectPattern (pattern: Pattern): boolean {
   if (typeof pattern !== 'string' || pattern !== pattern.trim()) return false

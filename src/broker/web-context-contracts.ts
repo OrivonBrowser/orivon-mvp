@@ -8,7 +8,7 @@
 /**
  * ADR-0019's `web.context` escape hatch into Electron -- the ONLY piece of
  * this capability the broker itself cannot do, because opening a real
- * `WebContentsView` needs `electron` (./web-capability.ts's own header: "the
+ * `WebContentsView` needs `electron` (./capabilities/web.ts's own header: "the
  * broker stays Electron-free"). `src/main/web-context-host.ts` is the real
  * implementation, wired in where the shell builds the broker
  * (`CreateBrokerOptions.webContextHost`); a fake stands in for it in every
@@ -16,7 +16,7 @@
  *
  * ID-ADDRESSED, not object-addressed, on purpose: `open` mints and returns
  * its OWN id (never one the caller supplies), and `evaluate`/`close` are
- * addressed by that same id -- the broker's own `web-capability.ts` holds no
+ * addressed by that same id -- the broker's own `capabilities/web.ts` holds no
  * live reference to whatever object represents the real context, only this
  * id, alongside the `HandleTable` entry id ADR-0019's own security
  * properties (revocation, the per-origin budget) are enforced against.

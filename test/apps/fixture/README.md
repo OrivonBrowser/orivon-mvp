@@ -32,7 +32,7 @@ apps/fixture/
   config.mjs                the two servers' host/ports, in one place with no side effects
   echo-server.mjs           starts the TCP echo server
   serve.mjs                 starts the static file server for this directory
-  manifest.test.ts          imports the real parseManifest() (src/loader/manifest.ts) and
+  manifest.test.ts          imports the real parseManifest() (src/loader/manifest/manifest.ts) and
                              checks the manifest above against it -- see "Testing" below
 ```
 

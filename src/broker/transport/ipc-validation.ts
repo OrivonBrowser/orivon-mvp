@@ -24,7 +24,7 @@ import { MAX_PATTERNS } from '../policy/connect.js'
  * NOT get a matching `fs.dir*` sibling of its own for what it returns: it
  * resolves a `FileHandle`, so every subsequent call against it is `fs.read`/
  * `fs.write`/`fs.fstat`/`fs.truncate`/`fs.sync`/`fs.close` -- fs.open's own
- * six, reused for free (A194's own dispatch-fs.ts comment on why that is
+ * six, reused for free (A194's own transport/dispatch/fs.ts comment on why that is
  * the correct reuse, not a second mechanism).
  */
 export type ControlMethod =
@@ -37,7 +37,7 @@ export type ControlMethod =
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
-  | 'web.openContext' | 'web.evaluate' | 'web.close' | 'web.awaitClose'
+  | 'web.openContext' | 'web.evaluate' | 'web.close' | 'web.awaitClose' | 'web.setEmbedScript'
   | 'secrets.available' | 'secrets.encrypt' | 'secrets.decrypt'
 
 export function isControlMethod (method: string): method is ControlMethod {
@@ -57,6 +57,7 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
     method === 'net.lookup' ||
     method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close' || method === 'web.awaitClose' ||
+    method === 'web.setEmbedScript' ||
     method === 'secrets.available' || method === 'secrets.encrypt' || method === 'secrets.decrypt'
 }
 
@@ -72,7 +73,7 @@ export interface FsOpenParams { readonly path: string, readonly flags: string }
  * `orivon.fs.userSelected`'s wire payload -- both `directory` and `multiple`
  * optional, matching `capability-api.ts`'s own overload split (`{directory:
  * true}` for a folder, `{directory?: false, multiple?: boolean}` for files).
- * Shape validation accepts EITHER call; `dispatch-fs.ts`'s own case routes
+ * Shape validation accepts EITHER call; `transport/dispatch/fs.ts`'s own case routes
  * `directory: true` to a `DirectoryHandle` acquisition (A195) and everything
  * else to the pre-existing file shape.
  */
@@ -108,6 +109,8 @@ export interface WebOpenContextParams { readonly origin: string, readonly width?
 export interface WebEvaluateParams { readonly id: string, readonly script: string, readonly timeoutMs?: number }
 /** Shared by web.close and web.awaitClose -- both take exactly `{ id }` (code-guidelines.md Rule 3: same shape, same reason, `NetConnectParams`'s own precedent). Structurally identical to `NetCloseParams`/`FsHandleIdParams` too, but kept as its own name -- one name per surface even where payload shapes happen to coincide. */
 export interface WebCloseParams { readonly id: string }
+/** `web.setEmbedScript` (ADR-0039). The byte cap is the broker's check (capabilities/embed.ts); the length bound here is shape hygiene against a payload no honest caller sends. */
+export interface WebSetEmbedScriptParams { readonly source: string }
 /** net.connect's payload. net.connectSecure's adds TLS options and has its own validator, ./secure-connect-params.ts. */
 export interface NetConnectParams { readonly host: string, readonly port: number }
 /**
@@ -130,14 +133,14 @@ export interface AppRequestGrantParams { readonly capability: string, readonly p
 
 /**
  * The one field of `SubsystemContext` (../../main/registry.js)
- * `dispatch-app.ts`'s 'app.requestGrant' case needs, read via THIS object's
+ * `transport/dispatch/app.ts`'s 'app.requestGrant' case needs, read via THIS object's
  * own live getter on every call rather than captured once: `registerBrokerIpc`
  * runs before request-grant-subsystem publishes it (subsystems.ts's own
  * ordering comment), so grabbing the value at wiring time would freeze it at
  * `undefined` forever. A real `SubsystemContext` satisfies this shape
  * structurally; ipc.test.ts needs only a plain object with this one field.
  * Lives here, alongside the payload shape it pairs with, rather than in
- * dispatch-app.ts: both ipc.ts's `handleControlRequest` and dispatch-app.ts's
+ * transport/dispatch/app.ts: both ipc.ts's `handleControlRequest` and transport/dispatch/app.ts's
  * `dispatchApp` need this same type, so it lives in the shared validation
  * module rather than in either one.
  */
@@ -212,7 +215,7 @@ export function isFsHandleIdParams (payload: unknown): payload is FsHandleIdPara
  * `position`/`length` are bounded to safe integers, never merely "a number"
  * -- `handle.read`'s own contract is explicit position, so `NaN`, `Infinity`
  * or a negative offset reaching the adapter is this file's job to refuse,
- * not `fs-capability.ts`'s (T1/T10's discipline: fail closed at the trust
+ * not `capabilities/fs.ts`'s (T1/T10's discipline: fail closed at the trust
  * boundary, not two layers in).
  */
 export function isFsHandleReadParams (payload: unknown): payload is FsHandleReadParams {
@@ -292,7 +295,7 @@ export function isIdSignParams (payload: unknown): payload is IdSignParams {
 }
 
 /** `LIMITS.secretBytes`-bounded here too, at the trust boundary, not only
- * inside secrets-capability.ts -- T1/T10's own discipline (see this file's
+ * inside capabilities/secrets.ts -- T1/T10's own discipline (see this file's
  * header): fail closed as early as the untrusted bytes are seen. */
 export function isSecretsEncryptParams (payload: unknown): payload is SecretsEncryptParams {
   if (typeof payload !== 'object' || payload === null) return false
@@ -311,7 +314,7 @@ export function isSecretsDecryptParams (payload: unknown): payload is SecretsDec
   return ciphertext instanceof Uint8Array && ciphertext.byteLength <= LIMITS.secretBytes + SECRET_WIRE_OVERHEAD_BYTES
 }
 
-/** `width`/`height` bounded to a safe finite number when present -- broker/web-capability.ts clamps to 1..7680 regardless, so this is shape hygiene, not the real range check. */
+/** `width`/`height` bounded to a safe finite number when present -- broker/capabilities/web.ts clamps to 1..7680 regardless, so this is shape hygiene, not the real range check. */
 export function isWebOpenContextParams (payload: unknown): payload is WebOpenContextParams {
   if (typeof payload !== 'object' || payload === null) return false
   const { origin, width, height } = payload as { origin?: unknown, width?: unknown, height?: unknown }
@@ -320,7 +323,7 @@ export function isWebOpenContextParams (payload: unknown): payload is WebOpenCon
     (height === undefined || (typeof height === 'number' && Number.isFinite(height)))
 }
 
-/** `timeoutMs` is only shape-checked here; whether its value is acceptable is the broker's decision (web-capability.ts). */
+/** `timeoutMs` is only shape-checked here; whether its value is acceptable is the broker's decision (capabilities/web.ts). */
 export function isWebEvaluateParams (payload: unknown): payload is WebEvaluateParams {
   if (typeof payload !== 'object' || payload === null) return false
   const timeoutMs = (payload as { timeoutMs?: unknown }).timeoutMs
@@ -332,6 +335,14 @@ export function isWebEvaluateParams (payload: unknown): payload is WebEvaluatePa
 export function isWebCloseParams (payload: unknown): payload is WebCloseParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { id?: unknown }).id === 'string'
+}
+
+export function isWebSetEmbedScriptParams (payload: unknown): payload is WebSetEmbedScriptParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { source } = payload as { source?: unknown }
+  // A UTF-16 length is never more than the UTF-8 byte count, so this cannot
+  // refuse a script the broker's own byte check would accept.
+  return typeof source === 'string' && source.length <= LIMITS.embedScriptBytes
 }
 
 export function isNetConnectParams (payload: unknown): payload is NetConnectParams {

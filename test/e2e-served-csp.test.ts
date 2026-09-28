@@ -1,5 +1,5 @@
 // End-to-end proof that a pinned bundle runs under the real served CSP
-// (src/loader/serve-csp.ts) the things real bundles do: compile WebAssembly,
+// (src/loader/serve/csp.ts) the things real bundles do: compile WebAssembly,
 // show a data: image, start a blob: worker, load a data: iframe, and eval.
 // Unit tests prove the header string; only Chromium can prove what the
 // header admits.
@@ -26,7 +26,7 @@ import { closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from '
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
 import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/node-storage.js'
+import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 

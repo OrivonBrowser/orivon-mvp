@@ -10,7 +10,7 @@
 // runs against either a stub filesystem or a real one addressed directly,
 // never through the full control-channel pipe. This file is what proves the
 // wiring itself -- ipc-validation.ts's param guards, ipc.ts's dispatch
-// cases, orivon-surface.ts's closures, main-world-socket.ts's bridge -- all
+// cases, surface/orivon.ts's closures, main-world-socket.ts's bridge -- all
 // reach a REAL directory on REAL disk, under a REAL grant, from REAL page
 // code, over the SAME control channel Phase 1 proves correctly denies
 // without one.

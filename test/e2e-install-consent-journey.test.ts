@@ -46,7 +46,7 @@ const GRANTED_TARGET = { host: '203.0.113.10', port: 443 }
 /** A second TEST-NET-1 address, named nowhere in the manifest. */
 const UNGRANTED_TARGET = { host: '203.0.113.11', port: 443 }
 
-/** The exact `{code}` shape a denied broker.net.connect() rejects with (src/broker/net-capability.ts's `fail('denied', ...)`), read off the rejection rather than assumed. */
+/** The exact `{code}` shape a denied broker.net.connect() rejects with (src/broker/capabilities/net.ts's `fail('denied', ...)`), read off the rejection rather than assumed. */
 async function connectDenialCode (broker: ReturnType<typeof createBroker>, target: { host: string, port: number }): Promise<string | 'resolved'> {
   return await broker.net.connect(ORIGIN, target).then(
     () => 'resolved' as const,

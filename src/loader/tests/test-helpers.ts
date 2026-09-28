@@ -1,7 +1,7 @@
 // Shared test fixtures for this directory's suites -- a stub Fetch and an
-// in-memory LoaderStorage, plus the manifest JSON both fetch-bundle.test.ts
+// in-memory LoaderStorage, plus the manifest JSON both fetch/tests/bundle.test.ts
 // and index.test.ts need. Split out once index.test.ts needed the same
-// stubFetch fetch-bundle.test.ts had already built (docs/development/
+// stubFetch fetch/tests/bundle.test.ts had already built (docs/development/
 // code-guidelines.md Rule 3), matching the `*.test-helpers.ts` pattern
 // already used in src/broker/ (handles.test-helpers.ts, connect.test-
 // helpers.ts). Not itself a `*.test.ts` file, so it carries no tests of its
@@ -11,11 +11,11 @@ import { vi } from 'vitest'
 import type { Resolver } from '../../broker/policy/connect.js'
 import { parsePinRecord } from '../../broker/policy/pin.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
-import { appRootDirectoryName } from '../storage.js'
+import { appRootDirectoryName } from '../cache/storage.js'
 import { ddocToJson } from '../ddoc-declaration.js'
 import type { DdocDeclaration } from '../ddoc-declaration.js'
-import type { Fetch, FetchResponse } from '../fetch-budget.js'
-import type { LoaderStorage, OpenedAsset } from '../storage.js'
+import type { Fetch, FetchResponse } from '../fetch/budget.js'
+import type { LoaderStorage, OpenedAsset } from '../cache/storage.js'
 
 export const ORIGIN = 'https://app.example.com'
 export const MANIFEST_URL = `${ORIGIN}/.well-known/orivon.json`
@@ -42,7 +42,7 @@ export function utf8 (text: string): Uint8Array {
 export interface RouteSpec {
   readonly status?: number
   /**
-   * `response.url`. Defaults to the requested url, but fetch-bundle.ts no
+   * `response.url`. Defaults to the requested url, but fetch/bundle.ts no
    * longer reads this field at all (A141: real Electron's net.fetch reports
    * it as '' unconditionally) -- set here only so a test can assert the
    * field is genuinely inert, e.g. the A141 suite below setting it to ''.
@@ -116,12 +116,12 @@ export function stubFetch (
   bodyReadSpy?: Set<string>,
   streamedBytesSpy?: Map<string, number>
 ): Fetch {
-  // `pinnedAddresses` is F2/F5's validated-literal hand-off (fetch-budget.ts's
+  // `pinnedAddresses` is F2/F5's validated-literal hand-off (fetch/budget.ts's
   // own `Fetch` doc comment) -- this stub is a fake HTTP layer keyed by URL
   // string, with no real DNS/TCP underneath to pin, so it has nothing to do
   // with the argument beyond accepting it. Tests that care whether it was
   // threaded through correctly wrap this stub in their own spy (see
-  // fetch-bundle.test.ts's F2 and F5 suites) rather than this shared fixture
+  // fetch/tests/bundle.test.ts's F2 and F5 suites) rather than this shared fixture
   // asserting anything about it.
   return async (url: string, _pinnedAddresses: readonly string[]): Promise<FetchResponse> => {
     const spec = routes[url]
@@ -254,7 +254,7 @@ export function memoryStorage (): MemoryStorage {
         if (!keepSet.has(path)) forOrigin.delete(path)
       }
     }),
-    // The two serve.ts-era methods, added alongside src/loader/serve.ts --
+    // The two serve.ts-era methods, added alongside src/loader/serve/serve.ts --
     // matching the SAME never-throws, undefined-on-anything-else contract
     // node-storage.ts's real implementation follows (storage.ts's own doc).
     readAsset: vi.fn(async (origin: string, path: string) => assets.get(origin)?.get(path)),

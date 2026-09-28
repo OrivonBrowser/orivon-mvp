@@ -11,7 +11,7 @@ This is a synthesis; it does not restate what the linked documents already say.
 
 **Clear.**
 - What the MVP proves, and the metric that judges it: 100 active users in EU/USA at
-  25 h/month. The metric, not the long-term vision, decides scope (`mvp-scope.md`).
+  25 h/month. The metric, not the long-term vision, decides scope (`scope.md`).
 - The flagship, with reasoning recorded so it is not re-litigated (`ADR-0001`).
 - Three journeys that must work: the clip, the identity, the developer.
 - Everything classified: in / deferrable / later / unrelated, plus explicit public non-goals.
@@ -32,7 +32,7 @@ This is a synthesis; it does not restate what the linked documents already say.
 | | |
 |---|---|
 | `ADR-0001` | BitTorrent streaming is the flagship |
-| `ADR-0002` | The capability API is the durable asset; WASM deferred, not cancelled |
+| `ADR-0002` | The capability API is the durable asset; the WASM runtime deferred, not cancelled |
 | `ADR-0003` | Local-first storage, per-origin isolation, no Orivon server for user data |
 | `ADR-0004` | Telemetry: opt-out, disclosed, self-hosted, inspectable |
 | `ADR-0005` | Apps are URL-addressed and cached, never bundled |

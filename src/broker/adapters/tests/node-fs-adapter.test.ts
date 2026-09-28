@@ -44,7 +44,7 @@ describe('nodeFs (the real filesystem adapter)', () => {
   })
 
   // This adapter deliberately does NOT classify its own errors.
-  // fs-capability.ts's mapIoError is the single place an errno becomes an
+  // capabilities/fs.ts's mapIoError is the single place an errno becomes an
   // OrivonError, and it passes an already-shaped OrivonError straight
   // through unchanged -- so an adapter that pre-shaped one BYPASSED the
   // mapper rather than helping it. index-fs-extended.test.ts already pins
@@ -75,7 +75,7 @@ describe('nodeFs (the real filesystem adapter)', () => {
 
 describe('nodeFs -- the extended fs adapters (queue item 2.1)', () => {
   // These adapters are the raw-I/O half only. Confinement is
-  // fs-capability.ts's job (confinePath, before any of these ever run) --
+  // capabilities/fs.ts's job (confinePath, before any of these ever run) --
   // every path handed to a test below is one this adapter is trusted to
   // touch directly, matching how the readFile/writeFile tests above already
   // work against real absolute paths under `fs.rootFor(...)`.

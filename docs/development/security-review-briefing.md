@@ -29,8 +29,8 @@ socket" is the feature. A finding that says "a web page can open a socket it was
 or "app A reached app B's data", is the product failing.
 
 The boundary runs: **page (untrusted) → preload (`src/preload/`) → broker (`src/broker/`) → OS.**
-Everything a page can reach is `window.orivon`, built in `src/preload/orivon-surface.ts` and
-`src/preload/main-world-socket.ts`. The broker is the only thing that touches real I/O, and it
+Everything a page can reach is `window.orivon`, built in `src/preload/surface/orivon.ts` and
+`src/preload/surface/main-world-socket.ts`. The broker is the only thing that touches real I/O, and it
 decides every call by origin.
 
 Read first, in this order:

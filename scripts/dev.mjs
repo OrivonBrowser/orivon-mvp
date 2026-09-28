@@ -6,6 +6,9 @@
  * `.eth` names and Inspect Element. Only this script sets it: `npm start` is
  * what a run-from-source user runs, and it stays off there.
  *
+ * Also ORIVON_INTRO=always, or off under --skip-intro: docs/development/setup.md
+ * "The welcome screen", which says why and how the two spellings of the flag differ.
+ *
  * NO `--watch`, deliberately -- owner, 2026-09-15. Consequence, stated here
  * so nobody re-adds the flag to "fix" it: a main-process or preload edit
  * does NOT appear until `npm run dev` is restarted, and a half-applied
@@ -23,8 +26,10 @@
 import { spawnSync } from 'node:child_process'
 
 const command = process.platform === 'win32' ? 'electron-vite.cmd' : 'electron-vite'
+const skipIntro = process.argv.includes('--skip-intro') || process.env.npm_config_skip_intro === 'true'
+const intro = skipIntro ? 'off' : process.env.ORIVON_INTRO ?? 'always'
 const result = spawnSync(command, ['dev'], {
   stdio: 'inherit',
-  env: { ...process.env, ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_DEV_ORIGINS: '1' }
+  env: { ...process.env, ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_DEV_ORIGINS: '1', ORIVON_INTRO: intro }
 })
 process.exit(result.status ?? 1)

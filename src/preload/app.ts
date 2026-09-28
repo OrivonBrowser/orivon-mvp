@@ -1,4 +1,4 @@
-import { exposeOrivon } from './orivon-surface.js'
+import { exposeOrivon } from './surface/orivon.js'
 import { exposeFetchRoute } from './expose-fetch-route.js'
 import { exposeShimGlobals } from './expose-shim-globals.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
@@ -7,7 +7,7 @@ import { installManifestHintWatcher } from './manifest-hint.js'
 // chrome view (tab strip + toolbar) loads preload/shell.ts instead, which
 // is privileged and must never be reachable from here.
 //
-// The real orivon.* surface lives in ./orivon-surface.ts, shared with
+// The real orivon.* surface lives in ./surface/orivon.ts, shared with
 // preload/newtab.ts's own fallback branch -- a dashboard tab the user has
 // navigated away from is an ordinary tab too, and must expose the SAME
 // thing this file does, not a second copy (code-guidelines.md Rule 3).

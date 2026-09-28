@@ -17,7 +17,7 @@ export const MAX_PORT = 65535
  * deliberately does NOT apply to `connect` -- see ./connect-patterns.ts's
  * `portMatches`, where applying it would deny 80 and 443.
  *
- * `src/loader/manifest-capabilities.ts` still keeps a private copy under this
+ * `src/loader/manifest/capabilities.ts` still keeps a private copy under this
  * name, enforcing the same rule at manifest-parse time. That file is the
  * `loader` stream's, so deduplicating it is a one-line import swap left for a
  * loader PR rather than taken here (parallel-work.md: a change needing another

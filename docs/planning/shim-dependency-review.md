@@ -69,8 +69,8 @@ function. Taking the npm package to answer one function pulls four more packages
 (`is-arguments`, `is-generator-function`, `is-typed-array`, `which-typed-array`) that nothing in
 this tree calls. `util.inherits` is a frozen API (Node itself deprecated it in favour of ES6
 classes years ago, so its shape will not change under this shim), which makes hand-writing it
-safe rather than merely cheap; see `src/shim/node-util.ts`, built as part of this lane, with
-its correctness verified in `src/shim/tests/node-util.test.ts` against real Node's own
+safe rather than merely cheap; see `src/shim/polyfills/util.ts`, built as part of this lane, with
+its correctness verified in `src/shim/polyfills/tests/util.test.ts` against real Node's own
 `util.inherits`, not against this review's idea of what it should do. **This is a Rule 6
 judgment call, not a rejection of the package on any technical ground**. If a real caller needs
 more of `util` later, the honest fix is extending this file, or revisiting this row, not
@@ -153,11 +153,11 @@ future reader will actually hit them, not just here:
   `deprecate`, `debuglog`), and readable-stream itself reads `util.debuglog` and `util.inspect`,
   so the one-function premise no longer held; hand-writing `format`, `inspect` and the `types`
   predicates would have been a second implementation of the package (`code-guidelines.md`
-  Rule 3). `src/shim/node-util.ts` now stands on the package and replaces only what it gets wrong
+  Rule 3). `src/shim/polyfills/util.ts` now stands on the package and replaces only what it gets wrong
   or predates: `promisify` keyed on Node's registry symbol, Node's `setPrototypeOf` form of
   `inherits`, `isDeepStrictEqual`, and the platform's `TextEncoder`/`TextDecoder`. The cost is
   about thirty small pure-JS transitive packages in any bundle that imports `util`
-  (`src/shim/README.md`, "`node-util.ts` stands on the `util` package, and corrects it";
+  (`src/shim/README.md`, "`polyfills/util.ts` stands on the `util` package, and corrects it";
   `decision-log.md` `d-0074`).
 
 `dns` is unchanged by this approval: still a broker-capability question

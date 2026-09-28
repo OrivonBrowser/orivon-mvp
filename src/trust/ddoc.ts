@@ -20,6 +20,8 @@ export const MAX_NAMED_DIFFERENCES = 20
 
 export type DdocVerdict =
   | { readonly status: 'not-checked' }
+  /** A local origin in developer mode serves a readable tree. A local address has no domain record to anchor one, so the tree is assumed to hold and no file is compared. */
+  | { readonly status: 'local-dev' }
   | { readonly status: 'not-published' }
   | { readonly status: 'verified' }
   | {
@@ -35,10 +37,11 @@ export type DdocVerdict =
  * Compared against the CURRENT pin, so a tree stored for an earlier bundle
  * can only ever fail, never verify. Both the root and every leaf must
  * match: a matching root beside a wrong leaf table would let a provider
- * reading the table be misled.
+ * reading the table be misled. `localDevTree` is `../main/dev/local-ddoc.ts`'s answer,
+ * and counts only when nothing is pinned.
  */
-export function ddocVerdict (pin: PinnedTree | null, published: PublishedTree | undefined): DdocVerdict {
-  if (pin === null) return { status: 'not-checked' }
+export function ddocVerdict (pin: PinnedTree | null, published: PublishedTree | undefined, localDevTree = false): DdocVerdict {
+  if (pin === null) return { status: localDevTree ? 'local-dev' : 'not-checked' }
   if (published === undefined) return { status: 'not-published' }
 
   const publishedLeaves = new Map(published.leaves.map(({ path, leaf }) => [path, leaf]))

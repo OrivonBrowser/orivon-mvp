@@ -93,7 +93,7 @@ properties are the security boundary, not features:
 - **Partition-scoped, never global.** The same URL in an ordinary tab reaches the real network.
   A global interception would mean Orivon silently serving stale local bytes for a real website.
 
-Needs a read half on [`src/loader/storage.ts`](../../src/loader/storage.ts), which today can
+Needs a read half on [`src/loader/cache/storage.ts`](../../src/loader/cache/storage.ts), which today can
 only write: `readAsset(origin, path)`, plus the node-backed implementation.
 
 **Exit:** an installed app loads from disk with the network unplugged; a planted extra file at
@@ -165,7 +165,7 @@ leaves no surviving process and no temp profile behind.
   on the line between "an app installs" and "an app runs with the authority a person gave it".
 - **`net.listen`'s page wiring**, blocked on a nested-port IPC shape (`A114`), unrelated to
   this step.
-- **Anything in `mvp-scope.md`'s excluded rows.** Ambient filesystem, `subprocess`, `hid`/USB are
+- **Anything in `scope.md`'s excluded rows.** Ambient filesystem, `subprocess`, `hid`/USB are
   refusals, not gaps.
 
 ## Order and what may run at once
@@ -175,7 +175,7 @@ leaves no surviving process and no temp profile behind.
     S4-2 ──┴──► S4-3 ──┬──► S4-6 ───────────── ┘
                        └──► S4-5
 
-`src/loader/storage.ts` and `src/loader/index.ts` are touched by both S4-3 and S4-5: those two
+`src/loader/cache/storage.ts` and `src/loader/index.ts` are touched by both S4-3 and S4-5: those two
 are serialised, never in flight together. `src/broker/transport/ipc.ts` is S4-1's alone.
 `src/main/shell/tabs.ts` is S4-2's alone. This is the run's main merge-conflict risk and it is the
 reason for the shape above.

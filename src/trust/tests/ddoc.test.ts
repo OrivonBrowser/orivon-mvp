@@ -25,6 +25,15 @@ describe('ddocVerdict', () => {
     expect(ddocVerdict(null, undefined)).toEqual({ status: 'not-checked' })
   })
 
+  it('local-dev when nothing is pinned and a local origin in developer mode serves a readable tree', () => {
+    expect(ddocVerdict(null, undefined, true)).toEqual({ status: 'local-dev' })
+  })
+
+  it('compares a pin as usual even when a local tree is served', () => {
+    expect(ddocVerdict(PIN, undefined, true)).toEqual({ status: 'not-published' })
+    expect(ddocVerdict(PIN, published(), true)).toEqual({ status: 'verified' })
+  })
+
   it('not published when the site published no readable tree', () => {
     expect(ddocVerdict(PIN, undefined)).toEqual({ status: 'not-published' })
   })

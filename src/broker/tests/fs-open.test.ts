@@ -12,7 +12,7 @@ import { IN_FLIGHT_QUEUE_LIMIT } from '../handles/in-flight.js'
 // in-memory `stubFs`. Real fd/stream mechanics -- does a positional write
 // actually land on disk, does destroy() really flush or discard a queued
 // writable() chunk -- are node-fs-adapter-open.test.ts's job, against a
-// real temp file; this file only has to prove fs-capability.ts's OWN
+// real temp file; this file only has to prove capabilities/fs.ts's OWN
 // wiring: every method routes through confineForOrigin exactly once, and
 // every guard (grant absent, confinement, quota, revocation, the in-flight
 // cap, the file-handle limit) actually refuses when it should.
@@ -108,7 +108,7 @@ describe('fs.open -- the guard rail failure path', () => {
   it('an open FileHandle does NOT consume the socket budget (SOCKET_KINDS excludes \'file\')', async () => {
     // A regression this lane's brief calls out by name: HandleKind already
     // includes 'file' and SOCKET_KINDS already excludes it -- this proves
-    // that stays true through fs-capability.ts's own wiring, not only
+    // that stays true through capabilities/fs.ts's own wiring, not only
     // handles.ts's own unit tests. The origin declares a socket allowance
     // of exactly 1 -- if 'file' were wrongly counted against it, the SECOND
     // open below would fail with 'limit' long before LIMITS.

@@ -14,7 +14,7 @@
 // the address was typed: a link to a loopback URL leads to the same prompt,
 // which the person still answers. Grants here are session-only (T13c).
 
-import { MAX_MANIFEST_BYTES, parseManifest } from '../../loader/manifest.js'
+import { MAX_MANIFEST_BYTES, parseManifest } from '../../loader/manifest/manifest.js'
 import { requestInstallConsent } from '../consent/install-consent.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from '../consent/install-consent.js'
 import type { Broker } from '../../broker/broker-contracts.js'

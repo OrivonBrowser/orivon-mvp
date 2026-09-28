@@ -254,7 +254,7 @@ async function main () {
 
         // Build step 2's IPC bridge, on THIS SAME tab -- the exact one
         // preload/newtab.ts's fallback branch used to leave at { version: 0 }
-        // before orivon-surface.ts existed. This is a SHELL-WIRING check, not
+        // before surface/orivon.ts existed. This is a SHELL-WIRING check, not
         // a capability-enforcement one: docs/development/testing.md is
         // explicit that the dedicated capability e2e test (not yet built)
         // owns that claim. What this proves is narrower and still real --
@@ -480,7 +480,7 @@ async function main () {
     }
 
     // ---- Address-bar text that is not a URL resolves to a search ---------
-    // Owner decision, build step 1 (mvp-scope.md IN table; build-plan.md's
+    // Owner decision, build step 1 (scope.md IN table; build-plan.md's
     // "Sequence" step 1): non-address input is sent to DuckDuckGo -- a stated
     // known limitation, since in the PRODUCT the search text leaves the
     // machine.

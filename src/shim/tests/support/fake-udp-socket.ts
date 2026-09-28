@@ -1,5 +1,5 @@
 // A fake UdpSocket (src/contracts/handles.ts) for exercising
-// node-dgram-socket.ts without a broker -- the dgram counterpart of
+// net/dgram-socket.ts without a broker -- the dgram counterpart of
 // fake-tcp-socket.ts. Under tests/support/, not tests/, for the same reason
 // that file is: vitest.config.ts's `include` only matches `*.test.ts`.
 

@@ -31,7 +31,7 @@ dashboard. `configurable: true` alone does not help; non-writability alone block
 
 **The lock was never a boundary.** Grant enforcement runs in the main process, keyed on
 `event.senderFrame` and the grant ledger ([`../../src/broker/transport/ipc.ts`](../../src/broker/transport/ipc.ts),
-[`net-capability.ts`](../../src/broker/net-capability.ts)); it cannot observe a renderer global.
+[`capabilities/net.ts`](../../src/broker/capabilities/net.ts)); it cannot observe a renderer global.
 `window.orivon` — hence the uncapped `orivon.net.connect` the routed `fetch` is itself built on
 — reaches every ordinary tab regardless. And a same-origin subframe gets no preload, so an
 unrouted `fetch` was always one line away.
@@ -44,7 +44,7 @@ a global whose entire promise is that *"every existing Nostr web client works un
 ## Alternatives considered
 
 **Fix each global as an app reports it.** Rejected on the project's own success metric: the
-genericity test in [`../mvp-scope.md`](../mvp-scope.md) claims app #3 costs dramatically less
+genericity test in [`../scope.md`](../scope.md) claims app #3 costs dramatically less
 than app #1, and a per-app rediscovery of the same one-line cause is that claim failing.
 
 **One shared `defineAppGlobal()` helper every install site calls.** The obvious Rule 3 answer,

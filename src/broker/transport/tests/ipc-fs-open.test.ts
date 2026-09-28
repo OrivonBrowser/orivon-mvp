@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { handleControlRequest } from '../ipc.js'
-import type { FsTransport } from '../dispatch-fs.js'
-import { createPortRegistry } from '../port-registry.js'
+import type { FsTransport } from '../dispatch/fs.js'
+import { createPortRegistry } from '../relay/port-registry.js'
 import type { FailableFileHandle } from '../../handles/handle-contracts.js'
 import { APP, OTHER, type BrokerCall, envelope, frameFor, stubBroker } from './ipc.test-helpers.js'
 
@@ -15,7 +15,7 @@ import { APP, OTHER, type BrokerCall, envelope, frameFor, stubBroker } from './i
 // belonging to a DIFFERENT origin is refused (T11c), and that fs.close's
 // contract is idempotent while every other op is not. Confinement, the
 // grant, quota and revocation are fs-open.test.ts's job, against the real
-// createBroker/fs-capability.ts stack -- a stubBroker here has none of that
+// createBroker/capabilities/fs.ts stack -- a stubBroker here has none of that
 // to get wrong.
 
 /** A minimal FailableFileHandle double -- enough to prove dispatch calls the right method with the right arguments. */

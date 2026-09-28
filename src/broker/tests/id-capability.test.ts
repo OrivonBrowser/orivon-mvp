@@ -1,5 +1,5 @@
-// orivon.id's two entry points (../id-capability.ts), exercised through
-// createBroker exactly the way net-capability.ts's own tests exercise
+// orivon.id's two entry points (../capabilities/id.ts), exercised through
+// createBroker exactly the way capabilities/net.ts's own tests exercise
 // connect/udpBind/listen -- same fixtures (index.test-helpers.ts), same
 // "grant, then call" shape.
 

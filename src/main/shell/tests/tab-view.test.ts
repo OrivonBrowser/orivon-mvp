@@ -11,7 +11,7 @@ vi.mock('electron', () => ({ WebContentsView: vi.fn() }))
 // The serve registry is a real module-level Set in the loader; mocking it
 // here keeps these tests about the RULE rather than about registration.
 const { served } = vi.hoisted(() => ({ served: new Set<string>() }))
-vi.mock('../../../loader/electron-serve.js', () => ({
+vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginServedFromCacheSync: (origin: string) => served.has(origin)
 }))
 

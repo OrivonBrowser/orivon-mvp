@@ -1,4 +1,4 @@
-// orivon.web's three entry points (../web-capability.ts), exercised through
+// orivon.web's three entry points (../capabilities/web.ts), exercised through
 // createBroker exactly the way id-capability.test.ts exercises orivon.id --
 // same fixtures (index.test-helpers.ts), same "grant, then call" shape.
 // ADR-0019's own security properties this file proves, unit-level:
@@ -328,7 +328,7 @@ describe('WebContext.evaluate (via orivon.web.evaluate)', () => {
       const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
 
       // Registered BEFORE the timeout fires -- see WebContext.closed's own
-      // doc note in ../web-capability.ts for why a timed-out evaluate
+      // doc note in ../capabilities/web.ts for why a timed-out evaluate
       // REJECTS `closed` (with 'timeout') rather than resolving it the way
       // an idle close does.
       const closedAssertion = expect(broker.web.awaitClose(APP, { id: context.id }))

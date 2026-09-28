@@ -57,7 +57,7 @@ verify: the manifest can verify a list matches what was fetched; it cannot verif
 ## Consequences
 - `src/contracts/manifest.ts`: `Manifest` gains `readonly assets: readonly string[]`, alongside
   `entry`. Contracts-only change, its own PR, merges before anything below depends on it.
-- `src/loader/manifest.ts`'s `parseManifest` validates it the same way other manifest fields are
+- `src/loader/manifest/manifest.ts`'s `parseManifest` validates it the same way other manifest fields are
   validated (structurally sound array of canonical-path-shaped strings; the existing per-path
   canonical-path validator, `src/broker/policy/canonical-path.ts`, is reused, not duplicated).
 - `src/loader/index.ts`'s `createLoader().load()` keeps taking `assetPaths` as an explicit
@@ -79,7 +79,7 @@ verify: the manifest can verify a list matches what was fetched; it cannot verif
   consequence of *declaring* the asset list on the manifest (the rest of this section, and the
   Decision/Reasoning above) is unaffected. Only where the declared list gets read off the
   manifest moves, from an external caller to `fetchBundle` itself. See `src/loader/README.md`'s
-  Design notes for the fuller account, including which of `fetch-bundle.ts`'s own
+  Design notes for the fuller account, including which of `fetch/bundle.ts`'s own
   adversarial-input checks became defence-in-depth rather than the primary enforcement point as
   a result.
 - `entry` itself is unchanged and still separately required to have a corresponding leaf

@@ -27,7 +27,7 @@ Recorded here because each is load-bearing and none is free to reverse later.
 | D5 | Streams integrate via **pull request, CI-gated, owner merges** | Owner | 2026-08-26 |
 
 **D1 in full, so it is not later mistaken for an oversight.** `readiness.md`,
-`audit-2026-08-25.md`, `mvp-scope.md` and `devlog/` contain the project's budget, its lack of
+`audit-2026-08-25.md`, `scope.md` and `devlog/` contain the project's budget, its lack of
 existing distribution presence, its honest download-funnel arithmetic, and candid internal
 assessments of whether the core hypothesis is true. The owner chose to publish all of it.
 Building in public is treated as a distribution channel, not a leak. The org already contains

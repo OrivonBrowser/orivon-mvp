@@ -1,10 +1,9 @@
 // Manifest.capabilities -> update.ts's PatternSet -- the declared-authority
 // half of the conversion patternSetFromGrants (./update.ts) already performs
-// for the GRANTED half. Moved here from src/loader/update-patterns.ts
-// (2026-09-10, P4-1): ./request-grant.ts's subset check needs the exact same
-// conversion decideUpdate() does, and src/broker/ may never import
-// src/loader/ (../README.md) -- only the reverse. src/loader/update-patterns.ts
-// now re-exports this so its existing import path needs no change.
+// for the GRANTED half. Lives here because ./request-grant.ts's subset check
+// needs the exact same conversion decideUpdate() does, and src/broker/ may
+// never import src/loader/ (../README.md) -- only the reverse.
+// src/loader/index.ts imports this directly.
 
 import type { Capabilities, CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { PatternSet } from './update.js'
@@ -22,10 +21,17 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
 
   const connect = capabilities.net?.tcp?.connect
   if (connect !== undefined) set['tcp.connect'] = connect
-  const listen = capabilities.net?.tcp?.listen
-  if (listen !== undefined) set['tcp.listen'] = listen
-  const bind = capabilities.net?.udp?.bind
-  if (bind !== undefined) set['udp.bind'] = bind
+  // BindScopes (ADR-0034): a `local` list and a `network` list, one
+  // CapabilityKind each -- mapped only when the app actually declared that
+  // scope, same as every other field in this function.
+  const listenLocal = capabilities.net?.tcp?.listen?.local
+  if (listenLocal !== undefined) set['tcp.listen.local'] = listenLocal
+  const listenNetwork = capabilities.net?.tcp?.listen?.network
+  if (listenNetwork !== undefined) set['tcp.listen.network'] = listenNetwork
+  const bindLocal = capabilities.net?.udp?.bind?.local
+  if (bindLocal !== undefined) set['udp.bind.local'] = bindLocal
+  const bindNetwork = capabilities.net?.udp?.bind?.network
+  if (bindNetwork !== undefined) set['udp.bind.network'] = bindNetwork
   const send = capabilities.net?.udp?.send
   if (send !== undefined) set['udp.send'] = send
   // ADR-0017's TLS-terminated capability -- a SEPARATE grant from
@@ -44,9 +50,9 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   // of its own (manifest.ts's FsCapability/IdCapability/SecretsCapability),
   // so an empty array is the correct "requested" value, not a placeholder
   // for a missing field. `secrets` (ADR-0033) follows `id`'s own precedent:
-  // requireGrantedCurve (../id-capability.js) re-checks the live manifest
+  // requireGrantedCurve (../capabilities/id.js) re-checks the live manifest
   // for what an empty-patterns `id` grant actually authorises, and
-  // secrets-capability.ts needs nothing narrower than presence either.
+  // capabilities/secrets.ts needs nothing narrower than presence either.
   if (capabilities.fs !== undefined) set.fs = []
   if (capabilities.id !== undefined) set.id = []
   if (capabilities.secrets !== undefined) set.secrets = []
@@ -58,6 +64,10 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   // fs/id's presence-only rows above.
   const contexts = capabilities.web?.contexts
   if (contexts !== undefined) set['web.context'] = contexts
+  // ADR-0039: web.embed.origins is the pattern list for 'web.embed', the
+  // same shape as web.contexts above.
+  const embedOrigins = capabilities.web?.embed?.origins
+  if (embedOrigins !== undefined) set['web.embed'] = embedOrigins
 
   // capabilities.protocols is deliberately not mapped: it is not a
   // CapabilityKind (contracts/manifest.ts's Capabilities.protocols is

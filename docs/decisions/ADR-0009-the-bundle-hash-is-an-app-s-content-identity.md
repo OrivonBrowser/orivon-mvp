@@ -57,7 +57,7 @@ separation (RFC 6962 §2.1). A flat construction has no tree shape to get wrong.
 **CIDv1 / UnixFS as the root encoding**, rejected. It reads as "D3 comes free," but CIDv1+UnixFS
 is a chunking and DAG-layout specification, not an encoding, so matching it means matching a
 chunker and DAG shape exactly, a large hidden dependency on IPFS, which is out of MVP scope
-(`mvp-scope.md`). `"sha256:"` keeps an algorithm-agility slot open at zero cost.
+(`scope.md`). `"sha256:"` keeps an algorithm-agility slot open at zero cost.
 
 **Hashing only the frontend assets, not the manifest**, rejected. It matches what
 `update.ts`'s current comment assumes ("the manifest is served separately from the bundle"), but

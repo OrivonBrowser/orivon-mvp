@@ -93,9 +93,9 @@ export function watchForManifestHint (doc: HintDocument, send: (href: string) =>
 /**
  * The real, zero-argument entry point -- app.ts and newtab.ts's fallback
  * branch both call this exactly once, the same way they each call
- * ./orivon-surface.ts's exposeOrivon() exactly once.
+ * ./surface/orivon.ts's exposeOrivon() exactly once.
  *
- * `typeof document === 'undefined'` guards the same way fetch-route.ts's own
+ * `typeof document === 'undefined'` guards the same way routed/fetch.ts's own
  * `target` default does: referencing the bare identifier is safe under
  * `typeof`, but not otherwise, in an environment (a plain vitest run) with
  * no such global at all.

@@ -47,7 +47,7 @@ so the implementation in `stream/broker-06-keys` had to choose all four. Under R
 choices are load-bearing and reversible only at cost, which is what this ADR records.
 
 What makes them one-way rather than merely awkward: **key export and backup are out of scope for
-the MVP** (`ADR-0003`, `mvp-scope.md`). While that holds, a user has no copy of their key and no
+the MVP** (`ADR-0003`, `scope.md`). While that holds, a user has no copy of their key and no
 way to restore one. So a derivation change does not fail loudly: it silently issues every user a
 new identity, orphaning their Nostr follows and posts on an npub they can no longer produce. The
 damage is invisible when introduced and permanent by the time anyone notices.
@@ -165,10 +165,10 @@ not a capability, and nothing outside `derive.test.ts` may call it.
     produce a BIP-340 Schnorr signature either.
 
     Note for whoever picks that up, because the earlier draft of `derive.ts` got this wrong: the
-    constraint is **not** "add no dependency"; no such rule exists. CLAUDE.md Rule 8 is "pure-JS
-    dependencies only" (nothing needing a compiler at install time) and Rule 6 is "do not
-    reinvent without a written reason". A pure-JS audited curve library such as `@noble/curves`
-    satisfies both. The argument for staying on WebCrypto in the policy layer is
+    constraint is **not** "add no dependency"; no such rule exists. CLAUDE.md Rule 8 is "no native
+    modules in Orivon's own dependencies" (nothing needing a compiler at install time) and Rule 6
+    is "do not reinvent without a written reason". A pure-JS audited curve library such as
+    `@noble/curves` satisfies both. The argument for staying on WebCrypto in the policy layer is
     engine-independence (`ADR-0002`), not dependency count, and it applies with much less force
     one layer up. Adopting such a library there would also let secp256k1 gain real public-key
     vectors and would close the timing risk above. **Owner decision, 2026-08-27: not in this PR;

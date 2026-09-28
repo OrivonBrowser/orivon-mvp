@@ -5,7 +5,7 @@
 There are no UI tests, no coverage targets, and a deliberately small number of unit tests. That
 is a decision, not a backlog ([`build-plan.md`](../planning/build-plan.md) §Testing).
 
-The reasoning: this is a one-month MVP built by one person, and at that scale broad test suites
+The reasoning: this is a browser built by one person, and at that scale broad test suites
 cost more than they return: they are written once, then maintained forever, against code that
 is still changing shape weekly. So testing is **concentrated where a silent failure is both
 plausible and expensive**, and absent everywhere else.
@@ -159,9 +159,9 @@ broker regression that skipped the check entirely would pass every test while th
 appeared to work perfectly. Do not drop it.
 
 **It lives in [`test/e2e-app-loader-journey.test.ts`](../../test/e2e-app-loader-journey.test.ts)**,
-and the refusal goes through the real shim (`src/shim/node-net.ts`), not only the raw capability
+and the refusal goes through the real shim (`src/shim/net/net.ts`), not only the raw capability
 API. One link is substituted, and the file's header says exactly where: the fixture is served
-from loopback, and [`install-origin.ts`](../../src/loader/install-origin.ts) refuses a loopback
+from loopback, and [`install-origin.ts`](../../src/loader/fetch/install-origin.ts) refuses a loopback
 origin outright (A46), so no install can succeed. The real `<link rel="orivon-manifest">` hint is
 proven to reach the real listener and take the grant-without-install path instead; the granted
 round trip is enabled separately, through `src/main/dev/dev-grant.ts`'s developer-only hook,
@@ -184,6 +184,15 @@ that TCP does not: a refused datagram must not kill the socket, and revoking `ud
 the *next datagram* on an already-bound socket). The shared harness (the fixture-server
 children, the address-bar navigation dance, the per-phase reporter) lives in
 [`test/e2e-helpers.ts`](../../test/e2e-helpers.ts).
+
+Two suites cover what an app's page is served with and what it may put inside itself:
+[`e2e-embed.test.ts`](../../test/e2e-embed.test.ts) drives a `<webview>` under a `web.embed`
+grant (the shown site loads in the app's own embed partition with no `orivon.*`, the app's
+script runs first under a strict page CSP and talks to the element both ways, a site outside
+the grant and a `file:` URL are refused, an ordinary tab's element is inert, and a revoke closes
+the page), and [`e2e-wasm-threads.test.ts`](../../test/e2e-wasm-threads.test.ts) pins one bundle
+declaring `crossOriginIsolated` and one without, and measures `SharedArrayBuffer`, a shared
+`WebAssembly.Memory` and `Atomics.wait` in a worker in each.
 
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and

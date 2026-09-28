@@ -395,7 +395,7 @@ describe('installGlobals -- serialisation safety', () => {
   // resolves the module scope -- then throws ReferenceError in a real page,
   // where the injection silently never happens and the app sees no `process`
   // or `setImmediate` at all. Both siblings already guard this
-  // (main-world-socket.test.ts's P-F6, fetch-route.test.ts's own); this file
+  // (main-world-socket.test.ts's P-F6, routed/tests/fetch.test.ts's own); this file
   // did not, and globals.ts holds no module-level value today only because
   // nothing had yet stopped one appearing.
   const source = installGlobals.toString()

@@ -8,7 +8,7 @@
 // GATED ON THE SAME `--orivon-app-tab` FLAG ./expose-fetch-route.ts already
 // reads (src/main/tab-view.ts's `appTabArgsFor`): shimmed Node globals must
 // never reach an ordinary browsing tab. `window.orivon` itself is exposed to
-// every tab (./orivon-surface.ts's own design notes explain why), but that is
+// every tab (./surface/orivon.ts's own design notes explain why), but that is
 // a capability surface an ungranted caller only ever sees denials through;
 // `process` is an ambient global a plain page's own script could stumble
 // into, a different and wider kind of leak.

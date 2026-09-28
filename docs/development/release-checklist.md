@@ -2,7 +2,7 @@
 
 Run before every release.
 
-**Why this file exists.** [`mvp-scope.md`](../mvp-scope.md) describes the user journeys as
+**Why this file exists.** [`scope.md`](../scope.md) describes the user journeys as
 prose, and prose cannot be run identically twice: two people reading "paste a magnet link"
 test two different things, and the same person tests something different next month. Every item
 here therefore has a **precondition**, a **fixed input**, and a **falsifiable assertion**.

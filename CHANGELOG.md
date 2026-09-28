@@ -12,6 +12,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A welcome screen, and a picture on the new tab.** The first time Orivon opens on a profile it
+  shows a full-window screen ("The browser Web3 deserves.") with an "Enter Orivon" button;
+  clicking it reveals the new-tab page, and it does not come back. `npm run dev` shows it on every
+  launch, and `npm run dev -- --skip-intro` skips it. The same mountain-meadow picture is now the
+  new-tab page's background, under a dark wash in both colour schemes. The screen loads nothing
+  from the network: its font and picture ship with the browser.
+- **An app can show a website inside its own page.** A new `web.embed` capability lets an app
+  put Electron's `<webview>` element in its page, under one warning-level grant that says what
+  it gives: "show any website inside itself, and read and change what those pages show", or the
+  sites named. Every page it shows runs apart from the app and from ordinary browsing, in a
+  session of the app's own that keeps a site's sign-in across restarts, sandboxed, with no
+  `orivon.*`, no popups and no downloads, and it may load documents only from the granted sites.
+  `orivon.web.setEmbedScript` sets a script that runs first in every page the app shows, whatever
+  that page's own policy says, with a channel back to the element. Revoking the grant closes
+  every page the app is showing. An app can also ask, in its manifest, for its pages to be
+  served cross-origin isolated, which turns on `SharedArrayBuffer` for a WebAssembly component
+  built with threads.
+- **`ipfs://` and `ipns://` addresses load, shown as themselves.** Typing or clicking
+  `ipfs://<cid>` opens the content with every block checked, exactly as a `.eth` name's is, and the
+  address bar, consent dialogs and permissions show `ipfs://<cid>/` while the page runs at an
+  ordinary https origin, `https://<cid>.ipfs.orivon`. `ipns://` takes an IPNS key or a DNSLink name.
+  A link to one never reaches whatever app claims the scheme on the computer. Protocols now live in
+  `src/protocols/`, each registered through one function over data the shell reads, so the next one
+  is an isolated piece of work. Registering one while Orivon runs is not built; every address scheme
+  shares one routed suffix so that it would need no restart (ADR-0038).
 - **The identity seed survives a restart, and an app can hold its own encrypted secret.** The
   seed behind `orivon.id` now lives in the OS keyring (Electron `safeStorage`), not a placeholder
   that refused every call. A new `secrets` capability (`orivon.secrets.available`/`encrypt`/
@@ -32,6 +57,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   meets DDOC: a `.eth` name's IPFS content, or an installed site whose files match the tree it
   publishes. Levels 3 and up show `?` until a Web3 Score provider judges them, and the page names
   what a provider would assess, the CID or the bundle hash.
+- **The address bar's Web3 Score shield now shows the site's Website level directly**, coloured
+  red (Level 1, "Web2") / orange / yellow / green (Level 4, "Web3"), instead of the plain
+  secure/insecure/cached read it carried before; a plain grey outline until a level resolves. The
+  Web3 Score page colours each level the same way. The Delivery ladder collapses from four D1-D4
+  rungs to three levels matching the canonical Web3 Score page's own Connection-to-network scale
+  (red/yellow/green): D2 is met only by a `.eth` name proven trustlessly whose content is itself
+  content-addressed, and nothing in this build reaches D3 automatically. A developer-only file
+  (`ORIVON_SCORE_LEVELS_FILE`, gated behind `ORIVON_DEV_ORIGINS=1`) can override either level per
+  origin, for previewing Level 3/4 and Delivery Level 3 before a real provider or peer-to-peer
+  fetching exist, always named as an override rather than shown as observed.
+- **The Web3 Score shield keeps its outline shape, and a Web2 / Web2.5 / Web3 mark names the
+  level.** The shield no longer turns into a wide filled badge once a level resolves: it stays the
+  outline a new tab shows, its stroke coloured by level. The words move to a mark at the address
+  pill's right end, replacing Orivon's logo there: Web2 in orange for Level 1, Web2.5 in yellow for
+  Levels 2 and 3, Web3 in green for Level 4. Reloading or finishing a load on the same site no
+  longer flashes the shield grey.
+- **In developer mode, a local origin that serves a DDOC hash tree is Website Level 2.** A
+  loopback URL or a developer `.eth` name has no domain record to anchor its tree, so with
+  `ORIVON_DEV_ORIGINS=1` a readable `/.well-known/orivon-ddoc.json` is taken as its DDOC, and the
+  Web3 Score page says it is marked only because Orivon is running in developer mode.
+- **A site shown at Website Level 4 has its grants presented without warnings**, on every consent
+  surface: the install-consent dialog, the `app.requestGrant` prompt, the update-widening prompt,
+  the site-info popup's switches and the all-sites settings panel. The words a grant carries never
+  change, only the `⚠` marker, the warning background and the native dialog's icon.
+- **Every permission row now carries an icon for what it grants** — one glyph per capability kind,
+  picked-file/folder kind, or site notification — in the site-info popup and the all-sites panel.
 
 - **A site can publish its bundle hash tree, and the Web3 Score page shows whether it matches
   (DDOC).** The site puts `/.well-known/orivon-ddoc.json` beside its manifest: the bundle hash and
@@ -156,6 +207,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **The toolbar no longer probes a fresh session partition for every ordinary website visited.**
+  The Web3 Score shield's own query used to ask Electron's protocol-handler registry directly,
+  which creates the partition it asks about; it now reads the same trust data the site-info popup
+  already computes.
 - **A sign-in that sends an app's tab to a provider and back can complete.** The app finds its
   `sessionStorage` where it left it, and its own back history, so an OIDC login no longer loses
   its state on the way back.
@@ -231,7 +286,7 @@ more slowly.
   platform's test cases, and build step 6 adds `.eth` names and IPFS delivery, verified on the
   machine rather than trusted to a server. The torrent app and Nostr identity are ideas, not
   build steps ([`ADR-0001`](docs/decisions/ADR-0001-flagship-app-bittorrent-streaming.md),
-  [`docs/mvp-scope.md`](docs/mvp-scope.md)).
+  [`docs/scope.md`](docs/scope.md)).
 - **Judged Web3 Score levels were out of the MVP. They are in**, from a provider that need not
   be trustless and may run locally. Each names its provider and is shown apart from what the
   machine observed ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).

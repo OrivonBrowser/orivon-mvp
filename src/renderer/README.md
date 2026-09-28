@@ -1,6 +1,6 @@
 # `src/renderer/`: the browser chrome UI
 
-**What lives here.** Four entries, all plain vanilla-TS pages, no framework. The main one is the
+**What lives here.** Five entries, all plain vanilla-TS pages, no framework. The main one is the
 chrome view: three rows, rendered in a dedicated `WebContentsView` above the active tab: the
 tab strip (sharing its row with Electron's native window buttons), the toolbar (navigation, the
 bookmark toggle, the omnibox, a right-hand icon cluster), and the bookmarks bar. Its look follows
@@ -9,7 +9,9 @@ dashboard: ordinary tab content loaded into a fresh tab's own `WebContentsView`,
 chrome view at all; see `src/main/shell/tabs.ts`'s `createTab()`. [`settings/`](settings/) and
 [`site-info/`](site-info/) are the two toolbar popups (`src/main/permissions/popover-view.ts`):
 the all-sites permissions list, and the per-site popover (a connection row, this site's own
-capability switches, its Web3 Score page, its Cookies and site data page).
+capability switches, its Web3 Score page, its Cookies and site data page). [`intro/`](intro/) is
+the welcome screen, a full-window view over the shell on a launch that opens on it
+(`src/main/shell/intro-view.ts`).
 
 **Files.**
 
@@ -19,16 +21,27 @@ capability switches, its Web3 Score page, its Cookies and site data page).
 | `style.css` | Entry point: colour/size tokens, both themes, page-wide base rules, `@import`s the three below |
 | `styles/tabstrip.css`, `styles/toolbar.css`, `styles/bookmarks.css` | One row each |
 | `main.ts` | Renders `ShellState`, turns clicks/typing into `orivonShell.*` commands |
-| `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button); everything else is static markup; also imported by `newtab/main.ts` for its bookmark tiles |
+| `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button), and the shared `svg`/`path`/`circle`/`rect`/`line` primitives every other icon file in this tree builds on; also imported by `newtab/main.ts` for its bookmark tiles |
+| `web3-shield.ts` | The Web3 Score shield element, shared by the toolbar and the site-info popup's connection row so the two can never draw it differently, and the address pill's Web2/Web2.5/Web3 mark |
+| `grant-icons.ts` | One icon per capability kind, picked-path kind or site notification, for the left side of a permission row (the site-info popup and the all-sites panel) |
+| `styles/web3-level.css` | The shield's level colours; the site-info popup's own stylesheet keeps a literal copy, matching this tree's cross-entry convention. The mark's own colours sit in `styles/toolbar.css`, the only place it is drawn |
 | `bookmarks-view.ts` | Renders the bookmarks bar's dynamic list |
 | `newtab/index.html`, `newtab/main.ts`, `newtab/style.css` | The dashboard: a search box, then a grid of app-shortcut and bookmark tiles, with its own small entry, separate from the chrome view |
+| `intro/index.html`, `intro/main.ts`, `intro/style.css` | The welcome screen: headline, "Enter Orivon" button, ticker and two decorative shapes over a picture. Its entry animations are CSS keyframes and its fonts are bundled, so it loads nothing from the network |
+| `assets/intro-background.webp` | The welcome screen's picture, also the dashboard's default background; Vite emits it once for both |
 | `settings/index.html`, `settings/main.ts`, `settings/permissions-view.ts`, `settings/style.css` | The all-sites popup: every app, all its grants, revoke-only |
 | `site-info/index.html`, `site-info/main.ts`, `site-info/main-view.ts`, `site-info/web3-view.ts`, `site-info/data-view.ts`, `site-info/switch.ts`, `site-info/icons.ts`, `site-info/style.css` | The per-site popup: a client-side router over three pages, each its own render function |
 
 **What it depends on.** `src/preload/shell.ts`'s exposed commands, over IPC, for the chrome
 view; `newtab/main.ts` depends on `src/preload/newtab.ts`'s exposed commands the same way, and
 degrades to plain unprivileged markup (no `window.orivonNewTab`) rather than throwing when
-loaded outside a genuinely fresh tab; see that file's own header comment.
+loaded outside a genuinely fresh tab; see that file's own header comment. `intro/` depends on no
+preload at all: it reports "Enter Orivon" to main by moving its own URL hash to `#leaving` and
+then `#entered`, which `src/main/shell/intro-view.ts` watches, so the page holds no capability
+beyond its own document.
+`settings/permissions-view.ts` also imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
+to show a protocol's origin as its address (`ipfs://<cid>`): pure string work over data, with no
+Node and no protocol's code behind it.
 
 **What it must never import.** `electron`, `node:*`, or anything under
 [`src/main/`](../main/). This is a sandboxed renderer with `nodeIntegration: false`; there is
@@ -77,7 +90,7 @@ exposed read-only from `preload/shell.ts` (available even under `sandbox: true`)
 `document.documentElement.dataset.platform` at the top of `main.ts`, before first paint.
 
 **Bookmarks are a real feature, not decoration**
-(`docs/mvp-scope.md`, `ADR-0003`), and not in the original scope pass. `src/main/browsing/bookmarks.ts`
+(`docs/scope.md`, `ADR-0003`), and not in the original scope pass. `src/main/browsing/bookmarks.ts`
 holds the list and persists it; this directory only ever renders what it's sent and asks main
 to add/remove/open, the same pattern the tab strip already uses for tabs.
 
@@ -87,22 +100,22 @@ on `null` or a load failure; it never fetches a favicon itself. `src/main/browsi
 actual fetching, capped and re-encoded to `data:`, specifically so this privileged view's CSP
 can stay `img-src 'self' data:` rather than opening it to arbitrary third-party hosts.
 
-**The Web3 Score shield leads the address pill, and carries the trust dot's own states.** A
-padlock reading "secure" for bytes read off disk, never touching TLS, would be the false claim
-`ADR-0007` names as unacceptable, so the shield cannot simply keep guessing from the URL scheme
-once a tab is a pinned app. `main.ts`'s `updateWeb3ScoreShield` still paints the ordinary
-secure/insecure read first, synchronously (no page ever shows a blank shield while a query is in
-flight), then asks main via `shell.deliveryProvenanceFor`, a separate round trip from the pill's
-own `siteSummaryFor`, because the two answer different questions (where this page's bytes came
-from, versus what it has asked to do), and upgrades to `.cached` if the answer says so. The
-tooltip text on that state is `"Running from local cache, pinned"`, quoted directly from
-`ADR-0007`'s own wording rather than paraphrased, so the two can never read differently.
-`src/main/browsing/delivery-provenance.ts` is deliberately built on the loader's own
-protocol-handler registry, never the broker's `isRegisteredSync`, since the latter means only "a
-manifest is registered," not "this origin's scheme is actually being answered from disk," and
-the difference is exactly the false-claim risk this feature exists to avoid. Clicking the shield
-opens the site-info popup straight to its Web3 Score page (`src/main/permissions/site-trust.ts`),
-which renders that same evidence in full, plus the delivery ladder -- never a grade
+**The Web3 Score shield leads the address pill, and a mark at its right end names the site's
+displayed Website level.** `web3-shield.ts`'s `web3Shield`/`paintShield` draw one element, used
+unchanged by both this toolbar and the site-info popup's connection row: the same outline at
+every level, grey with no level yet, then stroked red (Level 1), orange (2), yellow (3) or green
+(4). `paintMark` fills the pill's right end, where Orivon's logo would carry no information:
+Web2 in orange for Level 1, Web2.5 in yellow for Levels 2 and 3, Web3 in green for Level 4, and
+hidden with no level. `main.ts`'s `updateWeb3ScoreShield` clears both when the active origin
+changes, then asks main via `shell.web3ScoreFor` (a separate round trip from the pill's own
+`siteSummaryFor`, because the two answer different questions: how trustless this site is, versus
+what it has asked to do) and paints whichever level comes back; a push for the same origin keeps
+the level showing while it re-asks. The tooltip names a developer override, or a DDOC counted only
+in developer mode, rather than ever showing either as observed (`ADR-0006`, `ADR-0029`). The
+shield does not signal whether a page is served from Orivon's own pinned cache; `ADR-0007`'s
+amendment defers that to a future "store this Web3site locally" affordance. Clicking the shield
+opens the site-info popup straight to its Web3 Score page (`src/main/browsing/site-trust.ts`),
+which renders the level's own evidence in full, plus the Delivery level -- never a grade
 (`ARCHITECTURE.md`: "trust is shown as observed behaviour, never as a grade").
 
 **The site-info key sits right after the shield, and is absent until the site has asked for
@@ -110,9 +123,11 @@ something.** `main.ts`'s `updateSitePermissionsBadge` queries `shell.siteSummary
 active-tab change and toggles the key's own `hidden` attribute on `summary.asked` -- an ordinary
 website carries no key at all, the same way Chrome's own permission icon stays absent until a
 site has asked (owner reference). `.has-warning` tints it the moment any asked-for row is an
-unlimited grant. Clicking it opens the site-info popup to its main page: the connection row,
-then one switch per capability or picked path the site has asked for, staged until a Confirm
-click (`src/main/permissions/site-info-controller.ts`, `site-switches.ts`).
+unlimited grant -- a Level 4 site's own grants never trip it, since their rows carry no warning
+at all (`ADR-0037`). Clicking it opens the site-info popup to its main page: the connection row,
+then one switch per capability or picked path the site has asked for, each row led by an icon
+for what it grants (`grant-icons.ts`), staged until a Confirm click
+(`src/main/permissions/site-info-controller.ts`, `site-switches.ts`).
 
 **The all-sites popup moved to a tune icon in the right-hand cluster.** It lists every app this
 browser has ever granted anything to, revoke-only, and is reached either directly or from the

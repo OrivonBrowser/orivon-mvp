@@ -1,0 +1,299 @@
+/* The welcome screen, with the values of orivon-browser-v2's WelcomeScreen
+   (Tailwind classes written out as CSS, motion's entry animations as
+   keyframes with the same delays, durations and curves). Its own entry, so
+   the tokens are literal like every other entry's (newtab/style.css). */
+
+/* Latin only: the copy is fixed English, and the package's own opsz.css would
+   pull in every script's file for no glyph on this page. */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations');
+}
+
+* { box-sizing: border-box; }
+
+/* Transparent, not the app's dark: the shell fades this page out over the
+   dashboard by making the view itself transparent (intro-view.ts), and an
+   opaque body here would fade to dark instead of to the dashboard. */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: transparent;
+}
+body {
+  color: #f8fafc;
+  font-family: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+  letter-spacing: -0.01em;
+  line-height: 1.5;
+}
+h1, p { margin: 0; }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: url('../assets/intro-background.webp') center / cover;
+  animation: fade 0.4s;
+  transition: opacity 0.4s;
+}
+.overlay.leaving { opacity: 0; }
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+}
+/* The window has no title bar of its own to drag it by. */
+.drag-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  -webkit-app-region: drag;
+}
+.welcome {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  animation: fade 0.4s;
+}
+
+.top-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 48px 64px 0;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: drop-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+/* Round, not v2's 12px: the current logo is its own circle, and a rounded
+   square's glow would show as a box around it. */
+.brand-logo {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.45);
+}
+.brand-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+}
+.blurb {
+  max-width: 260px;
+  text-align: right;
+  font-size: 13px;
+  line-height: 1.75;
+  color: rgba(203, 213, 225, 0.42);
+  animation: slide-left 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+}
+
+.hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 64px;
+}
+.headline {
+  display: flex;
+  flex-direction: column;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.line {
+  display: block;
+  overflow: hidden;
+  line-height: 0.9;
+}
+.line-1 { --delay: 0.18s; }
+.line-2 { --delay: 0.3s; }
+.line-3 { --delay: 0.42s; }
+/* 700, not 900: v2's font request stopped at 700, so its "black" headline was
+   drawn at 700 and this matches what it showed. */
+.line-text {
+  display: block;
+  font-size: clamp(52px, 7.5vw, 108px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  text-transform: uppercase;
+  color: #e2e8f0;
+  animation: rise 0.82s cubic-bezier(0.22, 1, 0.36, 1) var(--delay) both;
+}
+.line-text.accent {
+  background: linear-gradient(95deg, #6366f1 0%, #a5b4fc 55%, #818cf8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cta {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 40px;
+  animation: rise-fade 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.92s both;
+}
+.enter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 32px;
+  border: none;
+  border-radius: 9999px;
+  background: #6366f1;
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.5);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+}
+.enter:hover {
+  transform: scale(1.04);
+  box-shadow: 0 14px 44px rgba(99, 102, 241, 0.7);
+}
+.enter:active { transform: scale(0.97); }
+.enter:focus-visible {
+  outline: 2px solid #a5b4fc;
+  outline-offset: 3px;
+}
+.enter-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.22);
+}
+.cta-note {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.38);
+}
+
+.ticker {
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  animation: fade 0.6s ease 1.05s both;
+}
+.ticker-track {
+  display: flex;
+  gap: 24px;
+  width: max-content;
+  white-space: nowrap;
+  animation: ticker 24s linear infinite;
+}
+.ticker-item {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.18);
+}
+.ticker-dash {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(99, 102, 241, 0.35);
+}
+
+.prism {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  animation: from-top-left 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.prism-face {
+  width: 115px;
+  height: 158px;
+  background: linear-gradient(145deg, #818cf8 0%, #4f46e5 40%, #1e1b4b 100%);
+  border-radius: 20px 6px 10px 6px;
+  transform: perspective(500px) rotateX(26deg) rotateY(-20deg) rotateZ(12deg) translate(-12px, -12px);
+  box-shadow: 18px 24px 72px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.discs {
+  position: absolute;
+  right: 32px;
+  bottom: 48px;
+  width: 120px;
+  height: 190px;
+  pointer-events: none;
+  animation: from-bottom-right 1.1s cubic-bezier(0.16, 1, 0.3, 1) 0.06s both;
+}
+/* Five discs, each 22px above the last, a step fainter and more tilted. */
+.disc {
+  position: absolute;
+  left: 5px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+}
+.disc-0 {
+  bottom: 0;
+  background: linear-gradient(130deg, rgba(129, 140, 248, 0.82), rgba(67, 56, 202, 0.72));
+  transform: perspective(350px) rotateX(18deg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+.disc-1 {
+  bottom: 22px;
+  background: linear-gradient(130deg, rgba(129, 140, 248, 0.72), rgba(67, 56, 202, 0.62));
+  transform: perspective(350px) rotateX(21deg);
+  box-shadow: 0 9px 22px rgba(0, 0, 0, 0.45);
+}
+.disc-2 {
+  bottom: 44px;
+  background: linear-gradient(130deg, rgba(129, 140, 248, 0.62), rgba(67, 56, 202, 0.52));
+  transform: perspective(350px) rotateX(24deg);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
+}
+.disc-3 {
+  bottom: 66px;
+  background: linear-gradient(130deg, rgba(129, 140, 248, 0.52), rgba(67, 56, 202, 0.42));
+  transform: perspective(350px) rotateX(27deg);
+  box-shadow: 0 19px 42px rgba(0, 0, 0, 0.45);
+}
+.disc-4 {
+  bottom: 88px;
+  background: linear-gradient(130deg, rgba(129, 140, 248, 0.42), rgba(67, 56, 202, 0.32));
+  transform: perspective(350px) rotateX(30deg);
+  box-shadow: 0 24px 52px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes fade { from { opacity: 0; } }
+@keyframes drop-in { from { opacity: 0; transform: translateY(-14px); } }
+@keyframes slide-left { from { opacity: 0; transform: translateX(18px); } }
+@keyframes rise { from { transform: translateY(108%); } }
+@keyframes rise-fade { from { opacity: 0; transform: translateY(22px); } }
+@keyframes from-top-left { from { opacity: 0; transform: translate(-60px, -60px); } }
+@keyframes from-bottom-right { from { opacity: 0; transform: translate(60px, 60px); } }
+@keyframes ticker { to { transform: translateX(-50%); } }

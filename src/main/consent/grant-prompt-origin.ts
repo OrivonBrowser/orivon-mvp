@@ -7,6 +7,7 @@
 // needs all three in front of them.
 
 import { isIP } from 'node:net'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 
 // ASCII, not the Unicode ellipsis glyph -- guaranteed to render identically
@@ -66,11 +67,16 @@ function matchingPrivateSuffix (labels: readonly string[]): readonly string[] | 
  * it is not label-structured the way a domain name is, and cutting it would
  * change which machine it names, not just shorten a cosmetic prefix.
  *
+ * A protocol's address origin is shown as the address a person typed,
+ * `ipfs://<cid>`, not the https origin serving it; the same cut then applies
+ * to its name, so a long DNSLink name keeps its authority-deciding end.
+ *
  * Never throws: a value `new URL` cannot parse is returned unchanged rather
  * than propagating out of what is otherwise a pure formatting function with
  * no failure mode of its own.
  */
-export function formatOriginForDisplay (origin: string): string {
+export function formatOriginForDisplay (servedOrigin: string): string {
+  const origin = BUILTIN_ADDRESSES.displayOrigin(servedOrigin)
   let parsed: URL
   try {
     parsed = new URL(origin)

@@ -70,7 +70,7 @@ function hostAuthorisesLookup (parsed: ParsedPattern | null, requested: string):
 
 /**
  * Decides whether `patterns` -- already the UNION of every outbound grant's
- * patterns the caller holds (`../net-capability.ts`'s own `lookup`:
+ * patterns the caller holds (`../capabilities/net.ts`'s own `lookup`:
  * `tcp.connect` + `udp.send`, d-0030 narrowed by d-0031 to exclude
  * `https.connect` -- see `docs/open-questions.md` A190/A193), never a
  * manifest's declared ones -- authorises resolving `hostnameArg`.

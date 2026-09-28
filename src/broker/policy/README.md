@@ -49,19 +49,19 @@ addresses` uses: a caller physically cannot proceed without destructuring what w
 comment somebody has to remember. Recommendation, not yet owner-confirmed;
 `docs/open-questions.md` A88.
 
-**[`derive-p256.ts`](derive-p256.ts): why secp256k1 isn't served here.** WebCrypto has no
-secp256k1 at all, so serving it would mean either hand-rolling scalar multiplication (variable-
-time, over a secret scalar, in the file that holds every user's identity) or reaching for a curve
-library from the layer ADR-0002 says must outlive the engine beneath it. The first is unacceptable
-outright. The second is a real option, just not one to take here: `src/nostr/` needs a secp256k1
-implementation regardless (WebCrypto cannot produce a BIP-340 Schnorr signature either), so the
-point multiplication costs nothing extra there and buys nothing extra here. The project rule is
-CLAUDE.md Rule 8 ("pure-JS dependencies only") and Rule 6 ("do not reinvent without a written
-reason"). There is no blanket "add no dependency" rule, and a pure-JS audited curve library would
-satisfy both. The argument for staying on WebCrypto is engine-independence, not dependency count.
-Revisit in the `nostr` stream (ADR-0010 §Rejected). What this file owns
-for secp256k1, the scalar frozen by golden vectors, is the part that must never change; the
-point is a deterministic function of it, so the identity is pinned either way.
+**[`derive-p256.ts`](derive-p256.ts): why secp256k1 isn't served here.** WebCrypto has no secp256k1
+at all, so serving it would mean either hand-rolling scalar multiplication (variable-time, over a
+secret scalar, in the file that holds every user's identity) or reaching for a curve library from
+the layer ADR-0002 says must outlive the engine beneath it. The first is unacceptable outright. The
+second is a real option, just not one to take here: `src/nostr/` needs a secp256k1 implementation
+regardless (WebCrypto cannot produce a BIP-340 Schnorr signature either), so the point
+multiplication costs nothing extra there and buys nothing extra here. The project rule is CLAUDE.md
+Rule 8 ("no native modules in Orivon's own dependencies") and Rule 6 ("do not reinvent without a
+written reason"). There is no blanket "add no dependency" rule, and a pure-JS audited curve library
+would satisfy both. The argument for staying on WebCrypto is engine-independence, not dependency
+count. Revisit in the `nostr` stream (ADR-0010 §Rejected). What this file owns for secp256k1, the
+scalar frozen by golden vectors, is the part that must never change; the point is a deterministic
+function of it, so the identity is pinned either way.
 
 **[`origin.ts`](origin.ts)'s `ORIGIN_BEARING_SCHEMES` is an allowlist, never a denylist.**
 `URL.origin` has two distinct silent failure modes a denylist of `file:`/`data:` misses both of:
@@ -148,7 +148,7 @@ disagree about which host they mean. Patterns are not canonicalised: a manifest 
 a literal canonically, where a person reads it (`declarableConnectHostRejection`).
 
 **[`connect-src.ts`](connect-src.ts)'s CSP source derivation is pure, and the header is set on
-the served response directly** (`src/loader/serve-csp.ts` assembles it, `src/loader/serve.ts`'s
+the served response directly** (`src/loader/serve/csp.ts` assembles it, `src/loader/serve/serve.ts`'s
 `buildResponse` sets it), never via
 `session.webRequest.onHeadersReceived`: that listener never fires for a `protocol.handle`-served
 response in this Electron version (A110), so the header is set on the handler's own `Response`,
@@ -166,7 +166,7 @@ the alternative ADR-0007 names. Three properties follow:
 - **Two scope gaps remain, both filed.** CSP bounds *names*, `connect.ts`'s `checkConnect`
 bounds *resolved addresses*:
 for a hostname pattern the two diverge exactly on DNS rebinding, and no CSP construction closes
-that. `src/loader/serve-csp.ts` sets `default-src 'self'` and explicit `script-src`, `frame-src`
+that. `src/loader/serve/csp.ts` sets `default-src 'self'` and explicit `script-src`, `frame-src`
 and `worker-src`. `form-action` has no fallback to `default-src` and is deliberately left unset
 (`src/loader/README.md`, "What the served bundle's CSP admits"), so A42 covers what CSP cannot
 cover at all: top-level navigation (`<a href>`, `location.href`, which CSP never governs) and the
@@ -180,7 +180,7 @@ literal is the same story: CSP's host grammar has no `[`, `]` or `:`, confirmed 
 
 **`https.connect` feeds the reach directives: `connect-src`, `img-src`, `font-src` and
 `media-src`** (A143, A192). `reachSourcesFor` reuses `connectSrcFor`'s own translate/emit logic
-unchanged (Rule 3), fed from `https.connect`, the grant `src/loader/serve.ts`'s `fetchThirdParty`
+unchanged (Rule 3), fed from `https.connect`, the grant `src/loader/serve/serve.ts`'s `fetchThirdParty`
 authorises a third-party request against. Its sources are scheme-qualified, `https://host:port`,
 never `ws:`/`wss:`: a WebSocket never reaches that handler, so no reach source may admit one. A
 `*` host emits `https:`, the one source wider than the grant, because every request it admits
@@ -200,7 +200,7 @@ an app force today: `checkConnect`'s own pre-resolve gate (`couldAnyPatternMatch
 granted pattern's exact host, or `*`, or an address literal, through to the real resolver
 before any port or address is checked, so an app holding `example.com:22` can already make the
 broker resolve `example.com` by attempting a connection to it, whatever the outcome of that
-connection turns out to be; `authorisedSend` (`../net-capability.ts`) reuses `checkConnect`
+connection turns out to be; `authorisedSend` (`../capabilities/net.ts`) reuses `checkConnect`
 verbatim, so `udp.send` gets the identical argument. `lookup` authorised the same way hands back
 a name-to-address MAPPING the app did not have before; it never hands back the ability to force
 a NAME resolved that the app could not already force resolved by name through
@@ -216,7 +216,7 @@ hostname at all, and TLS certificate verification stands in for the address chec
 learn what a hostname resolves to. Folding it into `net.lookup`'s union would hand an app holding
 ONLY `https.connect: ["*:*"]` exactly that: a general DNS oracle over any hostname it can guess,
 behind a capability whose stated intent is "let this app fetch over TLS," never "let this app
-query DNS for arbitrary names" (A190). So `OUTBOUND_CAPABILITIES` (`../net-capability.ts`) is
+query DNS for arbitrary names" (A190). So `OUTBOUND_CAPABILITIES` (`../capabilities/net.ts`) is
 `tcp.connect` + `udp.send`, and an app must hold one of those to resolve a name at all. The
 pre-resolve-gate argument above holds for both without qualification.
 
@@ -224,7 +224,7 @@ pre-resolve-gate argument above holds for both without qualification.
 one** (`errors.ts`): an app that is refused a lookup because it holds only `https.connect`
 sees exactly the same `'denied'`, with no `platformCode`, as any other reason `checkLookup`
 declines. Naming the reason for a ported app's benefit happens one layer up, in
-`src/shim/node-dns.ts`, which reads the app's OWN `orivon.app.grants()`, a standing,
+`src/shim/net/dns.ts`, which reads the app's OWN `orivon.app.grants()`, a standing,
 already-legitimate capability an app has over itself, to tell this specific refusal apart from
 an ordinary one, rather than the broker's reply carrying anything new. See that file's own
 `describeLookupDenial` for the mechanism and why it fails back to the ordinary generic message
@@ -251,12 +251,12 @@ throwaway main-process probe calling `executeJavaScript` on a real offscreen `Br
 that class; `NaN`/`Infinity`/`-Infinity` come back as real, live non-finite numbers; and an object
 or array with an `undefined`-valued property or element comes back with that key or slot genuinely
 present and genuinely `undefined`. Structured clone preserves all of this; only `JSON.stringify`
-(the old check this file replaces, in `../web-capability.ts`) silently turned the first group into
+(the old check this file replaces, in `../capabilities/web.ts`) silently turned the first group into
 strings-or-`{}` and the second into `null`, and returned the ORIGINAL value regardless -- so a
 script's `NaN` or a live `Date` object used to sail straight through to the app. A result that IS
 or CONTAINS a function, a symbol, a `bigint`, or a DOM object (`window`, `document`) never reaches
 this file at all: Electron's own structured-clone step refuses to clone those, so the whole
-`executeJavaScript` call rejects first, which `web-capability.ts`'s existing catch-all already
+`executeJavaScript` call rejects first, which `capabilities/web.ts`'s existing catch-all already
 turns into `'invalid'`.
 
 Cycle detection walks the CURRENT PATH only (a `Set` of ancestor objects, added on entry and

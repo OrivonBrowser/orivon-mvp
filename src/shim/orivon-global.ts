@@ -3,8 +3,8 @@
 // stream's, not importable from here -- see README.md's import boundary --
 // so this is a second, small copy rather than a shared one).
 //
-// Read once per caller, never cached at module-load time: node-http.ts and
-// node-https.ts each call this inside their own factory setup, not at their
+// Read once per caller, never cached at module-load time: http/http.ts and
+// http/https.ts each call this inside their own factory setup, not at their
 // own top level, so a test can stub `globalThis.orivon` per-case without
 // import-order games.
 

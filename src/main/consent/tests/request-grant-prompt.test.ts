@@ -90,4 +90,14 @@ describe('createGrantPrompt', () => {
     expect(result).toBe(false)
     expect(showMessageBox).not.toHaveBeenCalled()
   })
+
+  it('ADR-0037: an injected levelOverrideFor returning 4 keeps the dialog type "question" for an unlimited declaration', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+    const consent = createGrantPrompt(brokerWithManifest(manifest), (origin) => origin === ORIGIN ? 4 : undefined)
+
+    await consent(ORIGIN, 'https.connect', ['*:*'])
+
+    expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'question', message: 'Unlimited network access' }))
+  })
 })

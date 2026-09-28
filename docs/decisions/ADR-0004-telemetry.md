@@ -118,7 +118,7 @@ story. The data collected is identical either way, so there is no cost to announ
 - The explicit choice retains an estimated **85-90%** of installs, against 30-60% for opt-in.
   **The former "115-130 installs" consequence is withdrawn as wrong**: it applied the consent
   rate and nothing else, with no retention and no activation. The honest requirement is in the
-  thousands of downloads; sizing it is owner-side work (`mvp-scope.md`).
+  thousands of downloads; sizing it is owner-side work (`scope.md`).
 - **The metric resolves around month 3.** 25 h/month cannot be observed until ~30 days after
   ship. The build month produces a shipped product, not a measured result.
 - Requires a small self-hosted ingest endpoint, the only server Orivon operates. It must not

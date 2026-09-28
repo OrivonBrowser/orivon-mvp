@@ -128,4 +128,18 @@ describe('describeCapabilityChoice', () => {
     expect(content.detail).toContain('1 of 1')
     expect(content.message).toBe('Store files in a private folder for this app on this device')
   })
+
+  it('ADR-0037: at level 4, the current row AND every context row lose their warning, not only the one on screen', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] } }, fs: {} })
+    const declared = patternSetFromCapabilities(manifest.capabilities)
+    const capabilities: readonly CapabilityKind[] = ['tcp.connect', 'fs']
+
+    const content = describeCapabilityChoice(ORIGIN, manifest, declared, capabilities, 0, new Map(), 4)
+
+    expect(content.warning).toBe(false)
+    expect(content.message).toBe('Unlimited network access')
+    expect(content.detail).not.toContain('⚠')
+    // fs was already narrow, and stays exactly as worded before.
+    expect(content.detail).toContain('Store files in a private folder for this app on this device')
+  })
 })

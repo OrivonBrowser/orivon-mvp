@@ -37,6 +37,20 @@ no single one of them. Tests live in a `tests/` folder **inside** the directory 
 > shape is still not a template, but the *convention* — name a directory for the job, declare
 > what it must never import, carry a README on the shared template — now has a second
 > application.
+>
+> **Amendment, 2026-09-25.** Both predictions in this ADR's own §Reversibility fired.
+> [`ADR-0035`](ADR-0035-src-source-directories-are-organised-by-job.md) is the decision record;
+> the short version: `capabilities/` becomes this directory's sixth, holding what used to sit
+> loose at the top level as `net-capability.ts`, `fs-capability.ts`, `user-selected-capability.ts`,
+> `id-capability.ts`, `secrets-capability.ts` and `web-capability.ts` (each dropping the
+> `-capability` suffix its new folder now says), plus `net-connect-secure.ts`,
+> `fs-handle-wrapper.ts` and `socket-room.ts`. This reverses the broker README's own prior
+> position that a capability entry point is "not a sixth job" and belongs at the top level for
+> line count alone; that position is now wrong and the README no longer states it.
+> `transport/`, which had grown from the nine files this ADR counted to 26, splits exactly along
+> the seam predicted below: `dispatch/` (the per-capability switch cases) and `relay/` (the byte
+> pumps, sinks, port registry and per-kind relays). `policy/`, `grants/`, `handles/` and
+> `adapters/` are untouched.
 
 ## Context
 

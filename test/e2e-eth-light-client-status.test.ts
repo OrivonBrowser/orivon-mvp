@@ -35,7 +35,7 @@ async function lightClient (panel: Page): Promise<{ state: string, summary: stri
 }
 
 async function verifierPid (app: ElectronApplication): Promise<number | undefined> {
-  return await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics().find((m) => m.type === 'Utility' && m.name === 'Orivon .eth verifier')?.pid)
+  return await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics().find((m) => m.type === 'Utility' && m.name === 'Orivon verifier')?.pid)
 }
 
 it('shows the light client off, down when its process dies, and back once it restarts', async () => {

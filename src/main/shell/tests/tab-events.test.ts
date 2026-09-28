@@ -23,7 +23,7 @@ vi.mock('electron', () => ({
   Menu: { buildFromTemplate },
   clipboard: { writeText: vi.fn() }
 }))
-vi.mock('../../../loader/electron-serve.js', () => ({ isOriginServedFromCacheSync: () => false }))
+vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: () => false }))
 
 const { wireView } = await import('../tab-view.js')
 type Host = Parameters<typeof wireView>[0]

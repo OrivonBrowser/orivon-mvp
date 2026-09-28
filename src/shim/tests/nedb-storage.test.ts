@@ -1,4 +1,4 @@
-// Proves the shim's fs surface (node-fs.ts + fs.promises + the fs.create*
+// Proves the shim's fs surface (fs/fs.ts + fs.promises + the fs.create*
 // streams) is enough to run @seald-io/nedb's REAL, UNMODIFIED Node storage
 // layer -- the first confirmed caller this branch builds for. Everything
 // else nedb needs (path, stream, events, util, crypto, its own
@@ -58,14 +58,14 @@ type ModuleWithLoad = typeof Module & { _load: (request: string, parent: unknown
 /**
  * Runs `run` with every `require('fs')`/`require('node:fs')` reached from
  * ANY CommonJS module -- this repo's own or nedb's -- answered by the
- * shim's own node-fs.ts, restoring Node's real loader afterward regardless
+ * shim's own fs/fs.ts, restoring Node's real loader afterward regardless
  * of how `run` exits. Scoped to this one call, never left installed.
  */
 async function withShimAsRequiredFs<T> (run: () => Promise<T>): Promise<T> {
-  const shim = await import('../node-fs.js')
+  const shim = await import('../fs/fs.js')
   // Same shape as a real `module.exports` -- Module._load's return value IS
   // what a caller's `require(...)` receives directly, no ESM/CJS interop
-  // layer in between, so every member node-fs.ts's default export has must
+  // layer in between, so every member fs/fs.ts's default export has must
   // be a top-level property here too.
   const fsModuleExports = { ...shim.default, default: shim.default }
   const ModuleCtor = Module as ModuleWithLoad

@@ -75,6 +75,17 @@ describe('buildSiteInfo -- capability rows', () => {
     expect(info.capabilityRows).toEqual([])
   })
 
+  it('ADR-0037: at level 4, an unlimited row carries no warning, on and off both', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] } } })
+    const grants: Grant[] = [grant({ patterns: ['*:*'] })]
+
+    const held = buildSiteInfo(APP, manifest, grants, [], true, 4)
+    expect(held.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access' })
+
+    const notHeld = buildSiteInfo(APP, manifest, [], [], true, 4)
+    expect(notHeld.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access' })
+  })
+
   it('a grant for a capability the current manifest no longer declares is left out -- nothing left to switch', () => {
     // decideGrantRequest fails-closed for an undeclared capability, so no
     // row would be actionable; buildAppPermissions instead lists it
@@ -92,7 +103,7 @@ describe('buildSiteInfo -- picked paths', () => {
   it('renders one row per picked path, worded the same as the all-sites list', () => {
     const info = buildSiteInfo(APP, manifestWith({}), [], [{ id: 'pick-1', kind: 'file', path: '/home/person/notes.txt', pickedAt: 0 }], true)
     expect(info.pickedPathRows).toEqual([
-      { pickId: 'pick-1', warning: false, message: 'Can read and change "/home/person/notes.txt", including emptying it.' }
+      { pickId: 'pick-1', kind: 'file', warning: false, message: 'Can read and change "/home/person/notes.txt", including emptying it.' }
     ])
   })
 })

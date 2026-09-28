@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { handleControlRequest } from '../ipc.js'
-import type { FsTransport } from '../dispatch-fs.js'
-import { createPortRegistry } from '../port-registry.js'
+import type { FsTransport } from '../dispatch/fs.js'
+import { createPortRegistry } from '../relay/port-registry.js'
 import { fail } from '../../errors.js'
 import type { FailableDirectoryHandle, FailableFileHandle } from '../../handles/handle-contracts.js'
 import { APP, OTHER, type BrokerCall, envelope, frameFor, stubBroker } from './ipc.test-helpers.js'
@@ -445,7 +445,7 @@ describe('revocation survives the new plumbing (A195) -- both halves handle-cont
     expect(transport.registry.get(APP, 'file-from-dir')).toBe(openedFile)
 
     // Revoking the pick, in production, walks every handle sharing its
-    // pickId and unlinks each -- ../user-selected-capability.ts's own
+    // pickId and unlinks each -- ../../capabilities/user-selected.ts's own
     // `open` acquires the file under `entry.authorisedBy`, THE SAME
     // Authorisation the directory itself carries, which is what makes both
     // fire here. Simulated directly, matching this file's own header on why

@@ -215,6 +215,24 @@ export async function navigateToFixture (
 }
 
 /**
+ * The toolbar's Web3 Score shield level and its Web2/Web2.5/Web3 mark ('' while
+ * hidden), read once `web3ScoreFor` has answered. src/renderer/main.ts clears
+ * both when the active origin changes and paints the answer when it lands, so a
+ * read straight after navigating can catch the cleared state.
+ */
+export async function readShield (chrome: ReturnType<typeof findChrome>): Promise<{ level: string | null, mark: string }> {
+  const painted = await waitFor(async () => await chrome.evaluate(() => document.querySelector('#web3-score-btn .web3-shield')?.hasAttribute('data-level') === true), 8_000)
+  if (!painted) throw new Error('the toolbar shield never painted a level')
+  return await chrome.evaluate(() => {
+    const mark = document.querySelector<HTMLElement>('#web3-mark')
+    return {
+      level: document.querySelector('#web3-score-btn .web3-shield')?.getAttribute('data-level') ?? null,
+      mark: mark === null || mark.hidden ? '' : mark.textContent ?? ''
+    }
+  })
+}
+
+/**
  * Closes every tab (a real click, the same one a person would use), waits
  * for the shell to reach zero windows, then hands off to closeElectron()
  * for the part that must never depend on this succeeding: the bounded

@@ -304,7 +304,7 @@ settled bounds.
 Electron's `'resized'` event, which exists specifically to sidestep this class of bug, is
 declared `@platform darwin,win32` in the `.d.ts` — **it does not exist on Linux at all, on any
 window manager**, so it was never an option here regardless of which part of the cause above
-turns out to be WM-specific. `mvp-scope.md` puts Linux (AppImage + deb) first in the packaging
+turns out to be WM-specific. `scope.md` puts Linux (AppImage + deb) first in the packaging
 IN table, so the `setImmediate` deferral below is the fix on the primary target, not a
 workaround for one desktop.
 

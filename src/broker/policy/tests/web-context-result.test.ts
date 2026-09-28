@@ -5,7 +5,7 @@ import { isJsonCompatibleResult, webContextResultRejection } from '../web-contex
 // boolean, finite number, string, and arrays or plain objects of those --
 // nothing else. Electron's executeJavaScript does NOT hand back JSON text;
 // it hands back real, live V8 values reconstructed by structured clone
-// (measured against Electron 44, see ../../web-capability.ts's own header
+// (measured against Electron 44, see ../../capabilities/web.ts's own header
 // pointer to this file). A Date, Map, Set, RegExp, Error or TypedArray
 // completion value arrives here as a REAL instance of that class, not a
 // string or a plain object -- so every non-primitive case below uses the

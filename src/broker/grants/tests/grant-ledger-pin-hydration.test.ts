@@ -5,9 +5,9 @@
 // See `hydrateFromPinnedManifest`'s own doc (grant-ledger.ts) for why this
 // is safe under A137's "never trust disk as authority" rule -- callers MUST
 // pass a manifest already proven to be a leaf of a hash-pinned bundle
-// (`src/loader/serve.ts`'s `verifiedManifestFor`), never a bare disk read.
+// (`src/loader/serve/serve.ts`'s `verifiedManifestFor`), never a bare disk read.
 // This suite only proves GrantLedger's own contract; it does not re-verify
-// anything -- that is `serve-verify.test.ts`'s job.
+// anything -- that is `serve/tests/verify.test.ts`'s job.
 
 import { describe, expect, it } from 'vitest'
 import { GrantLedger } from '../grant-ledger.js'

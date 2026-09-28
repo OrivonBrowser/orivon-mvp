@@ -121,6 +121,22 @@ export interface Manifest {
    * (`docs/open-questions.md` A138.)
    */
   readonly consentGranularity?: ConsentGranularity
+  /**
+   * Asks for the app's documents to be served cross-origin isolated
+   * (`Cross-Origin-Opener-Policy: same-origin` and
+   * `Cross-Origin-Embedder-Policy: credentialless`), which is what turns on
+   * `SharedArrayBuffer`, a shared `WebAssembly.Memory` and `Atomics.wait` in
+   * a worker: everything a WebAssembly component built with threads needs
+   * (ADR-0036). `true` is the only accepted value; omit it to not ask.
+   *
+   * OPT-IN, because isolation costs the app two things the web platform
+   * charges every isolated page: a window it opens can no longer reach it
+   * through `window.opener` (a sign-in popup that reports back that way
+   * breaks), and a cross-origin subresource loads without credentials. An
+   * app that needs neither loses nothing by declaring it; one that needs
+   * either must not.
+   */
+  readonly crossOriginIsolated?: true
 }
 
 export interface Capabilities {
@@ -128,10 +144,12 @@ export interface Capabilities {
   readonly fs?: FsCapability
   readonly id?: IdCapability
   /**
-   * Isolated contexts (ADR-0019): an empty document at an origin the app
-   * names, for running that site's own script as that site would -- with
-   * none of the person's data there, and no network beyond this app's own
-   * `https.connect` grant. See `capability-api.ts`'s `OrivonWeb`.
+   * Other sites' documents, two ways. Isolated contexts (ADR-0019): an empty
+   * document at an origin the app names, for running that site's own script
+   * as that site would -- with none of the person's data there, and no
+   * network beyond this app's own `https.connect` grant. Embedded pages
+   * (ADR-0039): a site shown inside the app's own page, in a `<webview>`
+   * element the app controls. See `capability-api.ts`'s `OrivonWeb`.
    */
   readonly web?: WebCapability
   /**
@@ -206,19 +224,53 @@ export interface TcpCapability {
    */
   readonly connect?: readonly Pattern[]
   /**
-   * Port ranges. `"*"` is REJECTED here -- a declared range is required, and
-   * privileged ports below 1024 are denied outright at every tier
-   * (capability-api.md's open item A9, point 1). Listening opens a service rather than making
-   * an outbound call, and gets a distinct, more serious prompt.
+   * Port ranges to accept inbound connections on, split by who may reach
+   * them (ADR-0034). See `BindScopes`.
    */
-  readonly listen?: readonly Pattern[]
+  readonly listen?: BindScopes
 }
 
 export interface UdpCapability {
-  /** Port ranges, same rules as tcp.listen. */
-  readonly bind?: readonly Pattern[]
+  /**
+   * Port ranges to receive datagrams on, split by who may reach them
+   * (ADR-0034). Same rules as `TcpCapability.listen`.
+   */
+  readonly bind?: BindScopes
   /** host:port patterns, same rules as tcp.connect. */
   readonly send?: readonly Pattern[]
+}
+
+/**
+ * ADR-0034. Two separately declared and granted ways to accept inbound
+ * traffic on a port, because the two claims are materially different: one
+ * program on this device asking to be reachable by other programs on this
+ * SAME device reads nothing like a program asking to be reachable by every
+ * device on the network, and the internet if the port is forwarded. A
+ * manifest declaring `network` also covers `local` -- the broader grant
+ * subsumes the narrower one, so an app never needs both to get the wider
+ * reach.
+ *
+ * At least one of the two must be present; an empty `BindScopes` is
+ * rejected as the same ambiguity every other optional list in this file
+ * rejects it as. Each list follows `TcpCapability.connect`'s existing port
+ * rules: `"*"` is REJECTED, a declared range is required, and privileged
+ * ports below 1024 are denied outright at every tier.
+ */
+export interface BindScopes {
+  /**
+   * Reachable only by other programs on this same computer -- other
+   * Orivon apps included, since nothing here is scoped to one app's own
+   * processes. Never reachable from the local network or the internet,
+   * whatever the port is forwarded to.
+   */
+  readonly local?: readonly Pattern[]
+  /**
+   * Reachable from every device on the local network, and from the
+   * internet if the port is forwarded. The distinct, more serious prompt
+   * (capability-api.md's open item A9, point 1) names this reach in
+   * plain words, the same way `tcp.connect: ["*:*"]` must.
+   */
+  readonly network?: readonly Pattern[]
 }
 
 /**
@@ -279,8 +331,10 @@ export interface IdCapability {
 }
 
 /**
- * ADR-0019. The prompt names every origin listed here, in words that say what
- * it means: "run code as www.youtube.com, in a private, empty session".
+ * ADR-0019 and ADR-0039. The prompt names every origin listed here, in words
+ * that say what it means: "run code as www.youtube.com, in a private, empty
+ * session"; "show any website inside itself, and read and change what those
+ * pages show".
  */
 export interface WebCapability {
   /**
@@ -291,6 +345,48 @@ export interface WebCapability {
    * `web.context` are these strings, compared exactly.
    */
   readonly contexts?: readonly string[]
+  /**
+   * Sites the app may show inside its own page (ADR-0039). Its own
+   * capability kind, `web.embed`, granted and revoked apart from
+   * `web.context`: showing a person a page and running a script as that
+   * page's site are different powers, and a person may want one without the
+   * other.
+   */
+  readonly embed?: EmbedCapability
+}
+
+/**
+ * ADR-0039. An app holding a `web.embed` grant may put a `<webview>` element
+ * in its page: a browser view inside its own layout, showing a site of its
+ * choosing, with the element's interface as Electron defines it (`src`,
+ * `loadURL`, `reload`, `executeJavaScript`, `insertCSS`, `findInPage`,
+ * `send` and the `ipc-message` event, `setAudioMuted`, ...). The element is
+ * the web platform's own idea of an embedded browser, older than this
+ * project, and an engine beneath Orivon that lacks it would supply one to
+ * keep apps written against this working (ADR-0002).
+ *
+ * Every page the app shows runs in a storage partition of this app's own:
+ * apart from the person's ordinary browsing, apart from the app's own
+ * partition, and kept across restarts, so a site the app shows can keep the
+ * person signed in. The page's renderer is sandboxed, gets the shell's own
+ * preload and never the app's, has no `orivon.*` and no path to the app's
+ * grants, cannot open windows or download, and cannot itself embed. The
+ * app can read what those pages show and change it -- the element's own
+ * methods already allow that -- so the prompt says exactly that, with a
+ * warning, and a person who declines keeps every other grant.
+ */
+export interface EmbedCapability {
+  /**
+   * Which sites: exact `http://host[:port]` or `https://host[:port]`
+   * origins, compared exactly, or the single entry `"*"` for any site on the
+   * web. `"*"` never reaches an address literal outside public unicast or a
+   * `localhost` name (security-model.md T12); an origin named exactly may be
+   * one, and the person granting it sees that address. A page the app shows
+   * may load a document, in its top frame or a frame inside it, only from
+   * these origins; a subresource is the page's own business. A grant's
+   * `patterns` for `web.embed` are these strings.
+   */
+  readonly origins: readonly string[]
 }
 
 /**
@@ -342,13 +438,21 @@ export interface Grant {
 
 export type CapabilityKind =
   | 'tcp.connect'
-  | 'tcp.listen'
-  | 'udp.bind'
+  /** Reachable only from this device (ADR-0034). */
+  | 'tcp.listen.local'
+  /** Reachable from the local network, and the internet if forwarded (ADR-0034). */
+  | 'tcp.listen.network'
+  /** Reachable only from this device (ADR-0034). */
+  | 'udp.bind.local'
+  /** Reachable from the local network, and the internet if forwarded (ADR-0034). */
+  | 'udp.bind.network'
   | 'udp.send'
   | 'https.connect'
   | 'fs'
   | 'id'
   | 'web.context'
+  /** A site shown inside the app's own page (ADR-0039); its patterns are `EmbedCapability.origins`. */
+  | 'web.embed'
   | 'media.camera'
   | 'media.microphone'
   | 'clipboard.read'

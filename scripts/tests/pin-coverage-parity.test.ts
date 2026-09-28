@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { PinCoverageSnapshot } from '../../src/loader/pin-coverage.js'
+import type { PinCoverageSnapshot } from '../../src/loader/serve/pin-coverage.js'
 import type { PinCoverageEvidence } from '../../src/trust/delivery-ladder.js'
 
-// docs/open-questions.md A179: src/loader/pin-coverage.ts's
+// docs/open-questions.md A179: src/loader/serve/pin-coverage.ts's
 // PinCoverageSnapshot and src/trust/delivery-ladder.ts's PinCoverageEvidence
 // are deliberately duplicated -- src/trust/README.md forbids reaching into
 // src/loader/'s internals, and src/loader/README.md does not list src/trust/
@@ -23,7 +23,7 @@ import type { PinCoverageEvidence } from '../../src/trust/delivery-ladder.js'
 // scripts/ answers to neither stream.
 //
 // THE BINDING IS THE TYPE CHECK BELOW, NOT A RUNTIME ASSERTION. Follows the
-// precedent src/loader/tests/manifest-contract-parity.test.ts set for A164:
+// precedent src/loader/manifest/tests/contract-parity.test.ts set for A164:
 // that file types one manifest fixture against `Required<Manifest>` so a
 // contract field added anywhere in that chain without updating the fixture
 // is an `npm run typecheck` failure, not a silent gap. There is no

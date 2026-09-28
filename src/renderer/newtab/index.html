@@ -2,11 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Tightest CSP in this codebase: no image loading, no network
-         requests of its own (connect-src 'none' -- navigation goes
-         through orivonNewTab.navigate() over IPC, never a raw form
-         submission or fetch), nothing beyond this page's own script and
-         inline styles. -->
+    <!-- Among the tightest CSPs in this codebase: no network requests of its
+         own (connect-src 'none' -- navigation goes through
+         orivonNewTab.navigate() over IPC, never a raw form submission or
+         fetch), and images only from the page's own bundle or as data: URLs
+         (its background picture, and the bookmarks' icons). -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'"
@@ -43,7 +43,7 @@
       <section class="tile-section">
         <h2 class="tile-section-title">Apps</h2>
         <div class="tile-grid">
-          <!-- Both are ideas, not scheduled for this MVP (mvp-scope.md
+          <!-- Both are ideas, not scheduled in this version (scope.md
                LATER section), so both are disabled with an honest
                title, the same pattern already shipped for the
                toolbar's inert icons (open-questions.md A32). -->

@@ -12,34 +12,34 @@ function refusalOf (call: () => unknown): unknown {
 
 describe('subpath targets', () => {
   it('fs/promises is fs.promises, with named members', async () => {
-    const fs = await import('../node-fs.js')
-    const fsPromises = await import('../node-fs-promises.js')
+    const fs = await import('../fs/fs.js')
+    const fsPromises = await import('../fs/promises.js')
     expect(fsPromises.default).toBe(fs.promises)
     expect(fsPromises.readFile).toBe(fs.promises.readFile)
   })
 
   it('util/types is util.types, with named members', async () => {
-    const util = await import('../node-util.js')
-    const types = await import('../node-util-types.js')
+    const util = await import('../polyfills/util.js')
+    const types = await import('../polyfills/util-types.js')
     expect(types.default).toBe(util.types)
     expect(types.isPromise(Promise.resolve())).toBe(true)
   })
 
   it('dns/promises is dns.promises', async () => {
-    const dns = await import('../node-dns.js')
-    const dnsPromises = await import('../node-dns-promises.js')
+    const dns = await import('../net/dns.js')
+    const dnsPromises = await import('../net/dns-promises.js')
     expect(dnsPromises.default).toBe(dns.promises)
     expect(typeof dnsPromises.lookup).toBe('function')
   })
 
   it('path/posix is path itself', async () => {
-    const path = await import('../node-path.js')
+    const path = await import('../polyfills/path.js')
     expect(path.posix).toBe(path.default)
     expect(path.default.posix).toBe(path.default)
   })
 
   it('stream/promises pipeline and finished settle as promises', async () => {
-    const { pipeline, finished } = await import('../node-stream-promises.js')
+    const { pipeline, finished } = await import('../polyfills/stream-promises.js')
     const seen: string[] = []
     const source = pageStream.Readable.from(['a', 'b'])
     const sink = new pageStream.Writable({ write (chunk: unknown, _encoding, callback) { seen.push(String(chunk)); callback() } })
@@ -52,7 +52,7 @@ describe('subpath targets', () => {
 
 describe('package-backed wrappers', () => {
   it('path keeps path-browserify\'s answers and refuses win32 by name', async () => {
-    const path = await import('../node-path.js')
+    const path = await import('../polyfills/path.js')
     expect(path.join('/orivon/app', 'a', '..', 'b')).toBe('/orivon/app/b')
     expect(path.default.basename('/x/y.txt', '.txt')).toBe('y')
     const { win32 } = path.default as unknown as { win32: () => unknown }
@@ -60,7 +60,7 @@ describe('package-backed wrappers', () => {
   })
 
   it('crypto keeps crypto-browserify\'s hashes and adds the platform\'s Web Crypto members', async () => {
-    const crypto = await import('../node-crypto.js')
+    const crypto = await import('../polyfills/crypto.js')
     expect(crypto.createHash('sha1').update('abc').digest('hex')).toBe('a9993e364706816aba3e25717850c26c9cd0d89d')
     expect(crypto.default.createHash).toBe(crypto.createHash)
     expect(crypto.randomUUID()).toMatch(/^[0-9a-f-]{36}$/)
@@ -70,7 +70,7 @@ describe('package-backed wrappers', () => {
   })
 
   it('zlib round-trips gzip and refuses brotli by name', async () => {
-    const zlib = await import('../node-zlib.js')
+    const zlib = await import('../polyfills/zlib.js')
     // A string, not a Buffer: under vitest the package runs on Node's own
     // Buffer, which does not recognise the page's.
     expect(String(zlib.gunzipSync(zlib.gzipSync('hello')))).toBe('hello')
@@ -79,7 +79,7 @@ describe('package-backed wrappers', () => {
   })
 
   it('buffer is the package\'s Buffer, plus the platform\'s atob/btoa/Blob', async () => {
-    const buffer = await import('../node-buffer.js')
+    const buffer = await import('../polyfills/buffer.js')
     expect(buffer.Buffer).toBe(PageBuffer)
     expect(buffer.default.Buffer).toBe(PageBuffer)
     expect(buffer.atob('aGk=')).toBe('hi')

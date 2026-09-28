@@ -13,7 +13,14 @@ function ctxWith (broker: Broker | undefined, loader?: Loader): SubsystemContext
   return { broker, loader } as unknown as SubsystemContext
 }
 
-const NO_TRUST: SiteTrustSources = { isOriginServedFromCacheSync: () => false, pinCoverageFor: () => undefined, nameEvidenceFor: async () => undefined }
+const NO_TRUST: SiteTrustSources = {
+  isOriginServedFromCacheSync: () => false,
+  pinCoverageFor: () => undefined,
+  nameEvidenceFor: async () => undefined,
+  levelOverrideFor: () => undefined,
+  deliveryOverrideFor: () => undefined,
+  localDdocFor: async () => false
+}
 
 function fakeLoader (overrides: Partial<Loader> = {}): Loader {
   return {
@@ -106,7 +113,10 @@ describe('createSiteInfoController -- siteTrustFor', () => {
     const trustSources: SiteTrustSources = {
       isOriginServedFromCacheSync: (origin) => origin === APP,
       pinCoverageFor: () => ({ pinnedRequests: 1, thirdPartyRequests: 0, deniedRequests: 0, pinnedBytes: 5, thirdPartyBytes: 0, bytesIncomplete: false }),
-      nameEvidenceFor: async () => undefined
+      nameEvidenceFor: async () => undefined,
+      levelOverrideFor: () => undefined,
+      deliveryOverrideFor: () => undefined,
+      localDdocFor: async () => false
     }
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), loader), trustSources)
 
@@ -144,6 +154,52 @@ describe('createSiteInfoController -- siteTrustFor', () => {
   it('null for a malformed url', async () => {
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), NO_TRUST)
     expect(await controller.siteTrustFor('not a url')).toBeNull()
+  })
+
+  it('asks the injected sources for a level and a delivery override, and shows them as the displayed values', async () => {
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), {
+      ...NO_TRUST,
+      levelOverrideFor: (origin) => origin === APP ? 4 : undefined,
+      deliveryOverrideFor: (origin) => origin === APP ? 3 : undefined
+    })
+
+    const trust = await controller.siteTrustFor(APP)
+
+    expect(trust?.levelOverride).toBe(4)
+    expect(trust?.displayedLevel).toBe(4)
+    expect(trust?.deliveryOverride).toBe(3)
+    expect(trust?.displayedDelivery).toBe(3)
+    // The observed level is untouched by the override.
+    expect(trust?.level.level).toBe(1)
+  })
+
+  it('asks the local-DDOC source for an unpinned origin, and shows its answer as DDOC', async () => {
+    const LOCAL = 'http://127.0.0.1:8875'
+    const asked: string[] = []
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), {
+      ...NO_TRUST,
+      localDdocFor: async (origin) => { asked.push(origin); return origin === LOCAL }
+    })
+
+    const trust = await controller.siteTrustFor(`${LOCAL}/app/`)
+
+    expect(asked).toEqual([LOCAL])
+    expect(trust?.ddoc).toEqual({ status: 'local-dev' })
+    expect(trust?.displayedLevel).toBe(2)
+  })
+
+  it('never asks the local-DDOC source for a pinned origin: its pin is compared instead', async () => {
+    const asked: string[] = []
+    const loader = fakeLoader({ pinFor: async () => ({ schema: 1, origin: APP, bundleHash: 'a'.repeat(64), assets: [], version: '1.0.0', pinnedAt: 10 }) })
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), loader), {
+      ...NO_TRUST,
+      localDdocFor: async (origin) => { asked.push(origin); return true }
+    })
+
+    const trust = await controller.siteTrustFor(APP)
+
+    expect(asked).toEqual([])
+    expect(trust?.ddoc).toEqual({ status: 'not-published' })
   })
 })
 

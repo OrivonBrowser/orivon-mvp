@@ -1,7 +1,7 @@
 # Build plan
 
-Dependency-ordered. One solo developer with AI assistance, one month.
-Scope is fixed by `mvp-scope.md`; decisions by `docs/decisions/`.
+Dependency-ordered. One solo developer with AI assistance.
+Scope is recorded in `scope.md`; decisions by `docs/decisions/`.
 
 **webtorrent is 3.0.21.** `week-0-spike-plan.md` §Verified facts lists the other package facts
 checked against live metadata.
@@ -72,7 +72,7 @@ fails by silence.*
   recorded debt is far smaller than the original "privileged in main" fallback. The app
   still ships; only its status as "an ordinary app" is reduced.
 
-Failing here costs 2 days. Discovering it in week 4 costs the month.
+Failing here costs 2 days. Discovering it in week 4 costs a month's work.
 
 **Also in week 0:** repo scaffold, `electron-vite` + TypeScript, Node 24 (already installed).
 No Rust toolchain is required (`ADR-0002`). Decide the test stack now: **Vitest**
@@ -96,7 +96,8 @@ metric and their telemetry must work identically.
 
 Two constraints follow, and they are not optional:
 
-1. **Pure-JS dependencies only.** No native modules requiring compilation. If `npm install`
+1. **No native modules in the shell's dependencies.** Nothing may compile at install time;
+   JavaScript and WebAssembly both pass (`ADR-0031`). If `npm install`
    needs node-gyp and Visual Studio Build Tools, run-from-source is a worse wall than the
    certificate it was meant to avoid.
    The real blocker is **`node-datachannel`** (`utp-native` is optional), a *hard* transitive
@@ -115,7 +116,7 @@ Linux it needs an available keyring, with `isEncryptionAvailable()` returning fa
 A documented fallback is required; see `security-model.md`.
 
 Side benefit worth noting: anyone willing to clone and `npm start` self-selects as a potential
-contributor, which is precisely the population the MVP is meant to attract.
+contributor, which is precisely the population Orivon Browser is meant to attract.
 
 ## Critical path
 
@@ -187,7 +188,7 @@ the corpus and needs a live `context7` check before writing the wiring.
 app's own source is cloned at a pinned commit, built by its own toolchain, and never forked
 (`ADR-0020`). The ports, and the harness that builds and serves them, live in `orivon-ports`;
 nothing in this repository depends on that checkout. A gap a port finds is fixed here, for every
-app (`mvp-scope.md` §The genericity test), and `compatibility-matrix.md` tracks what works cell by
+app (`scope.md` §The genericity test), and `compatibility-matrix.md` tracks what works cell by
 cell.
 
 `orivon-ports` has recipes for FreeTube, Element, AirGap Vault and ASGARDEX. They run as
@@ -205,7 +206,7 @@ consented and installed like any other app (`ADR-0007`, `ADR-0018`). This is jou
 Three things arrive with it. **DDOC's off-host anchor:** a `.eth` name's contenthash commits to
 every file, so a host compromised well enough to rewrite both its files and its tree is caught
 (`ADR-0029`). **The Website level** leads the Web3 Score page on every site (`ADR-0006`). **The
-delivery ladder's D3 and D4 rungs** are reached (`src/trust/delivery-ladder.ts`). Rule 8 holds
+Delivery level's proven-name rung** is reached (`src/trust/delivery-ladder.ts`). Rule 8 holds
 here as everywhere: a library that pulls in a native module is out, however standard it is.
 
 The work queue is [`ens-ipfs-plan.md`](ens-ipfs-plan.md); the mechanism is `ADR-0030` and the
@@ -237,11 +238,11 @@ run-from-source path in the README for Windows and macOS.
 verifies only a SHA-512 fetched from the *same host* that serves the binary, making it a
 standing remote-code-execution channel keyed to a GitHub token, weaker than what `ADR-0005`
 demands of third-party apps, which is the wrong way round. v0 **checks and notifies**, linking
-to the release. Signing the update manifest with an offline key is the post-MVP upgrade.
+to the release. Signing the update manifest with an offline key is the next upgrade.
 
 Two packaging facts that shape the choice, verified 2026-08-25:
 - **AppImage is the only seamless auto-update target**; deb/rpm updates require a privilege
-  prompt. Moot for v0 given the above, but it constrains the post-MVP path.
+  prompt. Moot for v0 given the above, but it constrains the path after v0.
 - **Only deb can register as the default browser.** `xdg-settings set default-web-browser`
   needs an installed `.desktop` file with the right `MimeType=` entries, and a bare AppImage
   does not self-integrate. For a metric measured in daily-driver hours that is not cosmetic:
@@ -315,9 +316,9 @@ patterns and is rejected.**
 > to work perfectly. It costs ~30 lines to close.
 
 The fixture app is also the smallest consumer in the genericity test and the developer-mode
-example (`mvp-scope.md`).
+example (`scope.md`).
 
-**Manual checklist:** the journeys in `mvp-scope.md`, before each release,
+**Manual checklist:** the journeys in `scope.md`, before each release,
 **run-from-source on Windows and macOS included**, since that is a supported path and it
 is the one most likely to break silently.
 
@@ -344,9 +345,9 @@ unit-tested areas above are where a silent bug is a security bug, so they are no
 | A dependency pulls in native modules | Audit at install time; it silently breaks Windows/macOS run-from-source |
 | Electron CVEs | Track releases; a browser is a high-value target and this is not optional maintenance |
 | An app fills the disk | `fs.quotaBytes` enforcement + the disk-usage UI (`ADR-0003`) |
-| Scope creep from the vision docs | `mvp-scope.md` non-goals; anything absent from IN is out by default |
+| Scope creep from the vision docs | `scope.md` non-goals; a feature is built when a need calls for it, and the need is named first |
 
 ## Not in this plan
-Rust, Wasmtime, Chromium, mobile, app store, the dashboard widget platform, wallet, signed
-Windows/macOS installers, and the two ideas in `mvp-scope.md` §LATER: a torrent app
-([`torrent-app.md`](torrent-app.md)) and Nostr identity. See `mvp-scope.md`.
+Rust, Wasmtime, mobile, app store, the dashboard widget platform, wallet, signed
+Windows/macOS installers, and the two ideas in `scope.md` §LATER: a torrent app
+([`torrent-app.md`](torrent-app.md)) and Nostr identity. See `scope.md`.

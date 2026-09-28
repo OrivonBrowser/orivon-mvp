@@ -7,16 +7,16 @@
 // Design notes).
 
 import { contextBridge } from 'electron'
-import { installRoutedWire } from './routed-wire.js'
-import { installRoutedDial } from './routed-dial.js'
-import { installRoutedCore, releaseRoutedSlot } from './routed-core.js'
-import { installRoutedEvents } from './routed-events.js'
-import { installFetchRoute } from './fetch-route.js'
-import { installXhrResponse } from './xhr-route-response.js'
-import { installXhrRoute } from './xhr-route.js'
-import { installEventSourceRoute } from './eventsource-route.js'
-import { installWebSocketFrames } from './websocket-route-frames.js'
-import { installWebSocketRoute } from './websocket-route.js'
+import { installRoutedWire } from './routed/wire.js'
+import { installRoutedDial } from './routed/dial.js'
+import { installRoutedCore, releaseRoutedSlot } from './routed/core.js'
+import { installRoutedEvents } from './routed/events.js'
+import { installFetchRoute } from './routed/fetch.js'
+import { installXhrResponse } from './routed/xhr-response.js'
+import { installXhrRoute } from './routed/xhr.js'
+import { installEventSourceRoute } from './routed/eventsource.js'
+import { installWebSocketFrames } from './routed/websocket-frames.js'
+import { installWebSocketRoute } from './routed/websocket.js'
 
 /** The literal `webPreferences.additionalArguments` flag `src/main/
  * tab-view.ts`'s `appTabArgsFor` sets -- duplicated here rather than
@@ -33,7 +33,7 @@ const INSTALLERS: ReadonlyArray<(isAppTab: boolean) => void> = [
 ]
 
 /**
- * Fail-open, same shape as orivon-surface.ts's own `exposeOrivon()`:
+ * Fail-open, same shape as surface/orivon.ts's own `exposeOrivon()`:
  * `contextBridge.executeInMainWorld` is `@experimental` and may be absent
  * or throw, in which case the page keeps its native globals rather than
  * preload aborting. Reads `isAppTab` synchronously off `process.argv` --

@@ -16,6 +16,11 @@ const scripted = (url: string, features = ''): Details => ({ url, features, disp
 const popupWindow = (url: string): Details => ({ url, features: 'width=500,height=600', disposition: 'new-window' })
 
 describe('routePopup -- which window.open()/target=_blank calls keep their opener', () => {
+  it('opens a protocol address in a new tab, which loads it from the URL serving it', () => {
+    expect(routePopup(popupWindow('ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/'), onWeb, undefined)).toBe('new-tab')
+    expect(routePopup(scripted('ipns://docs.ipfs.tech'), onWeb, undefined)).toBe('new-tab')
+  })
+
   it('adopts a popup whose target belongs in the opener\'s own session, so window.open returns a real window', () => {
     expect(routePopup(scripted('https://other.example/'), onWeb, undefined)).toBe('adopt')
     expect(routePopup(scripted(`${APP}popout`), inApp, APP_PARTITION)).toBe('adopt')

@@ -1,6 +1,6 @@
 // The new-tab dashboard's IPC surface: read-only bookmark access, and
 // navigating the CALLING tab -- nothing else. Owner override, 2026-08-28
-// (mvp-scope.md; the dashboard replaces about:blank for a fresh tab).
+// (scope.md; the dashboard replaces about:blank for a fresh tab).
 //
 // A separate channel and a separate sender check from ipc.ts's
 // registerShellIpc() on purpose. That check is object identity against

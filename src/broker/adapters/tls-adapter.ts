@@ -30,7 +30,7 @@ import { toPeerCertificate } from './tls-peer-certificate.js'
  *
  * A TESTING SEAM ONLY. The production `dialTls` below passes none, so it
  * trusts the runtime's own store unless an app's call names its own `ca`
- * (`SecureDialOptions`, which ../net-connect-secure.ts treats as removing
+ * (`SecureDialOptions`, which ../capabilities/net-connect-secure.ts treats as removing
  * the certificate's binding of the granted name). Only a test constructing
  * its own dialer can set this, to exercise the default path against a
  * throwaway CA: there is no other way to hand a local test server a

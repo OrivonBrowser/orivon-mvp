@@ -7,7 +7,7 @@ import { createSubsystemContext } from '../../main/registry.js'
 import type { App } from 'electron'
 
 // A fake App, not a real one -- getPath is the only method afterReady
-// actually calls. `restorePinnedServing` (electron-serve.ts) DOES touch the
+// actually calls. `restorePinnedServing` (electron/serve.ts) DOES touch the
 // filesystem eagerly now -- a readdir of "<userData>/apps" -- but a fresh
 // temp directory has no apps/ at all, so that read fails ENOENT, is caught,
 // and the loop over origins never runs, meaning it never reaches the

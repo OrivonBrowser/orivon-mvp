@@ -1,4 +1,4 @@
-/* Bookmarks bar -- owner override, 2026-08-28 (mvp-scope.md, ADR-0003),
+/* Bookmarks bar -- owner override, 2026-08-28 (scope.md, ADR-0003),
    not in the original scope pass. v2's bar (visual reference only,
    ADR-0002) was static decoration with no data model; this one holds
    nothing but the real list. */

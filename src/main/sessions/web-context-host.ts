@@ -1,8 +1,8 @@
 // ADR-0019's Electron half: the real `WebContextHost` (broker/web-context-
-// contracts.ts) src/broker/web-capability.ts calls through `CreateBrokerOptions
+// contracts.ts) src/broker/capabilities/web.ts calls through `CreateBrokerOptions
 // .webContextHost`. Everything security-relevant about the isolated context
 // lives HERE, not in the broker (which stays Electron-free, ../broker/
-// web-capability.ts's own header) -- the partition, the sandboxed/isolated
+// capabilities/web.ts's own header) -- the partition, the sandboxed/isolated
 // WebContentsView, the reach-only network path, and the CORS wrapper the
 // spec's own item 5 asks to keep beside this file rather than in the loader.
 //
@@ -16,7 +16,7 @@ import { session as electronSession, WebContentsView } from 'electron'
 import type { Session, WebContents } from 'electron'
 import { LIMITS } from '../../contracts/index.js'
 import { originHash } from '../../broker/grants/origin-hash.js'
-import { reachOnlyHandlerFor } from '../../loader/electron-serve.js'
+import { reachOnlyHandlerFor } from '../../loader/electron/serve.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
 import type { Broker, WebContextHost } from '../../broker/broker-contracts.js'
 
@@ -42,7 +42,7 @@ function newHostId (): string {
 
 /**
  * ADR-0019's own network path, wrapped with CORS for the context's origin --
- * kept beside the host (spec item 5) rather than in loader/electron-serve.ts,
+ * kept beside the host (spec item 5) rather than in loader/electron/serve.ts,
  * which owns the reach DECISION but not this response shape. An `OPTIONS`
  * preflight is answered synthetically, never reaching the network; every
  * other response gets `access-control-allow-origin` for the context's own
@@ -84,6 +84,10 @@ function partitionName (opener: string, slot: number): string {
 }
 
 interface OpenContextRecord {
+  /** Never read: held so it is not garbage collected while the context is
+   * open. Collecting the view destroys its webContents, so an evaluate in
+   * flight never settles and the next one throws. */
+  readonly view: WebContentsView
   readonly webContents: WebContents
   readonly session: Session
   readonly opener: string
@@ -109,7 +113,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
         return slot
       }
     }
-    // broker/web-capability.ts's own HandleTable already enforces
+    // broker/capabilities/web.ts's own HandleTable already enforces
     // LIMITS.webContexts BEFORE this is ever called (assertCapacity, kind
     // 'webContext') -- reaching here means this file's own slot bookkeeping
     // has drifted from the broker's, a bug here, never a real over-budget
@@ -171,7 +175,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
    * permission outright, cancel every download, cancel ws:/wss:, and answer
    * https/http through the reach-only path for `opener`, CORS-wrapped for
    * `origin`. Idempotent -- `protocol.handle` throws on a scheme already
-   * handled on the same session (electron-serve.ts's own registerAppOrigin
+   * handled on the same session (electron/serve.ts's own registerAppOrigin
    * precedent), and `will-download` is a plain EventEmitter listener that
    * would otherwise accumulate one per reuse of this slot's session.
    */
@@ -222,7 +226,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
    * learning late that its context is gone is still better than one that
    * never learns at all, so this only logs (`console.error`, this
    * codebase's own convention for a swallowed fault -- see e.g.
-   * ../broker/transport/socket-relay.ts) and still notifies every listener.
+   * ../broker/transport/relay/socket.ts) and still notifies every listener.
    */
   async function handleRenderProcessGone (id: string, platformCode: string): Promise<void> {
     const entry = contexts.get(id)
@@ -288,7 +292,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
         void handleRenderProcessGone(id, details.reason)
       })
 
-      contexts.set(id, { webContents, session: contextSession, opener, slot })
+      contexts.set(id, { view, webContents, session: contextSession, opener, slot })
       return id
     } catch (error) {
       try {

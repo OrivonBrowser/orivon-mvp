@@ -40,7 +40,13 @@ export interface CapabilityGrantSummary {
   readonly explanation?: string
 }
 
-const WARNING_HEADLINE = '⚠ Unlimited network access'
+/** The one glyph every warned row's `message` opens with (or, for a
+ * multi-line message, every line opens with) -- extracted so `./grant-
+ * level.ts`'s `summaryAtLevel` has exactly one string to strip, rather than
+ * re-deriving the marker from each literal that uses it. */
+export const WARNING_MARK = '⚠ '
+
+const WARNING_HEADLINE = `${WARNING_MARK}Unlimited network access`
 
 /** `port 443`, or `ports 22, 443, 5432` for more than one -- shared by
  * `tcp.listen`/`udp.bind`'s own rendering (grant-prompt-render.ts) and
@@ -155,7 +161,7 @@ function portsListPhrase (specs: readonly string[]): string {
 // by any sensible reading, not a breadth risk. Re-anchored on something a
 // count of hosts can actually be compared against: `MAX_PATTERNS`, the real,
 // already-enforced ceiling on how many patterns ONE capability's array may
-// declare at all (loader/manifest-capabilities.ts). This fires only once a
+// declare at all (loader/manifest/capabilities.ts). This fires only once a
 // manifest names at least HALF of the hosts the format permits it to name
 // -- comfortably above any curated, human-reviewable list (a feed reader,
 // a CDN allowlist), and close enough to the format's own maximum that
@@ -188,7 +194,7 @@ function namedHostsSummary (verb: string, singular: string, plural: string, info
     const lowerVerb = verb.charAt(0).toLowerCase() + verb.slice(1)
     return {
       warning: true,
-      message: `⚠ ${verb} a large number of ${plural}`,
+      message: `${WARNING_MARK}${verb} a large number of ${plural}`,
       explanation: `This app can ${lowerVerb} ${hosts.length} specific ${plural}, starting with ${first} -- more than can be weighed individually.`
     }
   }
@@ -244,7 +250,7 @@ function namedHostsSummaryWithSensitiveAddresses (verb: string, singular: string
 
   return {
     warning: true,
-    message: `⚠ ${verb} ${sensitiveHosts.join(', ')}${otherSitesClause}`,
+    message: `${WARNING_MARK}${verb} ${sensitiveHosts.join(', ')}${otherSitesClause}`,
     explanation: `${sentences.join(' ')} ${closingSentence}`
   }
 }

@@ -8,15 +8,16 @@ import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { shouldClearFavicon } from '../browsing/favicon.js'
 import type { Bounds, TabRecord } from './tab-types.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron-serve.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { showContextMenu } from './context-menu.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
- * again in preload/fetch-route.ts rather than imported, for the reason
+ * again in preload/routed/fetch.ts rather than imported, for the reason
  * `appTabArgsFor` gives below; within this file it is one constant. */
 const APP_TAB_FLAG = '--orivon-app-tab'
 
@@ -76,7 +77,7 @@ export function partitionChanged (
 /** ADR-0017's `fetch()`-routing gate: a value fixed at `WebContentsView`
  * construction (via `webPreferences.additionalArguments`, read synchronously
  * off `process.argv` -- the same mechanism `newtab.ts` already uses for its
- * own dashboard-URL check) tells `src/preload/fetch-route.ts` whether to
+ * own dashboard-URL check) tells `src/preload/routed/fetch.ts` whether to
  * install its routed `fetch` override, with NO async round trip to race
  * against a page's own first script. `Broker.app.isRegisteredSync`
  * (`../broker/index.ts`) is what makes this possible without one: it reads
@@ -84,7 +85,7 @@ export function partitionChanged (
  * no IPC. Returns undefined (no flag) for anything with no derivable origin
  * or no broker to ask, same fallback shape as `partitionForTarget` -- an
  * ordinary tab must never carry this flag by accident. The literal
- * '--orivon-app-tab' is duplicated in fetch-route.ts rather than imported
+ * '--orivon-app-tab' is duplicated in routed/fetch.ts rather than imported
  * (src/preload/README.md forbids importing anything under src/main/ except
  * ./channels.ts, and this is not a channel) -- the same choice
  * '--orivon-newtab-url=' already made. */
@@ -97,7 +98,12 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
 
 /** Every tab's webPreferences, with the standard, non-negotiable ones
  * (contextIsolation/sandbox/no Node integration/webSecurity) -- shared by
- * makeTabView() and a popup's own, so no tab can drift from them (Rule 3). */
+ * makeTabView() and a popup's own, so no tab can drift from them (Rule 3).
+ *
+ * `webviewTag` only for a registered app's tab (ADR-0039): the element is
+ * inert everywhere else, and even there every attach is decided by
+ * `../embed/embed-host.ts` against the live `web.embed` grant, so turning
+ * the tag on grants nothing by itself. */
 export function tabWebPreferences (preload: string, partition: string | undefined, additionalArguments?: string[]): WebPreferences {
   return {
     preload,
@@ -106,7 +112,8 @@ export function tabWebPreferences (preload: string, partition: string | undefine
     contextIsolation: true,
     sandbox: true,
     nodeIntegration: false,
-    webSecurity: true
+    webSecurity: true,
+    webviewTag: additionalArguments?.includes(APP_TAB_FLAG) === true
   }
 }
 
@@ -294,6 +301,14 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
       return
     }
     if (host.window !== undefined && confirmLeavePage(host.window)) event.preventDefault()
+  })
+  // Chromium knows no `ipfs:` scheme and would offer a link to one to the
+  // OS; it loads here instead, from the URL its protocol serves it at.
+  wc.on('will-navigate', (event) => {
+    const served = BUILTIN_ADDRESSES.servedUrl(event.url)
+    if (served === undefined) return
+    event.preventDefault()
+    void wc.loadURL(served)
   })
   wc.on('context-menu', (_event, params) => {
     if (host.window === undefined) return

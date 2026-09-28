@@ -133,7 +133,8 @@ checkpoint: the run builds the mechanism and a deliberately plain, unstyled surf
    not author an ADR.
 3. **Any security tradeoff**, and explicitly: the dev grant path's gating, certificate handling and
    trust roots, and anything that would relax an existing boundary.
-4. **Any new dependency** -- license, provenance and pure-JS status reviewed first (Rules 6 and 8).
+4. **Any new dependency** -- license, provenance and native-module status reviewed first
+   (Rules 6 and 8).
 5. **Three consecutive failed attempts at one item**, or a test that can only pass by weakening its
    assertion. Write the reasoning into the test; never bend it to the guess.
 6. **An e2e that needs a real Electron window and cannot attach.** Known, unresolved risk with the

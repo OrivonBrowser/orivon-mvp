@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { nodeFs } from '../node-fs-adapter.js'
 
 // `nodeFs(...).open` -- the real fd-backed half of orivon.fs.open
-// (fs-capability.ts's own createFsCapability parks it there; this is the
+// (capabilities/fs.ts's own createFsCapability parks it there; this is the
 // raw-I/O layer underneath, same split as readFile/writeFile/mkdir/etc. in
 // node-fs-adapter.test.ts). Every test here opens a REAL file under a real
 // temp directory -- confinement, the grant check and the handle table are

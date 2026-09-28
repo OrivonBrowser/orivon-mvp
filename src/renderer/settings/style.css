@@ -135,6 +135,15 @@ button:focus-visible {
   border: 1px solid color-mix(in srgb, var(--wwarn) 40%, transparent);
 }
 
+/* The permission this row grants, at a glance -- ../grant-icons.ts,
+   one glyph per CapabilityKind/pick kind/notifications. */
+.grant-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--wink-dim);
+}
+
 .permission-message {
   flex: 1;
   min-width: 0;

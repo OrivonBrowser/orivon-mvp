@@ -1,0 +1,29 @@
+/* The Web3 Score shield's level colours -- shared between the toolbar
+   (style.css @imports this) and the site-info popup
+   (site-info/style.css keeps a literal copy, matching this codebase's
+   "copy tokens literally, never share a stylesheet across entries"
+   convention): the shield's colours must never drift between the two
+   surfaces that draw it, since src/renderer/web3-shield.ts is the one
+   module both build it from.
+
+   Theme-invariant, like --wok/--winsecure/--waccent already are (style.css):
+   a level's colour is not a light/dark-mode design choice, it is the fact
+   the level names. The shield keeps its outline shape at every level; only
+   its stroke takes the colour. */
+
+:root {
+  --wlevel1: #b91c1c; /* red    -- Website L1, Delivery D1 */
+  --wlevel2: #ea580c; /* orange -- Website L2 only */
+  --wlevel3: #ca8a04; /* yellow -- Website L3, Delivery D2 */
+  --wlevel4: #15803d; /* green  -- Website L4, Delivery D3 */
+}
+
+/* No data-level (a new tab, or a query still in flight): the plain grey
+   outline, through the `stroke: currentColor` every .pillbtn icon gets.
+   The colour sits on the svg itself, so a hovered button's own colour
+   change never repaints a level. */
+.web3-shield { transition: color 500ms ease; }
+.web3-shield[data-level='1'] { color: var(--wlevel1); }
+.web3-shield[data-level='2'] { color: var(--wlevel2); }
+.web3-shield[data-level='3'] { color: var(--wlevel3); }
+.web3-shield[data-level='4'] { color: var(--wlevel4); }

@@ -11,7 +11,8 @@ That is not an accident, and it is worth understanding before you add a dependen
 macOS are supported from day one via *run from source* rather than signed installers, which
 sidesteps SmartScreen and Gatekeeper without buying certificates. If `npm install` ever needs
 `node-gyp`, run-from-source becomes a worse wall than the certificate it was meant to avoid. So
-**pure-JS dependencies only** ([`CLAUDE.md`](../../CLAUDE.md) Rule 8), enforced automatically;
+**no native modules in Orivon's own dependencies** ([`CLAUDE.md`](../../CLAUDE.md) Rule 8), enforced
+automatically;
 see `check:natives` below.
 
 ## Install and run
@@ -151,13 +152,14 @@ name) needs neither variable below: in every build, `npm start` and a packaged o
 `<link rel="orivon-manifest">` hint raises the consent prompt, and the origin is granted without
 being installed (`src/main/install/grant-without-install.ts`). The grants last the session.
 
-Two environment variables, both off unless you set them. `npm run dev` sets the first; nothing
-sets the second for you.
+Three environment variables, all off unless you set them. `npm run dev` sets the first; nothing
+sets the other two for you.
 
 | Variable | What it turns on |
 |---|---|
-| `ORIVON_DEV_ORIGINS=1` | Developer mode (`src/main/dev/dev-mode.ts`): a `.eth` name from the file below may be granted capabilities **without being installed**, over `http:` only, and Inspect Element appears in the context menu. It is also the master switch for the row below |
+| `ORIVON_DEV_ORIGINS=1` | Developer mode (`src/main/dev/dev-mode.ts`): a `.eth` name from the file below may be granted capabilities **without being installed**, over `http:` only, and Inspect Element appears in the context menu. A loopback origin or such a `.eth` name that serves a readable `/.well-known/orivon-ddoc.json` is marked DDOC, so Website Level 2, since a local address has no domain record to anchor its tree; the Web3 Score page says it is marked only because of developer mode (`src/main/dev/local-ddoc.ts`, `ADR-0029`). It is also the master switch for the two rows below. `src/main/index.ts` additionally turns off Chromium's HTTP cache for the whole session (`src/main/shell/dev-switches.ts`), so a code change to how a `.eth` response is served is never masked by a stale disk-cached response across a restart -- `npm start` keeps a real browser's caching |
 | `ORIVON_ETH_NAMES_FILE=<path>` | A JSON file of `{"name.eth": port}` that `src/main/dev/eth-resolver.ts` reads and `src/main/verifier/` turns into Chromium DNS overrides, ahead of every other `.eth` name, so `http://name.eth` reaches `127.0.0.1:<port>`; typing such a name in the address bar opens it over `http:`. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set. `orivon-ports`' `orivon-port names` writes this file, and its `serve` and `run` rewrite it from every recipe on each start; nothing points the shell at it for you, and the shell reads it once, at its own startup |
+| `ORIVON_SCORE_LEVELS_FILE=<path>` | A JSON file of `{"https://origin": {"website": 1-4, "delivery": 1-3}}` that `src/main/dev/score-levels.ts` reads: forces the Web3 Score shield's displayed Website level and/or Delivery level for that origin, for previewing Level 3/4 before a real Web3 Score provider or peer-to-peer fetching exist (`ADR-0006`, `ADR-0037`). Either field may be omitted. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set; a bad entry is dropped and logged, never thrown. Every accepted override is logged loudly on startup, the same way the names file above is |
 
 A name in that file is also declared a **secure context**, which is not cosmetic. Its origin is
 plain `http:` on a non-loopback host, and Chromium judges trustworthiness by the origin, not by
@@ -181,13 +183,34 @@ Settings shows what it is doing.
 | Variable | What it does |
 |---|---|
 | `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
-| `ORIVON_LIVE_ETH=1` | Runs `src/verifier-host/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
+| `ORIVON_LIVE_ETH=1` | Runs `src/protocols/verifier-host/light-client/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
 | `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
 
 Each release ships a checkpoint for the light client, refreshed with
 `node scripts/refresh-eth-checkpoint.mjs --write` before tagging: it refuses unless two beacon APIs
 agree. An install keeps a newer one of its own after every sync, and refuses any checkpoint older
 than 14 days.
+
+---
+
+## The welcome screen
+
+A launch can open on a full-window welcome screen ("The browser Web3 deserves.", an "Enter
+Orivon" button) over the dashboard; clicking through reveals the dashboard. `ORIVON_INTRO`
+picks when, and an unset variable means `once`.
+
+| `ORIVON_INTRO` | Behaviour |
+|---|---|
+| `once` | Shows until the person has clicked through, then never again for that profile: the click writes `<userData>/intro.json`. What `npm start` and a packaged build do |
+| `always` | Shows on every launch, and never writes `intro.json`, so a dev launch does not use up the showing a later `npm start` on the same profile is owed. What `npm run dev` does |
+| `off` | Never shows. `test/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+
+Any other value is treated as `once`, with a line on the console.
+
+`npm run dev -- --skip-intro` sets `off` for that launch. `npm run dev --skip-intro` does the same
+today, but npm warns that it will stop working, so use the first form. An `ORIVON_INTRO` already
+in the environment is used as it stands, and the flag beats it. To see the `once` showing again
+on a profile that has passed it, delete `intro.json` from the profile directory.
 
 ---
 
@@ -202,7 +225,7 @@ measured in daily-driver hours.
 the metric and their telemetry must work identically. Two constraints follow, and neither is
 optional:
 
-1. Pure-JS dependencies only (above).
+1. No native modules in Orivon's own dependencies (above).
 2. **No platform-specific paths.** All storage goes through `app.getPath('userData')`, never a
    hardcoded XDG path ([`ADR-0003`](../decisions/ADR-0003-local-first-storage.md)). A hookify
    rule warns on hardcoded storage paths.

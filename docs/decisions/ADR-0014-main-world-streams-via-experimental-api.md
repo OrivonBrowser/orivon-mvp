@@ -136,7 +136,7 @@ weakening it.
 - Every app's `orivon.net.*` calls become dependent, transitively, on Electron continuing to
   ship `executeInMainWorld` in some working form. This is stated openly rather than hidden
   behind the `@experimental` tag going unread. It is the actual risk this ADR exists to record.
-- `src/preload/orivon-surface.ts`, `socket-bridge.ts`, `socket-port.ts` and
+- `src/preload/surface/orivon.ts`, `socket-bridge.ts`, `ports/socket.ts` and
   `main-world-socket.ts` (the `broker` stream's preload surface, `docs/development/
   parallel-work.md`'s ownership map) are the code this decision governs.
 - No change to `ADR-0008`'s handle shape, `handle-contracts.md`'s wire protocol, or

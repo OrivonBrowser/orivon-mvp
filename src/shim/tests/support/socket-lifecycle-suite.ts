@@ -1,12 +1,12 @@
 // The net.Socket lifecycle checks, defined once and run twice: under
-// vitest's own `node:stream` (node-net-socket.test.ts) and under
+// vitest's own `node:stream` (net/tests/socket.test.ts) and under
 // readable-stream 3, the `stream` the renderer actually gets
-// (node-net-socket-rs3.test.ts, which mocks 'stream' to stream-browserify).
+// (net/tests/socket-rs3.test.ts, which mocks 'stream' to stream-browserify).
 // readable-stream 3 defaults autoDestroy to false, so a lifecycle that only
 // holds under node:stream is the bug these exist to catch.
 
 import { describe, expect, it, vi } from 'vitest'
-import { Socket, kDial } from '../../node-net-socket.js'
+import { Socket, kDial } from '../../net/socket.js'
 import { createFakeTcpSocket, type FakeTcpSocket } from './fake-tcp-socket.js'
 
 async function connected (fake: FakeTcpSocket, opts: { allowHalfOpen?: boolean } = {}): Promise<Socket> {

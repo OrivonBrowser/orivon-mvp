@@ -13,7 +13,7 @@ const PAGE_BUFFER_SOURCE = normalizePath(resolve(root, 'src/preload/page-buffer.
 
 /** One expression evaluating to the `buffer` package's exports: the copy the shim's own `buffer` module imports, bundled whole. */
 async function bufferPackageExpression (): Promise<string> {
-  const entry = createRequire(resolve(root, 'src/shim/node-buffer.ts')).resolve('buffer/')
+  const entry = createRequire(resolve(root, 'src/shim/polyfills/buffer.ts')).resolve('buffer/')
   const result = await build({
     configFile: false,
     logLevel: 'warn',
@@ -94,12 +94,12 @@ export default defineConfig({
     },
     build: {
       // Two processes: the shell, and the verifier host it forks as a
-      // utility process (src/verifier-host/). Keys are the output names in
+      // utility process (src/protocols/verifier-host/). Keys are the output names in
       // out/main/, which src/main/verifier/ forks by name.
       rollupOptions: {
         input: {
           index: resolve(root, 'src/main/index.ts'),
-          'verifier-host': resolve(root, 'src/verifier-host/entry.ts')
+          'verifier-host': resolve(root, 'src/protocols/verifier-host/entry.ts')
         }
       },
       // Dependencies stay external, loaded from node_modules at run time,
@@ -142,14 +142,15 @@ export default defineConfig({
           shell: resolve(root, 'src/preload/shell.ts'),
           newtab: resolve(root, 'src/preload/newtab.ts'),
           settings: resolve(root, 'src/preload/settings.ts'),
-          'site-info': resolve(root, 'src/preload/site-info.ts')
+          'site-info': resolve(root, 'src/preload/site-info.ts'),
+          embed: resolve(root, 'src/preload/embed.ts')
         }
       },
       // BUG (found 2026-08-28, real regression): `shell.ts` and
       // `newtab.ts` both import from `./channels.js` -- the first time two
       // preload entries had shared a local import. (No longer the sole
       // example: build step 2's IPC task has `app.ts` share `./channels.js`
-      // too, plus `./orivon-surface.js` with `newtab.ts`. isolatedEntries
+      // too, plus `./surface/orivon.js` with `newtab.ts`. isolatedEntries
       // already covers both cases the same way.) Without isolatedEntries,
       // Rollup's default multi-entry
       // behaviour extracts that shared import into `chunks/channels-
@@ -180,13 +181,16 @@ export default defineConfig({
       // ordinary tab content loaded into a tab's own WebContentsView with
       // the unprivileged (well, narrowly scoped) newtab preload -- see
       // src/main/tabs.ts's createTab(). `settings` and `site-info` are the
-      // two toolbar popups (src/main/permissions/popover-view.ts). Every
-      // entry must live inside `root` above (src/renderer), not beside
-      // it, or the dev server won't serve it at an ordinary path.
+      // two toolbar popups (src/main/permissions/popover-view.ts). `intro` is
+      // the welcome screen, a full-window view with no preload
+      // (src/main/shell/intro-view.ts). Every entry must live inside `root`
+      // above (src/renderer), not beside it, or the dev server won't serve
+      // it at an ordinary path.
       rollupOptions: {
         input: {
           index: resolve(root, 'src/renderer/index.html'),
           newtab: resolve(root, 'src/renderer/newtab/index.html'),
+          intro: resolve(root, 'src/renderer/intro/index.html'),
           settings: resolve(root, 'src/renderer/settings/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html')
         }

@@ -6,7 +6,7 @@ Forty-odd documents. Pick one of the three tracks below rather than reading them
 
 | | |
 |---|---|
-| 1. [`mvp-scope.md`](mvp-scope.md) | What the MVP proves, the metric that judges it, the four journeys, and what is deliberately out |
+| 1. [`scope.md`](scope.md) | What Orivon Browser proves first, the metric that judges it, the four journeys, and what is not built yet |
 | 2. [`architecture/capability-api.md`](architecture/capability-api.md) | The highest-care artefact here. What apps program against |
 | 3. [`architecture/handle-contracts.md`](architecture/handle-contracts.md) | What a `TcpSocket`, `FileHandle` or `IdentityHandle` actually does: backpressure, close semantics, errors, revocation |
 
@@ -34,7 +34,7 @@ is where dates and decision IDs live.
 | | |
 |---|---|
 | [`ADR-0001`](decisions/ADR-0001-flagship-app-bittorrent-streaming.md) | BitTorrent streaming as the flagship. **Withdrawn**: kept as the case for a torrent app, which is an idea |
-| [`ADR-0002`](decisions/ADR-0002-capability-api-is-the-durable-asset.md) | The capability API is the durable asset; WASM deferred, not cancelled |
+| [`ADR-0002`](decisions/ADR-0002-capability-api-is-the-durable-asset.md) | The capability API is the durable asset; the WASM runtime deferred, not cancelled |
 | [`ADR-0003`](decisions/ADR-0003-local-first-storage.md) | Local-first storage, per-origin isolation, no Orivon server for user data |
 | [`ADR-0004`](decisions/ADR-0004-telemetry.md) | Telemetry: opt-out, disclosed, self-hosted, inspectable |
 | [`ADR-0005`](decisions/ADR-0005-apps-are-url-addressed-not-bundled.md) | Apps are URL-addressed and cached, never bundled |
@@ -103,7 +103,7 @@ Four reversals worth knowing about, because they are the ones people still repea
 | Question | Read |
 |---|---|
 | What is Orivon, long-term? | [orivon-docs](https://github.com/OrivonBrowser/orivon-docs), canonical, deployed at docs.orivonstack.com. Not duplicated here |
-| What is in the MVP? | [`mvp-scope.md`](mvp-scope.md) |
+| What is in this version? | [`scope.md`](scope.md) |
 | What do apps program against? | [`architecture/capability-api.md`](architecture/capability-api.md) |
 | What does a handle do? | [`architecture/handle-contracts.md`](architecture/handle-contracts.md) |
 | What identifies an app's content, and how is a change to it noticed? | [`architecture/bundle-hash.md`](architecture/bundle-hash.md), [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) |

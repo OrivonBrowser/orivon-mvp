@@ -18,6 +18,7 @@ import type { MessageBoxOptions } from 'electron'
 import { describeGrantRequest } from './grant-prompt-render.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { ConsentPrompt } from './request-grant.js'
+import type { ScoreLevel } from '../../trust/website-level.js'
 
 /**
  * Builds the real ConsentPrompt request-grant-subsystem.ts wires in.
@@ -26,8 +27,12 @@ import type { ConsentPrompt } from './request-grant.js'
  * calls consent() after its own fetch of the same manifest already
  * succeeded, but a person must never be asked to approve a grant this
  * dialog cannot actually describe.
+ *
+ * `levelOverrideFor` defaults to never overriding (ADR-0037); the real
+ * `../dev/score-levels.js` function is wired in at
+ * `./request-grant-subsystem.ts`.
  */
-export function createGrantPrompt (broker: Broker): ConsentPrompt {
+export function createGrantPrompt (broker: Broker, levelOverrideFor: (origin: string) => ScoreLevel | undefined = () => undefined): ConsentPrompt {
   return async (origin, capability, patterns) => {
     let manifest
     try {
@@ -36,7 +41,7 @@ export function createGrantPrompt (broker: Broker): ConsentPrompt {
       return false
     }
 
-    const content = describeGrantRequest(origin, manifest, capability, patterns)
+    const content = describeGrantRequest(origin, manifest, capability, patterns, levelOverrideFor(origin))
     const options: MessageBoxOptions = {
       type: content.warning ? 'warning' : 'question',
       buttons: ['Allow', 'Deny'],

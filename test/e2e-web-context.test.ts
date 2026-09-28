@@ -62,7 +62,8 @@ function testManifest (): Manifest {
 
 it(
   'opens an isolated context at the granted origin, with no orivon.*, no cookies, an ungranted fetch refused, ' +
-  'navigation refused, a reopened partition empty, and revocation rejecting a pending closed with \'revoked\'',
+  'navigation refused, a reopened partition empty, a context still served after a main-process garbage collection, ' +
+  'and revocation rejecting a pending closed with \'revoked\'',
   async () => {
     await runPhase('web.context e2e', async (check) => {
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
@@ -150,7 +151,40 @@ it(
         check('localStorage set before close is readable within that same context', reopen.before === 'set-before-close', JSON.stringify(reopen))
         check('the partition is empty after a close-and-reopen -- localStorage is gone', reopen.after === null, JSON.stringify(reopen))
 
-        // ---- (3) revoking the grant rejects a PENDING closed with 'revoked'.
+        // ---- (3) a context is still served after the main process collects garbage.
+        // Only the host's own record keeps a context's view alive. Collecting the view
+        // destroys the context, which is timing-dependent in ordinary use, so this forces
+        // a full collection between opening the context and using it.
+        await evaluateRetrying(view, async () => {
+          const orivon = (window as unknown as {
+            orivon: { web: { openContext: (origin: string) => Promise<unknown> } }
+          }).orivon
+          ;(window as unknown as { __orivonE2eContext: unknown }).__orivonE2eContext = await orivon.web.openContext('https://example.com')
+          return true
+        }, OPEN_TIMEOUT_MS)
+        await app.evaluate(() => {
+          const load = (process as unknown as { mainModule: { require: (id: string) => unknown } }).mainModule.require
+          ;(load('node:v8') as typeof import('node:v8')).setFlagsFromString('--expose-gc')
+          ;((load('node:vm') as typeof import('node:vm')).runInNewContext('gc') as () => void)()
+        })
+        const afterGc = await evaluateRetrying(view, async () => {
+          const context = (window as unknown as { __orivonE2eContext: {
+            evaluate: (script: string) => Promise<unknown>
+            close: () => Promise<void>
+          } }).__orivonE2eContext
+          const fetchResult = await context.evaluate(
+            'fetch(\'https://example.com/\').then(r => ({status: r.status})).catch(e => ({threw: String(e && e.message)}))'
+          )
+          await context.close()
+          return fetchResult
+        }, OPEN_TIMEOUT_MS)
+        check(
+          'a context opened before a main-process garbage collection still gets its refused fetch answered (404)',
+          (afterGc as { status?: number }).status === 404,
+          JSON.stringify(afterGc)
+        )
+
+        // ---- (4) revoking the grant rejects a PENDING closed with 'revoked'.
         await evaluateRetrying(view, async () => {
           const orivon = (window as unknown as {
             orivon: { web: { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
@@ -185,7 +219,7 @@ it(
           JSON.stringify(closedOutcome)
         )
 
-        // ---- (4) pins the contract's own positional-origin shape (capability-api.ts's
+        // ---- (5) pins the contract's own positional-origin shape (capability-api.ts's
         // `openContext(origin: string, options?: WebContextOptions)`): the OLD, WRONG
         // single-object call this file itself used to make must be refused, not silently
         // accepted as `{ origin: undefined }` (0faed54's own bug).

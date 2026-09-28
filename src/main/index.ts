@@ -3,7 +3,9 @@ import { createShellWindow } from './shell/window.js'
 import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { BookmarkStore } from './browsing/bookmarks.js'
+import { devOnlySwitches } from './shell/dev-switches.js'
 import { chromeUserAgent } from './shell/user-agent.js'
+import { planIntro } from './shell/intro-state.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
 // this machine first -- the window-visibility bug it was chasing is really
@@ -31,6 +33,11 @@ process.on('unhandledRejection', (reason) => { exitOnUncaught('unhandled promise
 // it is set ahead of the first session. Its own default carries `Electron/`
 // and `orivon/` tokens, which is-electron checks and sign-in pages refuse.
 app.userAgentFallback = chromeUserAgent(process.versions.chrome, process.platform)
+
+// Command-line switches apply only if set before app.whenReady(), same as
+// verifierSubsystem's own beforeReady -- this one is not `.eth`-specific
+// (dev-switches.ts), so it lives here rather than there.
+for (const flag of devOnlySwitches()) app.commandLine.appendSwitch(flag)
 
 // Subsystems register in subsystems.ts (the append point), never here.
 function report (failures: SubsystemFailure[]): void {
@@ -64,7 +71,9 @@ void app.whenReady().then(async () => {
     return
   }
 
-  createShellWindow(ctx)
+  // Only this first window can open on the welcome screen: the macOS
+  // 'activate' below recreates a window in a process that has already shown it.
+  createShellWindow(ctx, await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')))
   app.on('activate', () => {
     if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx)
   })

@@ -67,7 +67,9 @@ export async function requestGrant (
   // "does a restored grant still fit the current manifest" check and this
   // file's own sibling's real grant call, and a blanket refusal there once
   // silently broke both -- see decideGrantRequest's own doc for the finding.
-  if (request.capability === 'web.context') return false
+  // ADR-0039's `web.embed` keeps the same one door: the install-consent
+  // dialog, never a dynamic request.
+  if (request.capability === 'web.context' || request.capability === 'web.embed') return false
 
   let manifest
   try {

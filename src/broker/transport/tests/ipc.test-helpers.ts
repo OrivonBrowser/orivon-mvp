@@ -1,5 +1,5 @@
 // Shared fixtures for ipc.test.ts, ipc-rate-limit.test.ts and
-// socket-relay.test.ts -- all three test handleControlRequest/
+// transport/relay/tests/socket.test.ts -- all three test handleControlRequest/
 // createSocketRelay against the same Broker/ControlEvent/PortLike/
 // FailableTcpSocket shapes (code-guidelines.md Rule 3: the reason for reuse
 // is that all three exercise the same seams, not a stylistic preference).
@@ -12,7 +12,7 @@
 
 import { vi } from 'vitest'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from '../ipc.js'
-import { createPortRegistry } from '../port-registry.js'
+import { createPortRegistry } from '../relay/port-registry.js'
 import type { Datagram, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
 import type { CloseReason, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 import type { RequestEnvelope } from '../../../contracts/ipc.js'
@@ -52,7 +52,7 @@ export function never<T> (): Promise<T> {
  */
 export function fakePort (): PortLike & {
   readonly sent: unknown[]
-  /** The transfer list passed alongside each `sent` message, same index -- `undefined` where none was given. Only ever non-empty for an AcceptedMessage (server-relay.test.ts). */
+  /** The transfer list passed alongside each `sent` message, same index -- `undefined` where none was given. Only ever non-empty for an AcceptedMessage (transport/relay/tests/server.test.ts). */
   readonly transfers: Array<readonly unknown[] | undefined>
   emit: (message: unknown) => void
   simulateClose: () => void
@@ -94,7 +94,7 @@ export function fakeTransport (pair: PortPair): PortTransport {
  * A PortTransport that mints a FRESH `fakePortPair()` on every
  * `createPortPair()` call, tracking each one in order. `fakeTransport`'s
  * single fixed pair is not enough wherever a test drives more than one port
- * at once -- server-relay.test.ts's own server port plus one fresh pair per
+ * at once -- transport/relay/tests/server.test.ts's own server port plus one fresh pair per
  * accepted connection, distinct from each other and from the server's.
  */
 export function fakeMultiTransport (): PortTransport & { readonly pairs: ReadonlyArray<ReturnType<typeof fakePortPair>> } {
@@ -245,7 +245,7 @@ export interface FakeTcpServer {
 /**
  * ./fakeTcpSocket's/fakeUdpSocket's counterpart for a `FailableTcpServer`.
  *
- * `highWaterMark: 0` on `connections`, matching net-capability.ts's own
+ * `highWaterMark: 0` on `connections`, matching capabilities/net.ts's own
  * `entry.connections` exactly (handle-contracts.md's "TcpServer" section) --
  * a test drives it item by item via `acceptOne`, the same one-per-real-read
  * shape `createAcceptPump` (./accept-pump.js) expects on the other end.

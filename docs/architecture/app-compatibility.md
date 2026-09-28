@@ -14,16 +14,25 @@ one for free; apps that don't, don't.
 | **3** | Native / JVM / Qt desktop app | **must rewrite** | bundle a supervised helper process | Bisq, Monero GUI, Electrum, Sparrow, Wasabi |
 | **4** | Does not exist yet | **must write** | **must write** | torrent streaming in a browser |
 
-## What this implies for the MVP
+**What qualifies an app is the environment its code runs in, not the language it was written
+in** ([`ADR-0036`](../decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)).
+In this build that environment is Node's, as the shim reproduces it. Node runs WebAssembly
+natively, and so does an Orivon app's renderer, so a component compiled to WebAssembly from
+Rust, C or Go qualifies on the same terms as JavaScript. A native addon does not carry over, and
+is replaced per library (§Where WASM fits). Where Orivon's Node environment falls short of real
+Node, [`compatibility-matrix.md`](../planning/compatibility-matrix.md) lists the gap, and each
+gap is taken case by case.
 
-**The MVP's apps are tier 2.** Build step 5 ports Node.js and Electron desktop apps (FreeTube,
+## What this implies for this version
+
+**This version's apps are tier 2.** Build step 5 ports Node.js and Electron desktop apps (FreeTube,
 Element, AirGap Vault, ASGARDEX), each its own unmodified frontend plus one bridge file, in
 `orivon-ports`. Tier 2 is where the thesis is most literal: software that had to be a desktop app
 because a web page could not reach the network or the disk.
 
 **Nostr would be tier 1, at ~1 day.** Orivon would inject `window.nostr` (NIP-07) backed by
 `orivon.id`, and every existing Nostr web client would work unmodified with no extension
-installed. It is an idea, not a build step (`../mvp-scope.md` §LATER).
+installed. It is an idea, not a build step (`../scope.md` §LATER).
 
 **Mastodon was considered and rejected** (ADR-0001). Its *client* is tier 1, but the system
 is not trustless: identity is `@user@instance`, owned by the instance admin, and the feed
@@ -36,20 +45,20 @@ has. It is an idea, not a build step; `../planning/torrent-app.md` keeps what is
 Reuse is available even there: `webtorrent-desktop` is MIT-licensed Electron with a working
 player UI whose components can be lifted.
 
-**Bisq is tier 3** and is out of the MVP. Its UI is JavaFX, so nothing is reusable: it needs
+**Bisq is tier 3** and is not in this version. Its UI is JavaFX, so nothing is reusable: it needs
 both a new frontend *and* a bundled JVM, for an app used episodically rather than daily.
 
 > **A fourth path for tier 3, parked:**
 > [`../planning/container-apps-opportunity.md`](../planning/container-apps-opportunity.md).
 > Run the app unmodified inside a Linux container and stream its windows into a tab, so tier 3
 > costs an image build instead of a rewrite. It would also reach the tier-2 wallet cluster that
-> waits on `hid` (below). Post-MVP, unverified, and it reopens `subprocess`. But the
+> waits on `hid` (below). Not built, unverified, and it reopens `subprocess`. But the
 > "must rewrite" column above is not the only option, and that document says what it would cost.
 
 **What tier 2 actually reaches in v0.** Ledger Live, Trezor Suite and Frame are
 **hardware-wallet applications requiring `hid`/USB**, which `capability-api.md` excludes from v0
 entirely, for every tier. The apps build step 5 ports are the v0 examples; the wallet cluster
-waits on `hid`, a post-MVP capability.
+waits on `hid`, a capability not built yet.
 
 **"Swap Node calls for the shim" understates the shim's real surface.** Running `webtorrent` in a
 sandboxed renderer needs `Buffer`, `stream`, `events`, `crypto`, `path`, `os` and `process`
@@ -104,11 +113,20 @@ the design has failed.
 
 ## Where WASM fits
 
-Tier 3 is out of reach of the `orivon-node-shim` *and* out of reach of WASM: those apps would
-need full recompilation plus threads plus a GUI toolkit. So WASM is not the answer to tier 3.
+**Inside an app, today.** WebAssembly an app calls from its own JavaScript runs in its renderer,
+with no host of Orivon's: the served CSP allows it, and `test/e2e-served-csp.test.ts` proves it.
+It reaches the network and disk the way the app's JavaScript does, through `orivon.*` and the
+grants the app holds. AirGap Vault signs in it, Element's encryption is bundled as it, and most of
+ASGARDEX's largest chunk is WebAssembly. A library that exists only as a native addon often has a
+WebAssembly build (`sql.js` for `better-sqlite3`), which is the usual substitute.
 
-`orivon-runtime`'s real jobs are narrower and both post-MVP (ADR-0002): containment for
-untrusted third-party code, and portability to mobile.
+**Not as a way to reach tier 3.** Those apps would need full recompilation plus threads plus a
+GUI toolkit, so WebAssembly does not turn a Qt or JVM app into a tier-2 app.
+
+**Not as a host, in this build.** `orivon-runtime`, a WASI host that would run WebAssembly with no
+JavaScript around it, is not built yet (ADR-0002). Its real jobs are narrower: containment for
+untrusted third-party code, and portability to mobile. A standalone WASI program has nothing to
+host it today (`compatibility-matrix.md` Table 4).
 
 ## Licensing caution
 

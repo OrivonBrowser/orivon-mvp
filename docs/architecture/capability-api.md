@@ -7,7 +7,7 @@
 > surface *is*.
 >
 > Per ADR-0002 this is the highest-care artefact in the repository. The Electron shell is
-> disposable; **this interface is not.** Every app ever written for Orivon codes against it,
+> tied to one engine; **this interface is not.** Every app ever written for Orivon codes against it,
 > and it must survive the swap from Node → Wasmtime → Chromium/Mojo underneath.
 >
 > `orivonApiVersion: 0` explicitly means unstable: breaking changes are permitted while
@@ -105,22 +105,33 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
   "entry": "index.html",
   "assets": ["style.css", "app.js"],  // every other frontend file; omit if entry is the whole app
   // NOTE: "publisherKey" is CUT from v0. See "Signing is not in
-  // v0" below. Every month-1 app is unsigned; integrity rests on hash-pinning, with
+  // v0" below. Every v0 app is unsigned; integrity rests on hash-pinning, with
   // the site's published hash tree (/.well-known/orivon-ddoc.json) shown as DDOC evidence.
 
   "capabilities": {
     "net": {
       "tcp": {
-        "connect": ["*:*"],           // host:port patterns, "*" wildcard
-        "listen":  ["6881-6889"]      // port ranges
+        "connect": ["*:*"],                       // host:port patterns, "*" wildcard
+        "listen":  { "network": ["6881-6889"] }    // port ranges, split by who may reach them
+                                                    // (ADR-0034): "local" (this device only) or
+                                                    // "network" (the local network, and the
+                                                    // internet if forwarded); a "network" grant
+                                                    // also covers "local", so an app never needs
+                                                    // both to get the wider reach
       },
-      "udp": { "bind": ["6881-6889"], "send": ["*:*"] },
+      "udp": { "bind": { "network": ["6881-6889"] }, "send": ["*:*"] },
       "https": { "connect": ["*:*"] }   // TLS terminated by the broker (ADR-0017); "*:*" is
                                          // UNLIMITED HTTPS and must render as visibly wide as
                                          // tcp.connect's own "*:*" does (A100)
     },
     "fs": { "quotaBytes": 53687091200 },
     "id": { "curves": ["secp256k1"] },
+    "web": {
+      "contexts": ["https://www.youtube.com"],  // ADR-0019: run code as that site, in a private, empty
+                                                 // session that is never displayed; exact origins only
+      "embed": { "origins": ["*"] }             // ADR-0039: show a site inside the app's own page, in a
+                                                 // <webview>; exact origins, or "*" for any site on the web
+    },
     "media": { "camera": true, "microphone": true },  // ADR-0032; omit a flag to not ask for it
     "clipboard": { "read": true },                    // ADR-0032
     "secrets": {},                                    // ADR-0033; presence alone is the ask
@@ -128,9 +139,14 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
                                        // (first registrant is default; conflicts → user chooses)
   },
 
-  "consentGranularity": "all-or-nothing"  // omitting this line has the same effect; see below.
-                                           // "per-capability" lets the person accept some of the
-                                           // capabilities above and refuse others.
+  "consentGranularity": "all-or-nothing",  // omitting this line has the same effect; see below.
+                                            // "per-capability" lets the person accept some of the
+                                            // capabilities above and refuse others.
+  "crossOriginIsolated": true              // serve the app's documents cross-origin isolated, which
+                                            // turns on SharedArrayBuffer for a WebAssembly component
+                                            // built with threads (ADR-0036); omit it unless needed,
+                                            // since an isolated page loses window.opener from its
+                                            // popups and sends no credentials with cross-origin loads
 }
 ```
 
@@ -171,7 +187,7 @@ splitting the choice per capability would ask an author to answer a question the
 actually distinguish.
 
 `docs/open-questions.md` A138 carries the fuller argument. The loader
-parses the field (`src/loader/manifest.ts`), and the install-time consent dialog reads it:
+parses the field (`src/loader/manifest/manifest.ts`), and the install-time consent dialog reads it:
 `src/main/consent/install-consent.ts`'s `requestInstallConsent` branches its whole staged Allow-all /
 Choose-individually / Deny-all sequence on `manifest.consentGranularity === 'per-capability'`.
 Three update-time prompts (reconsent, capability-widening, rollback) do not yet honour it; see
@@ -233,8 +249,9 @@ orivon.net.connectSecure({ host, port, ...tls }) // => Promise<SecureTcpSocket> 
                                           //   in the broker (ADR-0017) under the app's own
                                           //   Node TLS options; connect()'s handle plus the
                                           //   handshake; a SEPARATE grant (https.connect)
-orivon.net.listen({ port })          // => Promise<TcpServer>   // .connections: ReadableStream<TcpSocket>
-orivon.net.udpBind({ port })         // => Promise<UdpSocket>
+orivon.net.listen({ port, scope })   // => Promise<TcpServer>   // .connections: ReadableStream<TcpSocket>
+                                      //   scope: 'local' | 'network' (ADR-0034), default 'local'
+orivon.net.udpBind({ port, scope })  // => Promise<UdpSocket>   // same scope, same default
 
 // --- fs, rooted at the app's files directory ---
 orivon.fs.readFile(path)             // => Promise<Uint8Array>  byte-oriented, no encoding option (A12)
@@ -258,7 +275,22 @@ orivon.id.requestIdentity({ kind })  // => Promise<IdentityHandle | null> — co
 orivon.secrets.available()           // => Promise<boolean>  false if ungranted, or the seed is session-only
 orivon.secrets.encrypt(plaintext)    // => Promise<Uint8Array>  bytes in, bytes out, no encoding option
 orivon.secrets.decrypt(ciphertext)   // => Promise<Uint8Array>  'invalid' for bytes this origin's key did not produce
+
+// --- web: other sites' documents ---
+orivon.web.openContext(origin)       // => Promise<WebContext>  an empty, never-displayed document AS that
+                                      //   site (ADR-0019); .evaluate(script) runs one script in it
+orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs first in every page the app
+                                      //   shows inside itself (ADR-0039); the pages themselves are
+                                      //   <webview> elements in the app's own page, under `web.embed`
 ```
+
+> **`web.embed` (ADR-0039) is granted like any other capability and used through an element,
+> not a call.** An app holding it puts a `<webview>` in its page, with the element's interface as
+> Electron defines it (`src`, `loadURL`, `executeJavaScript`, `insertCSS`, `findInPage`, `send`
+> and `ipc-message`, muting). The shell decides what the element attaches: the page it shows runs
+> in a `persist:` partition of the app's own, sandboxed, with the shell's preload, no `orivon.*`,
+> no popups, no downloads and no `<webview>` of its own, and it may load documents only from the
+> granted origins. `setEmbedScript` above is the one `orivon.*` call the capability adds.
 
 > **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0032) have no `orivon.*` entry
 > point of their own.** They are Chromium platform permissions (`getUserMedia`,
@@ -379,7 +411,7 @@ different Nostr identity to snort.social and noStrudel. So `id` yields two disti
 | Consumer | app-internal crypto | `window.nostr` (NIP-07), future wallet connect |
 
 **What `origin` and `identityId` are, precisely** (`ADR-0010`). Both
-are frozen into a key that the MVP cannot export, back up or migrate (`ADR-0003`), so two
+are frozen into a key that this version cannot export, back up or migrate (`ADR-0003`), so two
 spellings of one of them are two different identities, permanently.
 
 - **`origin`** is the *canonical* origin, as produced by `originFromSenderFrame()` in
@@ -399,9 +431,9 @@ make Nostr unusable). Presence of `window.nostr` is fingerprintable, as it is of
 extension; the *data* is what sits behind consent (`security-model.md` T16).
 
 ### Deliberately **not** in v0
-- **`subprocess`.** No tier-3 app is in the MVP (Bisq is cut), so it buys nothing and costs
+- **`subprocess`.** No tier-3 app is in this version (Bisq is cut), so it buys nothing and costs
   the largest attack surface in the design.
-- **`hid` / USB.** No wallet app in the MVP.
+- **`hid` / USB.** No wallet app in this version.
 - **Raw sockets / ICMP.** No use case, and unreachable from WASM later anyway.
 
 > **Narrower than ADR-0002.** That ADR says `subprocess` and `hid` are "not grantable to
@@ -411,7 +443,7 @@ extension; the *data* is what sits behind consent (`security-model.md` T16).
 ### Signing is not in v0
 
 `ADR-0002` posits signed and unsigned trust tiers; `ADR-0005`'s amendment keyed silent updates
-on a publisher signature. **Both are cut for month 1.** Three reasons, from the audit:
+on a publisher signature. **Both are cut from v0.** Three reasons, from the audit:
 
 1. **The tiers were already capability-identical in v0.** Their only stated difference was
    `subprocess` and `hid`, and this spec removes both for *every* tier. The distinction cost
@@ -569,7 +601,7 @@ Apps call `orivon.net.connect`. Underneath, that is:
 
 | phase | implementation |
 |---|---|
-| month 1 | Node `net.Socket` in the main process |
+| now | Node `net.Socket` in the main process |
 | later | a Wasmtime host function |
 | later | Mojo IPC in a Chromium fork |
 
@@ -600,7 +632,7 @@ conflated:
 
 | Event | Response | Comes from |
 |---|---|---|
-| Bundle hash changes | **Security re-consent**: "this app's code changed" | `ADR-0005`, `ADR-0006` D2 (pinning). The hash itself is `ADR-0009`/`bundle-hash.md`, which includes the manifest, so a manifest-only change also lands here |
+| Bundle hash changes | **Security re-consent**: "this app's code changed" | `ADR-0005`, `ADR-0006` (hash-pinning, TOFU on the bundle). The hash itself is `ADR-0009`/`bundle-hash.md`, which includes the manifest, so a manifest-only change also lands here |
 | Manifest requests a capability not yet granted | **Capability prompt** for that capability only | this spec |
 
 > **Keying on the capability *kind* alone would leave a hole.** An update changing

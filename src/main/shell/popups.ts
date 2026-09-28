@@ -6,6 +6,7 @@
 import { WebContentsView } from 'electron'
 import type { HandlerDetails, WebContents, WebPreferences, WindowOpenHandlerResponse } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 export type PopupRoute = 'adopt' | 'new-tab'
 
@@ -35,7 +36,8 @@ export function routePopup (
     const minter = originFromUrl(details.url.slice('blob:'.length))
     return minter !== null && minter === originFromUrl(opener.url) ? 'adopt' : 'new-tab'
   }
-  if (seversOpener(details.features)) return 'new-tab'
+  // Chromium cannot load a protocol's address itself; only a new tab turns it into the URL serving it.
+  if (seversOpener(details.features) || BUILTIN_ADDRESSES.servedUrl(details.url) !== undefined) return 'new-tab'
   if (targetPartition === opener.partition) return 'adopt'
   // An isolated app's pinned bundle is served only in its own session.
   // Adopted anywhere else, its origin would run whatever the network sends,

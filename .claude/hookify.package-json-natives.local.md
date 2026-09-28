@@ -16,4 +16,4 @@ conditions:
 
 `webtorrent` must not be a shell dependency: it transitively requires `node-datachannel`
 (CMake + libdatachannel). Ship it as a pre-built app asset instead (`build-plan.md`, spike
-check 2). For the others, find a pure-JS alternative or raise it with the owner.
+check 2). For the others, find a JavaScript or WebAssembly alternative or raise it with the owner.

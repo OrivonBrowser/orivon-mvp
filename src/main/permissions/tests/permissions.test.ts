@@ -53,6 +53,17 @@ describe('buildAppPermissions', () => {
     const result = buildAppPermissions(APP, manifestWith({}), [])
     expect(result.rows).toEqual([])
   })
+
+  it('ADR-0037: at level 4, an unlimited grant\'s row carries no warning and no ⚠', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] } } })
+    const grants: Grant[] = [grant({ capability: 'tcp.connect', patterns: ['*:*'] })]
+
+    const result = buildAppPermissions(APP, manifest, grants, [], 4)
+
+    expect(result.rows).toEqual([
+      { capability: 'tcp.connect', grantId: 'g1', warning: false, message: 'Unlimited network access' }
+    ])
+  })
 })
 
 describe('PermissionsRegistry', () => {
@@ -127,6 +138,21 @@ describe('createPermissionsController', () => {
 
     expect(result?.origin).toBe(APP)
     expect(result?.rows).toHaveLength(1)
+  })
+
+  it('ADR-0037: an injected levelOverrideFor applies per origin, in list()', async () => {
+    const broker = createBroker(baseDeps())
+    const OTHER = 'https://other.example'
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['*:*'])
+    broker.registerApp(OTHER, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
+    await broker.grant(OTHER, 'tcp.connect', ['*:*'])
+    const controller = createPermissionsController(ctxWith(broker), (origin) => origin === APP ? 4 : undefined)
+
+    const apps = await controller.list()
+
+    expect(apps.find((a) => a.origin === APP)?.rows[0]?.warning).toBe(false)
+    expect(apps.find((a) => a.origin === OTHER)?.rows[0]?.warning).toBe(true)
   })
 
   // THE EXIT-CRITERION TEST.
@@ -256,6 +282,12 @@ describe('buildPersistedAppPermissions -- a saved name is re-checked before it i
     const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'X', grants: oneGrant, pickedPaths: {} })
     expect(app.rows.every((r) => r.grantId === null)).toBe(true)
   })
+
+  it('ADR-0037: at level 4, an unlimited persisted grant\'s row carries no warning either', () => {
+    const unlimited = { 'tcp.connect': { patterns: ['*:*'], grantedAt: 0 } }
+    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'X', grants: unlimited, pickedPaths: {} }, 4)
+    expect(app.rows).toEqual([{ capability: 'tcp.connect', grantId: null, warning: false, message: 'Unlimited network access' }])
+  })
 })
 
 // D-0007: a picked path sits BESIDE an app's network and file access in the
@@ -282,7 +314,7 @@ describe('picked-path rows in AppPermissions (D-0007)', () => {
     const result = buildAppPermissions(APP, manifest, [], [{ id: 'pick-1', kind: 'directory', path: '/home/user/Downloads', pickedAt: 0 }])
 
     expect(result.pickedPathRows).toEqual([
-      { pickId: 'pick-1', warning: true, message: describePickedPath('directory', '/home/user/Downloads').message }
+      { pickId: 'pick-1', kind: 'directory', warning: true, message: describePickedPath('directory', '/home/user/Downloads').message }
     ])
   })
 
@@ -300,7 +332,7 @@ describe('picked-path rows in AppPermissions (D-0007)', () => {
     })
 
     expect(app.pickedPathRows).toEqual([
-      { pickId: 'pick-1', warning: false, message: describePickedPath('file', '/home/user/a.torrent').message }
+      { pickId: 'pick-1', kind: 'file', warning: false, message: describePickedPath('file', '/home/user/a.torrent').message }
     ])
   })
 })

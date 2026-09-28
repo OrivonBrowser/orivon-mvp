@@ -43,8 +43,8 @@ const CURVE_ORDER: Record<DeriveCurve, bigint> = {
 // one-byte change to the salt, the info encoding, the hash, the OKM length or
 // the scalar reduction silently issues everyone brand-new keys. Their npub
 // changes and their follows and posts are orphaned on the old one. Identity
-// export and backup are out of scope for the MVP -- deliberately, and they are
-// named as the first thing to add afterwards (ADR-0003, mvp-scope.md) -- so for
+// export and backup are not in this version -- deliberately, and they are
+// named as the first thing to add afterwards (ADR-0003, scope.md) -- so for
 // as long as that holds there is no backup to restore from. The damage is
 // invisible when it is introduced and permanent by the time a user notices.
 //

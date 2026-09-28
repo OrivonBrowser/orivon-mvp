@@ -107,8 +107,8 @@ const TABLE: readonly Row[] = [
   {
     name: 'a listen range widens at the top end',
     input: update({
-      grantedPatterns: { 'tcp.listen': ['6881-6889'] },
-      newPatterns: { 'tcp.listen': ['6881-7000'] }
+      grantedPatterns: { 'tcp.listen.network': ['6881-6889'] },
+      newPatterns: { 'tcp.listen.network': ['6881-7000'] }
     }),
     decision: 'capability-prompt'
   },
@@ -119,7 +119,7 @@ const TABLE: readonly Row[] = [
     input: update({
       newHash: REBUILT,
       grantedPatterns: ONE_HOST,
-      newPatterns: { 'tcp.connect': ['api.example.com:443'], 'tcp.listen': ['6881-6889'] }
+      newPatterns: { 'tcp.connect': ['api.example.com:443'], 'tcp.listen.network': ['6881-6889'] }
     }),
     decision: 'capability-prompt'
   },
@@ -148,8 +148,8 @@ const TABLE: readonly Row[] = [
   {
     name: 'a listen range narrows to a single port',
     input: update({
-      grantedPatterns: { 'tcp.listen': ['6881-6889'] },
-      newPatterns: { 'tcp.listen': ['6885'] }
+      grantedPatterns: { 'tcp.listen.network': ['6881-6889'] },
+      newPatterns: { 'tcp.listen.network': ['6885'] }
     }),
     decision: 'silent'
   },
@@ -161,7 +161,7 @@ const TABLE: readonly Row[] = [
   {
     name: 'a capability kind is dropped entirely',
     input: update({
-      grantedPatterns: { 'tcp.connect': ['api.example.com:443'], 'tcp.listen': ['6881-6889'] },
+      grantedPatterns: { 'tcp.connect': ['api.example.com:443'], 'tcp.listen.network': ['6881-6889'] },
       newPatterns: ONE_HOST
     }),
     decision: 'silent'
@@ -376,8 +376,8 @@ describe('the re-consent trigger is a subset check, not a kind comparison', () =
     expect(
       decideUpdate(
         update({
-          grantedPatterns: { 'tcp.listen': ['6881'] },
-          newPatterns: { 'tcp.listen': ['peer.example.com:6881'] }
+          grantedPatterns: { 'tcp.listen.network': ['6881'] },
+          newPatterns: { 'tcp.listen.network': ['peer.example.com:6881'] }
         })
       )
     ).toBe('capability-prompt')

@@ -6,7 +6,7 @@ action: warn
 conditions:
   - field: file_path
     operator: regex_match
-    pattern: ^(?:.*/)?(?:README\.md|ARCHITECTURE\.md|CONTRIBUTING\.md|SECURITY\.md|docs/(?:glossary|inventory|mvp-scope)\.md|docs/architecture/[^/]+\.md|docs/development/(?:code-guidelines|packaging|parallel-work|pr-blueprint|release-checklist|security-review-briefing|setup|testing)\.md|docs/planning/(?:build-plan|compatibility-matrix)\.md)$
+    pattern: ^(?:.*/)?(?:README\.md|ARCHITECTURE\.md|CONTRIBUTING\.md|SECURITY\.md|docs/(?:glossary|inventory|scope)\.md|docs/architecture/[^/]+\.md|docs/development/(?:code-guidelines|packaging|parallel-work|pr-blueprint|release-checklist|security-review-briefing|setup|testing)\.md|docs/planning/(?:build-plan|compatibility-matrix)\.md)$
   - field: content
     operator: regex_match
     pattern: (?i)(what changed since|since the last (derivation|pass|run)|\b(this|that|the last|an earlier) (lane|pass)\b|\bthis run's\b|\b(corrected|rewritten|added|landed|resolved|fixed|decided|approved)( on)? 20\d\d-\d\d-\d\d|\b(an?|the) (earlier|first|previous|original|old) (version|revision|draft) of this\b|\bused to (say|read|list|claim|name)\b|owner'?s (decision|verdict)|~~[^~\n]+~~|\bmoved here from\b|\bPR #?\d{2,4}\b|\(#\d{2,4}\)|\b[dD]-\d{4}\b)

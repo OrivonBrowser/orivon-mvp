@@ -1,6 +1,6 @@
-// The dgram counterpart of node-http-real-server.test.ts's
+// The dgram counterpart of http/tests/real-server.test.ts's
 // connectViaRealSocket: bridges a real `node:dgram` socket into the exact
-// UdpSocket shape (handles.ts) node-dgram-socket.ts consumes, so a test can
+// UdpSocket shape (handles.ts) net/dgram-socket.ts consumes, so a test can
 // bind two independent shim sockets on real loopback UDP ports without a
 // broker, a preload or an Electron launch. This is what makes it possible to
 // drive a real vendored dependency (k-rpc-socket, bittorrent-dht) against
@@ -8,7 +8,7 @@
 
 import { createSocket as createRealDgramSocket } from 'node:dgram'
 import type { Datagram, SendRefusal, UdpSocket } from '../../../contracts/handles.js'
-import type { UdpBindFn } from '../../node-dgram-socket.js'
+import type { UdpBindFn } from '../../net/dgram-socket.js'
 
 export function bindViaRealUdp (): UdpBindFn {
   return async ({ port }) => {

@@ -20,8 +20,8 @@ appId: com.orivonstack.orivon
 # for docs.orivonstack.com and the OrivonStack forum -- docs/inventory.md). Not invented
 # for this file.
 productName: Orivon
-# Not "Orivon MVP" -- that qualifier belongs to this repo, not the product a user sees
-# installed on their machine (README.md's own title is just "Orivon").
+# The name a user sees installed on their machine, the same as README.md's own
+# title ("Orivon").
 
 directories:
   output: release
@@ -121,7 +121,7 @@ linux:
   # deb listed first because it is the PRIMARY artefact, not an equal alternative to
   # AppImage -- only an installed package can register a .desktop file where
   # `xdg-settings` can find it, and the project's success metric is measured in
-  # daily-driver hours (docs/mvp-scope.md). A bare AppImage cannot self-integrate:
+  # daily-driver hours (docs/scope.md). A bare AppImage cannot self-integrate:
   # electron-builder's own docs state plainly that since electron-builder 21, AppImages
   # do not automatically create desktop files, associate file types, or register with
   # the application menu. AppImage remains the trial artefact; the

@@ -4,23 +4,23 @@
 here. This document covers what it does not: how a capability call actually travels, which parts
 of the codebase are meant to survive, and which decisions are already settled.
 
-## What is disposable, and what is not
+## What is tied to Electron, and what is not
 
-Almost all of this is disposable on purpose: the Electron shell, the preload, the renderer
-chrome, the Node shim. Each exists to make the current version work, and each would be rewritten
-if the foundation underneath changed.
+Almost all of this is tied to Electron: the shell, the preload, the renderer chrome, the Node
+shim. Each is how the current version works, and each would be rewritten if the foundation
+underneath changed.
 
 One thing would not, and that is the interface apps program against, in
 [`src/contracts/`](src/contracts/). An app calls `orivon.net.connect({ host, port })`; today
 that is a Node `net.Socket` in an Electron main process, and the interface is shaped so it could
 be something else later without any app already written having to change.
 
-That is a property of the design, not a plan. A WASM runtime and a browser-engine fork are both
-out of scope ([`docs/mvp-scope.md`](docs/mvp-scope.md) §LATER).
+That is a property of the design, not a plan. A WASM runtime is not scheduled
+([`docs/scope.md`](docs/scope.md) §LATER).
 
-The practical rule that follows: a shortcut in `src/main/` costs a refactor of code that was
-going to be replaced anyway. A shortcut in `src/contracts/` costs every app ever written for
-Orivon. Spend your care accordingly.
+The practical rule that follows: a shortcut in `src/main/` costs a refactor of code tied to
+Electron. A shortcut in `src/contracts/` costs every app ever written for Orivon. Spend your care
+accordingly.
 
 ## How a capability call reaches the OS
 
@@ -58,24 +58,24 @@ avoids the TOCTOU race where a check and its use disagree.
 
 ## Where things live
 
-The third column answers one question: if the Electron shell were thrown away tomorrow, would
-this code have to be rewritten? It is a measure of where care is worth spending, not a plan to
-throw anything away.
+The third column answers one question: if the engine beneath Orivon changed, would this code
+have to be rewritten? It is a measure of where care is worth spending.
 
 | Directory | What | Tied to Electron? |
 |---|---|---|
 | [`src/contracts/`](src/contracts/) | The `orivon.*` interface, types only | **No. This is the asset.** It imports nothing, by enforced rule |
 | [`src/broker/policy/`](src/broker/policy/) | Pure decision functions: capability matching, path confinement, origin derivation | **No.** No Electron, no I/O, portable anywhere |
 | [`src/broker/`](src/broker/) | Grants, prompts, session partitions, handle tables | Partly: the decisions are portable, the OS plumbing relies on Electron |
-| [`src/main/`](src/main/) | Window, tabs, consent dialogs, permissions, app install, subsystem registry | **Entirely. Knowingly disposable** |
+| [`src/main/`](src/main/) | Window, tabs, consent dialogs, permissions, app install, subsystem registry | **Entirely** |
 | [`src/preload/`](src/preload/) | The privilege boundary | **Entirely.** "preload" is an Electron concept |
 | [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the site's published hash tree, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
-| [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer, by design temporary |
+| [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer over `orivon.*` |
 | [`src/renderer/`](src/renderer/) | Browser chrome UI | **Entirely** |
-| [`src/resolution/`](src/resolution/) | The name-resolver and data-gatherer interfaces, and the registry that orders them | **No.** Pure types and decisions |
-| [`src/ens/`](src/ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | **No** |
-| [`src/ipfs/`](src/ipfs/) | Loading IPFS content from trustless gateways, every block hashed against its CID | **No** |
-| [`src/verifier-host/`](src/verifier-host/) | The utility process that runs the light client and serves `.eth` names on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` |
+| [`src/protocols/`](src/protocols/) | The one function every protocol registers through, the address rule (`ipfs://<cid>` shown, `https://<cid>.ipfs.orivon` served), and the registry that orders providers | **No.** Pure data and decisions |
+| [`src/protocols/resolution/`](src/protocols/resolution/) | The name-resolver and data-gatherer interfaces | **No.** Pure types and decisions |
+| [`src/protocols/ens/`](src/protocols/ens/) | ENS: proving a `.eth` name's contenthash, over any EIP-1193 provider | **No** |
+| [`src/protocols/ipfs/`](src/protocols/ipfs/) | IPFS: `ipfs://` and `ipns://` addresses, and loading content from trustless gateways, every block hashed against its CID | **No** |
+| [`src/protocols/verifier-host/`](src/protocols/verifier-host/) | The utility process that runs every protocol's providers, including the light client, and serves their pages on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` (one narrow, gated exception: `dns-fallback.ts`'s direct connection to a gateway a resolver appears to be lying about) |
 | [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
 | [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
 
@@ -110,6 +110,14 @@ client proves what the name points to, the content comes from IPFS with every bl
 against its CID, and a verifier on loopback serves only bytes that passed. From there the page is
 an ordinary one: the same hint, the same one dialog, the same pin, which also records the CID.
 
+**An `ipfs://` or `ipns://` address is shown as itself and served over HTTPS**
+([`ADR-0038`](docs/decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md)).
+The address bar and every consent surface read `ipfs://<cid>/`; the page runs at
+`https://<cid>.ipfs.orivon/`, an ordinary https origin the same verifier serves. Every address
+scheme shares the `.orivon` suffix, routed once at launch. Registering a protocol while Orivon runs
+is not part of this build; the shared suffix is what would let one route with no restart. Each protocol is registered through one function over data the shell can read
+([`src/protocols/README.md`](src/protocols/README.md) says how to add one).
+
 **The grant prompt is origin-first.** Any origin can serve a manifest, and the `name` in it is
 self-asserted, so the origin is the largest and primary element and the app's claimed name is
 visibly subordinate. There is no separate "open as app" action anywhere in the browser: a
@@ -117,7 +125,7 @@ Web3site is not a category a user converts a website into, it is the URL.
 
 ## The design choices
 
-All eight below are settled. The line given here is the sharpest reason, not the whole case; if
+All nine below are settled. The line given here is the sharpest reason, not the whole case; if
 you disagree with one, the ADR is where the objections are already answered.
 
 **What gets built, and what outlasts it**
@@ -128,9 +136,13 @@ you disagree with one, the ADR is where the objections are already answered.
   gap one of them finds is fixed here for every app. The torrent flagship of
   [`ADR-0001`](docs/decisions/ADR-0001-flagship-app-bittorrent-streaming.md) is withdrawn and
   kept as an idea.
+- **An app qualifies by the environment its code runs in, not its language.** WebAssembly runs
+  in an app as it runs in Node, so a component compiled to it qualifies like JavaScript; a native
+  addon does not carry over
+  ([`ADR-0036`](docs/decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)).
 - **The capability API is the durable asset.** A WASM runtime is deferred, not cancelled:
-  containment for untrusted code and mobile portability are both real goals, and both post-MVP
-  ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
+  containment for untrusted code and mobile portability are both real goals, and neither is
+  built yet ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
 
 **How an app reaches you**
 
@@ -149,11 +161,17 @@ you disagree with one, the ADR is where the objections are already answered.
 - **Telemetry is opt-out, but disclosed in full on first run.** The metric requires measurement;
   the disclosure shows the literal JSON, nothing preselected, nothing sent before you choose
   ([`ADR-0004`](docs/decisions/ADR-0004-telemetry.md)).
-- **Trust is shown as a level with its evidence, never as a bare grade.** The Web3 Score page
-  leads with the canonical Website level. Level 1 or 2 is what the machine observed: whether the
-  site meets DDOC. Level 3 and above are a named provider's judgement, shown grey `?` when no
-  provider has judged, and kept apart from what was observed. The evidence sits under the level,
-  never behind it ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
+- **Trust is shown as a level with its evidence, never as a bare grade.** The address bar's Web3
+  Score shield and the Web3 Score page it opens lead with the canonical Website level, coloured
+  red/orange/yellow/green, and a mark at the pill's right end names it: Web2 (Level 1), Web2.5
+  (Levels 2-3) or Web3 (Level 4). Level 1 or 2 is what the machine
+  observed: whether the site meets DDOC. Level 3 and above are a named provider's judgement,
+  shown grey `?` when no provider has judged, and kept apart from what was observed; a
+  developer-only override can preview one before a provider exists, always named as an override.
+  At Level 4, a site's own grants read without warnings, on every consent surface. The evidence
+  sits under the level, never behind it
+  ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md),
+  [`ADR-0037`](docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md)).
 
 **How the API behaves**
 
@@ -206,5 +224,5 @@ resolution overrides in `electron.vite.config.ts`.
 | [`src/contracts/`](src/contracts/) | The product surface, in seven files |
 | [`docs/architecture/capability-api.md`](docs/architecture/capability-api.md) | The specification those files transcribe |
 | [`docs/architecture/handle-contracts.md`](docs/architecture/handle-contracts.md) | What each handle does: backpressure, close semantics, errors, revocation |
-| [`docs/architecture/security-model.md`](docs/architecture/security-model.md) | The threat model. The MVP's model is authorisation, not containment; see [`SECURITY.md`](SECURITY.md) |
+| [`docs/architecture/security-model.md`](docs/architecture/security-model.md) | The threat model. This version's model is authorisation, not containment; see [`SECURITY.md`](SECURITY.md) |
 | [`docs/development/parallel-work.md`](docs/development/parallel-work.md) | How several people work here at once |

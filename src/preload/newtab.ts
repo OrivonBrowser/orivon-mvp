@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { Bookmark } from '../main/browsing/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../main/channels.js'
 import type { NewTabCommand } from '../main/ipc/newtab-ipc.js'
-import { exposeOrivon } from './orivon-surface.js'
+import { exposeOrivon } from './surface/orivon.js'
 import { exposeFetchRoute } from './expose-fetch-route.js'
 import { exposeShimGlobals } from './expose-shim-globals.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
@@ -20,7 +20,7 @@ import { installManifestHintWatcher } from './manifest-hint.js'
 // compile-time constant this file could just hardcode -- BEFORE
 // exposing anything privileged. If this script runs again for whatever
 // page the user navigated to instead, it exposes nothing beyond
-// ./orivon-surface.ts's exposeOrivon() -- the SAME orivon.* surface
+// ./surface/orivon.ts's exposeOrivon() -- the SAME orivon.* surface
 // preload/app.ts gives every ordinary tab, not a second, easily-
 // forgotten copy of it.
 //

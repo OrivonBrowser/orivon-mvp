@@ -1,4 +1,4 @@
-# Orivon MVP: agent operating instructions
+# Orivon Browser: agent operating instructions
 
 **The human documentation is the map. This file adds only what is specific to working here as
 an agent.** It is loaded into every session, so a line that does not change what an agent does
@@ -7,7 +7,7 @@ does not belong in it.
 | Read | Before |
 |---|---|
 | `README.md` | anything: what Orivon is, its status, its roadmap |
-| `ARCHITECTURE.md` | proposing a design: how the pieces fit, and which are disposable |
+| `ARCHITECTURE.md` | proposing a design: how the pieces fit, and which are tied to Electron |
 | `docs/README.md` | hunting for a document: it is the index and the sources-of-truth table |
 | `src/contracts/` | writing against the API: the product surface in seven files, faster than any prose |
 | The `README.md` of the directory you are in | editing there: what it may depend on and what it must never import |
@@ -31,27 +31,30 @@ grants later from a permissions panel. The permission engine is roughly 90% done
 is building real apps on it: build step 5 ports Node.js desktop apps in `../orivon-ports` as the
 platform's test cases. Build step 6, ENS and IPFS, is done: a `.eth` name loads from IPFS, its
 name proven by a light client and every byte verified on this machine. The torrent app and Nostr
-identity are ideas, not build steps (`docs/mvp-scope.md` §LATER).
+identity are ideas, not build steps (`docs/scope.md` §LATER).
 
 **For what works today, read `docs/planning/compatibility-matrix.md`, not this section.**
 
 ## What this repository is
 
-The MVP implementation of **Orivon**, not its vision documentation.
+The implementation of **Orivon Browser**, not its vision documentation. Built on Electron, mostly
+in TypeScript, it gains the vision's promised features one at a time, each as a need calls for it,
+and some will not reach this version.
 
-It proves one thing: that a browser can run applications **impossible in Chrome**, reaching the
+Its founding claim: that a browser can run applications **impossible in Chrome**, reaching the
 network and filesystem under user-granted, per-app capabilities, while those applications remain
 ordinary web frontends delivered from a URL.
 
-Success metric: **100 active users in EU/USA, active = 25 h/month.** The metric decides this
-build's scope. It does not bound the long-term vision.
+Success metric: **100 active users in EU/USA, active = 25 h/month.** It judges this version
+and decides what comes first. It does not bound the long-term vision.
 
 - **A path in angle brackets resolves in `.claude/local-paths.md`.** That file is gitignored and
   exists only on the owner's machine. A machine-absolute path never goes into a tracked file: add
   it there, and write the placeholder instead.
 - **The vision corpus lives at `<vision-corpus>`** (canonical; public as
   [orivon-docs](https://github.com/OrivonBrowser/orivon-docs), deployed at docs.orivonstack.com).
-  Summarise and link. **Never copy it into this repository**, which is deliberately narrower.
+  Summarise and link. **Never copy it into this repository**, which builds it rather than
+  restating it.
 - **`docs/inventory.md` indexes all prior material.** Do not re-crawl the filesystem for it.
 - **`<prior-mvp>` is a failed prior MVP.** Not a baseline and not a reference architecture; its
   GUI is a *visual* reference only.
@@ -62,12 +65,13 @@ build's scope. It does not bound the long-term vision.
 
 ## The load-bearing idea
 
-The durable asset is the **capability API** (`orivon.*`), written as types in `src/contracts/`.
-The Electron shell beneath it is knowingly disposable, and the interface is designed so the
-implementation underneath could change without any app already written having to change.
+The durable asset is the **capability API** (`orivon.*`), written as types in `src/contracts/`,
+and it is built to outlast whatever sits beneath it. Orivon Browser is built on Electron, and the
+interface is designed so the implementation underneath could change without any app already
+written having to change.
 
-**Practical consequence: a shortcut in `src/main/` costs a refactor of code that was replaceable
-anyway. A shortcut in `src/contracts/` costs every app ever written for Orivon.**
+**Practical consequence: a shortcut in `src/main/` costs a refactor of code tied to Electron. A
+shortcut in `src/contracts/` costs every app ever written for Orivon.**
 
 ## Rules
 
@@ -87,20 +91,24 @@ Other pages cite these by number, so a new rule goes at the end and none is ever
    page turns out to be wrong, **rewrite it to be right** rather than appending a correction
    block beneath the wrong text. The page states what is true now, and the change earns a row in
    the decision log.
-4. **Scope discipline. Anything absent from `mvp-scope.md`'s IN table is out by default.** The
-   vision corpus is large, coherent and seductive, and the developer is solo: scope creep out of
-   it is the single biggest risk this project has. When scope is the reason you stop a piece of
+4. **Build a feature when a need calls for it.** Any feature of the vision may be picked up once
+   a real app, a user or the success metric needs it, and `scope.md` records it as it lands. The
+   vision corpus is large, coherent and seductive, and the developer is solo: name the need before
+   building, because bandwidth is what runs out. When scope is the reason you stop a piece of
    work, say so plainly.
-5. **Label every component disposable or durable**: say whether it is tied to Electron or would
-   outlive it. `ARCHITECTURE.md` §Where things live has the table. This is about spending care in
-   the right place, not about a planned migration.
+5. **Label every component durable or tied to Electron**: say whether it would outlive a change of
+   the engine beneath it. `ARCHITECTURE.md` §Where things live has the table. This is about
+   spending care in the right place.
 6. **Prefer mature components.** For each subsystem, decide: build, use a library, fork, embed,
    or define an interface. Do not reinvent without a written reason.
 7. **Don't over-document trivia**, and don't create abstractions for elegance alone.
-8. **Pure-JS dependencies only.** Native modules break run-from-source, which is how Windows
-   and macOS are supported (`docs/planning/build-plan.md` §Platform policy).
+8. **No native modules in Orivon's own dependencies.** Native modules break run-from-source,
+   which is how Windows and macOS are supported (`docs/planning/build-plan.md` §Platform
+   policy). JavaScript and WebAssembly both pass. This bounds this repository's `npm install`,
+   never the apps Orivon runs: an app qualifies by running in the Node environment,
+   WebAssembly included (ADR-0036).
 9. **Say which scope a sentence bounds**: this build, this repository, or the project. Never
-   state an MVP boundary as a permanent property of Orivon, and never state a long-term
+   state a boundary of this version as a permanent property of Orivon, and never state a long-term
    aspiration as a plan for this repository. A reader cannot recover which you meant from
    context, and will believe whichever the sentence implies. Two worked examples, both real
    mistakes made here: `docs/development/readability-log.md` §What these rounds changed about how
@@ -221,7 +229,7 @@ at the step named here. **Check this table at the start of every build step.**
 |---|---|---|
 | `typescript-lsp` | Automatic on `.ts` edits | Type errors across main, preload and renderer. Trust its diagnostics over your own reading of a type |
 | `security-guidance` | Automatic: on edits, when you stop, and on every `git commit` | Path traversal (T1), local-network reach (T12), secrets. Address or explicitly acknowledge every finding |
-| `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell commands | Thirteen rules. **Block (8):** native modules (in code and in `package.json`), insecure `webPreferences`, non-TypeScript sources, an Electron launch that bypasses `scripts/run-headless.mjs` or could take focus, in-place branch switches (`git pull`/`checkout`/`switch`, `gh pr checkout`) and tree-wide discards (`reset --hard`, `clean -f`, `stash drop`). **Warn (5):** hardcoded storage paths, out-of-scope features, file-header essays, comments that narrate the change instead of the code, and live pages that narrate their own history (Rule 2). When the owner corrects the same thing twice, add a rule with `/hookify`. Start its `file_path` pattern with `^(?:.*/)?` before the directory name, because a repo-root anchor never matches the absolute path an edit passes, and the rule dies silently. There is no `not_regex_match` operator, and an unknown operator kills the whole rule (A55) |
+| `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell commands | Thirteen rules. **Block (8):** native modules (in code and in `package.json`), insecure `webPreferences`, non-TypeScript sources, an Electron launch that bypasses `scripts/run-headless.mjs` or could take focus, in-place branch switches (`git pull`/`checkout`/`switch`, `gh pr checkout`) and tree-wide discards (`reset --hard`, `clean -f`, `stash drop`). **Warn (5):** hardcoded storage paths, vision features not built yet, file-header essays, comments that narrate the change instead of the code, and live pages that narrate their own history (Rule 2). When the owner corrects the same thing twice, add a rule with `/hookify`. Start its `file_path` pattern with `^(?:.*/)?` before the directory name, because a repo-root anchor never matches the absolute path an edit passes, and the rule dies silently. There is no `not_regex_match` operator, and an unknown operator kills the whole rule (A55) |
 | `superpowers` | Process, automatic via its session hook | `brainstorming` before new work, `writing-plans` for anything multi-step, `test-driven-development` for every broker or policy function, `systematic-debugging` on any failure, `verification-before-completion` before claiming done |
 | `context7` (MCP) | **Manual: before writing code against Electron or webtorrent APIs** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session` partitions, `safeStorage`; webtorrent 3.x internals. Training data is stale for this stack (Electron 44), so check a signature live before trusting the remembered one |
 | `playwright` (MCP) | **Manual: the localhost fixture app** | Driving a real web page. The Electron e2e uses the `_electron` library, not this |
@@ -249,5 +257,5 @@ section: **Done / results** for outcomes, **In my head** for thinking. Skip rout
   on `main`. Two branches can take the same next number and merge without a git conflict, since
   the filenames differ, and no check catches it: the branch that merges later renumbers its own.
   A superseded ADR is rewritten in place with the reversal recorded (see ADR-0004).
-- The MVP is **TypeScript only**. No Rust, no C++ (ADR-0002).
+- This repository's code is **TypeScript only**. No Rust, no C++ (ADR-0002).
 - Prior material is quoted in English; the private planning docs are partly Italian.

@@ -127,7 +127,7 @@ export function originFromUrl (url: string): string | null {
  * step, is what `normalizeHost` existing as a shared function is for.
  *
  * Exported so a second caller checking name-based loopback outside this file
- * (`../../loader/install-origin.ts`'s T12 guard, which fetches through
+ * (`../../loader/fetch/install-origin.ts`'s T12 guard, which fetches through
  * Electron's `net.fetch` -- the same Chromium behaviour this comment
  * describes) reuses this rather than a second copy (Rule 3).
  */

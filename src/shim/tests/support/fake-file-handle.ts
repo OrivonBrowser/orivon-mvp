@@ -1,8 +1,8 @@
 // A fake FileHandle (src/contracts/handles.ts) for exercising
-// node-fs-handle.ts without a broker, a preload or an Electron launch.
+// fs/handle.ts without a broker, a preload or an Electron launch.
 // Positional reads/writes grow an in-memory Uint8Array exactly like a real
 // file would; every call's own `position` is recorded, so a test can prove
-// node-fs-handle.ts always sends an EXPLICIT position underneath -- this
+// fs/handle.ts always sends an EXPLICIT position underneath -- this
 // handle itself has no cursor of its own (handles.ts's own FileHandle doc
 // comment: deliberately, there isn't one). Under tests/support/, not
 // tests/, for the same reason fake-tcp-socket.ts is: vitest.config.ts's

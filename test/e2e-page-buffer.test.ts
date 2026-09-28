@@ -44,7 +44,7 @@ const FIRST = `window.__first = (() => {
 })()`
 
 // Bundled into the page as an app's bundler would put the shim's `buffer` module there.
-const SHIM_ENTRY = `import shimModule, { Buffer as ShimBuffer } from './src/shim/node-buffer.js'
+const SHIM_ENTRY = `import shimModule, { Buffer as ShimBuffer } from './src/shim/polyfills/buffer.js'
 const PageBuffer = (window as unknown as { Buffer?: typeof ShimBuffer }).Buffer
 ;(window as unknown as { __identity: unknown }).__identity = typeof PageBuffer !== 'function' ? null : {
   same: ShimBuffer === PageBuffer,

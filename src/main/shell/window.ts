@@ -16,15 +16,16 @@
 import { app, BaseWindow, ipcMain, nativeTheme, WebContentsView, screen } from 'electron'
 import { join } from 'node:path'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron-serve.js'
-import { ethNameEvidence } from '../verifier/verifier-subsystem.js'
+import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron/serve.js'
+import { verifierNameEvidence } from '../verifier/verifier-subsystem.js'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from '../channels.js'
 import { registerNewTabIpc } from '../ipc/newtab-ipc.js'
 import { createPermissionsController, createSiteNotificationsController } from '../permissions/permissions.js'
 import { notificationDecisions } from '../sessions/permission-gate.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
-import { deliveryProvenanceFor } from '../browsing/delivery-provenance.js'
+import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-levels.js'
+import { localDdocFor } from '../dev/local-ddoc.js'
 import { rendererEntryUrl } from './renderer-entry.js'
 import { lockNavigation } from './lock-navigation.js'
 import type { SubsystemContext } from '../registry.js'
@@ -37,6 +38,8 @@ import { HtmlFullscreen } from './fullscreen.js'
 import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
+import type { IntroPlan } from './intro-state.js'
+import { showIntro } from './intro-view.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -81,7 +84,8 @@ const WINDOW_ICON_PATH = app.isPackaged
   ? join(process.resourcesPath, 'icon.png')
   : join(import.meta.dirname, '../../build/icon.png')
 
-export function createShellWindow (ctx: SubsystemContext): BaseWindow {
+/** `intro`: the process's first window on a launch that opens on the welcome screen (./intro-state.ts). */
+export function createShellWindow (ctx: SubsystemContext, intro?: IntroPlan): BaseWindow {
   // Centers on the OS's primary display. Not on whichever display holds the
   // pointer: Wayland does not let an app control its own window position at
   // all, so that buys nothing.
@@ -172,7 +176,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // electron.vite.config.ts's `newtab` entry.
   const dashboardUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/newtab/', '../renderer/newtab/index.html')
 
-  // Bookmarks: owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not
+  // Bookmarks: owner override, 2026-08-28 (scope.md, ADR-0003) -- not
   // in the original scope pass, arrived bundled with the chrome restyle.
   // A separate store, not folded into TabManager -- tabs and bookmarks
   // change independently and neither needs to know the other exists;
@@ -247,16 +251,20 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one
   // controller, closing over `ctx` so it always sees whichever broker is
-  // currently published (permissions.ts's own doc).
-  const permissions = createPermissionsController(ctx)
+  // currently published (permissions.ts's own doc). `scoreLevelOverrideFor`
+  // is the developer-only preview path (ADR-0037, ../dev/score-levels.ts).
+  const permissions = createPermissionsController(ctx, scoreLevelOverrideFor)
 
   // The site-info popup's own door, sibling to `permissions` above
   // (site-info-controller.ts's own header on why it is not folded into
-  // that one). `isOriginServedFromCacheSync`/`pinCoverageFor`/`ethNameEvidence`
+  // that one). `isOriginServedFromCacheSync`/`pinCoverageFor`/`verifierNameEvidence`
   // are the real implementations `SiteTrustSources` asks for -- injected here
   // rather than imported by the controller itself, so it stays testable
   // against a fake session (that file's own doc).
-  const siteInfo = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: ethNameEvidence })
+  // `scoreLevelOverrideFor`/`deliveryLevelOverrideFor` (`../dev/score-levels.ts`)
+  // and `localDdocFor` (`../dev/local-ddoc.ts`) are developer-only: no-ops
+  // outside developer mode.
+  const siteInfo = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocFor })
 
   /** Previous push's active tab, so pushState() can tell a genuine tab
    * SWITCH from the many other reasons state is pushed (a title, a favicon,
@@ -395,8 +403,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
       lastSiteInfoOrigin = origin
       permissionsPanel.close() // only one popup open at a time
       siteInfoPanel.toggle(anchor, origin, page)
-    },
-    deliveryProvenanceFor
+    }
   )
   registerNewTabIpc(dashboardUrl, tabs, bookmarks)
   // A16 makes createShellWindow() re-run routinely now (close the last
@@ -434,6 +441,8 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
 
   layoutChrome()
   tabs.createTab()
+  // After the first tab, so the view stacks above it.
+  if (intro !== undefined) showIntro(win, tabs, intro)
 
   // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
   // typed event union; BaseWindow's own doc doesn't enumerate it either.

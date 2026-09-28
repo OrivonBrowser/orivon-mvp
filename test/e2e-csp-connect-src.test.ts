@@ -1,15 +1,15 @@
 // End-to-end proof that S4-6's CSP (src/broker/policy/connect-src.ts, wired
-// in src/loader/serve.ts) is enforced by CHROMIUM ITSELF against the served
+// in src/loader/serve/serve.ts) is enforced by CHROMIUM ITSELF against the served
 // bundle's own document -- not merely computed correctly (src/broker/
 // policy/tests/connect-src.test.ts already proves that) and not merely
-// reflected in a header string (src/loader/tests/serve.test.ts and
-// src/loader/tests/electron-serve.test.ts already prove that too, against a
+// reflected in a header string (src/loader/serve/tests/serve.test.ts and
+// src/loader/electron/tests/serve.test.ts already prove that too, against a
 // stub session). None of those three prove the browser actually refuses a
 // non-granted connection because of it, which is the one thing a real
 // Electron launch can prove and a unit test cannot.
 //
 // WHY XMLHttpRequest, NOT fetch(). ADR-0017's routed fetch()
-// (src/preload/fetch-route.ts) overrides `window.fetch` for a registered
+// (src/preload/routed/fetch.ts) overrides `window.fetch` for a registered
 // app's tab and answers a cross-origin request over a broker-checked raw
 // TCP socket instead of Chromium's own networking stack -- so a fetch()
 // failure there would prove the BROKER's own `tcp.connect` grant check, not
@@ -40,7 +40,7 @@ import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
 import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/node-storage.js'
+import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
@@ -139,7 +139,7 @@ it(
 
         // ---- The header itself really is on the document's own response --
         // a same-origin fetch() is never intercepted by the routing shim
-        // (fetch-route.ts's own `crossOrigin` check), so this reads the
+        // (routed/fetch.ts's own `crossOrigin` check), so this reads the
         // REAL response Chromium itself received and is enforcing.
         const cspHeader = await evaluateRetrying(view, async () => (await fetch('/')).headers.get('content-security-policy'))
         check(
@@ -158,7 +158,7 @@ it(
         // outside this function's own body would reference an undefined
         // identifier once it runs there. The two literals below are
         // duplicated from this file's own consts on purpose, matching
-        // fetch-route.ts's identical constraint on `installFetchRoute`.
+        // routed/fetch.ts's identical constraint on `installFetchRoute`.
         const result = await evaluateRetrying(view, async () => {
           const grantedUrl = 'https://granted.csp-connect-src-e2e.orivon.test/'
           const ungrantedUrl = 'https://not-granted.csp-connect-src-e2e.orivon.test/'

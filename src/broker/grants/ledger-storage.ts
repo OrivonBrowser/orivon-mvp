@@ -1,7 +1,7 @@
 // Where GrantLedger's own state that must survive a process restart gets
 // persisted -- the T19 version floor (A57), d-0017's rollback acknowledgement,
 // and now the grants themselves (A23). Broker-owned, the same way
-// src/loader/storage.ts's LoaderStorage is loader-owned: this file's real
+// src/loader/cache/storage.ts's LoaderStorage is loader-owned: this file's real
 // implementation puts all of it under its own `grants/` root, never the
 // loader's `apps/` (node-adapters.ts's `nodeFs` is the one exception, writing
 // under `apps/<hash>/files` -- predates this file, see README.md).

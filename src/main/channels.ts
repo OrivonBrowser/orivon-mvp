@@ -32,7 +32,7 @@ export const CONTROL_CHANNEL = 'orivon:control'
  * handle id CONTROL_CHANNEL's net.connect response also carries. Never a
  * request/reply pair like CONTROL_CHANNEL -- the port itself is the payload
  * that cannot travel over ipcMain.handle/ipcRenderer.invoke. See
- * ../broker/transport/ipc.ts and ../broker/transport/port-pump.ts. */
+ * ../broker/transport/ipc.ts and ../broker/transport/relay/port-pump.ts. */
 export const PORT_CHANNEL = 'orivon:port'
 
 /** Ordinary tab -> broker: orivon.fs.readFileSync (ADR-0016), over
@@ -72,3 +72,13 @@ export const SITE_INFO_COMMAND_CHANNEL = 'orivon-site-info:command'
  * it changes while the panel is open, so the page never polls for it.
  */
 export const LIGHT_CLIENT_STATUS_CHANNEL = 'orivon-settings:light-client'
+
+/**
+ * A page an app shows inside itself -> main (ADR-0039): the shell's own
+ * preload in that page asks for the script its app set with
+ * `orivon.web.setEmbedScript`, over `ipcRenderer.sendSync`, so the script
+ * runs before the page's own code. Main answers from the guest's own
+ * identity (`event.sender`, a webview guest, and the app tab that hosts
+ * it), never from anything in the payload. See `src/main/embed/`.
+ */
+export const EMBED_SCRIPT_CHANNEL = 'orivon-embed:page-script'

@@ -167,7 +167,7 @@ describe('why the unlink hook branches on reason rather than tearing down always
   }
 
   it('cancelling the read half first DESTROYS the socket and discards the queued write', async () => {
-    // This is the hazard the branch in socket-relay.ts exists for, pinned as a
+    // This is the hazard the branch in transport/relay/socket.ts exists for, pinned as a
     // fact about Node rather than left as a comment. `stop()` cancels the
     // reader; on a flushing close that would lose the app's own final bytes.
     const { written, received } = await sendThenClose(true)

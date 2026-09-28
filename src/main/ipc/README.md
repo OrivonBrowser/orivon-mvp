@@ -2,8 +2,8 @@
 
 **What lives here.** The four IPC surfaces the chrome view and its popups use to reach main:
 `ipc.ts` (tab commands — new tab, close, navigate — plus the toolbar's own `siteSummaryFor`/
-`openSettings`/`openSiteInfo`), `newtab-ipc.ts` (the dashboard's read-only bookmark access and
-navigate-the-calling-tab command), `settings-ipc.ts` (the all-sites popup's list/revoke
+`web3ScoreFor`/`openSettings`/`openSiteInfo`), `newtab-ipc.ts` (the dashboard's read-only bookmark
+access and navigate-the-calling-tab command), `settings-ipc.ts` (the all-sites popup's list/revoke
 commands, and the site list's list/reset), `site-info-ipc.ts` (the site-info popup's get/trust/data/apply/revokePickedPath/
 clearBrowserData/reload/openAllSites commands, all fixed to the ONE origin the popup was opened
 for — never a command field). Each registers its own `ipcMain.handle`, and each verifies
@@ -12,7 +12,7 @@ known frame is a stronger guard than a URL allowlist, and the source file header
 file.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (types),
-[`../browsing/`](../browsing/) (bookmarks, delivery-provenance), [`../shell/tabs.ts`](../shell/tabs.ts)
+[`../browsing/`](../browsing/) (bookmarks, `site-trust.ts`'s `web3Score`), [`../shell/tabs.ts`](../shell/tabs.ts)
 (type only), [`../permissions/`](../permissions/) (`PermissionsController`, `SiteInfoController`,
 `SiteInfo`, `site-data-runner.ts`'s exported functions), and the top-level `channels.ts`.
 

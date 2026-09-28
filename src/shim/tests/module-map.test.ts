@@ -72,7 +72,7 @@ describe('buildAliasEntries', () => {
   it("resolves 'util' to this stream's own wrapper over the util package", () => {
     const entries = buildAliasEntries()
     const util = entries.find((entry) => entry.specifier === 'util')
-    expect(util).toEqual({ specifier: 'util', kind: 'local', implementation: './node-util.js' })
+    expect(util).toEqual({ specifier: 'util', kind: 'local', implementation: './polyfills/util.js' })
   })
 })
 

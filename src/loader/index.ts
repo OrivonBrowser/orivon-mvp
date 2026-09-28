@@ -1,8 +1,8 @@
 // The app loader's fetch-and-cache path: createLoader({fetch, storage, now})
 // mirrors how src/broker/index.ts builds createBroker -- injected effects,
 // no Electron import, unit-testable against stubs. This file is the
-// orchestration only; fetching+hashing+entry-checking is fetch-bundle.ts,
-// the Manifest.capabilities -> PatternSet mapping is update-patterns.ts, and
+// orchestration only; fetching+hashing+entry-checking is fetch/bundle.ts,
+// the Manifest.capabilities -> PatternSet mapping is ../broker/policy/manifest-patterns.ts, and
 // the storage seam is storage.ts. See src/loader/README.md.
 //
 // THE SIX OUTCOMES: `installed` (TOFU, a `silent` decideUpdate() verdict,
@@ -27,25 +27,25 @@ import type { ContentAddress, PinRecord } from '../broker/policy/pin.js'
 import { decideUpdate } from '../broker/policy/update.js'
 import type { PatternSet } from '../broker/policy/update.js'
 import { withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
-import { fetchBundle } from './fetch-bundle.js'
-import type { Fetch, StagedAsset } from './fetch-bundle.js'
-import { installAndNotify } from './install.js'
+import { fetchBundle } from './fetch/bundle.js'
+import type { Fetch, StagedAsset } from './fetch/bundle.js'
+import { installAndNotify } from './cache/install.js'
 import { parseDdocDeclaration } from './ddoc-declaration.js'
 import type { DdocDeclaration } from './ddoc-declaration.js'
-import type { LoaderStorage } from './storage.js'
-import { patternSetFromCapabilities } from './update-patterns.js'
+import type { LoaderStorage } from './cache/storage.js'
+import { patternSetFromCapabilities } from '../broker/policy/manifest-patterns.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
 import { leafOf } from './leaf-hash.js'
-import { parseManifest } from './manifest.js'
-import { checkRecord, checkedRecently, loadCheckRecord, pinnedManifestLeaf, saveCheckRecord, validatorsForPin } from './update-check.js'
+import { parseManifest } from './manifest/manifest.js'
+import { checkRecord, checkedRecently, loadCheckRecord, pinnedManifestLeaf, saveCheckRecord, validatorsForPin } from './fetch/update-check.js'
 import type { LoadInstalled, LoadRejected, LoadResult } from './load-result.js'
-import { pinnedToRoot } from './content-root.js'
+import { pinnedToRoot } from './fetch/content-root.js'
 
-export type { Fetch, FetchResponse } from './fetch-bundle.js'
+export type { Fetch, FetchResponse } from './fetch/bundle.js'
 export type { LoadInstalled, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadRejected, LoadResult, LoadUpToDate } from './load-result.js'
-export type { LoaderStorage } from './storage.js'
-export { appRootDirectoryName } from './storage.js'
+export type { LoaderStorage } from './cache/storage.js'
+export { appRootDirectoryName } from './cache/storage.js'
 
 export interface CreateLoaderOptions {
   readonly fetch: Fetch
@@ -58,7 +58,7 @@ export interface CreateLoaderOptions {
    * `ensurePublicUnicastOrigin` for why this belongs there, not here. Same
    * `Resolver` shape `policy/connect.ts` already defines; no second type for
    * one idea (Rule 3). The real implementation wired in
-   * (`electron-resolve.ts`'s `electronResolveHost`) is deliberately NOT the
+   * (`electron/resolve.ts`'s `electronResolveHost`) is deliberately NOT the
    * broker's own node:dns-based one -- see that file's header for why the
    * loader needs Chromium's own resolver instead.
    */
@@ -70,7 +70,7 @@ export interface CreateLoaderOptions {
    * serve.ts`'s `registerServingFor` is the real implementation this closes
    * over (`subsystem.ts`) -- ADR-0007's serving mechanism, so an app already
    * works from cache within the SAME run it was installed in, not only
-   * after a restart (`electron-serve.ts`'s own `restorePinnedServing`
+   * after a restart (`electron/serve.ts`'s own `restorePinnedServing`
    * covers that second case). A failure here is logged and does not fail
    * the install it followed -- the same "one thing going wrong here must
    * not undo a bundle that is genuinely, correctly on disk" stance
@@ -155,11 +155,11 @@ export interface Loader {
    * rel="orivon-manifest">` hint already in delivered HTML, the only
    * discovery trigger (src/loader/README.md; never probed automatically).
    * The manifest is always fetched from exactly
-   * `<that origin>/.well-known/orivon.json` -- see fetch-bundle.ts's header
+   * `<that origin>/.well-known/orivon.json` -- see fetch/bundle.ts's header
    * for why a path component of `hintedUrl` is never used as the manifest
    * location.
    *
-   * The app's own file list is never supplied here -- fetch-bundle.ts reads
+   * The app's own file list is never supplied here -- fetch/bundle.ts reads
    * it off the manifest itself (`entry` unioned with `assets`, ADR-0011)
    * once it has fetched and parsed it. A passive discovery trigger never has
    * anything but `hintedUrl` to start from (docs/open-questions.md A45).

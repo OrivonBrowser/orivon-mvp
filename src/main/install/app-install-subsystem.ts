@@ -22,6 +22,7 @@ import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoiceProm
 import { grantableWithoutInstall, grantWithoutInstall } from './grant-without-install.js'
 import { installGrantedOriginCsp } from './granted-origin-csp.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
+import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 
 const GRANT_MANIFEST_TIMEOUT_MS = 5_000
 
@@ -41,10 +42,15 @@ export const appInstallSubsystem: Subsystem = {
     }
     const broker = ctx.broker
     const loader = ctx.loader
-    const consent = createInstallConsentPrompt()
-    const perCapabilityConsent = createPerCapabilityConsentPrompt()
+    // ADR-0037: an L4 site's grants read without warnings on every one of
+    // these -- the developer-only override is the only source of L4 today
+    // (../dev/score-levels.ts), always named as an override, never as
+    // observed. reconsentPrompt/rollbackChoicePrompt take no level at all:
+    // neither is about a grant's breadth.
+    const consent = createInstallConsentPrompt(scoreLevelOverrideFor)
+    const perCapabilityConsent = createPerCapabilityConsentPrompt(scoreLevelOverrideFor)
     const reconsentPrompt = createReconsentPrompt()
-    const capabilityPrompt = createCapabilityPrompt()
+    const capabilityPrompt = createCapabilityPrompt(scoreLevelOverrideFor)
     const rollbackChoicePrompt = createRollbackChoicePrompt()
     publishInstallApp(ctx, async (hintingOrigin, hintedUrl) => {
       // A loopback origin can never reach installFromHint's own consent:

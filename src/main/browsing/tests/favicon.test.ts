@@ -1,45 +1,67 @@
-import { describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
+import { Readable } from 'node:stream'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Resolver } from '../../../broker/policy/connect.js'
+import type { FaviconTarget } from '../favicon.js'
 
-// fetchFaviconDataUrl dynamically imports 'electron' for net.fetch (see
-// favicon.ts's file header for why) -- mocked here so the F35 regression
-// test below can hand it a response whose body errors mid-read without a
-// real network call. That mock is also why every symbol below arrives
-// through a dynamic import rather than a static one: it has to be
-// registered before favicon.js is evaluated.
+// fetchFaviconDataUrl dynamically imports 'electron' for net.request (see
+// favicon.ts's file header for why net.request, not net.fetch) -- mocked
+// here so every network-touching test below can hand it a scripted
+// response without a real network call. That mock is also why every symbol
+// below arrives through a dynamic import rather than a static one: it has
+// to be registered before favicon.js is evaluated.
 vi.mock('electron', () => ({
-  net: { fetch: vi.fn() }
+  net: { request: vi.fn() }
 }))
 
 const { net } = await import('electron')
 const {
   MAX_FAVICON_BYTES,
+  MAX_FAVICON_CANDIDATES,
+  MAX_FAVICON_REDIRECTS,
+  captureFaviconInto,
+  faviconCandidates,
   fetchFaviconDataUrl,
   isSafeFaviconUrl,
-  pickFaviconUrl,
   readCapped,
   shouldClearFavicon,
   toDataUrl
 } = await import('../favicon.js')
 
-describe('pickFaviconUrl', () => {
-  it('returns null for an empty list', () => {
-    expect(pickFaviconUrl([])).toBeNull()
+// net.request is one shared mock across the whole file (the module-level
+// `const { net }` above), so a call recorded in one test would otherwise
+// still be there for the next -- every test that asserts on it starts clean.
+beforeEach(() => {
+  vi.mocked(net.request).mockReset()
+})
+
+describe('faviconCandidates', () => {
+  it('returns an empty list for an empty list', () => {
+    expect(faviconCandidates([])).toEqual([])
   })
 
-  it('picks the first http(s) candidate', () => {
-    expect(pickFaviconUrl(['https://a.example/icon.png', 'https://b.example/icon.png']))
-      .toBe('https://a.example/icon.png')
-    expect(pickFaviconUrl(['http://a.example/icon.png'])).toBe('http://a.example/icon.png')
+  it('keeps http(s) candidates, in order', () => {
+    expect(faviconCandidates(['https://a.example/icon.png', 'http://b.example/icon.png']))
+      .toEqual(['https://a.example/icon.png', 'http://b.example/icon.png'])
   })
 
-  it('skips non-http(s) candidates and returns the first real one', () => {
-    expect(pickFaviconUrl(['data:image/png;base64,AAA=', 'https://a.example/icon.png']))
-      .toBe('https://a.example/icon.png')
+  it('keeps a data: candidate too', () => {
+    expect(faviconCandidates(['data:image/png;base64,AAA=', 'https://a.example/icon.png']))
+      .toEqual(['data:image/png;base64,AAA=', 'https://a.example/icon.png'])
   })
 
-  it('returns null when nothing is http(s)', () => {
-    expect(pickFaviconUrl(['data:image/png;base64,AAA=', 'javascript:alert(1)'])).toBeNull()
+  it('drops anything that is not http(s) or data:', () => {
+    expect(faviconCandidates(['javascript:alert(1)', 'https://a.example/icon.png']))
+      .toEqual(['https://a.example/icon.png'])
+  })
+
+  it('returns an empty list when nothing qualifies', () => {
+    expect(faviconCandidates(['javascript:alert(1)', 'blob:whatever'])).toEqual([])
+  })
+
+  it('caps at MAX_FAVICON_CANDIDATES', () => {
+    const many = Array.from({ length: MAX_FAVICON_CANDIDATES + 5 }, (_, i) => `https://a.example/${String(i)}.png`)
+    expect(faviconCandidates(many)).toHaveLength(MAX_FAVICON_CANDIDATES)
   })
 })
 
@@ -236,7 +258,7 @@ describe('isSafeFaviconUrl -- same origin with the page that declared it', () =>
   })
 })
 
-describe('fetchFaviconDataUrl', () => {
+describe('fetchFaviconDataUrl -- T12 refusals never reach the network', () => {
   // Every literal case is denied inside isSafeFaviconUrl before this
   // function ever reaches its `import('electron')` line, so these run
   // safely under plain vitest -- no Electron mock needed, and the
@@ -260,25 +282,6 @@ function streamOf (chunks: Uint8Array[]): ReadableStream<Uint8Array> {
     start (controller) {
       for (const chunk of chunks) controller.enqueue(chunk)
       controller.close()
-    }
-  })
-}
-
-// F35: a server that replies 200 OK with a declared Content-Length and then
-// closes the socket errors Chromium's body stream mid-read, so
-// reader.read() rejects on some later call rather than the stream simply
-// ending. streamOf() above can only ever produce a clean close, so this
-// models the failure shape that actually reached production.
-function erroringStream (): ReadableStream<Uint8Array> {
-  let delivered = false
-  return new ReadableStream({
-    pull (controller) {
-      if (!delivered) {
-        delivered = true
-        controller.enqueue(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))
-        return
-      }
-      controller.error(new Error('simulated mid-body stream failure'))
     }
   })
 }
@@ -313,37 +316,36 @@ describe('readCapped', () => {
   })
 
   // F35: readCapped itself still propagates a mid-read stream error as a
-  // rejection -- fetchFaviconDataUrl's own describe block below is what
-  // asserts the caller catches it. This test documents the precondition
-  // that fix depends on.
+  // rejection -- the net.request-driven tests below assert the caller
+  // catches it. This test documents the precondition that fix depends on.
   it('rejects when the underlying stream errors mid-read', async () => {
-    await expect(readCapped(erroringStream(), MAX_FAVICON_BYTES)).rejects.toThrow()
+    const stream = new ReadableStream<Uint8Array>({
+      start (controller) { controller.enqueue(new Uint8Array([1, 2, 3])) },
+      pull (controller) { controller.error(new Error('simulated mid-body stream failure')) }
+    })
+    await expect(readCapped(stream, MAX_FAVICON_BYTES)).rejects.toThrow()
   })
 })
 
 describe('toDataUrl', () => {
-  it('builds a data: URL for an allowed type', () => {
-    const bytes = new Uint8Array([1, 2, 3])
-    const url = toDataUrl(bytes, 'image/png')
-    expect(url).toBe(`data:image/png;base64,${Buffer.from(bytes).toString('base64')}`)
+  it('builds a data: URL, typed from the bytes, for a PNG', () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2])
+    expect(toDataUrl(bytes)).toBe(`data:image/png;base64,${Buffer.from(bytes).toString('base64')}`)
   })
 
-  it('is case-insensitive and strips a charset parameter', () => {
-    const bytes = new Uint8Array([1])
-    expect(toDataUrl(bytes, 'IMAGE/PNG')).toContain('data:image/png;base64,')
-    expect(toDataUrl(bytes, 'image/gif; charset=binary')).toContain('data:image/gif;base64,')
+  it('builds a data: URL for a real SVG document -- no longer excluded', () => {
+    const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+    expect(toDataUrl(svg)).toBe(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
   })
 
-  it('rejects an unknown or missing content type', () => {
-    const bytes = new Uint8Array([1])
-    expect(toDataUrl(bytes, 'text/html')).toBeNull()
-    expect(toDataUrl(bytes, null)).toBeNull()
+  it('builds a data: URL for an ICO, whatever a server might have labelled it', () => {
+    const ico = new Uint8Array([0x00, 0x00, 0x01, 0x00, 1, 2, 3])
+    expect(toDataUrl(ico)).toBe(`data:image/x-icon;base64,${Buffer.from(ico).toString('base64')}`)
   })
 
-  // Security-relevant: SVG is deliberately not on the allowlist (see the
-  // module header) even though it is a plausible favicon format.
-  it('rejects image/svg+xml even though it is a real favicon MIME type', () => {
-    expect(toDataUrl(new Uint8Array([1]), 'image/svg+xml')).toBeNull()
+  it('rejects bytes that are not a recognised image at all', () => {
+    expect(toDataUrl(new TextEncoder().encode('<!DOCTYPE html><html></html>'))).toBeNull()
+    expect(toDataUrl(new Uint8Array(0))).toBeNull()
   })
 })
 
@@ -379,21 +381,207 @@ describe('shouldClearFavicon', () => {
   })
 })
 
-describe('fetchFaviconDataUrl', () => {
-  // F35 (CLAUDE-SECURITY-20260910-203341): a favicon host that truncates
-  // its body against a declared Content-Length errors the response stream
+// --- net.request harness, for fetchFaviconDataUrl/captureFaviconInto's own network path ---
+
+interface FakeClientRequest extends EventEmitter {
+  end: () => void
+  abort: () => void
+}
+
+function fakeClientRequest (): FakeClientRequest {
+  const emitter = new EventEmitter() as FakeClientRequest
+  emitter.end = vi.fn()
+  emitter.abort = vi.fn(() => { emitter.emit('error', new Error('aborted')) })
+  return emitter
+}
+
+function fakeIncomingMessage (statusCode: number): Readable & { statusCode: number } {
+  const stream = new Readable({ read () {} }) as Readable & { statusCode: number }
+  stream.statusCode = statusCode
+  return stream
+}
+
+/** Queues one `net.request(...)` call's whole behaviour. Deferred to a
+ * microtask so it fires only once requestOnce's own synchronous listener
+ * registration (three `.on(...)` calls, then `.end()`) has already run --
+ * none of that registration ever awaits, so a plain microtask is enough. */
+function mockRequestOnce (act: (request: FakeClientRequest) => void): void {
+  vi.mocked(net.request).mockImplementationOnce(() => {
+    const request = fakeClientRequest()
+    queueMicrotask(() => { act(request) })
+    return request as never
+  })
+}
+
+function respondOk (statusCode: number, chunks: Uint8Array[]): Readable & { statusCode: number } {
+  const stream = fakeIncomingMessage(statusCode)
+  for (const chunk of chunks) stream.push(Buffer.from(chunk))
+  stream.push(null)
+  return stream
+}
+
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+
+describe('fetchFaviconDataUrl -- over net.request', () => {
+  it('decodes a plain 200 response, typed from its bytes', async () => {
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/icon.png', PUBLIC_PAGE))
+      .resolves.toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}`)
+  })
+
+  it('treats a non-2xx status as a failure', async () => {
+    mockRequestOnce((request) => { request.emit('response', respondOk(404, [])) })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/icon.png', PUBLIC_PAGE)).resolves.toBeNull()
+  })
+
+  it('follows a redirect whose target still clears T12, and stops re-requesting once it does', async () => {
+    mockRequestOnce((request) => { request.emit('redirect', 301, 'GET', 'https://93.184.216.35/icon.png', {}) })
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/icon.png', PUBLIC_PAGE))
+      .resolves.toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}`)
+    expect(net.request).toHaveBeenCalledTimes(2)
+  })
+
+  it('refuses a redirect to loopback from a public page, without a second request', async () => {
+    mockRequestOnce((request) => { request.emit('redirect', 302, 'GET', 'http://127.0.0.1:8080/icon.png', {}) })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/icon.png', PUBLIC_PAGE)).resolves.toBeNull()
+    expect(net.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives up after MAX_FAVICON_REDIRECTS redirects', async () => {
+    for (let hop = 0; hop <= MAX_FAVICON_REDIRECTS; hop++) {
+      mockRequestOnce((request) => { request.emit('redirect', 301, 'GET', `https://93.184.216.34/hop${String(hop)}`, {}) })
+    }
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/icon.png', PUBLIC_PAGE)).resolves.toBeNull()
+    expect(net.request).toHaveBeenCalledTimes(MAX_FAVICON_REDIRECTS + 1)
+  })
+
+  // F35 (CLAUDE-SECURITY-20260910-203341): a favicon host that truncates its
+  // body against a declared Content-Length errors the response stream
   // mid-read. Before the fix, that rejection escaped this function despite
   // its own doc comment promising it never throws -- and tabs.ts's bare
-  // `void` turned it into an unhandled rejection that this codebase maps
-  // to app.exit(1), killing every open tab. This asserts the contract
-  // actually holds now.
+  // `void` turned it into an unhandled rejection that this codebase maps to
+  // app.exit(1), killing every open tab. This asserts the contract still
+  // holds against the net.request-based fetch.
   it('resolves null, not a rejection, when the response body errors mid-read', async () => {
-    vi.mocked(net.fetch).mockResolvedValue({
-      ok: true,
-      body: erroringStream(),
-      headers: { get: () => 'image/png' }
-    } as never)
+    mockRequestOnce((request) => {
+      const stream = fakeIncomingMessage(200)
+      request.emit('response', stream)
+      stream.push(Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]))
+      queueMicrotask(() => { stream.destroy(new Error('simulated mid-body stream failure')) })
+    })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/boom.png', PUBLIC_PAGE)).resolves.toBeNull()
+  })
 
-    await expect(fetchFaviconDataUrl('https://attacker.example/boom.png', PUBLIC_PAGE)).resolves.toBeNull()
+  it('resolves null, not a rejection, on a transport error', async () => {
+    mockRequestOnce((request) => { request.emit('error', new Error('ECONNRESET')) })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/icon.png', PUBLIC_PAGE)).resolves.toBeNull()
+  })
+})
+
+describe('captureFaviconInto', () => {
+  function makeTarget (): FaviconTarget {
+    return { favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
+  }
+
+  it('decodes a data: candidate locally, with no network reach at all', async () => {
+    const svg = '<svg></svg>'
+    const dataUrl = `data:image/svg+xml,${encodeURIComponent(svg)}`
+    const target = makeTarget()
+    let updated = false
+
+    await captureFaviconInto(target, [dataUrl], () => PUBLIC_PAGE, () => true, () => { updated = true })
+
+    expect(net.request).not.toHaveBeenCalled()
+    expect(target.favicon).toBe(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
+    expect(updated).toBe(true)
+  })
+
+  it('falls through to the next candidate once the first fails to decode', async () => {
+    mockRequestOnce((request) => { request.emit('error', new Error('refused')) })
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    const target = makeTarget()
+
+    await captureFaviconInto(
+      target,
+      ['https://93.184.216.34/bad.ico', 'https://93.184.216.34/good.png'],
+      () => PUBLIC_PAGE,
+      () => true,
+      () => {}
+    )
+
+    expect(target.favicon).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}`)
+  })
+
+  it('never writes anything once every candidate has failed', async () => {
+    mockRequestOnce((request) => { request.emit('error', new Error('refused')) })
+    const target = makeTarget()
+    let updated = false
+
+    await captureFaviconInto(target, ['https://93.184.216.34/bad.ico'], () => PUBLIC_PAGE, () => true, () => { updated = true })
+
+    expect(target.favicon).toBeNull()
+    expect(updated).toBe(false)
+  })
+
+  // The bug this fixes: favicon.ts used to record the ICON's own origin
+  // (here, a CDN host different from the page), which shouldClearFavicon
+  // then compared against the PAGE's origin on every navigation -- so an
+  // icon hosted off-origin was cleared on the very next same-origin
+  // navigation and never came back (page-favicon-updated does not refire
+  // for an unchanged icon set).
+  it('records the DECLARING PAGE\'s origin, not the icon resource\'s own origin', async () => {
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    const target = makeTarget()
+    const page = 'https://a.example/page'
+
+    // A public literal address, not a.example's own hostname -- a real CDN
+    // icon, and a literal needs no DNS resolver mock to clear T12.
+    await captureFaviconInto(target, ['https://93.184.216.34/icon.png'], () => page, () => true, () => {})
+
+    expect(target.faviconOrigin).toBe('https://a.example')
+    // The whole point of the fix: a same-origin navigation must not clear it.
+    expect(shouldClearFavicon(target.faviconOrigin, 'https://a.example/page2')).toBe(false)
+  })
+
+  it('does nothing for an empty or all-unqualified candidate list', async () => {
+    const target = makeTarget()
+    await captureFaviconInto(target, [], () => PUBLIC_PAGE, () => true, () => {})
+    await captureFaviconInto(target, ['javascript:alert(1)'], () => PUBLIC_PAGE, () => true, () => {})
+    expect(net.request).not.toHaveBeenCalled()
+    expect(target.favicon).toBeNull()
+  })
+
+  it('decodes an upper-case DATA: candidate locally too, never falling through to a network fetch', async () => {
+    const target = makeTarget()
+    await captureFaviconInto(target, ['DATA:image/png;base64,' + Buffer.from(PNG_BYTES).toString('base64')], () => PUBLIC_PAGE, () => true, () => {})
+    expect(net.request).not.toHaveBeenCalled()
+    expect(target.favicon).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}`)
+  })
+
+  // The race three independent reviews of this diff converged on: a
+  // sequential, multi-candidate loop with its own timeout and redirect
+  // budget per candidate can still be running well after the tab has moved
+  // on to a different page that never fired its own page-favicon-updated
+  // (no icon, or an unchanged one) -- pendingFaviconUrl alone does not
+  // catch that, since nothing overwrote it.
+  it('never writes a favicon once the tab has navigated to a different page mid-fetch', async () => {
+    let currentPage = 'https://a.example/page1'
+    mockRequestOnce((request) => {
+      // The tab commits a navigation while this request is still in flight.
+      currentPage = 'https://b.example/page2'
+      request.emit('response', respondOk(200, [PNG_BYTES]))
+    })
+    const target = makeTarget()
+    let updated = false
+
+    // A candidate URL no earlier test in this file used: faviconCache is
+    // shared module state across every test, and a cache hit would skip
+    // net.request entirely, exercising nothing this test exists to prove.
+    await captureFaviconInto(target, ['https://93.184.216.99/race-icon.png'], () => currentPage, () => true, () => { updated = true })
+
+    expect(target.favicon).toBeNull()
+    expect(target.faviconOrigin).toBeNull()
+    expect(updated).toBe(false)
   })
 })

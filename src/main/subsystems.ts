@@ -27,6 +27,7 @@ import { verifierSubsystem } from './verifier/verifier-subsystem.js'
 import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
 import { devGrantSubsystem } from './dev/dev-grant.js'
 import { requestGrantSubsystem } from './consent/request-grant-subsystem.js'
+import { embedSubsystem } from './embed/embed-subsystem.js'
 import { loaderSubsystem } from '../loader/subsystem.js'
 import { appInstallSubsystem } from './install/app-install-subsystem.js'
 import { manifestHintSubsystem } from './install/manifest-hint.js'
@@ -43,6 +44,7 @@ export const subsystems: Subsystem[] = [
   brokerIpcSubsystem, // build step 2: broker -> src/broker/. Writes ctx.broker -- anything reading it must be listed below this line.
   devGrantSubsystem, // queue item 0.3: dev-only grant hook -> src/main/dev-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   requestGrantSubsystem, // queue item 4.1: app.requestGrant's mechanism -> src/main/request-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
+  embedSubsystem, // ADR-0039: pages an app shows inside itself -> src/main/embed/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   // build step 3: shim      -> src/shim/
   loaderSubsystem, // build step 4: loader -> src/loader/
   appInstallSubsystem, // queue item S4-4: install-time consent -> src/main/app-install.ts. Reads ctx.broker AND ctx.loader -- must stay below both brokerIpcSubsystem and loaderSubsystem.

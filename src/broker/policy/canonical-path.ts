@@ -238,7 +238,7 @@ function isSafeDecodedPath (decoded: string): boolean {
   return segments.length > 1
 }
 
-/** Percent-decodes, or null if any escape is malformed. Never throws. Exported for ../../loader/node-storage.ts's own decode-then-write step (Rule 3). */
+/** Percent-decodes, or null if any escape is malformed. Never throws. Exported for ../../loader/cache/node-storage.ts's own decode-then-write step (Rule 3). */
 export function decodePercentEscapes (path: string): string | null {
   if (!path.includes('%')) return path
   try {
@@ -252,7 +252,7 @@ export function decodePercentEscapes (path: string): string | null {
  * NFC-normalise, then simple-case-fold. THE ONE DEFINITION of "do these two
  * spellings name the same file on disk?" (code-guidelines.md Rule 3), shared
  * by collisionKey below and by the loader's prune comparison
- * (../../loader/node-storage.ts), which folds already-decoded real
+ * (../../loader/cache/node-storage.ts), which folds already-decoded real
  * filesystem paths and so must NOT re-run the decode step collisionKey adds
  * on top of this.
  *

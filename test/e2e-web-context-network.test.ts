@@ -5,7 +5,7 @@
 // this stream can reach without a real remote server: a context whose
 // opener holds a real `https.connect` grant for the context's own host can
 // `fetch()` it and get back a REAL response, through
-// src/loader/electron-serve.ts's `reachOnlyHandlerFor` and the REAL
+// src/loader/electron/serve.ts's `reachOnlyHandlerFor` and the REAL
 // `nodeReachDial()` -- the same "there is no hermetic way to prove a
 // granted byte round trip without either weakening trust or reaching a
 // real public host" position ./e2e-connect-secure-capability.test.ts's own
