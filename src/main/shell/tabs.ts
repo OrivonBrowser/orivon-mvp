@@ -23,7 +23,7 @@ import { BLANK_URL, TabFactory } from './tab-factory.js'
 import { clearOfPairs, moveInOrder } from './tab-order.js'
 import { PaneHost } from './pane-host.js'
 import { SplitController } from './split-controller.js'
-import { closeParkedViews, partitionChanged, repartitionView } from './tab-view.js'
+import { appTabFlagChanged, closeParkedViews, partitionChanged, repartitionView } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabState, TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
@@ -364,11 +364,9 @@ export class TabManager {
    * dashboard's own navigate command both funnel here (ipc.ts, newtab-
    * ipc.ts) -- a person's very first act in a fresh tab is typing a URL,
    * not calling createTab(url) directly. Repartitions via repartitionView()
-   * exactly when the target belongs in a different session from the one the
-   * tab is in -- which, since 2026-09-15, means entering or leaving an
-   * installed app, never one ordinary website to another. BLANK_URL has no
-   * derivable origin, so a rejected navigation never swaps and keeps landing
-   * in whatever view/partition the tab already had (BLANK_URL's own doc: "an
+   * when the target's session differs, or -- same session -- its app-tab
+   * flag would (appTabFlagChanged's own doc). BLANK_URL has no derivable
+   * origin, so a rejected navigation never swaps (BLANK_URL's own doc: "an
    * EXISTING tab keeps whatever preload it was created with"). */
   navigate (id: string, rawInput: string): void {
     const record = this.tabs.get(id)
@@ -383,8 +381,10 @@ export class TabManager {
     const target = this.resolveTarget(rawInput)
 
     const swap = partitionChanged(target, record.partition, this.ctx.broker)
-    if (swap !== undefined) {
-      repartitionView(id, record, target, swap.to)
+    if (swap !== undefined || appTabFlagChanged(target, record.view, this.ctx.broker)) {
+      // swap.to can itself be undefined (PartitionSwap's own doc) -- ??
+      // would wrongly read that as "no swap" and keep the old partition.
+      repartitionView(id, record, target, swap !== undefined ? swap.to : record.partition)
       return
     }
 

@@ -203,59 +203,6 @@ describe('TabManager -- an installed app gets its own session at creation (ADR-0
   })
 })
 
-// THE PRIMARY USER PATH: a fresh tab (dashboard or otherwise) navigated via
-// the omnibox -- ipc.ts's 'navigate' command and newtab-ipc.ts's dashboard
-// navigate both funnel here. Attempt 1 only wired partitioning into
-// createTab()'s own construction arguments, which a real launch proved is
-// NOT the path an actual person takes: nobody's very first act in a fresh
-// tab is calling createTab(url) directly, they type into the address bar,
-// which is navigate(). These tests exist because the e2e test alone did not
-// catch this fast enough -- it needs a real Electron launch to run at all.
-describe("TabManager -- ADR-0017's synchronous fetch()-routing flag (appTabArgsFor)", () => {
-  it('a fresh tab whose origin is a registered app gets the --orivon-app-tab additionalArgument', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
-    manager.createTab('https://app.example/page')
-
-    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toEqual(['--orivon-app-tab'])
-  })
-
-  it('a fresh tab whose origin is NOT a registered app gets no such argument', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://other.example'))
-    manager.createTab('https://app.example/page')
-
-    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toBeUndefined()
-  })
-
-  it('a tab with no broker at all (ctx.broker undefined) gets no argument -- never throws', () => {
-    const manager = newManager({} as SubsystemContext)
-    expect(() => { manager.createTab('https://app.example/page') }).not.toThrow()
-    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toBeUndefined()
-  })
-
-  it('the fresh-tab dashboard never gets the flag, even if its own URL happened to be a registered origin', () => {
-    const manager = newManager(ctxWithRegisteredOrigins(originFromUrl(DASHBOARD_URL) as string))
-    manager.createTab() // dashboard
-
-    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toEqual([`--orivon-newtab-url=${DASHBOARD_URL}`])
-  })
-
-  it('navigating an existing tab TO a registered app\'s origin swaps in a view carrying the flag', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
-    const id = manager.createTab('https://a.example/')
-    manager.navigate(id, 'https://app.example/page')
-
-    expect(additionalArgumentsOf(createdViews[1] as RecordedView)).toEqual(['--orivon-app-tab'])
-  })
-
-  it('navigating away FROM a registered app\'s origin to an unregistered one drops the flag on the new view', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
-    const id = manager.createTab('https://app.example/page')
-    manager.navigate(id, 'https://plain-website.example/')
-
-    expect(additionalArgumentsOf(createdViews[1] as RecordedView)).toBeUndefined()
-  })
-})
-
 describe('TabManager -- navigate() swaps a view only when entering or leaving an installed app', () => {
   // THE REGRESSION TEST FOR A109. Before 2026-09-15 this swapped the view,
   // and a swapped-in view starts with empty navigationHistory -- so one

@@ -96,6 +96,17 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
   return broker.app.isRegisteredSync(origin) ? [APP_TAB_FLAG] : undefined
 }
 
+/** Whether `target` needs the app-tab flag `view` does not already carry, or vice
+ * versa -- isolation follows CONSENT (`hasGrantsSync`, `partitionForTarget`) but this
+ * flag follows REGISTRATION (`isRegisteredSync`), so a navigation between a
+ * registered-but-ungranted app and an ordinary site can cross this without the
+ * partition ever changing. Undefined for a target with no derivable origin, same as
+ * `partitionChanged` -- a rejected navigation must not read as a flag change either. */
+export function appTabFlagChanged (target: string, view: WebContentsView, broker: Broker | undefined): boolean {
+  if (originFromUrl(target) === null) return false
+  return (appTabArgsFor(target, broker) !== undefined) !== appTabViews.has(view)
+}
+
 /** Every tab's webPreferences, with the standard, non-negotiable ones
  * (contextIsolation/sandbox/no Node integration/webSecurity) -- shared by
  * makeTabView() and a popup's own, so no tab can drift from them (Rule 3).
@@ -228,6 +239,14 @@ export function wireView (id: string, record: TabRecord): void {
       const swap = partitionChanged(navigatedUrl, record.partition, record.host.broker)
       if (swap !== undefined && !keepsOpenerSession(wc, swap)) {
         repartitionView(id, record, navigatedUrl, swap.to)
+        return
+      }
+      // No partition swap does not mean no rebuild is needed: the app-tab
+      // flag follows a different predicate (isRegisteredSync) than the
+      // partition does (hasGrantsSync), and can flip while the partition
+      // -- and so `swap` -- stays undefined.
+      if (swap === undefined && appTabFlagChanged(navigatedUrl, view, record.host.broker)) {
+        repartitionView(id, record, navigatedUrl, record.partition)
         return
       }
     }
