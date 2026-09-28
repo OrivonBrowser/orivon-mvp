@@ -141,10 +141,8 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // The popup's preload (`spec.preloadRelPath`) is privileged in exactly
     // the chrome view's own way, gated on the identical `location.href ===
     // expectedUrl` pattern -- a view holding it must never end up attached
-    // to a document other than `url`. Registered before the load, matching
-    // the chrome view's own ordering (main/shell/window.ts): `loadURL`
-    // never fires `will-navigate` for itself, so this blocks nothing this
-    // function is about to do on purpose.
+    // to a document other than `url`. Locked before the load, as every
+    // caller does (lock-navigation.ts says why that is safe).
     lockNavigation(popup.webContents, url)
 
     // Added last, so it renders above the active tab's view. Tab switches

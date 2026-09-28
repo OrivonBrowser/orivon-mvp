@@ -3,7 +3,7 @@
 **Status: design exploration, 2026-09-28. Not a decision.** Written for the owner, who decides,
 and for the agent that implements the chosen shape.
 
-> **Outcome, 2026-09-28 (`ADR-0040`, `d-0153`).** The owner's goal turned out wider than this
+> **Outcome, 2026-09-28 (`ADR-0040`, `d-0159`).** The owner's goal turned out wider than this
 > document's question: native modules loaded on the fly, and `child_process.spawn` and `fork`,
 > each at the same broker allowance as any app, with no added risk. That rules out shape B for
 > good in this build and settles A1 as the shape of `spawn`. It also changes one row below:

@@ -10,15 +10,14 @@
 // secret.
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { decodeDataUrl, sniffImageType } from './favicon-format.js'
-import { MAX_FAVICON_BYTES } from './favicon.js'
+import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 import { sanitizeDirectUrl } from './omnibox.js'
 
 export interface Bookmark {
   url: string
   title: string
   /** The site's own favicon as a `data:` URL, captured from the tab at the
-   * moment it was starred (src/main/favicon.ts already fetched and re-encoded
+   * moment it was starred (favicon.ts already fetched and re-encoded
    * it for the tab strip). Stored with the bookmark rather than re-fetched:
    * the bookmarks bar must render instantly and offline, and a privileged
    * view making a network request for an icon is exactly what favicon.ts
@@ -52,8 +51,8 @@ export interface BookmarkInput {
  * payload is decoded and sniffed too (favicon-format.ts's own byte check,
  * the same one a fetched candidate goes through) -- a stored favicon is
  * exactly as untrusted as a page's own `<link rel=icon>`, and gets exactly
- * the same guarantee: what it renders as is decided by its bytes, not by
- * a label anything wrote into the file. */
+ * the same guarantee: it comes back re-encoded under the label its bytes
+ * carry, never the label anything wrote into the file. */
 export const MAX_STORED_FAVICON_CHARS = Math.ceil(MAX_FAVICON_BYTES * 4 / 3) + 64
 
 export function sanitizeStoredFavicon (value: unknown): string | null {
@@ -61,8 +60,7 @@ export function sanitizeStoredFavicon (value: unknown): string | null {
   if (!value.startsWith('data:image/')) return null
   if (value.length > MAX_STORED_FAVICON_CHARS) return null
   const bytes = decodeDataUrl(value, MAX_FAVICON_BYTES)
-  if (bytes === null || sniffImageType(bytes) === null) return null
-  return value
+  return bytes === null ? null : toDataUrl(bytes)
 }
 
 /** Adds `entry`, replacing any existing bookmark for the same URL rather

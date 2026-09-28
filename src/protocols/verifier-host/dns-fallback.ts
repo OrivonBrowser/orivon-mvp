@@ -6,7 +6,9 @@
 // traffic; this exists only for the one case a lying resolver leaves with
 // nothing else to try.
 
+import { unlessAborted, withTimeout } from '../resolution/timing.js'
 import type { WebFetch } from './egress.js'
+import { DirectAnswerRefused } from './direct-fetch.js'
 import type { DirectFetch } from './direct-fetch.js'
 
 /** How long a route, once decided, is trusted before the next transport
@@ -16,6 +18,10 @@ import type { DirectFetch } from './direct-fetch.js'
  * and the cheaper one to re-confirm. */
 export const AGREED_FOR_MS = 5 * 60_000
 export const DIRECT_FOR_MS = 10 * 60_000
+/** How long either resolver may take to answer one comparison. */
+const CHECK_TIMEOUT_MS = 5_000
+/** Electron rejects `net.resolveHost` with the Chromium error's name as the message. */
+const NAME_NOT_RESOLVED = /\bERR_NAME_NOT_RESOLVED\b/
 
 type Route =
   | { readonly via: 'net', readonly until: number }
@@ -25,10 +31,9 @@ export interface DnsFallbackDeps {
   readonly fetch: WebFetch
   readonly direct: DirectFetch
   /** The system's own answer for `host` -- Electron's `net.resolveHost`,
-   * ordinarily. A rejection is treated the same as an empty answer: NXDOMAIN
-   * tampering is exactly the shape this exists to catch. */
+   * ordinarily. */
   readonly systemAddresses: (host: string) => Promise<readonly string[]>
-  /** Already public-unicast only (doh.ts's own `dohAddressResolver`). */
+  /** Already public-unicast only, in canonical spelling (doh.ts's own `dohAddressResolver`). */
   readonly dohAddresses: (host: string, signal: AbortSignal) => Promise<readonly string[]>
   readonly now?: () => number
   readonly log?: (line: string) => void
@@ -38,11 +43,15 @@ function disjoint (a: readonly string[], b: readonly string[]): boolean {
   return !a.some((address) => b.includes(address))
 }
 
-async function systemAnswersFor (host: string, systemAddresses: DnsFallbackDeps['systemAddresses']): Promise<readonly string[]> {
+/** The system resolver's answer. A name it says does not exist is `[]`,
+ * the NXDOMAIN shape of tampering, so it counts as disagreeing (fail-open by
+ * design). Any other failure (offline, timed out, a proxy error) is
+ * `undefined`: nothing to compare, so never a reason to go direct. */
+async function systemAnswersFor (host: string, systemAddresses: DnsFallbackDeps['systemAddresses']): Promise<readonly string[] | undefined> {
   try {
-    return await systemAddresses(host)
-  } catch {
-    return [] // an NXDOMAIN or a resolver error is exactly the tampering shape this checks for
+    return await withTimeout(systemAddresses(host), CHECK_TIMEOUT_MS, 'the system resolver')
+  } catch (error) {
+    return error instanceof Error && NAME_NOT_RESOLVED.test(error.message) ? [] : undefined
   }
 }
 
@@ -63,15 +72,21 @@ export function withDnsFallback (origins: readonly string[], deps: DnsFallbackDe
   const now = deps.now ?? Date.now
   const log = deps.log ?? (() => {})
 
+  /** The route decided for `origin`, while it is still in force. */
+  const routeFor = (origin: string): Route | undefined => {
+    const route = routes.get(origin)
+    return route !== undefined && route.until > now() ? route : undefined
+  }
+
   async function checkOrigin (origin: string, host: string): Promise<Route> {
     const existing = checks.get(origin)
     if (existing !== undefined) return await existing
     const check = (async (): Promise<Route> => {
       const [system, doh] = await Promise.all([
         systemAnswersFor(host, deps.systemAddresses),
-        deps.dohAddresses(host, AbortSignal.timeout(5_000)).catch(() => [])
+        deps.dohAddresses(host, AbortSignal.timeout(CHECK_TIMEOUT_MS)).catch(() => [])
       ])
-      if (doh.length > 0 && disjoint(system, doh)) {
+      if (system !== undefined && doh.length > 0 && disjoint(system, doh)) {
         log(`${host}: system resolver (${system.join(', ') || 'nothing'}) disagrees with DNS-over-HTTPS (${doh.join(', ')}) -- reaching it directly`)
         return { via: 'direct', addresses: doh, until: now() + DIRECT_FOR_MS }
       }
@@ -87,16 +102,18 @@ export function withDnsFallback (origins: readonly string[], deps: DnsFallbackDe
     }
   }
 
-  // A direct attempt that itself fails resets the route to `net` before
-  // rethrowing -- whether this was the fast path (already routed direct)
-  // or the very call that just decided to try direct for the first time.
-  // One place, so both mean the same thing (Rule 3): a direct route never
-  // survives its own failure, however it was reached.
+  // Only a transport failure of the direct attempt itself (refused, reset,
+  // a bad certificate) sends the origin back to `net`. An attempt its caller
+  // abandoned, or one that reached the gateway and refused its answer
+  // (DirectAnswerRefused), says nothing about the route.
   async function tryDirect (origin: string, url: string, init: RequestInit | undefined, addresses: readonly string[]): Promise<Response> {
     try {
       return await deps.direct(url, init, addresses)
     } catch (error) {
-      routes.set(origin, { via: 'net', until: now() + AGREED_FOR_MS })
+      if (init?.signal?.aborted !== true && !(error instanceof DirectAnswerRefused)) {
+        log(`${new URL(origin).hostname}: the direct connection failed too -- back to the system resolver`)
+        routes.set(origin, { via: 'net', until: now() + AGREED_FOR_MS })
+      }
       throw error
     }
   }
@@ -106,22 +123,17 @@ export function withDnsFallback (origins: readonly string[], deps: DnsFallbackDe
     const origin = parsed.origin
     if (!allowed.has(origin)) return await deps.fetch(url, init)
 
-    const route = routes.get(origin)
-    if (route !== undefined && route.via === 'direct' && route.until > now()) {
-      return await tryDirect(origin, url, init, route.addresses)
-    }
+    const route = routeFor(origin)
+    if (route?.via === 'direct') return await tryDirect(origin, url, init, route.addresses)
 
     try {
       return await deps.fetch(url, init)
     } catch (error) {
       if (init?.signal?.aborted === true) throw error
-      // A recent 'net' verdict ("checked, they agree") is honoured here too,
-      // not just a 'direct' one above -- without this, every subsequent
-      // transport failure re-ran the full system-vs-DoH comparison instead
-      // of remembering the answer for AGREED_FOR_MS, which was the whole
-      // point of recording it.
-      if (route !== undefined && route.via === 'net' && route.until > now()) throw error
-      const decided = await checkOrigin(origin, parsed.hostname)
+      // Read again rather than reusing `route`: a verdict another request
+      // reached while this one was in flight is honoured, not re-checked,
+      // and a recent 'net' verdict means no comparison until it expires.
+      const decided = routeFor(origin) ?? await unlessAborted(checkOrigin(origin, parsed.hostname), init?.signal)
       if (decided.via === 'direct') return await tryDirect(origin, url, init, decided.addresses)
       throw error
     }

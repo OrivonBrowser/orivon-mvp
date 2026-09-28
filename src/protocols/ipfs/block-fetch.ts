@@ -1,10 +1,10 @@
 // One verified block, fetched from whichever gateway answers first --
 // hedged against a slow one, retried across a cooling one, never against a
-// gateway that has lied. Split out of blockstore.ts (Rule 2) once this
-// stopped being a single sequential loop.
+// gateway that has lied.
 
 import type { CID } from 'multiformats/cid'
 import { ResolutionError } from '../resolution/records.js'
+import { sleepOrAbort } from '../resolution/timing.js'
 import type { Refusal } from '../resolution/providers.js'
 import { GatewayFailure, askGateway, readCapped } from './gateways.js'
 import type { Fetch, GatewayPool } from './gateways.js'
@@ -33,7 +33,7 @@ function limitFailure (error: unknown): ResolutionError {
 
 type AttemptOutcome =
   | { readonly kind: 'verified', readonly bytes: Uint8Array }
-  | { readonly kind: 'lied' }
+  | { readonly kind: 'lied', readonly reason: string }
   | { readonly kind: 'failed', readonly retryable: boolean, readonly reason: string }
   | { readonly kind: 'fatal', readonly error: ResolutionError }
 
@@ -48,7 +48,7 @@ async function attemptGateway (gateway: string, cid: CID, key: string, deps: Fet
     )
   } catch (error) {
     if (!(error instanceof GatewayFailure)) throw error
-    if (error.outcome.kind === 'cancelled') return { kind: 'failed', retryable: false, reason: 'superseded by a faster attempt' }
+    if (error.outcome.kind === 'cancelled') return { kind: 'failed', retryable: false, reason: `${gateway}: cancelled` }
     return { kind: 'failed', retryable: error.outcome.kind === 'rate-limited' || error.outcome.kind === 'unreachable', reason: error.message }
   }
   try {
@@ -57,7 +57,7 @@ async function attemptGateway (gateway: string, cid: CID, key: string, deps: Fet
     if (error instanceof BlockRefused && error.reason === 'mismatch') {
       onRefusal({ source: gateway, resource: key })
       deps.pool.drop(gateway)
-      return { kind: 'lied' }
+      return { kind: 'lied', reason: `${gateway} sent bytes that failed their hash` }
     }
     return { kind: 'fatal', error: limitFailure(error) }
   }
@@ -86,6 +86,8 @@ class AttemptQueue<T> {
    * has settled. */
   async next (signal: AbortSignal): Promise<T> {
     if (this.results.length === 0) {
+      // An 'abort' listener added to a signal that already fired is never called.
+      if (signal.aborted) throw signal.reason
       await new Promise<void>((resolve, reject) => {
         const onAbort = (): void => { reject(signal.reason) }
         this.notify = () => {
@@ -137,6 +139,16 @@ async function racePass (
     let retryable = false
     const reasons: string[] = []
 
+    // Applies one outcome, returning the pass's final result if this one
+    // ends it (verified or fatal), or undefined to keep racing.
+    const handle = (outcome: AttemptOutcome): PassResult | undefined => {
+      if (outcome.kind === 'verified' || outcome.kind === 'fatal') return outcome
+      if (outcome.kind === 'lied') lied = true
+      else retryable = retryable || outcome.retryable
+      reasons.push(outcome.reason)
+      return undefined
+    }
+
     const start = (): void => {
       if (nextIndex >= candidates.length || inFlight >= MAX_ATTEMPTS_IN_FLIGHT) return
       const gateway = candidates[nextIndex++]!
@@ -156,6 +168,9 @@ async function racePass (
 
     start()
     for (;;) {
+      // A caller that left is answered with its own reason, never with the
+      // reasons its cancelled attempts reported on the way out.
+      if (callerSignal.aborted) throw callerSignal.reason
       const canHedge = inFlight < MAX_ATTEMPTS_IN_FLIGHT && nextIndex < candidates.length
       if (canHedge) {
         const hedge = abortAfter(hedgeDelayMs)
@@ -177,15 +192,6 @@ async function racePass (
       }
       if (inFlight === 0 && nextIndex >= candidates.length) return { kind: 'exhausted', lied, retryable, reasons }
       if (inFlight < MAX_ATTEMPTS_IN_FLIGHT) start()
-    }
-
-    // Applies one outcome, returning the pass's final result if this one
-    // ends it (verified or fatal), or undefined to keep racing.
-    function handle (outcome: AttemptOutcome): PassResult | undefined {
-      if (outcome.kind === 'verified' || outcome.kind === 'fatal') return outcome
-      if (outcome.kind === 'lied') lied = true
-      else { retryable = retryable || outcome.retryable; reasons.push(outcome.reason) }
-      return undefined
     }
   } finally {
     // Every attempt still running lost the race (or the pass ended without
@@ -255,21 +261,11 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
     anyLied = anyLied || result.lied
     reasons.push(...result.reasons)
     pass++
-    if (!result.retryable && !result.lied) break
+    // A lie alone earns no new pass: the liar is dropped, and every other
+    // gateway in this pass has already answered.
+    if (!result.retryable) break
   }
 
   if (deps.pool.usable().length === 0) throw new ResolutionError('unverifiable', `block ${key}: every gateway was dropped this session for sending bytes that failed their hash`)
   throw new ResolutionError(anyLied ? 'unverifiable' : 'unavailable', `block ${key}: ${reasons.join('; ') || 'no gateway answered'}`)
-}
-
-/** Waits `ms`, or returns early if `signal` aborts first -- never rejects,
- * since giving up on a cooldown wait ends the pass loop on its own (the
- * next `candidates()` call finds nothing and the CALLER's own deadline,
- * not this wait, is what should end things). */
-async function sleepOrAbort (ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
-  })
 }

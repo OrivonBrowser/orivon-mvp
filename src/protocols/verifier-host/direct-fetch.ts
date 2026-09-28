@@ -12,16 +12,31 @@ import { Agent, request as httpsRequest } from 'node:https'
 import type { RequestOptions } from 'node:https'
 import type { LookupAddress } from 'node:dns'
 import { Readable } from 'node:stream'
+import { canonicalAddress, classifyAddress } from '../../broker/policy/address.js'
 
 export type DirectFetch = (url: string, init: RequestInit | undefined, addresses: readonly string[]) => Promise<Response>
 
 export interface DirectFetchOptions {
-  /** Test seam only: a private CA to trust, for a loopback TLS fixture. */
-  readonly ca?: string | Buffer
+  /** Test seam only: a loopback TLS fixture. Trusts its private CA, and
+   * lets the pinned address be loopback and the port any. */
+  readonly fixture?: { readonly ca: string | Buffer }
   readonly maxSocketsPerOrigin?: number
+  /** How long the connection may carry no bytes, before or after the headers. */
+  readonly idleTimeoutMs?: number
+}
+
+/** The pinned address answered with a valid certificate for the name, and
+ * its answer was refused (a redirect, a compressed body, a status outside
+ * 200-599, a protocol switch): the route reached the gateway, so it is not
+ * the route that failed. */
+export class DirectAnswerRefused extends Error {
+  override readonly name = 'DirectAnswerRefused'
 }
 
 const DEFAULT_MAX_SOCKETS_PER_ORIGIN = 8
+const DEFAULT_IDLE_TIMEOUT_MS = 30_000
+/** Set here, never by the caller: framing, and a Host that must stay the URL's. */
+const RESERVED_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'accept-encoding'])
 /** No content, or none for this method -- a body would violate the
  * `Response` constructor's own null-body-status rule (the WHATWG spec's
  * "null body status" set, minus 101/103, which a client never receives). */
@@ -42,14 +57,31 @@ function agentFor (origin: string, maxSockets: number): Agent {
 }
 
 function collectHeaders (init: RequestInit | undefined): Record<string, string> {
-  const headers: Record<string, string> = {
-    // A compressed body would fail its own hash check, and would wrongly
-    // frame an honest gateway as a liar for something Content-Encoding did.
-    'accept-encoding': 'identity'
+  const headers: Record<string, string> = {}
+  if (init?.headers !== undefined) {
+    for (const [key, value] of new Headers(init.headers)) if (!RESERVED_HEADERS.has(key)) headers[key] = value
   }
-  if (init?.headers === undefined) return headers
-  for (const [key, value] of new Headers(init.headers)) headers[key] = value
+  // A compressed body would fail its own hash check, and would wrongly
+  // frame an honest gateway as a liar for something Content-Encoding did.
+  headers['accept-encoding'] = 'identity'
   return headers
+}
+
+/** Public unicast, and already in canonical spelling, so the address Node
+ * dials is exactly the one that was checked (T12). */
+function dialable (address: string, fixture: boolean): boolean {
+  if (canonicalAddress(address) !== address) return false
+  const kind = classifyAddress(address)
+  return kind === 'public' || (fixture && kind === 'loopback')
+}
+
+/** Why an answer from the gateway is refused, or undefined to accept it. */
+function refusalOf (status: number, encoding: string | undefined): string | undefined {
+  // `new Response` throws a RangeError for any other status.
+  if (status < 200 || status > 599) return `direct fetch got status ${String(status)}, outside 200-599`
+  if (status >= 300 && status < 400) return `direct fetch got a ${String(status)} redirect, which it never follows`
+  if (encoding !== undefined && encoding.toLowerCase() !== 'identity') return `asked for accept-encoding: identity but got content-encoding: ${encoding}`
+  return undefined
 }
 
 function toWebHeaders (raw: Record<string, string | string[] | undefined>): Headers {
@@ -93,12 +125,17 @@ function pinnedLookup (hostname: string, addresses: readonly string[]): (askedHo
  */
 export function createDirectFetch (options: DirectFetchOptions = {}): DirectFetch {
   const maxSockets = options.maxSocketsPerOrigin ?? DEFAULT_MAX_SOCKETS_PER_ORIGIN
+  const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS
+  const fixture = options.fixture !== undefined
   return async (url, init, addresses) => {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:') throw new Error(`direct fetch only reaches https, not ${parsed.protocol}`)
+    if (parsed.port !== '' && !fixture) throw new Error(`direct fetch only reaches port 443, not ${parsed.port}`)
     const method = (init?.method ?? 'GET').toUpperCase()
     if (method !== 'GET' && method !== 'HEAD') throw new Error(`direct fetch only supports GET/HEAD, not ${method}`)
     if (addresses.length === 0) throw new Error('direct fetch given no pinned address')
+    const refused = addresses.find((address) => !dialable(address, fixture))
+    if (refused !== undefined) throw new Error(`direct fetch refuses to dial ${refused}: not a canonical public unicast address`)
 
     const requestOptions: RequestOptions = {
       method,
@@ -109,29 +146,48 @@ export function createDirectFetch (options: DirectFetchOptions = {}): DirectFetc
       headers: collectHeaders(init),
       lookup: pinnedLookup(parsed.hostname, addresses),
       agent: agentFor(parsed.origin, maxSockets),
-      ca: options.ca,
-      signal: init?.signal ?? undefined
+      ca: options.fixture?.ca,
+      signal: init?.signal ?? undefined,
+      timeout: idleTimeoutMs
     }
 
     return await new Promise<Response>((resolve, reject) => {
+      let settled = false
+      const fail = (error: Error): void => {
+        if (settled) return
+        settled = true
+        reject(error)
+      }
       const req = httpsRequest(requestOptions, (res) => {
-        const status = res.statusCode ?? 0
-        if (status >= 300 && status < 400) {
-          res.resume() // drain so the socket returns to the agent's pool
-          reject(new Error(`direct fetch got a ${String(status)} redirect, which it never follows`))
-          return
+        // Anything thrown in here would be uncaught, and end the verifier host.
+        try {
+          const refusal = refusalOf(res.statusCode ?? 0, res.headers['content-encoding'])
+          if (refusal !== undefined) {
+            res.resume() // drain so the socket returns to the agent's pool
+            fail(new DirectAnswerRefused(refusal))
+            return
+          }
+          const status = res.statusCode ?? 0
+          const body = method === 'HEAD' || NULL_BODY_STATUSES.has(status) ? null : (Readable.toWeb(res) as ReadableStream<Uint8Array>)
+          if (body === null) res.resume()
+          const response = new Response(body, { status, headers: toWebHeaders(res.headers) })
+          settled = true
+          resolve(response)
+        } catch (error) {
+          res.destroy()
+          fail(error instanceof Error ? error : new Error(String(error)))
         }
-        const encoding = res.headers['content-encoding']
-        if (encoding !== undefined && encoding.toLowerCase() !== 'identity') {
-          res.resume()
-          reject(new Error(`asked for accept-encoding: identity but got content-encoding: ${encoding}`))
-          return
-        }
-        const body = method === 'HEAD' || NULL_BODY_STATUSES.has(status) ? null : (Readable.toWeb(res) as ReadableStream<Uint8Array>)
-        if (body === null) res.resume()
-        resolve(new Response(body, { status, headers: toWebHeaders(res.headers) }))
       })
-      req.on('error', reject)
+      // Without a listener Node destroys the socket after a 101 and never
+      // calls the response callback, leaving this promise pending for good.
+      req.once('upgrade', (_res, socket) => {
+        socket.destroy()
+        fail(new DirectAnswerRefused('direct fetch got 101 Switching Protocols'))
+      })
+      req.once('timeout', () => { req.destroy(new Error(`direct fetch to ${parsed.hostname} carried no bytes for ${String(idleTimeoutMs)} ms`)) })
+      req.on('error', fail)
+      // The last word: whatever ended the request without an answer or an error.
+      req.once('close', () => { fail(new Error(`direct fetch to ${parsed.hostname} closed without an answer`)) })
       req.end()
     })
   }

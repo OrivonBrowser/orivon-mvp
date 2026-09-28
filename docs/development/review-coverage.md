@@ -74,6 +74,35 @@ Per-finding detail is in `open-questions.md` (A168-A182). This row records that 
 and what it found in aggregate, not a re-narration of each finding.
 
 
+### PRs #21, #22 and #24: the chrome-view lock, favicons, `.eth` gateway reliability (2026-09-28)
+
+Reviewed after #22 and #24 had merged and while #21 was open. The fixes are #29 (the verifier)
+and #30 (the shell).
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Adversarial personas (`adversarial-reviewer`) | All three PRs | Findings pooled with the next three rows: 32 in all, 5 of them HIGH, listed below the table |
+| `/code-review`, high effort | #24 and #21 | Pooled, as above |
+| Named-persona adversarial review | #21 and #22 | Pooled, as above |
+| STRIDE and DREAD model | #24's direct gateway route | Pooled, as above |
+| `/security-review` methodology, "exploitable, not denial of service" bar | All three PRs | No HIGH or MEDIUM vulnerability newly introduced. It reproduced the SVG DOCTYPE bypass and the 999-status crash independently and classed both as denial of service, confirmed the direct route cannot be steered at a non-public address, and noted that #22 closed an older gap: favicon redirects had no per-hop address check |
+
+The HIGH findings: an abandoned hedge attempt cooled an honest gateway down; an aborted direct
+attempt reset the DNS-tamper route; a gateway answering 999 or 101 crashed or wedged the verifier
+host; a failed favicon request was never torn down; and a same-document URL change dropped the
+tab's icon. Eleven of the 32 were reached by two passes independently and treated as settled
+rather than as one reviewer's opinion. Owner calls went to `open-questions.md`: A262-A267 on the
+direct gateway route, A269 on the popups' sender check, A270 on SVG favicons. Fixing found two
+more: A258's cause was the certificate serial's DER padding, and Electron's own `net.fetch`
+throws uncaught on a status outside 200-599 (A268).
+
+Not run: `ca:review` and `ca:security-reviewer`, which need an initialised `.codearbiter/`, and
+`claude-security`, which was not installed.
+
+**The strict bar and the correctness passes disagreed, usefully.** The security methodology,
+asked only for exploitable vulnerabilities, passed all three PRs; the defects it set aside as
+denial of service are the ones that would have failed `.eth` pages and favicons for real users.
+
 ## Adding an entry
 
 When an independent review event finishes (a hand-review, an adversarial pass, a security
@@ -86,4 +115,4 @@ see in the PR itself.
 
 | Mechanism | Scope | Outcome |
 |---|---|---|
-| `/code-review`, high effort, run by a forked reviewer | The branch against `main`: `src/shim/wasi/`, the `wasi` module row, its tests and e2e, and the docs | 10 findings, with no verify pass. Eight were correctness defects: a kill that could not end a pending read or sleep, a handle leaked by a kill, a reactor whose memory was never bound, a reactor's files closed after `_initialize`, a sleep over 24.8 days firing at once, a readdir cookie at or above 2^63 trapping, a path decoded from shared memory, and a window in `path_remove_directory`. The other two were a Rule 2 phrase in `scope.md` and serial stats in `fd_readdir`. Nine fixed in the same PR, with a test where one applies; the window needs a broker change and is filed as A263 |
+| `/code-review`, high effort, run by a forked reviewer | The branch against `main`: `src/shim/wasi/`, the `wasi` module row, its tests and e2e, and the docs | 10 findings, with no verify pass. Eight were correctness defects: a kill that could not end a pending read or sleep, a handle leaked by a kill, a reactor whose memory was never bound, a reactor's files closed after `_initialize`, a sleep over 24.8 days firing at once, a readdir cookie at or above 2^63 trapping, a path decoded from shared memory, and a window in `path_remove_directory`. The other two were a Rule 2 phrase in `scope.md` and serial stats in `fd_readdir`. Nine fixed in the same PR, with a test where one applies; the window needs a broker change and is filed as A273 |

@@ -30,16 +30,19 @@ across this boundary.
 | File | Loaded by | Exposes |
 |---|---|---|
 | `app.ts` | every ordinary tab | `window.orivon`, from `surface/orivon.ts`'s `exposeOrivon()` |
-| `shell.ts` | only the chrome view | Tab commands |
+| `shell.ts` | only the chrome view, and only at the URL `--orivon-shell-url` names | Tab commands, typed by its `OrivonShell` |
 | `settings.ts` | only the all-sites popup (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list and revoke grants, list and reset notification answers |
 | `site-info.ts` | only the per-site popup (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info, switches, picked paths and browser data |
 | `embed.ts` | only a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest; ADR-0039) | Nothing on `window`: runs the script set with `orivon.web.setEmbedScript` before the page's own code, handing it `orivonEmbed` |
 | `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrivon()` as `app.ts` |
 | `expose-fetch-route.ts`, `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, and `process`, `global`, `setImmediate`, `clearImmediate` and `Buffer` |
 
-`settings.ts`, `site-info.ts` and `newtab.ts` load into navigable views, so each checks
-`location.href` against its expected URL before exposing anything; `src/main/ipc/settings-ipc.ts`
-and `site-info-ipc.ts` re-verify the sender on every call, and site-info fixes the origin itself.
+`shell.ts`, `settings.ts`, `site-info.ts` and `newtab.ts` each check `location.href` against the
+URL main passed them (`--orivon-shell-url` and its siblings) before exposing anything. The chrome
+view and the two popups are also locked to that document (`src/main/shell/lock-navigation.ts`); a
+fresh tab is not, since it navigates. Main re-verifies the sender on every call: `ipc.ts`'s
+`isFromChrome` by frame identity and URL, `newtab-ipc.ts` by URL, `settings-ipc.ts` and
+`site-info-ipc.ts` by identity (A269), and site-info fixes the origin itself.
 
 ## The rule that governs this directory
 

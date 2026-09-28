@@ -209,6 +209,18 @@ describe('BlockSource.get -- in-flight sharing, not just cache hits', () => {
     expect(seenBy[1]).toEqual([A])
   })
 
+  it('a refusal still reaches the joiner when the shared fetch ends unverifiable', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.tamper(leafKey, [A])
+    gateways.failing.add(B)
+    const pool = new GatewayPool([A, B], 4)
+    const s = new BlockSource(gateways.fetch, pool, { ...DEFAULT_LIMITS, hedgeDelayMs: 20 }, new BlockCache(), 'https://one.example')
+    const seen: string[] = []
+    await expect(s.get(leaf, signal, (r) => { seen.push(r.source) })).rejects.toMatchObject({ failure: 'unverifiable' })
+    expect(pool.usable()).toEqual([B])
+    expect(seen).toEqual([A])
+  })
+
   it('the only joiner aborting stops the underlying fetch', async () => {
     const gateways = fakeGateways(dag.blocks)
     gateways.hanging.add(A)
