@@ -9,7 +9,7 @@ and for the agent that implements the chosen shape.
 > good in this build and settles A1 as the shape of `spawn`. It also changes one row below:
 > `fork` is built as a Web Worker running the app's module over the Node shim and an `orivon.*`
 > proxy, not refused. The WASI host this document leans on is built in `src/shim/wasi/`
-> (`wasm-compatibility.md` step 1); `child_process` itself is not built yet. Where this document
+> (`wasm-compatibility.md` step 1), and `child_process` in `src/shim/child-process/`, every child in a Web Worker (`d-0162`). Where this document
 > says JSPI in a Worker is unmeasured, `wasm-compatibility.md` section 2 has since measured it
 > working with no isolation. It reads the compatibility matrix's rows on
 `subprocess`, `child_process` and WASI, says what each could become, and recommends one path. The

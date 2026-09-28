@@ -64,6 +64,15 @@ export const op = {
   /** i32.store of a constant at a constant address: how a program lays out an iovec. */
   store: (address: number, value: number): number[] => [0x41, ...sleb(BigInt(address)), 0x41, ...sleb(BigInt(value)), 0x36, 2, 0],
   drop: [0x1a],
+  block: [0x02, 0x40],
+  loop: [0x03, 0x40],
+  end: [0x0b],
+  br: (depth: number): number[] => [0x0c, depth],
+  brIf: (depth: number): number[] => [0x0d, depth],
+  i32Eqz: [0x45],
+  unreachable: [0x00],
+  /** Copies the i32 at `from` to `to`. */
+  copy: (to: number, from: number): number[] => [0x41, ...sleb(BigInt(to)), 0x41, ...sleb(BigInt(from)), 0x28, 2, 0, 0x36, 2, 0],
   localGet: (index: number): number[] => [0x20, ...uleb(index)],
   localSet: (index: number): number[] => [0x21, ...uleb(index)],
   i32Add: [0x6a]
