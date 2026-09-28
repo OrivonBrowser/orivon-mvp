@@ -175,6 +175,12 @@ describe('checkComments', () => {
       expect(checkComments(repo({ 'spike/gate1a/shim/a.js': preamble(80) })).ok).toBe(true)
     })
 
+    it('exempts vendor/, third-party source not held to Orivon\'s own style', () => {
+      expect(
+        checkComments(repo({ 'vendor/electron-chrome-extensions/src/index.ts': preamble(80) })).ok
+      ).toBe(true)
+    })
+
     it('does not check test files', () => {
       const root = repo({
         'src/a.test.ts': preamble(80),

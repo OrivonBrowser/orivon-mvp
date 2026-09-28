@@ -1,0 +1,6 @@
+{
+  "manifest_version": 3, "name": "probe-dnr-static", "version": "1.0",
+  "permissions": ["declarativeNetRequest"],
+  "host_permissions": ["<all_urls>"],
+  "declarative_net_request": { "rule_resources": [ { "id": "r1", "enabled": true, "path": "rules.json" } ] }
+}

@@ -1299,6 +1299,29 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
+### A274: Security model T4 says ordinary tabs never see `orivon.*`; they do **[AI-REC]**
+
+- **Question:** Should T4 be rewritten to what the code does: `src/preload/app.ts` exposes the
+  locked `window.orivon` on every ordinary tab, and the broker, keyed on the frame's origin, is
+  what refuses an origin with no grant?
+- **Why it matters:** T4 claims a two-preload invariant and a `window.nostr`-only ordinary tab.
+  Neither holds, and extension pages opened in a tab also receive `window.orivon` today.
+- **Options:** rewrite T4 to the code and stop exposing on `chrome-extension:` pages (rec.);
+  change the code to match T4, which removes `orivon` from every ungranted page.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** extensions build plan package 3
+
+### A275: One extension instance everywhere undoes per-app sessions **[OWNER]**
+
+- **Question:** Extensions run on granted apps as one instance (owner, 2026-09-28). Does a grant
+  then stop implying a session partition, with only a pinned cache keeping one?
+- **Why it matters:** ADR-0018, ADR-0003 and T18/T22 isolate each granted origin in
+  `persist:app-*`; Electron loads an extension per session, so one instance means one session.
+- **Options:** granted network-served origins join the default session, cache-served ones keep
+  their partition until pins are served on the network path (rec.); an extension copy per app.
+- **Who decides:** owner
+- **Blocks:** extensions build plan package 6
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared

@@ -122,7 +122,12 @@ export default defineConfig({
           newtab: resolve(root, 'src/preload/newtab.ts'),
           settings: resolve(root, 'src/preload/settings.ts'),
           'site-info': resolve(root, 'src/preload/site-info.ts'),
-          embed: resolve(root, 'src/preload/embed.ts')
+          embed: resolve(root, 'src/preload/embed.ts'),
+          'extension-api': resolve(root, 'vendor/electron-chrome-extensions/src/preload.ts'),
+          'web-store': resolve(
+            root,
+            'vendor/electron-chrome-web-store/src/renderer/chrome-web-store.preload.ts'
+          )
         }
       },
       // Preloads share local imports (./channels.js, ./surface/orivon.js).
