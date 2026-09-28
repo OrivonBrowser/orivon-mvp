@@ -8,7 +8,7 @@ import type { SiteInfoController } from '../../permissions/site-info-controller.
 // file covers only the commands this lane and the site-info lane added on
 // COMMAND_CHANNEL: the toolbar key's per-tab summary, and opening the
 // all-sites and site-info popups. Listing every app and revoking live on
-// the all-sites popup's OWN channel instead (settings-ipc.test.ts); the
+// the all-sites popup's OWN channel instead (permissions-ipc.test.ts); the
 // site-info popup's own get/apply/trust/data commands live on ITS own
 // channel too (site-info-ipc.test.ts) -- see ShellCommand's own doc on why.
 
@@ -66,28 +66,28 @@ describe('registerShellIpc -- siteSummaryFor', () => {
   })
 })
 
-describe('registerShellIpc -- openSettings', () => {
+describe('registerShellIpc -- openPermissions', () => {
   it('toggles the all-sites popup, passing the tune icon\'s anchor and the tab url when given', async () => {
-    const openSettings = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openSettings, vi.fn(), vi.fn())
+    const openPermissions = vi.fn()
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openPermissions, vi.fn(), vi.fn())
 
     // The anchor is the chrome view's measurement of its own tune icon --
     // main has no way to derive it, so it always rides the command.
     const anchor = { x: 900, y: 44, width: 32, height: 32 }
-    await dispatch({ type: 'openSettings', anchor })
-    await dispatch({ type: 'openSettings', url: 'https://app.example/some/page', anchor })
+    await dispatch({ type: 'openPermissions', anchor })
+    await dispatch({ type: 'openPermissions', url: 'https://app.example/some/page', anchor })
 
-    expect(openSettings).toHaveBeenNthCalledWith(1, anchor, undefined)
-    expect(openSettings).toHaveBeenNthCalledWith(2, anchor, 'https://app.example/some/page')
+    expect(openPermissions).toHaveBeenNthCalledWith(1, anchor, undefined)
+    expect(openPermissions).toHaveBeenNthCalledWith(2, anchor, 'https://app.example/some/page')
   })
 
-  it('refuses openSettings from a frame that is not the chrome view\'s own', async () => {
-    const openSettings = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openSettings, vi.fn(), vi.fn())
+  it('refuses openPermissions from a frame that is not the chrome view\'s own', async () => {
+    const openPermissions = vi.fn()
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), openPermissions, vi.fn(), vi.fn())
 
-    await dispatch({ type: 'openSettings', anchor: { x: 900, y: 44, width: 32, height: 32 } }, OTHER_FRAME)
+    await dispatch({ type: 'openPermissions', anchor: { x: 900, y: 44, width: 32, height: 32 } }, OTHER_FRAME)
 
-    expect(openSettings).not.toHaveBeenCalled()
+    expect(openPermissions).not.toHaveBeenCalled()
   })
 })
 

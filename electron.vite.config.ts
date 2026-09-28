@@ -141,7 +141,7 @@ export default defineConfig({
           app: resolve(root, 'src/preload/app.ts'),
           shell: resolve(root, 'src/preload/shell.ts'),
           newtab: resolve(root, 'src/preload/newtab.ts'),
-          settings: resolve(root, 'src/preload/settings.ts'),
+          permissions: resolve(root, 'src/preload/permissions.ts'),
           'site-info': resolve(root, 'src/preload/site-info.ts'),
           embed: resolve(root, 'src/preload/embed.ts')
         }
@@ -180,7 +180,7 @@ export default defineConfig({
       // `index` is the privileged chrome view; `newtab` is the dashboard,
       // ordinary tab content loaded into a tab's own WebContentsView with
       // the unprivileged (well, narrowly scoped) newtab preload -- see
-      // src/main/tabs.ts's createTab(). `settings` and `site-info` are the
+      // src/main/tabs.ts's createTab(). `permissions` and `site-info` are the
       // two toolbar popups (src/main/permissions/popover-view.ts). `intro` is
       // the welcome screen, a full-window view with no preload
       // (src/main/shell/intro-view.ts). Every entry must live inside `root`
@@ -191,7 +191,7 @@ export default defineConfig({
           index: resolve(root, 'src/renderer/index.html'),
           newtab: resolve(root, 'src/renderer/newtab/index.html'),
           intro: resolve(root, 'src/renderer/intro/index.html'),
-          settings: resolve(root, 'src/renderer/settings/index.html'),
+          permissions: resolve(root, 'src/renderer/permissions/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html')
         }
       }

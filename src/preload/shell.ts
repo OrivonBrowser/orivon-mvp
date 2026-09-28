@@ -55,10 +55,10 @@ contextBridge.exposeInMainWorld('orivonShell', {
   // has no way to know where the toolbar put that button. Passed through
   // verbatim; permissions-panel.ts clamps it to the window rather than
   // trusting it as a bounds.
-  openSettings: (anchor: PanelAnchor, url?: string) => {
-    send(url === undefined ? { type: 'openSettings', anchor } : { type: 'openSettings', url, anchor })
+  openPermissions: (anchor: PanelAnchor, url?: string) => {
+    send(url === undefined ? { type: 'openPermissions', anchor } : { type: 'openPermissions', url, anchor })
   },
-  // Same anchor contract as openSettings, for the shield or key that opens
+  // Same anchor contract as openPermissions, for the shield or key that opens
   // the per-site popup instead -- `page` says which icon was clicked.
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => {
     send(url === undefined ? { type: 'openSiteInfo', anchor, page } : { type: 'openSiteInfo', url, anchor, page })

@@ -7,12 +7,12 @@
 // webContents, so it goes when the panel does -- see permissions-panel.ts.
 
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
-import { LIGHT_CLIENT_STATUS_CHANNEL, SETTINGS_COMMAND_CHANNEL } from '../channels.js'
+import { LIGHT_CLIENT_STATUS_CHANNEL, PERMISSIONS_COMMAND_CHANNEL } from '../channels.js'
 import type { LightClientView } from '../verifier/status-view.js'
 import type { AppPermissions, PermissionsController, SiteNotificationRow, SiteNotificationsController } from '../permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../../contracts/index.js'
 
-export type SettingsCommand =
+export type PermissionsCommand =
   | { type: 'list' }
   | { type: 'revoke', origin: string, grantId: GrantId }
   /** For an app that is not loaded this session: its grants live only on disk
@@ -40,24 +40,24 @@ export interface LightClientSource {
   subscribe: (listener: () => void) => () => void
 }
 
-function isFromSettingsWindow (event: IpcMainInvokeEvent, settingsWebContents: WebContents): boolean {
-  return event.senderFrame !== null && event.senderFrame === settingsWebContents.mainFrame
+function isFromPermissionsPanel (event: IpcMainInvokeEvent, permissionsWebContents: WebContents): boolean {
+  return event.senderFrame !== null && event.senderFrame === permissionsWebContents.mainFrame
 }
 
-export function registerSettingsIpc (
-  settingsWebContents: WebContents,
+export function registerPermissionsIpc (
+  permissionsWebContents: WebContents,
   permissions: PermissionsController,
   onContentHeight: (height: number) => void = () => {},
   sites?: SiteNotificationsController,
   lightClient?: LightClientSource
 ): () => void {
   const unsubscribe = lightClient?.subscribe(() => {
-    if (!settingsWebContents.isDestroyed()) settingsWebContents.send(LIGHT_CLIENT_STATUS_CHANNEL, lightClient.view())
+    if (!permissionsWebContents.isDestroyed()) permissionsWebContents.send(LIGHT_CLIENT_STATUS_CHANNEL, lightClient.view())
   })
   // On the panel's own webContents: the handler goes with it, and two windows
   // can each have one open.
-  settingsWebContents.ipc.handle(SETTINGS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: SettingsCommand): void | readonly SiteNotificationRow[] | LightClientView | null | Promise<void | readonly AppPermissions[]> => {
-    if (!isFromSettingsWindow(event, settingsWebContents)) return
+  permissionsWebContents.ipc.handle(PERMISSIONS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: PermissionsCommand): void | readonly SiteNotificationRow[] | LightClientView | null | Promise<void | readonly AppPermissions[]> => {
+    if (!isFromPermissionsPanel(event, permissionsWebContents)) return
 
     switch (command.type) {
       case 'list':

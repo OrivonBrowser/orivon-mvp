@@ -38,9 +38,9 @@ interface OrivonShell {
   /** Opens (or closes) the all-sites popup under the cluster's tune icon.
    * `anchor` is that icon's own rect -- main cannot know where the toolbar
    * put it. `url`, when given, is the tab whose card to scroll to. */
-  openSettings: (anchor: PopoverAnchor, url?: string) => void
+  openPermissions: (anchor: PopoverAnchor, url?: string) => void
   /** Opens (or closes) the site-info popup under the shield or the key --
-   * same anchor contract as openSettings. `page` says which icon was
+   * same anchor contract as openPermissions. `page` says which icon was
    * clicked. */
   openSiteInfo: (anchor: PopoverAnchor, page: SiteInfoPage, url?: string) => void
   onState: (listener: (state: ShellState) => void) => () => void
@@ -333,7 +333,7 @@ function anchorFor (el: HTMLElement): PopoverAnchor {
 // list unscrolled, which is the ordinary open.
 permissionsBtn.addEventListener('click', () => {
   const active = activeTab(currentState)
-  shell.openSettings(anchorFor(permissionsBtn), active === undefined || active.isNewTab ? undefined : active.url)
+  shell.openPermissions(anchorFor(permissionsBtn), active === undefined || active.isNewTab ? undefined : active.url)
 })
 
 // The site-info popup's two entry points: the shield opens straight to the

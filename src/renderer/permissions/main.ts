@@ -4,7 +4,7 @@ import { createPermissionsListView } from './permissions-view.js'
 import { renderLightClient } from './light-client-view.js'
 import type { LightClientView } from '../../main/verifier/status-view.js'
 
-// The settings window's whole job: fetch the list, render it, revoke on
+// The permissions panel's whole job: fetch the list, render it, revoke on
 // click, re-fetch. No live push channel exists for this yet (unlike the
 // chrome view's ShellState) -- every render is a fresh `list()` round trip,
 // which is cheap enough at the scale this page ever shows (a handful of
@@ -12,7 +12,7 @@ import type { LightClientView } from '../../main/verifier/status-view.js'
 // (src/main/permissions-panel.ts), so unlike the window this replaced there
 // is no stale-`focusOrigin` gap -- a reopen is always a fresh load.
 
-interface OrivonSettings {
+interface OrivonPermissions {
   list: () => Promise<readonly AppPermissions[]>
   revoke: (origin: string, grantId: GrantId) => Promise<void>
   /** For a row whose app is not loaded this session -- see revokeAndRefresh. */
@@ -30,7 +30,7 @@ interface OrivonSettings {
 
 declare global {
   interface Window {
-    orivonSettings?: OrivonSettings
+    orivonPermissions?: OrivonPermissions
   }
 }
 
@@ -41,9 +41,9 @@ function must<T> (value: T | null | undefined, message: string): T {
 
 // A hard throw, unlike newtab.ts's graceful degrade: this panel's preload
 // path is fixed at construction (permissions-panel.ts) and never anything
-// but preload/settings.ts, so `orivonSettings` missing here means the
+// but preload/permissions.ts, so `orivonPermissions` missing here means the
 // preload itself failed, not a legitimately unprivileged load.
-const settings = must(window.orivonSettings, 'orivonSettings not exposed -- preload did not run')
+const permissions = must(window.orivonPermissions, 'orivonPermissions not exposed -- preload did not run')
 
 const list = must(document.querySelector<HTMLDivElement>('#apps-list'), '#apps-list missing')
 const emptyState = must(document.querySelector<HTMLElement>('#empty-state'), '#empty-state missing')
@@ -57,13 +57,13 @@ const view = createPermissionsListView(
   (row) => { void resetSiteAndRefresh(row) }
 )
 
-/** Scrolls to `settings.focusOrigin`'s card once, the first time it
+/** Scrolls to `permissions.focusOrigin`'s card once, the first time it
  * appears in a rendered list -- guarded so a later refresh (after a
  * revoke) never yanks the page back to it a second time. */
 let scrolledToFocusOrigin = false
 function scrollToFocusOriginOnce (): void {
-  if (scrolledToFocusOrigin || settings.focusOrigin === null) return
-  const card = list.querySelector<HTMLElement>(`[data-origin="${CSS.escape(settings.focusOrigin)}"]`)
+  if (scrolledToFocusOrigin || permissions.focusOrigin === null) return
+  const card = list.querySelector<HTMLElement>(`[data-origin="${CSS.escape(permissions.focusOrigin)}"]`)
   if (card === null) return
   scrolledToFocusOrigin = true
   card.scrollIntoView({ block: 'start' })
@@ -87,11 +87,11 @@ function reportContentHeight (): void {
     bottom = Math.max(bottom, child.getBoundingClientRect().bottom)
   }
   const paddingBottom = parseFloat(getComputedStyle(page).paddingBottom)
-  settings.reportHeight(Math.ceil(bottom - top + paddingBottom))
+  permissions.reportHeight(Math.ceil(bottom - top + paddingBottom))
 }
 
 async function refresh (): Promise<void> {
-  const [apps, sites, lightClient] = await Promise.all([settings.list(), settings.listSiteNotifications(), settings.lightClient()])
+  const [apps, sites, lightClient] = await Promise.all([permissions.list(), permissions.listSiteNotifications(), permissions.lightClient()])
   view.render(apps, sites)
   renderLightClient(lightClientSection, lightClient)
   scrollToFocusOriginOnce()
@@ -105,9 +105,9 @@ async function refresh (): Promise<void> {
  * or care whether the app happens to be open. */
 async function revokeAndRefresh (origin: string, row: PermissionRow): Promise<void> {
   if (row.grantId === null) {
-    await settings.revokeCapability(origin, row.capability)
+    await permissions.revokeCapability(origin, row.capability)
   } else {
-    await settings.revoke(origin, row.grantId)
+    await permissions.revoke(origin, row.grantId)
   }
   await refresh()
 }
@@ -117,16 +117,16 @@ async function revokeAndRefresh (origin: string, row: PermissionRow): Promise<vo
  * works either way), so there is no `PermissionRow.grantId === null`-style
  * branch to make here. */
 async function revokePickedPathAndRefresh (origin: string, row: PickedPathRow): Promise<void> {
-  await settings.revokePickedPath(origin, row.pickId)
+  await permissions.revokePickedPath(origin, row.pickId)
   await refresh()
 }
 
 async function resetSiteAndRefresh (row: SiteNotificationRow): Promise<void> {
-  await settings.resetSiteNotifications(row.origin)
+  await permissions.resetSiteNotifications(row.origin)
   await refresh()
 }
 
-settings.onLightClient((lightClient) => {
+permissions.onLightClient((lightClient) => {
   renderLightClient(lightClientSection, lightClient)
   reportContentHeight()
 })

@@ -10,12 +10,12 @@ import type { PermissionsController, SiteNotificationsController } from '../../p
 
 const handlers = new Map<string, (event: unknown, command: unknown) => unknown>()
 
-const { registerSettingsIpc } = await import('../settings-ipc.js')
-const { SETTINGS_COMMAND_CHANNEL } = await import('../../channels.js')
+const { registerPermissionsIpc } = await import('../permissions-ipc.js')
+const { PERMISSIONS_COMMAND_CHANNEL } = await import('../../channels.js')
 
-const SETTINGS_FRAME = {}
+const PERMISSIONS_FRAME = {}
 // The handler is registered on the panel's own webContents.
-const settingsWebContents = { mainFrame: SETTINGS_FRAME, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
+const permissionsWebContents = { mainFrame: PERMISSIONS_FRAME, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
 const OTHER_FRAME = {}
 
 function fakePermissions (overrides: Partial<PermissionsController> = {}): PermissionsController {
@@ -29,16 +29,16 @@ function fakePermissions (overrides: Partial<PermissionsController> = {}): Permi
   }
 }
 
-function dispatch (command: unknown, senderFrame: unknown = SETTINGS_FRAME): unknown {
-  const fn = handlers.get(SETTINGS_COMMAND_CHANNEL)
-  if (fn === undefined) throw new Error('registerSettingsIpc did not register a handler')
+function dispatch (command: unknown, senderFrame: unknown = PERMISSIONS_FRAME): unknown {
+  const fn = handlers.get(PERMISSIONS_COMMAND_CHANNEL)
+  if (fn === undefined) throw new Error('registerPermissionsIpc did not register a handler')
   return fn({ senderFrame }, command)
 }
 
-describe('registerSettingsIpc', () => {
+describe('registerPermissionsIpc', () => {
   it('list calls permissions.list() and returns what it resolves', async () => {
     const permissions = fakePermissions({ list: vi.fn(async () => [{ origin: 'https://app.example', appName: 'Test', rows: [], pickedPathRows: [] }]) })
-    registerSettingsIpc(settingsWebContents, permissions)
+    registerPermissionsIpc(permissionsWebContents, permissions)
 
     const result = await dispatch({ type: 'list' })
 
@@ -48,7 +48,7 @@ describe('registerSettingsIpc', () => {
 
   it('revoke forwards origin and grantId to permissions.revoke() -- the settings page\'s own Revoke button', async () => {
     const permissions = fakePermissions()
-    registerSettingsIpc(settingsWebContents, permissions)
+    registerPermissionsIpc(permissionsWebContents, permissions)
 
     await dispatch({ type: 'revoke', origin: 'https://app.example', grantId: 'g1' })
 
@@ -57,7 +57,7 @@ describe('registerSettingsIpc', () => {
 
   it('refuses every command from a frame that is not the settings window\'s own', async () => {
     const permissions = fakePermissions()
-    registerSettingsIpc(settingsWebContents, permissions)
+    registerPermissionsIpc(permissionsWebContents, permissions)
 
     await dispatch({ type: 'list' }, OTHER_FRAME)
     await dispatch({ type: 'revoke', origin: 'https://app.example', grantId: 'g1' }, OTHER_FRAME)
@@ -68,7 +68,7 @@ describe('registerSettingsIpc', () => {
 
   it('refuses a command whose senderFrame is null', async () => {
     const permissions = fakePermissions()
-    registerSettingsIpc(settingsWebContents, permissions)
+    registerPermissionsIpc(permissionsWebContents, permissions)
 
     await dispatch({ type: 'list' }, null)
 
@@ -80,7 +80,7 @@ describe('registerSettingsIpc', () => {
   it('lists the sites\' notification answers, and resets one by origin', async () => {
     const rows = [{ origin: 'https://chat.example', allowed: true, message: 'Can show notifications.' }]
     const sites: SiteNotificationsController = { list: vi.fn(() => rows), reset: vi.fn() }
-    registerSettingsIpc(settingsWebContents, fakePermissions(), () => {}, sites)
+    registerPermissionsIpc(permissionsWebContents, fakePermissions(), () => {}, sites)
 
     expect(await dispatch({ type: 'listSiteNotifications' })).toEqual(rows)
     await dispatch({ type: 'resetSiteNotifications', origin: 'https://chat.example' })
@@ -89,7 +89,7 @@ describe('registerSettingsIpc', () => {
 
   it('ignores a reset whose origin is not a string, and one from another frame', async () => {
     const sites: SiteNotificationsController = { list: vi.fn(() => []), reset: vi.fn() }
-    registerSettingsIpc(settingsWebContents, fakePermissions(), () => {}, sites)
+    registerPermissionsIpc(permissionsWebContents, fakePermissions(), () => {}, sites)
 
     await dispatch({ type: 'resetSiteNotifications', origin: 42 })
     await dispatch({ type: 'resetSiteNotifications', origin: 'https://chat.example' }, OTHER_FRAME)
@@ -99,26 +99,26 @@ describe('registerSettingsIpc', () => {
   })
 
   it('lists no sites when the panel was given no site list', async () => {
-    registerSettingsIpc(settingsWebContents, fakePermissions())
+    registerPermissionsIpc(permissionsWebContents, fakePermissions())
     expect(await dispatch({ type: 'listSiteNotifications' })).toEqual([])
   })
 })
 
-describe('registerSettingsIpc: the light client section', () => {
+describe('registerPermissionsIpc: the light client section', () => {
   const VIEW = { state: 'synced' as const, summary: 'Following the chain.', checkpoint: 'Checkpoint 3 hours old.', about: 'It proves names.', endpoints: [] }
 
   it('answers lightClient with the current view, and null when there is no source', async () => {
-    registerSettingsIpc(settingsWebContents, fakePermissions(), () => {}, undefined, { view: () => VIEW, subscribe: () => () => {} })
+    registerPermissionsIpc(permissionsWebContents, fakePermissions(), () => {}, undefined, { view: () => VIEW, subscribe: () => () => {} })
     expect(await dispatch({ type: 'lightClient' })).toEqual(VIEW)
-    registerSettingsIpc(settingsWebContents, fakePermissions())
+    registerPermissionsIpc(permissionsWebContents, fakePermissions())
     expect(await dispatch({ type: 'lightClient' })).toBeNull()
   })
 
   it('pushes each change while open, and stops once the returned cleanup runs', async () => {
     const send = vi.fn()
-    const contents = { mainFrame: SETTINGS_FRAME, isDestroyed: () => false, send, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
+    const contents = { mainFrame: PERMISSIONS_FRAME, isDestroyed: () => false, send, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
     let listener: (() => void) | undefined
-    const cleanup = registerSettingsIpc(contents, fakePermissions(), () => {}, undefined, {
+    const cleanup = registerPermissionsIpc(contents, fakePermissions(), () => {}, undefined, {
       view: () => VIEW,
       subscribe: (l) => { listener = l; return () => { listener = undefined } }
     })
@@ -130,7 +130,7 @@ describe('registerSettingsIpc: the light client section', () => {
   })
 
   it('refuses the command from any other frame', async () => {
-    registerSettingsIpc(settingsWebContents, fakePermissions(), () => {}, undefined, { view: () => VIEW, subscribe: () => () => {} })
+    registerPermissionsIpc(permissionsWebContents, fakePermissions(), () => {}, undefined, { view: () => VIEW, subscribe: () => () => {} })
     expect(await dispatch({ type: 'lightClient' }, OTHER_FRAME)).toBeUndefined()
   })
 })

@@ -2,8 +2,8 @@
 
 **What lives here.** The four IPC surfaces the chrome view and its popups use to reach main:
 `ipc.ts` (tab commands — new tab, close, navigate — plus the toolbar's own `siteSummaryFor`/
-`web3ScoreFor`/`openSettings`/`openSiteInfo`), `newtab-ipc.ts` (the dashboard's read-only bookmark
-access and navigate-the-calling-tab command), `settings-ipc.ts` (the all-sites popup's list/revoke
+`web3ScoreFor`/`openPermissions`/`openSiteInfo`), `newtab-ipc.ts` (the dashboard's read-only bookmark
+access and navigate-the-calling-tab command), `permissions-ipc.ts` (the all-sites popup's list/revoke
 commands, and the site list's list/reset), `site-info-ipc.ts` (the site-info popup's get/trust/data/apply/revokePickedPath/
 clearBrowserData/reload/openAllSites commands, all fixed to the ONE origin the popup was opened
 for — never a command field). Three register on the `ipc` of the view they serve, so the
@@ -23,5 +23,5 @@ files reach the broker themselves; every capability decision arrives already res
 `TabManager`/`PermissionsController`/`SiteInfoController`/`BookmarkStore`, never by querying the
 broker from an IPC handler.
 
-**Owner stream.** `shell`, build step 1, **done**, except `settings-ipc.ts` and `site-info-ipc.ts`
+**Owner stream.** `shell`, build step 1, **done**, except `permissions-ipc.ts` and `site-info-ipc.ts`
 (queue item 4.4). Maintenance only.

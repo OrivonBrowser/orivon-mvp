@@ -93,7 +93,7 @@ it('the same popover opens in two windows one after the other', async () => {
   try {
     const first = await firstChrome(app)
     const second = await openSecondWindow(app, first)
-    const popovers = (): Page[] => app.windows().filter((w) => w.url().endsWith('/settings/index.html'))
+    const popovers = (): Page[] => app.windows().filter((w) => w.url().endsWith('/permissions/index.html'))
 
     await first.click('#permissions-btn')
     expect(await waitFor(() => popovers().length === 1)).toBe(true)

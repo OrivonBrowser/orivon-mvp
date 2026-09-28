@@ -46,11 +46,11 @@ themselves), [`../../trust/`](../../trust/) (`delivery-ladder.ts`/`website-level
 [`../consent/request-grant.ts`](../consent/request-grant.ts) (`clearDeclinedCapability`/
 `addDeclinedCapability`), [`../browsing/site-trust.ts`](../browsing/site-trust.ts),
 [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts) (type only), and, inside
-`src/main/`, `../shell/renderer-entry.ts`, `../shell/tabs.ts` (type only), `../ipc/settings-ipc.ts`,
+`src/main/`, `../shell/renderer-entry.ts`, `../shell/tabs.ts` (type only), `../ipc/permissions-ipc.ts`,
 `../ipc/site-info-ipc.ts`, the top-level `channels.ts`/`registry.ts`.
 
 **What it must never import.** Nothing bypasses either controller. Every renderer surface that
-shows grants or switches — `src/renderer/settings/permissions-view.ts` and
+shows grants or switches — `src/renderer/permissions/permissions-view.ts` and
 `src/renderer/site-info/` — reaches the broker only through `permissions.ts` or
 `site-info-controller.ts`, never directly; none is a `broker` import away from the trust
 boundary those files already crossed once.

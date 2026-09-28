@@ -58,16 +58,16 @@ export interface PopoverSpec {
   readonly dirname: string
   /** electron-vite dev-server subpath, e.g. `/settings/`. */
   readonly entryPath: string
-  /** Built-output path relative to `dirname`, e.g. `../renderer/settings/index.html`. */
+  /** Built-output path relative to `dirname`, e.g. `../renderer/permissions/index.html`. */
   readonly fallbackHtml: string
-  /** Preload script path relative to `dirname`, e.g. `../preload/settings.js`. */
+  /** Preload script path relative to `dirname`, e.g. `../preload/permissions.js`. */
   readonly preloadRelPath: string
-  /** The `--orivon-<name>-url` flag this popup's own preload gates on -- see e.g. `../../preload/settings.ts`. */
+  /** The `--orivon-<name>-url` flag this popup's own preload gates on -- see e.g. `../../preload/permissions.ts`. */
   readonly urlArgName: string
   /** `'right'` hangs the popup off its icon's right edge (the all-sites list, near the window's right edge); `'left'` off its left edge (the site-info popup, near the window's left edge). */
   readonly align: PopoverAlign
   /**
-   * Registers whatever `SETTINGS_COMMAND_CHANNEL`-shaped IPC this popup
+   * Registers whatever `PERMISSIONS_COMMAND_CHANNEL`-shaped IPC this popup
    * owns for its (freshly created) `webContents`, wired to resize via
    * `onContentHeight`. Returns the teardown `close()` runs -- typically
    * `ipcMain.removeHandler`. Called once per `open()`, matching the

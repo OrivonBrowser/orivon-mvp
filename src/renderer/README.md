@@ -29,7 +29,7 @@ the welcome screen, a full-window view over the shell on a launch that opens on 
 | `newtab/index.html`, `newtab/main.ts`, `newtab/style.css` | The dashboard: a search box, then a grid of app-shortcut and bookmark tiles, with its own small entry, separate from the chrome view |
 | `intro/index.html`, `intro/main.ts`, `intro/style.css` | The welcome screen: headline, "Enter Orivon" button, ticker and two decorative shapes over a picture. Its entry animations are CSS keyframes and its fonts are bundled, so it loads nothing from the network |
 | `assets/intro-background.webp` | The welcome screen's picture, also the dashboard's default background; Vite emits it once for both |
-| `settings/index.html`, `settings/main.ts`, `settings/permissions-view.ts`, `settings/style.css` | The all-sites popup: every app, all its grants, revoke-only |
+| `permissions/index.html`, `settings/main.ts`, `settings/permissions-view.ts`, `settings/style.css` | The all-sites popup: every app, all its grants, revoke-only |
 | `site-info/index.html`, `site-info/main.ts`, `site-info/main-view.ts`, `site-info/web3-view.ts`, `site-info/data-view.ts`, `site-info/switch.ts`, `site-info/icons.ts`, `site-info/style.css` | The per-site popup: a client-side router over three pages, each its own render function |
 
 **What it depends on.** `src/preload/shell.ts`'s exposed commands, over IPC, for the chrome

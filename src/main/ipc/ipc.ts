@@ -66,10 +66,10 @@ export type ShellCommand =
    * and the window width, both of which live in the renderer. It is only a
    * position -- treated as a hint and clamped to the window in
    * panelBounds(), never trusted as a bounds to set directly. */
-  | { type: 'openSettings'; url?: string; anchor: PanelAnchor }
+  | { type: 'openPermissions'; url?: string; anchor: PanelAnchor }
   /** Opens, or closes, the site-info popup under the address pill's shield
    * or key -- see ./site-info-panel.ts. Same `anchor`/`url` shape as
-   * `openSettings`; `page` is which icon was clicked (the shield opens
+   * `openPermissions`; `page` is which icon was clicked (the shield opens
    * straight to the Web3 Score page, the key to the main page). */
   | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
 
@@ -83,7 +83,7 @@ export function registerShellIpc (
   tabs: TabManager,
   bookmarks: BookmarkStore,
   siteInfo: SiteInfoController,
-  openSettings: (anchor: PanelAnchor, url?: string) => void,
+  openPermissions: (anchor: PanelAnchor, url?: string) => void,
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void,
   openWindow: () => void
 ): void {
@@ -148,8 +148,8 @@ export function registerShellIpc (
         return siteInfo.siteSummaryFor(command.url)
       case 'web3ScoreFor':
         return siteInfo.siteTrustFor(command.url).then(web3Score)
-      case 'openSettings':
-        openSettings(command.anchor, command.url)
+      case 'openPermissions':
+        openPermissions(command.anchor, command.url)
         return
       case 'openSiteInfo':
         openSiteInfo(command.anchor, command.page, command.url)

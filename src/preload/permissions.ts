@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { LIGHT_CLIENT_STATUS_CHANNEL, SETTINGS_COMMAND_CHANNEL } from '../main/channels.js'
-import type { SettingsCommand } from '../main/ipc/settings-ipc.js'
+import { LIGHT_CLIENT_STATUS_CHANNEL, PERMISSIONS_COMMAND_CHANNEL } from '../main/channels.js'
+import type { PermissionsCommand } from '../main/ipc/permissions-ipc.js'
 import type { LightClientView } from '../main/verifier/status-view.js'
 import type { AppPermissions, SiteNotificationRow } from '../main/permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../contracts/index.js'
@@ -12,39 +12,39 @@ import type { CapabilityKind, GrantId } from '../contracts/index.js'
 // privileged -- the same defense-in-depth newtab.ts applies for a page that
 // COULD navigate, kept here so this file is not the one preload in the
 // codebase that trusts webPreferences.additionalArguments without checking
-// location.href against it. src/main/settings-ipc.ts re-verifies the same
+// location.href against it. src/main/permissions-ipc.ts re-verifies the same
 // thing from the authoritative main-process side, on every call; neither
 // layer trusts the other.
-const URL_PREFIX = '--orivon-settings-url='
+const URL_PREFIX = '--orivon-permissions-url='
 const FOCUS_PREFIX = '--orivon-focus-origin='
 const expectedUrl = process.argv.find((arg) => arg.startsWith(URL_PREFIX))?.slice(URL_PREFIX.length)
 const focusOrigin = process.argv.find((arg) => arg.startsWith(FOCUS_PREFIX))?.slice(FOCUS_PREFIX.length)
 
 if (expectedUrl !== undefined && location.href === expectedUrl) {
-  contextBridge.exposeInMainWorld('orivonSettings', {
+  contextBridge.exposeInMainWorld('orivonPermissions', {
     list: async (): Promise<readonly AppPermissions[]> => {
-      const result: unknown = await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'list' } satisfies SettingsCommand)
+      const result: unknown = await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'list' } satisfies PermissionsCommand)
       return Array.isArray(result) ? result as AppPermissions[] : []
     },
     revoke: async (origin: string, grantId: GrantId): Promise<void> => {
-      await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'revoke', origin, grantId } satisfies SettingsCommand)
+      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'revoke', origin, grantId } satisfies PermissionsCommand)
     },
     revokeCapability: async (origin: string, capability: CapabilityKind): Promise<void> => {
-      await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'revokeCapability', origin, capability } satisfies SettingsCommand)
+      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'revokeCapability', origin, capability } satisfies PermissionsCommand)
     },
     revokePickedPath: async (origin: string, pickId: string): Promise<void> => {
-      await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'revokePickedPath', origin, pickId } satisfies SettingsCommand)
+      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'revokePickedPath', origin, pickId } satisfies PermissionsCommand)
     },
     listSiteNotifications: async (): Promise<readonly SiteNotificationRow[]> => {
-      const result: unknown = await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'listSiteNotifications' } satisfies SettingsCommand)
+      const result: unknown = await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'listSiteNotifications' } satisfies PermissionsCommand)
       return Array.isArray(result) ? result as SiteNotificationRow[] : []
     },
     resetSiteNotifications: async (origin: string): Promise<void> => {
-      await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'resetSiteNotifications', origin } satisfies SettingsCommand)
+      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'resetSiteNotifications', origin } satisfies PermissionsCommand)
     },
     /** The Ethereum light client's state in words; null when this build has none to report. */
     lightClient: async (): Promise<LightClientView | null> => {
-      const result: unknown = await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'lightClient' } satisfies SettingsCommand)
+      const result: unknown = await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'lightClient' } satisfies PermissionsCommand)
       return typeof result === 'object' && result !== null ? result as LightClientView : null
     },
     /** Pushed by main whenever that state changes while the panel is open. */
@@ -57,7 +57,7 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
      * (src/main/permissions-panel.ts). Fire-and-forget: a panel that failed
      * to resize is cosmetic, and must never break rendering the list. */
     reportHeight: (height: number): void => {
-      void ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'contentHeight', height } satisfies SettingsCommand)
+      void ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'contentHeight', height } satisfies PermissionsCommand)
     },
     /** Read-only -- which app's card, if any, to scroll to on load. `null`
      * for an ordinary open from the toolbar's own "Permissions" button. */
@@ -65,6 +65,6 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
   })
 }
 // No else branch, unlike newtab.ts: this window is never anything BUT the
-// settings page (it has no bookmarks bar, no address bar, nothing for a
+// permissions page (it has no bookmarks bar, no address bar, nothing for a
 // user to navigate away with), so there is no second, unprivileged surface
 // to fall back to.
