@@ -201,6 +201,10 @@ it wrote are read back through `orivon.fs`, and its attempt to leave its preopen
 suite, [`src/shim/wasi/tests/conformance.test.ts`](../../src/shim/wasi/tests/conformance.test.ts),
 which skips unless `ORIVON_WASI_TESTSUITE` names a checkout of the suite's prebuilt branch; the
 suite's binaries are not in this repository.
+[`e2e-child-process.test.ts`](../../test/e2e-child-process.test.ts) runs `child_process` in a pinned
+app: `spawn` of a WASI program and `fork` of the app's own module, each in a Worker under the served
+CSP, the forked module's `fs` write read back through the broker, a native program refused as
+`ENOEXEC`, a missing one `ENOENT`, and `kill()` ending a running child.
 
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and

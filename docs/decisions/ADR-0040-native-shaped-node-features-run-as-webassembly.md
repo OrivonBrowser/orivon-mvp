@@ -1,6 +1,6 @@
 # ADR-0040: Native modules and child processes run as WebAssembly in the app's tab, never as machine code
 
-- **Status:** accepted
+- **Status:** accepted, **amended 2026-09-28**: `spawn` and `fork` are built (see the Amendment at the end)
 - **Date:** 2026-09-28
 - **Type:** architecture / security
 - **Decided by:** owner (the goal, and that it must keep every broker guard with no added risk);
@@ -29,8 +29,8 @@ WebAssembly under WASI (`orivon-runtime`), so nothing in it points the other way
 The foundation lands with this ADR: a WASI preview1 host over `orivon.fs` in `src/shim/wasi/`,
 and Node's `wasi` module over it. A WASI call is synchronous for the program and `orivon.fs` is
 asynchronous; the host suspends the program on each file call through WebAssembly JavaScript
-Promise Integration (JSPI), on the page's main thread. The addon resolution, `spawn` and `fork`
-are not built yet.
+Promise Integration (JSPI). `spawn` and `fork` run their children in Web Workers
+(`src/shim/child-process/`, `src/shim/worker/`); the addon resolution is not built yet.
 
 ## Context
 
@@ -91,8 +91,8 @@ reached inside the renderer instead of in a separate host.
   therefore built for the first app whose addon has a WebAssembly build.
 - **A native binary refuses.** Daemon apps whose daemon is native, among them every Go one
   (kubo, lnd, geth: Go cannot open sockets from any WebAssembly target), do not run their daemon.
-- **A WASI program on the main thread holds it while it computes**, as WebAssembly the app calls
-  itself already does. `fork`'s Worker is where a long-running program goes.
+- **A program run through `node:wasi` holds the page's main thread while it computes**, as
+  WebAssembly the app calls itself already does. One run through `spawn` is in a Worker.
 - **The host serves no links, no file times and no sockets.** `orivon.fs` has no links and no way
   to set times; preview1 cannot dial. Against the preview1 conformance suite
   (`WebAssembly/wasi-testsuite`), 63 of 72 programs pass, and the nine that fail need links or
@@ -112,3 +112,11 @@ reached inside the renderer instead of in a separate host.
 - **What would make us revisit:** an app the success metric needs whose native code has no
   WebAssembly build and no substitute, or a class of WebAssembly exploit the renderer sandbox and
   the grant model cannot bound (`ADR-0036`'s own trigger).
+
+## Amendment (2026-09-28): `spawn` and `fork` are built
+
+`child_process` now runs every child in a Web Worker: `spawn` a WASI program from the app's bundle,
+`fork` an app module with an IPC channel, each reaching `orivon.*` through the page. The Decision
+and Consequences above are rewritten to say so. The addon resolution is decided (`d-0155`) and not
+built yet.
+

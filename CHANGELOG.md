@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **`child_process` works for ported apps**, every child in a Web Worker: `spawn`/`exec` run a
+  WASI program from the app's bundle and `fork` an app module with IPC, both under the app's
+  grants; a native program refuses by name (ADR-0040).
 - **A WASI program runs inside an app's tab** through Node's `wasi` module, its every file call an
   `orivon.fs` call under the app's grant; native modules and child processes will come as
   WebAssembly too, never as machine code (ADR-0040).
