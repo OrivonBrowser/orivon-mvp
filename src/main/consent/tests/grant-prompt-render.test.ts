@@ -238,6 +238,13 @@ describe('describeCapabilityGrant -- fs describes what a grant actually gives (A
 // survived): it is whether the rendered text can be mistaken for the
 // brand it is impersonating.
 describe('formatOriginForDisplay -- the last three labels, owner decision 2026-09-14 (A115/A142)', () => {
+  it('shows a protocol address origin as its address, cut on its name like any host', () => {
+    const cid = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
+    expect(formatOriginForDisplay(`https://${cid}.ipfs.orivon`)).toBe(`ipfs://${cid}`)
+    expect(formatOriginForDisplay('https://docs-ipfs-tech.ipns.orivon')).toBe('ipns://docs.ipfs.tech')
+    expect(formatOriginForDisplay('https://a-b-c-example-com.ipns.orivon')).toBe('ipns://...c.example.com')
+  })
+
   it('elides a subdomain-prefix confusable to exactly its last three labels, so the reassuring prefix does not survive alone', () => {
     const confusable = 'https://accounts.google.com.attacker.example'
 

@@ -4,6 +4,7 @@
 // Electron pass the URL to the OS's default app for that scheme, so this
 // never launches anything itself. The person is asked every time.
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { tabPromptState, type PromptingTab } from './tab-prompts.js'
 
 /** What the confirm dialog names. */
@@ -43,7 +44,8 @@ export function askableScheme (url: string): string | null {
     return null
   }
   const scheme = parsed.protocol.slice(0, -1)
-  if (NEVER_EXTERNAL.has(scheme) || scheme.startsWith(INTERNAL_SCHEME_PREFIX)) return null
+  // A protocol's address loads in the browser (../shell/tab-view.ts), never in whatever app claims the scheme.
+  if (NEVER_EXTERNAL.has(scheme) || scheme.startsWith(INTERNAL_SCHEME_PREFIX) || BUILTIN_ADDRESSES.servesScheme(scheme)) return null
   return scheme
 }
 

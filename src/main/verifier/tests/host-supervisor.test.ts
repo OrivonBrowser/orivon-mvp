@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EventEmitter } from 'node:events'
-import type { HostConfig } from '../../../verifier-host/protocol.js'
+import type { HostConfig } from '../../../protocols/verifier-host/protocol.js'
 import { HostSupervisor } from '../host-supervisor.js'
 import type { HostProcess, SupervisorEvents } from '../host-supervisor.js'
 

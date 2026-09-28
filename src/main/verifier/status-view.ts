@@ -4,7 +4,7 @@
 
 import { MAX_CHECKPOINT_AGE_SECONDS } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
-import type { LightClientState } from '../../verifier-host/protocol.js'
+import type { LightClientState } from '../../protocols/verifier-host/protocol.js'
 
 export interface LightClientView {
   /** One word for the badge: off, starting, syncing, synced, failed. */

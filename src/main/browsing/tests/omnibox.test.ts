@@ -5,6 +5,11 @@ import { parseOmniboxInput, sanitizeDirectUrl } from '../omnibox.js'
 // are what stop the address bar from being a script-injection or local-file
 // disclosure vector. Everything else is ordinary usability.
 describe('parseOmniboxInput', () => {
+  it('a typed ipfs:// or ipns:// address loads from its scheme endpoint, whatever its case', () => {
+    expect(parseOmniboxInput('  IPFS://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi  ')).toEqual({ kind: 'url', url: 'https://ipfs.orivon/bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/' })
+    expect(parseOmniboxInput('ipns://k51qzi5uqu5dipklqpo2uq7advlajxx5wxob0mwyqbxb5zu4htblc4bjipy834/docs#top')).toEqual({ kind: 'url', url: 'https://ipns.orivon/k51qzi5uqu5dipklqpo2uq7advlajxx5wxob0mwyqbxb5zu4htblc4bjipy834/docs#top' })
+  })
+
   describe('recognised as a URL', () => {
     it('a bare domain gets https:// prepended', () => {
       expect(parseOmniboxInput('example.com')).toEqual({
@@ -168,6 +173,12 @@ describe('parseOmniboxInput', () => {
 // query to run, it is a caller (possibly a hostile page) that failed to
 // supply a real URL, and the safe response is to reject, not guess.
 describe('sanitizeDirectUrl', () => {
+  it("an ipfs:// or ipns:// link becomes its scheme's https endpoint, never an unknown scheme", () => {
+    expect(sanitizeDirectUrl('ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG/a?b')).toBe('https://ipfs.orivon/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG/a?b')
+    expect(sanitizeDirectUrl('ipns://en.wikipedia-on-ipfs.org')).toBe('https://ipns.orivon/en.wikipedia-on-ipfs.org/')
+    expect(sanitizeDirectUrl('magnet:?xt=urn:btih:abc')).toBeNull()
+  })
+
   it('an absolute https URL passes through', () => {
     expect(sanitizeDirectUrl('https://example.com/path')).toBe('https://example.com/path')
   })

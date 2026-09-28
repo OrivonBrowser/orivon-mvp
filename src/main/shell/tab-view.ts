@@ -14,6 +14,7 @@ import { showContextMenu } from './context-menu.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
  * again in preload/routed/fetch.ts rather than imported, for the reason
@@ -300,6 +301,14 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
       return
     }
     if (host.window !== undefined && confirmLeavePage(host.window)) event.preventDefault()
+  })
+  // Chromium knows no `ipfs:` scheme and would offer a link to one to the
+  // OS; it loads here instead, from the URL its protocol serves it at.
+  wc.on('will-navigate', (event) => {
+    const served = BUILTIN_ADDRESSES.servedUrl(event.url)
+    if (served === undefined) return
+    event.preventDefault()
+    void wc.loadURL(served)
   })
   wc.on('context-menu', (_event, params) => {
     if (host.window === undefined) return

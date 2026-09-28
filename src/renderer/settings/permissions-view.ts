@@ -1,6 +1,7 @@
 import type { AppPermissions, PermissionRow, PickedPathRow, SiteNotificationRow } from '../../main/permissions/permissions.js'
 import type { GrantId } from '../../contracts/index.js'
 import { grantIcon } from '../grant-icons.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 // Renders the settings window's whole list of app cards -- one card per
 // `AppPermissions`, one row per `PermissionRow`. Mirrors bookmarks-view.ts's
@@ -63,7 +64,7 @@ function renderCard (
   heading.className = 'app-heading'
   const originEl = document.createElement('span')
   originEl.className = 'app-origin'
-  originEl.textContent = app.origin
+  originEl.textContent = BUILTIN_ADDRESSES.displayOrigin(app.origin)
   const claim = document.createElement('span')
   claim.className = 'app-claim'
   // Same literal phrasing grant-prompt-render.ts's install prompt uses --
@@ -137,7 +138,7 @@ function renderSiteCard (site: SiteNotificationRow, onReset?: (row: SiteNotifica
   heading.className = 'app-heading'
   const originEl = document.createElement('span')
   originEl.className = 'app-origin'
-  originEl.textContent = site.origin
+  originEl.textContent = BUILTIN_ADDRESSES.displayOrigin(site.origin)
   heading.append(originEl)
 
   const rows = document.createElement('ul')

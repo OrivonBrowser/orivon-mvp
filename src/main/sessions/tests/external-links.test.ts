@@ -35,6 +35,12 @@ describe('askableScheme', () => {
     ]) expect(askableScheme(url), url).toBeNull()
   })
 
+  it("never offers a protocol's address scheme, which loads in the browser whatever app claims it", () => {
+    for (const url of ['ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/', 'ipns://docs.ipfs.tech', 'IPFS://not-even-a-cid']) {
+      expect(askableScheme(url), url).toBeNull()
+    }
+  })
+
   // Chrome's own list of handlers that must never be launched from a page,
   // plus the two Windows handlers that turned a click into code execution.
   it('never offers a scheme whose OS handler is known to run code', () => {

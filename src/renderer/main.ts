@@ -235,7 +235,7 @@ function renderToolbar (state: ShellState): void {
   forwardBtn.disabled = active === undefined || !active.canGoForward
 
   if (!addressFocused) {
-    addressInput.value = active === undefined || active.isNewTab ? '' : active.url
+    addressInput.value = active === undefined || active.isNewTab ? '' : active.displayUrl
   }
 
   updateWeb3ScoreShield(active)

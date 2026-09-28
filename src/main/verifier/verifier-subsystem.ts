@@ -1,19 +1,20 @@
-// Registers the `.eth` verifier: the resolver rules sending every `.eth`
-// name to its loopback port, the certificate check on every session, and
-// the host process, started once the first page has loaded so it never
-// delays the window. Not critical: without it every `.eth` load fails
-// closed and nothing else changes.
+// Registers the verifier: the resolver rules sending every host a protocol
+// serves (a `.eth` name, an `ipfs://` address) to its loopback port, the
+// certificate check on every session, and the host process, started once
+// the first page has loaded so it never delays the window. Not critical:
+// without it every such load fails closed and nothing else changes.
 
 import { join } from 'node:path'
 import { app, session, utilityProcess } from 'electron'
 import type { Session, WebFrameMain } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames } from '../dev/eth-resolver.js'
-import type { HostConfig, LightClientState, SiteProvenance } from '../../verifier-host/protocol.js'
+import type { HostConfig, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
-import { servedByVerifier } from '../../loader/fetch/eth-origin.js'
+import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { PARTITION_HEADER } from '../../loader/fetch/content-root.js'
-import { ethCertificateVerdict } from './certificate-check.js'
+import { verifierCertificateVerdict } from './certificate-check.js'
 import { requestPartition, withPartition } from './partition.js'
 import { contentAddressOf } from './content-address.js'
 import { chooseCheckpoint, slotTimestamp } from './checkpoint.js'
@@ -50,18 +51,19 @@ function changed (): void {
 
 function installCertificateCheck (target: Session): void {
   target.setCertificateVerifyProc((request, callback) => {
-    callback(ethCertificateVerdict(request.hostname, request.certificate.fingerprint, fingerprint))
+    callback(verifierCertificateVerdict(request.hostname, request.certificate.fingerprint, fingerprint, (host) => BUILTIN_ADDRESSES.routesToVerifier(host)))
   })
 }
 
 /**
- * Stamps every page's `.eth` request with the partition its top-level page
+ * Stamps every page's request to the verifier with the partition its top-level page
  * owns, and strips whatever a request set itself: a worker's request has no
  * frame, and could otherwise name any partition. Installed on the default
  * session only: see README.md's Design notes for why no other.
  */
 function installPartitionStamp (target: Session): void {
-  target.webRequest.onBeforeSendHeaders({ urls: ['https://*.eth/*'] }, (details, callback) => {
+  const urls = BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `https://*.${suffix}/*`)
+  target.webRequest.onBeforeSendHeaders({ urls }, (details, callback) => {
     let frame: WebFrameMain | null | undefined
     try {
       frame = details.frame
@@ -130,7 +132,7 @@ function startAfterFirstPage (start: () => void): void {
 }
 
 /**
- * Where a `.eth` origin's content came from and whether DDOC holds, as a tab
+ * Where a protocol origin's content came from and whether DDOC holds, as a tab
  * showing that origin sees it; null when it is not mounted there or the host
  * is down.
  */
@@ -143,21 +145,24 @@ export async function siteProvenance (origin: string): Promise<SiteProvenance | 
   }
 }
 
-/** How a `.eth` name led to the content this tab shows, for the site-info popover; undefined for any other origin. */
-export async function ethNameEvidence (origin: string, pin: PinRecord | null, servedFromCache: boolean): Promise<NameEvidence | undefined> {
+/** How a `.eth` name or an address led to the content this tab shows, for the site-info popover; undefined for any other origin. */
+export async function verifierNameEvidence (origin: string, pin: PinRecord | null, servedFromCache: boolean): Promise<NameEvidence | undefined> {
   if (!servedByVerifier(origin)) return undefined
   const live = await siteProvenance(origin)
-  return chooseNameEvidence(pin?.content, servedFromCache, live, verifierView().summary, Date.now())
+  const address = BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace.endsWith(':') === true
+  // An address needs no light client, so its state would explain nothing.
+  const unanswered = address ? 'The verifier has not loaded it in this tab yet.' : verifierView().summary
+  return chooseNameEvidence(pin?.content, servedFromCache, live, unanswered, Date.now(), address)
 }
 
 /**
  * Where an origin's bundle is served from, for the loader: undefined for
- * any origin that is not a `.eth` name, and a throw when the name cannot be
+ * any origin no protocol serves, and a throw when its name cannot be
  * verified now.
  */
-export async function ethContentAddress (origin: string): Promise<ContentAddress | undefined> {
+export async function verifierContentAddress (origin: string): Promise<ContentAddress | undefined> {
   if (!servedByVerifier(origin)) return undefined
-  if (supervisor === undefined) throw new Error('the .eth verifier has not started')
+  if (supervisor === undefined) throw new Error('the verifier has not started')
   // The origin's own partition: the one a tab opening it uses.
   return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: new URL(origin).origin }, MOUNT_TIMEOUT_MS))
 }
@@ -184,7 +189,7 @@ export const verifierSubsystem: Subsystem = {
   beforeReady: () => {
     const dev = devEthNames()
     const existing = app.commandLine.getSwitchValue('host-resolver-rules')
-    app.commandLine.appendSwitch('host-resolver-rules', composeResolverRules({ devClauses: dev.rules, port: loopbackPort(), existing }))
+    app.commandLine.appendSwitch('host-resolver-rules', composeResolverRules({ devClauses: dev.rules, port: loopbackPort(), suffixes: BUILTIN_ADDRESSES.routedSuffixes(), existing }))
     if (dev.secureOrigins !== '') app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', dev.secureOrigins)
     app.on('session-created', installCertificateCheck)
   },
@@ -192,7 +197,7 @@ export const verifierSubsystem: Subsystem = {
     installCertificateCheck(session.defaultSession)
     installPartitionStamp(session.defaultSession)
     const host = new HostSupervisor({
-      fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon .eth verifier' }),
+      fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon verifier' }),
       config: hostConfig,
       events: {
         listening: (value) => {
