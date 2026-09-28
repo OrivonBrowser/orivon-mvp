@@ -29,6 +29,11 @@ import type { CapabilityRequest } from '../contracts/index.js'
 export interface SubsystemContext {
   readonly app: App
   /**
+   * This process is a private session: it keeps nothing after it ends, so a subsystem that would
+   * persist something about the person, or report it, must not. Fixed for the life of the process.
+   */
+  readonly privateSession: boolean
+  /**
    * The running app's one `Broker`. Nothing else in the process may
    * construct a second one: two independently-constructed brokers mean two
    * disagreeing grant ledgers for one running app, so every subsystem that
@@ -116,9 +121,11 @@ const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: st
 
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
+  readonly privateSession: boolean
 
-  constructor (app: App) {
+  constructor (app: App, privateSession: boolean) {
     this.app = app
+    this.privateSession = privateSession
   }
 
   get broker (): Broker | undefined {
@@ -142,8 +149,8 @@ class SubsystemContextImpl implements SubsystemContext {
  * The one way to build a `SubsystemContext`. `main/index.ts` calls this
  * once, at startup, and threads the result through `runAfterReady`.
  */
-export function createSubsystemContext (app: App): SubsystemContext {
-  return new SubsystemContextImpl(app)
+export function createSubsystemContext (app: App, privateSession = false): SubsystemContext {
+  return new SubsystemContextImpl(app, privateSession)
 }
 
 /**

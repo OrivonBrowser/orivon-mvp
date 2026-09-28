@@ -263,7 +263,7 @@ it('lists each site\'s notification answer in the permissions panel, and Reset f
       await waitForAddressBarStable(chrome)
       await chrome.click('#permissions-btn')
       let panel: Page | undefined
-      await waitFor(() => { panel = app.windows().find((w) => w.url().endsWith('/renderer/settings/index.html')); return panel !== undefined })
+      await waitFor(() => { panel = app.windows().find((w) => w.url().endsWith('/renderer/permissions/index.html')); return panel !== undefined })
       if (panel === undefined) throw new Error('the permissions panel did not open')
       const settings = panel
       const cards = async (): Promise<Array<{ origin: string, message: string }>> => await evaluateRetrying(settings, () =>

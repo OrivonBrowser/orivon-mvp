@@ -5,8 +5,14 @@ import type { Broker } from '../../../broker/broker-contracts.js'
 
 // tab-view.ts imports WebContentsView from 'electron' at module scope, so
 // even these pure functions cannot be imported without mocking it first --
-// same reasoning tabs.test.ts states for itself.
-vi.mock('electron', () => ({ WebContentsView: vi.fn() }))
+// same reasoning tabs.test.ts states for itself. makeTabView() below needs
+// a webContents with a working `.on` -- watchAppTab()'s own reportAppFailures
+// wiring calls it at construction, whatever additionalArguments it got.
+vi.mock('electron', () => ({
+  WebContentsView: vi.fn().mockImplementation(function (this: { webContents: unknown }) {
+    this.webContents = { on: vi.fn() }
+  })
+}))
 
 // The serve registry is a real module-level Set in the loader; mocking it
 // here keeps these tests about the RULE rather than about registration.
@@ -15,7 +21,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginServedFromCacheSync: (origin: string) => served.has(origin)
 }))
 
-const { partitionChanged, partitionForTarget } = await import('../tab-view.js')
+const { appTabArgsFor, appTabFlagChanged, makeTabView, partitionChanged, partitionForTarget } = await import('../tab-view.js')
 
 const APP = 'https://app.example'
 const SITE = 'https://news.example'
@@ -105,5 +111,33 @@ describe('partitionChanged -- when a navigation must swap the view', () => {
   it('never swaps for a target with no derivable origin, whatever the tab is in', () => {
     expect(partitionChanged('about:blank', appPartition, granted(APP))).toBeUndefined()
     expect(partitionChanged('about:blank', undefined, granted(APP))).toBeUndefined()
+  })
+})
+
+// hasGrantsSync (isolation) and isRegisteredSync (the app-tab flag) are
+// different predicates -- an app registered with nothing granted yet shares
+// the default session with every ordinary site, so partitionChanged alone
+// misses a navigation that crosses this boundary.
+describe('appTabFlagChanged -- a registered-but-ungranted app and an ordinary site can share a session while disagreeing on the flag', () => {
+  const registeredApp = brokerWith({ registered: [APP] })
+
+  it('needs a rebuild leaving such an app for an ordinary site', () => {
+    const view = makeTabView('preload.js', undefined, appTabArgsFor(APP, registeredApp))
+    expect(appTabFlagChanged(SITE, view, registeredApp)).toBe(true)
+  })
+
+  it('needs a rebuild entering such an app from an ordinary site', () => {
+    const view = makeTabView('preload.js', undefined, appTabArgsFor(SITE, registeredApp))
+    expect(appTabFlagChanged(APP, view, registeredApp)).toBe(true)
+  })
+
+  it('does not need one between two ordinary sites', () => {
+    const view = makeTabView('preload.js', undefined, appTabArgsFor(SITE, registeredApp))
+    expect(appTabFlagChanged(OTHER_SITE, view, registeredApp)).toBe(false)
+  })
+
+  it('never reads as a flag change for a target with no derivable origin', () => {
+    const view = makeTabView('preload.js', undefined, appTabArgsFor(APP, registeredApp))
+    expect(appTabFlagChanged('about:blank', view, registeredApp)).toBe(false)
   })
 })

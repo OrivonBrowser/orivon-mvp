@@ -13,6 +13,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A Settings page, and the browser features a person lives in.** `orivon://settings` has a section for
+  everything Orivon implements: appearance (theme, bookmarks bar, page zoom), search, tabs and windows,
+  profiles, privacy and data, the apps that hold permissions, the Ethereum light client, remappable
+  keyboard shortcuts, developer tools, and About. It searches, links to each section, marks what differs
+  from the default and applies a change at once. The browser gained a main menu, keyboard shortcuts for
+  everything it does (each can be changed, swapped, cleared or restored), zoom kept for each site, a
+  history that stays on this computer (`orivon://history`, searchable, kept 90 days by default, with
+  Clear browsing data), and developer tools on any page with F12, which ask once before opening on an app
+  that holds permissions.
+- **Tabs move, and two can share a window.** Tabs reorder by dragging or with Ctrl+Shift+PageUp and
+  PageDown, go to another window or a window of their own from their menu or by being dragged out, and keep
+  the page as it was. Two tabs can be shown side by side or stacked, made by dragging a tab to a page edge,
+  from a tab's menu or "Open Link in Split View", with a divider that resizes and a pane that follows the
+  click.
+- **Profiles and private windows.** A profile is a separate browser with its own bookmarks, history,
+  permissions and apps, made and managed at `orivon://profiles`; each runs as a process of its own, and a
+  second start of one already open hands over to it. A private window (Ctrl+Shift+N) starts empty on a
+  directory of its own, keeps no history, statistics or identity, asks for every permission again and is
+  deleted when its last window closes. `ADR-0042`.
 - **A native addon reaches the app's files from a forked child** of a cross-origin isolated app,
   each call blocking on the page's `orivon.fs`; that child's `fs.readFileSync` works too
   (ADR-0040).

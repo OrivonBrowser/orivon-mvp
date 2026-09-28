@@ -7,7 +7,7 @@ import type { CapabilityKind, Pattern } from '../contracts/index.js'
 
 // Loaded ONLY by the site-info popup's own WebContentsView
 // (src/main/permissions/site-info-panel.ts). Same defense-in-depth as
-// src/preload/settings.ts: this page never navigates anywhere else, but the
+// src/preload/permissions.ts: this page never navigates anywhere else, but the
 // check below still runs before exposing anything privileged, and
 // src/main/ipc/site-info-ipc.ts re-verifies the same thing from the
 // authoritative main-process side on every call -- neither layer trusts

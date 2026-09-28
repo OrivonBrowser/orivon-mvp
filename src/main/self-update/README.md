@@ -15,4 +15,6 @@ comparator (its header says why).
 browser update and an app grant are different questions, asked in different dialogs, under
 different rules.
 
-**Owner stream.** `shell`. Maintenance only.
+**Owner stream.** `shell`. Maintenance only. Nothing looks unless the person turned `updates.check` on in
+Settings (it is off by default): `index.ts` then calls `runUpdateCheck` once at start, and "Check now"
+(`updates-domain.ts`, through `checkUpdateNow`) asks at once and only reports. A private session looks at nothing.

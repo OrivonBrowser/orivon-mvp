@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'"
+    />
+    <title>Split view</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <div id="outline" hidden></div>
+    <div id="placeholder" hidden><span>Drop here to split</span></div>
+    <div id="divider" hidden><span></span></div>
+  </body>
+</html>

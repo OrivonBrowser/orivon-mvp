@@ -14,26 +14,20 @@
 import type { WebContentsView, View } from 'electron'
 import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
-import { parseOmniboxInput, sanitizeDirectUrl } from '../browsing/omnibox.js'
+import { parseOmniboxInput } from '../browsing/omnibox.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
+import { internalUrl, parseInternalUrl } from '../pages/internal-pages.js'
+import type { InternalPageId } from '../pages/internal-pages.js'
 import type { SubsystemContext } from '../registry.js'
-import { appTabArgsFor, closeParkedViews, makeTabView, partitionChanged, partitionForTarget, repartitionView, wireView } from './tab-view.js'
-import type { TabShell, TabViewHost } from './tab-view.js'
+import { BLANK_URL, TabFactory } from './tab-factory.js'
+import { clearOfPairs, moveInOrder } from './tab-order.js'
+import { PaneHost } from './pane-host.js'
+import { SplitController } from './split-controller.js'
+import { appTabFlagChanged, closeParkedViews, partitionChanged, repartitionView } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
-import type { TabState, TabsSnapshot, Bounds, TabRecord } from './tab-types.js'
+import type { TabState, TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-
-/** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
- * a bad window.open() URL, empty input) -- never the dashboard. Keeping
- * these landings on a plain, privilege-free page rather than the
- * dashboard matters structurally, not just cosmetically: an EXISTING
- * tab keeps whatever preload it was created with (preload is fixed at
- * WebContentsView creation, see createTab()), so a tab created with the
- * ordinary app.js preload that later lands here via a rejected
- * navigate() call must never show a page that expects the dashboard's
- * own preload to exist. */
-const BLANK_URL = 'about:blank'
 
 /** Defensive, found 2026-08-28 while investigating a reported crash: an
  * unbounded window.open() flood (an ad/popunder pattern, not
@@ -46,46 +40,41 @@ const MAX_TABS = 100
 /** Any id but 0 (the page's own world) and 999 (the preload's). */
 const EXIT_FULLSCREEN_WORLD_ID = 1001
 
-let nextId = 1
-function makeTabId (): string {
-  return `tab-${nextId++}`
-}
-
 export class TabManager {
-  /** One record per tab -- replaces a bare `Map<string, WebContentsView>`
-   * (build step 1) so favicon state and the view share one lifetime.
-   * A second, parallel map would need closeTab() to remember deleting
-   * from both, which is exactly the leak class this avoids. */
+  /** One record per tab, so favicon state and the view share one lifetime:
+   * a second, parallel map is the leak class this avoids. */
   private readonly tabs = new Map<string, TabRecord>()
-  /** Tab strip order, separate from the Map's insertion-order guarantee so
-   * reordering (not in this step's scope, but the seam matters) doesn't
-   * require touching the Map. */
+  /** Tab strip order, kept apart from the Map's insertion order. */
   private readonly order: string[] = []
   private activeId: string | null = null
+  /** Set once the window is closing: from then on no tab is activated, laid
+   * out or reported, because each of those asks the window for its bounds and
+   * a destroyed window throws. Teardown destroys the window first and its
+   * views' webContents after, so the views' `destroyed` events arrive here
+   * with the window already gone. */
+  private disposed = false
   private readonly listeners = new Set<(state: TabsSnapshot) => void>()
-  private readonly preloadPath: string
   /** The narrow surface tab-view.ts's per-view wiring calls back through. */
   private readonly viewHost: TabViewHost
-  private readonly newTabPreloadPath: string
+  private readonly factory: TabFactory
+  private readonly panes: PaneHost
+  /** The tabs shown two at a time. Public: split commands and the tab menu work it directly. */
+  readonly splits: SplitController
+  private readonly backdrop: TabShell['backdrop']
+  /** A page holding the whole area (HTML fullscreen): nothing else is shown. */
+  private fullscreenId: string | null = null
+  private readonly searchUrl: ((query: string) => string) | undefined
 
   constructor (
-    private readonly contentView: View,
+    contentView: View,
     private readonly getTabBounds: () => Bounds,
-    /** Called at most once, when the last tab closes -- A16, owner
-     * decision 2026-08-28: closing the last tab closes the window
-     * (Firefox/Safari-shaped), not left open and empty (the prior,
-     * undecided default) or a fresh tab (Chrome/Edge-shaped, the doc's
-     * own superseded AI-REC). window.ts wires this to `win.close()`;
-     * TabManager itself never calls `app.quit()` -- src/main/index.ts's
-     * existing `window-all-closed` handler is already the correct,
-     * complete owner of whether the whole process then exits. */
+    /** Called when the last tab closes (A16): window.ts closes the window or
+     * opens a new tab, as the person set. TabManager never quits the app --
+     * index.ts's `window-all-closed` owns whether the process exits. */
     private readonly onEmpty: () => void,
-    /** The dashboard's own resolved URL (dev server or built file,
-     * decided once by window.ts the same way it resolves the chrome
-     * view's own URL) -- a genuinely fresh tab (createTab() with no
-     * `url` argument) loads this, with the dashboard's own preload
-     * below. Never reachable via a rejected navigation -- see
-     * BLANK_URL and resolveTarget(). */
+    /** The dashboard's resolved URL (dev server or built file): a fresh tab
+     * (createTab() with no `url`) loads this, with the dashboard's own
+     * preload. A rejected navigation never reaches it -- see BLANK_URL. */
     private readonly dashboardUrl: string,
     /** `ctx.broker` may be `undefined` (a run without the broker
      * subsystem), and `ctx.loader` is deliberately unused so far -- do not
@@ -97,29 +86,71 @@ export class TabManager {
   ) {
     this.viewHost = {
       preloadPath: join(import.meta.dirname, '../preload/app.js'),
-      contentView,
       // A GETTER, not a captured value: ctx.broker may still be undefined
       // when TabManager is constructed and be published afterwards. Reading
       // it once here would pin 'no broker' for the process lifetime.
       get broker () { return ctx.broker },
       dashboardUrl,
       window: shell?.window,
-      isActive: (id) => this.activeId === id,
+      isShown: (id) => this.panes.isShown(id),
+      detachView: (view) => { this.panes.hide(this.idOfView(view)) },
+      attachView: (id, view) => { this.panes.replace(id, view, this.paneBounds(id)) },
+      paneClicked: (id) => { this.paneClicked(id) },
+      openInSplit: (id, url) => { if (!this.atCapacity()) this.splits.split(id, this.createTab(url), 'right') },
       emitState: () => { this.emitState() },
       captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },
       forgetTab: (id) => { this.forgetTab(id, false) },
       openTab: (url) => { this.createTab(url) },
       adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
       atCapacity: () => this.atCapacity(),
-      htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
-      getTabBounds
+      htmlFullscreenChanged: (id, entered) => {
+        // Only the tab in front is given the window: the shell refuses any other, and a refusal must leave nothing shown.
+        if (entered && id === this.activeId) this.fullscreenId = id
+        else if (!entered && this.fullscreenId === id) this.fullscreenId = null
+        shell?.htmlFullscreenChanged(id, entered)
+      },
+      isClosing: () => this.disposed,
+      devtools: shell?.devtools
     }
-    this.preloadPath = join(import.meta.dirname, '../preload/app.js')
-    this.newTabPreloadPath = join(import.meta.dirname, '../preload/newtab.js')
+    this.searchUrl = shell?.searchUrl
+    this.factory = new TabFactory(this.viewHost, () => ctx.broker, dashboardUrl, shell?.internalPages)
+    this.panes = new PaneHost(contentView)
+    this.backdrop = shell?.backdrop
+    this.splits = new SplitController({
+      order: this.order,
+      activate: (id) => { this.activateTab(id) },
+      focus: (id) => { this.liveWebContents(id)?.focus() },
+      changed: () => { this.syncViews(); this.emitState() },
+      openTab: () => this.atCapacity() ? undefined : this.createTab(),
+      area: getTabBounds
+    })
+  }
+
+  private add (id: string, record: TabRecord): void {
+    this.tabs.set(id, record)
+    this.order.push(id)
   }
 
   onStateChange (cb: (state: TabsSnapshot) => void): void {
     this.listeners.add(cb)
+  }
+
+  /** The window is closing: closes every tab's views and stops reacting, so
+   * the `destroyed` events that follow find no fallback tab to activate, no
+   * bounds to ask for, no state to push and no `onEmpty` to fire.
+   *
+   * The views must be closed here. Only the active tab's view is a child of
+   * the window; a background tab's view and every parked view are detached,
+   * so destroying the window leaves their renderers running. */
+  dispose (): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.listeners.clear()
+    for (const record of [...this.tabs.values()]) {
+      closeParkedViews(record)
+      record.host.devtools?.closeFor(record.view.webContents)
+      if (!record.view.webContents.isDestroyed()) record.view.webContents.close()
+    }
   }
 
   getState (): TabsSnapshot {
@@ -131,77 +162,49 @@ export class TabManager {
 
   createTab (url?: string): string {
     if (this.atCapacity()) {
-      // Refuse rather than crash -- see MAX_TABS above. Nothing reads
-      // this return value today (grep confirms every caller discards
-      // it), but the signature stays `string`, so hand back whatever is
-      // already current rather than inventing a sentinel.
+      // Refuse rather than crash -- see MAX_TABS above. A caller that uses
+      // the id (a split's partner) checks atCapacity() first.
       return this.activeId ?? ''
     }
 
-    // Computed BEFORE the view exists: preload is fixed at
-    // WebContentsView creation and can never change for this tab
-    // afterward, so the dashboard-or-not decision has to be made here,
-    // not after loadURL(). `url === undefined` -- a genuinely fresh tab,
-    // never a caller-supplied value -- is the ONLY thing that selects
-    // the dashboard preload. A page cannot trigger this by supplying the
-    // dashboard's own URL as a window.open() target: that still goes
-    // through sanitizeDirectUrl below and gets the ORDINARY preload
-    // regardless of what URL it resolves to.
-    const isDashboard = url === undefined
-    const target = isDashboard ? this.dashboardUrl : (sanitizeDirectUrl(url) ?? BLANK_URL)
-
-    // Excluded even though the dashboard's own URL is occasionally a real
-    // http(s) address (electron-vite's dev server) -- `partitionForTarget`
-    // cannot tell that apart from a real app on scheme alone, but the
-    // dashboard is shell UI (ADR-0003's "browser state" tier), never app
-    // content, and must never be isolated as if it were an app's own origin.
-    const partition = isDashboard ? undefined : partitionForTarget(target, this.ctx.broker)
-
-    const id = makeTabId()
-    const view = makeTabView(
-      isDashboard ? this.newTabPreloadPath : this.preloadPath,
-      partition,
-      // Tells the dashboard's own preload (src/preload/newtab.ts) what its
-      // expected URL is, so it can verify `location.href` matches before
-      // exposing anything -- necessary because a dashboard tab is an
-      // ordinary, navigable tab (unlike the chrome view), and preload
-      // cannot be un-set if the user later navigates away. A non-dashboard
-      // tab instead gets appTabArgsFor's ADR-0017 flag, if this origin is
-      // already a registered app.
-      isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : appTabArgsFor(target, this.ctx.broker)
-    )
-    const record: TabRecord = {
-      view,
-      favicon: null,
-      faviconOrigin: null,
-      pendingFaviconUrl: null,
-      partition,
-      isDashboardTab: isDashboard,
-      parkedViews: new Map()
-    }
-    wireView(this.viewHost, id, record)
-
-    this.tabs.set(id, record)
-    this.order.push(id)
-
-    void view.webContents.loadURL(target)
-
+    const { id, record, target } = this.factory.content(url)
+    this.add(id, record)
+    void record.view.webContents.loadURL(target)
     this.activateTab(id)
     return id
   }
 
+  /** Shows one of the shell's own pages: the tab that already has it, or a new
+   * one. A page has one tab per window, so a second request finds the first
+   * (and takes it to `path` if it is elsewhere). Only the shell calls this: a
+   * website's `window.open` reaches `createTab`, which refuses an `orivon:` URL.
+   * Its view lives in the internal session with the internal preload, and it
+   * stays on its page (./pages/internal-tab.ts). */
+  openInternal (page: InternalPageId, path = '/'): void {
+    const url = internalUrl(page, path)
+    for (const [id, record] of this.tabs) {
+      if (record.internalPage !== page) continue
+      this.activateTab(id)
+      if (!record.view.webContents.isDestroyed() && record.view.webContents.getURL() !== url) void record.view.webContents.loadURL(url)
+      return
+    }
+    if (this.atCapacity()) return
+
+    const { id, record } = this.factory.internal(page)
+    this.add(id, record)
+    void record.view.webContents.loadURL(url)
+    this.activateTab(id)
+  }
+
   private atCapacity (): boolean {
-    return this.order.length >= MAX_TABS
+    return this.disposed || this.order.length >= MAX_TABS
   }
 
   /** A popup Chromium already created, with its opener, in the opener's
    * session (./popups.ts). It navigates itself; nothing is loaded here. */
   private adoptPopup (view: WebContentsView, partition: string | undefined): void {
-    const id = makeTabId()
-    const record: TabRecord = { view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, parkedViews: new Map() }
-    wireView(this.viewHost, id, record)
-    this.tabs.set(id, record)
-    this.order.push(id)
+    const { id, record } = this.factory.popup(view, partition)
+    this.add(id, record)
     this.activateTab(id)
   }
 
@@ -219,27 +222,70 @@ export class TabManager {
     this.forgetTab(id, true)
   }
 
-  /** Shared by closeTab() (user- or app-initiated) and the webContents
-   * 'destroyed' handler (unexpected teardown, e.g. a crash). `closeView`
-   * is false for the crash path: the webContents is already gone, and
-   * calling further methods on a destroyed object throws. */
-  private forgetTab (id: string, closeView: boolean): void {
+  /** Puts a tab at `index` in the strip. */
+  moveTab (id: string, index: number): void {
+    if (this.splits.move(id, index) || moveInOrder(this.order, id, index, this.splits.groups.pairs())) this.emitState()
+  }
+
+  get tabCount (): number {
+    return this.order.length
+  }
+
+  /** Whether another tab may be shown here: a tab given by another window is not refused half way. */
+  hasRoom (): boolean {
+    return !this.atCapacity()
+  }
+
+  /** Lets go of a tab without closing it, so another window can show it. When this was the last tab the
+   * window is left empty and NOT told so (`onEmpty` is for closing a tab): whoever moved it closes the window. */
+  takeTab (id: string): TabRecord | null {
+    if (this.disposed) return null
+    const record = this.tabs.get(id)
+    if (record === undefined) return null
+    // Tools left open would inspect a page this window no longer shows.
+    record.host.devtools?.closeFor(record.view.webContents)
+    this.forgetTab(id, false, true)
+    return record
+  }
+
+  /** Shows a tab another window let go of, at `index` (the end by default). Its views' handlers read `record.host`
+   * when they run, so from here on they act for this window. */
+  giveTab (id: string, record: TabRecord, index?: number): void {
+    if (this.disposed) return
+    record.host = this.viewHost
+    this.tabs.set(id, record)
+    const wanted = Math.min(Math.max(0, index ?? this.order.length), this.order.length)
+    this.order.splice(clearOfPairs(this.order, wanted, this.splits.groups.pairs(), -1), 0, id)
+    this.activateTab(id)
+  }
+
+  /** Shared by closeTab() (user- or app-initiated), the webContents
+   * 'destroyed' handler (unexpected teardown, e.g. a crash) and takeTab().
+   * `closeView` is false for the crash path: the webContents is already gone,
+   * and calling further methods on a destroyed object throws. `handedOn` is
+   * a tab going to another window alive: its parked views go with it, and
+   * an empty strip is not reported. */
+  private forgetTab (id: string, closeView: boolean, handedOn = false): void {
     const record = this.tabs.get(id)
     if (record === undefined) return
 
-    if (this.activeId === id) {
-      this.contentView.removeChildView(record.view)
-    }
+    const partner = this.splits.groups.partnerOf(id)
+    if (!this.disposed) this.panes.hide(id)
+    this.splits.groups.separate(id)
+    // Out of the books before the view closes: closing announces its own end
+    // at once, and that second call must find nothing left to do.
+    this.tabs.delete(id)
+    const idx = this.order.indexOf(id)
+    if (idx !== -1) this.order.splice(idx, 1)
+    record.host.devtools?.closeFor(record.view.webContents)
     if (closeView && !record.view.webContents.isDestroyed()) {
       record.view.webContents.close()
     }
     // On the crash path too: a parked view is alive whatever became of the
     // one the tab showed.
-    closeParkedViews(record)
-    this.tabs.delete(id)
+    if (!handedOn) closeParkedViews(record)
 
-    const idx = this.order.indexOf(id)
-    if (idx !== -1) this.order.splice(idx, 1)
+    if (this.disposed) return
 
     if (this.activeId === id) {
       const fallback = this.order[Math.max(0, idx - 1)]
@@ -250,66 +296,93 @@ export class TabManager {
       }
     }
 
-    // A16, resolved: the last tab closing means there is nothing left to
-    // show -- close the window rather than leaving it open and empty.
-    // Reachable from exactly one call site: `record` is already deleted
-    // above, so a second forgetTab() for a since-removed id returns at
-    // the guard at the top of this method instead of reaching here --
-    // onEmpty cannot double-fire off the multiple emitState() sources
-    // (tab events, bookmark events) the way a `state.tabs.length === 0`
-    // check in window.ts's pushState would.
+    // The last tab closing leaves nothing to show. The record is already
+    // gone, so a second forgetTab() for it returns at the top: `onEmpty`
+    // cannot fire twice the way a check in window.ts's pushState would.
     if (this.order.length === 0) {
-      this.onEmpty()
+      if (!handedOn) this.onEmpty()
       return
     }
+    // The tab beside it now has the whole area.
+    if (partner !== null) this.syncViews()
     this.emitState()
   }
 
   activateTab (id: string): void {
     const record = this.tabs.get(id)
-    if (record === undefined || record.view.webContents.isDestroyed()) return
-
-    if (this.activeId !== null && this.activeId !== id) {
-      const previous = this.tabs.get(this.activeId)
-      if (previous !== undefined) this.contentView.removeChildView(previous.view)
-    }
-
-    if (this.activeId !== id) {
-      this.contentView.addChildView(record.view)
-      record.view.setBounds(this.getTabBounds())
-    }
+    if (this.disposed || record === undefined || record.view.webContents.isDestroyed()) return
 
     this.activeId = id
+    this.syncViews()
     this.emitState()
   }
 
-  /** Re-applies the active tab's bounds -- called on window resize. */
-  layout (): void {
-    if (this.activeId === null) return
-    const record = this.tabs.get(this.activeId)
-    if (record !== undefined && !record.view.webContents.isDestroyed()) {
-      record.view.setBounds(this.getTabBounds())
+  /** Puts the views on screen as the plan says: the tab in front, or the two panes of a split, sized. */
+  private syncViews (): void {
+    if (this.disposed) return
+    // A page holds the window only while it is the tab in front: a tab that closed or was left has no claim.
+    if (this.fullscreenId !== this.activeId) this.fullscreenId = null
+    const plan = this.splits.plan(this.activeId, this.getTabBounds(), this.fullscreenId)
+    const panes = plan.panes.flatMap(({ id, bounds }) => {
+      const view = this.tabs.get(id)?.view
+      return view === undefined || view.webContents.isDestroyed() ? [] : [{ id, view, bounds }]
+    })
+    if (plan.frame === null || this.backdrop === undefined) {
+      this.panes.show(panes)
+      return
     }
+    this.panes.show(panes, { id: 'backdrop', view: this.backdrop.view, bounds: plan.frame.area })
+    this.backdrop.update(plan.frame)
+  }
+
+  /** Where a tab's view goes now: its pane, or the whole area. */
+  private paneBounds (id: string): Bounds {
+    return this.splits.plan(this.activeId, this.getTabBounds(), this.fullscreenId).panes.find((pane) => pane.id === id)?.bounds ?? this.getTabBounds()
+  }
+
+  private idOfView (view: WebContentsView): string {
+    for (const [id, record] of this.tabs) if (record.view === view) return id
+    return ''
+  }
+
+  /** The person pressed in a page. Of two panes, that is the one they are in. */
+  private paneClicked (id: string): void {
+    if (id === this.activeId || this.splits.groups.partnerOf(id) !== this.activeId) return
+    this.activeId = id
+    this.syncViews()
+    this.emitState()
+  }
+
+  /** Re-applies the views' bounds -- called on window resize. */
+  layout (): void {
+    this.syncViews()
   }
 
   /** THE PRIMARY WAY A TAB EVER REACHES A REAL ORIGIN: the omnibox and the
    * dashboard's own navigate command both funnel here (ipc.ts, newtab-
    * ipc.ts) -- a person's very first act in a fresh tab is typing a URL,
    * not calling createTab(url) directly. Repartitions via repartitionView()
-   * exactly when the target belongs in a different session from the one the
-   * tab is in -- which, since 2026-09-15, means entering or leaving an
-   * installed app, never one ordinary website to another. BLANK_URL has no
-   * derivable origin, so a rejected navigation never swaps and keeps landing
-   * in whatever view/partition the tab already had (BLANK_URL's own doc: "an
+   * when the target's session differs, or -- same session -- its app-tab
+   * flag would (appTabFlagChanged's own doc). BLANK_URL has no derivable
+   * origin, so a rejected navigation never swaps (BLANK_URL's own doc: "an
    * EXISTING tab keeps whatever preload it was created with"). */
   navigate (id: string, rawInput: string): void {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return
+    // The address bar and the dashboard's search box are the person typing:
+    // an address of one of the shell's own pages opens that page.
+    const internal = parseInternalUrl(rawInput)
+    if (internal !== null) {
+      this.openInternal(internal.page, internal.path)
+      return
+    }
     const target = this.resolveTarget(rawInput)
 
     const swap = partitionChanged(target, record.partition, this.ctx.broker)
-    if (swap !== undefined) {
-      repartitionView(this.viewHost, id, record, target, swap.to)
+    if (swap !== undefined || appTabFlagChanged(target, record.view, this.ctx.broker)) {
+      // swap.to can itself be undefined (PartitionSwap's own doc) -- ??
+      // would wrongly read that as "no swap" and keep the old partition.
+      repartitionView(id, record, target, swap !== undefined ? swap.to : record.partition)
       return
     }
 
@@ -359,7 +432,7 @@ export class TabManager {
    * silently doing nothing, so a bad paste has a visible, safe result.
    * Never the dashboard -- see BLANK_URL's own comment for why. */
   private resolveTarget (rawInput: string): string {
-    const result = parseOmniboxInput(rawInput, isDevEthName)
+    const result = parseOmniboxInput(rawInput, isDevEthName, this.searchUrl)
     if (result.kind === 'reject') return BLANK_URL
     return result.url
   }
@@ -374,6 +447,11 @@ export class TabManager {
       if (record.view.webContents === wc) return id
     }
     return null
+  }
+
+  /** The session partition a tab's page runs in: an app's own, or undefined for the open web. */
+  partitionOf (id: string): string | undefined {
+    return this.tabs.get(id)?.partition
   }
 
   /** A tab's webContents, or undefined if the tab is gone or its
@@ -407,7 +485,9 @@ export class TabManager {
       canGoForward: wc?.navigationHistory.canGoForward() ?? false,
       loading: wc?.isLoading() ?? false,
       favicon: record?.favicon ?? null,
-      isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === this.dashboardUrl)
+      isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === this.dashboardUrl),
+      splitWith: this.splits.groups.partnerOf(id),
+      isInternal: record?.internalPage != null
     }
   }
 

@@ -16,13 +16,13 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-async function openSettings (app: ElectronApplication): Promise<Page> {
+async function openPermissions (app: ElectronApplication): Promise<Page> {
   await waitFor(() => app.windows().length === 2)
   const chrome = findChrome(app)
   await waitForAddressBarStable(chrome)
   await chrome.click('#permissions-btn')
   let panel: Page | undefined
-  await waitFor(() => { panel = app.windows().find((w) => w.url().endsWith('/renderer/settings/index.html')); return panel !== undefined })
+  await waitFor(() => { panel = app.windows().find((w) => w.url().endsWith('/renderer/permissions/index.html')); return panel !== undefined })
   if (panel === undefined) throw new Error('the settings panel did not open')
   return panel
 }
@@ -42,7 +42,7 @@ it('shows the light client off, down when its process dies, and back once it res
   await runPhase('light-client-off', async (check) => {
     const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
     try {
-      const panel = await openSettings(app)
+      const panel = await openPermissions(app)
       const off = await waitFor(async () => (await lightClient(panel)).state === 'Off', 15_000)
       check(`switched off for the test run, Settings says Off (${JSON.stringify(await lightClient(panel))})`, off)
 
@@ -76,7 +76,7 @@ it('shows the light client failed, and why, when no beacon API can be reached', 
   await runPhase('light-client-failed', async (check) => {
     const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_ETH_LIGHT_CLIENT: 'on' }, seedProfile: seedFreshCheckpoint })
     try {
-      const panel = await openSettings(app)
+      const panel = await openPermissions(app)
       const failed = await waitFor(async () => (await lightClient(panel)).state === 'Failed', 45_000)
       const shown = await lightClient(panel)
       check(`Settings says Failed with a reason and a retry (${JSON.stringify(shown)})`, failed && /Failed: .+\. Trying again/.test(shown.summary))

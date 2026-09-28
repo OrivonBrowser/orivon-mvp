@@ -32,6 +32,7 @@ import { loaderSubsystem } from '../loader/subsystem.js'
 import { appInstallSubsystem } from './install/app-install-subsystem.js'
 import { manifestHintSubsystem } from './install/manifest-hint.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
+import { pagesSubsystem } from './pages/pages-subsystem.js'
 
 export const subsystems: Subsystem[] = [
   // Listed first, ahead of everything else here: its beforeReady attaches
@@ -55,5 +56,6 @@ export const subsystems: Subsystem[] = [
   manifestHintSubsystem,
   // build step 7: trust     -> src/trust/
   // nostr -> src/nostr/, parked: an idea, not a build step
-  telemetrySubsystem // build step 8: telemetry -> src/telemetry/
+  telemetrySubsystem, // build step 8: telemetry -> src/telemetry/
+  pagesSubsystem // the shell's own pages: their scheme and session -> src/main/pages/. Reads neither ctx.broker nor ctx.loader.
 ]

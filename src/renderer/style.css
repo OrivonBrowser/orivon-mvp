@@ -62,6 +62,13 @@
   }
 }
 
+/* A private window's chrome is tinted, so it is never taken for the person's own: the same tone as the native window
+   buttons' overlay (src/main/shell/window-frame.ts), which CSS cannot reach. */
+:root[data-private='true'] { --wchrome: #d8cfe8; --wsurface: #ece6f5; }
+@media (prefers-color-scheme: dark) {
+  :root[data-private='true'] { --wchrome: #251c36; --wbookmarks: #20182f; --wsurface: #35294b; --wborder: #45375f; }
+}
+
 /* The omnibox leading dot's plain-http colour (toolbar.css's
    .address-dot.insecure). Theme-invariant in the reference, same as
    --waccent/--wmark/--wok above, so it isn't in the light/dark table. */

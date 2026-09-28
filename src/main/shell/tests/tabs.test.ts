@@ -203,59 +203,6 @@ describe('TabManager -- an installed app gets its own session at creation (ADR-0
   })
 })
 
-// THE PRIMARY USER PATH: a fresh tab (dashboard or otherwise) navigated via
-// the omnibox -- ipc.ts's 'navigate' command and newtab-ipc.ts's dashboard
-// navigate both funnel here. Attempt 1 only wired partitioning into
-// createTab()'s own construction arguments, which a real launch proved is
-// NOT the path an actual person takes: nobody's very first act in a fresh
-// tab is calling createTab(url) directly, they type into the address bar,
-// which is navigate(). These tests exist because the e2e test alone did not
-// catch this fast enough -- it needs a real Electron launch to run at all.
-describe("TabManager -- ADR-0017's synchronous fetch()-routing flag (appTabArgsFor)", () => {
-  it('a fresh tab whose origin is a registered app gets the --orivon-app-tab additionalArgument', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
-    manager.createTab('https://app.example/page')
-
-    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toEqual(['--orivon-app-tab'])
-  })
-
-  it('a fresh tab whose origin is NOT a registered app gets no such argument', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://other.example'))
-    manager.createTab('https://app.example/page')
-
-    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toBeUndefined()
-  })
-
-  it('a tab with no broker at all (ctx.broker undefined) gets no argument -- never throws', () => {
-    const manager = newManager({} as SubsystemContext)
-    expect(() => { manager.createTab('https://app.example/page') }).not.toThrow()
-    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toBeUndefined()
-  })
-
-  it('the fresh-tab dashboard never gets the flag, even if its own URL happened to be a registered origin', () => {
-    const manager = newManager(ctxWithRegisteredOrigins(originFromUrl(DASHBOARD_URL) as string))
-    manager.createTab() // dashboard
-
-    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toEqual([`--orivon-newtab-url=${DASHBOARD_URL}`])
-  })
-
-  it('navigating an existing tab TO a registered app\'s origin swaps in a view carrying the flag', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
-    const id = manager.createTab('https://a.example/')
-    manager.navigate(id, 'https://app.example/page')
-
-    expect(additionalArgumentsOf(createdViews[1] as RecordedView)).toEqual(['--orivon-app-tab'])
-  })
-
-  it('navigating away FROM a registered app\'s origin to an unregistered one drops the flag on the new view', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
-    const id = manager.createTab('https://app.example/page')
-    manager.navigate(id, 'https://plain-website.example/')
-
-    expect(additionalArgumentsOf(createdViews[1] as RecordedView)).toBeUndefined()
-  })
-})
-
 describe('TabManager -- navigate() swaps a view only when entering or leaving an installed app', () => {
   // THE REGRESSION TEST FOR A109. Before 2026-09-15 this swapped the view,
   // and a swapped-in view starts with empty navigationHistory -- so one
@@ -711,6 +658,32 @@ describe('TabManager -- a tab coming back to an app it left gets the app\'s own 
   })
 })
 
+// DevToolsService tracks every WebContents it opened tools on until closeFor()
+// runs; takeTab() already calls it -- these prove the paths that did not.
+describe('TabManager -- DevTools do not outlive the tab they were opened on', () => {
+  function managerWithDevtools (): { manager: InstanceType<typeof TabManager>, closeFor: ReturnType<typeof vi.fn> } {
+    const closeFor = vi.fn()
+    const devtools = { allowed: vi.fn(), inspect: vi.fn(), closeFor }
+    const manager = new TabManager(fakeContentView as never, () => fakeBounds, vi.fn(), DASHBOARD_URL, fakeCtx, { window: {} as never, htmlFullscreenChanged: vi.fn(), devtools })
+    return { manager, closeFor }
+  }
+
+  it('closes DevTools for a tab closed normally', () => {
+    const { manager, closeFor } = managerWithDevtools()
+    const id = manager.createTab('https://a.example/')
+    manager.closeTab(id)
+    expect(closeFor).toHaveBeenCalledWith((createdViews[0] as RecordedView).webContents)
+  })
+
+  it('closes DevTools for a tab whose view dies unexpectedly', () => {
+    const { manager, closeFor } = managerWithDevtools()
+    manager.createTab('https://a.example/')
+    const wc = (createdViews[0] as RecordedView).webContents
+    wc.emit('destroyed')
+    expect(closeFor).toHaveBeenCalledWith(wc)
+  })
+})
+
 // wireView() launches captureFavicon with a .catch, not a bare `void`: a
 // rejection there would be an unhandledRejection, which index.ts
 // deliberately maps to app.exit(1), killing every open tab. This exercises
@@ -739,5 +712,31 @@ describe('TabManager -- a rejecting captureFavicon must not escape as an unhandl
     }
 
     expect(onUnhandledRejection).not.toHaveBeenCalled()
+  })
+})
+
+describe('TabManager -- the search engine the person chose', () => {
+  function urlLoadedBy (input: string, searchUrl?: (query: string) => string): string {
+    const manager = new TabManager(fakeContentView as never, () => fakeBounds, vi.fn(), DASHBOARD_URL, fakeCtx,
+      searchUrl === undefined ? undefined : { window: {} as never, htmlFullscreenChanged: vi.fn(), searchUrl })
+    const id = manager.createTab('https://start.example/')
+    const view = createdViews.at(-1) as RecordedView
+    view.webContents.loadURL.mockClear()
+
+    manager.navigate(id, input)
+
+    return view.webContents.loadURL.mock.calls.at(-1)?.[0] as string
+  }
+
+  it('searches with the default engine when none was chosen', () => {
+    expect(urlLoadedBy('hello world')).toBe('https://duckduckgo.com/?q=hello+world')
+  })
+
+  it('searches with the chosen one', () => {
+    expect(urlLoadedBy('hello world', (query) => `https://search.example/?text=${encodeURIComponent(query)}`)).toBe('https://search.example/?text=hello%20world')
+  })
+
+  it('still opens an address as an address', () => {
+    expect(urlLoadedBy('example.com', () => 'https://never.example/')).toBe('https://example.com/')
   })
 })

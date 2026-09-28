@@ -26,7 +26,7 @@ types), [`../../loader/`](../../loader/) (`index.ts`, `manifest/manifest.ts`),
 `request-grant.ts`), [`../browsing/site-trust.ts`](../browsing/site-trust.ts),
 [`../verifier/`](../verifier/) (`name-evidence.ts`, `verifier-subsystem.ts`),
 [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts),
-`../shell/renderer-entry.ts`, `../shell/lock-navigation.ts`, `../ipc/settings-ipc.ts`, `../ipc/site-info-ipc.ts`, the top-level
+`../shell/renderer-entry.ts`, `../shell/lock-navigation.ts`, `../ipc/permissions-ipc.ts`, `../ipc/site-info-ipc.ts`, the top-level
 `channels.ts`/`registry.ts`, `node:fs/promises`, `node:path`.
 
 **What it must never import.** Nothing bypasses either controller. Every renderer surface that

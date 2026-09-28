@@ -8,10 +8,9 @@
 // popover (./site-info-panel.js); this file owns only the grant-list
 // content on top of it.
 
-import { ipcMain, type BaseWindow, type View } from 'electron'
-import { SETTINGS_COMMAND_CHANNEL } from '../channels.js'
+import type { BaseWindow, View } from 'electron'
 import type { PermissionsController, SiteNotificationsController } from './permissions.js'
-import { registerSettingsIpc } from '../ipc/settings-ipc.js'
+import { registerPermissionsIpc } from '../ipc/permissions-ipc.js'
 import { createPopoverView } from './popover-view.js'
 import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
 import type { PopoverAnchor } from './popover-view.js'
@@ -35,17 +34,13 @@ export function createPermissionsPanel (
 ): PermissionsPanel {
   const popover = createPopoverView(win, contentView, {
     dirname,
-    entryPath: '/settings/',
-    fallbackHtml: '../renderer/settings/index.html',
-    preloadRelPath: '../preload/settings.js',
-    urlArgName: 'orivon-settings-url',
+    entryPath: '/permissions/',
+    fallbackHtml: '../renderer/permissions/index.html',
+    preloadRelPath: '../preload/permissions.js',
+    urlArgName: 'orivon-permissions-url',
     align: 'right',
     registerIpc: (webContents, onContentHeight) => {
-      const unsubscribe = registerSettingsIpc(webContents, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange })
-      return () => {
-        unsubscribe()
-        ipcMain.removeHandler(SETTINGS_COMMAND_CHANNEL)
-      }
+      return registerPermissionsIpc(webContents, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange })
     }
   })
 
