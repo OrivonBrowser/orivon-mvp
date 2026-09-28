@@ -142,4 +142,16 @@ describe('developer tools', () => {
     gone.destroyed = true
     expect(() => { service.closeFor(as(gone)) }).not.toThrow()
   })
+
+  it('take a view whose page is already gone, and forget a page destroyed with its tools open', () => {
+    const { service, change } = setup()
+    expect(() => { service.closeFor(undefined) }).not.toThrow()
+    const contents = page()
+    service.toggle(as(contents), WINDOW)
+    contents.destroyed = true
+    contents.emit('destroyed')
+    contents.closeDevTools.mockClear()
+    change('developer.tools', false)
+    expect(contents.closeDevTools).not.toHaveBeenCalled()
+  })
 })

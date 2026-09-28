@@ -22,8 +22,8 @@ export interface DevToolsDeps {
 export interface DevToolsGate {
   allowed: (contents: WebContents) => boolean
   inspect: (contents: WebContents, window: BaseWindow, x: number, y: number) => void
-  /** Closes the tools on `contents`, which is about to stop being the page a tab shows. */
-  closeFor: (contents: WebContents) => void
+  /** Closes the tools on `contents`, which is about to stop being the page a tab shows. A view whose page is already gone passes undefined. */
+  closeFor: (contents: WebContents | undefined) => void
 }
 
 export class DevToolsService implements DevToolsGate {
@@ -60,7 +60,8 @@ export class DevToolsService implements DevToolsGate {
     contents.inspectElement(x, y)
   }
 
-  closeFor (contents: WebContents): void {
+  closeFor (contents: WebContents | undefined): void {
+    if (contents === undefined) return
     this.open.delete(contents)
     if (!contents.isDestroyed() && contents.isDevToolsOpened()) contents.closeDevTools()
   }
@@ -78,5 +79,7 @@ export class DevToolsService implements DevToolsGate {
     contents.openDevTools({ mode: this.settings.get('developer.dock') })
     this.open.add(contents)
     contents.once('devtools-closed', () => { this.open.delete(contents) })
+    // A tab torn down with its tools open may no longer be able to name this page.
+    contents.once('destroyed', () => { this.open.delete(contents) })
   }
 }
