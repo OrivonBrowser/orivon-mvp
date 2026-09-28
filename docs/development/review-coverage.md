@@ -135,3 +135,9 @@ see in the PR itself.
 |---|---|---|
 | `/code-review`, high effort, run by a forked reviewer | The WASI host's effect generators and drivers, `src/shim/worker/sync-channel.ts` with the server and client changes, and the addon loader's synchronous fs | 9 findings, all fixed in the same branch with a test where one applies: a refused synchronous reply left what it opened open on the page; a reply that failed to encode left the Worker waiting forever; `fd_renumber` became a suspending import; one revoked call disabled an addon for good; the reply writer pinned the last reply; an invalid reply channel threw on the page; stdin read end of input silently under the synchronous driver; sub-millisecond `poll_oneoff` waits began yielding; and the limit retry and the driver loop existed twice |
 
+### `stream/wasi-p2`: a WASI 0.2 host for spawned components (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | `src/shim/wasi-p2/`, component resolution in `child_process`, the Worker's component path | 12 findings, all fixed in the same branch with a test where one applies: the glue check failed open, so a fallback page made a missing program ENOEXEC; a late connect, listen or bind after drop leaked its handle; a listener leaked queued connections and could hang; an empty write while busy trapped; a shared address sent the wrong resolved name; error codes crossed interfaces; lookup failures had the wrong code; a revoked grant did not stop the component; a mapped address was accepted; clocks, randomness and the path checks existed twice; two docs lines were false; and several finish, send and shutdown edges departed from the spec |
+

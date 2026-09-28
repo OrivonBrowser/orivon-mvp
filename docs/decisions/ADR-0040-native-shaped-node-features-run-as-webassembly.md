@@ -1,6 +1,6 @@
 # ADR-0040: Native modules and child processes run as WebAssembly in the app's tab, never as machine code
 
-- **Status:** accepted, **amended 2026-09-28**: `spawn`, `fork` and the addon resolution are built, and an addon reaches files from a forked child (see the Amendments at the end)
+- **Status:** accepted, **amended 2026-09-28**: `spawn`, `fork` and the addon resolution are built, an addon reaches files from a forked child, and a spawned WASI 0.2 component opens sockets (see the Amendments at the end)
 - **Date:** 2026-09-28
 - **Type:** architecture / security
 - **Decided by:** owner (the goal, and that it must keep every broker guard with no added risk);
@@ -97,7 +97,8 @@ reached inside the renderer instead of in a separate host.
 - **The host serves no links, no file times and no sockets.** `orivon.fs` has no links and no way
   to set times; preview1 cannot dial. Against the preview1 conformance suite
   (`WebAssembly/wasi-testsuite`), 63 of 72 programs pass, and the nine that fail need links or
-  file times. Sockets come with WASI 0.2 over `orivon.net`, for a named program.
+  file times. Sockets come with WASI 0.2 over `orivon.net`: a component `spawn` runs has them
+  (the last Amendment).
 - **This build's WASI host needs JSPI.** An engine beneath the API without it would need another
   synchrony mechanism, such as Route B, for the same app-facing shape. `new WASI()` refuses by
   name on an engine without JSPI.
@@ -135,3 +136,12 @@ through `Atomics.wait` (`src/shim/worker/sync-channel.ts`): Route B, rejected ab
 programs, is used for the one caller JSPI cannot serve, code called synchronously. It adds no
 authority, since each call is one the page could make. On a page's main thread, which may not
 block, an addon's file calls still refuse. A Worker's `readFileSync` takes the same route.
+
+## Amendment (2026-09-28): a spawned component opens sockets
+
+`spawn` runs a WASI 0.2 component, whose `wasi:sockets` reach `orivon.net` and whose files reach
+`orivon.fs` through the preview1 host's own path operations (`src/shim/wasi-p2/`). A browser cannot
+instantiate a component, so jco transpiles it at the port's build and the port ships the output
+beside the program; jco is not transpiled at run time, since its packages install native binaries
+(Rule 8). A socket connects by the name the program resolved, so the broker checks the host grant
+it checks for `net.connect(name)`. Like the preview1 host, this one adds no authority.
