@@ -27,6 +27,31 @@ function embedderOrigin (embedder: WebContents): string | null {
 }
 
 /**
+ * The origin `will-attach-webview` admitted, carried to that SAME attach's
+ * `did-attach-webview` -- which gets no origin of its own, only the new
+ * guest `WebContents`, so it cannot re-derive one (R7-07). Re-reading
+ * `embedderOrigin(contents)` a second time there would trust whatever the
+ * embedder's top frame shows AT THAT LATER INSTANT: if it navigated in
+ * between, the guest would be hardened (partition, preload) under one
+ * origin's grant and then attributed to and governed by another. Queued
+ * per embedder, FIFO, because one tab may attach several `<webview>`s
+ * whose will/did pairs are not guaranteed not to interleave; each pair
+ * still resolves in the order it was admitted.
+ */
+const pendingEmbedderOrigins = new WeakMap<WebContents, string[]>()
+
+function queueEmbedderOrigin (embedder: WebContents, origin: string): void {
+  const queue = pendingEmbedderOrigins.get(embedder)
+  if (queue === undefined) pendingEmbedderOrigins.set(embedder, [origin])
+  else queue.push(origin)
+}
+
+/** The next queued origin for `embedder`, or undefined if none is pending (no matching `will-attach-webview` admitted one). */
+function dequeueEmbedderOrigin (embedder: WebContents): string | undefined {
+  return pendingEmbedderOrigins.get(embedder)?.shift()
+}
+
+/**
  * Wires one embed partition's session, once per process: no downloads, and
  * every document request judged against the app's LIVE grant, read fresh
  * per request so a revoke or a narrowed re-consent reaches the next load.
@@ -80,11 +105,12 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
         event.preventDefault()
         return
       }
+      queueEmbedderOrigin(contents, appOrigin)
       hardenGuest(webPreferences, params, { preloadPath, partition: partitionReady(appOrigin), devTools: devModeEnabled() })
     })
     contents.on('did-attach-webview', (_attachEvent, guest) => {
-      const appOrigin = embedderOrigin(contents)
-      if (appOrigin === null) {
+      const appOrigin = dequeueEmbedderOrigin(contents)
+      if (appOrigin === undefined) {
         if (!guest.isDestroyed()) guest.close()
         return
       }
