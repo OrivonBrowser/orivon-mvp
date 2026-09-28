@@ -81,7 +81,7 @@ describe('createDatagramPort -- inbound', () => {
     expect(seen).toEqual([[9, 0]])
   })
 
-  it('a message for a different handleId is ignored (R7-05, matching socket.ts\'s own guard)', () => {
+  it('a message for a different handleId is ignored, matching socket.ts\'s own guard', () => {
     const port = fakePort()
     const dp = createDatagramPort({ handleId: 'h1', port })
     const received: WireDatagram[] = []

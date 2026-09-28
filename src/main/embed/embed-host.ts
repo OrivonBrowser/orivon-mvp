@@ -29,21 +29,25 @@ function embedderOrigin (embedder: WebContents): string | null {
 /**
  * The origin `will-attach-webview` admitted, carried to that SAME attach's
  * `did-attach-webview` -- which gets no origin of its own, only the new
- * guest `WebContents`, so it cannot re-derive one (R7-07). Re-reading
+ * guest `WebContents`, so it cannot re-derive one. Re-reading
  * `embedderOrigin(contents)` a second time there would trust whatever the
  * embedder's top frame shows AT THAT LATER INSTANT: if it navigated in
  * between, the guest would be hardened (partition, preload) under one
  * origin's grant and then attributed to and governed by another. Queued
  * per embedder, FIFO, because one tab may attach several `<webview>`s
- * whose will/did pairs are not guaranteed not to interleave; each pair
- * still resolves in the order it was admitted.
+ * whose will/did pairs are not guaranteed not to interleave. An attach
+ * that never completes leaves its entry behind, so a new admission for a
+ * different origin drops the older ones (the embedder has navigated away
+ * from them), and the queue never holds more than `MAX_PENDING` entries.
  */
 const pendingEmbedderOrigins = new WeakMap<WebContents, string[]>()
 
+const MAX_PENDING = 32
+
 function queueEmbedderOrigin (embedder: WebContents, origin: string): void {
-  const queue = pendingEmbedderOrigins.get(embedder)
-  if (queue === undefined) pendingEmbedderOrigins.set(embedder, [origin])
-  else queue.push(origin)
+  const queue = (pendingEmbedderOrigins.get(embedder) ?? []).filter((queued) => queued === origin)
+  queue.push(origin)
+  pendingEmbedderOrigins.set(embedder, queue.slice(-MAX_PENDING))
 }
 
 /** The next queued origin for `embedder`, or undefined if none is pending (no matching `will-attach-webview` admitted one). */
@@ -78,11 +82,10 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
   const resolve = resolveViaSession(embedSession)
   embedSession.webRequest.onBeforeRequest((details, callback) => {
     guestRequestAllowed(details.url, details.resourceType, broker.embed.originsSync(appOrigin), resolve)
-      .then((allowed) => { callback({ cancel: !allowed }) })
-      // guestRequestAllowed never itself rejects (it catches `resolve`
-      // failing), but a callback Electron waits on must never go uncalled
-      // regardless -- fail closed the same way every refusal here does.
-      .catch(() => { callback({ cancel: true }) })
+      // A callback Electron waits on is called exactly once: a rejection
+      // refuses, the way every refusal here fails closed.
+      .then((allowed) => !allowed, () => true)
+      .then((cancel) => { callback({ cancel }) })
   })
 }
 

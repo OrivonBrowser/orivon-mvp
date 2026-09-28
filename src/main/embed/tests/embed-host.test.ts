@@ -64,7 +64,7 @@ function fakeBroker (origins: ReadonlySet<string>, attach: ReturnType<typeof vi.
 const ORIGIN_A = 'https://a.example'
 const ORIGIN_B = 'https://b.example'
 
-describe('installEmbedHost -- the embedder origin captured at will-attach-webview reaches did-attach-webview (R7-07)', () => {
+describe('installEmbedHost -- the embedder origin captured at will-attach-webview reaches did-attach-webview', () => {
   // fakeApp is one EventEmitter shared by the whole file (vi.mock runs
   // once); each test's own installEmbedHost() call must not leave its
   // 'web-contents-created' listener wired for the NEXT test's embedder.
@@ -130,6 +130,25 @@ describe('installEmbedHost -- the embedder origin captured at will-attach-webvie
     expect(attach.mock.calls.map((call) => call[0])).toEqual([ORIGIN_A, ORIGIN_A])
     expect(host.ownerOf(1)).toBe(ORIGIN_A)
     expect(host.ownerOf(2)).toBe(ORIGIN_A)
+  })
+
+  it('drops an admission whose attach never completed once the embedder admits another origin', () => {
+    const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
+    const broker = fakeBroker(new Set([ORIGIN_A, ORIGIN_B]), attach)
+    const host = installEmbedHost(broker, '/preload/embed.js')
+    const embedder = fakeEmbedder(`${ORIGIN_A}/tab`)
+
+    fakeApp.emit('web-contents-created', {}, embedder)
+    // A <webview> starts attaching at origin A and never finishes.
+    embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    embedder.mainFrame.url = `${ORIGIN_B}/elsewhere`
+    embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+
+    const guest = fakeGuest(9)
+    embedder.emit('did-attach-webview', {}, guest)
+
+    expect(attach.mock.calls.map((call) => call[0])).toEqual([ORIGIN_B])
+    expect(host.ownerOf(9)).toBe(ORIGIN_B)
   })
 })
 
