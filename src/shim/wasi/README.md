@@ -62,6 +62,12 @@ outlives any one call, and its caller handles the error.
 call; `initializeReactor` wraps only `_initialize`, and a `Suspending` import reached from an
 unwrapped export traps. A reactor's files stay open after `_initialize`, since it lives on.
 
+**Only one such call may be in flight on a given instance at a time.** `ctx.fds` and a
+descriptor's `position` are read and written across the suspend point, with no lock; two
+`WebAssembly.promising` calls that overlap would interleave that state. Orivon's own code never
+overlaps them; `host.ts`'s import wrapper refuses a second concurrent async import with `BUSY`
+as a cheap backstop.
+
 **`path_remove_directory` has a window** between its emptiness check and the delete, because
 `orivon.fs.rm` removes a directory only recursively: a file created in that window is deleted too
 (A273). Provisional, until the broker can remove an empty directory in one call.
