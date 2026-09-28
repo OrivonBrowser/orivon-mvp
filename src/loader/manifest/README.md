@@ -1,7 +1,8 @@
 # `src/loader/manifest/`: parsing and validating the manifest
 
 **What lives here.** `manifest.ts` (parses and validates `/.well-known/orivon.json`) and
-`capabilities.ts` (validates the `capabilities` sub-tree).
+`capabilities.ts` (validates the `capabilities` sub-tree) and `embed.ts` (`capabilities.web.embed`,
+split out of it under Rule 2).
 
 **What it depends on.** [`../../contracts/`](../../contracts/) and
 [`../ddoc-declaration.ts`](../ddoc-declaration.ts) (the DDOC path constant `manifest.ts` reads).

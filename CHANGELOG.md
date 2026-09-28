@@ -18,6 +18,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   launch, and `npm run dev -- --skip-intro` skips it. The same mountain-meadow picture is now the
   new-tab page's background, under a dark wash in both colour schemes. The screen loads nothing
   from the network: its font and picture ship with the browser.
+- **An app can show a website inside its own page.** A new `web.embed` capability lets an app
+  put Electron's `<webview>` element in its page, under one warning-level grant that says what
+  it gives: "show any website inside itself, and read and change what those pages show", or the
+  sites named. Every page it shows runs apart from the app and from ordinary browsing, in a
+  session of the app's own that keeps a site's sign-in across restarts, sandboxed, with no
+  `orivon.*`, no popups and no downloads, and it may load documents only from the granted sites.
+  `orivon.web.setEmbedScript` sets a script that runs first in every page the app shows, whatever
+  that page's own policy says, with a channel back to the element. Revoking the grant closes
+  every page the app is showing. An app can also ask, in its manifest, for its pages to be
+  served cross-origin isolated, which turns on `SharedArrayBuffer` for a WebAssembly component
+  built with threads.
 - **The identity seed survives a restart, and an app can hold its own encrypted secret.** The
   seed behind `orivon.id` now lives in the OS keyring (Electron `safeStorage`), not a placeholder
   that refused every call. A new `secrets` capability (`orivon.secrets.available`/`encrypt`/

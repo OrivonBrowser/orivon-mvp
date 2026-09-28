@@ -13,6 +13,7 @@
 import type {
   BindScopes,
   Capabilities,
+  EmbedCapability,
   FsCapability,
   HttpsCapability,
   IdCapability,
@@ -27,6 +28,7 @@ import { MAX_HOST_LENGTH, MAX_PORT } from '../../broker/policy/canonical-host.js
 import { declarableConnectHostRejection, parsePattern as parseConnectPattern } from '../../broker/policy/connect-patterns.js'
 import { ownProperty } from '../../broker/policy/own-property.js'
 import { webContextOriginRejection } from '../../broker/policy/web-context-origin.js'
+import { readEmbed } from './embed.js'
 import { UNSAFE_TEXT_CHARS, describeValue, extraKey, isAny, isRecord, optionalStringArray, reject } from './manifest.js'
 
 // --- bounds ----------------------------------------------------------------
@@ -53,7 +55,7 @@ const BIND_SCOPES_KEYS = ['local', 'network']
 const HTTPS_KEYS = ['connect']
 const FS_KEYS = ['quotaBytes']
 const ID_CAPABILITY_KEYS = ['curves']
-const WEB_CAPABILITY_KEYS = ['contexts']
+const WEB_CAPABILITY_KEYS = ['contexts', 'embed']
 /** ADR-0033: `SecretsCapability` declares no fields in v0 -- presence alone is the ask. */
 const SECRETS_CAPABILITY_KEYS: string[] = []
 
@@ -409,7 +411,13 @@ function readWeb (raw: unknown, path: string): WebCapability {
   const contexts = optionalStringArray(raw, path, 'contexts', MAX_PATTERNS, (origin, i) => {
     validateWebContextOrigin(origin, `${path}.contexts[${i}]`)
   })
-  return contexts === undefined ? {} : { contexts }
+  const embedRaw = ownProperty(raw, 'embed', isAny)
+  const embed = embedRaw === undefined ? undefined : readEmbed(embedRaw, `${path}.embed`)
+
+  const result: { contexts?: readonly string[], embed?: EmbedCapability } = {}
+  if (contexts !== undefined) result.contexts = contexts
+  if (embed !== undefined) result.embed = embed
+  return result
 }
 
 function readIdCapability (raw: unknown, path: string): IdCapability {

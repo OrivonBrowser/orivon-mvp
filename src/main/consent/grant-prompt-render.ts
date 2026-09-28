@@ -21,6 +21,7 @@ import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js
 import type { CapabilityGrantSummary } from './grant-prompt-connect.js'
 import { describeConnectCapability, portsPhrase, WARNING_MARK } from './grant-prompt-connect.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
+import { describeEmbedGrant } from './grant-prompt-embed.js'
 import type { PatternSet } from '../../broker/policy/update.js'
 import { formatOriginForDisplay } from './grant-prompt-origin.js'
 import { summaryAtLevel } from './grant-level.js'
@@ -161,12 +162,7 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
     case 'web.context':
       return describeWebContextGrant(patterns)
     case 'web.embed':
-      // ADR-0039: contract-only so far -- the loader does not parse
-      // WebCapability.embed yet (check-manifest-parity.mjs's own
-      // DELIBERATELY_DEFERRED entries), so no live grant can reach this
-      // switch. Thrown, not rendered, until the implementation PR gives it
-      // its real copy.
-      throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0039)`)
+      return describeEmbedGrant(patterns)
     case 'secrets':
       // ADR-0033: the app never sees the identity seed, only ciphertext its
       // own key produced -- say what the grant actually gives, not "your

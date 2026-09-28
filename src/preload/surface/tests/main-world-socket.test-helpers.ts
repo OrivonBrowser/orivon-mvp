@@ -146,6 +146,7 @@ export function fakeBridge (
   secretsEncrypt: (plaintext: Uint8Array) => Promise<Uint8Array>
   secretsDecrypt: (ciphertext: Uint8Array) => Promise<Uint8Array>
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
+  webSetEmbedScript: (source: string) => Promise<void>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
@@ -183,6 +184,7 @@ export function fakeBridge (
     // no test in this file drives web.openContext (main-world-socket-web.
     // test.ts, this lane's own sibling, does).
     webOpenContext: async () => fakeWebContextBridgeResult(),
+    webSetEmbedScript: async () => {},
     netConnect: async (_opts) => netConnectResult,
     // A SEPARATE fake result by default (its own fakeSocketBridgeResult(),
     // not netConnectResult) -- reusing the same one would let a bug that

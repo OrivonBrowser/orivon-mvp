@@ -12,6 +12,7 @@ import type { HeadersReceivedResponse, OnHeadersReceivedListenerDetails } from '
 import type { Broker } from '../../broker/broker-contracts.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { liveCspHeaderFor } from '../../loader/electron/serve.js'
+import { ISOLATION_HEADERS } from '../../loader/serve/csp.js'
 
 type HeadersListener = (details: OnHeadersReceivedListenerDetails, callback: (response: HeadersReceivedResponse) => void) => void
 
@@ -37,15 +38,39 @@ function isDocumentFrom (details: OnHeadersReceivedListenerDetails, origin: stri
   }
 }
 
-/** The `onHeadersReceived` listener for one granted origin. `cspFor` is read per response, so a grant or revoke reaches the next document load. */
-export function grantedOriginCspListener (origin: string, cspFor: () => Promise<string>): HeadersListener {
+/** `headers` plus the two cross-origin isolation headers, replacing the server's own if it sent any: the manifest asked for isolation, and a weaker server value would silently deny it. */
+export function withIsolationHeaders (headers: Record<string, string[]>): Record<string, string[]> {
+  const result: Record<string, string[]> = {}
+  const replaced = new Set(Object.keys(ISOLATION_HEADERS))
+  for (const [name, value] of Object.entries(headers)) {
+    if (!replaced.has(name.toLowerCase())) result[name] = value
+  }
+  for (const [name, value] of Object.entries(ISOLATION_HEADERS)) result[name] = [value]
+  return result
+}
+
+/**
+ * The `onHeadersReceived` listener for one granted origin. `cspFor` is read
+ * per response, so a grant or revoke reaches the next document load;
+ * `isolatedFor` (the manifest's `crossOriginIsolated`) the same way, so a
+ * manifest change reaches the next load too. Unlike the installed path,
+ * which sets the isolation headers on every served asset, a listener sees
+ * only documents here: a worker script the server sends without them is
+ * that server's own to fix.
+ */
+export function grantedOriginCspListener (origin: string, cspFor: () => Promise<string>, isolatedFor: () => Promise<boolean> = async () => false): HeadersListener {
   return (details, callback) => {
     if (!isDocumentFrom(details, origin)) {
       callback({})
       return
     }
-    cspFor().then(
-      (csp) => { callback({ responseHeaders: withAppendedCsp(details.responseHeaders, csp) }) },
+    // A manifest that cannot be read means "not isolated", never a document
+    // without its policy.
+    Promise.all([cspFor(), isolatedFor().catch(() => false)]).then(
+      ([csp, isolated]) => {
+        const withCsp = withAppendedCsp(details.responseHeaders, csp)
+        callback({ responseHeaders: isolated ? withIsolationHeaders(withCsp) : withCsp })
+      },
       // The callback must always run, or the response hangs.
       () => { callback({}) }
     )
@@ -60,6 +85,10 @@ export function grantedOriginCspListener (origin: string, cspFor: () => Promise<
  */
 export function installGrantedOriginCsp (broker: Broker, origin: string): void {
   session.fromPartition(partitionFor(origin)).webRequest.onHeadersReceived(
-    grantedOriginCspListener(origin, async () => await liveCspHeaderFor(broker, origin))
+    grantedOriginCspListener(
+      origin,
+      async () => await liveCspHeaderFor(broker, origin),
+      async () => (await broker.app.manifest(origin)).crossOriginIsolated === true
+    )
   )
 }

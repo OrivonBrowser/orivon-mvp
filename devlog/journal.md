@@ -23,6 +23,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Web3 Score shield back to its outline, coloured by level; a Web2/Web2.5/Web3 mark replaces the Orivon logo in the address bar.
 - In dev mode, a local origin serving a DDOC tree shows Level 2, and the Web3 Score page says it counts only in dev mode.
 - Direction set: this is Orivon Browser, not an MVP. Electron base, TypeScript, features land one at a time as needs arise.
+- Apps can show a website inside their own page: `<webview>` under a `web.embed` grant, with the app's script running first in every shown page.
+- A manifest can ask for cross-origin isolation, so a WebAssembly component built with threads gets `SharedArrayBuffer`.
 
 ### In my head
 

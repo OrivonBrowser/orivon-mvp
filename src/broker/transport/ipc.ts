@@ -130,6 +130,7 @@ async function dispatch (
     case 'web.evaluate':
     case 'web.close':
     case 'web.awaitClose':
+    case 'web.setEmbedScript':
       return await dispatchWeb(broker, origin, method, payload)
     case 'secrets.available':
     case 'secrets.encrypt':

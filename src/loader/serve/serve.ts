@@ -362,7 +362,7 @@ export async function createAppRequestHandler (
 
     const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
     const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
-    const response = buildResponse(servable.file, request, connectPatterns, securePatterns)
+    const response = buildResponse(servable.file, request, connectPatterns, securePatterns, manifest.crossOriginIsolated === true)
     // A175: record what was actually SENT -- a Range request serves only a
     // slice, and a 416 serves no body at all, a KNOWN zero rather than a size
     // that could not be measured (pin-coverage.ts's `bytesIncomplete`).

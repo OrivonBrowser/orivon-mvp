@@ -7,7 +7,7 @@
 import type { Pattern } from '../../contracts/index.js'
 import { leafOf } from '../leaf-hash.js'
 import { contentTypeFor } from './content-type.js'
-import { cspHeaderValue } from './csp.js'
+import { cspHeaderValue, ISOLATION_HEADERS } from './csp.js'
 import { parseRange } from './range.js'
 import type { LoaderStorage, OpenedAsset } from '../cache/storage.js'
 
@@ -121,14 +121,16 @@ export function buildResponse (
   file: ServableFile,
   request: Request,
   connectPatterns: readonly Pattern[],
-  securePatterns: readonly Pattern[]
+  securePatterns: readonly Pattern[],
+  crossOriginIsolated = false
 ): Response {
-  const csp = cspHeaderValue(connectPatterns, securePatterns)
+  const policy: Record<string, string> = { 'content-security-policy': cspHeaderValue(connectPatterns, securePatterns) }
+  if (crossOriginIsolated) Object.assign(policy, ISOLATION_HEADERS)
   const total = file.byteLength
   const range = parseRange(request.headers.get('range'), total)
 
   if (range.kind === 'unsatisfiable') {
-    return new Response(null, { status: 416, headers: { 'content-range': `bytes */${total}`, 'accept-ranges': 'bytes', 'content-security-policy': csp } })
+    return new Response(null, { status: 416, headers: { 'content-range': `bytes */${total}`, 'accept-ranges': 'bytes', ...policy } })
   }
 
   const { start, end } = range.kind === 'none' ? { start: 0, end: total - 1 } : range.range
@@ -137,7 +139,7 @@ export function buildResponse (
     'content-type': contentTypeFor(file.canonicalPath),
     'content-length': String(end - start + 1),
     'accept-ranges': 'bytes',
-    'content-security-policy': csp
+    ...policy
   }
   if (range.kind === 'none') return new Response(body, { status: 200, headers })
   return new Response(body, { status: 206, headers: { ...headers, 'content-range': `bytes ${start}-${end}/${total}` } })

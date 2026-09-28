@@ -1,15 +1,16 @@
 # `src/preload/`: the privilege boundary
 
-**What lives here.** Five preload scripts at five different privilege levels (`app.ts`,
-`shell.ts`, `newtab.ts` for the new-tab dashboard, `settings.ts` for the all-sites popup, and
-`site-info.ts` for the per-site popup), the app-tab wiring they share
+**What lives here.** Six preload scripts at six different privilege levels (`app.ts`,
+`shell.ts`, `newtab.ts` for the new-tab dashboard, `settings.ts` for the all-sites popup,
+`site-info.ts` for the per-site popup, and `embed.ts` for a page an app shows inside itself),
+the app-tab wiring they share
 (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`, `page-buffer.ts`), and
 `orivon-error.ts`, the plain-object error shape shared by [`surface/`](surface/) and
 [`ports/`](ports/). This is the narrowest and most security-critical surface in the repository.
 
 | Folder | Holds |
 |---|---|
-| (top level) | The five entry points, the app-tab wiring they share, and `orivon-error.ts` |
+| (top level) | The six entry points, the app-tab wiring they share, and `orivon-error.ts` |
 | [`surface/`](surface/) | `window.orivon`'s page surface: `orivon.ts`, `control-call.ts`, `net.ts`, `web.ts`, and the main-world installer (`main-world-socket.ts`) |
 | [`ports/`](ports/) | The isolated-world per-socket state machines `surface/main-world-socket.ts` wraps: `socket-bridge.ts`, `socket.ts`, `datagram.ts`, `server.ts` |
 | [`routed/`](routed/) | ADR-0017's routed network path: ten main-world installers for `fetch`, `XMLHttpRequest`, `EventSource` and `WebSocket` |
@@ -38,6 +39,7 @@ step 1, done).
 | `shell.ts` | **only** the chrome view | Tab commands |
 | `settings.ts` | **only** the all-sites popup's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, and list each site's notification answer and reset one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
 | `site-info.ts` | **only** the site-info popup's own view (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info/trust/data, apply a staged set of switches, revoke a picked path, clear browser data, reload, open the all-sites popup — same `location.href` check as `settings.ts`; `src/main/ipc/site-info-ipc.ts` re-verifies the sender and fixes the origin, never trusting one from the page |
+| `embed.ts` | **only** a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest at attach, whatever `preload` the app named; ADR-0039) | Nothing on `window`. Runs the script the app set with `orivon.web.setEmbedScript`, before the page's own code and whatever its CSP says, handing it `orivonEmbed` (`sendToHost`/`on`, the element's own `ipc-message`/`send` channel) as an argument; no `orivon.*` at all, since a shown page is another site's document |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/shell/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 | `routed/fetch.ts`, `routed/xhr.ts`, `routed/eventsource.ts`, `routed/websocket.ts` (the routed network path) | `app.ts` and `newtab.ts`'s fallback branch, via `expose-fetch-route.ts`'s `exposeFetchRoute()` | ADR-0017: `window.fetch`, `XMLHttpRequest`, `EventSource` and `WebSocket` reach a registered app's GRANTED cross-origin hosts through `orivon.net`, when the tab's `--orivon-app-tab` flag says so (`src/main/shell/tab-view.ts`'s `appTabArgsFor`). Every other request -- same-origin, another scheme, or to a host the app was not granted -- takes the page's native API, CORS and CSP and all. A plain website keeps all four native, untouched |
 | `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`global`/`setImmediate`/`clearImmediate`, passing no reporter so an uncaught callback error reaches the page's own `reportError`, and `page-buffer.ts`'s `Buffer`, into the main world, gated on the SAME `--orivon-app-tab` flag `expose-fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |

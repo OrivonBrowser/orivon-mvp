@@ -59,6 +59,10 @@ The eight files that stay at the top level belong to no single directory:
 - [`secure-dial-contracts.ts`](secure-dial-contracts.ts): `DialSecure` and the rest of
   `connectSecure`'s vocabulary, split out of `broker-contracts.ts` and re-exported from there,
   as `fs-contracts.ts` is
+- [`embed-contracts.ts`](embed-contracts.ts): `BrokerEmbedMethods`, what the shell's embed
+  host asks before a `<webview>` attaches or loads a document, and
+  `orivon.web.setEmbedScript`'s broker half (`ADR-0039`), re-exported from
+  `broker-contracts.ts` the same way
 - [`web-context-contracts.ts`](web-context-contracts.ts): `WebContextHost` and the rest of
   `orivon.web`'s vocabulary, re-exported from `broker-contracts.ts` the same way
 

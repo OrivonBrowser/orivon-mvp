@@ -75,7 +75,7 @@ const MAX_NAME_LENGTH = 200
 const MAX_VERSION_LENGTH = 256
 const MAX_ENTRY_LENGTH = 1024
 
-const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'assets', 'capabilities', 'consentGranularity']
+const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'assets', 'capabilities', 'consentGranularity', 'crossOriginIsolated']
 
 // The two literals contracts/manifest.ts's ConsentGranularity actually has --
 // kept here, not derived from the type, because TypeScript erases that type
@@ -380,6 +380,19 @@ function readConsentGranularity (value: Record<string, unknown>): ConsentGranula
   return raw as ConsentGranularity
 }
 
+/**
+ * `crossOriginIsolated` (contracts/manifest.ts's own doc carries the reasoning):
+ * `true` is the only accepted value. `false` is rejected rather than read as
+ * absent, the same "presence, not a value, is the ask" rule the capability
+ * flags follow, so a manifest never says one thing and means another.
+ */
+function readCrossOriginIsolated (value: Record<string, unknown>): true | undefined {
+  const raw = ownProperty(value, 'crossOriginIsolated', isAny)
+  if (raw === undefined) return undefined
+  if (raw !== true) reject(`crossOriginIsolated must be true when present, got ${describeValue(raw)}`)
+  return true
+}
+
 // --- top level ---------------------------------------------------------------
 
 function readManifest (value: unknown): Omit<ManifestOk, 'ok'> {
@@ -433,6 +446,7 @@ function readManifest (value: unknown): Omit<ManifestOk, 'ok'> {
   const capabilities = readCapabilities(capabilitiesRaw, 'capabilities')
 
   const consentGranularity = readConsentGranularity(value)
+  const crossOriginIsolated = readCrossOriginIsolated(value)
 
   const manifest: Manifest = {
     orivonApiVersion: 0,
@@ -442,7 +456,8 @@ function readManifest (value: unknown): Omit<ManifestOk, 'ok'> {
     entry,
     ...(assets !== undefined && { assets }),
     capabilities,
-    ...(consentGranularity !== undefined && { consentGranularity })
+    ...(consentGranularity !== undefined && { consentGranularity }),
+    ...(crossOriginIsolated !== undefined && { crossOriginIsolated })
   }
   return { manifest, ignoredFields: unknownKeys(value, MANIFEST_KEYS) }
 }

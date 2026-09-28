@@ -228,6 +228,8 @@ export interface MainWorldBridge {
   secretsDecrypt: (ciphertext: Uint8Array) => Promise<Uint8Array>
   /** ADR-0019 -- resolves a `MainWorldWebContextBridge`, `fsOpen`'s own shape of counterpart (a plain object of MORE proxied closures, no native stream). `./main-world-socket.ts`'s own `buildWebContext` wraps it the same way `buildFile` wraps `fsOpen`'s. Takes `origin` folded into `opts`, unlike the public `openContext(origin, options?)` two-argument shape `installOrivon` builds, which merges them back in before calling this. */
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
+  /** ADR-0039 -- plain request/reply, `idPublicKey`'s own shape: no main-world wrapping needed. */
+  webSetEmbedScript: (source: string) => Promise<void>
   netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
   /** net.connectSecure's own closure -- resolves to netConnect's bridge shape plus `tls`; `./main-world-socket.ts`'s own `buildSocket` is shared by both (Rule 3). The options pass through untouched: the broker validates them. */
   netConnectSecure: (opts: SecureConnectOptions) => Promise<MainWorldSocketBridge>

@@ -34,6 +34,7 @@ import { widensAuthority } from './policy/update.js'
 import { createNetCapability } from './capabilities/net.js'
 import { createIdCapability } from './capabilities/id.js'
 import { createWebCapability } from './capabilities/web.js'
+import { createEmbedCapability } from './capabilities/embed.js'
 import { createSecretsCapability } from './capabilities/secrets.js'
 import { createFsCapability } from './capabilities/fs.js'
 import { createUserSelectedCapability } from './capabilities/user-selected.js'
@@ -106,6 +107,11 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // `grant`/`revoke`/`revokePersisted` below already cascade to every other
   // capability's live handles -- see ./capabilities/web.ts's own header.
   const web = createWebCapability({ deps, handleTable, ledger, canonical })
+
+  // web.embed's broker half (ADR-0039): a shown page is a handle of kind
+  // 'embed' under the grant, so the same `handleTable.revoke` cascade
+  // closes it -- see ./capabilities/embed.ts's own header.
+  const embed = createEmbedCapability({ handleTable, ledger, canonical })
 
   // orivon.secrets's three entry points (ADR-0033) -- built the same shape
   // as `id` above, over the seed `deps.keychain` already provides for it,
@@ -460,6 +466,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     net,
     id,
     web,
+    embed,
     secrets,
     fs,
     registerApp,

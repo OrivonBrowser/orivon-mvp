@@ -1,0 +1,91 @@
+// ADR-0039's `web.embed` pattern grammar and its document gate -- shared by
+// the loader's manifest validator (src/loader/manifest/capabilities.ts's
+// readEmbed, rich per-reason messages) and the shell's own runtime gate
+// (src/main/embed/, which decides whether a shown page may load a document
+// at a URL). One implementation of the rule (code-guidelines.md Rule 3),
+// the same "reason enum in policy/, words in the caller" split
+// ./web-context-origin.ts already uses for `web.context`.
+
+import { classifyAddress } from './address.js'
+import { isLocalhostName } from './origin.js'
+import type { Pattern } from '../../contracts/index.js'
+
+/** The one pattern that is not an origin: any site on the web. */
+export const ANY_SITE: Pattern = '*'
+
+export type EmbedOriginRejection =
+  | 'unparseable'
+  | 'not-http'
+  | 'wildcard-host'
+  | 'userinfo'
+  | 'query-or-fragment'
+  | 'path'
+  | 'not-canonical'
+
+/**
+ * Why `pattern` is not a valid `web.embed` pattern, or null if it is.
+ *
+ * `"*"` passes. Anything else must be an EXACT `http://host[:port]` or
+ * `https://host[:port]` origin: no wildcard host, no path beyond `/`, no
+ * userinfo, no query or fragment, and `url.origin === pattern` so the
+ * canonical form is the only accepted spelling (a grant's patterns compare
+ * these strings exactly). Unlike `web.context`, an address literal outside
+ * public unicast or a `localhost` name IS accepted here when named exactly:
+ * the person granting it sees that address, the same rule `tcp.connect`
+ * applies to a literal pattern. Only the wildcard stops short of them,
+ * in `embedDocumentAllowed` below.
+ */
+export function embedOriginRejection (pattern: string): EmbedOriginRejection | null {
+  if (pattern === ANY_SITE) return null
+  let url: URL
+  try {
+    url = new URL(pattern)
+  } catch {
+    return 'unparseable'
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return 'not-http'
+  if (url.hostname.includes('*')) return 'wildcard-host'
+  if (url.username !== '' || url.password !== '') return 'userinfo'
+  if (url.search !== '' || url.hash !== '') return 'query-or-fragment'
+  if (url.pathname !== '/') return 'path'
+  if (url.origin !== pattern) return 'not-canonical'
+  return null
+}
+
+/** A hostname, or an address literal in public unicast: what `"*"` reaches (security-model.md T12). */
+function reachableByWildcard (hostname: string): boolean {
+  if (isLocalhostName(hostname)) return false
+  const cls = classifyAddress(hostname)
+  return cls === 'public' || cls === 'unparseable'
+}
+
+/**
+ * Whether a page shown under `patterns` may load a document at `url`, in
+ * its top frame or a frame inside it. Subresources are never judged here.
+ *
+ * `about:` documents and `data:` documents pass: neither reaches a site,
+ * and a `data:` document's origin is opaque. `blob:` is judged by the
+ * origin that minted it. Everything else must be `http:`/`https:` and
+ * match a pattern: an exact origin exactly, or `"*"` when the host is
+ * neither a `localhost` name nor an address literal outside public unicast.
+ * A URL that does not parse is refused, never passed through.
+ */
+export function embedDocumentAllowed (url: string, patterns: readonly Pattern[]): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  if (parsed.protocol === 'about:' || parsed.protocol === 'data:') return true
+  if (parsed.protocol === 'blob:') return embedDocumentAllowed(parsed.pathname, patterns)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+  for (const pattern of patterns) {
+    if (pattern === ANY_SITE) {
+      if (reachableByWildcard(parsed.hostname)) return true
+      continue
+    }
+    if (pattern === parsed.origin) return true
+  }
+  return false
+}
