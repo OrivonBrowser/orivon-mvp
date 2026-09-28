@@ -264,6 +264,10 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
       // and README.md's Design notes. A context has no reason to use WebRTC
       // at all, so this is refused outright rather than merely constrained.
       webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
+      // Before the first load, as for the chrome view and its popups. No
+      // `allowedUrl`: a context never legitimately navigates anywhere, not
+      // even back to its own EMPTY_DOCUMENT.
+      lockNavigation(webContents)
 
       await webContents.loadURL(EMPTY_DOCUMENT, { baseURLForDataURL: `${origin}/` })
 
@@ -272,22 +276,13 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
         throw new Error(`the context document settled at ${String(actualOrigin)}, not the requested ${origin}`)
       }
 
-      // ONLY AFTER THE FIRST LOAD -- webContents.loadURL's own programmatic
-      // navigation does not fire will-navigate at all (Electron's own doc),
-      // so lockNavigation's listeners never see it; attaching them any
-      // earlier would only be defensive, never load-bearing, and attaching
-      // them here matches the spec's own ordering exactly. No `allowedUrl`:
-      // a context never legitimately navigates anywhere, including back to
-      // its own EMPTY_DOCUMENT.
       const id = newHostId()
 
-      lockNavigation(webContents)
-      // Finding 3: react to the renderer dying on its own (a crash, an OOM
-      // kill) rather than learning about it only from the idle timer.
-      // Registered here, alongside the navigation guards above, rather than
-      // earlier -- a crash during loadURL/executeJavaScript above already
-      // surfaces as a rejection there, which the catch block below already
-      // tears down; this listener is for AFTER open() has already returned.
+      // React to the renderer dying on its own (a crash, an OOM kill)
+      // rather than learning about it only from the idle timer. Registered
+      // here rather than earlier: a crash during loadURL/executeJavaScript
+      // above already surfaces as a rejection there, which the catch block
+      // below tears down; this listener is for AFTER open() has returned.
       webContents.on('render-process-gone', (_event, details) => {
         void handleRenderProcessGone(id, details.reason)
       })

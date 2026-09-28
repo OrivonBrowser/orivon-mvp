@@ -4,9 +4,9 @@
 // file's own fetch must clear T12 before it runs.
 //
 // Structure mirrors update-check.ts/update-check-runner.ts: pure parts
-// exported and tested (faviconCandidates, isSafeFaviconUrl, readCapped,
-// toDataUrl), the one real network call (fetchFaviconDataUrl) thin and
-// defensive around it. net.request, not net.fetch -- redirects need
+// exported and tested (faviconCandidates, isSafeFaviconUrl, readCapped), and
+// one network entry point, fetchFaviconDataUrlCached, thin and defensive
+// around them. net.request, not net.fetch -- redirects need
 // per-hop T12 checks, the same reason loader/electron/fetch.ts's netFetch
 // avoids net.fetch's own redirect handling -- imported dynamically -- same
 // reasoning as update-check-runner.ts's file header: outside a real
@@ -19,12 +19,9 @@ import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js
 import type { Resolver } from '../../broker/policy/connect.js'
 import { isLoopbackHost } from '../../broker/policy/origin.js'
 import { electronResolveHost } from '../../loader/electron/resolve.js'
-import { decodeDataUrl, sniffImageType } from './favicon-format.js'
+import { FaviconCache } from './favicon-cache.js'
+import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 
-/** Generous enough for an SVG that embeds a raster image inline -- a real
- * shape (web3compass.net's own icons run 57 KiB doing exactly this), and
- * several times what any bitmap favicon format needs. */
-export const MAX_FAVICON_BYTES = 128 * 1024
 export const FAVICON_TIMEOUT_MS = 5_000
 /** Real sites redirect a bare-domain icon URL to a `www` host, or move
  * `/favicon.ico` behind a CDN -- both cross-origin, both legitimate. Each
@@ -127,17 +124,6 @@ export async function readCapped (
   return result
 }
 
-/** `null` for anything sniffImageType doesn't recognise -- a favicon this
- * shell can't identify is treated the same as one that failed to load. The
- * type comes from the BYTES (favicon-format.ts), never from a server's own
- * `content-type` header: a mislabelled `.ico` or an SVG served with any
- * label at all both decode correctly once the header is no longer trusted. */
-export function toDataUrl (bytes: Uint8Array): string | null {
-  const type = sniffImageType(bytes)
-  if (type === null) return null
-  return `data:${type};base64,${Buffer.from(bytes).toString('base64')}`
-}
-
 /** Whether the PAGE declaring a favicon is itself running on this machine.
  * `file:` and every other scheme is not -- only a real http(s) page on
  * loopback counts, so a local HTML file cannot be the lever either. */
@@ -174,10 +160,9 @@ function isLoopbackPage (pageUrl: string): boolean {
  * steers at 127.0.0.1 by a name like `bisq.eth` -- would otherwise never show
  * its own icon.
  *
- * **Loopback is allowed, for a page that is itself on loopback** -- owner's
- * decision, 2026-09-16, replacing the blanket refusal this had before. A
- * local dev server is a real thing to browse here, and refusing its icon
- * bought nothing. `http` is allowed on that path too, because a local dev
+ * **Loopback is allowed, for a page that is itself on loopback.** A local
+ * dev server is a real thing to browse here, and refusing its icon buys
+ * nothing. `http` is allowed on that path too, because a local dev
  * server is almost never https and an https-only carve-out would refuse
  * exactly the case the carve-out exists for.
  *
@@ -262,7 +247,7 @@ async function requestOnce (url: string, signal: AbortSignal): Promise<HopResult
 
   return await new Promise<HopResult>((resolve) => {
     let settled = false
-    const onAbort = (): void => { request.abort(); settle({ kind: 'failed' }) }
+    const onAbort = (): void => { endWith({ kind: 'failed' }) }
     // Removed on every settlement path, not only when the abort signal
     // itself fires: a hop that settles normally (redirect/ok/failed) has no
     // further use for it, and a fetch with several redirect hops would
@@ -276,21 +261,24 @@ async function requestOnce (url: string, signal: AbortSignal): Promise<HopResult
       resolve(value)
     }
     const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual' })
+    // settle() BEFORE abort(), not after: aborting a request that is still
+    // in flight can itself emit 'error' synchronously (the same way a real
+    // cancelled request does), and the settled guard means whichever call
+    // runs first wins -- an abort-triggered 'failed' must never race ahead
+    // of the outcome it was only meant to stop.
+    const endWith = (value: HopResult): void => { settle(value); request.abort() }
     request.on('redirect', (_status, _method, redirectUrl) => {
-      // settle() BEFORE abort(), not after: aborting a request that is
-      // still in flight can itself emit 'error' synchronously (the same
-      // way a real cancelled request does), and the settled guard means
-      // whichever call runs first wins -- an abort-triggered 'failed' must
-      // never race ahead of the redirect outcome it was only meant to stop.
-      settle({ kind: 'redirect', location: redirectUrl })
-      request.abort()
+      endWith({ kind: 'redirect', location: redirectUrl })
     })
+    // Every failure aborts too: nobody reads a failed hop's body, and
+    // Electron's loader stays alive until it completes or is cancelled.
+    // abort() on a request that already completed does nothing.
     request.on('response', (response) => {
-      if (response.statusCode < 200 || response.statusCode >= 300) { settle({ kind: 'failed' }); return }
+      if (response.statusCode < 200 || response.statusCode >= 300) { endWith({ kind: 'failed' }); return }
       const body = Readable.toWeb(response as unknown as Readable) as ReadableStream<Uint8Array>
       readCapped(body, MAX_FAVICON_BYTES).then(
-        (bytes) => { settle(bytes === null ? { kind: 'failed' } : { kind: 'ok', bytes }) },
-        () => { settle({ kind: 'failed' }) }
+        (bytes) => { if (bytes === null) endWith({ kind: 'failed' }); else settle({ kind: 'ok', bytes }) },
+        () => { endWith({ kind: 'failed' }) }
       )
     })
     request.on('error', () => { settle({ kind: 'failed' }) })
@@ -300,21 +288,10 @@ async function requestOnce (url: string, signal: AbortSignal): Promise<HopResult
   })
 }
 
-/**
- * The one function here that touches the network. Returns null on any
- * failure (offline, timeout, oversized, wrong type, T12 refusal on the
- * first hop or on any redirect target) -- never throws by contract,
- * matching update-check-runner.ts's fetchLatestGithubRelease.
- */
-export async function fetchFaviconDataUrl (url: string, pageUrl: string): Promise<string | null> {
-  if (!(await isSafeFaviconUrl(url, pageUrl, electronResolveHost))) return null
-  return await fetchUnchecked(url, pageUrl)
-}
-
 /** The fetch itself, with the T12 gate already cleared by the caller for
- * `url` (its first hop). Split out so the cached path can run that gate
- * exactly once per call instead of either skipping it on a cache hit or
- * resolving the same hostname twice. One timeout budget covers the whole
+ * `url` (its first hop), so the cached path runs that gate exactly once
+ * per call instead of either skipping it on a cache hit or resolving the
+ * same hostname twice. One timeout budget covers the whole
  * redirect chain, not each hop separately -- a chain of fast redirects to a
  * slow final host should not get MAX_FAVICON_REDIRECTS times the budget. */
 async function fetchUnchecked (url: string, pageUrl: string): Promise<string | null> {
@@ -336,17 +313,26 @@ async function fetchUnchecked (url: string, pageUrl: string): Promise<string | n
   }
 }
 
-/** In-memory only, unbounded for the process's lifetime -- acceptable
- * for a single browsing session (this codebase's existing "v0, revisit
- * later" tolerance; see e.g. update-check.ts's own scope notes). Only
- * successful fetches are cached, so a temporarily-down favicon host is
- * retried on the next visit rather than staying null forever. Keyed by the
- * candidate URL that was actually asked for, before any redirect -- a page
- * whose icon moves to a new location on its host is picked up again the
- * next time `page-favicon-updated` fires with a changed candidate list. */
-const faviconCache = new Map<string, string>()
+/** faviconCache's bounds, provisional: room for a few hundred sites' icons,
+ * not measured against real browsing. */
+const MAX_CACHED_FAVICONS = 256
+const MAX_CACHED_FAVICON_CHARS = 16 * 1024 * 1024
 
-export async function fetchFaviconDataUrlCached (url: string, pageUrl: string): Promise<string | null> {
+/** In memory only. Only successful fetches are cached, so a temporarily-down
+ * favicon host is retried on the next visit rather than staying null. Keyed
+ * by the candidate URL that was actually asked for, before any redirect -- a
+ * page whose icon moves on its host is picked up again the next time
+ * `page-favicon-updated` fires with a changed candidate list. */
+const faviconCache = new FaviconCache(MAX_CACHED_FAVICONS, MAX_CACHED_FAVICON_CHARS)
+
+/** The one exported function that reaches the network, answered from
+ * faviconCache when it can be. Returns null on any failure (offline,
+ * timeout, oversized, wrong type, T12 refusal on the first hop or on any
+ * redirect target) -- never throws by contract, matching
+ * update-check-runner.ts's fetchLatestGithubRelease. A result is cached only
+ * if `stillWanted()` holds when it lands: a capture that has already been
+ * dropped must not fill the cache. */
+export async function fetchFaviconDataUrlCached (url: string, pageUrl: string, stillWanted: () => boolean): Promise<string | null> {
   // The gate runs BEFORE the cache is consulted, not just on a miss: whether
   // a favicon may be fetched now depends on which page is asking (a loopback
   // icon is allowed for a loopback page and refused for a public one), so a
@@ -357,7 +343,7 @@ export async function fetchFaviconDataUrlCached (url: string, pageUrl: string): 
   if (cached !== undefined) return cached
 
   const result = await fetchUnchecked(url, pageUrl)
-  if (result !== null) faviconCache.set(url, result)
+  if (result !== null && stillWanted()) faviconCache.set(url, result)
   return result
 }
 
@@ -381,35 +367,23 @@ function decodedDataUrlCandidate (candidate: string): string | null {
 
 /** Tries each candidate from `page-favicon-updated`, in order, and stores
  * the first one that actually decodes to a recognised image, unless the
- * tab has since closed or a newer icon set has arrived.
+ * tab has since closed, a newer icon set has arrived, or the tab has moved
+ * to another origin.
  *
- * `pageUrl` is read exactly ONCE, at the start -- it names the document
- * that fired this very `page-favicon-updated` event, which is both what
- * decides whether a loopback candidate may be fetched at all
- * (isSafeFaviconUrl) and whose origin gets recorded on a hit
- * (`faviconOrigin`, below). Re-reading it later, after a same-tab
- * navigation that didn't itself change the icon set, would attribute the
- * icon to the wrong page.
+ * `pageUrl` is read ONCE, at the start, for the document that fired the
+ * event: it decides whether a loopback candidate may be fetched at all
+ * (isSafeFaviconUrl), and its origin is what `faviconOrigin` records -- the
+ * DECLARING PAGE's origin, never the icon resource's own (a CDN, commonly),
+ * which shouldClearFavicon depends on.
  *
- * `isStillCurrent`, `target.pendingFaviconUrl` AND `pageUrl()` are all
- * re-checked AFTER every await, never before: that is the whole point of
- * them. A fetch resolving once the tab has closed, once a newer icon set
- * has arrived (pendingFaviconUrl then points at a later candidate this same
- * call never chose), or once the tab has navigated on to a different page
- * that never fired its own `page-favicon-updated` (Chromium only fires it
- * when the favicon SET changes, so a page with no icon at all, or the same
- * icon, leaves `pendingFaviconUrl` untouched) -- must not win. Sequentially
- * trying up to MAX_FAVICON_CANDIDATES, each with its own fetch timeout and
- * redirect chain, made this last case a real window rather than a
- * theoretical one: a still-running call from the PREVIOUS page must never
- * write a favicon attributed to that old page onto a tab now showing a new
- * one, so `pageUrl()` -- read fresh, not the `declaringPage` captured at
- * the start -- has to still match before every write.
- *
- * `faviconOrigin` records the DECLARING PAGE's origin, never the icon
- * resource's own origin (a CDN, commonly) -- shouldClearFavicon and its own
- * test suite are built on that assumption: a same-origin navigation must
- * not clear an icon whose bytes happen to live elsewhere.
+ * All three are re-checked after every await, with `pageUrl()` read fresh.
+ * Chromium fires `page-favicon-updated` only when a page's icon set
+ * differs from the last one (a page declaring none gets `/favicon.ico`), so
+ * a newer set moves `pendingFaviconUrl` on, while a hash change, a
+ * pushState, or a same-origin page with the same set fires nothing: the
+ * icon being fetched is that page's icon too, so a same-origin change must
+ * not drop it. Another origin is what shouldClearFavicon clears, and the
+ * same rule stops a still-running call from writing onto it.
  */
 export async function captureFaviconInto (
   target: FaviconTarget,
@@ -422,11 +396,18 @@ export async function captureFaviconInto (
   if (candidates.length === 0) return
 
   const declaringPage = pageUrl()
-  const stillTheSamePage = (): boolean => isStillCurrent() && pageUrl() === declaringPage
+  let declaringOrigin: string
+  try {
+    declaringOrigin = new URL(declaringPage).origin
+  } catch {
+    return
+  }
+  const stillTheSamePage = (): boolean => isStillCurrent() && !shouldClearFavicon(declaringOrigin, pageUrl())
 
   for (const candidate of candidates) {
     if (!stillTheSamePage()) return
     target.pendingFaviconUrl = candidate
+    const stillWanted = (): boolean => stillTheSamePage() && target.pendingFaviconUrl === candidate
 
     // Case-insensitively too: faviconCandidates' own scheme filter is
     // case-insensitive (a page may spell it `DATA:`), and a candidate that
@@ -435,17 +416,13 @@ export async function captureFaviconInto (
     // `data:` URL has no hostname, so isSafeFaviconUrl never accepts one).
     const dataUrl = /^data:/i.test(candidate)
       ? decodedDataUrlCandidate(candidate)
-      : await fetchFaviconDataUrlCached(candidate, declaringPage)
+      : await fetchFaviconDataUrlCached(candidate, declaringPage, stillWanted)
 
-    if (!stillTheSamePage() || target.pendingFaviconUrl !== candidate) return
+    if (!stillWanted()) return
     if (dataUrl === null) continue
 
     target.favicon = dataUrl
-    try {
-      target.faviconOrigin = new URL(declaringPage).origin
-    } catch {
-      target.faviconOrigin = null
-    }
+    target.faviconOrigin = declaringOrigin
     onUpdated()
     return
   }

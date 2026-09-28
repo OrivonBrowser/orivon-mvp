@@ -517,11 +517,10 @@ describe('isLocalhostName', () => {
     expect(isLocalhostName('App.LocalHost')).toBe(true)
   })
 
-  // A live gap until this fix: `new URL('https://localhost.').hostname` is
-  // `'localhost.'` (verified against a real URL parser, trailing dot kept),
-  // and neither `=== 'localhost'` nor `.endsWith('.localhost')` recognised
-  // it, so `webContextOriginRejection('https://localhost.')` accepted a
-  // loopback-namespace origin T12/RFC 6761 require refusing.
+  // `new URL('https://localhost.').hostname` is `'localhost.'`, trailing dot
+  // kept, and neither `=== 'localhost'` nor `.endsWith('.localhost')` alone
+  // recognises it: without normalising first, `webContextOriginRejection`
+  // would accept a loopback-namespace origin T12 and RFC 6761 refuse.
   it('recognises a trailing root-label dot', () => {
     expect(isLocalhostName('localhost.')).toBe(true)
     expect(isLocalhostName('app.localhost.')).toBe(true)

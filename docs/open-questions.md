@@ -1253,6 +1253,41 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
+### A269: The toolbar popups' commands are checked by sender identity, not URL **[OWNER]**
+
+- **Question:** Should `settings-ipc.ts` and `site-info-ipc.ts` also compare the sender frame's
+  URL, as `ipc.ts`'s `isFromChrome` does for the chrome?
+- **Why it matters:** the settings channel revokes grants. A popup has two layers today: its view
+  is locked to its document, and its preload exposes nothing at another URL. The chrome has a
+  third, the URL check in main.
+- **Options:** pass the popup's URL to `PopoverSpec.registerIpc` and compare `senderFrame.url`
+  there too, so the three privileged views agree (rec.); keep two layers and say why they suffice.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A270: Refuse more of SVG in a favicon than a DOCTYPE internal subset **[OWNER]**
+
+- **Question:** Should the favicon sniffer also refuse `<script`, `<foreignObject`, `<animate`,
+  `<set` and `<filter`, the way it refuses a DOCTYPE internal subset?
+- **Why it matters:** an SVG favicon reaches Chromium's SVG engine in the privileged chrome
+  renderer and the new-tab page, and persists in `bookmarks.json`; `<img>` mode (no script, no
+  network) is today the only guarantee (`src/main/browsing/README.md`).
+- **Options:** keep `<img>` mode as the boundary (rec.: a substring match is no parse, and the
+  4 KiB window is passed by padding); refuse them across the whole body; accept raster icons only.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A271: A cross-origin page declaring the same icon URLs shows the globe **[AI-REC]**
+
+- **Question:** `page-favicon-updated` fires only when a page's icon set differs from the last
+  one, across origins too (measured, Electron 44), yet `did-navigate` clears the icon on any
+  origin change (`shouldClearFavicon`). How does the tab get its icon back?
+- **Why it matters:** subdomains sharing one absolute icon URL lose it for the whole visit.
+- **Options:** on a cross-origin `did-navigate`, rerun the capture with the tab's last icon set
+  against the new page, which a different set's own event supersedes (rec.); accept the gap.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared

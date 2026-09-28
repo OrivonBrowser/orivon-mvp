@@ -299,12 +299,13 @@ describe('createWebContextHost -- open', () => {
     await expect(host.open(OPENER, ORIGIN, { width: 100, height: 100 })).rejects.toThrow(/no free web-context slot/)
   })
 
-  it('prevents top-frame navigation, redirect and frame-navigate ONLY after the first load resolves', async () => {
+  it('prevents top-frame navigation, redirect and frame-navigate, locked before the first load', async () => {
     const wc = setNextWebContents(ORIGIN)
     const host = createWebContextHost(stubBroker)
 
     await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
 
+    expect(wc.setWindowOpenHandler.mock.invocationCallOrder[0]).toBeLessThan(wc.loadURL.mock.invocationCallOrder[0]!)
     const events = Object.keys(wc.listeners)
     expect(events).toEqual(expect.arrayContaining(['will-navigate', 'will-redirect', 'will-frame-navigate']))
 
