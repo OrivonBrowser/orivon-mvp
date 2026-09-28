@@ -5,8 +5,11 @@
 import { refuseShim } from '../errors.js'
 import { codedError } from '../node-errors.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
+import { createWarnOnce } from '../warn-once.js'
 import { ChildProcess } from './child.js'
 import { type SpawnOptions, applyLifetime, environmentOf, launch, normalizeStdio } from './spawn.js'
+
+const warnOnce = createWarnOnce('orivon child_process.fork')
 
 export interface ForkOptions extends SpawnOptions {
   readonly execPath?: string
@@ -35,6 +38,9 @@ export function fork (modulePath: string | URL, argsOrOptions?: readonly string[
   if (options.execPath !== undefined && options.execPath !== execPath) {
     throw refuseShim('child_process.fork options.execPath', 'not-applicable',
       'execPath names a native program to run the module with; a forked module runs in a Web Worker (ADR-0040)')
+  }
+  if (options.execArgv !== undefined && options.execArgv.length > 0) {
+    warnOnce('execArgv', 'a forked module runs in a Web Worker, which takes no native runtime flags')
   }
   const stdio = options.stdio ?? (options.silent === true ? ['pipe', 'pipe', 'pipe', 'ipc'] : ['inherit', 'inherit', 'inherit', 'ipc'])
   const { modes, ipc } = normalizeStdio(stdio, 'child_process.fork')

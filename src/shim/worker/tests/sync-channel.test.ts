@@ -8,7 +8,7 @@ import esbuild from 'esbuild'
 import { describe, expect, it } from 'vitest'
 import { createRealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { serveOrivon } from '../orivon-server.js'
-import { ReplyWriter, awaitReply, createChannelBuffer, decodeReply, encodeReply } from '../sync-channel.js'
+import { MAX_REPLY_LENGTH, ReplyWriter, awaitReply, createChannelBuffer, decodeReply, encodeReply } from '../sync-channel.js'
 
 describe('the reply encoding', () => {
   it('carries an ArrayBuffer as one, and leaves an object that merely looks like a marker alone', () => {
@@ -21,6 +21,18 @@ describe('the reply encoding', () => {
   it('refuses a channel with no room for a reply', () => {
     expect(() => new ReplyWriter(new SharedArrayBuffer(16))).toThrow(TypeError)
     expect(() => new ReplyWriter(new ArrayBuffer(64))).toThrow(TypeError)
+  })
+
+  it('refuses a reply too large for the signed Int32 length header, rather than writing a wrapped length', () => {
+    const buffer = createChannelBuffer()
+    const writer = new ReplyWriter(buffer)
+    const header = new Int32Array(buffer, 0, 4)
+    // A stand-in for a >=2 GiB reply: only its `length` is read before the writer refuses it,
+    // so this never allocates the reply itself.
+    const oversized = { length: MAX_REPLY_LENGTH + 1 } as unknown as Uint8Array
+    expect(() => { writer.send(oversized) }).toThrow(/cannot cross the synchronous channel/)
+    // Nothing was written: a Worker waiting on this channel never sees a wrapped, negative length.
+    expect(Atomics.load(header, 0)).toBe(0)
   })
 
   it('carries byte arrays beside the JSON, whole and at any depth', () => {

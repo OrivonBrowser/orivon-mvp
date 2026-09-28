@@ -143,10 +143,12 @@ function deny (reason: ConfineDenialReason): ConfineResult {
  * Resolve `requested` against `root` and confirm the result cannot leave it.
  *
  * WHAT THIS DOES NOT DO -- read before using the result. It confines the
- * deepest EXISTING ancestor, so a symlink planted at the LEAF between this
- * check and the open still escapes -- the caller must open with O_NOFOLLOW
- * (or lstat the leaf); pure path arithmetic cannot close that TOCTOU
- * window, only the open can. It also does not check the grant, the quota,
+ * deepest EXISTING ancestor, so a symlink planted at the leaf, or an
+ * ancestor swapped for one, between this check and the open still escapes:
+ * pure path arithmetic cannot close that window, only the open can, and
+ * the callers do not yet tie the open to this check (A283). O_NOFOLLOW on
+ * the returned path alone is not the fix: it refuses the in-root symlinks
+ * this check allows. It also does not check the grant, the quota,
  * or the capability -- it answers exactly one question: is this path
  * inside that root.
  *

@@ -6,11 +6,10 @@
 // ../verifier/ composes. This process has no other connection to
 // orivon-ports.
 //
-// --host-resolver-rules, not --proxy-pac-url: verified against a real
-// Electron 44 window before this file was written. Both the default session
-// and a `session.fromPartition` one honoured a process-wide
+// --host-resolver-rules, not --proxy-pac-url: on Electron 44, both the
+// default session and a `session.fromPartition` one honour a process-wide
 // --host-resolver-rules switch identically, including the exact port a
-// MAP clause named; a `file://` --proxy-pac-url did not take effect at all
+// MAP clause named; a `file://` --proxy-pac-url does not take effect at all
 // in the same build, silently falling through to ordinary DNS. No PAC is
 // generated or read here as a result. orivon-ports' own `generatePac` stays
 // available for whatever future consumer needs one -- this shell is not it.
@@ -63,9 +62,9 @@ export function buildHostResolverRules (names: Readonly<Record<string, unknown>>
  * this: its origin is really `https:` (ADR-0007), and only this dev-mode
  * path can reach the mismatch.
  *
- * Verified against a real Electron 44 window, the same standard
- * `--host-resolver-rules` above was held to: the switch takes effect on its
- * own, with no `--enable-features=OverrideSecurityRestrictionsOnInsecureOrigin`
+ * On Electron 44, the same standard `--host-resolver-rules` above is held
+ * to: the switch takes effect on its own, with no
+ * `--enable-features=OverrideSecurityRestrictionsOnInsecureOrigin`
  * alongside it.
  */
 export function buildSecureOriginList (names: Readonly<Record<string, unknown>>): string {
