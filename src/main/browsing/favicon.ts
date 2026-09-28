@@ -262,7 +262,7 @@ async function requestOnce (url: string, signal: AbortSignal): Promise<HopResult
 
   return await new Promise<HopResult>((resolve) => {
     let settled = false
-    const onAbort = (): void => { request.abort(); settle({ kind: 'failed' }) }
+    const onAbort = (): void => { endWith({ kind: 'failed' }) }
     // Removed on every settlement path, not only when the abort signal
     // itself fires: a hop that settles normally (redirect/ok/failed) has no
     // further use for it, and a fetch with several redirect hops would
@@ -276,21 +276,24 @@ async function requestOnce (url: string, signal: AbortSignal): Promise<HopResult
       resolve(value)
     }
     const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual' })
+    // settle() BEFORE abort(), not after: aborting a request that is still
+    // in flight can itself emit 'error' synchronously (the same way a real
+    // cancelled request does), and the settled guard means whichever call
+    // runs first wins -- an abort-triggered 'failed' must never race ahead
+    // of the outcome it was only meant to stop.
+    const endWith = (value: HopResult): void => { settle(value); request.abort() }
     request.on('redirect', (_status, _method, redirectUrl) => {
-      // settle() BEFORE abort(), not after: aborting a request that is
-      // still in flight can itself emit 'error' synchronously (the same
-      // way a real cancelled request does), and the settled guard means
-      // whichever call runs first wins -- an abort-triggered 'failed' must
-      // never race ahead of the redirect outcome it was only meant to stop.
-      settle({ kind: 'redirect', location: redirectUrl })
-      request.abort()
+      endWith({ kind: 'redirect', location: redirectUrl })
     })
+    // Every failure aborts too: nobody reads a failed hop's body, and
+    // Electron's loader stays alive until it completes or is cancelled.
+    // abort() on a request that already completed does nothing.
     request.on('response', (response) => {
-      if (response.statusCode < 200 || response.statusCode >= 300) { settle({ kind: 'failed' }); return }
+      if (response.statusCode < 200 || response.statusCode >= 300) { endWith({ kind: 'failed' }); return }
       const body = Readable.toWeb(response as unknown as Readable) as ReadableStream<Uint8Array>
       readCapped(body, MAX_FAVICON_BYTES).then(
-        (bytes) => { settle(bytes === null ? { kind: 'failed' } : { kind: 'ok', bytes }) },
-        () => { settle({ kind: 'failed' }) }
+        (bytes) => { if (bytes === null) endWith({ kind: 'failed' }); else settle({ kind: 'ok', bytes }) },
+        () => { endWith({ kind: 'failed' }) }
       )
     })
     request.on('error', () => { settle({ kind: 'failed' }) })

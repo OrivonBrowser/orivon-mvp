@@ -385,13 +385,18 @@ describe('shouldClearFavicon', () => {
 
 interface FakeClientRequest extends EventEmitter {
   end: () => void
-  abort: () => void
+  abort: ReturnType<typeof vi.fn>
 }
+
+/** Every request the harness below handed out, in order. */
+const requests: FakeClientRequest[] = []
+beforeEach(() => { requests.length = 0 })
 
 function fakeClientRequest (): FakeClientRequest {
   const emitter = new EventEmitter() as FakeClientRequest
   emitter.end = vi.fn()
   emitter.abort = vi.fn(() => { emitter.emit('error', new Error('aborted')) })
+  requests.push(emitter)
   return emitter
 }
 
@@ -476,6 +481,50 @@ describe('fetchFaviconDataUrl -- over net.request', () => {
   it('resolves null, not a rejection, on a transport error', async () => {
     mockRequestOnce((request) => { request.emit('error', new Error('ECONNRESET')) })
     await expect(fetchFaviconDataUrl('https://93.184.216.34/icon.png', PUBLIC_PAGE)).resolves.toBeNull()
+  })
+})
+
+// Electron's loader stays alive until it completes or is cancelled, and
+// nobody reads a failed hop's body, so a failure that is not aborted holds
+// a socket from the default session's pool until the server gives up.
+describe('fetchFaviconDataUrl -- a failed hop aborts its request', () => {
+  it('aborts a 404 whose body is never read', async () => {
+    mockRequestOnce((request) => {
+      const body = fakeIncomingMessage(404)
+      body.push(Buffer.from('<html>not found</html>'))
+      request.emit('response', body)
+    })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/missing.ico', PUBLIC_PAGE)).resolves.toBeNull()
+    expect(requests[0]?.abort).toHaveBeenCalled()
+  })
+
+  it('aborts a body past MAX_FAVICON_BYTES', async () => {
+    mockRequestOnce((request) => {
+      const body = fakeIncomingMessage(200)
+      const oversized = new Uint8Array(MAX_FAVICON_BYTES + 1)
+      oversized.set(PNG_BYTES)
+      body.push(Buffer.from(oversized))
+      request.emit('response', body)
+    })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/huge.png', PUBLIC_PAGE)).resolves.toBeNull()
+    expect(requests[0]?.abort).toHaveBeenCalled()
+  })
+
+  it('aborts a body that errors mid-read', async () => {
+    mockRequestOnce((request) => {
+      const body = fakeIncomingMessage(200)
+      request.emit('response', body)
+      body.push(Buffer.from([1, 2, 3]))
+      queueMicrotask(() => { body.destroy(new Error('simulated mid-body stream failure')) })
+    })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/broken.png', PUBLIC_PAGE)).resolves.toBeNull()
+    expect(requests[0]?.abort).toHaveBeenCalled()
+  })
+
+  it('does not abort a request that completed', async () => {
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    await expect(fetchFaviconDataUrl('https://93.184.216.34/whole.png', PUBLIC_PAGE)).resolves.not.toBeNull()
+    expect(requests[0]?.abort).not.toHaveBeenCalled()
   })
 })
 
