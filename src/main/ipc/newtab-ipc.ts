@@ -3,24 +3,17 @@
 // (scope.md; the dashboard replaces about:blank for a fresh tab).
 //
 // A separate channel and a separate sender check from ipc.ts's
-// registerShellIpc() on purpose. That check compares against the ONE chrome
-// webContents of its window (identity, then URL), registered on that view. More
-// than one dashboard tab can exist at once, in any window, so there is no
-// single webContents to compare against and the channel is process-wide --
-// the frame's own URL is the strongest available check instead. It is re-verified on EVERY call,
-// not just once at registration, because a dashboard tab is an
-// ordinary, navigable tab: one that has since left the dashboard must
-// fail this immediately, not keep whatever trust it had when the
-// channel was first wired. src/preload/newtab.ts makes the same check,
-// independently, before exposing anything at all -- neither layer
-// trusts the other.
-//
-// Untested by design, matching ipc.ts: this file is Electron wiring with no
-// decision logic pure enough to extract (`isFromDashboard`'s signature is
-// tied to `IpcMainInvokeEvent`, same as `ipc.ts`'s `isFromChrome`).
-// Exercised instead by scripts/smoke.mjs's dashboard scenario, against the
-// real running app -- same as tabs.ts's findTabIdByWebContents(), which
-// has no test file either.
+// registerShellIpc() on purpose. That check compares identity against the
+// ONE chrome webContents of its window; more than one dashboard tab can
+// exist at once, in any window, so there is no single webContents to
+// compare against here. isFromDashboard() instead requires the sender
+// frame to be its OWN webContents' top frame -- never an embedded
+// subframe -- and at the dashboard's own URL, re-verified on EVERY call:
+// a dashboard tab is an ordinary, navigable tab, and one that has since
+// left the dashboard must fail this at once, not keep whatever trust it
+// had when the channel was first wired. src/preload/newtab.ts makes the
+// same check, independently, before exposing anything at all -- neither
+// layer trusts the other.
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { Bookmark, BookmarkStore } from '../browsing/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../channels.js'
@@ -31,7 +24,9 @@ export type NewTabCommand =
   | { type: 'navigate'; input: string }
 
 function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): boolean {
-  return event.senderFrame !== null && event.senderFrame.url === dashboardUrl
+  return event.senderFrame !== null &&
+    event.senderFrame === event.sender.mainFrame &&
+    event.senderFrame.url === dashboardUrl
 }
 
 /** Once per process: `ipcMain.handle` refuses a second registration of a channel. */
