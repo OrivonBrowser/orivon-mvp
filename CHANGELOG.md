@@ -80,6 +80,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **An app that listens for TCP connections receives them**: the broker now hands each accepted
+  connection's port over by transfer alone, which Electron requires.
 - **The toolbar no longer creates a session partition for every website visited.**
 - **An OIDC sign-in that leaves an app's tab and returns can complete.**
 - **Entering fullscreen keeps the page's keyboard focus.**
