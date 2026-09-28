@@ -30,6 +30,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Settings page at orivon://settings: a section per implemented feature, searchable, live-applied, remappable shortcuts, per-site zoom, local history, F12 on any tab.
 - Tabs reorder, tear off and move between windows; two tabs split side by side or stacked, with a divider and edge-drag to make one.
 - Profiles and private windows are separate processes: a second start of a profile hands over; a private session's directory is deleted when it ends.
+- Two hostile reviews of that work found about twenty defects, from a leaked listener to history that could end the browser; all fixed with tests.
 
 ### In my head
 

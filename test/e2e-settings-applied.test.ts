@@ -55,7 +55,8 @@ it('applies the theme, the bookmarks bar, the search engine and the last-tab rul
     expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('dark')
 
     // Shown with no bookmark in it, and the chrome view sized to include it.
-    expect(await evaluateRetrying(chrome, () => document.documentElement.dataset['bookmarks'])).toBe('some')
+    // The first state push may not have reached the page yet: waited for, not read once.
+    expect(await waitFor(async () => await evaluateRetrying(chrome, () => document.documentElement.dataset['bookmarks']) === 'some')).toBe(true)
     expect(await evaluateRetrying(chrome, () => getComputedStyle(document.querySelector('#bookmarks-bar') as Element).display)).not.toBe('none')
 
     await clickAddressBarRetrying(chrome, 'hello world')
