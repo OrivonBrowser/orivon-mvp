@@ -1373,6 +1373,9 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   neither preselected. Settings has the same choice, undecided until made and nothing sent before it,
   but no screen asks on first run.
 - **Options:** build it on the welcome flow once the owner says where (rec.).
+- **Who decides:** owner
+- **Blocks:** nothing
+
 ### A283: Fs confinement checks a path, then the adapter opens it by name **[AI-REC]**
 
 - **Question:** `confinePath` proves a path stays inside its root, then the fs adapter and the
