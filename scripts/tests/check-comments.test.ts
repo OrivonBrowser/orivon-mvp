@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { checkComments, PREAMBLE_LIMIT } from '../check-comments.mjs'
+import { BLOCK_LIMIT, checkComments, PREAMBLE_LIMIT } from '../check-comments.mjs'
 
 /** A git repo whose tracked files are exactly those given. */
 const repo = (files: Record<string, string>): string => {
@@ -21,6 +21,14 @@ const repo = (files: Record<string, string>): string => {
 /** `count` comment lines, then a line of code. */
 const preamble = (count: number, code = 'export const x = 1\n'): string =>
   Array.from({ length: count }, (_, i) => `// line ${i + 1}\n`).join('') + code
+
+/** A workflow whose second step carries a `count`-line `#` comment block. */
+const workflow = (count: number, first = '# why\n'): string =>
+  'name: CI\non: push\njobs:\n  check:\n    steps:\n' +
+  first.replace(/^/gm, '      ').replace(/ +$/, '') +
+  '      - run: npm ci\n' +
+  Array.from({ length: count }, (_, i) => `      # line ${i + 1}\n`).join('') +
+  '      - run: npm test\n'
 
 describe('checkComments', () => {
   describe('the budget', () => {
@@ -307,6 +315,84 @@ describe('checkComments', () => {
       expect(result.ok).toBe(false)
       expect(result.offenders).toEqual([])
       expect(result.error).toMatch(/could not list git-tracked files/)
+    })
+  })
+
+  describe('the per-block budget for CI workflows and root config files', () => {
+    it('accepts a workflow comment block at the limit', () => {
+      const result = checkComments(repo({ '.github/workflows/ci.yml': workflow(BLOCK_LIMIT) }))
+      expect(result.ok).toBe(true)
+      expect(result.longBlocks).toEqual([])
+    })
+
+    it('rejects a block one line over, naming the file and its first line', () => {
+      const result = checkComments(repo({ '.github/workflows/ci.yml': workflow(BLOCK_LIMIT + 1) }))
+      expect(result.ok).toBe(false)
+      expect(result.longBlocks).toEqual([
+        { file: '.github/workflows/ci.yml', line: 8, length: BLOCK_LIMIT + 1, limit: BLOCK_LIMIT }
+      ])
+    })
+
+    it('measures every block, not only the leading one', () => {
+      const body = workflow(3, '# a\n'.repeat(BLOCK_LIMIT + 2)) + '# tail\n'.repeat(BLOCK_LIMIT + 1)
+      const result = checkComments(repo({ '.github/workflows/ci.yml': body }))
+      expect(result.longBlocks.map((b) => [b.line, b.length])).toEqual([
+        [6, BLOCK_LIMIT + 2], [23, BLOCK_LIMIT + 1]
+      ])
+    })
+
+    it('joins two paragraphs split by a blank line, and splits blocks at any other line', () => {
+      const joined = workflow(0, '# one\n'.repeat(6) + '\n' + '# two\n'.repeat(6))
+      expect(checkComments(repo({ '.github/workflows/ci.yml': joined })).longBlocks[0]?.length).toBe(13)
+      const split = workflow(6, '# one\n'.repeat(6))
+      expect(checkComments(repo({ '.github/workflows/ci.yml': split })).ok).toBe(true)
+    })
+
+    it('covers .yaml workflows, and no other YAML', () => {
+      const root = repo({
+        '.github/workflows/e2e.yaml': workflow(BLOCK_LIMIT + 1),
+        '.github/dependabot.yml': '# x\n'.repeat(40),
+        'docs/a.yml': '# x\n'.repeat(40)
+      })
+      expect(checkComments(root).longBlocks.map((b) => b.file)).toEqual(['.github/workflows/e2e.yaml'])
+    })
+
+    it('holds every `//` and `/* */` block in a root *.config.ts to the limit', () => {
+      const body = 'import { a } from "a"\n' +
+        '// short\nexport const x = 1\n' +
+        '/**\n' + ' * x\n'.repeat(BLOCK_LIMIT - 1) + ' */\nexport const y = 2\n'
+      const result = checkComments(repo({ 'vitest.config.ts': body }))
+      expect(result.longBlocks).toEqual([
+        { file: 'vitest.config.ts', line: 4, length: BLOCK_LIMIT + 1, limit: BLOCK_LIMIT }
+      ])
+    })
+
+    it('does not hold a nested or non-config .ts file to the per-block limit', () => {
+      const midFile = 'export const x = 1\n' + '// a\n'.repeat(BLOCK_LIMIT + 5) + 'export const y = 2\n'
+      const root = repo({ 'src/a.config.ts': midFile, 'src/b.ts': midFile, 'test/vitest.e2e.config.ts': midFile })
+      expect(checkComments(root).ok).toBe(true)
+    })
+
+    it('still applies the preamble budget to a root config file', () => {
+      const root = repo({ 'vitest.config.ts': preamble(PREAMBLE_LIMIT + 1) })
+      const result = checkComments(root, { blockLimit: 100 })
+      expect(result.offenders.map((o) => o.file)).toEqual(['vitest.config.ts'])
+    })
+
+    it('exempts a block carrying the pragma and a reason, and rejects a bare pragma', () => {
+      const reasoned = workflow(BLOCK_LIMIT, '# orivon:comment-budget -- a vendor quirk\n' + '# x\n'.repeat(BLOCK_LIMIT))
+      const bare = workflow(BLOCK_LIMIT, '# orivon:comment-budget\n' + '# x\n'.repeat(BLOCK_LIMIT))
+      const result = checkComments(repo({ '.github/workflows/a.yml': reasoned, '.github/workflows/b.yml': bare }))
+      expect(result.exempted).toEqual([{ file: '.github/workflows/a.yml', reason: 'a vendor quirk' }])
+      expect(result.unjustified).toEqual([{ file: '.github/workflows/b.yml' }])
+      expect(result.longBlocks).toEqual([])
+      expect(result.ok).toBe(false)
+    })
+
+    it('reports an unreadable workflow rather than passing it silently', () => {
+      const root = repo({ '.github/workflows/ci.yml': workflow(1) })
+      rmSync(join(root, '.github/workflows/ci.yml'))
+      expect(checkComments(root).unreadable.map((u) => u.file)).toEqual(['.github/workflows/ci.yml'])
     })
   })
 })
