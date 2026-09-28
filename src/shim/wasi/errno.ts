@@ -32,6 +32,7 @@ export const Errno = {
   SUCCESS: errno('SUCCESS'),
   ACCES: errno('ACCES'),
   BADF: errno('BADF'),
+  BUSY: errno('BUSY'),
   EXIST: errno('EXIST'),
   FAULT: errno('FAULT'),
   FBIG: errno('FBIG'),

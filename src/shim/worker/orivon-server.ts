@@ -206,8 +206,15 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
     } catch (error) {
       reply = { id: request.id, ok: false, error: wireErrorOf(error) }
     }
-    if (sync) replies?.send(encodeSync(reply))
-    else post(reply, transfer)
+    if (sync) {
+      try {
+        replies?.send(encodeSync(reply))
+      } catch (error) {
+        // The writer refused this reply (too large for the length header): answer with an
+        // error reply instead, same as one that failed to encode -- never leave the Worker waiting.
+        replies?.send(encodeSync({ id: request.id, ok: false, error: wireErrorOf(error) }))
+      }
+    } else post(reply, transfer)
   }
 
   port.onmessage = (event: MessageEvent<Request>) => {

@@ -114,16 +114,24 @@ export function createWasiHost (options: WasiHostOptions): WasiHost {
       return toErrno(error)
     }
   }
+  // One async import in flight per instance (README's Design notes): each reads and writes
+  // `ctx.fds`/a descriptor's `position` across a suspend point, so a second overlapping
+  // WebAssembly.promising entry would interleave them instead of running after the first.
+  let inFlight = false
   for (const family of families) {
     for (const [name, fn] of Object.entries(family.sync)) functions[name] = guard(fn)
     for (const [name, op] of Object.entries(family.ops)) {
       suspending.add(name)
       functions[name] = async (...args: never[]) => {
+        if (inFlight) return Errno.BUSY
+        inFlight = true
         try {
           ctx.throwIfTerminated()
           return await runAsync(ctx, op(...args))
         } catch (error) {
           return toErrno(error)
+        } finally {
+          inFlight = false
         }
       }
     }

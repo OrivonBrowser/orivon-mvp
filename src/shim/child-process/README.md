@@ -10,8 +10,8 @@ app module with `process.send` and an IPC channel. Durable: no Electron API.
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../worker/`](../worker/),
 [`../wasi/`](../wasi/), [`../wasi-p2/`](../wasi-p2/) (`run.ts`, to check a component's jco output), `../fs/paths.ts`, `../node-errors.ts`, `../errors.ts`,
-`../orivon-global.ts`, `../polyfills/module-proxy.ts`, and the `buffer`, `events` and `stream`
-polyfills.
+`../orivon-global.ts`, `../warn-once.ts`, `../polyfills/module-proxy.ts`, and the `buffer`,
+`events` and `stream` polyfills.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README.
