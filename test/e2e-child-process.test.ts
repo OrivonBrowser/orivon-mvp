@@ -12,7 +12,7 @@ import type { ConsoleMessage, Worker } from 'playwright'
 import { fileURLToPath } from 'node:url'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './e2e-helpers.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { ChildProcessResults } from './child-process-entry.js'
 import { echoProgram } from '../src/shim/wasi/tests/support/programs.js'
@@ -54,6 +54,7 @@ it('spawns a WASI program and forks an app module in Workers, refuses a native p
       view.on('console', (message: ConsoleMessage) => consoleLines.push(`page: ${message.text()}`))
       view.on('worker', (worker: Worker) => { worker.on('console', (message: ConsoleMessage) => consoleLines.push(`worker: ${message.text()}`)) })
       view.on('pageerror', (error: Error) => consoleLines.push(`pageerror: ${error.message}`))
+      await waitForPageGlobal(view, 'childProcessE2e')
       const results = await evaluateRetrying(view, async () => await (globalThis as unknown as { childProcessE2e: { run: () => Promise<ChildProcessResults> } }).childProcessE2e.run(), 30_000).catch(async (error: unknown) => {
         const progress = await view.evaluate(() => (globalThis as unknown as { childProcessProgress?: string[] }).childProcessProgress)
         throw new Error(`${String(error)}\nprogress: ${JSON.stringify(progress)}\nconsole: ${consoleLines.join('\n')}`)
