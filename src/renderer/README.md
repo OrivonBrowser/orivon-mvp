@@ -38,6 +38,7 @@ the welcome screen, a full-window view over the shell on a launch that opens on 
 | `split-frame/index.html`, `split-frame/main.ts`, `split-frame/style.css` | The backdrop of a split: the divider (the gap between the panes, which the pointer grabs), the ring round the pane in use, and the place a dragged tab would go |
 | `menu/index.html`, `menu/main.ts`, `menu/style.css` | The main menu popup: the commands under the menu button, each with its keys |
 | `pages/history/` (`index.html`, `main.ts`, `days.ts`, `style.css`) | The History page, served at `orivon://history`: the pages visited under a heading for each day, a search, and a button to remove one page or all |
+| `pages/profiles/`, `pages/private/` (each `index.html`, `main.ts`, `style.css`) | The Profiles page (every profile with its name and colour, and open, rename, recolour, delete, and make one) and the Private page (what a private window keeps and does not, and a button for another) |
 | `site-info/index.html`, `site-info/main.ts`, `site-info/main-view.ts`, `site-info/web3-view.ts`, `site-info/data-view.ts`, `site-info/switch.ts`, `site-info/icons.ts`, `site-info/style.css` | The per-site popup: a client-side router over three pages, each its own render function |
 
 **What it depends on.** `src/preload/shell.ts`'s exposed commands, over IPC, for the chrome

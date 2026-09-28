@@ -6,7 +6,8 @@ private session (`ADR-0041`), and what follows from that. `launch-context.ts` re
 is already open; `profile-store.ts` is the profiles (one directory each, with a `profile.json`);
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions;
 `peer-spawn.ts` starts another Orivon process; `profiles-service.ts` is what the rest of the shell asks:
-this process's own profile, the list, changes to it, and "open".
+this process's own profile, the list, changes to it, and "open"; `profiles-domain.ts` is what the Profiles,
+Private and Settings pages may ask of it.
 
 **What it depends on.** `node:fs`, `node:os`, `node:child_process`; `electron` only as a type
 (`start-launch.ts` is handed the `app`). [`../shell/`](../shell/) is never imported.

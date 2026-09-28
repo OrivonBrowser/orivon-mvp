@@ -59,7 +59,7 @@ export function resolveDashboardUrl (): string {
  * screen (./intro-state.ts). */
 export function createShellWindow (ctx: SubsystemContext, services: ShellServices, options: ShellWindowOptions = {}): BaseWindow {
   const { intro, first, place } = options
-  const frame = createWindowFrame(import.meta.dirname, place)
+  const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate)
   const { win } = frame
 
   const chrome = new WebContentsView({
@@ -256,7 +256,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       siteInfoPanel.close()
     }
     fullscreen.tabsChanged(state.activeTabId, (id) => state.tabs.some((tab) => tab.id === id))
-    chrome.webContents.send(STATE_CHANNEL, { ...state, bookmarks: bookmarks.getAll(), bookmarksBar: bookmarksBarShown(), zoomPercent: zoomChip(activeTab?.url) })
+    chrome.webContents.send(STATE_CHANNEL, { ...state, bookmarks: bookmarks.getAll(), bookmarksBar: bookmarksBarShown(), zoomPercent: zoomChip(activeTab?.url), profile: profileLook })
   }
 
   // Only the first and last bookmark change the chrome's height, so the
@@ -285,6 +285,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
 
   tabs.onStateChange(pushState)
   const stopListeningToZoom = services.zoom.onChange(pushState)
+  // Read when the profiles change, not on every push: it reads the disk.
+  let profileLook = services.profiles.look()
+  const stopListeningToProfiles = services.profiles.onChange(() => { profileLook = services.profiles.look(); pushState() })
   const stopListeningToBookmarks = bookmarks.onChange(onBookmarksChanged)
   const stopListeningToSettings = services.settings.onChange(({ key }) => {
     if (key === 'appearance.bookmarksBar') onBookmarksChanged()
@@ -354,6 +357,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     stopListeningToBookmarks()
     stopListeningToSettings()
     stopListeningToZoom()
+    stopListeningToProfiles()
     permissionsPanel.close()
     siteInfoPanel.close()
     menuPanel.close()

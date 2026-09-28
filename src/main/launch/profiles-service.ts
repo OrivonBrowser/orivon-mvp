@@ -64,7 +64,7 @@ export class ProfilesService {
 
   /** Never the profile this process is: deleting the data of a browser that is running would only break it. */
   remove (id: string): Outcome {
-    if (id === this.runtime.profileId) return { ok: false, reason: 'running' }
+    if (id !== DEFAULT_PROFILE_ID && id === this.runtime.profileId) return { ok: false, reason: 'running' }
     const result = this.runtime.profiles.remove(id)
     if (result.ok) this.notify()
     return result

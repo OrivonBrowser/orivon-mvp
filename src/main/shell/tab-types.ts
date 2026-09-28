@@ -63,6 +63,8 @@ export interface ShellState extends TabsSnapshot {
   bookmarksBar: boolean
   /** The active page's zoom, when it differs from what a site gets by default; otherwise null. */
   zoomPercent: number | null
+  /** Which profile this window is, for the chip beside the menu. */
+  profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
 }
 
 export interface Bounds {

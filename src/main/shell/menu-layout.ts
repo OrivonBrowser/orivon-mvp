@@ -9,6 +9,7 @@ import type { ShortcutService } from '../shortcuts/shortcut-service.js'
 export const MENU_LAYOUT: readonly (CommandId | '-')[] = [
   'tab.new',
   'window.new',
+  'window.newPrivate',
   'split.toggle',
   '-',
   'bookmark.toggle',
@@ -20,6 +21,7 @@ export const MENU_LAYOUT: readonly (CommandId | '-')[] = [
   '-',
   'devtools.toggle',
   '-',
+  'profiles.open',
   'settings.open',
   '-',
   'app.quit'

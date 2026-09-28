@@ -30,6 +30,8 @@ export class SettingsState {
   about: AboutInfo | null = null
   readonly shortcuts: ShortcutsState
   readonly privacy: PrivacyState
+  /** This profile and the others, and whether this window is private. */
+  profiles: { readonly profiles: ReadonlyArray<{ readonly id: string, readonly name: string, readonly current: boolean }>, readonly isPrivate: boolean } | null = null
   private readonly listeners = new Set<() => void>()
 
   constructor (private readonly bridge: OrivonInternal = internalBridge()) {
@@ -44,6 +46,7 @@ export class SettingsState {
     this.about = await this.bridge.request('about', {}) as AboutInfo
     await this.shortcuts.load()
     await this.privacy.load()
+    this.profiles = await this.bridge.request('profiles', { type: 'list' }) as SettingsState['profiles']
     this.bridge.onEvent((topic, payload) => {
       if (this.shortcuts.handle(topic, payload) || topic !== 'settings.changed') return
       const change = payload as { key: string, value: unknown }
@@ -77,6 +80,11 @@ export class SettingsState {
     await this.bridge.request('settings', { type: 'resetAll' })
     for (const description of this.descriptions.values()) this.values.set(description.key, description.default)
     this.notify()
+  }
+
+  /** Starts a private window: a browser of its own. */
+  async openPrivate (): Promise<void> {
+    await this.bridge.request('profiles', { type: 'newPrivate' })
   }
 
   /** Takes the person to another of the shell's own pages, in this window. */

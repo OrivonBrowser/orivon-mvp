@@ -13,7 +13,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
-import { bookmarkUrls, delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 let server: Server
 let origin = ''
@@ -153,8 +153,10 @@ it('runs a private session in a directory of its own, with the settings it began
     expect(existsSync(join(dir, 'identity', 'seed.json'))).toBe(false)
     expect(existsSync(join(dir, '.orivon-private.json'))).toBe(true)
 
-    // It opens on the page that says what it does, and no welcome screen.
+    // It opens on the page that says what it does, and no welcome screen, and its chrome says it is private.
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://private')))).toBe(true)
+    expect(await waitFor(async () => await evaluateRetrying(chrome, () => document.documentElement.dataset['private']) === 'true')).toBe(true)
+    expect(await evaluateRetrying(chrome, () => { const el = document.querySelector<HTMLElement>('#profile-chip'); return el === null || el.hidden ? null : el.textContent })).toBe('Private')
 
     // Pages visited leave no history, in this session or on the person's disk.
     await chrome.click('#new-tab')

@@ -108,6 +108,7 @@ const web3MarkEl = must(document.querySelector<HTMLSpanElement>('#web3-mark'), '
 const sitePermissionsBtn = must(document.querySelector<HTMLButtonElement>('#site-permissions-btn'), '#site-permissions-btn missing')
 const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#permissions-btn'), '#permissions-btn missing')
 const zoomChip = must(document.querySelector<HTMLButtonElement>('#zoom-chip'), '#zoom-chip missing')
+const profileChip = must(document.querySelector<HTMLButtonElement>('#profile-chip'), '#profile-chip missing')
 const menuBtn = must(document.querySelector<HTMLButtonElement>('#menu'), '#menu missing')
 const bookmarksList = must(document.querySelector<HTMLDivElement>('#bookmarks-list'), '#bookmarks-list missing')
 
@@ -332,6 +333,14 @@ function applySitePermissionsBadge (summary: SiteSummary): void {
   sitePermissionsBtn.setAttribute('aria-label', label)
 }
 
+/** The profile chip: a coloured mark with the profile's name, or "Private" in a private window. */
+function renderProfile (profile: ShellState['profile']): void {
+  profileChip.hidden = !profile.shown
+  profileChip.dataset['color'] = profile.color
+  profileChip.textContent = profile.name
+  profileChip.title = profile.isPrivate ? 'A private window: what it keeps, and what it does not' : `Profile: ${profile.name}`
+}
+
 function render (state: ShellState): void {
   renderTabs(state)
   renderToolbar(state)
@@ -340,10 +349,12 @@ function render (state: ShellState): void {
   // chromeHeight), so the row and the space reserved for it appear and
   // disappear together.
   document.documentElement.dataset['bookmarks'] = state.bookmarksBar ? 'some' : 'none'
+  document.documentElement.dataset['private'] = String(state.profile.isPrivate)
+  renderProfile(state.profile)
   bookmarksView.render(state.bookmarks)
 }
 
-let currentState: ShellState = { tabs: [], activeTabId: null, bookmarks: [], bookmarksBar: false, zoomPercent: null }
+let currentState: ShellState = { tabs: [], activeTabId: null, bookmarks: [], bookmarksBar: false, zoomPercent: null, profile: { name: '', color: 'blue', isPrivate: false, shown: false } }
 shell.onState((state) => {
   currentState = state
   render(state)
@@ -407,6 +418,7 @@ sitePermissionsBtn.addEventListener('click', () => {
 })
 
 zoomChip.addEventListener('click', () => { shell.runCommand('zoom.reset') })
+profileChip.addEventListener('click', () => { shell.openInternal(currentState.profile.isPrivate ? 'private' : 'profiles') })
 menuBtn.addEventListener('click', () => { shell.openMenu(anchorFor(menuBtn)) })
 
 // A keyboard shortcut in main asks for the address bar.

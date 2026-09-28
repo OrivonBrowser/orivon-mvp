@@ -197,6 +197,8 @@ export default defineConfig({
           permissions: resolve(root, 'src/renderer/permissions/index.html'),
           'page-settings': resolve(root, 'src/renderer/pages/settings/index.html'),
           'page-history': resolve(root, 'src/renderer/pages/history/index.html'),
+          'page-profiles': resolve(root, 'src/renderer/pages/profiles/index.html'),
+          'page-private': resolve(root, 'src/renderer/pages/private/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),
           menu: resolve(root, 'src/renderer/menu/index.html'),
           'split-frame': resolve(root, 'src/renderer/split-frame/index.html')

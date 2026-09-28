@@ -6,6 +6,7 @@ import type { ShellServices } from '../shell/shell-services.js'
 import { settingsDomain } from '../settings/settings-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
 import { pagesDomain } from './pages-domain.js'
+import { profilesDomain } from '../launch/profiles-domain.js'
 import { historyDomain } from '../history/history-domain.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
@@ -38,6 +39,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     settings: settingsDomain(services.settings),
     shortcuts: shortcutsDomain(services.shortcuts),
     history: historyDomain(services.history),
+    profiles: profilesDomain(services.profiles),
     pages: pagesDomain(services.windows),
     privacy: privacyDomain(services.history, services.zoomStore, {
       history: services.history,

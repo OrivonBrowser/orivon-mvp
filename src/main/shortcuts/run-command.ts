@@ -8,6 +8,7 @@ import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { DevToolsService } from '../devtools/devtools-service.js'
+import type { ProfilesService } from '../launch/profiles-service.js'
 import type { ZoomService } from '../zoom/zoom-service.js'
 import type { CommandId } from './commands.js'
 
@@ -15,6 +16,7 @@ export interface CommandDeps {
   readonly bookmarks: BookmarkStore
   readonly zoom: ZoomService
   readonly devtools: DevToolsService
+  readonly profiles: ProfilesService
   readonly openWindow: (options?: ShellWindowOptions) => void
   readonly quit: () => void
 }
@@ -77,6 +79,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.moveToNewWindow':
       if (active !== undefined) moveToNewWindow(target, active.id, deps.openWindow, cascadeFrom(window.getBounds()))
       return
+    case 'window.newPrivate': deps.profiles.openPrivate(); return
+    case 'profiles.open': tabs.openInternal('profiles'); return
     case 'window.close': window.close(); return
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
     case 'settings.open': tabs.openInternal('settings'); return

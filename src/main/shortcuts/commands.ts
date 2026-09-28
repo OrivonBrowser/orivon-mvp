@@ -52,6 +52,8 @@ export const COMMANDS = [
   { id: 'devtools.toggle', label: 'Developer tools', category: 'navigation', default: 'F12', macDefault: 'Mod+Alt+I', aliases: ['Mod+Shift+I'] },
   { id: 'bookmark.toggle', label: 'Bookmark this page', category: 'navigation', default: 'Mod+D' },
   { id: 'window.new', label: 'New window', category: 'window', default: 'Mod+N' },
+  { id: 'window.newPrivate', label: 'New private window', category: 'window', default: 'Mod+Shift+N' },
+  { id: 'profiles.open', label: 'Profiles', category: 'window' },
   { id: 'window.close', label: 'Close window', category: 'window', default: 'Mod+Shift+W' },
   { id: 'window.fullscreen', label: 'Full screen', category: 'window', default: 'F11', macDefault: 'Ctrl+Meta+F' },
   { id: 'settings.open', label: 'Open Settings', category: 'window', default: 'Mod+,' },

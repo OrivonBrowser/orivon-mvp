@@ -18,6 +18,9 @@ import type { Placement } from './window-options.js'
 // live OS theme change.
 const OVERLAY_DARK = { color: '#1e1f24', symbolColor: '#e6e7e8' }
 const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
+// A private window is tinted (src/renderer/style.css's `data-private`), so it is never taken for the person's own.
+const OVERLAY_PRIVATE_DARK = { color: '#251c36', symbolColor: '#e6e7e8' }
+const OVERLAY_PRIVATE_LIGHT = { color: '#d8cfe8', symbolColor: '#202124' }
 
 /** Height of the native overlay: the tab row's height, in src/renderer/style.css too. */
 const OVERLAY_HEIGHT = 36
@@ -39,7 +42,10 @@ export interface WindowFrame {
 
 /** `dirname`: the calling module's own `import.meta.dirname`, from which a run
  * from source finds the repo's build/icon.png (out/main -> ../../build). */
-export function createWindowFrame (dirname: string, place: Placement = {}): WindowFrame {
+export function createWindowFrame (dirname: string, place: Placement = {}, isPrivate = false): WindowFrame {
+  const overlay = (): { color: string, symbolColor: string } => isPrivate
+    ? (nativeTheme.shouldUseDarkColors ? OVERLAY_PRIVATE_DARK : OVERLAY_PRIVATE_LIGHT)
+    : (nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT)
   // Hands the app icon to the window. GNOME's dock does not read it -- the
   // icon shown for a running window comes from matching the window's WM_CLASS
   // ("orivon") against a .desktop entry's Icon=/StartupWMClass, and this
@@ -72,7 +78,7 @@ export function createWindowFrame (dirname: string, place: Placement = {}): Wind
     ...place
   }
 
-  const initialOverlay = nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT
+  const initialOverlay = overlay()
   const win = new BaseWindow({
     ...initialBounds,
     show: false,
@@ -96,7 +102,7 @@ export function createWindowFrame (dirname: string, place: Placement = {}): Wind
   // window.
   function applyOverlayForTheme (): void {
     if (process.platform === 'darwin') return
-    win.setTitleBarOverlay(nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT)
+    win.setTitleBarOverlay(overlay())
   }
   nativeTheme.on('updated', applyOverlayForTheme)
   win.on('closed', () => { nativeTheme.removeListener('updated', applyOverlayForTheme) })
