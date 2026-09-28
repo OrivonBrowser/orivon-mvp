@@ -1301,6 +1301,30 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
+### A284: Served `.eth`/`ipfs://` content sends no `frame-ancestors` **[OWNER]**
+
+- **Question:** Served content can be framed by any page (clickjacking a dApp), and static
+  content cannot set its own header.
+- **Why it matters:** a page under an origin the user trusts (a `.eth` name, an IPFS gateway
+  response) can be embedded and manipulated by any other page that frames it.
+- **Options:** `frame-ancestors 'self'` by default (rec.; breaks embedding by other origins);
+  `'none'`; leave it as the web does today and document the gap.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A285: CCIP-Read egress validates a resolved hostname, then fetches the hostname again **[OWNER]**
+
+- **Question:** `urlRefusal` resolves a CCIP gateway hostname and checks every address against
+  T12, but `requestOne` then fetches the ORIGINAL url string, which resolves again -- a
+  DNS-rebinding TOCTOU `direct-fetch.ts`'s `pinnedLookup` already avoids on the sibling path.
+- **Why it matters:** a `.eth` name's own resolver contract controls the CCIP gateway url, so a
+  short-TTL rebind could point the verifier-host process at an internal address.
+- **Options:** reuse `pinnedLookup` for CCIP's POST/redirect-following path (rec.; a real change,
+  since CCIP needs a body and its own redirect loop, unlike `createDirectFetch`'s GET/HEAD-only
+  shape); accept the residual, narrowed by the existing `https`-only rule.
+- **Who decides:** owner
+- **Blocks:** nothing
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared
