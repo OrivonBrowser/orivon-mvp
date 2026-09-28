@@ -1,14 +1,19 @@
-// Inside the Worker: runs a WASI program the page compiled, over the WASI
-// host, with its file calls going to the page's orivon.fs and its stdio to
-// the page's ChildProcess streams.
+// Inside the Worker: runs a WASI program the page compiled over the WASI
+// host, or a component's jco output over the WASI 0.2 host, with its file and
+// socket calls going to the page's orivon and its stdio to the page's
+// ChildProcess streams.
 
 import { createWasiHost, type WasiFs } from '../wasi/host.js'
 import { runCommand, suspendingImports } from '../wasi/instantiate.js'
 import type { StdinSource } from '../wasi/stdio.js'
 import { WasiTerminated } from '../wasi/termination.js'
+import type { SocketNet } from '../wasi-p2/addresses.js'
+import { componentImports } from '../wasi-p2/imports.js'
+import { InputStream, OutputStream } from '../wasi-p2/io.js'
+import { type Instantiate, instantiateComponent } from '../wasi-p2/run.js'
 import { createOrivonClient } from './orivon-client.js'
 import { OutputAcks, type ParentChannel } from './parent.js'
-import type { SpawnStart, StreamName } from './protocol.js'
+import type { SpawnProgram, SpawnStart, StreamName } from './protocol.js'
 
 /** stdin as the program reads it: chunks from the page, until it ends the stream. */
 class StdinQueue implements StdinSource {
@@ -35,7 +40,12 @@ function signalFor (error: unknown): string {
   return error instanceof WasiTerminated && error.reason === 'revoked' ? 'SIGKILL' : 'SIGABRT'
 }
 
-export async function runSpawn (start: SpawnStart, parent: ParentChannel, wasm: typeof WebAssembly = WebAssembly): Promise<void> {
+/** How the Worker loads a component's jco output; a test passes one that evaluates it against its JSPI namespace. */
+export type LoadComponent = (glue: string) => Promise<Instantiate>
+
+const importComponent: LoadComponent = async (glue) => ((await import(/* @vite-ignore */ glue)) as { instantiate: Instantiate }).instantiate
+
+export async function runSpawn (start: SpawnStart, parent: ParentChannel, wasm: typeof WebAssembly = WebAssembly, loadComponent: LoadComponent = importComponent): Promise<void> {
   const stdin = new StdinQueue()
   const acks = new OutputAcks()
   parent.onMessage((message) => {
@@ -51,28 +61,62 @@ export async function runSpawn (start: SpawnStart, parent: ParentChannel, wasm: 
     await acked
   }
   const orivon = createOrivonClient(start.orivon)
-  const host = createWasiHost({
-    fs: orivon.fs as WasiFs,
-    args: start.args,
-    env: start.env,
-    preopens: start.preopens,
-    stdin,
-    stdout: sink('stdout'),
-    stderr: sink('stderr')
-  })
-  let instance: WebAssembly.Instance
+  const io = { stdin, stdout: sink('stdout'), stderr: sink('stderr') }
+  let run: () => Promise<number>
   try {
-    instance = await wasm.instantiate(start.module, { wasi_snapshot_preview1: suspendingImports(host, wasm) } as WebAssembly.Imports)
+    run = start.program.kind === 'core'
+      ? await prepareProgram(start, start.program, orivon, io, wasm)
+      : await prepareComponent(start, start.program, orivon, io, wasm, loadComponent)
   } catch (error) {
-    parent.post({ type: 'failed', error: { name: 'Error', message: `the program cannot be instantiated as a WASI command: ${String(error)}`, code: 'ENOEXEC' } })
+    parent.post({ type: 'failed', error: { name: 'Error', message: String((error as Error)?.message ?? error), code: 'ENOEXEC' } })
     return
   }
   parent.post({ type: 'started' })
   try {
-    parent.post({ type: 'exit', code: await runCommand(instance, host, wasm), signal: null })
+    parent.post({ type: 'exit', code: await run(), signal: null })
   } catch (error) {
     const text = new TextEncoder().encode(`${String((error as Error)?.stack ?? error)}\n`)
     parent.post({ type: 'output', stream: 'stderr', data: text }, [text.buffer])
     parent.post({ type: 'exit', code: null, signal: signalFor(error) })
+  }
+}
+
+interface ChildIo {
+  readonly stdin: StdinQueue
+  readonly stdout: (data: Uint8Array) => Promise<void>
+  readonly stderr: (data: Uint8Array) => Promise<void>
+}
+
+async function prepareProgram (start: SpawnStart, program: Extract<SpawnProgram, { kind: 'core' }>, orivon: Record<string, unknown>, io: ChildIo, wasm: typeof WebAssembly): Promise<() => Promise<number>> {
+  const host = createWasiHost({ fs: orivon.fs as WasiFs, args: start.args, env: start.env, preopens: start.preopens, ...io })
+  let instance: WebAssembly.Instance
+  try {
+    instance = await wasm.instantiate(program.module, { wasi_snapshot_preview1: suspendingImports(host, wasm) } as WebAssembly.Imports)
+  } catch (error) {
+    throw new Error(`the program cannot be instantiated as a WASI command: ${String(error)}`)
+  }
+  return async () => await runCommand(instance, host, wasm)
+}
+
+async function prepareComponent (start: SpawnStart, program: Extract<SpawnProgram, { kind: 'component' }>, orivon: Record<string, unknown>, io: ChildIo, wasm: typeof WebAssembly, loadComponent: LoadComponent): Promise<() => Promise<number>> {
+  const imports = componentImports({
+    fs: orivon.fs as WasiFs,
+    net: orivon.net as SocketNet,
+    preopens: start.preopens,
+    args: start.args,
+    env: start.env,
+    stdin: new InputStream(async (max) => await io.stdin.read(max)),
+    stdout: new OutputStream(io.stdout),
+    stderr: new OutputStream(io.stderr)
+  })
+  const getCoreModule = async (name: string): Promise<WebAssembly.Module> => {
+    const response = await fetch(new URL(name, program.base))
+    if (!response.ok) throw new Error(`the component's core module ${name} is not served (${response.status})`)
+    return await wasm.compile(await response.arrayBuffer())
+  }
+  try {
+    return await instantiateComponent(await loadComponent(program.glue), getCoreModule, imports)
+  } catch (error) {
+    throw new Error(`the component cannot be instantiated as a WASI 0.2 command: ${String((error as Error)?.message ?? error)}`)
   }
 }

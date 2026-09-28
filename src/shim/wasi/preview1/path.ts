@@ -10,7 +10,7 @@ import { type DirectoryEntry, type FileEntry, PathError, type ResolvedPath, reso
 import type { ImportFamily } from './family.js'
 import { Oflags, Rights, SYNC_FDFLAGS } from './flags.js'
 
-interface OpenIntent {
+export interface OpenIntent {
   readonly read: boolean
   readonly write: boolean
   readonly creat: boolean
@@ -28,7 +28,7 @@ function assertTrailingSlashFits (resolved: ResolvedPath, stat: FileStat | undef
  * truncated never gets a `w` flag (which would empty it), and one being
  * created always gets `x`, so two programs cannot both create it.
  */
-function openFlags (intent: OpenIntent, exists: boolean): string {
+export function openFlags (intent: OpenIntent, exists: boolean): string {
   if (!exists) return intent.read || !intent.write ? 'wx+' : 'wx'
   if (intent.trunc) return intent.read ? 'w+' : 'w'
   return intent.write ? 'r+' : 'r'

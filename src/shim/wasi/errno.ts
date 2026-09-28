@@ -71,6 +71,11 @@ const BY_ORIVON_CODE: Readonly<Record<OrivonErrorCode, ErrnoName>> = {
   unavailable: 'IO'
 }
 
+/** 55 -> `NOTEMPTY`: the name WASI 0.2's error codes are mapped from. */
+export function errnoName (value: number): string | undefined {
+  return ERRNO_NAMES[value]
+}
+
 /** `ENOTEMPTY` -> 55. Undefined for a name WASI does not have. */
 function fromPosixName (name: unknown): number | undefined {
   if (typeof name !== 'string' || !name.startsWith('E')) return undefined

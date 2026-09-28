@@ -33,7 +33,7 @@ describe('programUrls', () => {
 describe('loadProgram', () => {
   it('compiles a WebAssembly program found under its .wasm name, and fetches it once', async () => {
     const fetchStub = serve({ '/bin/cached.wasm': WASM })
-    expect(await loadProgram('/bin/cached', [], ORIGIN)).toBeInstanceOf(WebAssembly.Module)
+    expect((await loadProgram('/bin/cached', [], ORIGIN)) as { kind: string, module: unknown }).toMatchObject({ kind: 'core', module: expect.any(WebAssembly.Module) })
     await loadProgram('/bin/cached', [], ORIGIN)
     expect(fetchStub.mock.calls.filter(([url]) => String(url).endsWith('cached.wasm'))).toHaveLength(1)
   })
