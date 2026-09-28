@@ -76,8 +76,8 @@ and what it found in aggregate, not a re-narration of each finding.
 
 ### PRs #21, #22 and #24: the chrome-view lock, favicons, `.eth` gateway reliability (2026-09-28)
 
-Reviewed after #22 and #24 had merged and while #21 was open. The fixes landed in two follow-up
-PRs, one for the verifier and one for the shell.
+Reviewed after #22 and #24 had merged and while #21 was open. The fixes are #29 (the verifier)
+and #30 (the shell).
 
 | Mechanism | Scope | Outcome |
 |---|---|---|
