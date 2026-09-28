@@ -1,27 +1,26 @@
 ---
 name: "orivon-electron"
-description: Use when writing or debugging code that runs webtorrent (or anything with a similar Node-dependency graph) inside an Orivon Electron renderer, when building the real orivon-node-shim, when an Electron+Vite renderer build fails with a confusing module-resolution error, when a gate/test hangs with no error under Playwright's _electron driver, or when anything Electron-related behaves inexplicably in this repository's dev environment. Captures knowledge from the week-0 spike (2026-08-25) that exists nowhere else.
+description: Use when writing or debugging code that runs webtorrent (or anything with a similar Node-dependency graph) inside an Orivon Electron renderer, when building the real orivon-node-shim, when an Electron+Vite renderer build fails with a confusing module-resolution error, when a gate/test hangs with no error under Playwright's _electron driver, or when anything Electron-related behaves inexplicably in this repository's dev environment. Captures Electron behaviour measured in this repository that is written down nowhere else.
 ---
 
-# Orivon + Electron: what the week-0 spike learned
+# Orivon + Electron: measured behaviour and traps
 
-This knowledge came from building four passing gates and one blocked one
-(`docs/planning/spike-verdict.md`, `docs/planning/spike-results/*.json`). It is not written
-down anywhere else. Read this before repeating any of it from scratch.
+Most of the evidence is in `docs/planning/spike-verdict.md` and
+`docs/planning/spike-results/*.json` (four spike gates pass, one is blocked). None of this is
+written down anywhere else. Read it before re-deriving any of it.
 
 ## First: check the environment for poison
 
 **This machine has `ELECTRON_RUN_AS_NODE=1` set in the ambient shell environment.** It makes
 the Electron binary run as plain Node — no windows, no `require('electron')`, no
-`MessagePortMain`. It does not fail loudly; it fails in ways that look like unrelated bugs (it
-once presented as a module-format error that had nothing to do with module formats, costing
-about an hour before being caught).
+`MessagePortMain`. It does not fail loudly; it fails in ways that look like unrelated bugs, such
+as a module-format error that has nothing to do with module formats.
 
-**Never launch Electron directly.** Always go through `spike/launch.mjs`'s `launchElectron()`,
-which strips the variable and asserts `MessageChannelMain` exists before returning. If you are
-writing new Electron-launching code outside the spike, port this pattern — check
-`process.env.ELECTRON_RUN_AS_NODE` and strip it before spawning, or a "gate" (or later, a real
-test) can produce a confident, completely false result.
+**Never launch Electron directly.** Go through `test/launch-electron.mjs` (or
+`spike/launch.mjs`'s `launchElectron()` for a spike gate), which strips the variable and asserts
+`MessageChannelMain` exists before returning. New Electron-launching code must do the same:
+strip `ELECTRON_RUN_AS_NODE` before spawning, or a test can produce a confident, completely
+false result.
 
 ```js
 const env = { ...process.env }
@@ -34,33 +33,32 @@ if (!isReal) throw new Error('not real Electron — refuse to trust any result f
 
 ## A launch that leaves anything behind is not a finished launch
 
-**Owner's decision, 2026-09-09, after the machine filled with windows overnight.** This is the
-companion to the section above: that one stops a launch being fake, this one stops a launch being
-permanent. Both were measured on this machine, not reasoned about.
-
-What was found, at one moment, after a *failed* e2e run: seven orphaned Electron processes
-reparented to `systemd --user` (the runner had exited and left the tree alive), one already
-`<defunct>`, **no `Xvfb` process at all** — so that launch had painted on the real display — and 77
-abandoned `/tmp/orivon-test-*` profile directories totalling 105 MB.
+The section above stops a launch being fake; this one stops a launch being permanent. What a
+*failed* e2e run can leave behind on this machine: orphaned Electron processes reparented to
+`systemd --user` (the runner exited and left the tree alive), `<defunct>` zombies, a launch with
+**no `Xvfb` process at all** (so it painted on the real display), and abandoned
+`/tmp/orivon-test-*` profile directories (77 of them, 105 MB, in one measured case).
 
 Four rules, and they are part of the test contract rather than cleanup hygiene:
 
-1. **`xvfb-run` on every launch, no exceptions.** `env -u ELECTRON_RUN_AS_NODE xvfb-run -a ...`.
-   The `-u` is the trap above; `xvfb-run -a` is what makes painting on a real display impossible.
+1. **`scripts/run-headless.mjs` on every launch, no exceptions.**
+   `env -u ELECTRON_RUN_AS_NODE node scripts/run-headless.mjs ...`. The `-u` is the trap above;
+   the runner puts the launch on a virtual display, which bare `xvfb-run` does not guarantee on a
+   Wayland desktop (see the last section).
 2. **Teardown must run on the failure path.** This is where it actually breaks. A bounded
    `app.close()` race works when the test passes and silently does not when it throws — put the
    teardown in a `finally`/`afterAll` that always runs, SIGKILL the process tree after the bounded
-   wait, and reap the child so no zombie survives. `app.close()` hanging indefinitely is already
-   documented in this repo's own e2e helpers; the workaround for it was never wired to the failure
-   path.
+   wait, and reap the child so no zombie survives. `app.close()` can hang indefinitely (the e2e
+   helpers document it), so the bounded wait and the kill must both run on the failure path.
 3. **Check for survivors before reporting the run.** Zero Electron processes, zero zombies, zero
    stray `Xvfb`. A run that leaves a process is not a finished run.
 4. **Delete the `--user-data-dir` temp profile** the run created.
 
 **The trap inside the check itself:** `pgrep -f node_modules/electron/dist/electron` matches *the
 command doing the checking*, because that string is in its own argv. It reports processes that do
-not exist, which reads as a leak and sends you hunting for nothing. Resolve `/proc/<pid>/exe` and
-compare the real binary path instead:
+not exist, which reads as a leak and sends you hunting for nothing. The same happens when the
+string sits anywhere in a larger pipeline you are running. Resolve `/proc/<pid>/exe` and compare
+the real binary path instead, or at least filter with `ps -eo pid,cmd | grep -F ... | grep -v grep`:
 
 ```sh
 for p in /proc/[0-9]*; do
@@ -76,12 +74,12 @@ webtorrent's `browser` field maps `net`, `bittorrent-dht`, `ut_pex`, `conn-pool`
 `fs`, `http`, `os` and more to `false`, which makes it WebRTC-only — precisely the outcome
 `ADR-0001` reason 3 exists to defeat. Beating this needs a specific, non-obvious set of Vite
 aliases. This is the complete, verified list (`spike/gate1b/vite.config.js` is the reference
-implementation — it is the superset; `gate1a`'s config is missing several of these because it
-predates DHT/MSE work, do not copy it as "the full list").
+implementation and the superset; `gate1a`'s config lacks the DHT and MSE entries, so do not copy
+it as the full list).
 
 | Alias target | Replacement | Why |
 |---|---|---|
-| `net` | `shim/net.js` (project-specific) | **The load-bearing one.** webtorrent's `torrent.js` refuses all TCP unless `typeof net.connect === 'function'`. Must also export `isIP`/`isIPv4`/`isIPv6` — see "The isIP incident" below. |
+| `net` | `shim/net.js` (project-specific) | **The load-bearing one.** webtorrent's `torrent.js` refuses all TCP unless `typeof net.connect === 'function'`. Must also export `isIP`/`isIPv4`/`isIPv6` — see "A shim must mirror the whole surface" below. |
 | `dgram` | `shim/dgram.js` (project-specific) | Only if DHT is needed. An `EventEmitter`, not a stream — `bind()`, `send(msg, port, host, cb)`, `'message'`/`'listening'`/`'error'` events. `address()` must be **synchronous**, so cache it from the `'listening'` broker message rather than round-tripping. |
 | `./mse.js` | real `bittorrent-protocol/mse.js` | Protocol encryption. **Use the real file, not a stub** — see "MSE actually works" below. |
 | `crypto` | `crypto-browserify` | Needed by both MSE and DHT node-ID hashing. Pure JS. |
@@ -107,21 +105,18 @@ Also mandatory:
 
 ## `file://` counts as a secure context — `serviceWorker.register()` needs no fallback
 
-The week-0 plan assumed `navigator.serviceWorker.register()` would need a fallback for the media
-path, because service workers are ordinarily gated to secure contexts (`https:` or `localhost`)
-and a packaged app serves its files over `file://`. **That assumption was wrong for
-registration, and confirmed empirically rather than left standing** (gate 3, 2026-08-25):
-Electron treats a `file://` origin loaded via `loadFile()` as a secure context, and
-`navigator.serviceWorker.register()` succeeds with no flag and no workaround needed. Don't build
-a registration fallback speculatively — `docs/planning/spike-verdict.md` (its Gate 3 section)
-has the evidence.
+Service workers are ordinarily gated to secure contexts (`https:` or `localhost`), and a
+packaged app serves its files over `file://`. **Electron treats a `file://` origin loaded via
+`loadFile()` as a secure context**: `navigator.serviceWorker.register()` succeeds with no flag
+and no workaround, measured in spike gate 3. Don't build a registration fallback speculatively —
+`docs/planning/spike-verdict.md` (its Gate 3 section) has the evidence.
 
 **What this does not prove:** gate 3 itself is **BLOCKED**, not passed — `register()` succeeding
 is confirmed, but the end-to-end media path through the `<video>` element is still unproven,
 because Playwright can't attach to that gate's window (see the known-unsolved-issue section
 below) and the element itself is explicitly "not yet tested" in `spike-verdict.md`.
 
-## The `path` polyfill incident — when an error names the wrong thing entirely
+## A missing `path` polyfill — when an error names the wrong thing entirely
 
 A missing `path` alias did not produce a "cannot find module 'path'" error. It produced:
 
@@ -139,15 +134,13 @@ alone.
 
 ## MSE actually works — do not assume otherwise
 
-The original assumption was that BitTorrent protocol encryption (MSE) can't run in a renderer,
-because it needs Diffie-Hellman, a synchronous SHA-1, and RC4 — none of which WebCrypto usefully
-provides. **This was wrong, and it took a direct challenge to catch:**
+BitTorrent protocol encryption (MSE) runs in a renderer, although it needs Diffie-Hellman, a
+synchronous SHA-1 and RC4, none of which WebCrypto usefully provides:
 
 - `bittorrent-protocol/mse.js` already ships a **complete pure-JS RC4 fallback**, selected
   automatically whenever `crypto.createCipheriv('rc4', ...)` throws (which it does, on
-  `crypto-browserify`). RC4 was never actually the blocker — reading the `nativeRC4` detection
-  line and stopping there, without reading the fifteen lines under it, is what produced the
-  wrong conclusion the first time.
+  `crypto-browserify`). RC4 is not the blocker: the `nativeRC4` detection line alone suggests it
+  is, and the fifteen lines under it are the fallback.
 - The only genuinely missing pieces are `createHash('sha1')` and `createDiffieHellman`, and
   `crypto-browserify` supplies both, in pure JS.
 - Verified end to end: a full encrypted handshake at `secure: 2` (RC4 required, **no** plaintext
@@ -170,9 +163,9 @@ payload — **the message never arrives, at all**, for any size tested. This rep
 worse than the issue as filed.
 
 **Consequences, both load-bearing:**
-- **Never design a reply-carrying protocol over `MessagePortMain` without a timeout.** The
-  first version of the gate-0 test hung indefinitely on exactly this — a reply promise with no
-  timeout, waiting for a message that had already been silently dropped.
+- **Never design a reply-carrying protocol over `MessagePortMain` without a timeout.** A reply
+  promise with no timeout hangs indefinitely, waiting for a message that was already silently
+  dropped.
 - **Do not reach for transferables as a throughput optimisation on this path.** They are not
   available. Structured clone (which copies) is not a fallback for a rescue plan — it is the
   *only* mechanism, and it is fast enough on its own: 313–1134 MB/s measured, against a
@@ -181,21 +174,20 @@ worse than the issue as filed.
 ## A shim must mirror the whole surface a dependency touches, not the obvious methods
 
 `bittorrent-dht`'s RPC layer calls `net.isIP(peer.host)` before every send, to decide whether to
-send directly or resolve via DNS first. The project's `net` shim implemented `connect`,
-`createServer`, and `Socket` — a complete-looking socket API — but not `isIP`. The result: the
-DHT bound its listening socket successfully, then **sent nothing, ever**, with no error and no
-warning.
+send directly or resolve via DNS first. A `net` shim that implements `connect`, `createServer`
+and `Socket` — a complete-looking socket API — but not `isIP` leaves the DHT with its listening
+socket bound and **sending nothing, ever**, with no error and no warning.
 
-The reason it was silent compounds the lesson: the throw happened inside a `process.nextTick`
-callback, and this project's `globals.js` polyfills `nextTick` with `queueMicrotask`. **Node's
-real `nextTick` surfaces an uncaught exception to the process; `queueMicrotask` does not route
-into the same handlers.** A polyfill chosen for API-shape compatibility silently changed error
-visibility in exactly the wrong direction for code whose job is partly security-relevant.
+It is silent because the throw happens inside a `process.nextTick` callback, and the spike's
+`globals.js` polyfills `nextTick` with `queueMicrotask`. **Node's real `nextTick` surfaces an
+uncaught exception to the process; `queueMicrotask` does not route into the same handlers.** A
+polyfill chosen for API-shape compatibility changes error visibility in exactly the wrong
+direction for code whose job is partly security-relevant.
 
-**When building the real `orivon-node-shim` (A10): audit every Node timing primitive
-(`nextTick`, `setImmediate`, microtask ordering) for this class of behavioural change, not just
-for call-signature compatibility.** A shim that type-checks and passes a synthetic test can
-still be a black hole for real dependency errors.
+**In `orivon-node-shim` (A10), audit every Node timing primitive (`nextTick`, `setImmediate`,
+microtask ordering) for this class of behavioural change, not just for call-signature
+compatibility.** A shim that type-checks and passes a synthetic test can still be a black hole
+for real dependency errors.
 
 ## Why webtorrent isn't in the shell `package.json`
 
@@ -209,8 +201,7 @@ prebuild-install -r napi || (npm install --ignore-scripts --production=false && 
 It tries a prebuild and **falls back to compiling with CMake** when no prebuild matches the
 platform/ABI — exactly the Rule 8 threat (breaks `npm install` on a machine without a C++
 toolchain, i.e. most contributors on Windows/macOS). This is why webtorrent lives in an isolated
-`spike/app/` (soon: a real app-asset tree) with its own `package.json`, never installed at the
-shell level. The built renderer bundle contains zero `node-datachannel` references — confirmed
+`spike/app/` with its own `package.json`, never installed at the shell level. The built renderer bundle contains zero `node-datachannel` references — confirmed
 by grepping `dist/assets/*.js` — because `@thaunknown/simple-peer`/`webrtc-polyfill` are
 deliberately left **unaliased**, so they keep browser resolution and the renderer uses
 Chromium's native WebRTC instead.
@@ -228,17 +219,15 @@ Symptom: TypeScript's own types — and context7's docs — show `ready-to-show`
 either source suggests it exists on `BaseWindow` at all.
 
 Cause: this is a **typing/documentation gap, not a runtime one**. `ready-to-show` fires
-identically on `BaseWindow` — confirmed empirically (`src/main/shell/window.ts`, 2026-08-26; see the
-next section for the one real caveat, which is about *when* it fires, not *whether* it exists).
+identically on `BaseWindow` — confirmed empirically in `src/main/shell/window.ts` (see the next
+section for the one real caveat, which is about *when* it fires, not *whether* it exists).
 
-**Corrected 2026-09-01:** an earlier version of this section made the same claim for
-`titleBarStyle`, `titleBarOverlay` and `trafficLightPosition`. That was false — checked directly
-against `node_modules/electron/electron.d.ts` (v44.0.0): all three are declared inside
-`BaseWindowConstructorOptions` itself (`titleBarOverlay` at line 4039, `titleBarStyle` at line
-4043, `trafficLightPosition` at line 4049), and `setTitleBarOverlay(...)` is a method on the
-`BaseWindow` class (line 3569). Only `ready-to-show` is actually `BrowserWindow`-only. The
-mistaken belief is itself the lesson below: check the `.d.ts` before assuming a gap, in either
-direction.
+`titleBarStyle`, `titleBarOverlay` and `trafficLightPosition` are **not** in this gap: all three
+are declared inside `BaseWindowConstructorOptions` itself (`node_modules/electron/electron.d.ts`
+v44.0.0: `titleBarOverlay` at line 4039, `titleBarStyle` at 4043, `trafficLightPosition` at
+4049), and `setTitleBarOverlay(...)` is a method on the `BaseWindow` class (line 3569). Only
+`ready-to-show` is `BrowserWindow`-only in the types. Check the `.d.ts` before assuming a gap, in
+either direction.
 
 **Fix: when context7 — or the `.d.ts` itself — is silent about `BaseWindow` for something
 documented only on `BrowserWindow`, treat the silence as "unconfirmed", not "no".** Verify
@@ -254,36 +243,31 @@ mismatch would still be caught by the type-checker:
 
 ## `ready-to-show` does not fire reliably when loading from a dev server
 
-Build step 1 (2026-08-26): a `show: false` + `win.once('ready-to-show', () => win.show())`
-window (`src/main/shell/window.ts`) **never appeared** under `npm run dev` — no error, no crash, a
-completely healthy process tree (main, GPU process, both renderers, confirmed repeatedly via
-`ps`). It worked fine every time under Playwright-launched diagnostics and under the production
-`loadFile()` path (`npm run smoke`). The difference: `npm run dev`'s chrome view loads via
-`chrome.webContents.loadURL(devServerUrl)` (electron-vite's Vite dev server), not a built file.
+A `show: false` + `win.once('ready-to-show', () => win.show())` window
+(`src/main/shell/window.ts`) can **never appear** under `npm run dev` — no error, no crash, a
+completely healthy process tree (main, GPU process, both renderers, per `ps`). It appears every
+time under Playwright-launched runs and on the production `loadFile()` path (`npm run smoke`).
+The difference: `npm run dev`'s chrome view loads via `chrome.webContents.loadURL(devServerUrl)`
+(electron-vite's Vite dev server), not a built file.
 
-**Root-caused only by adding `console.error` at every step of window creation and having a human
-run `npm run dev` directly and paste the actual output** — every automated diagnostic this
-session (querying `win.isVisible()`/`isFocused()`/`getBounds()` through Playwright) reported the
-window as fully correct, because those diagnostics never exercised the dev-server load path at
-all. The trace showed `chrome did-finish-load` firing normally, then **`ready-to-show` simply
-never firing** within several seconds — `show()` was never called, on an otherwise perfectly
-healthy window.
+**Automated diagnostics cannot see it.** Querying `win.isVisible()`/`isFocused()`/`getBounds()`
+through Playwright reports the window as fully correct, because it never exercises the
+dev-server load path. What finds it: `console.error` at every step of window creation, and the
+human running `npm run dev` pasting the actual output. The trace shows `chrome did-finish-load`
+firing normally, then **`ready-to-show` never firing** within several seconds, so `show()` is
+never called on an otherwise healthy window.
 
 **Fix: race `ready-to-show` against a short fallback timer** (`src/main/shell/window.ts`'s `showOnce`),
 guarded so `show()` never runs twice if the event fires late, after the fallback already ran.
 Do not rely on `ready-to-show` alone for a window whose content may come from a dev server —
 only for the production `loadFile()` path is it proven prompt and reliable here.
 
-**Process lesson, worth repeating for the next hard-to-reproduce Electron bug:** two plausible-
-looking diagnoses were tried and both were dead ends before this one — a "wrong monitor"
-misdiagnosis (misreading a display's reported dimensions as an unusual portrait monitor when it
-was actually the user's real main screen) and, worse, a **regression** while chasing it (forcing
-`ozone-platform: x11` to make explicit window positioning work, which segfaulted the GPU process
-under XWayland on this machine). Both are recorded, not deleted, in the git history
-(`04d44bc`) — they are exactly the kind of trap this file exists to save the next session from
-re-discovering. The thing that actually worked was the least exotic tool available: ask the
-human running the real environment to paste what they actually see, before trusting any
-automated proxy for it again.
+**Two dead ends to skip on the next hard-to-reproduce Electron bug** (commit `04d44bc` has the
+full trail): the display's reported dimensions are the user's real main screen, not an unusual
+portrait monitor; and forcing `ozone-platform: x11` to make explicit window positioning work
+segfaults the GPU process under XWayland on this machine. The least exotic tool is the one that
+works: ask the human running the real environment to paste what they actually see, before
+trusting any automated proxy for it.
 
 ## `getContentBounds()` read inside a `'resize'` handler can return stale, pre-resize bounds
 
@@ -308,14 +292,11 @@ turns out to be WM-specific. `scope.md` puts Linux (AppImage + deb) first in the
 IN table, so the `setImmediate` deferral below is the fix on the primary target, not a
 workaround for one desktop.
 
-Fix (`src/main/shell/window.ts`, commit `18b2e12`):
+Fix (`src/main/shell/window.ts`'s `'resize'` handler):
 
 ```ts
 win.on('resize', () => {
-  setImmediate(() => {
-    layoutChrome()
-    tabs.layout()
-  })
+  setImmediate(() => { if (!win.isDestroyed()) layoutAll() })
 })
 ```
 
@@ -367,10 +348,9 @@ Both cost real time and are easy to reintroduce, but the complete write-up alrea
 is only the pointer:
 
 - **A `waitFor` helper must never be pointed at a condition the pre-action state already
-  satisfies.** It returns the instant its predicate holds, so that is a no-op reporting green —
-  this shipped twice in `scripts/smoke.mjs` and both passed while the exact regression they
-  existed to catch was present (commit `5fc883b`). Establish an observable *transition* first, or
-  settle and read once. A refusal — a navigation that must **not** happen — cannot be polled for
+  satisfies.** It returns the instant its predicate holds, so that is a no-op reporting green,
+  and it passes while the exact regression it exists to catch is present. Establish an
+  observable *transition* first, or settle and read once. A refusal — a navigation that must **not** happen — cannot be polled for
   at all, only waited out.
 - **`--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`** makes a launch hermetic
   *structurally*, not by assertion. Deliberately a whole-world blackhole rather than a per-host
@@ -380,21 +360,17 @@ is only the pointer:
 
 - `docs/planning/spike-verdict.md` — the readable summary, start there.
 - `docs/planning/spike-results/gate-{0,1a,1b,2,3,4}.json` — raw measured evidence.
-- `docs/planning/week-0-spike-plan.md` and `spike-remaining-gates-plan.md` — the execution
-  plans, including the state table and traps list as they were understood mid-spike.
+- `docs/planning/week-0-spike-plan.md` and `spike-remaining-gates-plan.md` — the spike's
+  execution plans, with its state table and traps list.
 - `docs/architecture/capability-api.md` §Design rules, §Throughput — where the durable lessons
   (shim completeness, error visibility, transferables) are folded into the actual spec.
 - `spike/launch.mjs`, `spike/gate1b/vite.config.js`, `spike/gate1b/shim/*.js` — the reference
-  implementations. The `spike/` directory itself is throwaway and will be deleted once the
-  owner has reviewed the verdict; this skill and the docs above are what should outlive it.
-- `src/main/shell/window.ts`'s `showOnce` — the `ready-to-show`-under-dev-server fix. Commit `04d44bc`
-  (build step 1) has the full incident, including the two dead ends ruled out first.
-- Commit `18b2e12` has the full `getContentBounds()`/`setImmediate` incident. It exists only on
-  `stream/backlog-09-chrome-restyle`, a local branch not yet merged and not pushed to any remote
-  as of this writing — `git show 18b2e12` fails for anyone who has not fetched that branch. The
-  code block above is the whole fix, so nothing is lost if that branch never lands.
+  implementations. The `spike/` directory is throwaway; this skill and the docs above are what
+  outlive it.
+- `src/main/shell/window.ts`'s `showOnce` — the `ready-to-show`-under-dev-server fix, and its
+  `'resize'` handler — the `getContentBounds()`/`setImmediate` fix.
 
-## `xvfb-run` is not enough on a Wayland desktop (found 2026-09-15, the hard way)
+## `xvfb-run` is not enough on a Wayland desktop
 
 **The symptom:** an agent runs the e2e suite "headlessly", the log says *using a virtual display*,
 and a window opens **on the owner's real screen, in front of what they are typing**, stealing focus.
@@ -423,7 +399,8 @@ what the app *asks for* is not.
 ### Two false positives that will waste your time
 
 **1. A `dev` session looks exactly like an orphaned test tree.** `pgrep` reporting many Electron
-processes with no `Xvfb` running is D-0002's signature — and is also what `npm run dev` looks like.
+processes with no `Xvfb` running is what a leaked test tree looks like — and also what `npm run dev`
+looks like.
 Killing it destroys the owner's live work. **The distinguishing signal is the profile path and the
 parent**, never the process count:
 
@@ -432,8 +409,7 @@ parent**, never the process count:
 `--user-data-dir=~/.config/orivon` with a live `electron-vite dev` parent is the **owner's
 own session — leave it alone.** A `/tmp/orivon-test-*` profile is a test run and is yours to clean.
 
-**2. `pgrep -f` matches your own shell command.** The D-0002 post-run check
-(`pgrep -f node_modules/electron/dist/electron` returning nothing) reports a false positive if the
-command you are running *contains that string* — including the check itself when written inside a
-larger pipeline. Confirm with `ps -eo pid,cmd | grep -F ... | grep -v grep` before concluding a run
-left something behind, or you will "clean up" a run that already tore down correctly.
+**2. `pgrep -f` matches your own shell command**, so the post-run survivor check can report a
+leak that does not exist. Use the `/proc/<pid>/exe` recipe in "A launch that leaves anything
+behind" before concluding a run left something, or you will "clean up" a run that already tore
+down correctly.

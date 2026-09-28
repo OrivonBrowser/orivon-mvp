@@ -8,6 +8,7 @@ interface Fake extends EventEmitter {
   loadURL: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
   isDestroyed: () => boolean
+  setWindowOpenHandler: ReturnType<typeof vi.fn>
   ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => void) => void }
 }
 const made: Array<{ webContents: Fake, options: { webPreferences: Record<string, unknown> } }> = []
@@ -21,6 +22,7 @@ vi.mock('electron', () => ({
     contents.loadURL = vi.fn(async () => {})
     contents.close = vi.fn()
     contents.isDestroyed = () => false
+    contents.setWindowOpenHandler = vi.fn()
     contents.ipc = { handle: (channel, fn) => { handlers.set(channel, fn) } }
     this.webContents = contents
     this.options = options
@@ -49,6 +51,20 @@ describe('SplitFrame', () => {
     expect(made).toHaveLength(1)
     expect(made[0]?.options.webPreferences).toMatchObject({ contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true })
     expect(made[0]?.webContents.loadURL).toHaveBeenCalledTimes(1)
+  })
+
+  it('never leaves its own document: its preload is privileged', () => {
+    const { frame: f } = frame()
+    const contents = f.view.webContents as unknown as Fake
+    const address = String(contents.loadURL.mock.calls[0]?.[0])
+    const refuse = (url: string): boolean => {
+      const event = { url, preventDefault: vi.fn() }
+      contents.emit('will-navigate', event)
+      return event.preventDefault.mock.calls.length > 0
+    }
+    expect(refuse('https://evil.example/')).toBe(true)
+    expect(refuse(address)).toBe(false)
+    expect(contents.setWindowOpenHandler).toHaveBeenCalledTimes(1)
   })
 
   it('draws what it is told, once the page has loaded, and the latest thing if it was told sooner', () => {

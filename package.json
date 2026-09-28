@@ -32,6 +32,7 @@
     "check:manifest-parity": "node scripts/check-manifest-parity.mjs",
     "check:page-globals": "node scripts/check-page-globals.mjs",
     "check:dev-grant-absent": "node scripts/check-dev-grant-absent.mjs",
+    "check:devlog": "node scripts/check-devlog.mjs",
     "install:electron": "node scripts/install-electron.mjs",
     "smoke": "node scripts/build-ordinary.mjs && node scripts/run-headless.mjs node scripts/smoke.mjs",
     "test:e2e": "node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts",

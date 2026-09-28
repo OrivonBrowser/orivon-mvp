@@ -4,6 +4,7 @@
 // `URL` is a global -- no import needed for it.
 
 import { classifyAddress } from './address.js'
+import { MAX_HOST_LENGTH, normalizeHost } from './canonical-host.js'
 
 /**
  * Only these two schemes yield an origin.
@@ -15,20 +16,6 @@ import { classifyAddress } from './address.js'
  * the localhost fixture both need a real origin to scope a session grant to.
  */
 const ORIGIN_BEARING_SCHEMES = ['http:', 'https:']
-
-/**
- * Longest host that may become an origin: RFC 1035's limit on a DNS name.
- *
- * The URL parser imposes no bound, so without this a caller can hand back a
- * megabyte-long origin -- and the origin is not just a return value. It names
- * a session partition, keys a grant ledger entry, and is the input to the
- * sha256 that names a storage directory (security-model.md T13b). An
- * unbounded key is threaded through all three.
- *
- * 253 refuses nothing real: a name longer than this cannot resolve, so it
- * cannot serve an app. IPv6 literals are far shorter, brackets included.
- */
-const MAX_HOST_LENGTH = 253
 
 /**
  * Canonicalises the host the URL parser hands back.
@@ -57,6 +44,9 @@ function canonicalHost (hostname: string): string | null {
   const host = hostname.endsWith('.') ? hostname.slice(0, -1) : hostname
 
   if (host.length === 0) return null
+  // The parser bounds nothing, and an origin names a session partition, a
+  // grant ledger key and a storage directory (T13b). 253 refuses nothing
+  // real: a longer name cannot resolve, so it cannot serve an app.
   if (host.length > MAX_HOST_LENGTH) return null
   if (host.split('.').some((label) => label.length === 0)) return null
 
@@ -115,13 +105,18 @@ export function originFromUrl (url: string): string | null {
  * name check is the only way to catch either; a resolver-based check would be
  * resolver-dependent where Chromium's own behaviour is not.
  *
+ * `normalizeHost` first: `URL.hostname` keeps a trailing root-label dot
+ * (`new URL('https://localhost.').hostname` is `'localhost.'`), which
+ * neither equality check below would recognise as the `.localhost` namespace.
+ *
  * Exported so a second caller checking name-based loopback outside this file
  * (`../../loader/fetch/install-origin.ts`'s T12 guard, which fetches through
  * Electron's `net.fetch` -- the same Chromium behaviour this comment
  * describes) reuses this rather than a second copy (Rule 3).
  */
 export function isLocalhostName (host: string): boolean {
-  return host === 'localhost' || host.endsWith('.localhost')
+  const normalized = normalizeHost(host)
+  return normalized === 'localhost' || normalized.endsWith('.localhost')
 }
 
 /** This machine: a loopback literal in any spelling `classifyAddress` accepts, or a `localhost` name, which Chromium resolves to loopback itself and never puts on the wire. */

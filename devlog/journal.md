@@ -25,6 +25,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Direction set: this is Orivon Browser, not an MVP. Electron base, TypeScript, features land one at a time as needs arise.
 - Apps can show a website inside their own page: `<webview>` under a `web.embed` grant, with the app's script running first in every shown page.
 - A manifest can ask for cross-origin isolation, so a WebAssembly component built with threads gets `SharedArrayBuffer`.
+- Review of three merged PRs found five HIGH regressions; all fixed, with `.eth` gateways, favicons and the chrome lock hardened.
 
 - Settings page at orivon://settings: a section per implemented feature, searchable, live-applied, remappable shortcuts, per-site zoom, local history, F12 on any tab.
 - Tabs reorder, tear off and move between windows; two tabs split side by side or stacked, with a divider and edge-drag to make one.

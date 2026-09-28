@@ -15,6 +15,7 @@ import { createSiteInfoController } from '../permissions/site-info-controller.js
 import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { localDdocFor } from '../dev/local-ddoc.js'
 import { rendererEntryUrl } from './renderer-entry.js'
+import { lockNavigation } from './lock-navigation.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from '../ipc/ipc.js'
@@ -62,23 +63,31 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate)
   const { win } = frame
 
+  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
+  // The chrome's own resolved URL -- computed before construction so both
+  // the preload's expected-URL argument and the load target name the exact
+  // same string, the pattern `--orivon-newtab-url` already establishes
+  // below for the dashboard.
+  const chromeUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/', '../renderer/index.html')
+
   const chrome = new WebContentsView({
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/shell.js'),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      webSecurity: true
+      webSecurity: true,
+      additionalArguments: [`--orivon-shell-url=${chromeUrl}`]
     }
   })
   win.contentView.addChildView(chrome)
-
-  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
-  if (devServerUrl !== undefined) {
-    void chrome.webContents.loadURL(devServerUrl)
-  } else {
-    void chrome.webContents.loadFile(join(import.meta.dirname, '../renderer/index.html'))
-  }
+  // The chrome preload is unconditionally privileged (src/preload/shell.ts
+  // gates on this same URL, ipc.ts's isFromChrome checks it a second time
+  // on every call) -- a view holding it must never end up attached to a
+  // document other than this one. No further navigation happens from here,
+  // so `chromeUrl` is also the one destination the lock still lets through.
+  lockNavigation(chrome.webContents, chromeUrl)
+  void chrome.webContents.loadURL(chromeUrl)
 
   // A genuinely fresh tab loads this (tabs.ts's createTab()). electron-vite's
   // dev server serves every renderer entry off the SAME origin at a nested
@@ -309,6 +318,12 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // registers onState before that), so this re-sync is guaranteed to
   // land, not timing-dependent.
   chrome.webContents.on('did-finish-load', pushState)
+  // The preload's gate and isFromChrome compare `chromeUrl` exactly; a
+  // mismatch would leave the chrome dead with no other sign.
+  chrome.webContents.on('did-finish-load', () => {
+    const loaded = chrome.webContents.getURL()
+    if (loaded !== chromeUrl) console.error(`[window] the chrome loaded ${loaded}, not ${chromeUrl}; its commands will be refused`)
+  })
   // The address bar's Cut/Copy/Paste: the same menu a tab gets.
   chrome.webContents.on('context-menu', (_event, params) => {
     showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, ...(devModeEnabled() ? { inspect: (x: number, y: number) => { chrome.webContents.inspectElement(x, y) } } : {}) })
@@ -341,7 +356,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const entry: ShellWindow = { window: win, chrome, tabs, shortcutsSuspended: () => fullscreen.tabId !== null }
   const menuPanel = createMenuPanel(win, win.contentView, services.shortcuts, (id) => { services.commands.run(id, entry) }, import.meta.dirname)
 
-  registerShellIpc(chrome.webContents, tabs, bookmarks, siteInfo, shellActions({
+  registerShellIpc(chrome.webContents, chromeUrl, tabs, bookmarks, siteInfo, shellActions({
     entry,
     services,
     panels: { permissions: permissionsPanel, siteInfo: siteInfoPanel, menu: menuPanel },

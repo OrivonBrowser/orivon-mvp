@@ -5,6 +5,7 @@
 // uses them. README.md's Design notes cover the four wrappers it needs.
 
 import { ResolutionError } from '../../resolution/records.js'
+import { withTimeout } from '../../resolution/timing.js'
 import type { WebFetch } from '../egress.js'
 import { heliosError } from './helios-errors.js'
 import { failoverRpc } from './rpc-failover.js'
@@ -23,19 +24,15 @@ const REFRESH_MS = 60_000
  * grace window below rather than waiting out the ordinary cadence. */
 export const REFRESH_RETRY_MS = 5_000
 /** A failed head read this soon after the last SUCCESSFUL one leaves the
- * client `synced` -- one bad RPC call must not fail every `.eth` mount for
- * up to a minute (the old REFRESH_MS-interval behaviour) when the head this
- * process already proved is still fresh enough to keep answering with. */
+ * client `synced` -- one bad RPC call must not fail every `.eth` mount until
+ * the next refresh when the head this process already proved is still
+ * fresh enough to keep answering with. */
 const HEAD_GRACE_MS = 2 * 60_000
 
 interface Helios {
   request: (args: { method: string, params?: unknown }) => Promise<unknown>
   waitSynced: () => Promise<void>
   destroy: () => Promise<void>
-}
-
-function withTimeout<T> (promise: Promise<T>, ms: number, what: string): Promise<T> {
-  return Promise.race([promise, new Promise<never>((_resolve, reject) => setTimeout(() => { reject(new Error(`${what} took longer than ${String(ms / 1000)} s`)) }, ms))])
 }
 
 function message (error: unknown): string {
@@ -113,6 +110,9 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     lastHeadReadAt = Date.now()
     consecutiveFailures = 0
     setState({ state: 'synced', block: Number(BigInt(head.number)), at: Number(BigInt(head.timestamp)) * 1000 })
+    // Wakes a request waiting in `provider.request` the moment a refresh
+    // recovers from a downgrade, instead of after its full SYNC_WAIT_MS.
+    markSynced()
   }
 
   /** Never changes state, on success or failure -- a checkpoint is a bonus
@@ -180,7 +180,6 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       helios = client
       await withTimeout(client.waitSynced(), SYNC_TIMEOUT_MS, 'syncing')
       await refreshHead(client)
-      markSynced()
       scheduleRefresh(client, REFRESH_MS)
     } catch (error) {
       const failed = helios
@@ -199,7 +198,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     provider: {
       request: async (args) => {
         // A failed client retries on its own schedule, so waiting here would only delay the answer.
-        if (state.state === 'starting' || state.state === 'syncing') await Promise.race([synced, new Promise((resolve) => setTimeout(resolve, SYNC_WAIT_MS))])
+        if (state.state === 'starting' || state.state === 'syncing') await withTimeout(synced, SYNC_WAIT_MS, 'syncing').catch(() => {})
         const client = helios
         const now = state
         if (client === undefined || now.state !== 'synced') throw new ResolutionError('not-synced', notSyncedReason(now))

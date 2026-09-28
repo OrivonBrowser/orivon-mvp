@@ -20,7 +20,8 @@ const { COMMAND_CHANNEL } = await import('../../channels.js')
 
 // The handler is registered on the chrome view's own webContents, so the fake
 // is that webContents' `ipc`.
-const CHROME_FRAME = {}
+const CHROME_URL = 'https://chrome.orivon.example/index.html'
+const CHROME_FRAME = { url: CHROME_URL }
 const chromeWebContents = {
   mainFrame: CHROME_FRAME,
   ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } }
@@ -54,7 +55,7 @@ function dispatch (command: unknown, senderFrame: unknown = CHROME_FRAME): unkno
 describe('registerShellIpc -- siteSummaryFor', () => {
   it('forwards the tab URL to siteInfo.siteSummaryFor()', async () => {
     const siteInfo = fakeSiteInfo({ siteSummaryFor: vi.fn(async () => ({ asked: true, warning: false })) })
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
 
     const result = await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' })
 
@@ -64,18 +65,37 @@ describe('registerShellIpc -- siteSummaryFor', () => {
 
   it('refuses siteSummaryFor from a frame that is not the chrome view\'s own', async () => {
     const siteInfo = fakeSiteInfo()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
 
     await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' }, OTHER_FRAME)
 
     expect(siteInfo.siteSummaryFor).not.toHaveBeenCalled()
+  })
+
+  // The SAME frame object `chromeWebContents.mainFrame` already is -- object
+  // identity alone would pass this -- but with `.url` mutated to something
+  // else, the state the chrome view would be in if `lockNavigation`
+  // (main/shell/lock-navigation.ts) ever let a navigation through. Checks
+  // that the URL comparison is a second, independent layer, not a
+  // restatement of the identity check.
+  it('refuses siteSummaryFor when the chrome frame itself has navigated to a different URL', async () => {
+    const siteInfo = fakeSiteInfo()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
+
+    CHROME_FRAME.url = 'https://evil.example/'
+    try {
+      await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' })
+      expect(siteInfo.siteSummaryFor).not.toHaveBeenCalled()
+    } finally {
+      CHROME_FRAME.url = CHROME_URL
+    }
   })
 })
 
 describe('registerShellIpc -- openMenu', () => {
   it('toggles the main menu at the anchor the chrome measured, and only for the chrome view', async () => {
     const openMenu = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openMenu }))
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openMenu }))
     const anchor = { x: 1, y: 2, width: 3, height: 4 }
 
     await dispatch({ type: 'openMenu', anchor }, OTHER_FRAME)
@@ -89,7 +109,7 @@ describe('registerShellIpc -- openMenu', () => {
 describe('registerShellIpc -- openPermissions', () => {
   it('toggles the all-sites popup, passing the tune icon\'s anchor and the tab url when given', async () => {
     const openPermissions = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openPermissions }))
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openPermissions }))
 
     // The anchor is the chrome view's measurement of its own tune icon --
     // main has no way to derive it, so it always rides the command.
@@ -103,7 +123,7 @@ describe('registerShellIpc -- openPermissions', () => {
 
   it('refuses openPermissions from a frame that is not the chrome view\'s own', async () => {
     const openPermissions = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openPermissions }))
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openPermissions }))
 
     await dispatch({ type: 'openPermissions', anchor: { x: 900, y: 44, width: 32, height: 32 } }, OTHER_FRAME)
 
@@ -114,7 +134,7 @@ describe('registerShellIpc -- openPermissions', () => {
 describe('registerShellIpc -- openSiteInfo', () => {
   it('toggles the site-info popup, passing the icon\'s anchor, the requested page and the tab url when given', async () => {
     const openSiteInfo = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openSiteInfo }))
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openSiteInfo }))
 
     const anchor = { x: 40, y: 44, width: 28, height: 28 }
     await dispatch({ type: 'openSiteInfo', anchor, page: 'web3' })
@@ -126,7 +146,7 @@ describe('registerShellIpc -- openSiteInfo', () => {
 
   it('refuses openSiteInfo from a frame that is not the chrome view\'s own', async () => {
     const openSiteInfo = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openSiteInfo }))
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openSiteInfo }))
 
     await dispatch({ type: 'openSiteInfo', anchor: { x: 40, y: 44, width: 28, height: 28 }, page: 'main' }, OTHER_FRAME)
 
@@ -140,7 +160,7 @@ describe('registerShellIpc -- starring a page keeps its icon', () => {
   it('stores the icon MAIN already captured for that tab, not one sent by the renderer', () => {
     const add = vi.fn()
     const tabs = { faviconFor: vi.fn(() => ICON) } as unknown as TabManager
-    registerShellIpc(chromeWebContents, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), actions())
+    registerShellIpc(chromeWebContents, CHROME_URL, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), actions())
 
     void dispatch({ type: 'addBookmark', url: 'https://a.example/', title: 'A', tabId: 'tab-7' })
 
@@ -151,7 +171,7 @@ describe('registerShellIpc -- starring a page keeps its icon', () => {
   it('saves the bookmark with no icon when that tab has not got one yet', () => {
     const add = vi.fn()
     const tabs = { faviconFor: vi.fn(() => null) } as unknown as TabManager
-    registerShellIpc(chromeWebContents, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), actions())
+    registerShellIpc(chromeWebContents, CHROME_URL, tabs, { add } as unknown as BookmarkStore, fakeSiteInfo(), actions())
 
     void dispatch({ type: 'addBookmark', url: 'https://a.example/', title: 'A', tabId: 'tab-7' })
 
@@ -169,7 +189,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
         levelOverride: 4, displayedLevel: 4, deliveryOverride: undefined, displayedDelivery: 1
       } as never))
     })
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
 
     const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
@@ -178,7 +198,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
   })
 
   it('is null when siteTrustFor has nothing to report', async () => {
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions())
 
     const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
@@ -187,7 +207,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
 
   it('refuses web3ScoreFor from a frame that is not the chrome view\'s own', async () => {
     const siteInfo = fakeSiteInfo()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
 
     await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' }, OTHER_FRAME)
 
@@ -198,7 +218,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
 describe('registerShellIpc -- runCommand', () => {
   it('runs a command the shell has, and only for the chrome view', async () => {
     const runCommand = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ runCommand }))
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ runCommand }))
 
     await dispatch({ type: 'runCommand', id: 'window.new' }, OTHER_FRAME)
     expect(runCommand).not.toHaveBeenCalled()
@@ -209,7 +229,7 @@ describe('registerShellIpc -- runCommand', () => {
 
   it('ignores a command that does not exist', async () => {
     const runCommand = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ runCommand }))
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ runCommand }))
 
     await dispatch({ type: 'runCommand', id: 'nope' })
     await dispatch({ type: 'runCommand', id: 7 })
@@ -221,7 +241,7 @@ describe('registerShellIpc -- runCommand', () => {
 describe('registerShellIpc -- moving tabs', () => {
   it('moves a tab in the strip, and refuses what is not an id and a number', async () => {
     const moveTab = vi.fn()
-    registerShellIpc(chromeWebContents, { moveTab } as unknown as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions())
+    registerShellIpc(chromeWebContents, CHROME_URL, { moveTab } as unknown as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions())
 
     await dispatch({ type: 'moveTab', id: 'tab-1', index: 2 })
     await dispatch({ type: 'moveTab', id: 7, index: 2 })
@@ -234,7 +254,7 @@ describe('registerShellIpc -- moving tabs', () => {
   it('passes on a tab let go outside the strip, and the tab menu request', async () => {
     const dropTab = vi.fn()
     const showTabMenu = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ dropTab, showTabMenu }))
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ dropTab, showTabMenu }))
 
     await dispatch({ type: 'dropTab', id: 'tab-1', x: 100, y: 200, clientX: 10, clientY: 20 })
     await dispatch({ type: 'dropTab', id: 'tab-1', x: 'left', y: 200, clientX: 10, clientY: 20 })
@@ -252,7 +272,7 @@ describe('registerShellIpc -- moving tabs', () => {
 describe('registerShellIpc -- dragging a tab over the page', () => {
   it('reports where it is, and that it is back in the strip when there is no place', async () => {
     const dragTab = vi.fn()
-    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ dragTab }))
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ dragTab }))
 
     await dispatch({ type: 'dragTab', id: 'tab-1', x: 300, y: 400 })
     await dispatch({ type: 'dragTab', id: 'tab-1' })

@@ -30,8 +30,10 @@ their history. The one status a page must still carry is *provisional*: a
 recommendation presented as a decision is how a project ends up defending a choice nobody
 actually made.
 
-**3. Surface contradictions; do not smooth them over.** Append to
-[`docs/open-questions.md`](docs/open-questions.md). When a page turns out to be wrong, rewrite
+**3. Surface contradictions; do not smooth them over.** File them in
+[`docs/open-questions.md`](docs/open-questions.md), in the shape its header gives; a resolved
+entry becomes one row in
+[`docs/decisions/resolved-questions.md`](docs/decisions/resolved-questions.md). When a page turns out to be wrong, rewrite
 it to be right rather than leaving a correction under the wrong text, and record the change in
 the decision log. The page states what is true now; the log remembers that it changed.
 

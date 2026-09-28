@@ -39,9 +39,15 @@ function oid (dotted: string): Buffer {
   return der(OID, Buffer.from(bytes))
 }
 
-/** A positive INTEGER: a leading 0x00 keeps a high first bit from reading as negative. */
-function positiveInteger (value: Buffer): Buffer {
-  return der(INTEGER, value[0] !== undefined && value[0] >= 0x80 ? Buffer.concat([Buffer.from([0]), value]) : value)
+/** A positive INTEGER in its one minimal DER encoding: leading zero bytes
+ * stripped (one kept), then a single 0x00 put back only where a high first
+ * bit would read as negative. OpenSSL and Chromium refuse any other padding,
+ * and a random serial starts with a zero byte once in 256. */
+export function positiveInteger (value: Buffer): Buffer {
+  let start = 0
+  while (start < value.length - 1 && value[start] === 0) start++
+  const minimal = value.subarray(start)
+  return der(INTEGER, minimal[0] !== undefined && minimal[0] >= 0x80 ? Buffer.concat([Buffer.from([0]), minimal]) : minimal)
 }
 
 /** UTCTime through 2049, GeneralizedTime after, as RFC 5280 requires. */

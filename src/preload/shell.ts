@@ -7,13 +7,71 @@ import type { Web3Score } from '../main/browsing/site-trust.js'
 import type { PanelAnchor } from '../main/permissions/permissions-panel.js'
 import type { SiteInfoPage } from '../main/permissions/site-info-panel.js'
 
-// Loaded ONLY by the chrome view (src/main/window.ts) -- the tab strip and
-// toolbar UI. Privileged: this is the one preload that may issue tab
+// Loaded ONLY by the chrome view (src/main/shell/window.ts) -- the tab strip
+// and toolbar UI. Privileged: this is the one preload that may issue tab
 // commands. Never load this in a tab that shows arbitrary web content.
 //
 // Closures only, matching preload/app.ts's rule -- no raw ipcRenderer
 // handle crosses the bridge, so the chrome page can never listen on a
 // channel this file didn't intend it to.
+//
+// EXPOSURE IS GATED ON `location.href`, the same shape preload/newtab.ts's
+// own gate uses and for the same reason: `lockNavigation` (main/shell/
+// lock-navigation.ts) refuses the chrome view ever navigating away, but a
+// preload is only as safe as the document it is attached to, and this is
+// the second, independent check that never trusts the main-side lock
+// alone. `--orivon-shell-url=` is passed at `WebContentsView` construction
+// (window.ts's own `additionalArguments`), the exact string `chromeUrl`
+// there, so this compares against the real load target rather than a
+// hardcoded guess that dev/build would diverge from.
+const ARG_PREFIX = '--orivon-shell-url='
+const expectedUrl = process.argv.find((arg) => arg.startsWith(ARG_PREFIX))?.slice(ARG_PREFIX.length)
+
+/** What the chrome view gets as `window.orivonShell`. `src/renderer/main.ts`
+ * imports this type, so a command dropped here fails the typecheck there. */
+export interface OrivonShell {
+  newTab: (url?: string) => void
+  newWindow: () => void
+  /** Runs one of main's commands on this window, by id. */
+  runCommand: (id: string) => void
+  /** One of the shell's own pages, e.g. `'settings'`, optionally at a place inside it. */
+  openInternal: (page: string, path?: string) => void
+  closeTab: (id: string) => void
+  activateTab: (id: string) => void
+  navigate: (id: string, input: string) => void
+  back: (id: string) => void
+  forward: (id: string) => void
+  reload: (id: string) => void
+  /** `tabId` lets main read that tab's own captured favicon and keep it with
+   * the bookmark -- the chrome view never sends the icon itself. */
+  addBookmark: (url: string, title: string, tabId: string) => void
+  removeBookmark: (url: string) => void
+  openBookmark: (url: string) => void
+  /** Whether the site has asked for anything at all, and whether any
+   * asked-for row carries a warning. `false`/`false` for an ordinary website. */
+  siteSummaryFor: (url: string) => Promise<SiteSummary>
+  /** The Web3 Score shield's data, `null` when there is nothing to show. */
+  web3ScoreFor: (url: string) => Promise<Web3Score | null>
+  /** Opens (or closes) the all-sites popup. `url`, when given, is the tab
+   * whose card to scroll to. */
+  openPermissions: (anchor: PanelAnchor, url?: string) => void
+  /** Opens (or closes) the site-info popup; `page` says which icon was clicked. */
+  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
+  /** Opens (or closes) the main menu under the button that opens it. */
+  openMenu: (anchor: PanelAnchor) => void
+  /** Puts a tab at a place in the strip. */
+  moveTab: (id: string, index: number) => void
+  /** A tab is being dragged: where over the page it is, or nothing while it is over the strip. */
+  dragTab: (id: string, x?: number, y?: number) => void
+  /** A tab was let go outside the strip: where on the screen, and where in this window. */
+  dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => void
+  /** Asks main for the right-click menu of a tab. */
+  showTabMenu: (id: string) => void
+  onState: (listener: (state: ShellState) => void) => () => void
+  /** Commands main asks the chrome to carry out itself. */
+  onCommand: (listener: (command: { type: 'focusAddress' }) => void) => () => void
+  platform: string
+}
 
 function send (command: ShellCommand): void {
   void ipcRenderer.invoke(COMMAND_CHANNEL, command)
@@ -26,7 +84,9 @@ async function request<T> (command: ShellCommand): Promise<T> {
   return await ipcRenderer.invoke(COMMAND_CHANNEL, command) as T
 }
 
-contextBridge.exposeInMainWorld('orivonShell', {
+// Defining these closures grants nothing; exposing them is the privileged
+// step, and only that is gated below.
+const api: OrivonShell = {
   newTab: (url?: string) => { send(url === undefined ? { type: 'newTab' } : { type: 'newTab', url }) },
   newWindow: () => { send({ type: 'runCommand', id: 'window.new' }) },
   runCommand: (id: string) => { send({ type: 'runCommand', id }) },
@@ -96,4 +156,12 @@ contextBridge.exposeInMainWorld('orivonShell', {
    * both report empty/false for this shell's BaseWindow + WebContentsView
    * composition -- confirmed empirically, open-questions.md A34. */
   platform: process.platform
-})
+}
+
+if (expectedUrl !== undefined && location.href === expectedUrl) {
+  contextBridge.exposeInMainWorld('orivonShell', api)
+} else {
+  // Neither string is a secret in the chrome's own process, and a chrome
+  // that silently lost its bridge would otherwise show nothing at all.
+  console.error(`[shell preload] orivonShell not exposed: location.href ${location.href} is not --orivon-shell-url ${String(expectedUrl)}`)
+}

@@ -1,49 +1,28 @@
-# `src/` — the browser itself
+# `src/`: the browser itself
 
-Everything the Orivon shell is made of. Each subdirectory is one **stream**: a unit of work
-one person (or one agent session) owns end to end. See
-[`docs/development/parallel-work.md`](../docs/development/parallel-work.md) for who owns what.
+Everything the Orivon shell is made of. Each subdirectory is one **stream**, a unit of work one
+person or agent session owns end to end
+([`parallel-work.md`](../docs/development/parallel-work.md) §The ownership map). How a call
+travels through them, and which are tied to Electron: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
-## The data flow
-
-```
-app page (renderer, sandboxed)
-     |  orivon.*                  <- the durable interface: src/contracts/
-     v
-preload (isolated world)          <- contextBridge closures only. The raw
-     |  IPC + MessageChannelMain     MessagePortMain never crosses into the
-     v                               main world (security-model.md T17)
-broker (main process)             <- authorisation: manifest, grants,
-     |                               per-origin enforcement
-     v
-OS (sockets, filesystem, keychain)
-```
-
-## The subdirectories
-
-| Directory | What it is | Build step | State |
-|---|---|---|---|
-| [`contracts/`](contracts/) | The `orivon.*` interface, types only. **The durable asset** | — | done |
-| [`main/`](main/) | Electron main process: window, tabs, omnibox, IPC, subsystem registry | 1 | done |
-| [`preload/`](preload/) | Five preload entry points at five privilege levels | 1, 2 | in progress |
-| [`renderer/`](renderer/) | The browser chrome UI (tab strip, toolbar, address bar) | 1 | done |
-| [`broker/`](broker/) | Manifest parsing, grants, per-origin enforcement. **This is the product** | 2 | done |
-| [`shim/`](shim/) | `net`, `dgram`, `fs` over `orivon.*`, so Node code runs in a renderer | 3 | done |
-| [`shim-electron/`](shim-electron/) | `electron` itself, reconstructed or refused on top of `orivon.*`, for a tier-2 app | 3 | in progress |
-| [`loader/`](loader/) | Manifest discovery, fetch, cache, hash-pinning, DDOC | 4 | done |
-| [`protocols/`](protocols/) | The protocol registry: one function every protocol registers through, and the address rule that shows `ipfs://<cid>` and serves `https://<cid>.ipfs.orivon` | 6 | in progress |
-| [`protocols/resolution/`](protocols/resolution/) | The `NameResolver`/`DataGatherer` provider interfaces a `.eth` name is proven and loaded through | 6 | in progress |
-| [`protocols/ens/`](protocols/ens/) | Proving a `.eth` name's contenthash through ENS, over any EIP-1193 provider | 6 | in progress |
-| [`protocols/ipfs/`](protocols/ipfs/) | Loading IPFS content from trustless gateways, every block hashed against its CID | 6 | in progress |
-| [`protocols/verifier-host/`](protocols/verifier-host/) | The Electron utility process that runs the light client and serves `.eth` names on loopback | 6 | in progress |
-| [`trust/`](trust/) | The trust indicator, from observed behaviour | 7 | in progress |
-| [`nostr/`](nostr/) | `window.nostr` (NIP-07) backed by `orivon.id` | — | parked: an idea, not a build step |
-| [`telemetry/`](telemetry/) | Collection, first-run disclosure, "what has been sent" | 8 | in progress |
-| [`shared/`](shared/) | Helpers needed on both sides of a trust boundary | — | empty by design |
+| Directory | What it is | Build step |
+|---|---|---|
+| [`contracts/`](contracts/) | The `orivon.*` interface, types only. **The durable asset** | none |
+| [`main/`](main/) | Electron main process: window, tabs, omnibox, IPC, subsystem registry | 1 |
+| [`preload/`](preload/) | Five preload entry points at five privilege levels | 1, 2 |
+| [`renderer/`](renderer/) | The browser chrome UI (tab strip, toolbar, address bar) | 1 |
+| [`broker/`](broker/) | Manifest parsing, grants, per-origin enforcement. **This is the product** | 2 |
+| [`shim/`](shim/) | `net`, `dgram`, `fs` over `orivon.*`, so Node code runs in a renderer | 3 |
+| [`shim-electron/`](shim-electron/) | `electron` itself, reconstructed or refused on top of `orivon.*`, for a tier-2 app | 3 |
+| [`loader/`](loader/) | Manifest discovery, fetch, cache, hash-pinning, DDOC | 4 |
+| [`protocols/`](protocols/) | Finding and loading a site besides DNS and HTTP: ENS, IPFS, and the verifier host that serves them | 6 |
+| [`trust/`](trust/) | The trust indicator, from observed behaviour | 7 |
+| [`nostr/`](nostr/) | `window.nostr` (NIP-07) backed by `orivon.id` | none: parked |
+| [`telemetry/`](telemetry/) | Collection, first-run disclosure, "what has been sent" | 8 |
+| [`shared/`](shared/) | Helpers needed on both sides of a trust boundary | none |
 
 ## The one rule that matters
 
-`contracts/` is what everything else agrees on, and it **references nothing outside itself**.
-Every other directory may depend on it; it depends on none of them. That is what lets the
-engine underneath change -- Node broker now, Wasmtime later, Chromium/Mojo after that --
-without any app noticing ([`ADR-0002`](../docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
+`contracts/` references nothing outside itself, and every other directory may depend on it
+([`ADR-0002`](../docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md);
+`npm run check:contracts` enforces it).

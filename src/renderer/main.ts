@@ -1,70 +1,21 @@
 import type { Bookmark } from '../main/browsing/bookmarks.js'
 import type { SiteSummary } from '../main/permissions/site-info-controller.js'
-import type { SiteInfoPage } from '../main/permissions/site-info-panel.js'
 import type { Web3Score } from '../main/browsing/site-trust.js'
 import type { ShellState, TabState } from '../main/shell/tabs.js'
+import type { OrivonShell } from '../preload/shell.js'
 import { createBookmarksView } from './bookmarks-view.js'
 import { closeIcon, faviconElement } from './icons.js'
 import { isDraggingTab, makeTabDraggable } from './tab-drag.js'
 import { paintMark, paintShield, shieldLabel, web3Shield } from './web3-shield.js'
 
 // The chrome view's whole job: render ShellState, turn clicks/typing into
-// orivonShell.* commands. Main holds truth (src/main/tabs.ts,
-// src/main/bookmarks.ts) -- this file never guesses at state between
-// pushes.
+// orivonShell.* commands. Main holds truth (src/main/shell/tabs.ts,
+// src/main/browsing/bookmarks.ts) -- this file never guesses at state
+// between pushes. It never changes its own URL, not even the fragment:
+// main refuses every command from a sender at any other URL (ipc.ts's
+// isFromChrome), so a hash change or pushState would silence the chrome.
 
 type PopoverAnchor = { x: number, y: number, width: number, height: number }
-
-interface OrivonShell {
-  newTab: (url?: string) => void
-  newWindow: () => void
-  /** Runs one of main's commands on this window, by id. */
-  runCommand: (id: string) => void
-  /** One of the shell's own pages, e.g. `'settings'`, optionally at a place inside it. */
-  openInternal: (page: string, path?: string) => void
-  closeTab: (id: string) => void
-  activateTab: (id: string) => void
-  navigate: (id: string, input: string) => void
-  back: (id: string) => void
-  forward: (id: string) => void
-  reload: (id: string) => void
-  /** `tabId` lets main read that tab's own captured favicon and keep it with
-   * the bookmark -- this view never sends the icon itself. */
-  addBookmark: (url: string, title: string, tabId: string) => void
-  removeBookmark: (url: string) => void
-  openBookmark: (url: string) => void
-  /** The toolbar key's own at-a-glance state -- whether the site has asked
-   * for anything at all, and whether any asked-for row carries a warning.
-   * `false`/`false` for an ordinary website. */
-  siteSummaryFor: (url: string) => Promise<SiteSummary>
-  /** The active tab's displayed Website level and Delivery level -- the
-   * Web3 Score shield's own data, `null` when there is nothing to show. */
-  web3ScoreFor: (url: string) => Promise<Web3Score | null>
-  /** Opens (or closes) the all-sites popup under the cluster's tune icon.
-   * `anchor` is that icon's own rect -- main cannot know where the toolbar
-   * put it. `url`, when given, is the tab whose card to scroll to. */
-  openPermissions: (anchor: PopoverAnchor, url?: string) => void
-  /** Opens (or closes) the site-info popup under the shield or the key --
-   * same anchor contract as openPermissions. `page` says which icon was
-   * clicked. */
-  openSiteInfo: (anchor: PopoverAnchor, page: SiteInfoPage, url?: string) => void
-  /** Opens (or closes) the main menu under the toolbar's menu button; same anchor contract as openPermissions. */
-  openMenu: (anchor: PopoverAnchor) => void
-  /** Puts a tab at a place in the strip. */
-  moveTab: (id: string, index: number) => void
-  /** A tab is being dragged below the strip, over this point of the window; no point: it is back in the strip. */
-  dragTab: (id: string, x?: number, y?: number) => void
-  /** A tab was let go outside the strip: where on the screen, and where in this window. */
-  dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => void
-  /** Asks main for the right-click menu of a tab. */
-  showTabMenu: (id: string) => void
-  onState: (listener: (state: ShellState) => void) => () => void
-  /** Commands main asks the chrome to carry out itself. */
-  onCommand: (listener: (command: { type: 'focusAddress' }) => void) => () => void
-  /** Read-only -- see preload/shell.ts for why this exists instead of
-   * env(titlebar-area-*) or navigator.windowControlsOverlay. */
-  platform: string
-}
 
 declare global {
   interface Window {
@@ -83,7 +34,7 @@ function must<T> (value: T | null | undefined, message: string): T {
   return value
 }
 
-const shell = must(window.orivonShell, 'orivonShell not exposed -- preload did not run')
+const shell = must(window.orivonShell, 'orivonShell not exposed -- the preload did not run, or location.href did not match --orivon-shell-url')
 
 // See ../style.css's [data-platform] rules -- reserves room for
 // Electron's native window buttons before the first paint, rather than

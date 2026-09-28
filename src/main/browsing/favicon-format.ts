@@ -1,9 +1,14 @@
 // What bytes an icon actually is, decided by sniffing rather than trusting a
-// server's `content-type` header (favicon.ts's own header explains why: an
-// `.ico` served as `application/octet-stream`, or SVG served with any label
-// at all, is common and today refused only because the header didn't say
-// the right thing). Pure -- no Electron import, so `favicon.ts` stays
-// importable under plain vitest the same way its own header requires.
+// label: a server's `content-type` (an `.ico` served as
+// `application/octet-stream`, or SVG under any label at all, is common), a
+// page's own `data:` URL, or a label stored in bookmarks.json. Pure -- no
+// Electron import, so favicon.ts and bookmarks.ts stay importable under
+// plain vitest.
+
+/** Generous enough for an SVG that embeds a raster image inline -- a real
+ * shape (web3compass.net's own icons run 57 KiB doing exactly this), and
+ * several times what any bitmap favicon format needs. */
+export const MAX_FAVICON_BYTES = 128 * 1024
 
 /** Every format this module will recognise, spelled the way `toDataUrl`
  * emits them -- `.ico`/`.cur` both become `image/x-icon`, the same spelling
@@ -60,9 +65,9 @@ function isAvif (bytes: Uint8Array): boolean {
  * ASCII-safe UTF-8 for this much of the file. */
 export function looksLikeSvg (text: string): boolean {
   let rest = text
-  if (rest.charCodeAt(0) === 0xfeff) rest = rest.slice(1) // UTF-8 BOM, decoded
   for (;;) {
-    const trimmed = rest.replace(/^[\s﻿]+/, '')
+    // trimStart drops a decoded byte-order mark (U+FEFF) along with whitespace.
+    const trimmed = rest.trimStart()
     if (trimmed.startsWith('<?xml')) {
       const end = trimmed.indexOf('?>')
       if (end === -1) return false
@@ -76,21 +81,39 @@ export function looksLikeSvg (text: string): boolean {
       continue
     }
     if (/^<!doctype/i.test(trimmed)) {
-      const end = trimmed.indexOf('>')
+      const end = doctypeEnd(trimmed)
       if (end === -1) return false
-      const subset = trimmed.indexOf('[')
-      // A DOCTYPE's internal subset (`<!DOCTYPE svg [ <!ENTITY ... > ]>`) is
-      // where a "billion laughs" entity bomb is declared -- nested entity
-      // references that expand to gigabytes during parsing, script or no
-      // script. A real favicon's DOCTYPE never needs one (a bare PUBLIC/
-      // SYSTEM reference, as every generator observed here emits, has none),
-      // so its mere presence is refused rather than parsed any further.
-      if (subset !== -1 && subset < end) return false
       rest = trimmed.slice(end + 1)
       continue
     }
     return /^<svg[\s>/]/i.test(trimmed)
   }
+}
+
+/** The index of the `>` closing the DOCTYPE `text` starts with, or -1 if it
+ * never closes or carries an internal subset. The subset
+ * (`<!DOCTYPE svg [ <!ENTITY ... > ]>`) is where a "billion laughs" entity
+ * bomb is declared -- nested references that expand to gigabytes during
+ * parsing, script or no script -- and a real favicon's DOCTYPE never needs
+ * one, so its presence alone is refused. Quoted literals are skipped: a
+ * SYSTEM literal may hold any character but its own quote, `>` and `[`
+ * included, so neither the first `>` nor the first `[` in the text can be
+ * trusted to be the DOCTYPE's own. */
+function doctypeEnd (text: string): number {
+  let quote: string | undefined
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (quote !== undefined) {
+      if (char === quote) quote = undefined
+    } else if (char === '"' || char === '\'') {
+      quote = char
+    } else if (char === '[') {
+      return -1
+    } else if (char === '>') {
+      return i
+    }
+  }
+  return -1
 }
 
 /** How much of a candidate is even looked at for the SVG text check --
@@ -99,9 +122,8 @@ export function looksLikeSvg (text: string): boolean {
  * decoding the whole thing as text. */
 const SVG_SNIFF_WINDOW = 4 * 1024
 
-/** `null` for anything not recognised -- treated the same as a fetch
- * failure by every caller, same as an unrecognised `content-type` was
- * before this file existed. */
+/** `null` for anything not recognised -- every caller treats that the same
+ * as a fetch failure. */
 export function sniffImageType (bytes: Uint8Array): SniffedImageType | null {
   if (startsWith(bytes, PNG)) return 'image/png'
   if (startsWith(bytes, JPEG)) return 'image/jpeg'
@@ -114,42 +136,58 @@ export function sniffImageType (bytes: Uint8Array): SniffedImageType | null {
   return null
 }
 
+/** `bytes` as a base64 `data:` URL labelled by sniffImageType, or `null` for
+ * anything it does not recognise. The only way this codebase builds an
+ * icon's `data:` URL, so a label always matches the bytes it names. */
+export function toDataUrl (bytes: Uint8Array): string | null {
+  const type = sniffImageType(bytes)
+  if (type === null) return null
+  return `data:${type};base64,${Buffer.from(bytes).toString('base64')}`
+}
+
 /** A `data:` URL's payload, decoded and capped -- `null` for anything past
  * `cap` bytes or unparseable. The declared media type is not checked here:
  * the caller sniffs the decoded bytes the same way a fetched candidate's
- * bytes are sniffed, rather than trusting a label a page wrote itself.
- * Percent-encoded data (rare for an image, but valid per the URL spec) is
- * decoded as UTF-8 text; a malformed escape makes this `null` rather than
- * throw, matching every other function here that reports failure by
- * returning `null`. */
+ * bytes are sniffed, rather than trusting a label a page wrote itself. The
+ * payload is percent-decoded first, base64 or not, as the fetch spec's
+ * `data:` URL processor does; a malformed escape makes this `null`. */
 export function decodeDataUrl (url: string, cap: number): Uint8Array | null {
   const match = /^data:([^,]*),(.*)$/is.exec(url)
   if (match === null) return null
   const [, meta = '', payload = ''] = match
   const isBase64 = meta.split(';').some((part) => part.trim().toLowerCase() === 'base64')
-  if (isBase64) {
-    if (payload.length > cap * 4 / 3 + 4) return null // reject before the (potentially huge) decode
-    let bytes: Buffer
-    try {
-      bytes = Buffer.from(payload, 'base64')
-    } catch {
-      return null
+  // Refused by length before any decoding: base64 takes 4 characters per 3
+  // bytes, and a %XX escape 3 characters per byte, so a longer payload
+  // cannot decode to `cap` bytes or fewer.
+  const base64Longest = cap * 4 / 3 + 4
+  if (payload.length > (isBase64 ? base64Longest : cap) * 3) return null
+  const body = percentDecode(payload)
+  if (body === null) return null
+  if (!isBase64) return body.length > cap ? null : body
+  if (body.length > base64Longest) return null
+  // Node's base64 decoder skips characters outside the alphabet rather than
+  // throwing; whatever that leaves fails sniffImageType instead.
+  const bytes = Buffer.from(Buffer.from(body).toString('latin1'), 'base64')
+  return bytes.length > cap ? null : new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+}
+
+/** `text`'s UTF-8 bytes with each `%XX` escape replaced by the byte it names,
+ * or `null` for a malformed escape. Bytes, not a string: a percent-encoded
+ * binary icon is not valid UTF-8, which decodeURIComponent refuses. */
+function percentDecode (text: string): Uint8Array | null {
+  const input = Buffer.from(text, 'utf8')
+  const out = new Uint8Array(input.length)
+  let length = 0
+  for (let i = 0; i < input.length; i++) {
+    const byte = input[i]!
+    if (byte !== 0x25) {
+      out[length++] = byte
+      continue
     }
-    return bytes.length > cap ? null : new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const hex = input.toString('latin1', i + 1, i + 3)
+    if (!/^[0-9a-f]{2}$/i.test(hex)) return null
+    out[length++] = parseInt(hex, 16)
+    i += 2
   }
-  // Reject before the decode, the same way the base64 branch above does:
-  // a %XX escape is 3 source characters per output byte, the most
-  // compact a percent-encoded payload can ever be, so nothing shorter
-  // than that ratio could decode to `cap` bytes or fewer regardless of
-  // content -- a page-declared candidate never gets a full decode/encode
-  // pass just to be rejected for size.
-  if (payload.length > cap * 3) return null
-  let text: string
-  try {
-    text = decodeURIComponent(payload)
-  } catch {
-    return null
-  }
-  const bytes = new TextEncoder().encode(text)
-  return bytes.length > cap ? null : bytes
+  return out.subarray(0, length)
 }

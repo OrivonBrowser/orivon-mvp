@@ -1,6 +1,7 @@
 # Changelog
 
-All notable changes to this project are recorded here.
+All notable changes to this project are recorded here, at most three lines each; the full
+account of a change is in its pull request.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning will follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once there is something to version.
@@ -223,89 +224,95 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   every directory stating what it depends on and what it must never import.
 - **AGPL-3.0-only licence.** `package.json` previously said `UNLICENSED`, which legally forbade
   the clone-and-run path this project treats as a supported platform strategy.
+- **An app can show a website inside its own page** (`web.embed`, ADR-0039), each shown page
+  sandboxed in the app's own session; a manifest can also ask for cross-origin isolation, which
+  turns on `SharedArrayBuffer` for WebAssembly threads.
+- **A welcome screen on first launch**, and its picture behind the new-tab page. Nothing loads
+  from the network.
+- **`ipfs://` and `ipns://` addresses load, shown as themselves**, with every block checked;
+  protocols register through one function in `src/protocols/` (ADR-0038).
+- **`.eth` names load, with every byte checked on this machine**: a light client proves the name,
+  IPFS blocks are hashed against their CID (ADR-0030, ADR-0031).
+- **The identity seed survives a restart** in the OS keyring, and a granted app can encrypt its
+  own secrets with `orivon.secrets`.
+- **The Web3 Score shield shows the site's Website level**, coloured by level, with a Web2 /
+  Web2.5 / Web3 mark; the Web3 Score page leads with the same level.
+- **A site can publish its bundle hash tree (DDOC)**, and the Web3 Score page shows whether it
+  matches; a local origin serving one is Level 2 in developer mode.
+- **A Website Level 4 site's grants are shown without warnings** on every consent surface
+  (ADR-0037), and every permission row carries an icon for what it grants.
+- **A per-site permissions popover** in the address bar: one switch per capability, and the
+  site's storage.
+- **App tabs route `fetch()`, `XMLHttpRequest`, `EventSource` and WebSocket to granted hosts**,
+  under the broker's grant and local-network checks.
+- **Installed apps can compile WebAssembly and use `eval`**, and load `data:` and `blob:`
+  resources.
+- **Fullscreen, pointer lock and keyboard lock from a click**; Escape always gives the window
+  back (ADR-0025, ADR-0026).
+- **External links and site notifications ask the person first** (ADR-0027, ADR-0028).
+- **`window.open()` returns a real window**; a page guarding unsaved work asks Leave or Stay;
+  right-click works; tabs identify as Chrome.
+- **The Node shim covers much more of Node**: more modules, one virtual root, closing `fs`
+  streams, Node's error shapes, and a `Buffer` global in app tabs.
+- **Ported apps reach self-signed and private-CA TLS servers**; turning verification off never
+  widens what a grant reaches.
+- **A manifest with unknown top-level fields installs**, with a warning; `web.context`'s
+  `evaluate` takes a per-call timeout.
+- **A global Orivon installs on an app's window can be replaced by the app** (ADR-0021), and
+  `check:page-globals` enforces it.
+- **An app tab that dies on load says so** in the shell's own output.
+- **The capability broker** (build step 2): grants that survive a restart, per-origin
+  enforcement, per-app `session` partitions, TCP, TLS, UDP, fs and name resolution.
+- **`orivon-node-shim`** (build step 3): `net`, `dgram`, `fs`, `dns.lookup`, `http` and `https`
+  in Node's shapes over the capabilities.
+- **The app loader** (build step 4): a discovery hint, a hash-pinned cache, one consent dialog
+  before the app's code runs, and a CSP narrowed to what was granted.
+- **The browser shell** (build step 1): tabs, toolbar, address bar with DuckDuckGo search, and
+  two preloads at two privilege levels.
+- **`src/contracts/`**: the complete `orivon.*` interface as types, the durable asset (ADR-0002).
+- **The subsystem registry, the parallel-work system and the human entry path**: README,
+  ARCHITECTURE, CONTRIBUTING and a README in every directory.
+- **AGPL-3.0-only licence.**
 
 ### Fixed
 
-- **The toolbar no longer probes a fresh session partition for every ordinary website visited.**
-  The Web3 Score shield's own query used to ask Electron's protocol-handler registry directly,
-  which creates the partition it asks about; it now reads the same trust data the site-info popup
-  already computes.
-- **A sign-in that sends an app's tab to a provider and back can complete.** The app finds its
-  `sessionStorage` where it left it, and its own back history, so an OIDC login no longer loses
-  its state on the way back.
-- **Entering fullscreen no longer takes the page's keyboard focus**, so a video player's keys keep
-  working under the exit notice.
-- **An installed app keeps its app-tab setup after a restart**, and the tab that installs an app
-  reloads once so it runs as the app.
-- **Bundles up to 512 MiB install, and assets up to 64 MiB are served, without being held in
-  memory**: streamed to and from disk, Range requests included.
-- **Real static hosts work.** An update no longer breaks an open single-page app's lazily loaded
-  chunks, reloading a client-side route works, a corrupted cache recovers instead of locking the
-  app out, and hosts that redirect the root document (Cloudflare Pages, GitHub Pages) install.
-- **A capability the person declined, or revoked in Settings, is not asked for again at every
-  launch**, and the app can still request it.
-- **An unchanged installed app costs one conditional (304) manifest request an hour**, and the
-  interval survives a restart.
-- **Chunked file I/O no longer hits the control channel's rate limit**, which broke nedb past a
-  few hundred documents. The fs quota measures disk usage; a socket closed cleanly on both sides
-  frees its slot; a wider `requestGrant` no longer resets live sockets; `localhost:<port>` grants
-  work; the file picker waits 120 s; a malformed UDP send is refused instead of killing the
-  socket; an operation on a closed handle gives `EBADF`; a peer reset reaches the page as
-  `ECONNRESET`; an operation past the in-flight cap waits briefly instead of failing.
-- **Subresources from granted hosts behave like a browser's.** Over-limit requests queue instead
-  of failing, redirect chains are capped at 20, a request is dropped after five minutes without a
-  byte rather than 30 s, and audio, subtitle, streaming-manifest and web-manifest files are served
-  with their real types.
-
-- **A page can open and save a file through the File System Access API.** One file the person
-  picks or drops can be read and written; folders stay refused (ADR-0024). Without this,
-  FreeTube's import and export failed with `NotAllowedError`, as did any website saving a file
-  this way.
-- **A routed `fetch()` to a dead host names the real failure.** A DNS or connection failure
-  before the TLS handshake was reported as "the secure connection failed", and the error now
-  carries the platform's own code, such as `EHOSTUNREACH` or `ECONNREFUSED`.
-- **The routed `fetch()` is replaceable, as the platform's own is.** It was installed
-  non-writable, which in strict mode stops a bundle shadowing `fetch` on a surrogate global --
-  the pattern common `fetch` ponyfills use -- so such an app died while its module graph was
-  still evaluating, with nothing naming a cause.
-
-- **The window never appeared under `npm run dev`.** `ready-to-show` is unreliable when loading
-  from the dev server; the shell now shows the window once, deterministically.
+- **The toolbar no longer creates a session partition for every website visited.**
+- **An OIDC sign-in that leaves an app's tab and returns can complete.**
+- **Entering fullscreen keeps the page's keyboard focus.**
+- **An installed app keeps its app-tab setup after a restart.**
+- **Large bundles install and stream from disk**: 512 MiB per bundle, 64 MiB per asset, Range
+  requests included.
+- **Real static hosts work**: lazy chunks survive an update, client routes reload, a corrupted
+  cache recovers, and redirecting hosts install.
+- **A declined or revoked capability is not asked for again at every launch.**
+- **An unchanged app costs one conditional manifest request an hour.**
+- **Chunked file I/O no longer hits the control channel's rate limit**, and a dozen socket and
+  fs edge cases behave as in Node.
+- **Subresources from granted hosts behave like a browser's**: queued, redirect-capped, with
+  real content types.
+- **A page can open and save one file through the File System Access API** (ADR-0024).
+- **A routed `fetch()` to a dead host names the real failure**, and is replaceable like the
+  platform's own.
+- **The window appears under `npm run dev`.**
+- **The chrome view and its popups expose their bridge only at their own URL**; an isolated
+  context is locked before its first load, and a refused navigation is logged.
+- **Favicons survive a hash change or a same-origin page**, a failed icon fetch no longer holds a
+  socket, the icon cache is bounded, and an SVG entity bomb behind a quoted DOCTYPE literal is
+  refused.
+- **`.eth` pages keep their gateways through a lost race, a cooldown and a hostile answer**: the
+  verifier host no longer crashes on a 999 status or stalls on a 101, and every run certificate
+  parses.
 
 ### Resolved
 
-- **The week-0 spike.** Gates 0, 1a, 1b and 2 **pass** with measured evidence. Gate 4
-  (throughput) fails its literal relative-to-control threshold and beats the actual product
-  requirement by roughly 10x. Gate 3 is **blocked, not failed**: the app works, but
-  Playwright's `_electron` driver cannot attach to that window, for a cause still unidentified.
-  See [`docs/planning/spike-verdict.md`](docs/planning/spike-verdict.md). The `utilityProcess`
-  fallback was not needed.
-- **Handle contracts** ([`ADR-0008`](docs/decisions/ADR-0008-handles-are-whatwg-streams.md)).
-  WHATWG streams are the durable interface; Node's shapes are reconstructed by the shim one
-  layer above.
+- **The week-0 spike**: gates 0, 1a, 1b and 2 pass; see `docs/planning/spike-verdict.md`.
+- **Handle contracts**: WHATWG streams are the durable interface (ADR-0008).
 
 ### Notable reversals
 
-Recorded rather than quietly corrected, because a project that hides having been wrong learns
-more slowly.
-
-- **Protocol encryption was recorded as unavailable. It is not.** `mse.js` ships a complete
-  pure-JS RC4 fallback, and `crypto-browserify` supplies the two genuinely missing pieces. A
-  successful encrypted handshake was measured. It should be on.
-- **Transferable `ArrayBuffer`s were named as the rescue if throughput failed.** That rescue
-  does not exist: renderer → main, the message silently never arrives
-  ([electron#34905](https://github.com/electron/electron/issues/34905)). It does not matter:
-  structured clone already runs two orders of magnitude faster than the requirement.
-- **The telemetry metric measured how long the app was open.** A torrent client seeds in the
-  background, so a user who pasted one magnet and walked away would cross the target on day one
-  having used the product once. The metric is now stated on `activeSec`, which is harder, which
-  is the point.
-- **BitTorrent streaming was the flagship. There is no flagship now.** Build step 5 ports real
-  Node.js and Electron desktop apps (FreeTube, Element, AirGap Vault, ASGARDEX) as the
-  platform's test cases, and build step 6 adds `.eth` names and IPFS delivery, verified on the
-  machine rather than trusted to a server. The torrent app and Nostr identity are ideas, not
-  build steps ([`ADR-0001`](docs/decisions/ADR-0001-flagship-app-bittorrent-streaming.md),
-  [`docs/scope.md`](docs/scope.md)).
-- **Judged Web3 Score levels were out of the MVP. They are in**, from a provider that need not
-  be trustless and may run locally. Each names its provider and is shown apart from what the
-  machine observed ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
+- **Protocol encryption is available**: `mse.js` ships a pure-JS RC4 fallback.
+- **Transferable `ArrayBuffer`s are no rescue**: renderer to main they never arrive, and
+  structured clone is fast enough.
+- **The telemetry metric counts `activeSec`**, not time the app was open.
+- **There is no flagship app**: build step 5 ports existing desktop apps as test cases (ADR-0001).
+- **Judged Web3 Score levels are in**, each naming its provider (ADR-0006).

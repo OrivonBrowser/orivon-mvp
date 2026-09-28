@@ -59,6 +59,16 @@ describe('dohAddressResolver', () => {
     expect(await resolve('example.com', signal)).toEqual(['93.184.216.34'])
   })
 
+  it('returns each address in its canonical spelling, and drops one with a zone id', async () => {
+    const resolve = dohAddressResolver(['https://dns.example/q'], async (url) => {
+      const type = new URL(url).searchParams.get('type')
+      return type === 'A'
+        ? answer({ Status: 0, Answer: [] })
+        : answer({ Status: 0, Answer: [{ type: 28, data: '2606:4700:0:0:0:0:6810:84E5' }, { type: 28, data: '2606:4700::1%eth0' }] })
+    })
+    expect(await resolve('example.com', signal)).toEqual(['2606:4700::6810:84e5'])
+  })
+
   it('succeeds on one family alone when the other genuinely has none (NXDOMAIN-shaped empty answer)', async () => {
     const resolve = dohAddressResolver(['https://dns.example/q'], async (url) => {
       const type = new URL(url).searchParams.get('type')

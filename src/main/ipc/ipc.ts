@@ -4,15 +4,14 @@
 //
 // Sender check, same pattern as the senderFrame -> origin check
 // build-plan.md's "Testing" section requires for the broker's T3 defense:
-// every handler verifies event.senderFrame is
-// EXACTLY the chrome view's top frame before doing anything. Without this,
-// any web page loaded in a tab could reach this channel too, if it were
-// ever exposed more broadly than the chrome preload by accident -- object
-// identity against a known frame is a stronger guard than a URL allowlist,
-// and it costs nothing here since main already holds the one true
-// reference. Checked synchronously at the top of the handler, per
-// Electron's own warning that a WebFrameMain reference can go stale after
-// an await.
+// every handler verifies event.senderFrame is EXACTLY the chrome view's top
+// frame, by identity, AND that it is still at the chrome's own URL, before
+// doing anything (`isFromChrome`). Identity keeps out every tab's page, if
+// the channel were ever exposed more broadly than the chrome preload by
+// accident; the URL keeps out whatever document the chrome view might be
+// navigated to, independently of lock-navigation.ts refusing that. Checked
+// synchronously at the top of the handler, per Electron's own warning that
+// a WebFrameMain reference can go stale after an await.
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL } from '../channels.js'
@@ -88,9 +87,21 @@ export type ShellCommand =
   /** The right-click menu of a tab, which main shows (it lists the other windows). */
   | { type: 'tabMenu'; id: string }
 
-function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents): boolean {
+/**
+ * BOTH object identity AND URL, matching `newtab-ipc.ts`'s own
+ * `isFromDashboard` for the second half: identity alone assumes
+ * `chromeWebContents.mainFrame` can never be attached to anything but the
+ * chrome document, which is exactly what `main/shell/lock-navigation.ts`'s
+ * `lockNavigation` (window.ts's own call) makes true today -- but a sender
+ * check that would still pass if that lock were ever removed or
+ * misconfigured is the weaker of the two, not a redundant one. `chromeUrl`
+ * is the same string `window.ts` passed the view at construction and the
+ * preload's own gate (`preload/shell.ts`) compares `location.href` against.
+ */
+function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents, chromeUrl: string): boolean {
   return event.senderFrame !== null &&
-    event.senderFrame === chromeWebContents.mainFrame
+    event.senderFrame === chromeWebContents.mainFrame &&
+    event.senderFrame.url === chromeUrl
 }
 
 /** What the chrome's commands do that is the window's own business rather than the tab collection's. */
@@ -106,6 +117,7 @@ export interface ShellActions {
 
 export function registerShellIpc (
   chromeWebContents: WebContents,
+  chromeUrl: string,
   tabs: TabManager,
   bookmarks: BookmarkStore,
   siteInfo: SiteInfoController,
@@ -116,7 +128,7 @@ export function registerShellIpc (
   // handler goes with the view. The frame check below stays: a webContents'
   // handlers hear every frame in it.
   chromeWebContents.ipc.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | Web3Score | null> => {
-    if (!isFromChrome(event, chromeWebContents)) {
+    if (!isFromChrome(event, chromeWebContents, chromeUrl)) {
       // Not the chrome view's top frame -- refuse silently rather than
       // throwing a message back that confirms the channel exists.
       return

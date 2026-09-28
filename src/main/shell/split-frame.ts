@@ -9,6 +9,7 @@ import { WebContentsView } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import { SPLIT_FRAME_CHANNEL, SPLIT_STATE_CHANNEL } from '../channels.js'
+import { lockNavigation } from './lock-navigation.js'
 import { rendererEntryUrl } from './renderer-entry.js'
 import type { FrameState } from './split-controller.js'
 import type { SplitBackdrop } from './tab-types.js'
@@ -61,6 +62,8 @@ export class SplitFrame implements SplitBackdrop {
       }
     })
     const { webContents } = view
+    // Its preload is privileged: this view must never end up on another document. Locked before the load.
+    lockNavigation(webContents, url)
     // A webContents' handlers hear every frame in it: only its own top frame is heard.
     webContents.ipc.handle(SPLIT_FRAME_CHANNEL, (event: IpcMainInvokeEvent, command: { type?: unknown, at?: unknown }): void => {
       if (event.senderFrame !== webContents.mainFrame) return

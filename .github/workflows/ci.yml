@@ -1,10 +1,7 @@
 name: CI
 
-# With no code reviewer, CI is the reviewer (build-plan.md SS Week 0).
-#
-# workflow_dispatch lets a human re-trigger the `e2e` job below on demand; that
-# job also runs on every push and pull_request, because a security test nobody
-# remembers to launch is the same as no security test at all.
+# CI is the reviewer: there is no human code review. Every job runs on every
+# push and pull request; workflow_dispatch re-runs them on demand.
 on:
   push:
   pull_request:
@@ -21,54 +18,15 @@ jobs:
           node-version: '24'
           cache: npm
 
-      # `npm ci` runs the postinstall guard, so Rule 8 is enforced here too.
-      #
-      # It now also fetches Electron's ~280 MB binary
-      # (scripts/install-electron.mjs). This job never launches Electron, so
-      # skipping that looks free -- it is not, and a first version of this file
-      # set ELECTRON_SKIP_BINARY_DOWNLOAD here before a CI run disproved it.
-      # test/launch-electron.mjs does `await import('electron')`, which is
-      # Electron's own lazy downloader, and the unit suite reaches it: the
-      # binary was already being fetched mid-test, printing "Downloading
-      # Electron binary..." inside the `Unit tests` step. Fetching it during
-      # install costs the same and puts a network failure where it reads as one.
+      # Runs the Rule 8 postinstall guard and fetches Electron's binary. Keep
+      # ELECTRON_SKIP_BINARY_DOWNLOAD unset: the unit suite reaches
+      # test/launch-electron.mjs, whose import('electron') would fetch it anyway.
       - run: npm ci
 
-      # The real-peer UDP tests (src/shim/tests/real-bittorrent-dht.test.ts)
-      # drive a real, unmodified bittorrent-dht client and its real
-      # k-rpc-socket transport through the shim's dgram implementation. They
-      # need webtorrent's dependency tree, which lives in spike/app and is
-      # gitignored, so before this step they were SKIPPED on every runner and
-      # in every fresh clone -- the only three skipped tests in the suite, and
-      # the ones covering the P2P transport. Three real dgram defects
-      # reached main in 2026-09 because nothing executing exercised that path
-      # (docs/open-questions.md A136; owner decision: install here rather than
-      # vendor the package into the tree).
-      #
-      # `npm install`, NOT `npm ci`, and that is deliberate -- both flags here
-      # were arrived at by CI failing, not by guessing.
-      #
-      # `npm ci` fails on this runner and passes locally, for the same tree and
-      # the same committed lock: `ws` declares bufferutil and utf-8-validate as
-      # optional native accelerators, and npm decides per-platform whether they
-      # belong in the tree. The runner says they are missing from the lock; this
-      # machine says the lock needs no change at all (verified with
-      # `npm install --package-lock-only`: zero packages added, removed or
-      # changed). `npm ci` treats that disagreement as a hard error BEFORE
-      # `--omit=optional` can filter anything, so the flag does not rescue it.
-      # `npm install` honours the committed lock where it can and tolerates that
-      # one platform-conditional difference. The lock is still tracked, so the
-      # fixture is still pinned in practice -- what is given up is `ci`'s refusal
-      # to proceed, which for a TEST FIXTURE is the right thing to give up.
-      #
-      # `--omit=optional` stays on its own merits: those two are native modules,
-      # Rule 8 wants none of them, and the DHT tests do not use them (ws works
-      # without them and only runs slower).
-      #
-      # What this DOES still pull is node-datachannel, which ships a PREBUILT
-      # .node binary for webtorrent's WebRTC path -- no compiler at install
-      # time, so it is the category check:natives already accepts, and it lands
-      # in the fixture tree, never in what ships.
+      # webtorrent's tree (spike/app, gitignored) for the real-peer DHT tests,
+      # which skip without it. `npm install`, since npm disagrees per platform
+      # on whether ws's optional natives belong in the lock and `npm ci` fails
+      # on that. --omit=optional keeps those natives out (Rule 8).
       - name: Install the real-peer UDP test fixture
         run: npm install --prefix spike/app --omit=optional --no-audit --no-fund
 
@@ -84,114 +42,58 @@ jobs:
       - name: No dependency requires a compiler (Rule 8)
         run: npm run check:natives
 
-      # src/contracts/ is what lets several streams work at once. If it grows a
-      # dependency edge, every stream inherits it. See
-      # docs/development/parallel-work.md.
+      # Every parallel stream inherits a dependency edge in src/contracts/.
       - name: Contracts are complete and reference only their own siblings
         run: npm run check:contracts
 
-      # The unit tests prove derive.ts (WebCrypto) matches the frozen table.
-      # This proves an INDEPENDENT node:crypto implementation matches it too, so
-      # the table cannot quietly become a recording of one implementation's own
-      # bugs. Keys are not exportable in this version (ADR-0003), so a derivation
-      # change is unrecoverable -- see ADR-0010.
+      # An independent node:crypto implementation must match the table the
+      # unit tests hold derive.ts to. Keys are not exportable (ADR-0003), so a
+      # derivation change is unrecoverable (ADR-0010).
       - name: Golden vectors match an independent implementation
         run: npm run check:vectors
 
-      # This repository is public, and the autonomous build loop uses a real
-      # credential (kept in ~/.config/orivon/notify.env, outside the repo).
-      # A token pushed here is scraped within minutes and cannot be un-pushed.
+      # Public repository: a pushed token is scraped within minutes.
       - name: No credentials in tracked files
         run: npm run check:secrets
 
-      # Rule 1's restates-the-code test cannot see a file-header essay, and half
-      # the source files had drifted into one. This bounds the comment block a
-      # reader pays for before reaching any code; a file that genuinely needs
-      # more says why in the file. docs/development/code-guidelines.md Rule 1.
+      # code-guidelines.md Rule 1: each source file's leading comment block,
+      # and every comment block in this workflow and root *.config.ts files.
       - name: No source file opens with an essay
         run: npm run check:comments
 
       - name: No source file over the 500/800-line limit
         run: npm run check:size
 
-      # Two branches opened at the same time both read main's highest
-      # open-questions.md number and both take the next one -- the PR
-      # blueprint's "take it from main's highest" rule cannot prevent that by
-      # itself. Caught by hand three times in one evening (PRs #163/#165,
-      # #166/#167, #168); this is the mechanical guard against a fourth.
+      # Two branches opened together can both take main's next A-number.
       - name: No duplicate entry number in docs/open-questions.md
         run: npm run check:questions
 
-      # An app author reads src/contracts/manifest.ts, uses a field it
-      # documents, and gets refused at install by a loader-side allowlist
-      # that never learned the field's name -- the exact failure mode
-      # docs/open-questions.md A164 and the consentGranularity gap both
-      # were. scripts/check-manifest-parity.mjs reads both sides from their
-      # real source text and fails when they disagree.
+      - name: Every devlog bullet is at most 25 words
+        run: npm run check:devlog
+
+      # A field src/contracts/manifest.ts documents must not be refused by the
+      # loader's allowlist; the script reads both sides from their source.
       - name: Loader accepts every field the manifest contract declares
         run: npm run check:manifest-parity
 
-      # A page global an app cannot replace kills any bundle that ponyfills
-      # it, mid-module-evaluation, with nothing naming the cause -- the
-      # routed fetch did exactly that, having been locked by copy-paste from
-      # window.orivon's own deliberate lock. ADR-0021 states the rule;
-      # scripts/check-page-globals.mjs is the mechanical guard for it, and
-      # reads an omitted `writable` as the lock it actually is.
+      # ADR-0021: a global an app cannot replace breaks any bundle that
+      # ponyfills it, silently. An omitted `writable` counts as locked.
       - name: Every page global carries a descriptor an app can replace
         run: npm run check:page-globals
 
       - name: Build
         run: npm run build
 
-      # Item 0.3's exit criterion (.claude/unattended-build-queue.md)
-      # has two clauses: a developer-only grant path, AND "CI fails if the
-      # path is reachable once packaged." The script has existed and passed
-      # by hand since it landed, but was never wired into CI -- this step is
-      # that second clause. It runs its OWN internal rebuild regardless of
-      # the Build step above (scripts/check-dev-grant-absent.mjs scans out/
-      # before rebuilding too, to catch a dev-enabled artefact already
-      # sitting there -- see that script's header), so placing it after
-      # Build does not avoid a second build; it runs last so the cheaper
-      # checks above fail first.
+      # Scans out/, then runs its own rebuild rather than reusing Build's
+      # output. Last, so the cheaper checks fail first.
       - name: Developer-only grant path is absent from a packaged build
         run: npm run check:dev-grant-absent
 
-  # test/e2e-capability-boundary.test.ts is, in its own header, "the
-  # highest-value assertion in the entire plan" (docs/development/testing.md
-  # SS"The end-to-end test"): it proves a granted net.connect round-trips
-  # real bytes through a real spawned echo server, AND that an
-  # out-of-manifest connect is denied before any dial is attempted. Until
-  # this job existed, nothing automated ran it at all -- CLAUDE.md's own
-  # notes on the spike flag the reason this is not on `check` above:
-  # Playwright's `_electron` driver has a real, previously-UNIDENTIFIED
-  # attach failure against this shell's window shape (spike gate 3,
-  # docs/open-questions.md C6). That failure was ruled out for THIS repo's
-  # shell shape once (CLAUDE.md SSNarrowed at build step 1: a BaseWindow
-  # with multiple WebContentsViews attaches cleanly), and this job's own
-  # wiring was verified locally against a real display AND against
-  # `xvfb-run` (headless, the same mechanism used below) on the same
-  # machine -- both passed, output pasted into this change's PR.
-  #
-  # UPDATED once the thing below was actually observed, not assumed: a
-  # GitHub-hosted ubuntu-latest runner specifically. Electron's sandbox has a
-  # separate, well-known CI failure mode on hosted runners (restricted
-  # unprivileged user namespaces), distinct from the C6 attach issue above,
-  # that a developer's own machine cannot reproduce or rule out -- this job
-  # started manual-only (`workflow_dispatch`) for exactly that reason, per
-  # this lane's own brief: a real GUI-requiring job must not be faked into
-  # looking automatic before it has been proven reliable in the ACTUAL CI
-  # environment. It has now been observed green on a real ubuntu-latest
-  # runner for BOTH `push` and `pull_request` -- that failure mode did not
-  # reproduce -- so the `if:` that used to gate this job to
-  # `workflow_dispatch` only is gone, and it runs unconditionally alongside
-  # `check` above (see `on:` at the top of this file). If a hosted runner
-  # ever fails to launch Electron here, that is the signal to reinstate the
-  # `if:` with the failing run recorded as the evidence, not to silently
-  # retry.
-  # Kept a separate job rather than folded into `check`: it needs a real Electron
-  # build and a display server, takes far longer than the unit suite, and a
-  # failure here means something different (the capability boundary itself
-  # broke), so it should be readable as its own red X.
+  # The capability boundary end to end (testing.md "The end-to-end test").
+  # Its own job: it needs an Electron build and a display, runs far longer,
+  # and its failure means the boundary itself broke. If a hosted runner cannot
+  # launch Electron, gate the job to workflow_dispatch with the failing run as
+  # evidence; do not retry silently.
   e2e:
     runs-on: ubuntu-latest
     steps:
@@ -204,16 +106,10 @@ jobs:
 
       - run: npm ci
 
-      # Electron's real Chromium window has to land somewhere -- ubuntu-latest
-      # has no display server by default. xvfb-run is this repo's own existing
-      # pattern for a headed launch with no visible window
-      # (docs/planning/spike-remaining-gates-plan.md).
+      # ubuntu-latest has no display server, and Electron's window needs one.
       - name: Install a virtual display
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
-      # `npm run test:e2e` builds first (the app is launched from `out/`, not
-      # source) and then runs test/e2e-capability-boundary.test.ts via
-      # test/vitest.e2e.config.ts -- see that file's header for why this test
-      # cannot run through plain `npm test`.
+      # Builds first (the app launches from out/), then runs the e2e config.
       - name: Capability-enforcement end-to-end test
         run: xvfb-run -a npm run test:e2e

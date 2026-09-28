@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AGREED_FOR_MS, DIRECT_FOR_MS, withDnsFallback } from '../dns-fallback.js'
 import type { DnsFallbackDeps } from '../dns-fallback.js'
+import { DirectAnswerRefused } from '../direct-fetch.js'
 
 const ORIGIN = 'https://gateway.example'
 const OTHER = 'https://other.example'
@@ -144,6 +145,103 @@ describe('withDnsFallback', () => {
     await expect(fetch(`${ORIGIN}/x`, undefined)).rejects.toThrow('direct is down too')
     const response = await fetch(`${ORIGIN}/x`, undefined)
     expect(await response.text()).toBe('net ok now')
+  })
+
+  it('a direct attempt its caller abandoned keeps the direct route', async () => {
+    const d = deps({
+      fetch: vi.fn(async () => { throw new TypeError('refused (forged address)') }),
+      direct: vi.fn(async (_url: string, init: RequestInit | undefined) => {
+        if (init?.signal?.aborted === true) throw new DOMException('aborted', 'AbortError')
+        return new Response('direct ok', { status: 200 })
+      }),
+      systemAddresses: vi.fn(async () => ['85.38.30.66'])
+    })
+    const fetch = withDnsFallback([ORIGIN], d)
+    expect(await (await fetch(`${ORIGIN}/a`, undefined)).text()).toBe('direct ok')
+    const controller = new AbortController()
+    controller.abort(new Error('superseded by a faster attempt'))
+    await expect(fetch(`${ORIGIN}/b`, { signal: controller.signal })).rejects.toThrow()
+    expect(await (await fetch(`${ORIGIN}/c`, undefined)).text()).toBe('direct ok')
+    expect(d.direct).toHaveBeenCalledTimes(3)
+    expect(d.systemAddresses).toHaveBeenCalledTimes(1)
+  })
+
+  it('a gateway reached directly whose answer is refused keeps the direct route', async () => {
+    const d = deps({
+      fetch: vi.fn(async () => { throw new TypeError('refused') }),
+      direct: vi.fn()
+        .mockImplementationOnce(async () => { throw new DirectAnswerRefused('status 999') })
+        .mockImplementation(async () => new Response('direct ok', { status: 200 })),
+      systemAddresses: vi.fn(async () => ['85.38.30.66'])
+    })
+    const fetch = withDnsFallback([ORIGIN], d)
+    await expect(fetch(`${ORIGIN}/a`, undefined)).rejects.toBeInstanceOf(DirectAnswerRefused)
+    expect(await (await fetch(`${ORIGIN}/b`, undefined)).text()).toBe('direct ok')
+    expect(d.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('a verdict reached while this request was in flight is honoured, not re-checked', async () => {
+    let failSlow: (() => void) | undefined
+    const d = deps({
+      fetch: vi.fn()
+        .mockImplementationOnce(async () => await new Promise<Response>((_resolve, reject) => { failSlow = () => { reject(new TypeError('refused, slowly')) } }))
+        .mockImplementationOnce(async () => { throw new TypeError('refused') }),
+      systemAddresses: vi.fn(async () => ['85.38.30.66'])
+    })
+    const fetch = withDnsFallback([ORIGIN], d)
+    const slow = fetch(`${ORIGIN}/slow`, undefined)
+    expect(await (await fetch(`${ORIGIN}/fast`, undefined)).text()).toBe('direct ok')
+    failSlow!()
+    expect(await (await slow).text()).toBe('direct ok')
+    expect(d.systemAddresses).toHaveBeenCalledTimes(1)
+  })
+
+  it('a system resolver that says the name does not exist counts as disagreeing', async () => {
+    const d = deps({
+      fetch: vi.fn(async () => { throw new TypeError('refused') }),
+      systemAddresses: vi.fn(async () => { throw new Error('net::ERR_NAME_NOT_RESOLVED') })
+    })
+    const fetch = withDnsFallback([ORIGIN], d)
+    expect(await (await fetch(`${ORIGIN}/x`, undefined)).text()).toBe('direct ok')
+  })
+
+  it('a system resolver that fails any other way is no reason to go direct', async () => {
+    const d = deps({
+      fetch: vi.fn(async () => { throw new TypeError('refused') }),
+      systemAddresses: vi.fn(async () => { throw new Error('net::ERR_INTERNET_DISCONNECTED') })
+    })
+    const fetch = withDnsFallback([ORIGIN], d)
+    await expect(fetch(`${ORIGIN}/x`, undefined)).rejects.toThrow('refused')
+    expect(d.direct).not.toHaveBeenCalled()
+  })
+
+  describe('a system resolver that never answers', () => {
+    afterEach(() => { vi.useRealTimers() })
+
+    it('is given up on with the DoH side, and is no reason to go direct', async () => {
+      vi.useFakeTimers()
+      const d = deps({
+        fetch: vi.fn(async () => { throw new TypeError('refused') }),
+        systemAddresses: vi.fn(async () => await new Promise<readonly string[]>(() => {}))
+      })
+      const fetch = withDnsFallback([ORIGIN], d)
+      const outcome = fetch(`${ORIGIN}/x`, undefined).then(() => 'answered', (error: unknown) => (error as Error).message)
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(await outcome).toBe('refused')
+      expect(d.direct).not.toHaveBeenCalled()
+    })
+
+    it('does not hold a caller that aborts while the check runs', async () => {
+      const d = deps({
+        fetch: vi.fn(async () => { throw new TypeError('refused') }),
+        systemAddresses: vi.fn(async () => await new Promise<readonly string[]>(() => {}))
+      })
+      const fetch = withDnsFallback([ORIGIN], d)
+      const controller = new AbortController()
+      const pending = fetch(`${ORIGIN}/x`, { signal: controller.signal })
+      setTimeout(() => { controller.abort(new Error('the client left')) }, 10)
+      await expect(pending).rejects.toThrow('the client left')
+    })
   })
 
   it('AGREED_FOR_MS and DIRECT_FOR_MS are exported and positive', () => {

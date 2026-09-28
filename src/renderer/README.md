@@ -1,164 +1,72 @@
 # `src/renderer/`: the browser chrome UI
 
-**What lives here.** Eight entries, all plain vanilla-TS pages, no framework. The main one is the
-chrome view: three rows, rendered in a dedicated `WebContentsView` above the active tab: the
-tab strip (sharing its row with Electron's native window buttons), the toolbar (navigation, the
-bookmark toggle, the omnibox, a right-hand icon cluster), and the bookmarks bar. Its look follows
-`orivon-browser-v2`'s chrome; see **Visual reference** below. [`newtab/`](newtab/) is the new-tab
-dashboard: ordinary tab content loaded into a fresh tab's own `WebContentsView`, not part of the
-chrome view at all; see `src/main/shell/tabs.ts`'s `createTab()`. [`permissions/`](permissions/),
-[`site-info/`](site-info/) and [`menu/`](menu/) are the three toolbar popups (`src/main/permissions/popover-view.ts`):
-the all-sites permissions list, the per-site popover (a connection row, this site's own
-capability switches, its Web3 Score page, its Cookies and site data page), and the main menu.
-[`split-frame/`](split-frame/) is the view behind the two panes of a split.
-[`pages/`](pages/) holds the shell's own pages, each a tab of its own (Settings so far). [`intro/`](intro/) is
-the welcome screen, a full-window view over the shell on a launch that opens on it
-(`src/main/shell/intro-view.ts`).
+**What lives here.** Nine entries, plain vanilla-TS pages with no framework. Tied to Electron,
+entirely.
 
-**Files.**
-
-| File | What |
+| Entry | What it is |
 |---|---|
-| `index.html` | The chrome view's DOM: three rows, and every icon that never changes as static inline SVG |
-| `style.css` | Entry point: colour/size tokens, both themes, page-wide base rules, `@import`s the three below |
-| `styles/tabstrip.css`, `styles/toolbar.css`, `styles/bookmarks.css` | One row each |
-| `main.ts` | Renders `ShellState`, turns clicks/typing into `orivonShell.*` commands |
-| `tab-drag.ts` | Dragging a tab in the strip, with pointer events and the pointer captured: a new place in the strip, or out of it to another window |
-| `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button), and the shared `svg`/`path`/`circle`/`rect`/`line` primitives every other icon file in this tree builds on; also imported by `newtab/main.ts` for its bookmark tiles |
-| `web3-shield.ts` | The Web3 Score shield element, shared by the toolbar and the site-info popup's connection row so the two can never draw it differently, and the address pill's Web2/Web2.5/Web3 mark |
-| `grant-icons.ts` | One icon per capability kind, picked-path kind or site notification, for the left side of a permission row (the site-info popup and the all-sites panel) |
-| `styles/web3-level.css` | The shield's level colours; the site-info popup's own stylesheet keeps a literal copy, matching this tree's cross-entry convention. The mark's own colours sit in `styles/toolbar.css`, the only place it is drawn |
-| `bookmarks-view.ts` | Renders the bookmarks bar's dynamic list |
-| `newtab/index.html`, `newtab/main.ts`, `newtab/style.css` | The dashboard: a search box, then a grid of app-shortcut and bookmark tiles, with its own small entry, separate from the chrome view |
-| `intro/index.html`, `intro/main.ts`, `intro/style.css` | The welcome screen: headline, "Enter Orivon" button, ticker and two decorative shapes over a picture. Its entry animations are CSS keyframes and its fonts are bundled, so it loads nothing from the network |
-| `assets/intro-background.webp` | The welcome screen's picture, also the dashboard's default background; Vite emits it once for both |
-| `permissions/index.html`, `permissions/main.ts`, `permissions/permissions-view.ts`, `permissions/style.css` | The all-sites popup: every app, all its grants, revoke-only |
-| `pages/shared/` (`tokens.css`, `controls.css`, `dom.ts`, `bridge.ts`) | What every shell page shares: the design tokens, buttons and choices, a small typed element builder, and the typed line to main |
-| `pages/settings/` (`index.html`, `main.ts`, `state.ts`, `shortcuts-state.ts`, `privacy-state.ts`, `apps-state.ts`, `apps-view.ts`, `web3-state.ts`, `usage-state.ts`, `usage-view.ts`, `updates-state.ts`, `clear-data.ts`, `model.ts`, `rows.ts`, `search.ts`, `router.ts`, `style.css`, `sections/`) | The Settings page, served at `orivon://settings`: a list of sections, one section's rows, search, and a deep link per section. A section is data (rows with a label, help, keywords and a control), so the page draws it and search reads it from the same rows |
-| `split-frame/index.html`, `split-frame/main.ts`, `split-frame/style.css` | The backdrop of a split: the divider (the gap between the panes, which the pointer grabs), the ring round the pane in use, and the place a dragged tab would go |
-| `menu/index.html`, `menu/main.ts`, `menu/style.css` | The main menu popup: the commands under the menu button, each with its keys |
-| `pages/history/` (`index.html`, `main.ts`, `days.ts`, `style.css`) | The History page, served at `orivon://history`: the pages visited under a heading for each day, a search, and a button to remove one page or all |
-| `pages/profiles/`, `pages/private/` (each `index.html`, `main.ts`, `style.css`) | The Profiles page (every profile with its name and colour, and open, rename, recolour, delete, and make one) and the Private page (what a private window keeps and does not, and a button for another) |
-| `site-info/index.html`, `site-info/main.ts`, `site-info/main-view.ts`, `site-info/web3-view.ts`, `site-info/data-view.ts`, `site-info/switch.ts`, `site-info/icons.ts`, `site-info/style.css` | The per-site popup: a client-side router over three pages, each its own render function |
+| (top level) | The chrome view: tab strip (sharing its row with the native window buttons, and dragging a tab out of it: `tab-drag.ts`), toolbar and bookmarks bar, in its own `WebContentsView` above the active tab |
+| [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
+| [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
+| [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches, its Web3 Score and site data pages |
+| [`intro/`](intro/) | The welcome screen, a full-window view over the shell (`src/main/shell/intro-view.ts`) |
+| [`menu/`](menu/) | The main menu popup: the commands under the menu button, each with its keys |
+| [`split-frame/`](split-frame/) | The view behind the two panes of a split: the divider, the ring round the pane in use, and where a dragged tab would go |
+| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `profiles`, `private`), on the tokens and controls in `pages/shared/` |
 
-**What it depends on.** `src/preload/shell.ts`'s exposed commands, over IPC, for the chrome
-view; `pages/` depends on `src/preload/internal.ts`'s one `request` and `onEvent`, and holds no
-capability of its own (it is served with a CSP that allows no network); `newtab/main.ts` depends on `src/preload/newtab.ts`'s exposed commands the same way, and
-degrades to plain unprivileged markup (no `window.orivonNewTab`) rather than throwing when
-loaded outside a genuinely fresh tab; see that file's own header comment. `intro/` depends on no
-preload at all: it reports "Enter Orivon" to main by moving its own URL hash to `#leaving` and
-then `#entered`, which `src/main/shell/intro-view.ts` watches, so the page holds no capability
-beyond its own document.
-`permissions/permissions-view.ts` also imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
-to show a protocol's origin as its address (`ipfs://<cid>`): pure string work over data, with no
-Node and no protocol's code behind it.
+**What it depends on.** The chrome view on `src/preload/shell.ts`'s commands, typed by that file's
+`OrivonShell` so a dropped command fails the typecheck, and `newtab/` on
+`src/preload/newtab.ts`'s, degrading to plain markup outside a fresh tab. `pages/` depends on
+`src/preload/internal.ts`'s one `request` and `onEvent` and holds no capability of its own: it is
+served with a CSP that allows no network. `intro/` has no preload: it reports "Enter Orivon"
+through its URL hash, which `intro-view.ts` watches. `permissions/permissions-view.ts` imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
+for pure string work (showing `ipfs://<cid>` as an address).
 
-**What it must never import.** `electron`, `node:*`, or anything under
-[`src/main/`](../main/). This is a sandboxed renderer with `nodeIntegration: false`; there is
-no Node here, and reaching for it is a sign the logic belongs in main. (Type-only imports from
-`src/main/shell/tabs.ts`, `src/main/browsing/bookmarks.ts` and `src/main/settings/schema.ts` are fine: they describe the shape of a state
-push and are erased at build time by `verbatimModuleSyntax`.)
+**What it must never import.** `electron`, `node:*`, or anything under [`src/main/`](../main/).
+This is a sandboxed renderer with no Node; reaching for it means the logic belongs in main.
+Type-only imports from `src/main/shell/tabs.ts`, `src/main/browsing/bookmarks.ts`,
+`src/main/settings/schema.ts` and `src/preload/shell.ts` are fine: `verbatimModuleSyntax` erases them.
 
-**Owner stream.** `shell`, build step 1, **done, maintenance only**.
+**The chrome document never changes its own URL, not even the fragment.** Main refuses every
+command from a sender whose URL is not exactly the chrome's (`src/main/ipc/ipc.ts`'s
+`isFromChrome`), so a hash change or `pushState` in `main.ts` would silence the chrome.
 
-**This is the only ESM tree in the repository.** Main and all three preloads are CommonJS; see
-[`src/main/README.md`](../main/README.md).
+## Design notes
 
-**Layout constant, kept in three places on purpose.** `CHROME_HEIGHT` in
-[`../main/shell/window.ts`](../main/shell/window.ts) is the sum of the rows below (native code and
-CSS must agree on where tab content starts), and `scripts/smoke.mjs` carries its own copy to
-assert against. **If you change one, change all three**, and re-run `npm run smoke`.
+**The chrome's height is kept in three places on purpose.** `CHROME_HEIGHT` in
+[`../main/shell/window.ts`](../main/shell/window.ts), `style.css`, and `scripts/smoke.mjs`'s own
+copy to assert against. **Change one, change all three**, and re-run `npm run smoke`.
 
 ```
-tab strip     36px   shares the row with Electron's native window buttons (titleBarOverlay /
-                     macOS traffic lights) — reserved space for them is an approximation, not
-                     a measurement; see open-questions.md A34
-toolbar       40px
-                     ────  76px  CHROME_TOP_ROWS — a profile with no bookmarks
-bookmarks bar 28px   only rendered when there is a bookmark to render
-                     ──── 104px  CHROME_HEIGHT
+tab strip     36px   shares the row with the native window buttons; their reserved
+                     inset is an approximation, not a measurement (open-questions.md A34)
+toolbar       40px   -> 76px CHROME_TOP_ROWS, a profile with no bookmarks
+bookmarks bar 28px   only when there is a bookmark -> 104px CHROME_HEIGHT
 ```
 
-**The bookmarks bar is not always there, and that makes the chrome two heights, not one.** An
-empty bar would be a row of controls that do nothing, so the row is hidden outright until the
-list is non-empty. v2's static bar also had an apps-grid button and an "Other Bookmarks" folder;
-neither is here, because neither has a model behind it, and "Other Bookmarks" could not be given
-one without a folder feature nobody has scoped. The bar is the real list and nothing else. **The renderer hiding it is only half the
-fix:** the tab content below starts where the chrome view *ends*, so main must shrink the view
-too or the hidden row becomes a 28px band of empty chrome. `window.ts`'s `chromeHeight()` owns
-that, reading the same `BookmarkStore` the state push comes from; `main.ts` sets
-`data-bookmarks` on `<html>` from the same push, which drives `style.css`'s height override and
-`styles/bookmarks.css`'s hide rule. The two are separate decisions made from one fact, so
-`smoke.mjs` asserts them **together** (`bookmarksBarMatches`); either alone passes while the
-feature is visibly broken.
+**The bookmarks bar makes the chrome two heights.** The row is hidden until the list is
+non-empty, and hiding it is half the fix: main must shrink the view too (`window.ts`'s
+`chromeHeight()`), or the row becomes a 28px band of empty chrome. `main.ts` sets
+`data-bookmarks` on `<html>` from the same push. `smoke.mjs` asserts the two together
+(`bookmarksBarMatches`), since either alone passes while the feature is visibly broken.
 
-**Reserving space for native window buttons.** `env(titlebar-area-*)` and
-`navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` +
-`WebContentsView` composition, confirmed empirically rather than assumed (`open-questions.md` A34).
-`style.css`'s `[data-platform]` rules reserve a fixed inset instead, driven by `process.platform`
-exposed read-only from `preload/shell.ts` (available even under `sandbox: true`) and written to
-`document.documentElement.dataset.platform` at the top of `main.ts`, before first paint.
+**Bookmarks are a real feature** (`docs/scope.md`, ADR-0003): `src/main/browsing/bookmarks.ts`
+holds and persists the list, and this directory renders what it is sent and asks main to add,
+remove or open, as the tab strip does for tabs.
 
-**Bookmarks are a real feature, not decoration**
-(`docs/scope.md`, `ADR-0003`), and not in the original scope pass. `src/main/browsing/bookmarks.ts`
-holds the list and persists it; this directory only ever renders what it's sent and asks main
-to add/remove/open, the same pattern the tab strip already uses for tabs.
+**Favicons arrive as `data:` URLs.** `src/main/browsing/favicon.ts` fetches, caps and re-encodes
+them, so this view's CSP stays `img-src 'self' data:`; the renderer never fetches one itself.
 
-**Tabs show real favicons.** This directory only ever receives a `data:` URL
-(or `null`) on `TabState.favicon` and renders it as an `<img>`, falling back to a generic globe
-on `null` or a load failure; it never fetches a favicon itself. `src/main/browsing/favicon.ts` does the
-actual fetching, capped and re-encoded to `data:`, specifically so this privileged view's CSP
-can stay `img-src 'self' data:` rather than opening it to arbitrary third-party hosts.
-
-**The Web3 Score shield leads the address pill, and a mark at its right end names the site's
-displayed Website level.** `web3-shield.ts`'s `web3Shield`/`paintShield` draw one element, used
-unchanged by both this toolbar and the site-info popup's connection row: the same outline at
-every level, grey with no level yet, then stroked red (Level 1), orange (2), yellow (3) or green
-(4). `paintMark` fills the pill's right end, where Orivon's logo would carry no information:
-Web2 in orange for Level 1, Web2.5 in yellow for Levels 2 and 3, Web3 in green for Level 4, and
-hidden with no level. `main.ts`'s `updateWeb3ScoreShield` clears both when the active origin
-changes, then asks main via `shell.web3ScoreFor` (a separate round trip from the pill's own
-`siteSummaryFor`, because the two answer different questions: how trustless this site is, versus
-what it has asked to do) and paints whichever level comes back; a push for the same origin keeps
-the level showing while it re-asks. The tooltip names a developer override, or a DDOC counted only
-in developer mode, rather than ever showing either as observed (`ADR-0006`, `ADR-0029`). The
-shield does not signal whether a page is served from Orivon's own pinned cache; `ADR-0007`'s
-amendment defers that to a future "store this Web3site locally" affordance. Clicking the shield
-opens the site-info popup straight to its Web3 Score page (`src/main/browsing/site-trust.ts`),
-which renders the level's own evidence in full, plus the Delivery level -- never a grade
-(`ARCHITECTURE.md`: "trust is shown as observed behaviour, never as a grade").
+**Icons are hand-drawn inline SVG**, no icon font or library (Rule 8;
+[`ADR-0002`](../../docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)), with paths
+matching `orivon-browser-v2` ported from lucide (ISC), credited in `icons.ts`. A control with no
+behaviour yet ships `disabled` with an honest `title`, never omitted or silently clickable
+(A32).
 
 **The zoom chip sits at the right of the address pill, and is absent at the default level.** `main.ts` shows
 `state.zoomPercent` when main sends one (`src/main/shell/window.ts`), and clicking it asks main to run the
 `zoom.reset` command, so the chip and the keyboard reset one way.
 
-**The site-info key sits right after the shield, and is absent until the site has asked for
-something.** `main.ts`'s `updateSitePermissionsBadge` queries `shell.siteSummaryFor` on every
-active-tab change and toggles the key's own `hidden` attribute on `summary.asked` -- an ordinary
-website carries no key at all, the same way Chrome's own permission icon stays absent until a
-site has asked (owner reference). `.has-warning` tints it the moment any asked-for row is an
-unlimited grant -- a Level 4 site's own grants never trip it, since their rows carry no warning
-at all (`ADR-0037`). Clicking it opens the site-info popup to its main page: the connection row,
-then one switch per capability or picked path the site has asked for, each row led by an icon
-for what it grants (`grant-icons.ts`), staged until a Confirm click
-(`src/main/permissions/site-info-controller.ts`, `site-switches.ts`).
-
-**The all-sites popup moved to a tune icon in the right-hand cluster.** It lists every app this
-browser has ever granted anything to, revoke-only, and is reached either directly or from the
-site-info popup's own "Site settings" row. A URL belonging to no app is harmless there:
-`permissions/main.ts` finds no card to scroll to and renders the list unscrolled, which is the
-ordinary open.
-
-**Icons.** Hand-drawn inline SVG, no icon font, no library, no framework, matching the rest of
-this codebase (Rule 8; `ADR-0002`, TypeScript only). Path data for the ones that visually match
-`orivon-browser-v2` is hand-ported from lucide's icon set (ISC licence) onto lucide's own
-default attributes, credited in `icons.ts`. A control with no v0 behaviour yet (extensions, the
-sidebar, the identity/card slot, favorites, the menu) ships `disabled` with an honest
-`title` rather than being omitted or left silently clickable (`open-questions.md` A32).
-
-**Visual reference only, never code:** the prior prototype at
-`<prior-mvp>` and `webtorrent-desktop`. Both are
-[`ADR-0002`](../../docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)
-"visual reference only": their plumbing is stale and points at designs v0 rejects. v2 happens
-to be a React + Tailwind + lucide-react app with no framework or dependency carried over here;
-what's reused is its measured colours, dimensions and icon shapes, not a line of its code.
+**Visual reference only, never code:** `orivon-browser-v2` (the prior prototype at
+`<prior-mvp>`) and `webtorrent-desktop` (ADR-0002). What is reused is v2's measured colours,
+dimensions and icon shapes, not a line of its code.

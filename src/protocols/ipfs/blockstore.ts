@@ -21,9 +21,9 @@ const CACHE_BYTES = 64 * 1024 * 1024
  * A joiner's OWN `signal` races against the shared result: if it aborts
  * first, `join` rejects for that caller alone, and only when the LAST
  * joiner has left this way does the underlying fetch actually stop
- * (`start`'s own signal aborts). Every remaining joiner still gets the
- * refusals a lying gateway earned, whichever joiner's request happened to
- * trigger the fetch that caught it.
+ * (`start`'s own signal aborts). Every joiner still waiting when the fetch
+ * settles gets the refusals a lying gateway earned, whether the fetch
+ * succeeded or not, and whichever joiner's request triggered it.
  */
 export class SharedFetch {
   private readonly controller = new AbortController()
@@ -55,20 +55,23 @@ export class SharedFetch {
     // promises.
     if (signal.aborted) throw signal.reason
     this.liveJoiners++
+    let answered = false
     try {
-      const bytes = await new Promise<Uint8Array>((resolve, reject) => {
+      return await new Promise<Uint8Array>((resolve, reject) => {
         const onAbort = (): void => { reject(signal.reason) }
         signal.addEventListener('abort', onAbort, { once: true })
+        const settle = (): void => { signal.removeEventListener('abort', onAbort); answered = true }
         this.result.then(
-          (value) => { signal.removeEventListener('abort', onAbort); resolve(value) },
-          (error: unknown) => { signal.removeEventListener('abort', onAbort); reject(error) }
+          (value) => { settle(); resolve(value) },
+          (error: unknown) => { settle(); reject(error) }
         )
       })
-      for (const refusal of this.refusals) onRefusal(refusal)
-      return bytes
     } finally {
       this.liveJoiners--
       if (this.liveJoiners === 0 && !this.settled) this.controller.abort(signal.reason)
+      // A fetch that ended unverifiable is exactly the one whose report
+      // must name the gateway that lied.
+      if (answered) for (const refusal of this.refusals) onRefusal(refusal)
     }
   }
 }

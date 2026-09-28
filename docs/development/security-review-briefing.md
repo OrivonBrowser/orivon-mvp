@@ -12,7 +12,7 @@ re-derived from the tree rather than copied out of it.
 
 | Before you report anything | Read |
 |---|---|
-| Is this already filed, and what happened to it? | [`../open-questions.md`](../open-questions.md), where every entry carries its status in its own heading: `[STILL OPEN]`, `[RESOLVED <date>]`, `[PARTIALLY RESOLVED <date>]`, `[AI-REC]`, `[NEEDS OWNER DECISION]` |
+| Is this already filed, and what happened to it? | [`../open-questions.md`](../open-questions.md) if it is still open, tagged `[OWNER]`, `[AI-REC]` or `[RESEARCH]`; [`../decisions/resolved-questions.md`](../decisions/resolved-questions.md) if it is settled, one row each |
 | Does this code path exist yet, and can a page actually reach it? | [`../planning/compatibility-matrix.md`](../planning/compatibility-matrix.md), scored in four columns, because **a module existing is not the same fact as a page being able to reach it** (A151) |
 
 **Deepening a filed finding is valuable; rediscovering it is not.** Where you can show one is worse

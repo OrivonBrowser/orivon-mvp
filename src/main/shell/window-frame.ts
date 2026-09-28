@@ -119,8 +119,8 @@ export function showWhenReady ({ win, initialBounds }: WindowFrame): void {
   // `win` to the wrong class.
   //
   // 'ready-to-show' does not fire reliably -- or fires very late -- when
-  // the chrome view loads from electron-vite's dev server
-  // (`loadURL(devServerUrl)`) rather than the built file, which reads as
+  // the chrome view loads `chromeUrl` from electron-vite's dev server
+  // rather than the built file, which reads as
   // "no window ever appears": the window exists the whole time, `show()`
   // is just never called. A short fallback timer closes the gap; `shown`
   // guards against calling `show()` twice if 'ready-to-show' fires late,

@@ -16,6 +16,7 @@
 import { WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
 import { join } from 'node:path'
 import { rendererEntryUrl } from '../shell/renderer-entry.js'
+import { lockNavigation } from '../shell/lock-navigation.js'
 
 const WIDTH = 380
 const MAX_HEIGHT = 460
@@ -137,6 +138,12 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
       }
     })
     view = popup
+    // The popup's preload (`spec.preloadRelPath`) is privileged in exactly
+    // the chrome view's own way, gated on the identical `location.href ===
+    // expectedUrl` pattern -- a view holding it must never end up attached
+    // to a document other than `url`. Locked before the load, as every
+    // caller does (lock-navigation.ts says why that is safe).
+    lockNavigation(popup.webContents, url)
 
     // Added last, so it renders above the active tab's view. Tab switches
     // and clicks into the page both blur this webContents, which closes the

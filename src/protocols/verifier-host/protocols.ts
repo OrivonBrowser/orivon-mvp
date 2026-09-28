@@ -58,7 +58,8 @@ function startIpfs (config: HostConfig, deps: HostDeps): Protocol {
     fetch: deps.fetch,
     direct: deps.directFetch,
     systemAddresses: deps.resolveHost,
-    dohAddresses: dohAddressResolver(config.dnsOverHttps, dohFetch)
+    dohAddresses: dohAddressResolver(config.dnsOverHttps, dohFetch),
+    log: (line) => { console.error(`[verifier] ${line}`) }
   })
   const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], reach, 'the IPFS gatherer')
   return ipfsProtocol({

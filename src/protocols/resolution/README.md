@@ -4,17 +4,15 @@
 [DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution) and
 [Data gathering](https://docs.orivonstack.com/docs/implementations/data-gathering) pages give
 Apps, as internal TypeScript: a `NameResolver` returns a name's records for the namespaces it
-declares (a top-level domain, `.eth`, or an address scheme, `ipfs:`), and a `DataGatherer` loads a
-site from those records and reports DDOC. Plus the one rule both an open page and an installed app
-use to judge a chain of pointers, and two helpers the providers and the verifier host share:
-DNS-name validation ([`dns-name.ts`](dns-name.ts)) and a concurrency limit, abortable per waiter
-([`slots.ts`](slots.ts)). A protocol ([`../protocol.ts`](../protocol.ts)) groups providers under
-its namespaces, and [`../registry.ts`](../registry.ts) orders them.
+declares, and a `DataGatherer` loads a site from those records and reports DDOC. Plus
+[`pointer-chain.ts`](pointer-chain.ts), the one rule both an open page and an installed app use to
+judge a chain of pointers, and three helpers the providers, the verifier host and its supervisor
+share ([`dns-name.ts`](dns-name.ts), [`slots.ts`](slots.ts), and [`timing.ts`](timing.ts)'s
+timeouts and waits, which leave no timer or listener behind). Ordinary ICANN names never pass through
+here; Chromium resolves them. Opening these interfaces to third-party Apps would be a
+`src/contracts/` change, and is not part of this build.
 
-Ordinary ICANN names never pass through here; Chromium resolves them. Opening these interfaces to
-third-party Apps would be a `src/contracts/` change, and is not part of this build.
-
-**Not tied to Electron.** Durable: nothing here would change if the shell did.
+**Not tied to Electron.** Durable.
 
 **What it depends on.** Nothing outside this directory.
 
@@ -26,33 +24,6 @@ the shell import it, so an edge out of it would reach all of them.
 
 ## Design notes
 
-Why the code here has the shape it has. This is the destination
-[`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
-source comment warns about a trap a maintainer would otherwise fall into, and the argument for
-a design belongs here instead.
-
-**[`providers.ts`](providers.ts)'s gatherer mounts a site once, then opens paths under it.**
-The canonical page describes a gatherer that loads a site from its records. Following the pointers
-from those records to a root (a signed IPNS record, a DNSLink) happens once per mount, so every
-file of one page, and every asset of one installed bundle, is read from the same root. Resolving
-per file would let an IPNS update land halfway through a page, and a bundle hash would then cover
-files from two releases.
-
-**[`records.ts`](records.ts) holds CIDs and keys as strings.** They cross a `MessagePort` between
-the verifier host and the shell, and this directory stays free of any IPFS library. The gatherer
-parses them and refuses anything that does not parse, so a string here is never trusted as a
-valid CID.
-
-**How providers fall back to one another** is the registry's, and
-[`../README.md`](../README.md)'s Design notes cover it.
-
-**[`pointer-chain.ts`](pointer-chain.ts) judges the pointers, not the bytes.** Two questions are
-kept apart. DDOC asks whether every byte served matched the content's hashes, and the gatherer's
-report answers it per mount. Whether every pointer from the name to the root was proven is the
-Delivery level's own question (the canonical Connection-to-network scale's proven-name rung,
-`ADR-0006`'s 2026-09-26 amendment), and this file answers it, for a live page and an installed
-app's stored chain alike. A DNSLink hop is not proven, because DNS can forge the
-TXT record, yet the bytes are still checked against the CID it named: DDOC holds, and the site is
-Level 2 with its DNS hop shown unproven. A test build's `fixture`
-provenance counts as proven: the seam that produces it is compiled out of an ordinary build. So
-does an `address`: `ipfs://<cid>` names its own content, and there is no pointer to forge.
+**A CID or key in [`records.ts`](records.ts) is an unchecked string.** Records cross a
+`MessagePort`, and this directory stays free of any IPFS library, so the gatherer parses each one
+and refuses what does not parse; never treat one as a valid CID before that.

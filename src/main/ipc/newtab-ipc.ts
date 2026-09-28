@@ -3,8 +3,8 @@
 // (scope.md; the dashboard replaces about:blank for a fresh tab).
 //
 // A separate channel and a separate sender check from ipc.ts's
-// registerShellIpc() on purpose. That check is object identity against
-// the ONE chrome webContents of its window, registered on that view. More
+// registerShellIpc() on purpose. That check compares against the ONE chrome
+// webContents of its window (identity, then URL), registered on that view. More
 // than one dashboard tab can exist at once, in any window, so there is no
 // single webContents to compare against and the channel is process-wide --
 // the frame's own URL is the strongest available check instead. It is re-verified on EVERY call,

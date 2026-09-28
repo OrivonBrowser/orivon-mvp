@@ -135,6 +135,11 @@ describe('sanitizeStoredFavicon -- bookmarks.json is a user-writable file', () =
     const svg = `data:image/svg+xml;base64,${Buffer.from('<svg></svg>').toString('base64')}`
     expect(sanitizeStoredFavicon(svg)).toBe(svg)
   })
+
+  it('relabels a stored icon by its bytes, so its label never disagrees with what it is', () => {
+    const svgBytes = Buffer.from('<svg></svg>').toString('base64')
+    expect(sanitizeStoredFavicon(`data:image/png;base64,${svgBytes}`)).toBe(`data:image/svg+xml;base64,${svgBytes}`)
+  })
 })
 
 describe('parseBookmarksFile -- the favicon field', () => {

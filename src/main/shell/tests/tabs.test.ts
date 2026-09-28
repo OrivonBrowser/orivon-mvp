@@ -711,13 +711,11 @@ describe('TabManager -- a tab coming back to an app it left gets the app\'s own 
   })
 })
 
-// F35 (CLAUDE-SECURITY-20260910-203341): wireView() used to launch
-// captureFavicon with a bare `void` and no .catch. A visited page's own
-// favicon host could reject that promise (see favicon.test.ts's
-// fetchFaviconDataUrl coverage for how), turning an ordinary page visit
-// into an unhandledRejection -- which index.ts deliberately maps to
-// app.exit(1), killing every open tab. This exercises the wiring in
-// tabs.ts directly, independent of what makes captureFavicon reject.
+// wireView() launches captureFavicon with a .catch, not a bare `void`: a
+// rejection there would be an unhandledRejection, which index.ts
+// deliberately maps to app.exit(1), killing every open tab. This exercises
+// the wiring in tabs.ts directly, independent of what makes captureFavicon
+// reject.
 describe('TabManager -- a rejecting captureFavicon must not escape as an unhandled rejection (F35)', () => {
   it('does not fire process "unhandledRejection" when fetchFaviconDataUrlCached rejects', async () => {
     vi.mocked(fetchFaviconDataUrlCached).mockRejectedValueOnce(new Error('simulated favicon failure'))

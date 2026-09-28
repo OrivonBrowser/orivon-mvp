@@ -16,9 +16,9 @@ independent meaning a second reader, human or agent, checking work that was not 
 - a conductor's hand-review of a diff (the standing carve-out for `src/broker/` and `src/main/`,
   from `.claude/unattended-run-protocol.md`'s "Which model runs what": those two
   directories are hand-reviewed personally, never trusted from a lane's own report alone);
-- an `adversarial-reviewer` or `named-persona-adversarial-review` pass (`CLAUDE.md`'s tooling
-  table: run after each build step lands, on the broker and the app loader at minimum);
-- a `/claude-security` scan (`CLAUDE.md`'s tooling table: end of build step 2, and before
+- an `adversarial-reviewer` or `named-persona-adversarial-review` pass (the `orivon-workflow` skill's
+  review shape: run at the end of a build step, on the broker and the app loader at minimum);
+- a `/claude-security` scan (the `orivon-workflow` skill's tooling table: end of build step 2, and before
   packaging);
 - a clean-checkout verification: a fresh clone and install, run to catch what a shared
   `node_modules` symlink across worktrees cannot.
@@ -73,6 +73,35 @@ confirmed by hand.
 Per-finding detail is in `open-questions.md` (A168-A182). This row records that the review happened
 and what it found in aggregate, not a re-narration of each finding.
 
+
+### PRs #21, #22 and #24: the chrome-view lock, favicons, `.eth` gateway reliability (2026-09-28)
+
+Reviewed after #22 and #24 had merged and while #21 was open. The fixes are #29 (the verifier)
+and #30 (the shell).
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Adversarial personas (`adversarial-reviewer`) | All three PRs | Findings pooled with the next three rows: 32 in all, 5 of them HIGH, listed below the table |
+| `/code-review`, high effort | #24 and #21 | Pooled, as above |
+| Named-persona adversarial review | #21 and #22 | Pooled, as above |
+| STRIDE and DREAD model | #24's direct gateway route | Pooled, as above |
+| `/security-review` methodology, "exploitable, not denial of service" bar | All three PRs | No HIGH or MEDIUM vulnerability newly introduced. It reproduced the SVG DOCTYPE bypass and the 999-status crash independently and classed both as denial of service, confirmed the direct route cannot be steered at a non-public address, and noted that #22 closed an older gap: favicon redirects had no per-hop address check |
+
+The HIGH findings: an abandoned hedge attempt cooled an honest gateway down; an aborted direct
+attempt reset the DNS-tamper route; a gateway answering 999 or 101 crashed or wedged the verifier
+host; a failed favicon request was never torn down; and a same-document URL change dropped the
+tab's icon. Eleven of the 32 were reached by two passes independently and treated as settled
+rather than as one reviewer's opinion. Owner calls went to `open-questions.md`: A262-A267 on the
+direct gateway route, A269 on the popups' sender check, A270 on SVG favicons. Fixing found two
+more: A258's cause was the certificate serial's DER padding, and Electron's own `net.fetch`
+throws uncaught on a status outside 200-599 (A268).
+
+Not run: `ca:review` and `ca:security-reviewer`, which need an initialised `.codearbiter/`, and
+`claude-security`, which was not installed.
+
+**The strict bar and the correctness passes disagreed, usefully.** The security methodology,
+asked only for exploitable vulnerabilities, passed all three PRs; the defects it set aside as
+denial of service are the ones that would have failed `.eth` pages and favicons for real users.
 
 ## Adding an entry
 
