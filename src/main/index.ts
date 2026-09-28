@@ -6,6 +6,7 @@ import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
 import { installShortcuts } from './shortcuts/install-shortcuts.js'
 import { installZoom } from './zoom/install-zoom.js'
+import { installHistory } from './history/install-history.js'
 import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
@@ -82,10 +83,12 @@ void app.whenReady().then(async () => {
   // bookmarks bar rather than changing after it is on screen.
   await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])
   applyThemeSetting(shell.settings, nativeTheme)
-  startInternalPages(shell)
+  shell.history.prune()
+  startInternalPages(shell, ctx)
   shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, openWindow: () => { createShellWindow(ctx, shell) }, quit: () => { app.quit() } })
   installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
   installZoom(app, shell.windows, shell.zoom)
+  installHistory(app, shell.windows, shell.internalPages, shell.history)
   registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
   // Only this first window can open on the welcome screen: the macOS
   // 'activate' below recreates a window in a process that has already shown it.

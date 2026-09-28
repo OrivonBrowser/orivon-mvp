@@ -12,6 +12,8 @@ export type Control =
   | { readonly type: 'toggle', readonly key: SettingKey }
   /** A keyboard shortcut: its keys, and the buttons that change it. */
   | { readonly type: 'shortcut', readonly id: string }
+  /** What to forget, and the button that forgets it. */
+  | { readonly type: 'clearData' }
   /** A value shown, not changed. */
   | { readonly type: 'info', readonly text: (state: SettingsState) => string }
   /** A button. With `confirm`, the first click arms it and the second does it. */

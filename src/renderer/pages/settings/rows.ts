@@ -2,6 +2,7 @@
 // state, which asks main; main's answer, not the control, decides what the
 // value is.
 import { h } from '../shared/dom.js'
+import { renderClearData } from './clear-data.js'
 import type { Control, Row } from './model.js'
 import type { SettingsState } from './state.js'
 
@@ -111,6 +112,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'text': field = renderText(control, state, controlId); break
     case 'action': field = renderAction(control, state); break
     case 'shortcut': field = renderShortcut(control, state); break
+    case 'clearData': field = renderClearData(state); break
     case 'info': field = h('span', { className: 'value', textContent: control.text(state) }); break
   }
 

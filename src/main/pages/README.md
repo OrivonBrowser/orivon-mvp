@@ -6,7 +6,7 @@
 from the built renderer or the dev server; both are pure. `internal-session.ts` is the one
 in-memory session that serves the scheme, and registers it before the app is ready. `internal-registry.ts`
 records which webContents the shell opened as which page, `internal-tab.ts` keeps such a tab on its page,
-and `internal-ipc.ts` is the single channel pages speak on, checked per call. `pages-subsystem.ts` and
+and `internal-ipc.ts` is the single channel pages speak on, checked per call, and `pages-domain.ts` lets one page take the person to another. `pages-subsystem.ts` and
 `start-internal-pages.ts` bring it up.
 
 **What it depends on.** `electron`; [`../settings/`](../settings/) (the settings domain);

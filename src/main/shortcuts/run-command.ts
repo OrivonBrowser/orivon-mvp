@@ -55,6 +55,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       else deps.zoom.step(origin, id === 'zoom.in' ? 'in' : 'out')
       return
     }
+    case 'history.open': tabs.openInternal('history'); return
     case 'devtools.toggle': deps.devtools.toggle(tabs.activeWebContents(), window); return
     case 'bookmark.toggle':
       // The same rule as the star in the toolbar: a page with a site, and no other.

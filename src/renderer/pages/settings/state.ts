@@ -4,6 +4,7 @@
 import type { SettingDescription } from '../../../main/settings/schema.js'
 import { internalBridge } from '../shared/bridge.js'
 import type { OrivonInternal } from '../shared/bridge.js'
+import { PrivacyState } from './privacy-state.js'
 import { ShortcutsState } from './shortcuts-state.js'
 
 export interface AboutInfo {
@@ -28,10 +29,12 @@ export class SettingsState {
   private readonly values = new Map<string, unknown>()
   about: AboutInfo | null = null
   readonly shortcuts: ShortcutsState
+  readonly privacy: PrivacyState
   private readonly listeners = new Set<() => void>()
 
   constructor (private readonly bridge: OrivonInternal = internalBridge()) {
     this.shortcuts = new ShortcutsState(bridge, () => { this.notify() })
+    this.privacy = new PrivacyState(bridge)
   }
 
   async load (): Promise<void> {
@@ -40,6 +43,7 @@ export class SettingsState {
     for (const [key, value] of Object.entries(reply.values)) this.values.set(key, value)
     this.about = await this.bridge.request('about', {}) as AboutInfo
     await this.shortcuts.load()
+    await this.privacy.load()
     this.bridge.onEvent((topic, payload) => {
       if (this.shortcuts.handle(topic, payload) || topic !== 'settings.changed') return
       const change = payload as { key: string, value: unknown }
@@ -73,6 +77,11 @@ export class SettingsState {
     await this.bridge.request('settings', { type: 'resetAll' })
     for (const description of this.descriptions.values()) this.values.set(description.key, description.default)
     this.notify()
+  }
+
+  /** Takes the person to another of the shell's own pages, in this window. */
+  async openPage (page: string, path?: string): Promise<void> {
+    await this.bridge.request('pages', { type: 'open', page, ...(path === undefined ? {} : { path }) })
   }
 
   onChange (listener: () => void): () => void {

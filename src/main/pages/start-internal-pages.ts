@@ -5,6 +5,12 @@ import { devModeEnabled } from '../dev/dev-mode.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { settingsDomain } from '../settings/settings-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
+import { pagesDomain } from './pages-domain.js'
+import { historyDomain } from '../history/history-domain.js'
+import { privacyDomain } from '../privacy/privacy-domain.js'
+import { partitionFor } from '../../broker/grants/origin-hash.js'
+import { createPermissionsController } from '../permissions/permissions.js'
+import type { SubsystemContext } from '../registry.js'
 import type { InternalDomain } from './internal-ipc.js'
 import { registerInternalIpc } from './internal-ipc.js'
 import { internalSession } from './internal-session.js'
@@ -26,10 +32,20 @@ function aboutDomain (): InternalDomain {
 }
 
 /** Once per process. */
-export function startInternalPages (services: ShellServices): void {
+export function startInternalPages (services: ShellServices, ctx: SubsystemContext): void {
+  const permissions = createPermissionsController(ctx)
   registerInternalIpc(services.internalPages, internalSession, {
     settings: settingsDomain(services.settings),
     shortcuts: shortcutsDomain(services.shortcuts),
+    history: historyDomain(services.history),
+    pages: pagesDomain(services.windows),
+    privacy: privacyDomain(services.history, services.zoomStore, {
+      history: services.history,
+      zoom: services.zoomStore,
+      websites: session.defaultSession,
+      appSessions: async () => (await permissions.list()).map((app) => session.fromPartition(partitionFor(app.origin))),
+      now: Date.now
+    }),
     about: aboutDomain()
   })
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings']) })

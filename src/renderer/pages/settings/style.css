@@ -133,6 +133,15 @@
 }
 .card > .group:first-child { border-top: none; }
 
+.clear-data { display: grid; gap: 10px; width: 420px; max-width: 100%; }
+.clear-history { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.clear-history .select { min-width: 0; }
+.clear-option { display: flex; align-items: flex-start; gap: 10px; }
+.clear-option input { margin-top: 3px; flex: none; }
+.clear-option .block { display: block; font-size: 12.5px; }
+.danger-option { padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--wdanger) 8%, transparent); }
+.clear-actions { display: flex; align-items: center; gap: 12px; }
+
 .shortcut { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .shortcut.stacked { flex-direction: column; align-items: flex-end; gap: 6px; }
 .keys { display: inline-flex; gap: 4px; }

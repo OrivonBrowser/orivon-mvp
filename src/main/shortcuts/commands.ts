@@ -41,6 +41,7 @@ export const COMMANDS = [
   { id: 'zoom.in', label: 'Zoom in', category: 'navigation', default: 'Mod+=', aliases: ['Mod++'], repeatable: true },
   { id: 'zoom.out', label: 'Zoom out', category: 'navigation', default: 'Mod+-', repeatable: true },
   { id: 'zoom.reset', label: 'Actual size', category: 'navigation', default: 'Mod+0' },
+  { id: 'history.open', label: 'History', category: 'navigation', default: 'Mod+H' },
   { id: 'devtools.toggle', label: 'Developer tools', category: 'navigation', default: 'F12', macDefault: 'Mod+Alt+I', aliases: ['Mod+Shift+I'] },
   { id: 'bookmark.toggle', label: 'Bookmark this page', category: 'navigation', default: 'Mod+D' },
   { id: 'window.new', label: 'New window', category: 'window', default: 'Mod+N' },

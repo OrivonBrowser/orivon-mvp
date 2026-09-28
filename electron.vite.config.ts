@@ -195,6 +195,7 @@ export default defineConfig({
           intro: resolve(root, 'src/renderer/intro/index.html'),
           permissions: resolve(root, 'src/renderer/permissions/index.html'),
           'page-settings': resolve(root, 'src/renderer/pages/settings/index.html'),
+          'page-history': resolve(root, 'src/renderer/pages/history/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),
           menu: resolve(root, 'src/renderer/menu/index.html')
         }

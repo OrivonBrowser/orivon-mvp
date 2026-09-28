@@ -6,6 +6,8 @@ import { BookmarkStore } from '../browsing/bookmarks.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { partitionForTarget } from './tab-view.js'
+import { HistoryService } from '../history/history-service.js'
+import { openHistory } from '../history/open-history.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmOpenDevTools } from '../devtools/devtools-prompt.js'
 import { DevToolsService } from '../devtools/devtools-service.js'
@@ -21,6 +23,7 @@ export interface ShellServices {
   readonly bookmarks: BookmarkStore
   readonly commands: CommandBus
   readonly devtools: DevToolsService
+  readonly history: HistoryService
   readonly internalPages: InternalPageRegistry
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
@@ -36,6 +39,7 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
   const settings = new SettingsStore(join(userDataPath, 'settings.json'))
   const zoomStore = new ZoomStore(join(userDataPath, 'zoom.json'))
   const internalPages = new InternalPageRegistry()
+  const openedHistory = openHistory(join(userDataPath, 'history.db'))
   return {
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
     commands: new CommandBus(),
@@ -45,6 +49,7 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
       developerMode: devModeEnabled,
       confirm: confirmOpenDevTools
     }),
+    history: new HistoryService(openedHistory.store, settings, openedHistory.problem),
     internalPages,
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),

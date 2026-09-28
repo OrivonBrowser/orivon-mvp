@@ -29,6 +29,9 @@ const SPECS = {
     labels: { ...Object.fromEntries(SEARCH_ENGINES.map((engine) => [engine.id, engine.label])), [CUSTOM_SEARCH_ENGINE]: 'Custom' }
   },
   'search.customUrl': { kind: 'text', default: '', maxLength: 2048, check: (value) => value === '' || isValidSearchTemplate(value) },
+  // Whether pages are written down, and for how long. 90 days is provisional: what a person expects a browser to remember is not yet measured.
+  'history.remember': { kind: 'bool', default: true },
+  'history.retentionDays': { kind: 'enum', options: ['7', '30', '90', 'forever'], default: '90', labels: { 7: '7 days', 30: '30 days', 90: '90 days', forever: 'Forever' } },
   // Every tab's page can be inspected unless the person turns it off; where the tools open is theirs too.
   'developer.tools': { kind: 'bool', default: true },
   'developer.dock': { kind: 'enum', options: ['right', 'bottom', 'undocked'], default: 'right' },

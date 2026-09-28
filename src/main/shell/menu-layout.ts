@@ -11,6 +11,7 @@ export const MENU_LAYOUT: readonly (CommandId | '-')[] = [
   'window.new',
   '-',
   'bookmark.toggle',
+  'history.open',
   '-',
   'zoom.in',
   'zoom.out',
