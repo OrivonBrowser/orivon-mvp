@@ -68,22 +68,13 @@ const DOCUMENT_TYPES: ReadonlySet<string> = new Set(['mainFrame', 'subFrame'])
  * Whether a request inside a shown page may proceed under `patterns`. A
  * subresource always may: the grant names which sites the app shows, and
  * what those sites load is their own business. A document load, top frame
- * or subframe, must pass the grant (`embedDocumentAllowed`), and with no
- * live grant at all nothing loads.
- */
-export function guestRequestAllowed (url: string, resourceType: string, patterns: readonly Pattern[] | undefined): boolean {
-  if (patterns === undefined) return false
-  if (!DOCUMENT_TYPES.has(resourceType)) return true
-  return embedDocumentAllowed(url, patterns)
-}
-
-/**
- * `guestRequestAllowed`'s async counterpart -- C-7/A286: no cancellable
- * Electron webRequest event carries the address a document load actually
- * connects to, so this checks the NAME first, through `resolve` (the guest
- * session's own `Session.resolveHost`, ./embed-host.ts's job to inject --
- * it shares Chromium's host cache with the load that follows, so a static
- * name already answers from that same cache).
+ * or subframe, must pass the grant, and with no live grant nothing loads.
+ *
+ * No cancellable Electron webRequest event carries the address a document
+ * load actually connects to, so a `"*"`-admitted NAME is checked first,
+ * through `resolve`: the guest session's own `Session.resolveHost`, which
+ * ./embed-host.ts injects, sharing Chromium's host cache with the load that
+ * follows.
  *
  * `embedAdmissionKind`'s pure hostname gate (`reachableByWildcard`) stays
  * the FIRST gate: a `localhost` name or a non-public address literal named
@@ -100,7 +91,7 @@ export function guestRequestAllowed (url: string, resourceType: string, patterns
  * that answers differently between this check and the connection -- is
  * A286, the same class A196 already accepts for `connectSecure`.
  */
-export async function guestRequestAllowedAsync (
+export async function guestRequestAllowed (
   url: string,
   resourceType: string,
   patterns: readonly Pattern[] | undefined,

@@ -13,7 +13,7 @@ import type { Session, WebContents } from 'electron'
 import { join } from 'node:path'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { embedPartitionFor, guestRequestAllowedAsync, hardenGuest } from './embed-guard.js'
+import { embedPartitionFor, guestRequestAllowed, hardenGuest } from './embed-guard.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 
 export interface EmbedHost {
@@ -52,8 +52,8 @@ function dequeueEmbedderOrigin (embedder: WebContents): string | undefined {
 }
 
 /**
- * `embedSession`'s own resolver, wrapped to `guestRequestAllowedAsync`'s
- * `resolve` shape -- the C-7/A286 fix's whole point. Resolving through
+ * `embedSession`'s own resolver, wrapped to `guestRequestAllowed`'s
+ * `resolve` shape -- the whole point of A286's check. Resolving through
  * THIS SPECIFIC session, not `net.resolveHost`/`dns`, is what shares
  * Chromium's host cache with the load `onBeforeRequest` is about to admit
  * or refuse: the same name, asked again moments later to actually connect,
@@ -77,9 +77,9 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
   embedSession.on('will-download', (event) => { event.preventDefault() })
   const resolve = resolveViaSession(embedSession)
   embedSession.webRequest.onBeforeRequest((details, callback) => {
-    guestRequestAllowedAsync(details.url, details.resourceType, broker.embed.originsSync(appOrigin), resolve)
+    guestRequestAllowed(details.url, details.resourceType, broker.embed.originsSync(appOrigin), resolve)
       .then((allowed) => { callback({ cancel: !allowed }) })
-      // guestRequestAllowedAsync never itself rejects (it catches `resolve`
+      // guestRequestAllowed never itself rejects (it catches `resolve`
       // failing), but a callback Electron waits on must never go uncalled
       // regardless -- fail closed the same way every refusal here does.
       .catch(() => { callback({ cancel: true }) })

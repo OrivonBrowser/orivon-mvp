@@ -98,7 +98,7 @@ describe('embedDocumentAllowed -- "*"', () => {
   })
 })
 
-// A286/C-7: embedDocumentAllowed's own boolean cannot say whether the
+// A286: embedDocumentAllowed's own boolean cannot say whether the
 // admitting pattern was an exact origin (ADR-0039 lets it be private, no
 // address check ever needed) or "*" alone (whose hostname still needs its
 // connected address checked -- embed-guard.ts's own job, not this file's).

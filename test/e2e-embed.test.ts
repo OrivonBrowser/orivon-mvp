@@ -37,7 +37,7 @@ const OTHER_ORIGIN = `http://${HOST}:${OTHER_PORT}`
 const STEP_TIMEOUT_MS = 20_000
 const TEST_TIMEOUT_MS = 180_000
 
-// C-7/A286: a name that resolves to loopback -- not a literal, so
+// A286: a name that resolves to loopback -- not a literal, so
 // embed-origin.ts's own hostname gate cannot see it; only guestRequestAllowedAsync's
 // resolveHost check can. Mapped by its OWN --host-resolver-rules entry
 // (below), ahead of the file's usual blackhole rule, to the SAME already-
@@ -308,14 +308,14 @@ it(
   TEST_TIMEOUT_MS
 )
 
-// C-7/A286: a "*" grant reaches an ordinary DNS name (embed-origin.ts's own
+// A286: a "*" grant reaches an ordinary DNS name (embed-origin.ts's own
 // hostname gate has nothing to refuse -- it is not a localhost name and not
 // an address literal), so admitting it must now go through the guest
 // session's OWN resolveHost before the load proceeds. Its own launch and
 // its own --host-resolver-rules, on top of the shared HERMETIC_RESOLVER
 // blackhole: REBIND_HOST maps to loopback, everything else stays refused.
 it(
-  'a "*" grant refuses a document whose host resolves to a loopback address, rather than loading it (C-7/A286)',
+  'a "*" grant refuses a document whose host resolves to a loopback address, rather than loading it (A286)',
   async () => {
     await runPhase('web.embed "*" DNS-rebind e2e', async (check) => {
       const app = await launchElectron({

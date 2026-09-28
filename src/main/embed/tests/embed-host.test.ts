@@ -133,8 +133,8 @@ describe('installEmbedHost -- the embedder origin captured at will-attach-webvie
   })
 })
 
-// C-7/A286: configureEmbedSession wires the guest session's OWN resolveHost
-// into guestRequestAllowedAsync (embed-guard.test.ts covers that function's
+// A286: configureEmbedSession wires the guest session's OWN resolveHost
+// into guestRequestAllowed (embed-guard.test.ts covers that function's
 // own decisions in isolation) -- this checks the WIRING: that resolveHost
 // is the one actually asked, that its `endpoints[].address` shape is read
 // correctly, and that onBeforeRequest's callback receives `cancel` built
