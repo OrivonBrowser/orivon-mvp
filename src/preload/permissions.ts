@@ -6,13 +6,13 @@ import type { AppPermissions, SiteNotificationRow } from '../main/permissions/pe
 import type { CapabilityKind, GrantId } from '../contracts/index.js'
 
 // Loaded ONLY by the permissions panel's own WebContentsView
-// (src/main/permissions-panel.ts) -- queue item 4.4's permissions surface.
+// (src/main/permissions/permissions-panel.ts) -- queue item 4.4's permissions surface.
 // This page never navigates anywhere else (no links, no
 // address bar), but the check below still runs before exposing anything
 // privileged -- the same defense-in-depth newtab.ts applies for a page that
 // COULD navigate, kept here so this file is not the one preload in the
 // codebase that trusts webPreferences.additionalArguments without checking
-// location.href against it. src/main/permissions-ipc.ts re-verifies the same
+// location.href against it. src/main/ipc/permissions-ipc.ts re-verifies the same
 // thing from the authoritative main-process side, on every call; neither
 // layer trusts the other.
 const URL_PREFIX = '--orivon-permissions-url='
@@ -54,7 +54,7 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
       })
     },
     /** Tells main how tall the rendered content is, so the panel sizes to it
-     * (src/main/permissions-panel.ts). Fire-and-forget: a panel that failed
+     * (src/main/permissions/permissions-panel.ts). Fire-and-forget: a panel that failed
      * to resize is cosmetic, and must never break rendering the list. */
     reportHeight: (height: number): void => {
       void ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'contentHeight', height } satisfies PermissionsCommand)

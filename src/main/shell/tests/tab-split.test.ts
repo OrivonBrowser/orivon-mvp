@@ -431,3 +431,16 @@ describe('a joined pair in the strip', () => {
     expect(ids(manager)).toEqual([a, b, arriving])
   })
 })
+
+describe('a split asked for in a full window', () => {
+  it('leaves every existing pair alone rather than pairing with the tab in front', () => {
+    const { manager } = rig()
+    const tabs = Array.from({ length: 100 }, (_, n) => manager.createTab(`https://t${String(n)}.example/`))
+    manager.splits.split(tabs[98] as string, tabs[99] as string, 'right')
+    const openInSplit = (manager as unknown as { viewHost: { openInSplit: (id: string, url: string) => void } }).viewHost.openInSplit
+    openInSplit(tabs[0] as string, 'https://more.example/')
+    const withs = Object.fromEntries(manager.getState().tabs.map((tab) => [tab.id, tab.splitWith]))
+    expect(withs[tabs[99] as string]).toBe(tabs[98])
+    expect(withs[tabs[0] as string]).toBeNull()
+  })
+})

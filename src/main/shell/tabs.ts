@@ -96,7 +96,7 @@ export class TabManager {
       detachView: (view) => { this.panes.hide(this.idOfView(view)) },
       attachView: (id, view) => { this.panes.replace(id, view, this.paneBounds(id)) },
       paneClicked: (id) => { this.paneClicked(id) },
-      openInSplit: (id, url) => { this.splits.split(id, this.createTab(url), 'right') },
+      openInSplit: (id, url) => { if (!this.atCapacity()) this.splits.split(id, this.createTab(url), 'right') },
       emitState: () => { this.emitState() },
       captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },
       forgetTab: (id) => { this.forgetTab(id, false) },
@@ -121,7 +121,7 @@ export class TabManager {
       activate: (id) => { this.activateTab(id) },
       focus: (id) => { this.liveWebContents(id)?.focus() },
       changed: () => { this.syncViews(); this.emitState() },
-      openTab: () => this.createTab(),
+      openTab: () => this.atCapacity() ? undefined : this.createTab(),
       area: getTabBounds
     })
   }
@@ -162,10 +162,8 @@ export class TabManager {
 
   createTab (url?: string): string {
     if (this.atCapacity()) {
-      // Refuse rather than crash -- see MAX_TABS above. Nothing reads
-      // this return value today (grep confirms every caller discards
-      // it), but the signature stays `string`, so hand back whatever is
-      // already current rather than inventing a sentinel.
+      // Refuse rather than crash -- see MAX_TABS above. A caller that uses
+      // the id (a split's partner) checks atCapacity() first.
       return this.activeId ?? ''
     }
 
