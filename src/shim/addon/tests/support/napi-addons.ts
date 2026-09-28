@@ -62,3 +62,16 @@ export function threadedAddon (): Uint8Array<ArrayBuffer> {
     body: () => [op.localGet(1)]
   })
 }
+
+/** A command build, exporting `_start`, which emnapi would start through Node's WASI internals. */
+export function commandAddon (): Uint8Array<ArrayBuffer> {
+  return buildModule({
+    imports: [],
+    table: true,
+    extra: [...ALLOCATOR, { name: '_start', params: [], results: [], body: [] }],
+    exportName: 'napi_register_wasm_v1',
+    params: [I32, I32],
+    results: [I32],
+    body: () => [op.localGet(1)]
+  })
+}

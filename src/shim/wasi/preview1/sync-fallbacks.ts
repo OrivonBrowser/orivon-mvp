@@ -8,7 +8,7 @@ import type { HostContext } from '../context.js'
 import { Errno } from '../errno.js'
 import type { WasiFunction } from './family.js'
 
-/** A sink that finished synchronously; any other stdout/stderr write refuses. */
+/** A sink that has taken the bytes by the time it returns. */
 export type SyncSink = (bytes: Uint8Array) => void
 
 export function syncFallbacks (ctx: HostContext, suspending: ReadonlySet<string>, sinks: { stdout: SyncSink, stderr: SyncSink }): Record<string, WasiFunction> {
@@ -22,7 +22,8 @@ export function syncFallbacks (ctx: HostContext, suspending: ReadonlySet<string>
   fallbacks.sched_yield = () => Errno.SUCCESS
   fallbacks.fd_write = ((fd: number, iovsPtr: number, iovsLen: number, nwrittenPtr: number) => {
     const entry = ctx.fds.get(fd)
-    if (entry?.kind !== 'stdout' && entry?.kind !== 'stderr') {
+    if (entry === undefined) return Errno.BADF
+    if (entry.kind !== 'stdout' && entry.kind !== 'stderr') {
       ctx.warnOnce('fd_write', 'a synchronous module can write only to stdout and stderr')
       return Errno.NOSYS
     }

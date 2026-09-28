@@ -91,7 +91,7 @@ export async function initializeReactor (instance: WebAssembly.Instance, host: W
 export interface SyncWasi {
   readonly wasiImport: Readonly<Record<string, unknown>>
   initialize (instance: WebAssembly.Instance): void
-  /** A command's `_start`, run to its end; returns its exit code. */
+  /** Required by emnapi's type; a synchronous module is always a reactor. */
   start (instance: WebAssembly.Instance): number
 }
 
@@ -108,17 +108,7 @@ export function synchronousWasi (host: WasiHost): SyncWasi {
       const init = exportedFunction(instance, '_initialize')
       if (init !== undefined) init()
     },
-    start: (instance) => {
-      bindInstanceMemory(instance, host)
-      const run = exportedFunction(instance, '_start')
-      if (run === undefined) throw new TypeError('The WASI program does not export "_start"')
-      try {
-        run()
-        return 0
-      } catch (error) {
-        if (error instanceof WasiExit) return error.code
-        throw error
-      }
-    }
+    // emnapi runs a build exporting _start through Node's WASI internals; load.ts refuses one first.
+    start: () => { throw new TypeError('a synchronous WASI module is initialized as a reactor, never started') }
   }
 }

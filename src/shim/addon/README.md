@@ -21,8 +21,11 @@ README.
 `ERR_DLOPEN_FAILED` with `reason: 'excluded'`, naming the three paths.
 
 **What an addon cannot do yet:** reach files (its imports cannot wait on `orivon.fs`, so those
-calls refuse by name; stdout and stderr reach the console), run a threaded build
-(`wasm32-wasip1-threads` refuses by name, `not-built`), or open sockets.
+calls refuse by name), run a threaded build (`wasm32-wasip1-threads` refuses by name,
+`not-built`), or open sockets. A command build, one exporting `_start`, refuses too: emnapi starts
+one through Node's own WASI internals, so an addon is built as a reactor, as napi-rs builds it.
+Its stdout and stderr go to `process.stdout` and `process.stderr`, as Node's do: the page console,
+or a forked child's pipes.
 
 ## Design notes
 
@@ -36,5 +39,7 @@ runs in a Worker, which has no such limit, so it loads any addon on the fly.
 **An addon's imports never suspend** (`../wasi/preview1/sync-fallbacks.ts`): JavaScript calls its
 exports synchronously, and a `Suspending` import reached without a `promising` entry traps.
 
-**Each addon is loaded once per page or Worker**, keyed by the path asked for, as Node caches a
-dlopen.
+**Each addon is loaded once per page or Worker**, keyed by its path on the origin however it was
+spelled (a path, an https or `file:` URL, `.` segments), as Node caches a dlopen by resolved path.
+Concurrent preloads share one load, and a preload that finishes after a synchronous load keeps the
+first instance.

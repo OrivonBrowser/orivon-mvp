@@ -17,7 +17,7 @@ export function isBuiltin (name: string): boolean {
 type ShimRequire = ((id: string) => unknown) & { resolve: (id: string) => string, cache: Record<string, unknown> }
 
 export function createRequire (filename: string | URL): ShimRequire {
-  const from = typeof filename === 'string' ? (filename.startsWith('file://') ? new URL(filename).pathname : filename) : filename.pathname
+  const from = (typeof filename === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(filename)) ? filename : new URL(filename).pathname
   const base = from.endsWith('/') ? from : dirname(from)
   const resolvePath = (id: string): string => id.startsWith('.') || id.startsWith('/') ? resolve(base, id) : id
   const require = ((id: string): unknown => {

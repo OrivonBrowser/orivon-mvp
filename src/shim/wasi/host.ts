@@ -14,7 +14,7 @@ import type { ImportFamily, WasiFunction } from './preview1/family.js'
 import { fdFunctions } from './preview1/fd.js'
 import { pathFunctions } from './preview1/path.js'
 import { refusedFunctions } from './preview1/refused.js'
-import { syncFallbacks } from './preview1/sync-fallbacks.js'
+import { type SyncSink, syncFallbacks } from './preview1/sync-fallbacks.js'
 import { EMPTY_STDIN, type LineSink, type Sink, type StdinSource, lineSink } from './stdio.js'
 import { isTermination } from './termination.js'
 
@@ -31,6 +31,9 @@ export interface WasiHostOptions {
   /** Default: the page console, one entry per line. */
   readonly stdout?: Sink
   readonly stderr?: Sink
+  /** Where a synchronous module's stdout and stderr go (syncFunctions). Default: the page console. */
+  readonly syncStdout?: SyncSink
+  readonly syncStderr?: SyncSink
 }
 
 export interface WasiHost {
@@ -122,17 +125,31 @@ export function createWasiHost (options: WasiHostOptions): WasiHost {
     }
   }
 
-  const consoleOut = lineSink((line) => console.log(line))
-  const consoleErr = lineSink((line) => console.error(line))
-  lineSinks.push(consoleOut, consoleErr)
-  const fallbacks = syncFallbacks(ctx, suspending, { stdout: (bytes) => { void consoleOut.sink(bytes) }, stderr: (bytes) => { void consoleErr.sink(bytes) } })
-  const syncFunctions: Record<string, WasiFunction> = { ...functions }
-  for (const [name, fn] of Object.entries(fallbacks)) syncFunctions[name] = guardSync(fn as (...args: never[]) => number)
+  // Built on first use: only a synchronous module (a native addon) reads them.
+  let syncFunctions: Record<string, WasiFunction> | undefined
+  const buildSyncFunctions = (): Record<string, WasiFunction> => {
+    const sinkOf = (given: SyncSink | undefined, emit: (line: string) => void): SyncSink => {
+      if (given !== undefined) return given
+      const line = lineSink(emit)
+      lineSinks.push(line)
+      return (bytes) => { void line.sink(bytes) }
+    }
+    const fallbacks = syncFallbacks(ctx, suspending, {
+      stdout: sinkOf(options.syncStdout, (line) => console.log(line)),
+      stderr: sinkOf(options.syncStderr, (line) => console.error(line))
+    })
+    const table: Record<string, WasiFunction> = { ...functions }
+    for (const [name, fn] of Object.entries(fallbacks)) table[name] = guardSync(fn as (...args: never[]) => number)
+    return table
+  }
 
   return {
     functions,
     suspending,
-    syncFunctions,
+    get syncFunctions () {
+      syncFunctions ??= buildSyncFunctions()
+      return syncFunctions
+    },
     bindMemory: (memory) => ctx.memory.bind(memory),
     kill: () => ctx.terminate('killed'),
     finish: async () => {
