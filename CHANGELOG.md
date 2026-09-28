@@ -32,6 +32,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   second start of one already open hands over to it. A private window (Ctrl+Shift+N) starts empty on a
   directory of its own, keeps no history, statistics or identity, asks for every permission again and is
   deleted when its last window closes. `ADR-0042`.
+- **A native addon reaches the app's files from a forked child** of a cross-origin isolated app,
+  each call blocking on the page's `orivon.fs`; that child's `fs.readFileSync` works too
+  (ADR-0040).
+- **A native addon loads as its WebAssembly build**: `process.dlopen` and `createRequire` take
+  the `.node` path and load the build beside it through Node-API for WebAssembly; the `.node`
+  machine code never runs (ADR-0040).
+- **`child_process` works for ported apps**, every child in a Web Worker: `spawn`/`exec` run a
+  WASI program from the app's bundle and `fork` an app module with IPC, both under the app's
+  grants; a native program refuses by name (ADR-0040).
+- **A WASI program runs inside an app's tab** through Node's `wasi` module, its every file call an
+  `orivon.fs` call under the app's grant; native modules and child processes will come as
+  WebAssembly too, never as machine code (ADR-0040).
 - **An app can show a website inside its own page** (`web.embed`, ADR-0039), each shown page
   sandboxed in the app's own session; a manifest can also ask for cross-origin isolation, which
   turns on `SharedArrayBuffer` for WebAssembly threads.

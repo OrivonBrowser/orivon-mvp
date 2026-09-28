@@ -54,10 +54,11 @@
    async-only `fs` costs is not speed but presence: `readFileSync`/`existsSync`-shaped calls
    are how a ported Node program reads its own configuration, typically from inside a
    dependency the porting developer does not control, and the app throws before it ever
-   renders rather than merely running a few milliseconds slower. The mechanism is the
-   runtime's synchronous renderer-to-main channel today; an `Atomics.wait`-in-a-Worker route
-   is deferred, not rejected, as a future swap for the identical interface, and an app calling
-   `readFileSync` cannot tell which one answered it, and never will be able to.
+   renders rather than merely running a few milliseconds slower. On the page the mechanism is
+   the runtime's synchronous renderer-to-main channel; in a forked child's Worker of a
+   cross-origin isolated app it is the Worker waiting in `Atomics.wait` on the page
+   (`src/shim/worker/sync-channel.ts`). An app calling `readFileSync` cannot tell which one
+   answered it, and never will be able to.
 
    This is not a general licence to add more synchronous calls where they would be
    convenient. `readFileSync` is the one call a ported app cannot do without at startup; the
@@ -432,7 +433,9 @@ extension; the *data* is what sits behind consent (`security-model.md` T16).
 
 ### Deliberately **not** in v0
 - **`subprocess`.** No tier-3 app is in this version (Bisq is cut), so it buys nothing and costs
-  the largest attack surface in the design.
+  the largest attack surface in the design. A ported app's child processes and native modules run
+  as WebAssembly in its own tab instead, under the grants it already holds, so they need no
+  capability of their own (`ADR-0040`).
 - **`hid` / USB.** No wallet app in this version.
 - **Raw sockets / ICMP.** No use case, and unreachable from WASM later anyway.
 

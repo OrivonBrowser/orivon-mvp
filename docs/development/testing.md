@@ -194,6 +194,22 @@ the page), and [`e2e-wasm-threads.test.ts`](../../test/e2e-wasm-threads.test.ts)
 declaring `crossOriginIsolated` and one without, and measures `SharedArrayBuffer`, a shared
 `WebAssembly.Memory` and `Atomics.wait` in a worker in each.
 
+[`e2e-wasi-host.test.ts`](../../test/e2e-wasi-host.test.ts) pins an app whose page runs a WASI
+program through Node's `wasi` module: its file calls reach the real broker through JSPI, the bytes
+it wrote are read back through `orivon.fs`, and its attempt to leave its preopen comes back
+`NOTCAPABLE`. The WASI host also has an opt-in conformance run against the official preview1
+suite, [`src/shim/wasi/tests/conformance.test.ts`](../../src/shim/wasi/tests/conformance.test.ts),
+which skips unless `ORIVON_WASI_TESTSUITE` names a checkout of the suite's prebuilt branch; the
+suite's binaries are not in this repository.
+[`e2e-child-process.test.ts`](../../test/e2e-child-process.test.ts) runs `child_process` in a pinned
+app: `spawn` of a WASI program and `fork` of the app's own module, each in a Worker under the served
+CSP, the forked module's `fs` write read back through the broker, a native program refused as
+`ENOEXEC`, a missing one `ENOENT`, and `kill()` ending a running child.
+[`e2e-native-addon.test.ts`](../../test/e2e-native-addon.test.ts) loads a hand-assembled Node-API
+module as a native addon's WebAssembly build: through `createRequire` and `process.dlopen` on the
+page, through `preloadAddon` for one over the page's 8 MB synchronous-compile limit, and on the fly
+in a forked child.
+
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
 pull request (see §How to run above).

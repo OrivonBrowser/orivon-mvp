@@ -198,6 +198,15 @@ export async function runPhase (
  * surfaces as an ordinary thrown error into the calling phase's own
  * try/catch instead of a named check.
  */
+/**
+ * Waits until the fixture page's script has defined `name` on its global.
+ * The page's title is parsed before a `<script src>` in its head has run, so
+ * a tab showing the right title may not have that global yet.
+ */
+export async function waitForPageGlobal (view: ReturnType<typeof findChrome>, name: string, timeoutMs = 30_000): Promise<void> {
+  await view.waitForFunction((global: string) => (globalThis as Record<string, unknown>)[global] !== undefined, name, { timeout: timeoutMs })
+}
+
 export async function navigateToFixture (
   app: ElectronApplication,
   url: string,

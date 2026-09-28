@@ -1277,6 +1277,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
+### A273: `orivon.fs.rm` cannot remove an empty directory in one call **[AI-REC]**
+
+- **Question:** Should the broker remove a directory with a non-recursive `rm` when it is empty,
+  and fail `ENOTEMPTY` otherwise, as POSIX `rmdir` does?
+- **Why it matters:** `rm` removes a directory only recursively, so the WASI host's
+  `path_remove_directory` checks emptiness and then deletes; a file created in between is lost.
+- **Options:** map a non-recursive `rm` on a directory to `rmdir` in `src/broker/` (rec.), no
+  contract type change; add an `rmdir` method, a contracts change; keep the window.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
 ### A274: A second profile counts as a second install in usage statistics **[OWNER]**
 
 - **Question:** Should a second profile send its own usage statistics, or share the default's install id?

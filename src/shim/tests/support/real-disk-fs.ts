@@ -18,11 +18,15 @@
 // back, not a raw Node errno the shim's toNodeError would then fail to
 // recognise as an OrivonError at all.
 
+import {
+  closeSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, statSync, writeSync
+} from 'node:fs'
 import { mkdir, mkdtemp, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import type { Orivon } from '../../../contracts/capability-api.js'
 import type { FileHandle, FileStat } from '../../../contracts/handles.js'
+import type { SyncFileHandle, SyncWasiFs } from '../../wasi/host.js'
 // The SHIM's own root-detection, reused rather than a second copy: this
 // fake stands in for the broker's confinement policy, and the one thing
 // that must never drift between the two is which paths COUNT as the root
@@ -92,8 +96,34 @@ function wrapHandle (real: Awaited<ReturnType<typeof open>>): FileHandle {
   }
 }
 
+/** The same disk, answered synchronously: what a Worker's bridge gives the WASI host's synchronous driver. */
+function syncFsOver (resolve: (path: string) => string): SyncWasiFs {
+  const guard = <T>(run: () => T): T => { try { return run() } catch (error) { mapError(error) } }
+  const handleOf = (fd: number): SyncFileHandle => ({
+    read: ({ position, length }) => guard(() => {
+      const buffer = Buffer.alloc(length)
+      return new Uint8Array(buffer.subarray(0, readSync(fd, buffer, 0, length, position)))
+    }),
+    write: ({ position, data }) => guard(() => writeSync(fd, data, 0, data.length, position)),
+    stat: () => guard(() => toFileStat(fstatSync(fd))),
+    truncate: (length) => { guard(() => { ftruncateSync(fd, length) }) },
+    sync: () => { guard(() => { fsyncSync(fd) }) },
+    close: () => { guard(() => { closeSync(fd) }) }
+  })
+  return {
+    open: (path, flags) => { denyIfRoot(path); return handleOf(guard(() => openSync(resolve(path), flags))) },
+    stat: (path) => { denyIfRoot(path); return guard(() => toFileStat(statSync(resolve(path)))) },
+    readdir: (path) => { denyIfRoot(path); return guard(() => readdirSync(resolve(path))) },
+    mkdir: (path, opts) => { denyIfRoot(path); guard(() => mkdirSync(resolve(path), { recursive: opts?.recursive })) },
+    rm: (path, opts) => { denyIfRoot(path); guard(() => { rmSync(resolve(path), { recursive: opts?.recursive ?? false }) }) },
+    rename: (from, to) => { denyIfRoot(from); denyIfRoot(to); guard(() => { renameSync(resolve(from), resolve(to)) }) }
+  }
+}
+
 export interface RealDiskFs {
   readonly orivon: Orivon
+  /** The synchronous twin, over the same directory. */
+  readonly syncFs: SyncWasiFs
   readonly root: string
   /** Reads a file directly off the real filesystem, bypassing the shim entirely -- for asserting the actual on-disk bytes. */
   readRealFile: (relativePath: string) => Promise<string>
@@ -122,6 +152,7 @@ export async function createRealDiskFs (): Promise<RealDiskFs> {
 
   return {
     orivon: { version: 0, fs, app: undefined, net: undefined, id: undefined } as unknown as Orivon,
+    syncFs: syncFsOver(resolve),
     root,
     readRealFile: async (relativePath) => await readFile(join(root, relativePath), 'utf8'),
     existsOnDisk: async (relativePath) => {

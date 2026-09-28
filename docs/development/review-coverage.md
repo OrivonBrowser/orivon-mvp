@@ -119,3 +119,28 @@ scan, a clean-checkout run) add one row naming the PR or range it covered, what 
 outcome. This is not filled in per ordinary PR; most PRs here merge on their author's own
 verification, and recording that would not tell a later reader anything they could not already
 see in the PR itself.
+
+### `stream/wasi-host`: the WASI host (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | The branch against `main`: `src/shim/wasi/`, the `wasi` module row, its tests and e2e, and the docs | 10 findings, with no verify pass. Eight were correctness defects: a kill that could not end a pending read or sleep, a handle leaked by a kill, a reactor whose memory was never bound, a reactor's files closed after `_initialize`, a sleep over 24.8 days firing at once, a readdir cookie at or above 2^63 trapping, a path decoded from shared memory, and a window in `path_remove_directory`. The other two were a Rule 2 phrase in `scope.md` and serial stats in `fd_readdir`. Nine fixed in the same PR, with a test where one applies; the window needs a broker change and is filed as A273 |
+
+### `stream/child-process`: `child_process` over Web Workers (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | `src/shim/worker/` and `src/shim/child-process/` against the WASI-host branch | 10 findings, all fixed in the same branch with a test each: the stdout sink transferred the buffer the WASI host then measured, so `fd_write` reported 0 bytes and a real libc would rewrite forever (the hand-assembled test programs ignored the count); a forked child never ended on its own; `kill()` emitted `exit` synchronously and `kill(0)` threw; a Worker that could not be created was an unhandled rejection; a load failure after a kill emitted a second `error`; held IPC deadlocked a top-level `await` on the first message; a handle's `closed` lost its `platformCode`; `execFile(file, undefined, options)` dropped its options; and `#` was not refused as a shell comment |
+
+### `stream/native-addons`: native addons through emnapi (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | `src/shim/addon/`, the `module` target, and the WASI host's synchronous imports | 10 findings, all fixed in the same branch, with a test where one applies: a concurrent preload could instantiate an addon twice; `createRequire(import.meta.url)` misread an https URL; a command build crashed inside emnapi instead of refusing; addon output bypassed a forked child's stdout and a line without a newline was lost; the synchronous `fd_write` answered NOSYS for a bad descriptor; a preload's errors were not wrapped; the cache key was not normalised; every host built the synchronous imports eagerly; and the polyfills README missed the new module |
+
+### `stream/addon-files`: an addon's files through a Worker's synchronous calls (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | The WASI host's effect generators and drivers, `src/shim/worker/sync-channel.ts` with the server and client changes, and the addon loader's synchronous fs | 9 findings, all fixed in the same branch with a test where one applies: a refused synchronous reply left what it opened open on the page; a reply that failed to encode left the Worker waiting forever; `fd_renumber` became a suspending import; one revoked call disabled an addon for good; the reply writer pinned the last reply; an invalid reply channel threw on the page; stdin read end of input silently under the synchronous driver; sub-millisecond `poll_oneoff` waits began yielding; and the limit retry and the driver loop existed twice |
+

@@ -1,6 +1,6 @@
 # ADR-0036: An app qualifies by running in the Node environment, not by being written in JavaScript
 
-- **Status:** accepted
+- **Status:** accepted, **amended 2026-09-28**: a standalone WASI program runs (see the Amendment at the end)
 - **Date:** 2026-09-26
 - **Type:** product / architecture
 - **Decided by:** owner
@@ -76,10 +76,10 @@ the one `ADR-0002` shaped the API to mirror.
   changes, and an app with a WebAssembly component is now such an app. The CSP's
   `'wasm-unsafe-eval'`, `.wasm` served as `application/wasm`, and `WebAssembly.instantiateStreaming`
   are part of what an app can rely on. `test/e2e-served-csp.test.ts` guards all three.
-- **A standalone WASI program qualifies but does not run yet.** WebAssembly that imports WASI
-  instead of calling JavaScript has nothing to satisfy those imports: the shim maps no
-  `node:wasi`, and nothing implements WASI over `orivon.*`. That is a matrix row, taken case by
-  case like every other gap.
+- **A standalone WASI program qualifies and runs.** WebAssembly that imports
+  `wasi_snapshot_preview1` instead of calling JavaScript runs against a host over `orivon.fs`
+  (`src/shim/wasi/`), reached through Node's `wasi` module (`ADR-0040`). Links, file times and
+  sockets are not served: each is a matrix row, taken case by case like every other gap.
 - **WebAssembly adds no containment.** A WebAssembly component runs with its app's grants and
   inside its app's renderer sandbox, like the JavaScript around it. The containment
   `orivon-runtime` would add is a separate question, still deferred.
@@ -93,3 +93,12 @@ the one `ADR-0002` shaped the API to mirror.
 - **What would make us revisit:** an engine beneath the API that cannot run WebAssembly in app
   code, or a class of WebAssembly exploit that the renderer sandbox and the grant model cannot
   bound.
+
+## Amendment (2026-09-28): a standalone WASI program runs
+
+As first written, the consequences said a WASI program qualified but did not run, because nothing
+satisfied its imports. `ADR-0040` adds a WASI preview1 host over `orivon.fs` and the `wasi` module
+target over it, so such a program now runs with its app's grants, inside its app's renderer
+sandbox, as the JavaScript around it does. The consequence above is rewritten to say so. Nothing
+else in this ADR changes: the host is not `orivon-runtime`, and a native addon still does not
+carry over.
