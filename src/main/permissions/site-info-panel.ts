@@ -6,8 +6,7 @@
 // this sit near the LEFT edge of the address pill, so a right-aligned
 // popup would hang off the window's own left edge instead of the icon.
 
-import { ipcMain, type BaseWindow, type View, type WebContents } from 'electron'
-import { SITE_INFO_COMMAND_CHANNEL } from '../channels.js'
+import type { BaseWindow, View, WebContents } from 'electron'
 import type { SiteInfoController } from './site-info-controller.js'
 import { registerSiteInfoIpc } from '../ipc/site-info-ipc.js'
 import { createPopoverView } from './popover-view.js'
@@ -57,7 +56,7 @@ export function createSiteInfoPanel (
     align: 'left',
     registerIpc: (webContents, onContentHeight) => {
       registerSiteInfoIpc(webContents, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openAllSites, onContentHeight)
-      return () => { ipcMain.removeHandler(SITE_INFO_COMMAND_CHANNEL) }
+      return () => {}
     }
   })
 

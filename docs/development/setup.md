@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Node.js `>=22.12.0`.** CI runs Node 24; either works.
+- **Node.js `>=22.13.0`.** CI runs Node 24; either works. (History uses `node:sqlite`, which Node has unflagged from 22.13.)
 - **git.**
 
 That is the whole list. **No compiler, no Python, no CMake, no Visual Studio Build Tools.**

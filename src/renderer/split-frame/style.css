@@ -1,0 +1,70 @@
+/* Behind the two panes of a split. A small literal copy of the palette, as every
+   renderer entry has (see permissions/style.css). */
+
+:root {
+  --wbg: #dcdce4;
+  --waccent: #4f46e5;
+  --whandle: rgba(0, 0, 0, 0.32);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wbg: #17181c;
+    --whandle: rgba(255, 255, 255, 0.4);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--wbg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+}
+
+[hidden] { display: none !important; }
+
+/* A ring round the pane the person is in, in the margin the panes leave. */
+#outline {
+  position: absolute;
+  border: 2px solid var(--waccent);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+#placeholder {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--waccent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--waccent) 14%, transparent);
+  color: var(--waccent);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* The gap between the panes: all of it grabs, a slim bar shows where. */
+#divider {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#divider[data-orientation='row'] { cursor: col-resize; }
+#divider[data-orientation='column'] { cursor: row-resize; }
+#divider span {
+  border-radius: 2px;
+  background: var(--whandle);
+  transition: background 0.12s;
+}
+#divider[data-orientation='row'] span { width: 3px; height: 40px; }
+#divider[data-orientation='column'] span { width: 40px; height: 3px; }
+#divider:hover span, #divider.dragging span { background: var(--waccent); }

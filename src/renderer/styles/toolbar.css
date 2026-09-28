@@ -104,6 +104,66 @@
 }
 .addressbar::placeholder { color: var(--wink-dim); }
 
+/* Which profile this window is: a dot in the profile's colour and its name. */
+.profile-chip {
+  --dot: #4f46e5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  max-width: 140px;
+  margin: 0 2px;
+  padding: 0 10px 0 8px;
+  border: none;
+  border-radius: 999px;
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wink);
+  background: color-mix(in srgb, var(--dot) 16%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.profile-chip[hidden] { display: none; }
+.profile-chip::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--dot);
+}
+.profile-chip:hover { background: color-mix(in srgb, var(--dot) 26%, transparent); }
+.profile-chip[data-color='blue'] { --dot: #3b82f6; }
+.profile-chip[data-color='green'] { --dot: #22c55e; }
+.profile-chip[data-color='orange'] { --dot: #f97316; }
+.profile-chip[data-color='red'] { --dot: #ef4444; }
+.profile-chip[data-color='purple'] { --dot: #a855f7; }
+.profile-chip[data-color='pink'] { --dot: #ec4899; }
+.profile-chip[data-color='teal'] { --dot: #14b8a6; }
+.profile-chip[data-color='gray'] { --dot: #9ca3af; }
+
+.zoom-chip {
+  height: 20px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 999px;
+  flex: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--wink-dim);
+  background: color-mix(in srgb, var(--wink-dim) 14%, transparent);
+  cursor: pointer;
+}
+.zoom-chip[hidden] { display: none; }
+.zoom-chip:hover { color: var(--wink); }
+
 .addressbar-trailing {
   display: flex;
   align-items: center;

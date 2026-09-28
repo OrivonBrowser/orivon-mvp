@@ -5,6 +5,7 @@ import type { ShellState, TabState } from '../main/shell/tabs.js'
 import type { OrivonShell } from '../preload/shell.js'
 import { createBookmarksView } from './bookmarks-view.js'
 import { closeIcon, faviconElement } from './icons.js'
+import { isDraggingTab, makeTabDraggable } from './tab-drag.js'
 import { paintMark, paintShield, shieldLabel, web3Shield } from './web3-shield.js'
 
 // The chrome view's whole job: render ShellState, turn clicks/typing into
@@ -57,6 +58,9 @@ web3ScoreBtn.append(web3ScoreShieldEl)
 const web3MarkEl = must(document.querySelector<HTMLSpanElement>('#web3-mark'), '#web3-mark missing')
 const sitePermissionsBtn = must(document.querySelector<HTMLButtonElement>('#site-permissions-btn'), '#site-permissions-btn missing')
 const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#permissions-btn'), '#permissions-btn missing')
+const zoomChip = must(document.querySelector<HTMLButtonElement>('#zoom-chip'), '#zoom-chip missing')
+const profileChip = must(document.querySelector<HTMLButtonElement>('#profile-chip'), '#profile-chip missing')
+const menuBtn = must(document.querySelector<HTMLButtonElement>('#menu'), '#menu missing')
 const bookmarksList = must(document.querySelector<HTMLDivElement>('#bookmarks-list'), '#bookmarks-list missing')
 
 const bookmarksView = createBookmarksView(
@@ -71,6 +75,12 @@ let addressFocused = false
 
 function activeTab (state: ShellState): TabState | undefined {
   return state.tabs.find((t) => t.id === state.activeTabId)
+}
+
+/** A tab that is showing a site: not the new-tab page, and not one of the
+ * shell's own pages, which have no shield, no permissions and nothing to bookmark. */
+function hasSite (tab: TabState | undefined): tab is TabState {
+  return tab !== undefined && !tab.isNewTab && !tab.isInternal
 }
 
 function isBookmarked (bookmarks: Bookmark[], url: string): boolean {
@@ -93,7 +103,15 @@ function renderFavicon (tab: TabState): HTMLSpanElement {
   return fav
 }
 
+let tabsRenderDeferred = false
+
 function renderTabs (state: ShellState): void {
+  // A tab held by the pointer is not rebuilt under it; the strip is redrawn when it is let go.
+  if (isDraggingTab()) {
+    tabsRenderDeferred = true
+    return
+  }
+  tabsRenderDeferred = false
   // Rebuilds the whole strip on every push rather than diffing -- simple,
   // and tab counts in v0 are small enough that this never shows up as jank.
   const items = tabrow.querySelectorAll('.tab')
@@ -110,6 +128,11 @@ function renderTabs (state: ShellState): void {
     el.setAttribute('role', 'tab')
     el.setAttribute('aria-selected', String(tab.id === state.activeTabId))
     el.dataset['id'] = tab.id
+    if (tab.splitWith !== null) {
+      // Joined tabs are one pill: the pane the person is not in is a shade lighter.
+      el.classList.add('joined', state.tabs.findIndex((other) => other.id === tab.splitWith) > state.tabs.findIndex((other) => other.id === tab.id) ? 'joined-first' : 'joined-second')
+      el.title = 'Split view'
+    }
 
     const title = document.createElement('span')
     title.className = 'title'
@@ -127,6 +150,20 @@ function renderTabs (state: ShellState): void {
 
     el.append(renderFavicon(tab), title, close)
     el.addEventListener('click', () => shell.activateTab(tab.id))
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      shell.showTabMenu(tab.id)
+    })
+    makeTabDraggable(el, tab.id, {
+      tabs: () => [...tabrow.querySelectorAll<HTMLElement>('.tab')],
+      partnerOf: () => tab.splitWith === null ? null : tabrow.querySelector<HTMLElement>(`.tab[data-id="${tab.splitWith}"]`),
+      stripHeight: () => tabrow.getBoundingClientRect().height,
+      moveTab: (id, index) => { shell.moveTab(id, index) },
+      hover: (id, x, y) => { shell.dragTab(id, x, y) },
+      dropTab: (id, x, y, clientX, clientY) => { shell.dropTab(id, x, y, clientX, clientY) },
+      // Let go in the strip, the order on screen is already the order main is about to confirm.
+      finished: (tornOut) => { if (tornOut || tabsRenderDeferred) renderTabs(currentState) }
+    })
     // Middle-click closes a tab, matching every other browser. Guarded on
     // mousedown too: Windows arms Blink's middle-click autoscroll on
     // mousedown, before 'auxclick' fires, so preventDefault() there alone
@@ -176,7 +213,7 @@ function updateWeb3ScoreShield (active: TabState | undefined): void {
   // http://localhost:... address (electron-vite's dev server), which has
   // no Website level to show -- an internal page, not a real signal about
   // anything the user visited.
-  if (active === undefined || active.isNewTab) {
+  if (!hasSite(active)) {
     shieldRequestUrl = null
     shieldOrigin = null
     applyShield(null)
@@ -213,6 +250,9 @@ function renderToolbar (state: ShellState): void {
   bookmarkToggle.setAttribute('aria-pressed', String(bookmarked))
 
   updateSitePermissionsBadge(active)
+
+  zoomChip.hidden = state.zoomPercent === null
+  if (state.zoomPercent !== null) zoomChip.textContent = `${String(state.zoomPercent)}%`
 }
 
 /** The site-info popup's own key: hidden until the active tab's site has
@@ -225,7 +265,7 @@ function renderToolbar (state: ShellState): void {
 let permissionsRequestUrl: string | null = null
 
 function updateSitePermissionsBadge (active: TabState | undefined): void {
-  const url = active === undefined || active.isNewTab ? null : active.url
+  const url = hasSite(active) ? active.url : null
   permissionsRequestUrl = url
   if (url === null) {
     applySitePermissionsBadge({ asked: false, warning: false })
@@ -244,6 +284,14 @@ function applySitePermissionsBadge (summary: SiteSummary): void {
   sitePermissionsBtn.setAttribute('aria-label', label)
 }
 
+/** The profile chip: a coloured mark with the profile's name, or "Private" in a private window. */
+function renderProfile (profile: ShellState['profile']): void {
+  profileChip.hidden = !profile.shown
+  profileChip.dataset['color'] = profile.color
+  profileChip.textContent = profile.name
+  profileChip.title = profile.isPrivate ? 'A private window: what it keeps, and what it does not' : `Profile: ${profile.name}`
+}
+
 function render (state: ShellState): void {
   renderTabs(state)
   renderToolbar(state)
@@ -251,11 +299,13 @@ function render (state: ShellState): void {
   // main sizes this whole view from the same fact (window.ts's
   // chromeHeight), so the row and the space reserved for it appear and
   // disappear together.
-  document.documentElement.dataset['bookmarks'] = state.bookmarks.length > 0 ? 'some' : 'none'
+  document.documentElement.dataset['bookmarks'] = state.bookmarksBar ? 'some' : 'none'
+  document.documentElement.dataset['private'] = String(state.profile.isPrivate)
+  renderProfile(state.profile)
   bookmarksView.render(state.bookmarks)
 }
 
-let currentState: ShellState = { tabs: [], activeTabId: null, bookmarks: [] }
+let currentState: ShellState = { tabs: [], activeTabId: null, bookmarks: [], bookmarksBar: false, zoomPercent: null, profile: { name: '', color: 'blue', isPrivate: false, shown: false } }
 shell.onState((state) => {
   currentState = state
   render(state)
@@ -275,7 +325,7 @@ reloadBtn.addEventListener('click', () => {
 
 bookmarkToggle.addEventListener('click', () => {
   const active = activeTab(currentState)
-  if (active === undefined || active.isNewTab) return
+  if (!hasSite(active)) return
   if (isBookmarked(currentState.bookmarks, active.url)) {
     shell.removeBookmark(active.url)
   } else {
@@ -300,7 +350,7 @@ function anchorFor (el: HTMLElement): PopoverAnchor {
 // list unscrolled, which is the ordinary open.
 permissionsBtn.addEventListener('click', () => {
   const active = activeTab(currentState)
-  shell.openSettings(anchorFor(permissionsBtn), active === undefined || active.isNewTab ? undefined : active.url)
+  shell.openPermissions(anchorFor(permissionsBtn), hasSite(active) ? active.url : undefined)
 })
 
 // The site-info popup's two entry points: the shield opens straight to the
@@ -309,13 +359,24 @@ permissionsBtn.addEventListener('click', () => {
 // there is no origin for either page to describe.
 web3ScoreBtn.addEventListener('click', () => {
   const active = activeTab(currentState)
-  if (active === undefined || active.isNewTab) return
+  if (!hasSite(active)) return
   shell.openSiteInfo(anchorFor(web3ScoreBtn), 'web3', active.url)
 })
 sitePermissionsBtn.addEventListener('click', () => {
   const active = activeTab(currentState)
-  if (active === undefined || active.isNewTab) return
+  if (!hasSite(active)) return
   shell.openSiteInfo(anchorFor(sitePermissionsBtn), 'main', active.url)
+})
+
+zoomChip.addEventListener('click', () => { shell.runCommand('zoom.reset') })
+profileChip.addEventListener('click', () => { shell.openInternal(currentState.profile.isPrivate ? 'private' : 'profiles') })
+menuBtn.addEventListener('click', () => { shell.openMenu(anchorFor(menuBtn)) })
+
+// A keyboard shortcut in main asks for the address bar.
+shell.onCommand((command) => {
+  if (command.type !== 'focusAddress') return
+  addressInput.focus()
+  addressInput.select()
 })
 
 addressInput.addEventListener('focus', () => { addressFocused = true })

@@ -125,7 +125,7 @@ names, not a test of this design:
 | The site-info popover's Web3 Score page | [`src/renderer/site-info/web3-view.ts`](../../src/renderer/site-info/web3-view.ts), [`site-trust.ts`](../../src/main/browsing/site-trust.ts) | Built. It shows delivery rungs and pin coverage, and no level; EI-10 adds the level |
 | The D-ladder, including content-addressed rungs | [`delivery-ladder.ts`](../../src/trust/delivery-ladder.ts) | Built; `site-trust.ts` hardcodes the content-addressed inputs `false`. It stays as evidence beneath the level |
 | Pin coverage: pinned versus third-party loads per page | [`src/loader/serve/pin-coverage.ts`](../../src/loader/serve/pin-coverage.ts) | Built. The evidence for third-party code on a Level 2 site |
-| The Settings page | [`src/renderer/settings/`](../../src/renderer/settings/), [`settings-ipc.ts`](../../src/main/ipc/settings-ipc.ts) | Built, with one section (Permissions). EI-11 adds the light-client section |
+| The Settings page | [`src/renderer/permissions/`](../../src/renderer/permissions/), [`permissions-ipc.ts`](../../src/main/ipc/permissions-ipc.ts) | Built, with one section (Permissions). EI-11 adds the light-client section |
 | Mapping `.eth` hosts to loopback, honoured by the default session and every partition | [`src/main/dev/eth-resolver.ts`](../../src/main/dev/eth-resolver.ts) | Built for dev names, verified in Electron 44 |
 | A `.eth` tab proven to be a secure context | [`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts) | The pattern to reuse |
 | Content types, byte ranges | [`serve/content-type.ts`](../../src/loader/serve/content-type.ts), [`serve/range.ts`](../../src/loader/serve/range.ts) | Reuse: no second map (code-guidelines Rule 3) |
@@ -441,7 +441,7 @@ naming the domain, and an ordinary HTTPS fixture at Level 1. None of them shows 
   - the endpoints in use for each hop, and the last error.
 - **Popover row on `.eth` pages:** "name verified by the light client at block N, M minutes ago",
   or why it could not be verified.
-- Status reaches the renderer through the Settings command channel (`settings-ipc.ts`) plus a push
+- Status reaches the renderer through the Settings command channel (`permissions-ipc.ts`) plus a push
   on change. It is never polled from the page.
 
 **Exit:** e2e with the light client switched off shows "off" in Settings. With the test seam, a

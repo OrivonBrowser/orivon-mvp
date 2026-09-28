@@ -1,8 +1,16 @@
 # `src/main/shell/`: the window, and the views inside it
 
 **What lives here.** `window.ts` composes the frameless `BaseWindow`: a chrome view on top, the
-active tab's `WebContentsView` below. `tabs.ts` owns the tab collection, with `tab-view.ts` and
-`tab-types.ts` as its pure halves. `intro-state.ts` and `intro-view.ts` are the welcome screen.
+active tab's `WebContentsView` below, or the two panes of a split. A process holds any number of these
+windows: `shell-services.ts` is what they share, and `window-registry.ts` is how a page's IPC finds the
+window holding it. `window-frame.ts` is the native window itself and `window-options.ts` says how a new one
+opens. `tabs.ts` owns the tab collection, with `tab-view.ts`, `tab-types.ts` and `tab-factory.ts` as its
+parts. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
+same page, `tab-menu.ts` is its right-click menu, and `window-actions.ts` is what the chrome's buttons and
+menus ask of their window. Split view: `split-model.ts` is the arithmetic and the groups of joined tabs,
+`split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in that order,
+`split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab would split the
+page. `intro-state.ts` and `intro-view.ts` are the welcome screen.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
 and notification questions the permission gate asks, the right-click menu for tabs and the
@@ -12,11 +20,17 @@ popups, whose privileged preload would follow any navigation, and
 [`../sessions/web-context-host.ts`](../sessions/web-context-host.ts)'s isolated context, which
 has no preload but is confined to one origin (ADR-0019).
 
+The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows (the
+names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a key that does
+not work), and `menu-panel.ts` is the popover that shows it, built on
+[`../permissions/popover-view.ts`](../permissions/popover-view.ts) like the two other toolbar popups.
+
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types);
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts);
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts); and, inside `src/main/`,
 [`../browsing/`](../browsing/), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+[`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
 `permission-gate.ts`'s notification store, handed to the permissions panel),
@@ -49,6 +63,27 @@ read as an origin change; the handler excludes the dashboard explicitly.
 **Residual: `did-navigate` fires after commit**, so the new origin's page has rendered once in
 the old partition and may already have read from it. Intercepting before commit would cost a
 fresh view and a lost history entry on every cross-origin link; it is open as A109.
+
+**One process, several windows: what is per window and what is shared.** Per window: the chrome view, the
+`TabManager`, the popovers, the fullscreen and notice state, and the IPC handlers on the chrome view and the
+popovers, which are registered on those views' own `ipc` so two windows never collide on a channel. Shared:
+the `BookmarkStore` (built once and read once: a second read would replace the list with the file and drop a
+change not yet flushed; its listeners return a removal each window runs when it closes), the `WindowRegistry`,
+and the new-tab page's `ipcMain` channel, registered once. A closing window closes every view it made.
+Destroying a window destroys only what is attached to it, so `TabManager.dispose()` closes the tabs' views
+first: a background tab's view and every parked view are detached, and their renderers would outlive it.
+
+**A tab's handlers read `record.host` when an event arrives**, never a host captured at wiring, so a tab that
+moves to another window keeps them (`tests/tab-events.test.ts`). Every handler `wireView()` attaches acts only
+while its view is the one the tab shows, and `repartitionView()` retires the old view only after `record.view`
+has moved on: retire it first and its `'destroyed'` calls `forgetTab()` on a tab that is not closing.
+
+**A joined pair stays whole.** A tab moved into the strip goes past a pair, not between its tabs
+(`tab-order.ts`, also for a tab given by another window); a pair moves as one from the keyboard; and when
+the tab beside a closed or departed one was in a split, `forgetTab()` lays the views out again so the
+survivor has the whole area. A page holds the window in HTML fullscreen only while its tab is the one in
+front, and a tab that closes or is left has no claim on it. `forgetTab()` takes the record out before it
+closes the view, because closing announces its own end at once and that call must find nothing to do.
 
 **[`tab-view.ts`](tab-view.ts): a view leaving an app's partition is parked, not closed.** A
 page's `sessionStorage` lives in its view, not its partition (measured in Electron 44), so a

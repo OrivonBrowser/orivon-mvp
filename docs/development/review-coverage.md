@@ -103,6 +103,15 @@ Not run: `ca:review` and `ca:security-reviewer`, which need an initialised `.cod
 asked only for exploitable vulnerabilities, passed all three PRs; the defects it set aside as
 denial of service are the ones that would have failed `.eth` pages and favicons for real users.
 
+### The browser-grade shell branch: Settings, profiles, history, zoom, tabs, split view, private windows, DevTools (2026-09-28)
+
+Reviewed once the branch was complete and before it merged. The fixes are in the same PR.
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Correctness review by a subagent, read-only, with throwaway probes for the findings it could reproduce | The tab, split and window code | 10 findings, none a crash in main: a listener leaked per tab per redraw, a split's survivor left half-size, a fullscreen claim that outlived its tab, a close reported twice, a joined pair split by a move. All fixed with a test each |
+| Adversarial security review by a subagent, read-only | The new IPC, internal-page, launch and history surface | 9 findings and a dev-only nit, none a way for a page to reach a domain it should not. Availability and privacy: a failed peer start ended the browser, a failed prune ended it at every start, the visit list of IPNS names was copied into private sessions, history could grow without bound and kept cleared addresses in its file, DevTools' question was asked by address and not by session. All fixed with a test each |
+
 ## Adding an entry
 
 When an independent review event finishes (a hand-review, an adversarial pass, a security
@@ -135,9 +144,20 @@ see in the PR itself.
 |---|---|---|
 | `/code-review`, high effort, run by a forked reviewer | The WASI host's effect generators and drivers, `src/shim/worker/sync-channel.ts` with the server and client changes, and the addon loader's synchronous fs | 9 findings, all fixed in the same branch with a test where one applies: a refused synchronous reply left what it opened open on the page; a reply that failed to encode left the Worker waiting forever; `fd_renumber` became a suspending import; one revoked call disabled an addon for good; the reply writer pinned the last reply; an invalid reply channel threw on the page; stdin read end of input silently under the synchronous driver; sub-millisecond `poll_oneoff` waits began yielding; and the limit retry and the driver loop existed twice |
 
+### The whole-repository review: `main`, the WASI stack, the shell, and their fixes in #36 and #38 (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Conventional review lanes, one per area, triaged by hand | `main`: `src/broker/` (two passes), `src/main/` with `src/preload/` and `src/protocols/`, `src/loader/` with the shims, and telemetry, trust, nostr, contracts, CI and dependencies; the WASI stack #31-#34; the shell branch; `stream/security-hardening` | On `main`, a `web.embed` `"*"` grant reached private and loopback hosts through any host name (fixed in #36, d-0182, residual A286); the fs confinement race (filed as A283, see below); an app tab's flag surviving an in-place navigation (fixed in #38); smaller fixes in #36. `stream/security-hardening` is superseded by `main` and was not merged |
+| `security-review` skill | The stack; the shell branch | No finding at its bar on either |
+| `adversarial-reviewer` skill | The stack; `main`'s broker and loader | The `"*"` embed finding above; one LOW on the stack, fixed |
+| `named-persona-adversarial-review` skill | The shell branch | ADR-0041 and ADR-0042 held; a reused pid after a reboot kept a private directory unswept, fixed |
+| Alignment and privacy lane | All pending work | Stack and shell aligned; their colliding ids resolved by renumbering the shell |
+| `/code-review`, high effort, run by the verify lanes | #36's diff; #38's whole branch | #36: the first fs fix refused in-root symlinks, so it was reverted and A283 records the fix it needs. #38: a DevTools teardown crash, a split at the tab limit, and a private window that lost the sandbox switch in CI; all fixed |
+| Gate, smoke and e2e, headless | #36 and #38 | Typecheck, unit, the 12 guards, smoke and e2e pass; the two FreeTube e2e files fail on `main` as well (the network) |
+
 ### `stream/wasi-p2`: a WASI 0.2 host for spawned components (2026-09-28)
 
 | Mechanism | Scope | Outcome |
 |---|---|---|
 | `/code-review`, high effort, run by a forked reviewer | `src/shim/wasi-p2/`, component resolution in `child_process`, the Worker's component path | 12 findings, all fixed in the same branch with a test where one applies: the glue check failed open, so a fallback page made a missing program ENOEXEC; a late connect, listen or bind after drop leaked its handle; a listener leaked queued connections and could hang; an empty write while busy trapped; a shared address sent the wrong resolved name; error codes crossed interfaces; lookup failures had the wrong code; a revoked grant did not stop the component; a mapped address was accepted; clocks, randomness and the path checks existed twice; two docs lines were false; and several finish, send and shutdown edges departed from the spec |
-

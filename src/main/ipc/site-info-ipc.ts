@@ -1,7 +1,7 @@
 // The site-info popup's own command channel -- one page of Orivon
 // capability switches, a Web3 Score page, and a Cookies and site data
 // page, all for the ONE origin this popup was opened for. The same
-// sender-identity check as ./settings-ipc.ts, against the site-info
+// sender-identity check as ./permissions-ipc.ts, against the site-info
 // popup's own webContents instead of the all-sites panel's.
 //
 // THE ORIGIN IS FIXED AT CONSTRUCTION, NEVER A COMMAND FIELD. Every
@@ -10,7 +10,7 @@
 // before creating the popup, itself from the active tab, never from
 // anything the popup's own page could claim about itself.
 
-import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import { SITE_INFO_COMMAND_CHANNEL } from '../channels.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { SiteInfo } from '../permissions/site-info.js'
@@ -50,7 +50,7 @@ export type SiteInfoCommand =
   | { type: 'clearBrowserData' }
   | { type: 'reload' }
   | { type: 'openAllSites' }
-  /** Same contract as ./settings-ipc.ts's own `contentHeight`. */
+  /** Same contract as ./permissions-ipc.ts's own `contentHeight`. */
   | { type: 'contentHeight'; height: number }
 
 function isFromSiteInfoWindow (event: IpcMainInvokeEvent, siteInfoWebContents: WebContents): boolean {
@@ -90,7 +90,9 @@ export function registerSiteInfoIpc (
   openAllSites: () => void,
   onContentHeight: (height: number) => void = () => {}
 ): void {
-  ipcMain.handle(SITE_INFO_COMMAND_CHANNEL, async (
+  // On the popup's own webContents: the handler goes with it, and two windows
+  // can each have one open.
+  siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
   ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult> => {

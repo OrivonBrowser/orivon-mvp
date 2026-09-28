@@ -1,0 +1,76 @@
+// What every shell window in this process shares. A store built per window
+// would give each its own in-memory copy of one file, and the last to write
+// would win.
+import { join } from 'node:path'
+import { BookmarkStore } from '../browsing/bookmarks.js'
+import { InternalPageRegistry } from '../pages/internal-registry.js'
+import { SettingsStore } from '../settings/settings-store.js'
+import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
+import { partitionForTarget } from './tab-view.js'
+import { HistoryService } from '../history/history-service.js'
+import { NullHistoryStore } from '../history/history-store.js'
+import { openHistory } from '../history/open-history.js'
+import { ProfilesService } from '../launch/profiles-service.js'
+import type { Runtime } from '../launch/start-launch.js'
+import { devModeEnabled } from '../dev/dev-mode.js'
+import { confirmOpenDevTools } from '../devtools/devtools-prompt.js'
+import { DevToolsService } from '../devtools/devtools-service.js'
+import type { SubsystemContext } from '../registry.js'
+import { CommandBus } from '../shortcuts/command-bus.js'
+import { ShortcutService } from '../shortcuts/shortcut-service.js'
+import { ShortcutStore } from '../shortcuts/shortcut-store.js'
+import { ZoomService } from '../zoom/zoom-service.js'
+import { ZoomStore } from '../zoom/zoom-store.js'
+import { WindowRegistry } from './window-registry.js'
+
+export interface ShellServices {
+  readonly bookmarks: BookmarkStore
+  readonly commands: CommandBus
+  readonly devtools: DevToolsService
+  readonly history: HistoryService
+  readonly internalPages: InternalPageRegistry
+  readonly profiles: ProfilesService
+  readonly settings: SettingsStore
+  readonly shortcuts: ShortcutService
+  readonly shortcutStore: ShortcutStore
+  readonly windows: WindowRegistry
+  readonly zoom: ZoomService
+  readonly zoomStore: ZoomStore
+}
+
+/** `ctx.broker` is read when a page is asked about, not now: the broker is published after the shell starts. */
+export function createShellServices (userDataPath: string, ctx: Pick<SubsystemContext, 'broker'>, runtime: Runtime, platform: NodeJS.Platform = process.platform): ShellServices {
+  const shortcutStore = new ShortcutStore(join(userDataPath, 'shortcuts.json'), platform)
+  const settings = new SettingsStore(join(userDataPath, 'settings.json'))
+  const zoomStore = new ZoomStore(join(userDataPath, 'zoom.json'))
+  const internalPages = new InternalPageRegistry()
+  const windows = new WindowRegistry()
+  // A private session writes down no pages: it never opens a history file at all.
+  const openedHistory = runtime.isPrivate ? { store: new NullHistoryStore(), problem: null } : openHistory(join(userDataPath, 'history.db'))
+  return {
+    bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
+    commands: new CommandBus(),
+    devtools: new DevToolsService(settings, {
+      appOf: (contents) => {
+        const url = contents.getURL()
+        // The session the page runs in, and only after that its address: a popup an app opened is at about:blank, with the app's opener.
+        const found = windows.findTab(contents)
+        const partition = found?.window.tabs.partitionOf(found.tabId) ?? partitionForTarget(url, ctx.broker)
+        return partition === undefined || partition === INTERNAL_PARTITION ? null : { key: partition, label: originFromUrl(url) ?? 'this app' }
+      },
+      isShellPage: (contents) => internalPages.pageOf(contents) !== undefined,
+      developerMode: devModeEnabled,
+      confirm: confirmOpenDevTools
+    }),
+    history: new HistoryService(openedHistory.store, settings, openedHistory.problem),
+    internalPages,
+    profiles: new ProfilesService(runtime),
+    settings,
+    shortcuts: new ShortcutService(shortcutStore, platform),
+    shortcutStore,
+    windows,
+    zoom: new ZoomService(zoomStore, settings),
+    zoomStore
+  }
+}

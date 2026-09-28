@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { COMMAND_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
+import { COMMAND_CHANNEL, SHELL_EVENT_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
 import type { ShellCommand } from '../main/ipc/ipc.js'
 import type { ShellState } from '../main/shell/tabs.js'
 import type { SiteSummary } from '../main/permissions/site-info-controller.js'
@@ -31,6 +31,11 @@ const expectedUrl = process.argv.find((arg) => arg.startsWith(ARG_PREFIX))?.slic
  * imports this type, so a command dropped here fails the typecheck there. */
 export interface OrivonShell {
   newTab: (url?: string) => void
+  newWindow: () => void
+  /** Runs one of main's commands on this window, by id. */
+  runCommand: (id: string) => void
+  /** One of the shell's own pages, e.g. `'settings'`, optionally at a place inside it. */
+  openInternal: (page: string, path?: string) => void
   closeTab: (id: string) => void
   activateTab: (id: string) => void
   navigate: (id: string, input: string) => void
@@ -49,10 +54,22 @@ export interface OrivonShell {
   web3ScoreFor: (url: string) => Promise<Web3Score | null>
   /** Opens (or closes) the all-sites popup. `url`, when given, is the tab
    * whose card to scroll to. */
-  openSettings: (anchor: PanelAnchor, url?: string) => void
+  openPermissions: (anchor: PanelAnchor, url?: string) => void
   /** Opens (or closes) the site-info popup; `page` says which icon was clicked. */
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
+  /** Opens (or closes) the main menu under the button that opens it. */
+  openMenu: (anchor: PanelAnchor) => void
+  /** Puts a tab at a place in the strip. */
+  moveTab: (id: string, index: number) => void
+  /** A tab is being dragged: where over the page it is, or nothing while it is over the strip. */
+  dragTab: (id: string, x?: number, y?: number) => void
+  /** A tab was let go outside the strip: where on the screen, and where in this window. */
+  dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => void
+  /** Asks main for the right-click menu of a tab. */
+  showTabMenu: (id: string) => void
   onState: (listener: (state: ShellState) => void) => () => void
+  /** Commands main asks the chrome to carry out itself. */
+  onCommand: (listener: (command: { type: 'focusAddress' }) => void) => () => void
   platform: string
 }
 
@@ -71,6 +88,9 @@ async function request<T> (command: ShellCommand): Promise<T> {
 // step, and only that is gated below.
 const api: OrivonShell = {
   newTab: (url?: string) => { send(url === undefined ? { type: 'newTab' } : { type: 'newTab', url }) },
+  newWindow: () => { send({ type: 'runCommand', id: 'window.new' }) },
+  runCommand: (id: string) => { send({ type: 'runCommand', id }) },
+  openInternal: (page: string, path?: string) => { send(path === undefined ? { type: 'openInternal', page } : { type: 'openInternal', page, path }) },
   closeTab: (id: string) => { send({ type: 'closeTab', id }) },
   activateTab: (id: string) => { send({ type: 'activateTab', id }) },
   navigate: (id: string, input: string) => { send({ type: 'navigate', id, input }) },
@@ -97,14 +117,20 @@ const api: OrivonShell = {
   // has no way to know where the toolbar put that button. Passed through
   // verbatim; permissions-panel.ts clamps it to the window rather than
   // trusting it as a bounds.
-  openSettings: (anchor: PanelAnchor, url?: string) => {
-    send(url === undefined ? { type: 'openSettings', anchor } : { type: 'openSettings', url, anchor })
+  openPermissions: (anchor: PanelAnchor, url?: string) => {
+    send(url === undefined ? { type: 'openPermissions', anchor } : { type: 'openPermissions', url, anchor })
   },
-  // Same anchor contract as openSettings, for the shield or key that opens
+  // Same anchor contract as openPermissions, for the shield or key that opens
   // the per-site popup instead -- `page` says which icon was clicked.
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => {
     send(url === undefined ? { type: 'openSiteInfo', anchor, page } : { type: 'openSiteInfo', url, anchor, page })
   },
+
+  openMenu: (anchor: PanelAnchor) => { send({ type: 'openMenu', anchor }) },
+  moveTab: (id: string, index: number) => { send({ type: 'moveTab', id, index }) },
+  dragTab: (id: string, x?: number, y?: number) => { send(x === undefined || y === undefined ? { type: 'dragTab', id } : { type: 'dragTab', id, x, y }) },
+  dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => { send({ type: 'dropTab', id, x, y, clientX, clientY }) },
+  showTabMenu: (id: string) => { send({ type: 'tabMenu', id }) },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe
    * function; the listener is a closure, not the raw ipcRenderer, so the
@@ -113,6 +139,14 @@ const api: OrivonShell = {
     const handler = (_event: Electron.IpcRendererEvent, state: ShellState): void => listener(state)
     ipcRenderer.on(STATE_CHANNEL, handler)
     return () => ipcRenderer.removeListener(STATE_CHANNEL, handler)
+  },
+
+  /** Commands main asks the chrome to carry out itself (today: focus the
+   * address bar). Returns the unsubscribe; a closure, like `onState`. */
+  onCommand: (listener: (command: { type: 'focusAddress' }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, command: { type: 'focusAddress' }): void => listener(command)
+    ipcRenderer.on(SHELL_EVENT_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(SHELL_EVENT_CHANNEL, handler)
   },
 
   /** A read-only value, not a command -- lets the chrome view reserve

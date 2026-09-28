@@ -4,7 +4,7 @@ Contributions are welcome. This document is what you need to make one that gets 
 
 ## Setup
 
-[`docs/development/setup.md`](docs/development/setup.md). Short version: Node ≥22.12, `npm
+[`docs/development/setup.md`](docs/development/setup.md). Short version: Node ≥22.13, `npm
 install`, `npm run dev`. No compiler required.
 
 **Read the `ELECTRON_RUN_AS_NODE` section before you debug anything.** If that variable is set

@@ -3,8 +3,13 @@
 // navigate fix pushed that file over Rule 2's 500-line limit. These are
 // wire-format types with no logic of their own; tabs.ts re-exports them so
 // every existing `from './tabs.js'` import keeps working unchanged.
-import type { WebContentsView } from 'electron'
+import type { BaseWindow, View, WebContentsView } from 'electron'
+import type { FrameState } from './split-controller.js'
+import type { Broker } from '../../broker/broker-contracts.js'
 import type { Bookmark } from '../browsing/bookmarks.js'
+import type { InternalPageId } from '../pages/internal-pages.js'
+import type { InternalPageRegistry } from '../pages/internal-registry.js'
+import type { DevToolsGate } from '../devtools/devtools-service.js'
 
 export interface TabState {
   id: string
@@ -37,6 +42,10 @@ export interface TabState {
    * creation, and only ever flipped false, one-way, by a real navigation
    * (repartitionView()), never from a URL a page can influence. */
   isNewTab: boolean
+  /** The tab shown beside this one in a split, or null. */
+  splitWith: string | null
+  /** One of the shell's own pages (Settings, History, ...). It has no site: no shield, no permissions, nothing to bookmark. */
+  isInternal: boolean
 }
 
 /** What TabManager itself knows. Bookmarks are a separate store
@@ -50,6 +59,12 @@ export interface TabsSnapshot {
 
 export interface ShellState extends TabsSnapshot {
   bookmarks: Bookmark[]
+  /** Whether the bookmarks bar is shown: main decides (it sizes the chrome view to match) and the page follows. */
+  bookmarksBar: boolean
+  /** The active page's zoom, when it differs from what a site gets by default; otherwise null. */
+  zoomPercent: number | null
+  /** Which profile this window is, for the chip beside the menu. */
+  profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
 }
 
 export interface Bounds {
@@ -59,9 +74,74 @@ export interface Bounds {
   height: number
 }
 
+/** What the window around the tabs gives them: window.ts supplies it. */
+export interface TabShell {
+  /** The window a tab's dialogs and menus attach to. */
+  readonly window: BaseWindow
+  /** A tab's page entered or left HTML fullscreen. */
+  htmlFullscreenChanged: (id: string, entered: boolean) => void
+  /** The URL that searches for a query, under the chosen search engine. Absent in tests: the default engine. */
+  searchUrl?: (query: string) => string
+  /** Where a tab opened as one of the shell's own pages is recorded. Absent in tests. */
+  internalPages?: InternalPageRegistry
+  /** Developer tools for a tab. Absent in tests: no "Inspect". */
+  devtools?: DevToolsGate
+  /** What is drawn behind two panes. Absent in tests, and a window that never splits never makes it. */
+  backdrop?: SplitBackdrop
+}
+
+/** The view behind two panes: the divider, and an outline round the pane the person is in. */
+export interface SplitBackdrop {
+  /** Made when first asked for. */
+  readonly view: View
+  update: (state: FrameState) => void
+}
+
+/** What the per-view wiring in tab-view.ts needs back from the TabManager
+ * that holds the tab.
+ *
+ * An explicit surface rather than the class itself: that wiring is about ONE
+ * view's lifetime, and keeping it honest about what it touches is what lets it
+ * live outside the tab collection at all. `forgetTab` is the crash path,
+ * `openTab` and `adoptPopup` the two ways a page opens a tab -- all
+ * deliberately narrower than the methods behind them. */
+export interface TabViewHost {
+  readonly preloadPath: string
+  readonly broker: Broker | undefined
+  /** Read only to tell "still showing the dashboard" from "navigated away", in `wireView`'s did-navigate. Never used to decide that a tab IS the dashboard -- `TabRecord.isDashboardTab` owns that, and only creation sets it. */
+  readonly dashboardUrl: string
+  /** Undefined without a window around the tabs; a tab then shows no dialog or menu. */
+  readonly window: BaseWindow | undefined
+  /** Whether the tab's view is on screen: it is the tab in front, or the other pane beside it. */
+  isShown: (id: string) => boolean
+  /** Takes a view off the screen, and puts another in its place: what a tab moving to another session does. */
+  detachView: (view: WebContentsView) => void
+  attachView: (id: string, view: WebContentsView) => void
+  /** The person pressed in the tab's page. In a split, that makes it the pane they are in. */
+  paneClicked: (id: string) => void
+  /** "Open Link in Split View": the link opens in a new tab beside this one. */
+  openInSplit: (id: string, url: string) => void
+  emitState: () => void
+  captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
+  forgetTab: (id: string) => void
+  openTab: (url: string) => void
+  /** Makes Chromium's own popup webContents, already in `partition`, a tab. */
+  adoptPopup: (view: WebContentsView, partition: string | undefined) => void
+  atCapacity: () => boolean
+  htmlFullscreenChanged: (id: string, entered: boolean) => void
+  /** The window is closing: nothing more is made or shown for it. */
+  isClosing: () => boolean
+  readonly devtools: DevToolsGate | undefined
+}
+
 /** One live tab, as TabManager and the per-view wiring in tab-view.ts both
  * see it. Exported so that wiring can live outside the class. */
 export interface TabRecord {
+  /** The manager and window this tab belongs to, read AT CALL TIME by every
+   * handler `wireView` attaches. Reassigned when a tab moves to another
+   * window, so the handlers already on its views follow it there; a handler
+   * that captured the host would keep acting for the window the tab left. */
+  host: TabViewHost
   /** Mutable, not readonly: repartitionView() (see navigate()) replaces
    * this with a fresh WebContentsView whenever a navigation changes the
    * tab's origin -- Electron fixes a partition at construction, so
@@ -90,6 +170,9 @@ export interface TabRecord {
    * dashboardUrl` is a plain http:// address in dev mode, which a page
    * could otherwise steer an unrelated tab's `wc.getURL()` to match). */
   isDashboardTab: boolean
+  /** The shell's own page this tab was opened as, or null. Set only by
+   * `TabManager.openInternal`; cleared when the tab navigates to a website. */
+  internalPage: InternalPageId | null
   /** The view of each app partition this tab has left, emptied to
    * about:blank and kept, keyed by partition. Coming back reuses it: a
    * page's sessionStorage lives in its view, and a fresh one would lose

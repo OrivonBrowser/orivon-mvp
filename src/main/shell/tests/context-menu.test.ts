@@ -94,7 +94,20 @@ describe('contextMenuTemplate -- what a right-click in a tab offers', () => {
     expect(a.copyImageAt).toHaveBeenCalledWith(10, 20)
   })
 
-  it('offers Inspect Element only in developer mode', () => {
+  it('offers a link in a split view only where a split is offered, and only for a link a tab could load', () => {
+    const link = params({ linkURL: 'https://example.com/page' })
+    expect(labels(contextMenuTemplate(link, actions(), false))).not.toContain('Open Link in Split View')
+
+    const withSplit = { ...actions(), openInSplit: vi.fn() }
+    const template = contextMenuTemplate(link, withSplit, false)
+    expect(labels(template)).toContain('Open Link in Split View')
+    click(template, 'Open Link in Split View')
+    expect(withSplit.openInSplit).toHaveBeenCalledWith('https://example.com/page')
+
+    expect(labels(contextMenuTemplate(params({ linkURL: 'javascript:alert(1)' }), withSplit, false))).not.toContain('Open Link in Split View')
+  })
+
+  it('offers Inspect Element only where developer tools are allowed', () => {
     const plain = params({ editFlags: { ...NO_EDIT, canSelectAll: true } })
     expect(labels(contextMenuTemplate(plain, actions(), false))).not.toContain('Inspect Element')
     const a = actions()
@@ -125,7 +138,7 @@ describe('showContextMenu', () => {
     popup.mockClear()
     const wc = fakeContents()
     const window = {}
-    showContextMenu(wc as never, params({ isEditable: true, editFlags: { ...NO_EDIT, canPaste: true } }), { window: window as never, openInNewTab: vi.fn(), developerMode: false })
+    showContextMenu(wc as never, params({ isEditable: true, editFlags: { ...NO_EDIT, canPaste: true } }), { window: window as never, openInNewTab: vi.fn() })
 
     expect(popup).toHaveBeenCalledWith(expect.objectContaining({ window }))
     const template = buildFromTemplate.mock.calls[0]?.[0] as unknown as MenuItemConstructorOptions[]
@@ -136,21 +149,21 @@ describe('showContextMenu', () => {
   it('does nothing when the tab closed while its menu was open', () => {
     buildFromTemplate.mockClear()
     const wc = fakeContents(true)
-    showContextMenu(wc as never, params({ isEditable: true, editFlags: { ...NO_EDIT, canPaste: true } }), { window: {} as never, openInNewTab: vi.fn(), developerMode: false })
+    showContextMenu(wc as never, params({ isEditable: true, editFlags: { ...NO_EDIT, canPaste: true } }), { window: {} as never, openInNewTab: vi.fn() })
     click(buildFromTemplate.mock.calls[0]?.[0] as unknown as MenuItemConstructorOptions[], 'Paste')
     expect(wc['paste']).not.toHaveBeenCalled()
   })
 
   it('copies a link through the system clipboard', () => {
     buildFromTemplate.mockClear()
-    showContextMenu(fakeContents() as never, params({ linkURL: 'https://example.com/' }), { window: {} as never, openInNewTab: vi.fn(), developerMode: false })
+    showContextMenu(fakeContents() as never, params({ linkURL: 'https://example.com/' }), { window: {} as never, openInNewTab: vi.fn() })
     click(buildFromTemplate.mock.calls[0]?.[0] as unknown as MenuItemConstructorOptions[], 'Copy Link Address')
     expect(writeText).toHaveBeenCalledWith('https://example.com/')
   })
 
   it('shows nothing when the template is empty', () => {
     buildFromTemplate.mockClear()
-    showContextMenu(fakeContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn(), developerMode: false })
+    showContextMenu(fakeContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn() })
     expect(buildFromTemplate).not.toHaveBeenCalled()
   })
 })

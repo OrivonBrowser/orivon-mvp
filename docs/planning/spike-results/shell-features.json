@@ -1,0 +1,87 @@
+{
+  "measured": "Electron 44.0.0, Linux, X11 under Xvfb, real pointer and key input through XTest, BaseWindow with WebContentsView children",
+  "notMeasured": [
+    "Wayland: pointer routing across views, focus from a second launch, getCursorScreenPoint outside the app's windows",
+    "AltGr and IME composition",
+    "moving a view that holds pointer lock or HTML fullscreen",
+    "a detached peer process inside an AppImage",
+    "Vite dev-server HMR and CSS injection behind an internal scheme"
+  ],
+  "S1_pointerRouting": {
+    "question": "Does the chrome view keep receiving pointer events while a button pressed in it is held over a page view or outside the window?",
+    "result": "yes",
+    "withSetPointerCapture": { "moves": 33, "movesOverPageArea": 31, "movesOutsideWindow": 2, "maxClientX": 980, "windowWidth": 900, "pointerUpReceived": true, "pageViewMouseEvents": 0 },
+    "withoutSetPointerCapture": { "moves": 33, "movesOverPageArea": 31, "movesOutsideWindow": 2, "maxClientX": 980, "pointerUpReceived": true, "pageViewMouseEvents": 0 }
+  },
+  "S2_devtools": {
+    "question": "Do docked DevTools work in a WebContentsView inside a BaseWindow?",
+    "result": "yes",
+    "right": { "inspectedInnerWidth": "900 -> 345", "opened": true, "baseWindows": 1 },
+    "bottom": { "inspectedInnerHeight": "600 -> 300", "opened": true, "baseWindows": 1 },
+    "undocked": { "inspectedInnerWidth": 900, "opened": true },
+    "hostedInOwnView": "setDevToolsWebContents with a WebContentsView reported isDevToolsOpened false and created a second BaseWindow; not needed"
+  },
+  "S3_moveView": {
+    "question": "What happens to a WebContentsView added to a second BaseWindow?",
+    "result": "it leaves the first window on its own; script state, scroll position, input value and focus are kept; closing the first window afterwards leaves the view alive",
+    "before": { "windowA": 1, "windowB": 0, "marker": 42, "scrollY": 500, "input": "hello", "focus": true },
+    "afterAdd": { "windowA": 0, "windowB": 1, "marker": 42, "scrollY": 500, "input": "hello", "focus": true },
+    "afterSourceClosed": { "destroyed": false, "marker": 42, "windowB": 1 }
+  },
+  "S4_internalScheme": {
+    "question": "Can a privileged scheme be served on an in-memory session and stay unreachable from every other session?",
+    "result": "yes",
+    "internalSession": { "loaded": true, "origin": "orivon://settings", "isSecureContext": true, "externalScript": "ran", "externalStyle": "applied", "inlineScript": "blocked by script-src 'self'" },
+    "defaultSession": { "topLevelLoad": "does not load (empty url and title)", "iframe": "empty", "fetch": "TypeError: Failed to fetch" },
+    "note": "for a standard scheme the page name is the host and the path is what follows it"
+  },
+  "S5_focus": {
+    "question": "Does a pane that navigates while attached take focus from the pane the person is in?",
+    "result": "yes; a view loaded detached and then attached does not",
+    "attachedNavigation": { "leftPaneFocusedBefore": true, "leftPaneFocusedAfter": false, "navigatedPaneFocusedAfter": true },
+    "detachedLoadThenAttach": { "leftPaneFocusedAfter": true },
+    "realClick": { "focusEventsFired": 1, "focusedPane": "clicked one" },
+    "caveat": "the test page has an autofocus input, which is what a real page can also have"
+  },
+  "S6_keys": {
+    "question": "What does the default application menu do in this shell, and does before-input-event see every key?",
+    "defaultMenuPresent": { "items": ["File(Quit Ctrl+Q)", "Edit", "View(Reload Ctrl+R, Force Reload, Toggle Developer Tools Ctrl+Shift+I, zoom, F11)", "Window(Close Ctrl+W)"] },
+    "withDefaultMenu": {
+      "Ctrl+R": "reloads the focused view, chrome view included; with the page focused the keys never reach before-input-event or the page",
+      "Ctrl+minus": "zooms the focused page",
+      "Ctrl+Shift+I and F12": "open nothing",
+      "beforeInputEvent": "misses the keys the menu takes"
+    },
+    "withNullMenu": {
+      "beforeInputEvent": "sees every key in both the chrome view and the page view, including F12 and modifier keys",
+      "sideEffects": "none"
+    },
+    "preventDefault": "a page that would receive F12 receives nothing when before-input-event prevents it",
+    "inputFields": ["key", "code", "control", "shift", "alt", "meta", "isAutoRepeat", "isComposing"]
+  },
+  "S7_launch": {
+    "question": "Does app.setPath('userData') before ready move everything, and how does the single-instance lock behave?",
+    "userDataMoved": { "userData": "given dir", "sessionData": "given dir", "cookies": "in dir", "IndexedDB": "in dir", "Partitions": "in dir", "Cache": "in dir", "logs": "in dir", "Crashpad": "in dir" },
+    "outsideTheDirectory": "only system font and shader caches under the cache home; nothing from browsing",
+    "setPathToMissingDirectory": "did not throw",
+    "lock": {
+      "viaCommandLineSwitch": { "secondGotLock": false, "secondExitCode": 0, "firstReceivedSecondInstance": true },
+      "viaSetPath": { "secondGotLock": false, "secondExitCode": 0, "firstReceivedSecondInstance": true },
+      "argvReceived": "the full command line including the URL and Chromium switches",
+      "additionalDataReceived": true
+    },
+    "staleLockFromAnotherHost": { "startedNormally": true }
+  },
+  "S8_zoom": {
+    "question": "Who applies Ctrl+wheel zoom, and do two file views share a level?",
+    "defaultMode": { "zoomChangedEvents": 2, "factorAfter": 1, "conclusion": "the event fires and nothing zooms" },
+    "manualMode": { "zoomChangedEvents": 2, "factorAfterWithHandler": 1.5625 },
+    "setZoomFactor": "per webContents: setting 1.5 on one file view left the other at 1 in default mode"
+  },
+  "S10_requestInterception": {
+    "question": "Can the DevTools request-interception domain replace a bundle served through protocol.handle?",
+    "result": "no",
+    "requestsPaused": 0,
+    "bundleAfterInterceptionAttempt": "ORIGINAL"
+  }
+}
