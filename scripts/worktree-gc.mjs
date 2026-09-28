@@ -38,9 +38,10 @@ export function parseWorktreeList (porcelain) {
  * Sorts every linked worktree into removable or kept, with the reason.
  * `git` is injected so the rules can be tested without a repository.
  * @param {{ entries: ReturnType<typeof parseWorktreeList>, baseHead: string, cwd: string,
- *   isMerged: (branch: string) => boolean, isDirty: (path: string) => boolean }} input
+ *   isMerged: (branch: string) => boolean, isDirty: (path: string) => boolean,
+ *   isFresh: (branch: string) => boolean }} input
  */
-export function classify ({ entries, baseHead, cwd, isMerged, isDirty }) {
+export function classify ({ entries, baseHead, cwd, isMerged, isDirty, isFresh }) {
   const removable = []
   const kept = []
   for (const entry of entries.slice(1)) {
@@ -48,10 +49,11 @@ export function classify ({ entries, baseHead, cwd, isMerged, isDirty }) {
     if (entry.locked) keep('locked')
     else if (entry.detached || !entry.branch) keep('detached HEAD')
     else if (resolve(cwd).startsWith(resolve(entry.path))) keep('current directory')
-    // A branch just created from the newest main is "merged" too, and is
-    // about to be worked on; it qualifies once main moves past it.
+    // A branch just created from main is "merged" too, and is about to be
+    // worked on. Its reflog says so even after main has moved past it.
     else if (entry.head === baseHead) keep(`at ${BASE}, possibly just started`)
     else if (!isMerged(entry.branch)) keep('not merged')
+    else if (isFresh(entry.branch)) keep('no commit since it was created, possibly just started')
     else if (isDirty(entry.path)) keep('uncommitted changes')
     else removable.push(entry)
   }
@@ -70,7 +72,12 @@ export function findMergedWorktrees (root) {
     baseHead: git(['rev-parse', BASE], root).trim(),
     cwd: process.cwd(),
     isMerged: (branch) => succeeds(['merge-base', '--is-ancestor', `refs/heads/${branch}`, BASE]),
-    isDirty: (path) => git(['status', '--porcelain'], path).trim() !== ''
+    isDirty: (path) => git(['status', '--porcelain'], path).trim() !== '',
+    isFresh: (branch) => {
+      const entries = git(['reflog', 'show', '--format=%gs', `refs/heads/${branch}`], root)
+        .split('\n').filter(Boolean)
+      return entries.length === 1 && entries[0].startsWith('branch: Created from')
+    }
   })
 }
 
