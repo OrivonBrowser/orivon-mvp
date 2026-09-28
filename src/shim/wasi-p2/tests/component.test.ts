@@ -34,6 +34,13 @@ describe('jco\'s output as a port ships it', () => {
   })
 })
 
+describe('instantiation', () => {
+  it('refuses output whose wasi:cli/run was not transpiled as asynchronous, naming the flag', async () => {
+    const instantiate = async (): Promise<Record<string, unknown>> => ({ run: { run: () => undefined } })
+    await expect(runComponent(instantiate, async () => { throw new Error('unused') }, {})).rejects.toThrow(/--async-exports wasi:cli\/run#run/)
+  })
+})
+
 describe.skipIf(!hasJspi)('a command component', () => {
   it('echoes stdin, writes a file through orivon.fs, and exits 1 for its non-zero code', async () => {
     disk = await createRealDiskFs()

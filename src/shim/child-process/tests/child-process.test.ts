@@ -29,6 +29,7 @@ const PROGRAMS: Record<string, Uint8Array<ArrayBuffer> | string> = {
   '/bin/raw.wasm': COMPONENT_HEADER,
   '/bin/unmarked.wasm': COMPONENT_HEADER,
   ...componentOutput('/bin/unmarked', tour.glue.replace(/([\w$]+)\.manuallyAsync\s*=\s*!0/g, 'void 0')),
+  '/bin/fallback.p2/fallback.js': '<!doctype html><title>index</title>',
   '/bin/echo.wasm': echoProgram(),
   '/bin/fail.wasm': failingProgram('went wrong\n', 3),
   '/bin/native': new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0])
@@ -144,6 +145,10 @@ describe.skipIf(!hasJspi)('spawn a WASI 0.2 component', () => {
     const child = spawn('/bin/only')
     child.stdin?.end()
     expect(await events(child)).toContain('exit 1 null')
+  })
+
+  it('keeps a missing program ENOENT where the server answers every path with a fallback page', async () => {
+    expect(await events(spawn('/bin/fallback'))).toEqual(['error ENOENT', 'close -2 null'])
   })
 
   it('refuses a component shipped without its jco output, naming the command to make it', async () => {

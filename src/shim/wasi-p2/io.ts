@@ -4,15 +4,24 @@
 // from what has already arrived, and the blocking ones wait, which the
 // component reaches through JSPI.
 
+import { isTermination } from '../wasi/termination.js'
+
+/** Which interface's `*-error-code` function names an error: each reports none for the other's. */
+export type ErrorCode = { readonly kind: 'filesystem' | 'network', readonly code: string }
+
 /** wasi:io/error's `error` resource. */
 export class IoError {
   readonly #message: string
-  /** The filesystem or network error code the interface's `*-error-code` function reports for it. */
-  readonly code: string | undefined
+  readonly #code: ErrorCode | undefined
 
-  constructor (message: string, code?: string) {
+  constructor (message: string, code?: ErrorCode) {
     this.#message = message
-    this.code = code
+    this.#code = code
+  }
+
+  /** The code filesystem-error-code or network-error-code reports, for its own kind only. */
+  codeFor (kind: ErrorCode['kind']): string | undefined {
+    return this.#code?.kind === kind ? this.#code.code : undefined
   }
 
   toDebugString (): string {
@@ -26,8 +35,35 @@ export type StreamError = { readonly tag: 'closed' } | { readonly tag: 'last-ope
 export const CLOSED: StreamError = { tag: 'closed' }
 
 /** `code` names the failure for filesystem-error-code or network-error-code. */
-export function failed (error: unknown, code?: string): StreamError {
+export function failed (error: unknown, code?: ErrorCode): StreamError {
   return { tag: 'last-operation-failed', val: new IoError(error instanceof Error ? error.message : String(error), code) }
+}
+
+/** What a stream throws once its source or sink failed: a termination stays one, so it unwinds the program. */
+type Failure = StreamError | Error
+
+function failure (error: unknown, codeOf: CodeOf | undefined): Failure {
+  return isTermination(error) ? error : failed(error, codeOf?.(error))
+}
+
+/**
+ * One wait shared by everyone until the next notify, so a program that polls
+ * in a loop does not pile up waiters on something that never happens.
+ */
+export class Signal {
+  #waiting: Promise<void> | undefined
+  #wake: () => void = () => {}
+
+  wait (): Promise<void> {
+    this.#waiting ??= new Promise<void>((resolve) => { this.#wake = resolve })
+    return this.#waiting
+  }
+
+  notify (): void {
+    const wake = this.#wake
+    this.#waiting = undefined
+    wake()
+  }
 }
 
 export class Pollable {
@@ -70,7 +106,7 @@ export async function poll (list: readonly Pollable[]): Promise<Uint32Array> {
 export type ByteSource = (max: number) => Promise<Uint8Array>
 
 /** Names an underlying failure for the interface's error-code function, when it has one. */
-export type CodeOf = (error: unknown) => string | undefined
+export type CodeOf = (error: unknown) => ErrorCode | undefined
 
 /** How many bytes one read of the source asks for. */
 const SOURCE_CHUNK = 65_536
@@ -80,7 +116,7 @@ export class InputStream {
   readonly #codeOf: CodeOf | undefined
   #buffered: Uint8Array = new Uint8Array(0)
   #ended = false
-  #error: StreamError | undefined
+  #error: Failure | undefined
   #filling: Promise<void> | undefined
 
   constructor (source: ByteSource, codeOf?: CodeOf) {
@@ -114,6 +150,12 @@ export class InputStream {
     return new Pollable(() => this.#buffered.length > 0 || this.#ended || this.#error !== undefined, async () => { await this.#fill() })
   }
 
+  /** A shutdown of the receiving side: what was buffered is discarded, and the stream reads closed. */
+  discard (): void {
+    this.#buffered = new Uint8Array(0)
+    this.#ended = true
+  }
+
   #take (len: bigint): Uint8Array {
     const count = Number(len < BigInt(this.#buffered.length) ? len : BigInt(this.#buffered.length))
     const taken = this.#buffered.subarray(0, count)
@@ -129,7 +171,7 @@ export class InputStream {
         if (chunk.length === 0) this.#ended = true
         else this.#buffered = chunk
       },
-      (error: unknown) => { this.#error = failed(error, this.#codeOf?.(error)) }
+      (error: unknown) => { this.#error = failure(error, this.#codeOf) }
     ).finally(() => { this.#filling = undefined })
     await this.#filling
   }
@@ -145,7 +187,7 @@ export class OutputStream {
   readonly #sink: ByteSink
   readonly #codeOf: CodeOf | undefined
   #inFlight: Promise<void> | undefined
-  #error: StreamError | undefined
+  #error: Failure | undefined
 
   constructor (sink: ByteSink, codeOf?: CodeOf) {
     this.#sink = sink
@@ -160,12 +202,12 @@ export class OutputStream {
   /** Starts the write; `check-write` answers zero until the sink has taken it. */
   write (contents: Uint8Array): void {
     if (this.#error !== undefined) throw this.#error
-    if (this.#inFlight !== undefined || BigInt(contents.length) > WRITE_BUDGET) throw new TypeError('a write exceeded what check-write permitted')
     if (contents.length === 0) return
+    if (this.#inFlight !== undefined || BigInt(contents.length) > WRITE_BUDGET) throw new TypeError('a write exceeded what check-write permitted')
     const copy = contents.slice()
     this.#inFlight = this.#sink(copy).then(
       () => { this.#inFlight = undefined },
-      (error: unknown) => { this.#inFlight = undefined; this.#error = failed(error, this.#codeOf?.(error)) }
+      (error: unknown) => { this.#inFlight = undefined; this.#error = failure(error, this.#codeOf) }
     )
   }
 

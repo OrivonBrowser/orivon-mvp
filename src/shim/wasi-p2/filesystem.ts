@@ -1,17 +1,21 @@
 // wasi:filesystem over orivon.fs: a descriptor is a directory's confined
-// path, or an open orivon.fs file handle. Every call is an orivon.fs call the
-// app could already make. Paths resolve as the preview1 host resolves them
-// (../wasi/fds.ts), and errors map through its errno table, so the two
-// hosts refuse the same things the same way.
+// path, or an open orivon.fs file handle. Each call runs the preview1 host's
+// own operations (../wasi/path-ops.ts) through its asynchronous driver, so
+// the two hosts resolve, refuse, retry a bare limit and stop on a revoked
+// grant the same way; only the error's spelling differs.
 
 import type { FileHandle, FileStat } from '../../contracts/handles.js'
 import { toConfinedPath } from '../fs/paths.js'
-import { isRootPath, rootStat } from '../fs/root.js'
-import type { WasiFs } from '../wasi/context.js'
+import { HostContext, type WasiFs } from '../wasi/context.js'
+import { runAsync } from '../wasi/drivers.js'
+import { type Op, fsCall, handleCall } from '../wasi/effects.js'
 import { errnoFor, errnoName } from '../wasi/errno.js'
 import { PathError, type ResolvedPath, inodeFor, resolveGuestPath } from '../wasi/fds.js'
-import { openFlags } from '../wasi/preview1/path.js'
-import { InputStream, type IoError, OutputStream } from './io.js'
+import { createDirectory, openPath, readlink, removeDirectory, renamePath, statPath, unlinkFile } from '../wasi/path-ops.js'
+import { EMPTY_STDIN } from '../wasi/stdio.js'
+import { isTermination } from '../wasi/termination.js'
+import { msToNs } from '../wasi/time.js'
+import { type ErrorCode, InputStream, type IoError, OutputStream } from './io.js'
 
 export type DescriptorType = 'unknown' | 'directory' | 'regular-file'
 
@@ -47,18 +51,11 @@ export function errorCodeOf (error: unknown): string {
   return CODE_BY_ERRNO_NAME[errnoName(errno) ?? ''] ?? 'io'
 }
 
-/** Runs one orivon.fs call; its failure is thrown as the error code, which the glue lowers as the result's error. */
-async function attempt<T> (run: () => Promise<T>): Promise<T> {
-  try {
-    return await run()
-  } catch (error) {
-    throw errorCodeOf(error)
-  }
-}
+const filesystemCode = (error: unknown): ErrorCode => ({ kind: 'filesystem', code: errorCodeOf(error) })
 
 function datetimeOf (ms: number): Datetime {
-  const seconds = Math.floor(ms / 1000)
-  return { seconds: BigInt(seconds), nanoseconds: Math.round((ms - seconds * 1000) * 1_000_000) }
+  const ns = msToNs(ms)
+  return { seconds: ns / 1_000_000_000n, nanoseconds: Number(ns % 1_000_000_000n) }
 }
 
 function statOf (stat: FileStat): DescriptorStat {
@@ -87,17 +84,43 @@ export class DirectoryEntryStream {
 }
 
 export class Descriptor {
-  readonly #fs: WasiFs
+  readonly #ctx: HostContext
   readonly #target: Target
 
-  constructor (fs: WasiFs, target: Target) {
-    this.#fs = fs
+  constructor (ctx: HostContext, target: Target) {
+    this.#ctx = ctx
     this.#target = target
+  }
+
+  /**
+   * Runs one operation. Its refusal is thrown as the error code, which the
+   * glue lowers as the result's error; a revoked grant stays a termination
+   * and unwinds the component, as the preview1 host stops a program.
+   */
+  async #run<T> (op: Op<T>): Promise<T> {
+    try {
+      return await runAsync(this.#ctx, op)
+    } catch (error) {
+      if (isTermination(error)) throw error
+      throw errorCodeOf(error)
+    }
   }
 
   #file (): Extract<Target, { kind: 'file' }> {
     if (this.#target.kind !== 'file') throw 'is-directory'
     return this.#target
+  }
+
+  #readable (): FileHandle {
+    const { handle, flags } = this.#file()
+    if (flags.read !== true) throw 'bad-descriptor'
+    return handle
+  }
+
+  #writable (): FileHandle {
+    const { handle, flags } = this.#file()
+    if (flags.write !== true) throw 'bad-descriptor'
+    return handle
   }
 
   #resolve (path: string): ResolvedPath {
@@ -109,50 +132,38 @@ export class Descriptor {
     }
   }
 
-  async #stat (path: string): Promise<FileStat> {
-    return isRootPath(path) ? rootStat() : await attempt(async () => await this.#fs.stat(path))
-  }
-
-  async #statIfExists (path: string): Promise<FileStat | undefined> {
-    try {
-      return await this.#stat(path)
-    } catch (code) {
-      if (code === 'no-entry') return undefined
-      throw code
-    }
-  }
-
   readViaStream (offset: bigint): InputStream {
-    const { handle, flags } = this.#file()
-    if (flags.read !== true) throw 'bad-descriptor'
+    const handle = this.#readable()
     let position = Number(offset)
     return new InputStream(async (max) => {
-      const data = await handle.read({ position, length: max })
+      const data = await runAsync(this.#ctx, handleCall<Uint8Array>(handle, 'read', { position, length: max }))
       position += data.length
       return data
-    }, errorCodeOf)
+    }, filesystemCode)
   }
 
   writeViaStream (offset: bigint): OutputStream {
-    return this.#writer(() => Number(offset), false)
+    return this.#writer(Number(offset), false)
   }
 
   appendViaStream (): OutputStream {
-    return this.#writer(() => 0, true)
+    return this.#writer(0, true)
   }
 
-  #writer (start: () => number, append: boolean): OutputStream {
-    const { handle, flags } = this.#file()
-    if (flags.write !== true) throw 'bad-descriptor'
-    let position = start()
+  #writer (start: number, append: boolean): OutputStream {
+    const handle = this.#writable()
+    const ctx = this.#ctx
+    let position = start
     return new OutputStream(async (bytes) => {
-      if (append) position = (await handle.stat()).size
-      for (let written = 0; written < bytes.length;) {
-        const count = await handle.write({ position, data: bytes.subarray(written) })
-        position += count
-        written += count
-      }
-    }, errorCodeOf)
+      await runAsync(ctx, (function * (): Op<void> {
+        if (append) position = (yield * handleCall<FileStat>(handle, 'stat')).size
+        for (let written = 0; written < bytes.length;) {
+          const count = yield * handleCall<number>(handle, 'write', { position, data: bytes.subarray(written) })
+          position += count
+          written += count
+        }
+      })())
+    }, filesystemCode)
   }
 
   advise (): void {}
@@ -162,7 +173,7 @@ export class Descriptor {
   }
 
   async sync (): Promise<void> {
-    if (this.#target.kind === 'file') { const { handle } = this.#target; await attempt(async () => { await handle.sync() }) }
+    if (this.#target.kind === 'file') await this.#run(handleCall(this.#target.handle, 'sync'))
   }
 
   getFlags (): DescriptorFlags {
@@ -174,52 +185,42 @@ export class Descriptor {
   }
 
   async setSize (size: bigint): Promise<void> {
-    const { handle, flags } = this.#file()
-    if (flags.write !== true) throw 'bad-descriptor'
-    await attempt(async () => { await handle.truncate(Number(size)) })
+    await this.#run(handleCall(this.#writable(), 'truncate', Number(size)))
   }
 
   async read (length: bigint, offset: bigint): Promise<[Uint8Array, boolean]> {
-    const { handle, flags } = this.#file()
-    if (flags.read !== true) throw 'bad-descriptor'
-    const data = await attempt(async () => await handle.read({ position: Number(offset), length: Number(length) }))
+    const data = await this.#run(handleCall<Uint8Array>(this.#readable(), 'read', { position: Number(offset), length: Number(length) }))
     return [data, data.length < Number(length)]
   }
 
   async write (buffer: Uint8Array, offset: bigint): Promise<bigint> {
-    const { handle, flags } = this.#file()
-    if (flags.write !== true) throw 'bad-descriptor'
-    return BigInt(await attempt(async () => await handle.write({ position: Number(offset), data: buffer.slice() })))
+    return BigInt(await this.#run(handleCall<number>(this.#writable(), 'write', { position: Number(offset), data: buffer.slice() })))
   }
 
   /** A snapshot, typed by a stat of each entry; `.` and `..` are not listed, as WASI 0.2 specifies. */
   async readDirectory (): Promise<DirectoryEntryStream> {
     if (this.#target.kind !== 'directory') throw 'not-directory'
     const { path } = this.#target
-    const names = await attempt(async () => await this.#fs.readdir(path))
+    const ctx = this.#ctx
+    const names = await this.#run(fsCall<readonly string[]>('readdir', path))
     const entries = await Promise.all(names.map(async (name) => {
-      const stat = await this.#statIfExists(path === '.' ? name : `${path}/${name}`)
+      const stat = await this.#run(ctx.statIfExists(path === '.' ? name : `${path}/${name}`))
       return { type: stat === undefined ? 'unknown' as const : statOf(stat).type, name }
     }))
     return new DirectoryEntryStream(entries)
   }
 
   async createDirectoryAt (path: string): Promise<void> {
-    const resolved = this.#resolve(path)
-    if (isRootPath(resolved.path)) throw 'exist'
-    await attempt(async () => { await this.#fs.mkdir(resolved.path) })
+    await this.#run(createDirectory(this.#resolve(path)))
   }
 
   async stat (): Promise<DescriptorStat> {
-    if (this.#target.kind === 'file') { const { handle } = this.#target; return statOf(await attempt(async () => await handle.stat())) }
-    return statOf(await this.#stat(this.#target.path))
+    if (this.#target.kind === 'file') return statOf(await this.#run(handleCall<FileStat>(this.#target.handle, 'stat')))
+    return statOf(await this.#run(this.#ctx.stat(this.#target.path)))
   }
 
   async statAt (_pathFlags: unknown, path: string): Promise<DescriptorStat> {
-    const resolved = this.#resolve(path)
-    const stat = await this.#stat(resolved.path)
-    if (resolved.trailingSlash && !stat.isDirectory) throw 'not-directory'
-    return statOf(stat)
+    return statOf(await this.#run(statPath(this.#ctx, this.#resolve(path))))
   }
 
   setTimes (): never { throw 'unsupported' }
@@ -227,66 +228,30 @@ export class Descriptor {
   linkAt (): never { throw 'unsupported' }
   symlinkAt (): never { throw 'unsupported' }
 
-  /** orivon.fs has no links, so an existing name is never one: POSIX's EINVAL. */
   async readlinkAt (path: string): Promise<string> {
-    await this.#stat(this.#resolve(path).path)
-    throw 'invalid'
+    return await this.#run(readlink(this.#ctx, this.#resolve(path)))
   }
 
   async openAt (_pathFlags: unknown, path: string, open: OpenFlags, flags: DescriptorFlags): Promise<Descriptor> {
     const resolved = this.#resolve(path)
-    const existing = await this.#statIfExists(resolved.path)
-    if (resolved.trailingSlash && existing !== undefined && !existing.isDirectory) throw 'not-directory'
-    if (open.create === true && open.exclusive === true && existing !== undefined) throw 'exist'
     const write = flags.write === true || open.truncate === true
-    if (existing?.isDirectory === true) {
-      if (write) throw 'is-directory'
-      return new Descriptor(this.#fs, { kind: 'directory', path: resolved.path })
-    }
-    if (open.directory === true) throw existing === undefined ? 'no-entry' : 'not-directory'
-    if (existing === undefined && open.create !== true) throw 'no-entry'
     const intent = { read: flags.read === true || !write, write, creat: open.create === true, excl: open.exclusive === true, trunc: open.truncate === true }
-    const handle = await this.#open(resolved.path, intent, existing !== undefined)
-    return new Descriptor(this.#fs, { kind: 'file', path: resolved.path, handle, flags: { read: intent.read, write } })
-  }
-
-  /** A file that appeared between the stat and a create without `exclusive` is simply opened, as path.ts's openFile does. */
-  async #open (path: string, intent: Parameters<typeof openFlags>[0], exists: boolean): Promise<FileHandle> {
-    try {
-      return await this.#fs.open(path, openFlags(intent, exists))
-    } catch (error) {
-      const raced = !exists && !intent.excl && (error as { code?: unknown } | null)?.code === 'exists'
-      if (!raced) throw errorCodeOf(error)
-      return await attempt(async () => await this.#fs.open(path, openFlags({ ...intent, trunc: false }, true)))
-    }
+    const opened = await this.#run(openPath(this.#ctx, resolved, intent, open.directory === true))
+    return new Descriptor(this.#ctx, opened.kind === 'directory'
+      ? { kind: 'directory', path: resolved.path }
+      : { kind: 'file', path: resolved.path, handle: opened.handle as FileHandle, flags: { read: intent.read, write } })
   }
 
   async removeDirectoryAt (path: string): Promise<void> {
-    const resolved = this.#resolve(path)
-    if (isRootPath(resolved.path)) throw 'invalid'
-    const stat = await this.#stat(resolved.path)
-    if (!stat.isDirectory) throw 'not-directory'
-    if ((await attempt(async () => await this.#fs.readdir(resolved.path))).length > 0) throw 'not-empty'
-    // orivon.fs.rm removes a directory only recursively; emptiness was checked above.
-    await attempt(async () => { await this.#fs.rm(resolved.path, { recursive: true }) })
+    await this.#run(removeDirectory(this.#ctx, this.#resolve(path)))
   }
 
   async renameAt (oldPath: string, target: Descriptor, newPath: string): Promise<void> {
-    const from = this.#resolve(oldPath)
-    const to = target.#resolve(newPath)
-    if (isRootPath(from.path) || isRootPath(to.path)) throw 'access'
-    const source = await this.#stat(from.path)
-    if (to.trailingSlash && !source.isDirectory) throw 'not-directory'
-    await attempt(async () => { await this.#fs.rename(from.path, to.path) })
+    await this.#run(renamePath(this.#ctx, this.#resolve(oldPath), target.#resolve(newPath)))
   }
 
   async unlinkFileAt (path: string): Promise<void> {
-    const resolved = this.#resolve(path)
-    if (isRootPath(resolved.path)) throw 'is-directory'
-    const stat = await this.#stat(resolved.path)
-    if (stat.isDirectory) throw 'is-directory'
-    if (resolved.trailingSlash) throw 'not-directory'
-    await attempt(async () => { await this.#fs.rm(resolved.path) })
+    await this.#run(unlinkFile(this.#ctx, this.#resolve(path)))
   }
 
   isSameObject (other: Descriptor): boolean {
@@ -312,13 +277,14 @@ function hashOf (path: string, stat: DescriptorStat): { lower: bigint, upper: bi
 }
 
 export function filesystemInterfaces (fs: WasiFs, preopens: Readonly<Record<string, string>>): Record<string, Record<string, unknown>> {
+  const ctx = new HostContext(fs, [], [], EMPTY_STDIN, () => {}, () => {})
   const directories = Object.entries(preopens).map(([name, virtualPath]): [Descriptor, string] =>
-    [new Descriptor(fs, { kind: 'directory', path: toConfinedPath(virtualPath, 'wasi preopen') }), name])
+    [new Descriptor(ctx, { kind: 'directory', path: toConfinedPath(virtualPath, 'wasi preopen') }), name])
   return {
     'wasi:filesystem/types': {
       Descriptor,
       DirectoryEntryStream,
-      filesystemErrorCode: (error: IoError): string | undefined => error.code
+      filesystemErrorCode: (error: IoError): string | undefined => error.codeFor('filesystem')
     },
     'wasi:filesystem/preopens': { getDirectories: (): Array<[Descriptor, string]> => directories }
   }

@@ -3,7 +3,7 @@
 // it against the host, and enters it through wasi:cli/run.
 
 import { ComponentExit } from './basics.js'
-import { ASYNC_IMPORTS } from './imports.js'
+import { ASYNC_EXPORTS, ASYNC_IMPORTS } from './imports.js'
 
 export type GetCoreModule = (name: string) => Promise<WebAssembly.Module>
 export type Instantiate = (getCoreModule: GetCoreModule, imports: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -26,6 +26,11 @@ function glueName (selector: string): string {
 
 const ASYNC_GLUE_NAMES = new Set(ASYNC_IMPORTS.map(glueName))
 
+/** Whether `text` is jco's instantiation-mode output at all: a fallback page served for a missing file is not. */
+export function isJcoOutput (text: string): boolean {
+  return /export\s*(?:async\s+)?function\s+instantiate\b|export\s*\{[^}]*\binstantiate\b/.test(text) && new RegExp(TRAMPOLINE.source).test(text)
+}
+
 /** The imports the host answers asynchronously that `glue` lowers synchronously: each would receive a promise. */
 export function unmarkedAsyncImports (glue: string): string[] {
   const unmarked: string[] = []
@@ -43,9 +48,11 @@ export function transpileCommand (component: string): string {
     `--async-exports wasi:cli/run#run ${ASYNC_IMPORTS.map((selector) => `--async-imports '${selector}'`).join(' ')}`
 }
 
+/** jco makes an export it was told is asynchronous an async function; any other would trap at its first suspending import. */
 function runExport (exports: Record<string, unknown>): () => Promise<unknown> {
   const entry = Object.entries(exports).find(([key]) => key === 'run' || key.startsWith('wasi:cli/run@'))?.[1] as { run?: unknown } | undefined
   if (typeof entry?.run !== 'function') throw new TypeError('the component does not export wasi:cli/run: only a command component can be spawned')
+  if (entry.run.constructor.name !== 'AsyncFunction') throw new TypeError(`its wasi:cli/run export was not transpiled as asynchronous: transpile it with --async-exports ${ASYNC_EXPORTS.join(' ')}`)
   return entry.run as () => Promise<unknown>
 }
 

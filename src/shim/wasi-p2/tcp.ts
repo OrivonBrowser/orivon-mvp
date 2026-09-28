@@ -7,27 +7,21 @@
 import type { TcpServer, TcpSocket as OrivonTcpSocket } from '../../contracts/handles.js'
 import {
   type IpAddressFamily, type IpSocketAddress, type ResolvedNames, type SocketNet,
-  addressOf, isUnspecified, reportedAddress, scopeOf, socketErrorCode
+  addressOf, isIpv4Mapped, isUnspecified, networkCode, reportedAddress, scopeOf, socketFailure
 } from './addresses.js'
-import { InputStream, OutputStream, Pollable } from './io.js'
+import { InputStream, OutputStream, Pollable, Signal } from './io.js'
 
 type State = 'unbound' | 'bind-started' | 'bound' | 'connect-started' | 'connected' | 'listen-started' | 'listening' | 'closed'
 type ShutdownType = 'receive' | 'send' | 'both'
 type Connection = [TcpSocket, InputStream, OutputStream]
 
-/** A change any pollable of the socket may be waiting on. */
-class Signal {
-  #waiters: Array<() => void> = []
+/** Connections accepted ahead of the program; past this, the listener waits before taking more. */
+const DEFAULT_BACKLOG = 128
 
-  wait (): Promise<void> {
-    return new Promise((resolve) => { this.#waiters.push(resolve) })
-  }
-
-  notify (): void {
-    const waiters = this.#waiters
-    this.#waiters = []
-    waiters.forEach((wake) => { wake() })
-  }
+/** A failure as the socket throws it: a revoked grant stays a termination, which unwinds the component. */
+function rethrow (error: unknown): never {
+  const failure = socketFailure(error)
+  throw typeof failure === 'string' ? error : failure
 }
 
 /** The streams of a connected orivon.net socket. */
@@ -35,10 +29,10 @@ function streamsOf (socket: OrivonTcpSocket): { input: InputStream, output: Outp
   const reader = socket.readable.getReader()
   const writer = socket.writable.getWriter()
   const input = new InputStream(async () => {
-    const { done, value } = await reader.read()
+    const { done, value } = await reader.read().catch(rethrow)
     return done ? new Uint8Array(0) : value
-  }, socketErrorCode)
-  const output = new OutputStream(async (bytes) => { await writer.write(bytes) }, socketErrorCode)
+  }, networkCode)
+  const output = new OutputStream(async (bytes) => { await writer.write(bytes).catch(rethrow) }, networkCode)
   return { input, output, reader, writer }
 }
 
@@ -53,11 +47,14 @@ export class TcpSocket {
   readonly #signal = new Signal()
   #state: State = 'unbound'
   #local: IpSocketAddress | undefined
-  #pending: 'running' | 'done' | { readonly code: string } | undefined
+  #pending: 'running' | 'done' | { readonly failure: unknown } | undefined
   #socket: OrivonTcpSocket | undefined
   #server: TcpServer | undefined
   #streams: ReturnType<typeof streamsOf> | undefined
   readonly #accepted: Connection[] = []
+  /** Set once the listener's connections stream ends: accept then fails with it. */
+  #listenFailure: unknown
+  #backlog = DEFAULT_BACKLOG
   readonly #options = new Map<string, unknown>()
 
   constructor (context: TcpContext, family: IpAddressFamily, connected?: OrivonTcpSocket) {
@@ -73,58 +70,63 @@ export class TcpSocket {
     if (!states.includes(this.#state)) throw 'invalid-state'
   }
 
-  #checkFamily (address: IpSocketAddress): void {
-    if (address.tag !== this.#family) throw 'invalid-argument'
+  #checkAddress (address: IpSocketAddress): void {
+    if (address.tag !== this.#family || isIpv4Mapped(addressOf(address))) throw 'invalid-argument'
   }
 
   /** Runs `work` as the pending operation: finish-* answers would-block until it settles. */
   #start (work: Promise<void>): void {
+    if (this.#pending === 'running') throw 'concurrency-conflict'
     this.#pending = 'running'
     work.then(
       () => { this.#pending = 'done' },
-      (error: unknown) => { this.#pending = { code: socketErrorCode(error) } }
+      (error: unknown) => { this.#pending = { failure: socketFailure(error) } }
     ).finally(() => { this.#signal.notify() })
   }
 
-  /** Throws would-block while the pending operation runs, or its error once it failed. */
-  #finish (): void {
+  /** The finish of `started`: not-in-progress unless it was started, would-block while it runs, its failure once it failed. */
+  #finish (started: State): void {
+    if (this.#state !== started) throw 'not-in-progress'
     const pending = this.#pending
-    if (pending === undefined) throw 'not-in-progress'
     if (pending === 'running') throw 'would-block'
     this.#pending = undefined
-    if (pending !== 'done') {
+    if (pending !== 'done' && pending !== undefined) {
       this.#state = 'closed'
-      throw pending.code
+      throw pending.failure
     }
+  }
+
+  /** Keeps what orivon.net hands back, unless the socket was dropped meanwhile: then it is closed, never leaked. */
+  #adopt<T extends { close: () => Promise<void> }> (handle: T, keep: (handle: T) => void): void {
+    if (this.#state === 'closed') void handle.close().catch(() => {})
+    else keep(handle)
   }
 
   startBind (_network: unknown, localAddress: IpSocketAddress): void {
     this.#expect('unbound')
-    this.#checkFamily(localAddress)
+    this.#checkAddress(localAddress)
     this.#local = localAddress
     this.#state = 'bind-started'
     this.#pending = 'done'
   }
 
   finishBind (): void {
-    this.#expect('bind-started')
-    this.#finish()
+    this.#finish('bind-started')
     this.#state = 'bound'
   }
 
   startConnect (_network: unknown, remoteAddress: IpSocketAddress): void {
     this.#expect('unbound', 'bound')
-    this.#checkFamily(remoteAddress)
+    this.#checkAddress(remoteAddress)
     const address = addressOf(remoteAddress)
     if (remoteAddress.val.port === 0 || isUnspecified(address)) throw 'invalid-argument'
-    this.#state = 'connect-started'
     this.#start(this.#context.net.connect({ host: this.#context.names.hostFor(address), port: remoteAddress.val.port })
-      .then((socket) => { this.#socket = socket }))
+      .then((socket) => { this.#adopt(socket, (kept) => { this.#socket = kept }) }))
+    this.#state = 'connect-started'
   }
 
   finishConnect (): [InputStream, OutputStream] {
-    this.#expect('connect-started')
-    this.#finish()
+    this.#finish('connect-started')
     this.#state = 'connected'
     const streams = this.#connectedStreams()
     return [streams.input, streams.output]
@@ -139,40 +141,51 @@ export class TcpSocket {
   startListen (): void {
     this.#expect('bound')
     const local = this.#local as IpSocketAddress
-    this.#state = 'listen-started'
     this.#start(this.#context.net.listen({ port: local.val.port, scope: scopeOf(addressOf(local)) })
-      .then((server) => { this.#server = server }))
+      .then((server) => { this.#adopt(server, (kept) => { this.#server = kept }) }))
+    this.#state = 'listen-started'
   }
 
   finishListen (): void {
-    this.#expect('listen-started')
-    this.#finish()
+    this.#finish('listen-started')
     this.#state = 'listening'
     void this.#pumpConnections()
   }
 
-  /** Queues each accepted connection as it arrives, so accept() can answer at once. */
+  /** Queues each accepted connection as it arrives, up to the backlog, so accept() can answer at once. */
   async #pumpConnections (): Promise<void> {
     const server = this.#server
     if (server === undefined) return
     const reader = server.connections.getReader()
     try {
       for (;;) {
+        while (this.#accepted.length >= this.#backlog && this.#state === 'listening') await this.#signal.wait()
+        if (this.#state !== 'listening') break
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) { this.#listenFailure = 'invalid-state'; break }
+        if (this.#state !== 'listening') { void value.close().catch(() => {}); break }
         const socket = new TcpSocket(this.#context, this.#family, value)
         const streams = socket.#connectedStreams()
         this.#accepted.push([socket, streams.input, streams.output])
         this.#signal.notify()
       }
-    } catch {}
+    } catch (error) {
+      this.#listenFailure = socketFailure(error)
+    } finally {
+      reader.releaseLock()
+      this.#signal.notify()
+    }
   }
 
   accept (): Connection {
     this.#expect('listening')
     const next = this.#accepted.shift()
-    if (next === undefined) throw 'would-block'
-    return next
+    if (next !== undefined) {
+      this.#signal.notify()
+      return next
+    }
+    if (this.#listenFailure !== undefined) throw this.#listenFailure
+    throw 'would-block'
   }
 
   localAddress (): IpSocketAddress {
@@ -198,6 +211,7 @@ export class TcpSocket {
 
   setListenBacklogSize (value: bigint): void {
     if (value === 0n) throw 'invalid-argument'
+    this.#backlog = Number(value < BigInt(DEFAULT_BACKLOG) ? value : BigInt(DEFAULT_BACKLOG))
   }
 
   keepAliveEnabled (): boolean { return this.#options.get('keepAlive') === true }
@@ -235,20 +249,22 @@ export class TcpSocket {
 
   #isReady (): boolean {
     if (this.#pending === 'running') return false
-    if (this.#state === 'listening') return this.#accepted.length > 0
+    if (this.#state === 'listening') return this.#accepted.length > 0 || this.#listenFailure !== undefined
     return true
   }
 
   shutdown (how: ShutdownType): void {
     this.#expect('connected')
     const streams = this.#connectedStreams()
-    if (how !== 'send') void streams.reader.cancel().catch(() => {})
+    if (how !== 'send') { streams.input.discard(); void streams.reader.cancel().catch(() => {}) }
     if (how !== 'receive') void streams.writer.close().catch(() => {})
   }
 
   [Symbol.dispose] (): void {
     this.#state = 'closed'
+    this.#signal.notify()
     void this.#socket?.close().catch(() => {})
     void this.#server?.close().catch(() => {})
+    for (const [socket] of this.#accepted.splice(0)) socket[Symbol.dispose]()
   }
 }

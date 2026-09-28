@@ -3,7 +3,7 @@
 // `would-block` until orivon.net.lookup settles; each address it returns is
 // remembered with its name (addresses.ts).
 
-import { type IpAddress, type IpAddressFamily, ResolvedNames, type SocketNet, parseAddress, socketErrorCode } from './addresses.js'
+import { type IpAddress, type IpAddressFamily, ResolvedNames, type SocketNet, parseAddress, socketFailure } from './addresses.js'
 import { type IoError, Pollable } from './io.js'
 import { TcpSocket } from './tcp.js'
 import { UdpSocket } from './udp.js'
@@ -13,7 +13,7 @@ export class Network {}
 
 export class ResolveAddressStream {
   #addresses: IpAddress[] | undefined
-  #failure: string | undefined
+  #failure: unknown
   readonly #settled: Promise<void>
 
   constructor (net: SocketNet, names: ResolvedNames, name: string) {
@@ -32,7 +32,7 @@ export class ResolveAddressStream {
           return [address]
         })
       },
-      (error: unknown) => { this.#failure = socketErrorCode(error) }
+      (error: unknown) => { this.#failure = socketFailure(error) }
     )
   }
 
@@ -52,7 +52,7 @@ export function socketInterfaces (net: SocketNet): Record<string, Record<string,
   const network = new Network()
   const context = { net, names }
   return {
-    'wasi:sockets/network': { Network, networkErrorCode: (error: IoError): string | undefined => error.code },
+    'wasi:sockets/network': { Network, networkErrorCode: (error: IoError): string | undefined => error.codeFor('network') },
     'wasi:sockets/instance-network': { instanceNetwork: (): Network => network },
     'wasi:sockets/tcp': { TcpSocket },
     'wasi:sockets/tcp-create-socket': { createTcpSocket: (family: IpAddressFamily): TcpSocket => new TcpSocket(context, family) },

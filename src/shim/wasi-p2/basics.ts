@@ -1,24 +1,17 @@
 // wasi:clocks, wasi:random and wasi:cli: the interfaces that touch no file
 // and no socket.
 
+import { delay, monotonicNs, randomBytes, realtimeNs } from '../wasi/time.js'
 import { InputStream, OutputStream, Pollable } from './io.js'
 
-/** setTimeout's largest delay; a longer wait is taken in slices of this. */
-const MAX_TIMER_MS = 2 ** 31 - 1
-/** crypto.getRandomValues refuses more than this per call. */
-const RANDOM_CHUNK = 65_536
-
-function monotonicNs (): bigint {
-  return BigInt(Math.round(performance.now() * 1_000_000))
-}
-
-/** Ready once the monotonic clock reaches `deadlineNs`. */
+/** Ready once the monotonic clock reaches `deadlineNs`; one timer however often it is polled. */
 function timer (deadlineNs: bigint): Pollable {
+  let fired: Promise<void> | undefined
   const remainingMs = (): number => Number(deadlineNs - monotonicNs()) / 1_000_000
-  return new Pollable(
-    () => remainingMs() <= 0,
-    async () => { await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(remainingMs(), 0), MAX_TIMER_MS))) }
-  )
+  return new Pollable(() => remainingMs() <= 0, async () => {
+    fired ??= delay(Math.max(remainingMs(), 0))
+    await fired
+  })
 }
 
 export const monotonicClock = {
@@ -30,25 +23,22 @@ export const monotonicClock = {
 
 export const wallClock = {
   now: (): { seconds: bigint, nanoseconds: number } => {
-    const ms = performance.timeOrigin + performance.now()
-    const seconds = Math.floor(ms / 1000)
-    return { seconds: BigInt(seconds), nanoseconds: Math.round((ms - seconds * 1000) * 1_000_000) % 1_000_000_000 }
+    const ns = realtimeNs()
+    return { seconds: ns / 1_000_000_000n, nanoseconds: Number(ns % 1_000_000_000n) }
   },
   resolution: (): { seconds: bigint, nanoseconds: number } => ({ seconds: 0n, nanoseconds: 1_000 })
 }
 
-function randomBytes (len: bigint): Uint8Array {
-  const bytes = new Uint8Array(Number(len))
-  for (let offset = 0; offset < bytes.length; offset += RANDOM_CHUNK) crypto.getRandomValues(bytes.subarray(offset, offset + RANDOM_CHUNK))
-  return bytes
+function getRandomBytes (len: bigint): Uint8Array {
+  return randomBytes(Number(len))
 }
 
 function randomU64 (): bigint {
-  return new DataView(randomBytes(8n).buffer).getBigUint64(0)
+  return new DataView(randomBytes(8).buffer).getBigUint64(0)
 }
 
-export const random = { getRandomBytes: randomBytes, getRandomU64: randomU64 }
-export const insecure = { getInsecureRandomBytes: randomBytes, getInsecureRandomU64: randomU64 }
+export const random = { getRandomBytes, getRandomU64: randomU64 }
+export const insecure = { getInsecureRandomBytes: getRandomBytes, getInsecureRandomU64: randomU64 }
 export const insecureSeed = { insecureSeed: (): [bigint, bigint] => [randomU64(), randomU64()] }
 
 /** How wasi:cli/exit unwinds the component: an Error, so the glue rethrows it rather than lowering it. */

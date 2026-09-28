@@ -23,11 +23,12 @@ describe('InputStream', () => {
   })
 
   it('reports a failed source as last-operation-failed, with the code the interface names it by', async () => {
-    const stream = new InputStream(async () => { throw Object.assign(new Error('gone'), { code: 'reset' }) }, () => 'connection-reset')
+    const stream = new InputStream(async () => { throw Object.assign(new Error('gone'), { code: 'reset' }) }, () => ({ kind: 'network', code: 'connection-reset' }))
     const error = await stream.blockingRead(4n).catch((thrown: unknown) => thrown) as { tag: string, val: IoError }
     expect(error.tag).toBe('last-operation-failed')
     expect(error.val.toDebugString()).toBe('gone')
-    expect(error.val.code).toBe('connection-reset')
+    expect(error.val.codeFor('network')).toBe('connection-reset')
+    expect(error.val.codeFor('filesystem')).toBeUndefined()
   })
 })
 
@@ -52,6 +53,13 @@ describe('OutputStream', () => {
     const stream = new OutputStream(async (data) => { sizes.push(data.length) })
     await stream.blockingWriteAndFlush(new Uint8Array(70_000))
     expect(sizes).toEqual([65_536, 4_464])
+  })
+
+  it('accepts an empty write while another is in flight, so an empty splice returns 0 rather than trapping', () => {
+    const stream = new OutputStream(async () => await new Promise(() => {}))
+    stream.write(bytes('busy'))
+    expect(() => { stream.write(new Uint8Array(0)) }).not.toThrow()
+    expect(stream.splice(new InputStream(async () => new Uint8Array(0)), 10n)).toBe(0n)
   })
 
   it('keeps the copy it writes, so the caller may reuse its buffer', async () => {

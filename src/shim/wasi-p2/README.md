@@ -10,8 +10,9 @@ holds no authority of its own
 Durable: no Electron API, only JSPI.
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), and within the shim
-[`../wasi/`](../wasi/)'s path resolution, errno table and open-flag choice (so both hosts refuse
-the same things the same way), `../fs/paths.ts` and `../fs/root.ts`.
+[`../wasi/`](../wasi/): its path operations (`path-ops.ts`), run through its asynchronous driver
+with a host context of this host's own, its errno table, clocks and termination, so both hosts
+resolve, refuse, retry and stop the same way; and `../fs/paths.ts`.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README.
@@ -27,8 +28,11 @@ promise, which the output must let suspend through JSPI. `spawn` refuses output 
 them synchronously, naming each.
 
 **Not served:** links and file times (`orivon.fs` has neither), terminals (a program here has
-none), and a second `stream()` of one UDP socket. `wasi:cli/exit` carries only success or failure
-in WASI 0.2, so a program's non-zero exit code reaches Node as 1.
+none), and a second `stream()` of one UDP socket. WASI 0.2's `exit` carries only success or
+failure, so a program's non-zero code reaches Node as 1, unless the component calls
+`exit-with-code`, which passes its code. A bind to one address other than loopback binds every
+interface, since `orivon.net` binds loopback or all of them: still within the app's grant, but
+wider than the program asked.
 
 ## Design notes
 
@@ -45,7 +49,12 @@ as the result's error and rethrows an `Error` as a trap, which is how exit unwin
 **A socket connects by the name the program resolved** (`addresses.ts`): a program resolves a name
 and then connects to an address, while an app's grants usually name hosts. The broker is asked for
 the name, checks the grant it would check for `net.connect(name)`, and resolves it itself. An
-address the program did not resolve goes to the broker as it is.
+address the program did not resolve, or one that several resolved names share, goes to the broker
+as it is.
+
+**A revoked grant stops the component**, file or socket alike, as it stops a preview1 program: a
+program retrying against a grant that is gone would spin. The host throws the preview1 host's
+termination, which unwinds the component as a trap.
 
 **A bind is made at listen**, since `orivon.net` binds and listens in one call: `finish-bind`
 always succeeds, and an address in use is reported by `finish-listen` (`tcp.ts`).

@@ -3,8 +3,9 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
+import { WasiTerminated } from '../../wasi/termination.js'
 import { type Descriptor, filesystemInterfaces } from '../filesystem.js'
 
 let disk: RealDiskFs | undefined
@@ -98,10 +99,25 @@ describe('wasi:filesystem', () => {
     const file = await dir.openAt({}, 'gone.txt', { create: true }, { read: true, write: true })
     file[Symbol.dispose]()
     await new Promise((resolve) => setTimeout(resolve, 10))
-    const error = await file.readViaStream(0n).blockingRead(4n).catch((thrown: unknown) => thrown) as { tag: string, val: { code?: string } }
+    const error = await file.readViaStream(0n).blockingRead(4n).catch((thrown: unknown) => thrown) as { tag: string, val: { codeFor: (kind: string) => string | undefined } }
     expect(error.tag).toBe('last-operation-failed')
     const errorCode = filesystemInterfaces({} as never, {})['wasi:filesystem/types']?.filesystemErrorCode as (error: unknown) => string | undefined
-    expect(errorCode(error.val)).toBe(error.val.code)
-    expect(typeof error.val.code).toBe('string')
+    expect(typeof errorCode(error.val)).toBe('string')
+    expect(error.val.codeFor('network')).toBeUndefined()
+  })
+
+  it('stops the component on a revoked grant, and on every call after, as the preview1 host stops a program', async () => {
+    const dir = await root()
+    vi.spyOn((disk as RealDiskFs).orivon.fs, 'stat').mockRejectedValue(Object.assign(new Error('revoked'), { code: 'revoked' }))
+    await expect(dir.statAt({}, 'anything')).rejects.toBeInstanceOf(WasiTerminated)
+    await expect(dir.createDirectoryAt('later')).rejects.toBeInstanceOf(WasiTerminated)
+  })
+
+  it('retries a bare limit, as the preview1 host does', async () => {
+    const dir = await root()
+    const stat = vi.spyOn((disk as RealDiskFs).orivon.fs, 'stat')
+      .mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'limit' }))
+    await expect(dir.statAt({}, 'missing')).rejects.toBe('no-entry')
+    expect(stat).toHaveBeenCalledTimes(2)
   })
 })

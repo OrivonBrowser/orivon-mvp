@@ -11,6 +11,7 @@ import type { InputStream, OutputStream } from '../io.js'
 import { socketInterfaces } from '../sockets.js'
 import type { TcpSocket } from '../tcp.js'
 import type { UdpSocket } from '../udp.js'
+import { WasiTerminated } from '../../wasi/termination.js'
 
 const v4 = (a: number, b: number, c: number, d: number, port: number): IpSocketAddress => ({ tag: 'ipv4', val: { port, address: [a, b, c, d] } })
 
@@ -73,12 +74,13 @@ describe('TCP', () => {
     expect(() => socket.startConnect({}, v4(1, 2, 3, 4, 80))).toThrow('invalid-state')
   })
 
-  it('refuses what WASI refuses before any call: port 0, the unspecified address, another family, a second connect', () => {
+  it('refuses what WASI refuses before any call: port 0, the unspecified address, another family or a mapped one, a finish never started', () => {
     const socket = createTcp(socketInterfaces(fakeNet()))
     expect(() => { socket.startConnect({}, v4(1, 2, 3, 4, 0)) }).toThrow('invalid-argument')
     expect(() => { socket.startConnect({}, v4(0, 0, 0, 0, 80)) }).toThrow('invalid-argument')
     expect(() => { socket.startConnect({}, { tag: 'ipv6', val: { port: 80, flowInfo: 0, address: [0, 0, 0, 0, 0, 0, 0, 1], scopeId: 0 } }) }).toThrow('invalid-argument')
-    expect(() => socket.finishConnect()).toThrow('invalid-state')
+    expect(() => { socket.startConnect({}, { tag: 'ipv6', val: { port: 80, flowInfo: 0, address: [0, 0, 0, 0, 0, 0xffff, 0x7f00, 1], scopeId: 0 } }) }).toThrow('invalid-argument')
+    expect(() => socket.finishConnect()).toThrow('not-in-progress')
   })
 
   it('binds at listen, in the scope its address names, and accepts each connection as it arrives', async () => {
@@ -148,5 +150,110 @@ describe('name lookup', () => {
     const interfaces = socketInterfaces(fakeNet({ lookup: async () => { throw Object.assign(new Error('nx'), { code: 'notFound' }) } }))
     expect(await resolve(interfaces, '::1')).toEqual([{ tag: 'ipv6', val: [0, 0, 0, 0, 0, 0, 0, 1] }])
     await expect(resolve(interfaces, 'nowhere.invalid')).rejects.toBe('name-unresolvable')
+  })
+})
+
+describe('what a dropped or failing socket leaves behind', () => {
+  it('closes a connection that arrives after its socket was dropped', async () => {
+    const fake = createFakeTcpSocket()
+    let arrive: () => void = () => {}
+    const socket = createTcp(socketInterfaces(fakeNet({ connect: async () => { await new Promise<void>((resolve) => { arrive = resolve }); return fake.socket } })))
+    socket.startConnect({}, v4(1, 2, 3, 4, 80))
+    socket[Symbol.dispose]()
+    arrive()
+    await vi.waitFor(() => { expect(fake.closed()).toBe(true) })
+  })
+
+  it('closes the connections a listener queued but the program never accepted', async () => {
+    const server = createFakeTcpServer({ localAddress: '127.0.0.1', localPort: 4002 })
+    const listening = async (): Promise<TcpSocket> => {
+      const socket = createTcp(socketInterfaces(fakeNet({ listen: async () => server.server as TcpServer })))
+      socket.startBind({}, v4(127, 0, 0, 1, 4002))
+      socket.finishBind()
+      socket.startListen()
+      await socket.subscribe().block()
+      socket.finishListen()
+      return socket
+    }
+    const socket = await listening()
+    await vi.waitFor(() => { expect(server.pullCount()).toBeGreaterThan(0) })
+    const queued = createFakeTcpSocket()
+    server.deliver(queued.socket)
+    await socket.subscribe().block()
+    socket[Symbol.dispose]()
+    await vi.waitFor(() => { expect(queued.closed()).toBe(true) })
+  })
+
+  it('makes a listener whose connection stream ended ready, and accept fails rather than blocking forever', async () => {
+    const server = createFakeTcpServer({ localAddress: '127.0.0.1', localPort: 4003 })
+    const socket = createTcp(socketInterfaces(fakeNet({ listen: async () => server.server as TcpServer })))
+    socket.startBind({}, v4(127, 0, 0, 1, 4003))
+    socket.finishBind()
+    socket.startListen()
+    await socket.subscribe().block()
+    socket.finishListen()
+    await vi.waitFor(() => { expect(server.pullCount()).toBeGreaterThan(0) })
+    server.fail('reset', 'gone')
+    await socket.subscribe().block()
+    expect(() => socket.accept()).toThrow('connection-reset')
+  })
+
+  it('refuses a second start while one runs, as concurrency-conflict', () => {
+    const socket = createTcp(socketInterfaces(fakeNet({ connect: async () => await new Promise(() => {}) })))
+    socket.startConnect({}, v4(1, 2, 3, 4, 80))
+    expect(() => { socket.startConnect({}, v4(1, 2, 3, 4, 80)) }).toThrow()
+  })
+
+  it('discards what arrived when its receiving side is shut down', async () => {
+    const fake = createFakeTcpSocket()
+    const socket = createTcp(socketInterfaces(fakeNet({ connect: async () => fake.socket })))
+    socket.startConnect({}, v4(1, 2, 3, 4, 80))
+    await socket.subscribe().block()
+    const [input] = socket.finishConnect()
+    fake.push(new TextEncoder().encode('unread'))
+    await input.subscribe().block()
+    socket.shutdown('receive')
+    expect(() => input.read(10n)).toThrow()
+  })
+
+  it('stops the component on a revoked grant, as the preview1 host stops a program', async () => {
+    const socket = createTcp(socketInterfaces(fakeNet({ connect: async () => { throw Object.assign(new Error('revoked'), { code: 'revoked' }) } })))
+    socket.startConnect({}, v4(1, 2, 3, 4, 80))
+    await socket.subscribe().block()
+    expect(() => socket.finishConnect()).toThrow(WasiTerminated)
+  })
+})
+
+describe('resolved names', () => {
+  it('connects by the literal address when several resolved names share it', async () => {
+    const net = fakeNet({ lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 'IPv4' as const }]) })
+    const interfaces = socketInterfaces(net)
+    await resolve(interfaces, 'api.example.test')
+    await resolve(interfaces, 'cdn.other.test')
+    const socket = createTcp(interfaces)
+    socket.startConnect({}, v4(93, 184, 216, 34, 443))
+    await socket.subscribe().block()
+    socket.finishConnect()
+    expect(net.connect).toHaveBeenCalledWith({ host: '93.184.216.34', port: 443 })
+  })
+
+  it('names a resolver that found nothing as name-unresolvable, and one that failed for now as temporary', async () => {
+    const failing = (platformCode: string): Interfaces => socketInterfaces(fakeNet({ lookup: async () => { throw Object.assign(new Error('dns'), { code: 'unreachable', platformCode }) } }))
+    await expect(resolve(failing('ENOTFOUND'), 'nowhere.test')).rejects.toBe('name-unresolvable')
+    await expect(resolve(failing('EAI_AGAIN'), 'later.test')).rejects.toBe('temporary-resolver-failure')
+  })
+})
+
+describe('UDP sends', () => {
+  it('checks every datagram before sending any', async () => {
+    const fake = createFakeUdpSocket()
+    const socket = fn<(family: string) => UdpSocket>(socketInterfaces(fakeNet({ udpBind: async () => fake.socket as OrivonUdpSocket })), 'wasi:sockets/udp-create-socket', 'createUdpSocket')('ipv4')
+    socket.startBind({}, v4(0, 0, 0, 0, 0))
+    await socket.subscribe().block()
+    socket.finishBind()
+    const [, outgoing] = socket.stream(undefined)
+    expect(() => outgoing.send([{ data: new Uint8Array([1]), remoteAddress: v4(1, 2, 3, 4, 53) }, { data: new Uint8Array([2]), remoteAddress: v4(1, 2, 3, 4, 0) }])).toThrow('invalid-argument')
+    await new Promise((settle) => setTimeout(settle, 10))
+    expect(fake.sent).toHaveLength(0)
   })
 })

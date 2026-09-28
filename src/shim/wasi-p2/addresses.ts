@@ -3,9 +3,12 @@
 // an app's grants usually name hosts: connecting by the name the program
 // resolved lets the broker check the grant it would check for Node's
 // net.connect(name), and re-resolve it itself. An address the program did
-// not resolve is passed as it is, and the broker decides.
+// not resolve, or one several resolved names share, is passed as it is, and
+// the broker decides.
 
 import type { OrivonNet } from '../../contracts/capability-api.js'
+import { WasiTerminated } from '../wasi/termination.js'
+import type { ErrorCode } from './io.js'
 
 export type IpAddress =
   | { readonly tag: 'ipv4', readonly val: readonly [number, number, number, number] }
@@ -76,6 +79,11 @@ export function isLoopback (address: IpAddress): boolean {
   return address.tag === 'ipv4' ? address.val[0] === 127 : address.val.slice(0, 7).every((part) => part === 0) && address.val[7] === 1
 }
 
+/** `::ffff:a.b.c.d`, which WASI 0.2 refuses in a bind or connect. */
+export function isIpv4Mapped (address: IpAddress): boolean {
+  return address.tag === 'ipv6' && address.val.slice(0, 5).every((part) => part === 0) && address.val[5] === 0xffff
+}
+
 /** Which interface a bind to `address` reaches: orivon.net binds loopback or every interface, never one address. */
 export function scopeOf (address: IpAddress): 'local' | 'network' {
   return isLoopback(address) ? 'local' : 'network'
@@ -83,23 +91,43 @@ export function scopeOf (address: IpAddress): 'local' | 'network' {
 
 /** The names a program resolved, by the address each resolved to. */
 export class ResolvedNames {
-  readonly #names = new Map<string, string>()
+  readonly #names = new Map<string, Set<string>>()
 
   remember (name: string, address: IpAddress): void {
-    this.#names.set(formatAddress(address), name)
+    const text = formatAddress(address)
+    const names = this.#names.get(text) ?? new Set<string>()
+    names.add(name)
+    this.#names.set(text, names)
   }
 
-  /** What orivon.net is asked to reach for `address`: the name the program resolved it from, else the address. */
+  /** What orivon.net is asked to reach for `address`: the one name the program resolved it from, else the address. */
   hostFor (address: IpAddress): string {
     const text = formatAddress(address)
-    return this.#names.get(text) ?? text
+    const names = this.#names.get(text)
+    return names?.size === 1 ? [...names][0] as string : text
   }
+}
+
+/**
+ * What an orivon.net rejection becomes: a revoked grant stops the component,
+ * as it stops a preview1 program, and anything else is a socket error code.
+ */
+export function socketFailure (error: unknown): string | WasiTerminated {
+  if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'revoked') return new WasiTerminated('revoked')
+  return socketErrorCode(error)
+}
+
+/** A socket stream's failure, named for network-error-code. */
+export function networkCode (error: unknown): ErrorCode {
+  return { kind: 'network', code: socketErrorCode(error) }
 }
 
 /** An orivon.net rejection as the socket error code the component sees. */
 export function socketErrorCode (error: unknown): string {
   const { code, platformCode } = typeof error === 'object' && error !== null ? error as { code?: unknown, platformCode?: unknown } : {}
   switch (platformCode) {
+    case 'ENOTFOUND': return 'name-unresolvable'
+    case 'EAI_AGAIN': return 'temporary-resolver-failure'
     case 'ECONNREFUSED': return 'connection-refused'
     case 'ECONNRESET': return 'connection-reset'
     case 'ECONNABORTED': return 'connection-aborted'
