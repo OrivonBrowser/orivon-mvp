@@ -123,3 +123,9 @@ see in the PR itself.
 |---|---|---|
 | `/code-review`, high effort, run by a forked reviewer | `src/shim/worker/` and `src/shim/child-process/` against the WASI-host branch | 10 findings, all fixed in the same branch with a test each: the stdout sink transferred the buffer the WASI host then measured, so `fd_write` reported 0 bytes and a real libc would rewrite forever (the hand-assembled test programs ignored the count); a forked child never ended on its own; `kill()` emitted `exit` synchronously and `kill(0)` threw; a Worker that could not be created was an unhandled rejection; a load failure after a kill emitted a second `error`; held IPC deadlocked a top-level `await` on the first message; a handle's `closed` lost its `platformCode`; `execFile(file, undefined, options)` dropped its options; and `#` was not refused as a shell comment |
 
+### `stream/native-addons`: native addons through emnapi (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | `src/shim/addon/`, the `module` target, and the WASI host's synchronous imports | 10 findings, all fixed in the same branch, with a test where one applies: a concurrent preload could instantiate an addon twice; `createRequire(import.meta.url)` misread an https URL; a command build crashed inside emnapi instead of refusing; addon output bypassed a forked child's stdout and a line without a newline was lost; the synchronous `fd_write` answered NOSYS for a bad descriptor; a preload's errors were not wrapped; the cache key was not normalised; every host built the synchronous imports eagerly; and the polyfills README missed the new module |
+

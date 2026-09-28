@@ -86,3 +86,29 @@ export async function initializeReactor (instance: WebAssembly.Instance, host: W
   bindInstanceMemory(instance, host)
   if (exportedFunction(instance, '_initialize') !== undefined) await callEntry(instance, '_initialize', wasm)
 }
+
+/** A WASI object for a module JavaScript calls synchronously, in the shape Node's `WASI` and emnapi expect. */
+export interface SyncWasi {
+  readonly wasiImport: Readonly<Record<string, unknown>>
+  initialize (instance: WebAssembly.Instance): void
+  /** Required by emnapi's type; a synchronous module is always a reactor. */
+  start (instance: WebAssembly.Instance): number
+}
+
+/**
+ * The host for a module with no `promising` entry, a native addon's
+ * WebAssembly build: its imports never suspend, and initialize() binds its
+ * memory and runs `_initialize` directly.
+ */
+export function synchronousWasi (host: WasiHost): SyncWasi {
+  return {
+    wasiImport: host.syncFunctions,
+    initialize: (instance) => {
+      bindInstanceMemory(instance, host)
+      const init = exportedFunction(instance, '_initialize')
+      if (init !== undefined) init()
+    },
+    // emnapi runs a build exporting _start through Node's WASI internals; load.ts refuses one first.
+    start: () => { throw new TypeError('a synchronous WASI module is initialized as a reactor, never started') }
+  }
+}

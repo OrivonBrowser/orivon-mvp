@@ -168,7 +168,7 @@ as owned by the `shim` stream, matching Table 2's `net, dgram, fs, Buffer, strea
 | Installing a real built frontend (static-host redirects, extra manifest fields, large assets, client-side routes) | **`outside`** | every installed app | ✅ built | The loader follows a host's same-origin redirects (`/index.html` to `/`), ignores an unknown top-level manifest field such as `$schema`, `description`, `icons` or `homepage` with a warning, and takes assets up to 64 MiB in bundles up to 512 MiB, streamed to and from disk in constant memory, Range requests included. Reloading a client-side route serves the entry document. An unchanged app costs one conditional manifest request (a 304) an hour, and the interval survives a restart (A236). A capability revoked in Settings is not asked for again at the next launch, and the app can still request it |
 | Delivery from a `.eth` name (IPFS content under an ENS name) | **`outside`** | apps published on IPFS rather than an HTTPS host | ✅ built | `https://<name>.eth` loads as an ordinary origin ([ADR-0030](../decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)): the Helios light client proves the contenthash (IPFS CID, IPNS key or DNSLink, CCIP-Read included), every block is hashed against its CID, and a failure is an error page, never unverified bytes. It installs through the same hint and dialog and runs from its pin with every server gone. Website Level 2 on the Web3 Score page. **Named limits:** no Swarm or Arweave, no internationalised names, and one keyless beacon API (A253) |
 | Delivery from an `ipfs://` or `ipns://` address | **`outside`** | IPFS content linked or shared by its address | ✅ built | Typed, linked or opened in a new window, shown as itself in the address bar and on every consent surface, and served at an ordinary https origin, `https://<cid>.ipfs.orivon` ([ADR-0038](../decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md)), every block checked as for a `.eth` name. `ipns://` takes an IPNS key or a DNSLink name. **Named limits:** an `ipfs://` subresource inside a page does not load (A260), and a new release under `ipfs://` is a new origin, so apps that keep grants ship under `ipns://` or `.eth` |
-| Native addon in the dep tree | **`outside`** | see Table 5 | ❌ missing | Per-library substitution, not a platform feature. Pure-JS/WASM substitute, or a helper process |
+| Native addon in the dep tree | **`outside`** | see Table 5 | ⚠️ partial | Loaded as its WebAssembly build ([`src/shim/addon/`](../../src/shim/addon/), [ADR-0040](../decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)): `process.dlopen` and `module.createRequire` take the `.node` path and load the build beside it through emnapi. Not yet: an addon reaching files or sockets, and threaded builds. An addon with no WebAssembly build still needs a substitute (Table 5). E2e in [`e2e-native-addon.test.ts`](../../test/e2e-native-addon.test.ts) |
 
 ## Table 4: open blockers, and the cheapest lever for each
 
@@ -186,7 +186,7 @@ open blockers are listed; a resolved one is deleted, not struck through.
 | 7 | `protocols` is declared and validated but unbuilt on both sides | Unfiled; needs a decision first on how a routed URI reaches the app | Contracts + shell + prompt UX |
 | 8 | Camera, microphone and clipboard read are denied on every page with no route to a yes, so AirGap Vault can create and hold keys but never receive a transaction to sign | A prompt on the pattern notifications already use (A202's ground 2); camera also needs a tab indicator and a reset that stops a running stream. Needs a decision first: whether either is allowed at all | Shell + prompt UX; A202 for clipboard read |
 | 9 | `hid`/USB, the wallet cluster | `orivon.hid.*` + device chooser | Contracts + prompt UX + security argument |
-| 10 | Native addons in dep trees | Substitute per library, Table 5 | Per-app, not per-platform |
+| 10 | A native addon's WebAssembly build that reaches files, opens sockets or is threaded | Files through a Worker waiting on `Atomics` (cross-origin isolated); threads as emnapi workers over the Worker runtime; sockets once WASI 0.2 sockets exist (row 12). An addon with no WebAssembly build: substitute per library (Table 5) | Shim work; files and threads need `crossOriginIsolated` |
 | 11 | Tier 3, no HTML frontend | Container + xpra ([doc](container-apps-opportunity.md)) | Parked; reopens `subprocess` in a narrow shape |
 | 12 | A WASI program that needs sockets: preview1 cannot dial, and nothing hosts WASI 0.2's socket interfaces. A program that uses files only runs (Table 3) | WASI 0.2 through jco, its `wasi:sockets` mapped onto `orivon.net` ([`wasm-compatibility.md`](wasm-compatibility.md) section 5.5), once a named program needs it | Also blocked upstream for some programs: Go has no wasip2, and wasi-sdk has no target with threads AND sockets |
 | 13 | A page an app shows inside itself (`web.embed`) cannot load a URL on a scheme the app itself answers, and a popup or a download it starts goes nowhere with no event to the app | A request channel from the shell back into the app for a scheme the manifest names, and a `<webview>` event handing a refused popup or download to the app; neither shape exists in `orivon.*` yet, and ADR-0039 defers both until a need names them | Contracts + shell; a scheme the shell itself answers (`ipfs://`, the protocol registry) would reach a shown page without any of this |
@@ -201,11 +201,10 @@ hosts) and per-syscall IPC cost on a chatty workload.
 
 *Could native binaries be preinstalled, bypassing Rule 8, to reach these?*
 
-**The mechanical answer first.** App code runs with `sandbox: true, nodeIntegration: false`. A
-preinstalled native module lives in *Orivon's* process, not the app's, and no page can `require` it
-under any Rule 8 policy. Reaching one means giving it an `orivon.*` capability, so the cost lands
-on [`src/contracts/`](../../src/contracts/), the artefact `ADR-0002` says is expensive to get
-wrong, not on the build toolchain.
+**The mechanical answer first.** App code runs with `sandbox: true, nodeIntegration: false`, and
+no native module runs for an app ([ADR-0040](../decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)).
+An addon whose WebAssembly build the app ships loads as that build (Table 3); for one with none,
+this table is the substitute per library.
 
 | Library | Why an app wants it | Renderer answer that exists today | Verdict |
 |---|---|---|---|

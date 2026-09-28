@@ -2,11 +2,14 @@
 
 **What lives here.** The modules a dependency graph needs just to *evaluate*, independent of any
 capability: wrappers over the `buffer`, `crypto`, `os`, `path`, `util` and `zlib` packages, and
-hand-written `assert`, `querystring`, `string_decoder`, `timers`, `url` and `stream/promises`.
+hand-written `assert`, `querystring`, `string_decoder`, `timers`, `url` and `stream/promises`,
+and `module` (`createRequire` for a native addon's `.node` path, over [`../addon/`](../addon/)).
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../errors.ts`](../errors.ts),
 [`../unimplemented.ts`](../unimplemented.ts) and [`../virtual-root.ts`](../virtual-root.ts)
-(`os.ts`'s `homedir()`/`tmpdir()`).
+(`os.ts`'s `homedir()`/`tmpdir()`); `module.ts` also on [`../addon/`](../addon/), which installs
+`process.dlopen` when it loads, and on [`../module-map.ts`](../module-map.ts) for
+`builtinModules`.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README's "What it must never import".

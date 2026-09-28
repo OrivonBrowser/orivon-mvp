@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A native addon loads as its WebAssembly build**: `process.dlopen` and `createRequire` take
+  the `.node` path and load the build beside it through Node-API for WebAssembly; the `.node`
+  machine code never runs (ADR-0040).
 - **`child_process` works for ported apps**, every child in a Web Worker: `spawn`/`exec` run a
   WASI program from the app's bundle and `fork` an app module with IPC, both under the app's
   grants; a native program refuses by name (ADR-0040).
