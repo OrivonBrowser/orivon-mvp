@@ -633,6 +633,35 @@ describe('captureFaviconInto', () => {
     expect(updated).toBe(false)
   })
 
+  it('does not cache an icon the capture dropped, so the next page asks again', async () => {
+    const icon = 'https://93.184.216.97/dropped.png'
+    let currentPage = 'https://a.example/'
+    mockRequestOnce((request) => {
+      currentPage = 'https://b.example/'
+      request.emit('response', respondOk(200, [PNG_BYTES]))
+    })
+    await captureFaviconInto(makeTarget(), [icon], () => currentPage, () => true, () => {})
+
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    const target = makeTarget()
+    await captureFaviconInto(target, [icon], () => 'https://c.example/', () => true, () => {})
+
+    expect(net.request).toHaveBeenCalledTimes(2)
+    expect(target.favicon).not.toBeNull()
+  })
+
+  it('answers a second capture of the same icon from the cache', async () => {
+    const icon = 'https://93.184.216.97/kept.png'
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    await captureFaviconInto(makeTarget(), [icon], () => 'https://a.example/', () => true, () => {})
+
+    const target = makeTarget()
+    await captureFaviconInto(target, [icon], () => 'https://c.example/', () => true, () => {})
+
+    expect(net.request).toHaveBeenCalledTimes(1)
+    expect(target.favicon).not.toBeNull()
+  })
+
   // page-favicon-updated does not fire again for a hash change, a
   // pushState/replaceState, or a same-origin page declaring the same icon
   // set (measured on Electron 44), so dropping the icon here would leave the

@@ -3,7 +3,8 @@
 **What lives here.** `omnibox.ts` classifies address-bar input (URL or search). `bookmarks.ts`
 is the bookmarks bar's data model and disk persistence. `favicon.ts` fetches a tab's icon to a
 `data:` URL; `favicon-format.ts` is the pure byte-sniffing half of that (what format an icon
-actually is), split out so it stays importable with no Electron process at all. `site-trust.ts`
+actually is), split out so it stays importable with no Electron process at all, and
+`favicon-cache.ts` is the bounded memory of icons already fetched. `site-trust.ts`
 is the site-info popup's Web3 Score page and the toolbar shield's own data source:
 `buildSiteTrust` computes the Website level (`../../trust/website-level.ts`) and the Delivery
 level (`../../trust/delivery-ladder.ts`), each with its own developer-only override
@@ -113,6 +114,8 @@ Related questions, and the current answer to each:
   address-reach question. Bounding it well needs new per-tab state in `../shell/tabs.ts` (which
   `favicon.ts` deliberately has no dependency on, so it stays importable under plain vitest), a
   design decision of its own.
-- **Bound `faviconCache`?** Not bounded. Its own comment calls the unbounded, process-lifetime
-  cache a deliberate "v0, revisit later" choice, and it is orthogonal to T12: reaching a private
-  address is not something the cache makes worse or better.
+- **Bound `faviconCache`?** Yes, since any page can name any number of icon URLs and each cached
+  `data:` URL can run to ~171 KiB: at most 256 icons and 16 MiB, least recently used dropped
+  first ([`favicon-cache.ts`](favicon-cache.ts)), both numbers provisional. Only an icon its
+  capture kept is stored, so a fetch that lands after the tab moved to another origin, or after a
+  newer icon set replaced it, is dropped rather than cached.

@@ -19,6 +19,7 @@ import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js
 import type { Resolver } from '../../broker/policy/connect.js'
 import { isLoopbackHost } from '../../broker/policy/origin.js'
 import { electronResolveHost } from '../../loader/electron/resolve.js'
+import { FaviconCache } from './favicon-cache.js'
 import { decodeDataUrl, sniffImageType } from './favicon-format.js'
 
 /** Generous enough for an SVG that embeds a raster image inline -- a real
@@ -339,17 +340,22 @@ async function fetchUnchecked (url: string, pageUrl: string): Promise<string | n
   }
 }
 
-/** In-memory only, unbounded for the process's lifetime -- acceptable
- * for a single browsing session (this codebase's existing "v0, revisit
- * later" tolerance; see e.g. update-check.ts's own scope notes). Only
- * successful fetches are cached, so a temporarily-down favicon host is
- * retried on the next visit rather than staying null forever. Keyed by the
- * candidate URL that was actually asked for, before any redirect -- a page
- * whose icon moves to a new location on its host is picked up again the
- * next time `page-favicon-updated` fires with a changed candidate list. */
-const faviconCache = new Map<string, string>()
+/** faviconCache's bounds, provisional: room for a few hundred sites' icons,
+ * not measured against real browsing. */
+const MAX_CACHED_FAVICONS = 256
+const MAX_CACHED_FAVICON_CHARS = 16 * 1024 * 1024
 
-export async function fetchFaviconDataUrlCached (url: string, pageUrl: string): Promise<string | null> {
+/** In memory only. Only successful fetches are cached, so a temporarily-down
+ * favicon host is retried on the next visit rather than staying null. Keyed
+ * by the candidate URL that was actually asked for, before any redirect -- a
+ * page whose icon moves on its host is picked up again the next time
+ * `page-favicon-updated` fires with a changed candidate list. */
+const faviconCache = new FaviconCache(MAX_CACHED_FAVICONS, MAX_CACHED_FAVICON_CHARS)
+
+/** fetchFaviconDataUrl, answered from faviconCache when it can be. A result
+ * is cached only if `stillWanted()` holds when it lands: a capture that has
+ * already been dropped must not fill the cache. */
+export async function fetchFaviconDataUrlCached (url: string, pageUrl: string, stillWanted: () => boolean): Promise<string | null> {
   // The gate runs BEFORE the cache is consulted, not just on a miss: whether
   // a favicon may be fetched now depends on which page is asking (a loopback
   // icon is allowed for a loopback page and refused for a public one), so a
@@ -360,7 +366,7 @@ export async function fetchFaviconDataUrlCached (url: string, pageUrl: string): 
   if (cached !== undefined) return cached
 
   const result = await fetchUnchecked(url, pageUrl)
-  if (result !== null) faviconCache.set(url, result)
+  if (result !== null && stillWanted()) faviconCache.set(url, result)
   return result
 }
 
@@ -424,6 +430,7 @@ export async function captureFaviconInto (
   for (const candidate of candidates) {
     if (!stillTheSamePage()) return
     target.pendingFaviconUrl = candidate
+    const stillWanted = (): boolean => stillTheSamePage() && target.pendingFaviconUrl === candidate
 
     // Case-insensitively too: faviconCandidates' own scheme filter is
     // case-insensitive (a page may spell it `DATA:`), and a candidate that
@@ -432,9 +439,9 @@ export async function captureFaviconInto (
     // `data:` URL has no hostname, so isSafeFaviconUrl never accepts one).
     const dataUrl = /^data:/i.test(candidate)
       ? decodedDataUrlCandidate(candidate)
-      : await fetchFaviconDataUrlCached(candidate, declaringPage)
+      : await fetchFaviconDataUrlCached(candidate, declaringPage, stillWanted)
 
-    if (!stillTheSamePage() || target.pendingFaviconUrl !== candidate) return
+    if (!stillWanted()) return
     if (dataUrl === null) continue
 
     target.favicon = dataUrl
