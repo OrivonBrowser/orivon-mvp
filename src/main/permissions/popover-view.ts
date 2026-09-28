@@ -17,6 +17,7 @@ import { WebContentsView, type BaseWindow, type View, type WebContents } from 'e
 import { join } from 'node:path'
 import { rendererEntryUrl } from '../shell/renderer-entry.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
+import { SHELL_PARTITION } from '../shell/shell-session.js'
 
 const WIDTH = 380
 const MAX_HEIGHT = 460
@@ -130,6 +131,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     const popup = new WebContentsView({
       webPreferences: {
         preload: join(spec.dirname, spec.preloadRelPath),
+        partition: SHELL_PARTITION,
         additionalArguments: [`--${spec.urlArgName}=${url}`, ...extraArgs],
         contextIsolation: true,
         sandbox: true,

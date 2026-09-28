@@ -10,7 +10,15 @@ chrome, and the plain Chrome User-Agent every page sees. `lock-navigation.ts` re
 and popup on a view that must stay on the document it was created for: the chrome view and its
 popups, whose privileged preload would follow any navigation, and
 [`../sessions/web-context-host.ts`](../sessions/web-context-host.ts)'s isolated context, which
-has no preload but is confined to one origin (ADR-0019).
+has no preload but is confined to one origin (ADR-0019). `shell-session.ts` names the one
+Electron session every view that shows Orivon's own UI runs in, never a tab's.
+
+**Views on the shell's own session, never a tab's.** The chrome view (`window.ts`), the intro
+screen (`intro-view.ts`), the fullscreen/pointer-lock notice (`window-notice.ts`) and both
+permissions popovers ([`../permissions/popover-view.ts`](../permissions/popover-view.ts)) set
+`webPreferences.partition` to `shell-session.ts`'s `SHELL_PARTITION`. An ordinary tab, and the
+new-tab dashboard (a tab that happens to navigate to `file://`), stay on
+`session.defaultSession`; the Design notes below say why.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types);
@@ -34,6 +42,16 @@ depend on.
 **Owner stream.** `shell`, build step 1, **done**. Maintenance only.
 
 ## Design notes
+
+**[`shell-session.ts`](shell-session.ts): the shell's own views never share a session with a
+tab.** Chrome extensions load into `session.defaultSession`, the session every ordinary tab and
+the dashboard use, and may act on `<all_urls>` there, so a privileged view on that session would
+be reachable the same way. The dashboard stays out of their reach in a packaged build because it
+is `file://` and no extension is given file access. `SHELL_PARTITION` is `persist:` so a
+privileged page may one day use `localStorage` without losing it; none does now.
+`permission-gate.ts` and `verifier-subsystem.ts` cover the partition through
+`app.on('session-created', ...)`, registered in `beforeReady` (`../subsystems.ts`), before
+`createShellWindow` first creates it.
 
 **[`tabs.ts`](tabs.ts): a tab changes session by replacing its view.** Electron fixes a
 partition at construction, so every path that can change a tab's origin swaps its

@@ -7,6 +7,7 @@ import { WebContentsView, type BaseWindow } from 'electron'
 import type { IntroPlan } from './intro-state.js'
 import { rendererEntryUrl } from './renderer-entry.js'
 import type { TabManager } from './tabs.js'
+import { SHELL_PARTITION } from './shell-session.js'
 
 // The app's own dark, the page's fade-in happens over it.
 const BACKDROP = '#0d0e14'
@@ -15,7 +16,7 @@ const ERR_ABORTED = -3
 
 export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChange' | 'activeWebContents'>, plan: IntroPlan): void {
   const view = new WebContentsView({
-    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true }
+    webPreferences: { partition: SHELL_PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true }
   })
   const { webContents } = view
   // Opaque until the person clicks: the page fades in over this, not over the
