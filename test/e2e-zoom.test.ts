@@ -132,7 +132,7 @@ it('opens a site at the level saved for it, others at the default, and the new-t
   })
   try {
     // The first tab is the new-tab page.
-    expect(await factorAt(app, '/newtab/')).toBe(1)
+    expect(await waitFor(async () => await factorAt(app, '/newtab/') === 1)).toBe(true)
     expect(await chip(chrome)).toBeNull()
 
     await clickAddressBarRetrying(chrome, `${siteOrigin}/saved`)

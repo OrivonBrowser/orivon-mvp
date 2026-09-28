@@ -88,7 +88,7 @@ it('keeps the defaults for a settings file with values the schema refuses', asyn
     const chrome = findChrome(app)
 
     expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('system')
-    expect(await evaluateRetrying(chrome, () => document.documentElement.dataset['bookmarks'])).toBe('none')
+    expect(await waitFor(async () => await evaluateRetrying(chrome, () => document.documentElement.dataset['bookmarks']) === 'none')).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
