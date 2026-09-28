@@ -26,6 +26,7 @@ every answer is verified, which RPC gives it changes nothing about trust.
 head is re-read on a timer; a failed read leaves the client reporting `synced` while the last
 proven head is under two minutes old, since that head is still a real, usable proof, and a single
 bad RPC call must not fail every `.eth` mount for up to a minute. Past two minutes, or on a second
-failure with no success between, the client drops to `syncing` and the next request waits for a
-real answer, as it always did. Reading the finalized-block checkpoint (a separate RPC call, kept
+failure with no success between, the client drops to `syncing`. A request that arrives then waits
+up to `SYNC_WAIT_MS` (8 s) and is answered the moment a refresh succeeds, or fails with
+`not-synced` when none does in time. Reading the finalized-block checkpoint (a separate RPC call, kept
 only so the shell can persist a newer one) never affects sync state either way.

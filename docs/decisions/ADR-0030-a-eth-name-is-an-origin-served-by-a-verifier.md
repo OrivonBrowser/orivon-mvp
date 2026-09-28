@@ -195,8 +195,9 @@ of serving a root that old.
 **The light client tolerates one failed refresh.** A refresh that fails to read the chain's head
 no longer un-syncs the client while the last proven head is under two minutes old
 (`HEAD_GRACE_MS`, `src/protocols/verifier-host/light-client/light-client.ts`); past that window, or on a
-second failure with no success between, the client drops to syncing and the next request waits up
-to `SYNC_WAIT_MS` for a real answer, as before. A checkpoint read (a separate, non-essential RPC
+second failure with no success between, the client drops to syncing; a request arriving then waits
+up to `SYNC_WAIT_MS` and is answered as soon as a refresh recovers, or fails with `not-synced` if
+none does in time. A checkpoint read (a separate, non-essential RPC
 call) failing never affects sync state at all, and retries follow sooner (5 s) after a failure
 than the ordinary 60 s cadence.
 
