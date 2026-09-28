@@ -102,12 +102,12 @@ export function fileAddon (): Uint8Array<ArrayBuffer> {
  * export that stores 7 for napi_register_wasm_v1 to read back as `marked`,
  * which is 7 only if the loader ran it first.
  */
-export function napiRsShapedAddon (): Uint8Array<ArrayBuffer> {
+export function napiRsShapedAddon (memory: { initial: number, maximum: number, shared?: boolean } = { initial: 3, maximum: 16 }): Uint8Array<ArrayBuffer> {
   const env = (name: string, params: number): { module: string, name: string, params: number[], results: number[] } =>
     ({ module: 'env', name, params: Array<number>(params).fill(I32), results: [I32] })
   return buildModule({
     imports: [env('napi_create_int32', 3), env('napi_set_named_property', 4)],
-    importMemory: { initial: 3, maximum: 16 },
+    importMemory: memory,
     exportName: 'napi_register_wasm_v1',
     params: [I32, I32],
     results: [I32],

@@ -99,8 +99,15 @@ describe('a build shaped as napi-rs makes one', () => {
     expect((loadAddon('/lib/rs.node') as { marked: number }).marked).toBe(7)
   })
 
+  it('refuses a build importing a shared memory as a threaded one, and names a declared memory too large to allocate', () => {
+    serveSync({ '/lib/shared.wasm': napiRsShapedAddon({ initial: 3, maximum: 16, shared: true }), '/lib/huge.wasm': napiRsShapedAddon() })
+    expect(() => loadAddon('/lib/shared.node')).toThrow(/shared memory, as a threaded build does/)
+    vi.spyOn(WebAssembly, 'Memory').mockImplementation(function () { throw new RangeError('out of memory') })
+    expect(() => loadAddon('/lib/huge.node')).toThrow(expect.objectContaining({ code: 'ERR_DLOPEN_FAILED', message: expect.stringMatching(/declares 3 pages of memory/) }))
+  })
+
   it('reads an imported memory\'s limits off the binary, past other imports', () => {
-    expect(importedMemory(napiRsShapedAddon())).toEqual({ initial: 3, maximum: 16, shared: false })
+    expect(importedMemory(napiRsShapedAddon())).toEqual({ initial: 3, maximum: 16, shared: false, memory64: false })
     expect(importedMemory(napiAddon())).toBeUndefined()
   })
 })

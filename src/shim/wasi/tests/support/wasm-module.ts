@@ -119,7 +119,7 @@ export interface ModuleSpec {
   /** More exported functions, after the main one. */
   readonly extra?: ReadonlyArray<{ readonly name: string, readonly params: readonly number[], readonly results: readonly number[], readonly locals?: number, readonly body: number[][] }>
   /** Imports `env.memory` with these limits instead of defining and exporting one, as a napi-rs build does. */
-  readonly importMemory?: { readonly initial: number, readonly maximum: number }
+  readonly importMemory?: { readonly initial: number, readonly maximum: number, readonly shared?: boolean }
 }
 
 export const TYPE = { I32, I64 } as const
@@ -135,7 +135,7 @@ export function buildModule (spec: ModuleSpec): Uint8Array<ArrayBuffer> {
   types.push(signature(spec.params, spec.results))
   for (const fn of extra) types.push(signature(fn.params, fn.results))
   const imports = spec.imports.map((entry, index) => [...bytes(entry.module), ...bytes(entry.name), 0x00, ...uleb(index)])
-  if (spec.importMemory !== undefined) imports.push([...bytes('env'), ...bytes('memory'), 0x02, 0x01, ...uleb(spec.importMemory.initial), ...uleb(spec.importMemory.maximum)])
+  if (spec.importMemory !== undefined) imports.push([...bytes('env'), ...bytes('memory'), 0x02, spec.importMemory.shared === true ? 0x03 : 0x01, ...uleb(spec.importMemory.initial), ...uleb(spec.importMemory.maximum)])
   const call = (name: string): number[] => {
     const index = spec.imports.findIndex((entry) => entry.name === name)
     if (index === -1) throw new Error(`${name} is not among the module's imports`)

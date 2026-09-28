@@ -83,9 +83,8 @@ type ImportObject = Record<string, Record<string, unknown>>
  * supplied at the size the build declares when it imports one, and each
  * `__napi_register__*` export run before the module initializes.
  */
-function napiRsConventions (bytes: Uint8Array): Pick<InstantiateOptions, 'overwriteImports' | 'beforeInit'> {
-  const limits = importedMemory(bytes)
-  const memory = limits === undefined ? undefined : new WebAssembly.Memory({ initial: limits.initial, maximum: limits.maximum ?? 65_536 })
+function napiRsConventions (bytes: Uint8Array, filename: string): Pick<InstantiateOptions, 'overwriteImports' | 'beforeInit'> {
+  const memory = memoryFor(bytes, filename)
   return {
     overwriteImports: (importObject: ImportObject) => {
       importObject.env = { ...importObject.env, ...importObject.napi, ...importObject.emnapi, ...(memory === undefined ? {} : { memory }) }
@@ -97,6 +96,20 @@ function napiRsConventions (bytes: Uint8Array): Pick<InstantiateOptions, 'overwr
       }
     }
   } as Pick<InstantiateOptions, 'overwriteImports' | 'beforeInit'>
+}
+
+/** The memory a build imports, at the size it declares; one this loader cannot supply refuses by name. */
+function memoryFor (bytes: Uint8Array, filename: string): WebAssembly.Memory | undefined {
+  const limits = importedMemory(bytes)
+  if (limits === undefined) return undefined
+  if (limits.shared) throw refuseShim('process.dlopen', 'not-built', `${filename} imports a shared memory, as a threaded build does; build it for wasm32-wasip1`)
+  if (limits.memory64) throw dlopenError(filename, 'its WebAssembly build imports a 64-bit memory, which this loader does not supply')
+  try {
+    return new WebAssembly.Memory({ initial: limits.initial, maximum: limits.maximum ?? 65_536 })
+  } catch (error) {
+    if (error instanceof RangeError) throw dlopenError(filename, `its WebAssembly build declares ${limits.initial} pages of memory, more than can be allocated`)
+    throw error
+  }
 }
 
 /** Addon output goes where Node's does: the process's stdout and stderr, a forked child's pipes included. */
@@ -114,7 +127,7 @@ function options (filename: string, bytes: Uint8Array): InstantiateOptions {
     ...(proc?.stdout?.write === undefined ? {} : { syncStdout: write(proc.stdout) }),
     ...(proc?.stderr?.write === undefined ? {} : { syncStderr: write(proc.stderr) })
   })
-  return { context: getDefaultContext(), filename, wasi: synchronousWasi(host), asyncWorkPoolSize: 0, ...napiRsConventions(bytes) }
+  return { context: getDefaultContext(), filename, wasi: synchronousWasi(host), asyncWorkPoolSize: 0, ...napiRsConventions(bytes, filename) }
 }
 
 function keyOf (filename: string, origin: string): string {

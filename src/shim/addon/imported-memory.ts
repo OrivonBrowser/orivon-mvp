@@ -1,8 +1,9 @@
 // The memory an addon's build imports, read from its binary: a napi-rs build
 // imports `env.memory` rather than exporting one, and WebAssembly.Module
-// reports an import's name but not the limits the memory must meet.
+// reports an import's name but not the limits the memory must meet. Read
+// only once the binary has compiled, so its sections are well formed.
 
-export interface MemoryLimits { readonly initial: number, readonly maximum?: number, readonly shared: boolean }
+export interface MemoryLimits { readonly initial: number, readonly maximum?: number, readonly shared: boolean, readonly memory64: boolean }
 
 const IMPORT_SECTION = 2
 const MEMORY = 2
@@ -40,7 +41,7 @@ class Reader {
   limits (): MemoryLimits {
     const flags = this.byte()
     const initial = this.u32()
-    return { initial, ...((flags & 1) !== 0 ? { maximum: this.u32() } : {}), shared: (flags & 2) !== 0 }
+    return { initial, ...((flags & 1) !== 0 ? { maximum: this.u32() } : {}), shared: (flags & 2) !== 0, memory64: (flags & 4) !== 0 }
   }
 }
 
