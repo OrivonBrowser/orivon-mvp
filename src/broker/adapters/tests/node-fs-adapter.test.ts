@@ -301,3 +301,54 @@ describe('nodeFs.diskUsage', () => {
     expect(await fs.diskUsage?.(join(root, 'missing'))).toBe(0)
   })
 })
+
+describe('a leaf symlink planted after confinement is refused, not followed (R6-01)', () => {
+  // policy/paths.ts's own doc comment: confinePath proves a path safe at
+  // the instant it checks, and a symlink planted at the LEAF between that
+  // check and the real fs call still escapes unless the real call itself
+  // refuses to follow it. These tests skip confinePath and go straight at
+  // nodeFs's own methods with an already-"confined" path whose leaf is a
+  // symlink -- exactly the shape a race would hand them.
+  it('readFile refuses a leaf symlink rather than returning the outside target\'s bytes', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-toctou-'))
+    const fs = nodeFs(userData)
+    const root = fs.rootFor('https://app.example')
+    const outside = join(userData, 'outside-secret.txt')
+    await writeFile(outside, 'TOP-SECRET-OUTSIDE-ROOT')
+    const leaf = join(root, 'evidence.txt')
+    await symlink(outside, leaf)
+
+    await expect(fs.readFile(leaf)).rejects.toMatchObject({ code: 'ELOOP' })
+  })
+
+  it('writeFile refuses a leaf symlink rather than overwriting the outside target', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-toctou-'))
+    const fs = nodeFs(userData)
+    const root = fs.rootFor('https://app.example')
+    const outside = join(userData, 'outside-target.txt')
+    await writeFile(outside, 'UNTOUCHED')
+    const leaf = join(root, 'evidence.txt')
+    await symlink(outside, leaf)
+
+    await expect(fs.writeFile(leaf, new Uint8Array([1, 2, 3]))).rejects.toMatchObject({ code: 'ELOOP' })
+    expect(await fsReadFile(outside, 'utf8')).toBe('UNTOUCHED')
+  })
+
+  it('stat reports the leaf symlink itself, never the outside file it points to', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-toctou-'))
+    const fs = nodeFs(userData)
+    const root = fs.rootFor('https://app.example')
+    const outside = join(userData, 'outside-file.txt')
+    await writeFile(outside, 'twelve bytes')
+    const leaf = join(root, 'evidence.txt')
+    await symlink(outside, leaf)
+
+    const stat = await fs.stat(leaf)
+
+    // A symlink is neither a regular file nor a directory to lstat -- proof
+    // this did not follow it into the outside file's own stat (which would
+    // report isFile: true, size: 12).
+    expect(stat.isFile).toBe(false)
+    expect(stat.isDirectory).toBe(false)
+  })
+})

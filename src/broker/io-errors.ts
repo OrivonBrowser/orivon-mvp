@@ -48,7 +48,14 @@ const ERRNO_TO_CODE: Readonly<Record<string, OrivonErrorCode>> = {
   ENOSPC: 'limit',
   EDQUOT: 'limit',
   EACCES: 'denied',
-  EPERM: 'denied'
+  EPERM: 'denied',
+  // A leaf symlink refused by `O_NOFOLLOW` (or its Windows lstat-first
+  // fallback) -- ../adapters/node-fs-adapter.ts's `openNoFollow`,
+  // ../transport/sync-fs-policy.ts's `openLeafNoFollowSync`. Mapped to the
+  // same code ../policy/paths.ts's own `symlink-escape` denial already
+  // uses: both are the same confinement boundary refusing the same kind of
+  // escape, so an app sees one error shape for it, never two.
+  ELOOP: 'denied'
 }
 
 /**

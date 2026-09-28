@@ -37,6 +37,14 @@ const OTHER_ORIGIN = `http://${HOST}:${OTHER_PORT}`
 const STEP_TIMEOUT_MS = 20_000
 const TEST_TIMEOUT_MS = 180_000
 
+// C-7/A286: a name that resolves to loopback -- not a literal, so
+// embed-origin.ts's own hostname gate cannot see it; only guestRequestAllowedAsync's
+// resolveHost check can. Mapped by its OWN --host-resolver-rules entry
+// (below), ahead of the file's usual blackhole rule, to the SAME already-
+// listening `site` server -- no third HTTP server needed.
+const REBIND_HOST = 'rebind.orivon-embed-e2e.invalid'
+const REBIND_URL = `http://${REBIND_HOST}:${SITE_PORT}/`
+
 /** The app's own script for every page it shows: marks the page before its own code runs, and answers the element. */
 const PAGE_SCRIPT = `
   window.orivonProbe = { value: 'injected-first' };
@@ -88,6 +96,17 @@ function testManifest (): Manifest {
     version: '1.0.0',
     entry: '/index.html',
     capabilities: { web: { embed: { origins: [SITE_ORIGIN] } } }
+  }
+}
+
+function wildcardManifest (): Manifest {
+  return {
+    orivonApiVersion: 0,
+    id: 'app.orivon.embed-e2e-wildcard',
+    name: 'Orivon embed e2e wildcard fixture',
+    version: '1.0.0',
+    entry: '/index.html',
+    capabilities: { web: { embed: { origins: ['*'] } } }
   }
 }
 
@@ -281,6 +300,59 @@ it(
           return { live: typeof el.loadURL === 'function', title: document.title }
         }, STEP_TIMEOUT_MS)
         check('in an ordinary tab <webview> is an unknown element with no loadURL, and no script was injected there', !inert.live && inert.title === 'probe:undefined:-', JSON.stringify(inert))
+      } finally {
+        await closeElectronApp(app)
+      }
+    })
+  },
+  TEST_TIMEOUT_MS
+)
+
+// C-7/A286: a "*" grant reaches an ordinary DNS name (embed-origin.ts's own
+// hostname gate has nothing to refuse -- it is not a localhost name and not
+// an address literal), so admitting it must now go through the guest
+// session's OWN resolveHost before the load proceeds. Its own launch and
+// its own --host-resolver-rules, on top of the shared HERMETIC_RESOLVER
+// blackhole: REBIND_HOST maps to loopback, everything else stays refused.
+it(
+  'a "*" grant refuses a document whose host resolves to a loopback address, rather than loading it (C-7/A286)',
+  async () => {
+    await runPhase('web.embed "*" DNS-rebind e2e', async (check) => {
+      const app = await launchElectron({
+        appPath: '.',
+        args: [`--host-resolver-rules=MAP ${REBIND_HOST} 127.0.0.1, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`]
+      })
+      try {
+        const grantOutcome = await app.evaluate(async (_electron, request: DevGrantRequest) => {
+          const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+          if (typeof hook !== 'function') return { installed: false as const }
+          return { installed: true as const, grant: await hook(request) }
+        }, { origin: FIXTURE_ORIGIN, manifest: wildcardManifest(), capability: 'web.embed', patterns: ['*'] } satisfies DevGrantRequest)
+        check('the developer-only grant hook is installed in this build', grantOutcome.installed)
+        if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
+
+        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        await view.evaluate((url: string) => { (window as unknown as { __orivonE2eRebindUrl: string }).__orivonE2eRebindUrl = url }, REBIND_URL)
+
+        const outcome = await evaluateRetrying(view, async () => {
+          const url = (window as unknown as { __orivonE2eRebindUrl: string }).__orivonE2eRebindUrl
+          const el = document.createElement('webview') as WebviewLike
+          const result = new Promise<string>((resolve) => {
+            el.addEventListener('did-finish-load', () => { resolve('finished') })
+            el.addEventListener('did-fail-load', (event) => { resolve(`failed:${String((event as unknown as { errorCode: number }).errorCode)}`) })
+            setTimeout(() => { resolve('timeout') }, 15_000)
+          })
+          el.src = url
+          el.style.width = '400px'
+          el.style.height = '300px'
+          document.body.appendChild(el)
+          return await result
+        }, STEP_TIMEOUT_MS)
+        check(
+          'a document whose host resolves to a loopback address is refused, never loaded, though "*" admits the hostname itself',
+          outcome !== 'finished',
+          outcome
+        )
       } finally {
         await closeElectronApp(app)
       }

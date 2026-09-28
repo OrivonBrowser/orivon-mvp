@@ -24,13 +24,43 @@
 // placeholder pending owner decision d-D (caps become manifest
 // declarations the user sees, per A80) -- see docs/open-questions.md.
 
-import { readFileSync as nodeReadFileSync, statSync } from 'node:fs'
+import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readFileSync as nodeReadFileSync } from 'node:fs'
+import { leafSymlinkError } from '../adapters/node-fs-adapter.js'
 import { fail } from '../errors.js'
 import type { Broker } from '../broker-contracts.js'
 import type { SyncFsPolicy } from './sync-fs.js'
 
 /** A placeholder value, not the owner's chosen number -- see this file's header. */
 const MAX_SYNC_READ_BYTES = 2 * 1024 * 1024
+
+/** Undefined on Windows -- same platform gap node-fs-adapter.ts's own `NOFOLLOW` documents. */
+const NOFOLLOW: number | undefined = fsConstants.O_NOFOLLOW
+
+/**
+ * Opens `path` read-only without following a leaf symlink, mirroring
+ * `../adapters/node-fs-adapter.ts`'s own `openNoFollow` -- same POSIX
+ * `O_NOFOLLOW`/Windows `lstat`-first split, same `leafSymlinkError` shape,
+ * necessarily a second, SYNCHRONOUS implementation (this whole file exists
+ * because `orivon.fs.readFileSync`'s caller cannot await a Promise,
+ * ADR-0016) rather than a shared one. Closes the same TOCTOU
+ * `policy/paths.ts`'s own doc comment describes: `confineSync` proves the
+ * leaf safe at that instant; only this open, not a second path check, can
+ * prove it still is by the time the bytes are read.
+ */
+function openLeafNoFollowSync (path: string): number {
+  if (NOFOLLOW !== undefined) return openSync(path, fsConstants.O_RDONLY | NOFOLLOW)
+  let leaf
+  try {
+    leaf = lstatSync(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    // Does not exist -- nothing to follow; let the real open below raise
+    // its own ENOENT, the same shape a missing file always fails with.
+    return openSync(path, fsConstants.O_RDONLY)
+  }
+  if (leaf.isSymbolicLink()) throw leafSymlinkError(path)
+  return openSync(path, fsConstants.O_RDONLY)
+}
 
 export function createSyncFsPolicy (
   broker: Pick<Broker, 'fs'>,
@@ -39,16 +69,24 @@ export function createSyncFsPolicy (
   return {
     confine: (origin, path) => broker.fs.confineSync(origin, path),
     readFileSync: (resolvedPath) => {
-      // stat before read, not read-then-measure -- the whole point is that
-      // the main process must never block on bytes it is about to refuse.
-      const { size } = statSync(resolvedPath)
-      if (size > maxReadBytes) {
-        throw fail('limit', 'the file exceeds the synchronous read size cap')
+      const fd = openLeafNoFollowSync(resolvedPath)
+      try {
+        // fstat on the OPEN fd, not statSync(resolvedPath) -- a second
+        // path-taking call would re-open the TOCTOU window openLeafNoFollowSync
+        // just closed. stat before read, not read-then-measure, still holds:
+        // the main process must never block on bytes it is about to refuse.
+        const { size } = fstatSync(fd)
+        if (size > maxReadBytes) {
+          throw fail('limit', 'the file exceeds the synchronous read size cap')
+        }
+        // A copy, not a view into node:fs's pool-backed Buffer -- see
+        // ../adapters/README.md's Design notes for why this one memcpy is
+        // load-bearing here too. readFileSync(fd) reads via the descriptor
+        // already proven safe, never re-resolving `resolvedPath`.
+        return new Uint8Array(nodeReadFileSync(fd))
+      } finally {
+        closeSync(fd)
       }
-      // A copy, not a view into node:fs's pool-backed Buffer -- see
-      // ../adapters/README.md's Design notes for why this one memcpy is
-      // load-bearing here too.
-      return new Uint8Array(nodeReadFileSync(resolvedPath))
     }
   }
 }
