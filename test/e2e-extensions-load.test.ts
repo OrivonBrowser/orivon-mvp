@@ -27,6 +27,8 @@ import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mj
 import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
 import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
 import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
+import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
+import { generateId } from '../vendor/electron-chrome-web-store/src/browser/id.js'
 import { SHELL_PARTITION } from '../src/main/shell/shell-session.js'
 
 const FIXTURES_DIR = fileURLToPath(new URL('./apps/extensions/', import.meta.url)).replace(/[/\\]$/, '')
@@ -34,12 +36,14 @@ const FIXTURES = ['content-marker', 'network-perms'] as const
 
 /**
  * Copies each fixture folder into `<userData>/extensions/<slot>/<version>/`,
- * with `loadableManifest`'s stripped copy in place of `manifest.json`, and
- * writes `extensions/registry.json` through `registry.ts`'s own serialiser
- * -- exactly what `install-runner.ts` would have produced, so the boot path
- * under test (`extensions-subsystem.ts` reading the registry and calling
- * `session.defaultSession.extensions.loadExtension`) is the real one, never
- * a shortcut through `installFromFolder` itself.
+ * with `loadableManifest`'s stripped copy -- plus a `key` from
+ * `resolveSlotKey`, the same per-slot key `install-runner.ts` itself
+ * generates and persists at `<slot>/key.pub` -- in place of `manifest.json`,
+ * and writes `extensions/registry.json` through `registry.ts`'s own
+ * serialiser -- exactly what `install-runner.ts` would have produced, so the
+ * boot path under test (`extensions-subsystem.ts` reading the registry and
+ * calling `session.defaultSession.extensions.loadExtension`) is the real
+ * one, never a shortcut through `installFromFolder` itself.
  */
 function seedExtensions (userDataDir: string): void {
   const entries: InstalledExtension[] = []
@@ -49,12 +53,14 @@ function seedExtensions (userDataDir: string): void {
     const parsed = readExtensionManifest(rawManifest)
     if (!parsed.ok) throw new Error(`fixture ${slot}'s own manifest.json was refused: ${parsed.reason}`)
     const { manifest, stripped } = loadableManifest(rawManifest as Record<string, unknown>)
+    const key = resolveSlotKey(userDataDir, slot)
+    manifest.key = key
     const targetDir = join(userDataDir, 'extensions', slot, parsed.facts.version)
     cpSync(sourceDir, targetDir, { recursive: true })
     writeFileSync(join(targetDir, 'manifest.json'), JSON.stringify(manifest))
     const now = Date.now()
     entries.push({
-      id: `${slot}-fixture-id`,
+      id: generateId(key),
       name: parsed.facts.name,
       version: parsed.facts.version,
       enabled: true,

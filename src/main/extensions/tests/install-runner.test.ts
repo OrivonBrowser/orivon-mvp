@@ -7,27 +7,57 @@ import AdmZip from 'adm-zip'
 import Pbf from 'pbf'
 import { installFromFile, installFromFolder, setEnabled, uninstall, type InstallContext } from '../install-runner.js'
 import { readRegistry } from '../registry-runner.js'
+import { generateId } from '../../../../vendor/electron-chrome-web-store/src/browser/id.js'
 
-/** A fake `Session` carrying just the two `extensions.*` methods
+/** The id a real Electron session would derive for a loaded copy at `path`:
+ * `generateId` (Chromium's own algorithm) of its manifest's own `key` when
+ * it has one -- every copy install-runner.ts writes does, after the id-
+ * stability fix -- else a hash of the path itself, the closest a manifest
+ * with no key at all gets in real Electron (Chromium's
+ * `id_util::GenerateIdForPath`). */
+function idForLoadedPath (path: string): string {
+  const manifest = JSON.parse(readFileSync(join(path, 'manifest.json'), 'utf8')) as Record<string, unknown>
+  const key = typeof manifest.key === 'string' ? manifest.key : undefined
+  return key !== undefined ? generateId(key) : createHash('sha256').update(path).digest('hex').slice(0, 32)
+}
+
+/** A fake `Session` carrying just the three `extensions.*` methods
  * install-runner.ts calls -- a real `electron.Session` needs a running
  * Electron process, which this suite (plain vitest, no Electron) does not
- * have. `id` is derived from the loaded path, deterministically, the way a
- * real unpacked-extension id is (a hash of its own path) -- close enough
- * for these tests, which never assert a SPECIFIC id, only that one was
- * recorded and later found again. */
-function fakeSession (): { session: InstallContext['session'], loaded: Map<string, string> } {
+ * have. `setFailNextLoad` lets a test make the NEXT `loadExtension` call
+ * throw, to exercise finishInstall's rollback path without touching real
+ * Electron. `removedIds` records every `removeExtension` call, in order --
+ * `loaded` alone cannot show a remove-then-reload of the SAME id happened,
+ * since overwriting a Map entry looks identical to never having removed it. */
+function fakeSession (): {
+  session: InstallContext['session']
+  loaded: Map<string, string>
+  removedIds: string[]
+  setFailNextLoad: (error: Error) => void
+} {
   const loaded = new Map<string, string>() // id -> path
+  const removedIds: string[] = []
+  let failNextLoad: Error | undefined
   const session = {
     extensions: {
       loadExtension: async (path: string) => {
-        const id = createHash('sha256').update(path).digest('hex').slice(0, 32)
+        if (failNextLoad !== undefined) {
+          const error = failNextLoad
+          failNextLoad = undefined
+          throw error
+        }
+        const id = idForLoadedPath(path)
         loaded.set(id, path)
         return { id, name: 'fake', manifest: {}, path, url: `chrome-extension://${id}/` }
       },
-      removeExtension: (id: string) => { loaded.delete(id) }
+      removeExtension: (id: string) => { removedIds.push(id); loaded.delete(id) },
+      getExtension: (id: string) => {
+        const path = loaded.get(id)
+        return path === undefined ? undefined : { id, name: 'fake', manifest: {}, path, url: `chrome-extension://${id}/` }
+      }
     }
   } as unknown as InstallContext['session']
-  return { session, loaded }
+  return { session, loaded, removedIds, setFailNextLoad: (error) => { failNextLoad = error } }
 }
 
 const ALWAYS_ALLOW: InstallContext['prompt'] = async () => true
@@ -146,6 +176,61 @@ describe('installFromFolder', () => {
       expect(second.entry.path).not.toBe(first.entry.path)
       expect(existsSync(firstPath)).toBe(false)
       expect(readRegistry(userDataPath)).toHaveLength(1)
+    })
+  })
+
+  it('keeps the same id across an update, and unloads the old version from the session before the new one loads', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session, loaded, removedIds } = fakeSession()
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(first.installed).toBe(true)
+      if (!first.installed) return
+      const firstId = first.entry.id
+
+      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ ...FIXTURE_MANIFEST, version: '2.0.0' }))
+      const second = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(second.installed).toBe(true)
+      if (!second.installed) return
+
+      // A slot-generated key is reused for every install into the same
+      // slot, so a real Electron session derives the same id every time --
+      // chrome.storage, logins and every per-extension setting stay keyed
+      // to the right entry across an update.
+      expect(second.entry.id).toBe(firstId)
+      // The old version was actually removed from the session before the
+      // new one loaded, not just silently overwritten in the map.
+      expect(removedIds).toEqual([firstId])
+      expect(loaded.size).toBe(1)
+      expect(loaded.get(firstId)).toBe(second.entry.path)
+    })
+  })
+
+  it('on a failed load, reloads the previous version and leaves the registry and its folder untouched', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session, loaded, removedIds, setFailNextLoad } = fakeSession()
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(first.installed).toBe(true)
+      if (!first.installed) return
+      const firstPath = first.entry.path
+      const firstId = first.entry.id
+
+      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ ...FIXTURE_MANIFEST, version: '2.0.0' }))
+      setFailNextLoad(new Error('boom: simulated new-version load failure'))
+      await expect(installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)).rejects.toThrow('boom')
+
+      // The old version was removed before the failed load attempt, then
+      // loaded back afterward -- under its own id and path, same as before.
+      expect(removedIds).toEqual([firstId])
+      expect(loaded.get(firstId)).toBe(firstPath)
+      // The registry and the old version's folder are exactly as they were.
+      expect(existsSync(firstPath)).toBe(true)
+      const registry = readRegistry(userDataPath)
+      expect(registry).toHaveLength(1)
+      expect(registry[0]).toEqual(first.entry)
     })
   })
 })

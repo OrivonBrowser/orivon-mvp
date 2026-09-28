@@ -1426,18 +1426,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A287: Security model T4 says ordinary tabs never see `orivon.*`; they do **[AI-REC]**
-
-- **Question:** Should T4 be rewritten to what the code does: `src/preload/app.ts` exposes the
-  locked `window.orivon` on every ordinary tab, and the broker, keyed on the frame's origin, is
-  what refuses an origin with no grant?
-- **Why it matters:** T4 claims a two-preload invariant and a `window.nostr`-only ordinary tab.
-  Neither holds, and extension pages opened in a tab also receive `window.orivon` today.
-- **Options:** rewrite T4 to the code and stop exposing on `chrome-extension:` pages (rec.);
-  change the code to match T4, which removes `orivon` from every ungranted page.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** extensions build plan package 3
-
 ### A288: One extension instance everywhere undoes per-app sessions **[OWNER]**
 
 - **Question:** Extensions run on granted apps as one instance (owner, 2026-09-28). Does a grant
