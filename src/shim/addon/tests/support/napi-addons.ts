@@ -96,6 +96,32 @@ export function fileAddon (): Uint8Array<ArrayBuffer> {
   })
 }
 
+/**
+ * Shaped as a napi-rs build is: Node-API imported from `env`, `env.memory`
+ * imported at 3 pages rather than exported, and a `__napi_register__mark`
+ * export that stores 7 for napi_register_wasm_v1 to read back as `marked`,
+ * which is 7 only if the loader ran it first.
+ */
+export function napiRsShapedAddon (): Uint8Array<ArrayBuffer> {
+  const env = (name: string, params: number): { module: string, name: string, params: number[], results: number[] } =>
+    ({ module: 'env', name, params: Array<number>(params).fill(I32), results: [I32] })
+  return buildModule({
+    imports: [env('napi_create_int32', 3), env('napi_set_named_property', 4)],
+    importMemory: { initial: 3, maximum: 16 },
+    exportName: 'napi_register_wasm_v1',
+    params: [I32, I32],
+    results: [I32],
+    table: true,
+    extra: [...ALLOCATOR, { name: '__napi_register__mark', params: [], results: [], body: [op.store(600, 7)] }],
+    data: [HEAP_TOP, { offset: 100, text: 'marked\0' }],
+    body: (call) => [
+      op.localGet(0), op.load(600), op.i32(200), call('napi_create_int32'), op.drop,
+      op.localGet(0), op.localGet(1), op.i32(100), op.load(200), call('napi_set_named_property'), op.drop,
+      op.localGet(1)
+    ]
+  })
+}
+
 export function threadedAddon (): Uint8Array<ArrayBuffer> {
   return buildModule({
     imports: [{ module: 'wasi', name: 'thread-spawn', params: [I32], results: [I32] }],

@@ -13,6 +13,7 @@ import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { type SyncWasiFs, createWasiHost, type WasiFs } from '../wasi/host.js'
 import { synchronousWasi } from '../wasi/instantiate.js'
 import { SYNCHRONOUS } from '../worker/sync-channel.js'
+import { importedMemory } from './imported-memory.js'
 import { addonPath, addonUrls, isWasm } from './resolve.js'
 
 /** Exports by the addon's path on the origin, however it was spelled when asked for. */
@@ -74,8 +75,32 @@ function assertLoadable (module: WebAssembly.Module, filename: string): void {
   }
 }
 
+type ImportObject = Record<string, Record<string, unknown>>
+
+/**
+ * The conventions a napi-rs build is loaded by, as its own loaders load it:
+ * Node-API reached from `env` beside its own namespaces, `env.memory`
+ * supplied at the size the build declares when it imports one, and each
+ * `__napi_register__*` export run before the module initializes.
+ */
+function napiRsConventions (bytes: Uint8Array): Pick<InstantiateOptions, 'overwriteImports' | 'beforeInit'> {
+  const limits = importedMemory(bytes)
+  const memory = limits === undefined ? undefined : new WebAssembly.Memory({ initial: limits.initial, maximum: limits.maximum ?? 65_536 })
+  return {
+    overwriteImports: (importObject: ImportObject) => {
+      importObject.env = { ...importObject.env, ...importObject.napi, ...importObject.emnapi, ...(memory === undefined ? {} : { memory }) }
+      return importObject
+    },
+    beforeInit: ({ instance }: { instance: WebAssembly.Instance }) => {
+      for (const [name, value] of Object.entries(instance.exports)) {
+        if (name.startsWith('__napi_register__') && typeof value === 'function') (value as () => void)()
+      }
+    }
+  } as Pick<InstantiateOptions, 'overwriteImports' | 'beforeInit'>
+}
+
 /** Addon output goes where Node's does: the process's stdout and stderr, a forked child's pipes included. */
-function options (filename: string): InstantiateOptions {
+function options (filename: string, bytes: Uint8Array): InstantiateOptions {
   const proc = (globalThis as { process?: ShimProcess }).process
   const env = proc?.env ?? {}
   const write = (stream: WritableStdio | undefined) => (bytes: Uint8Array): void => { stream?.write?.(bytes) }
@@ -89,7 +114,7 @@ function options (filename: string): InstantiateOptions {
     ...(proc?.stdout?.write === undefined ? {} : { syncStdout: write(proc.stdout) }),
     ...(proc?.stderr?.write === undefined ? {} : { syncStderr: write(proc.stderr) })
   })
-  return { context: getDefaultContext(), filename, wasi: synchronousWasi(host), asyncWorkPoolSize: 0 }
+  return { context: getDefaultContext(), filename, wasi: synchronousWasi(host), asyncWorkPoolSize: 0, ...napiRsConventions(bytes) }
 }
 
 function keyOf (filename: string, origin: string): string {
@@ -115,7 +140,7 @@ export function loadAddon (filename: string, origin: string = globalThis.locatio
       throw dlopenError(filename, `its WebAssembly build is not valid: ${String(error)}`)
     }
     assertLoadable(module, filename)
-    const { napiModule } = instantiateNapiModuleSync(module, options(filename))
+    const { napiModule } = instantiateNapiModuleSync(module, options(filename, bytes))
     loaded.set(key, napiModule.exports)
     return napiModule.exports
   }
@@ -137,7 +162,7 @@ async function preload (filename: string, key: string, origin: string): Promise<
     assertLoadable(module, filename)
     // A synchronous load may have finished while this one was compiling: the first instance stays.
     if (loaded.has(key)) return
-    const { napiModule } = await instantiateNapiModule(module, options(filename))
+    const { napiModule } = await instantiateNapiModule(module, options(filename, bytes))
     if (!loaded.has(key)) loaded.set(key, napiModule.exports)
     return
   }

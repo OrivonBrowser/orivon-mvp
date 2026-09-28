@@ -10,7 +10,8 @@ import { createRequire } from '../../polyfills/module.js'
 import { createRealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { Errno } from '../../wasi/errno.js'
 import { SYNCHRONOUS } from '../../worker/sync-channel.js'
-import { commandAddon, fileAddon, napiAddon, threadedAddon } from './support/napi-addons.js'
+import { importedMemory } from '../imported-memory.js'
+import { commandAddon, fileAddon, napiAddon, napiRsShapedAddon, threadedAddon } from './support/napi-addons.js'
 import { dlopen, loadAddon, preloadAddon } from '../index.js'
 import { addonUrls } from '../resolve.js'
 
@@ -89,6 +90,18 @@ describe('loadAddon', () => {
   it('refuses a threaded build by name, since it needs Workers sharing its memory', () => {
     serveSync({ '/lib/threaded.wasm': threadedAddon() })
     expect(() => loadAddon('/lib/threaded.node')).toThrow(OrivonShimError)
+  })
+})
+
+describe('a build shaped as napi-rs makes one', () => {
+  it('loads with Node-API from env, its imported memory at the size it declares, and its registrations run first', () => {
+    serveSync({ '/lib/rs.wasm': napiRsShapedAddon() })
+    expect((loadAddon('/lib/rs.node') as { marked: number }).marked).toBe(7)
+  })
+
+  it('reads an imported memory\'s limits off the binary, past other imports', () => {
+    expect(importedMemory(napiRsShapedAddon())).toEqual({ initial: 3, maximum: 16, shared: false })
+    expect(importedMemory(napiAddon())).toBeUndefined()
   })
 })
 
