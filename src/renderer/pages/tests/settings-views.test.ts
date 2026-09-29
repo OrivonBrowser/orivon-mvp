@@ -109,16 +109,32 @@ describe('AppsState.handle', () => {
 
 describe('PrivacyState.handle', () => {
   it('reloads status and tells the page on privacy.changed', async () => {
+    vi.useFakeTimers()
     let changes = 0
     const bridge = { request: async () => ({ history: { remembering: true, problem: null, count: 3 }, zoomSites: 1 }) } as unknown as OrivonInternal
     const privacy = new PrivacyState(bridge, () => { changes += 1 })
 
     expect(privacy.handle('privacy.changed')).toBe(true)
-    await Promise.resolve()
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(1000)
 
     expect(privacy.status).toEqual({ history: { remembering: true, problem: null, count: 3 }, zoomSites: 1 })
     expect(changes).toBe(1)
+    vi.useRealTimers()
+  })
+
+  it('coalesces a burst of privacy.changed into one reload', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const bridge = { request: async () => { calls += 1; return { history: { remembering: true, problem: null, count: 0 }, zoomSites: 0 } } } as unknown as OrivonInternal
+    const privacy = new PrivacyState(bridge, () => {})
+
+    privacy.handle('privacy.changed')
+    privacy.handle('privacy.changed')
+    privacy.handle('privacy.changed')
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(calls).toBe(1)
+    vi.useRealTimers()
   })
 
   it('ignores any other topic', () => {

@@ -112,13 +112,14 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   // app's own partition and a granted-without-install app sharing
   // session.defaultSession (see `appSessions` above for that split).
   ctx.broker?.onGrantsChanged(() => { services.internalPages.publish('apps.changed', undefined, ['settings']) })
-  // One underlying change, two pages: the History page's own list and count,
-  // and Settings' Privacy section (which shows the same count). Published as
-  // two topics, matching every other domain's own name -- a page dispatches
-  // on the topic name alone.
-  services.history.onChange(() => {
+  // The History page cares about every change, titles included; Settings'
+  // Privacy section shows only a count, which a title update never changes
+  // (history-service.ts's own `HistoryChange`) -- a retitling page (a tab's
+  // own document.title, which a site may set as often as it likes) must
+  // never itself keep redrawing a section that has nothing new to show.
+  services.history.onChange((change) => {
     services.internalPages.publish('history.changed', undefined, ['history'])
-    services.internalPages.publish('privacy.changed', undefined, ['settings'])
+    if (change !== 'titled') services.internalPages.publish('privacy.changed', undefined, ['settings'])
   })
   services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })

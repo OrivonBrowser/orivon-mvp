@@ -10,6 +10,7 @@ import { ShortcutsState } from './shortcuts-state.js'
 import { UpdatesState } from './updates-state.js'
 import { UsageState } from './usage-state.js'
 import { Web3State } from './web3-state.js'
+import { coalesce } from '../shared/coalesce.js'
 
 export interface AboutInfo {
   readonly version: string
@@ -41,6 +42,7 @@ export class SettingsState {
   /** This profile and the others, and whether this window is private. */
   profiles: { readonly profiles: ReadonlyArray<{ readonly id: string, readonly name: string, readonly current: boolean }>, readonly isPrivate: boolean } | null = null
   private readonly listeners = new Set<() => void>()
+  private readonly reloadProfilesCoalesced: () => void
 
   constructor (private readonly bridge: OrivonInternal = internalBridge()) {
     this.shortcuts = new ShortcutsState(bridge, () => { this.notify() })
@@ -49,6 +51,10 @@ export class SettingsState {
     this.usage = new UsageState(bridge, () => { this.notify() })
     this.updates = new UpdatesState(bridge, () => { this.notify() })
     this.web3 = new Web3State(bridge)
+    // A rename made close together with a colour change, or several profile
+    // windows starting at once, can each fire `profiles.changed` -- coalesced
+    // the same way `apps.changed`/`privacy.changed` already are.
+    this.reloadProfilesCoalesced = coalesce(() => { void this.reloadProfiles() })
   }
 
   async load (): Promise<void> {
@@ -67,7 +73,7 @@ export class SettingsState {
       if (this.privacy.handle(topic)) return
       if (this.usage.handle(topic)) return
       if (this.updates.handle(topic, payload)) return
-      if (topic === 'profiles.changed') { void this.reloadProfiles(); return }
+      if (topic === 'profiles.changed') { this.reloadProfilesCoalesced(); return }
       if (topic !== 'settings.changed') return
       const change = payload as { key: string, value: unknown }
       this.values.set(change.key, change.value)

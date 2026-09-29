@@ -137,9 +137,19 @@ async function start (): Promise<void> {
   })
 
   // A change made elsewhere, or by a control here, redraws the page; but not
-  // under a text box the person is typing in.
+  // while the person is in the middle of something a redraw would throw
+  // away: typing, a focused control (a <select> a redraw would otherwise
+  // silently close), or a two-click confirm armed and waiting for its
+  // second click (clear-data.ts's own "Click again to clear", the only
+  // `.armed` button in Settings today, and any future one the same way).
+  function midInteraction (): boolean {
+    const active = document.activeElement
+    if (!(content.contains(active))) return false
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) return true
+    return content.querySelector('.armed') !== null
+  }
   state.onChange(() => {
-    if (document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'text' && content.contains(document.activeElement)) return
+    if (midInteraction()) return
     render()
   })
 

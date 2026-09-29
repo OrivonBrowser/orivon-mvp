@@ -57,16 +57,6 @@ describe('watchProfiles', () => {
     expect(await waitForChange(() => calls() - before)).toBe(true)
   })
 
-  it('fires when an existing profiles/ subdirectory changes', async () => {
-    await mkdir(join(root, 'profiles', 'work'), { recursive: true })
-    await writeFile(join(root, 'profiles', 'work', 'profile.json'), JSON.stringify({ name: 'Work' }))
-    const { calls } = watching()
-
-    await writeFile(join(root, 'profiles', 'work', 'profile.json'), JSON.stringify({ name: 'Renamed' }))
-
-    expect(await waitForChange(calls)).toBe(true)
-  })
-
   it('coalesces a burst of writes into far fewer calls than writes', async () => {
     const { calls } = watching()
 
@@ -87,6 +77,61 @@ describe('watchProfiles', () => {
     await new Promise((resolve) => setTimeout(resolve, 400))
 
     expect(calls()).toBe(0)
+  })
+
+  it('never fires when a deep file changes under a profile\'s own cache directory', async () => {
+    await mkdir(join(root, 'profiles', 'work', 'Cache', 'sub'), { recursive: true })
+    await writeFile(join(root, 'profiles', 'work', 'profile.json'), JSON.stringify({ name: 'Work' }))
+    const { calls } = watching()
+
+    await writeFile(join(root, 'profiles', 'work', 'Cache', 'sub', 'entry'), 'x')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    expect(calls()).toBe(0)
+  })
+
+  it('never fires for an unrelated file at the root, such as settings.json', async () => {
+    const { calls } = watching()
+
+    await writeFile(join(root, 'settings.json'), '{}')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    expect(calls()).toBe(0)
+  })
+
+  it('fires once, debounced, for editing an existing profile\'s profile.json', async () => {
+    await mkdir(join(root, 'profiles', 'work'), { recursive: true })
+    await writeFile(join(root, 'profiles', 'work', 'profile.json'), JSON.stringify({ name: 'Work' }))
+    const { calls } = watching()
+
+    await writeFile(join(root, 'profiles', 'work', 'profile.json'), JSON.stringify({ name: 'Renamed' }))
+
+    expect(await waitForChange(calls)).toBe(true)
+    const afterFirst = calls()
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(calls()).toBe(afterFirst)
+  })
+
+  it('fires when a profile directory is added', async () => {
+    const { calls } = watching()
+
+    await mkdir(join(root, 'profiles', 'new-one'), { recursive: true })
+
+    expect(await waitForChange(calls)).toBe(true)
+  })
+
+  it('a profile removed and a different one added later still gets its own watch', async () => {
+    await mkdir(join(root, 'profiles', 'gone'), { recursive: true })
+    await writeFile(join(root, 'profiles', 'gone', 'profile.json'), JSON.stringify({ name: 'Gone' }))
+    const { calls } = watching()
+
+    await rm(join(root, 'profiles', 'gone'), { recursive: true, force: true })
+    expect(await waitForChange(calls)).toBe(true)
+
+    const afterRemoval = calls()
+    await mkdir(join(root, 'profiles', 'new-one'), { recursive: true })
+    await writeFile(join(root, 'profiles', 'new-one', 'profile.json'), JSON.stringify({ name: 'New' }))
+    expect(await waitForChange(() => calls() - afterRemoval)).toBe(true)
   })
 
   it('does not throw when the root does not exist yet', () => {
