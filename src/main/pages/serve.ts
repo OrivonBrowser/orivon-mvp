@@ -10,7 +10,18 @@ export interface InternalServeOptions {
   /** electron-vite's dev server, when one is running. */
   readonly devServerUrl: string | undefined
   readonly readFile: (path: string) => Promise<Uint8Array>
-  readonly fetchDev?: ((url: string) => Promise<Response>) | undefined
+  /** `accept` is forwarded from the page's own request: Vite's dev server
+   * answers a CSS `<link>`'s fetch (`Accept: text/css,...`) with the plain
+   * stylesheet, but a bare `fetch()` with no `Accept` gets back the
+   * HMR-wrapping JS module it serves a script import instead -- the two are
+   * different response bodies for the identical URL. */
+  readonly fetchDev?: ((url: string, accept?: string) => Promise<Response>) | undefined
+  /** Only consulted in development, for what `/@fs/` may read (route.ts):
+   * the project's `src/` and `node_modules/`, already resolved to their real
+   * paths by the caller (internal-session.ts), since a symlinked
+   * `node_modules` -- this project's own parallel-worktree pattern -- would
+   * otherwise never textually match what Vite itself reports. */
+  readonly devFsRoots?: readonly string[]
 }
 
 const MIME: Readonly<Record<string, string>> = {
@@ -61,15 +72,20 @@ function reply (body: BodyInit | null, status: number, contentType: string, devS
 const notFound = (devServerUrl: string | undefined): Response => reply('Not found', 404, 'text/plain; charset=utf-8', devServerUrl)
 
 /** Deep links (`orivon://settings/privacy`) resolve the page's relative asset
- * URLs against their own path; pinning the base to the root keeps them right
- * however deep the link goes. */
-export function withRootBase (html: string): string {
-  return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (open) => `${open}<base href="/">`) : `<base href="/">${html}`
+ * URLs against their own path; pinning the base keeps them right however deep
+ * the link goes. Once built, every page's assets are flattened into one
+ * `assets/` directory reached by a relative climb out of `pages/<page>/`, so
+ * the root, `/`, is the right base at any depth (the default here). In
+ * development the page's own HTML is unbundled -- `./main.ts`, `./style.css`,
+ * relative to the page's own folder on the dev server -- so the base must be
+ * that folder instead, `/pages/<page>/` (serve.ts's only other caller). */
+export function withRootBase (html: string, base = '/'): string {
+  return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (open) => `${open}<base href="${base}">`) : `<base href="${base}">${html}`
 }
 
 export function createInternalHandler (options: InternalServeOptions): (request: Request) => Promise<Response> {
   const { rendererRoot, devServerUrl } = options
-  const fetchDev = options.fetchDev ?? (async (url: string) => await fetch(url))
+  const fetchDev = options.fetchDev ?? (async (url: string, accept?: string) => await fetch(url, accept === undefined ? undefined : { headers: { accept } }))
   const root = resolve(rendererRoot)
 
   async function readInside (relativePath: string): Promise<Uint8Array | null> {
@@ -84,7 +100,7 @@ export function createInternalHandler (options: InternalServeOptions): (request:
   }
 
   return async (request) => {
-    const route = routeInternalRequest(request.url, devServerUrl !== undefined)
+    const route = routeInternalRequest(request.url, devServerUrl !== undefined, options.devFsRoots)
     switch (route.kind) {
       case 'not-found':
         return notFound(devServerUrl)
@@ -99,7 +115,8 @@ export function createInternalHandler (options: InternalServeOptions): (request:
           if (!upstream.ok) return notFound(devServerUrl)
           html = await upstream.text()
         }
-        return reply(withRootBase(html), 200, MIME['.html'] as string, devServerUrl)
+        const base = devServerUrl === undefined ? '/' : `/pages/${route.page}/`
+        return reply(withRootBase(html, base), 200, MIME['.html'] as string, devServerUrl)
       }
       case 'asset': {
         const bytes = await readInside(route.path)
@@ -109,7 +126,7 @@ export function createInternalHandler (options: InternalServeOptions): (request:
       }
       case 'dev': {
         if (devServerUrl === undefined) return notFound(devServerUrl)
-        const upstream = await fetchDev(new URL(route.path, devServerUrl).toString())
+        const upstream = await fetchDev(new URL(route.path, devServerUrl).toString(), request.headers.get('accept') ?? undefined)
         return reply(upstream.body, upstream.status, upstream.headers.get('content-type') ?? 'application/octet-stream', devServerUrl)
       }
     }

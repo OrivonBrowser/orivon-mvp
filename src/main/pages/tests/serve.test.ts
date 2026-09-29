@@ -63,23 +63,47 @@ describe('createInternalHandler', () => {
     expect(internalCsp('http://localhost:5173/')).toContain('connect-src ws://localhost:5173')
   })
 
-  it('takes a page and its modules from the dev server, and refuses to read arbitrary files from it', async () => {
+  it('takes a page and its modules from the dev server, pinning the base to the page\'s own folder there', async () => {
     const fetchDev = vi.fn(async (url: string) => new Response(url.endsWith('index.html') ? '<head></head>' : 'module', { headers: { 'content-type': 'text/javascript' } }))
     const dev = handler('http://localhost:5173', fetchDev)
 
-    expect(await (await get(dev, 'orivon://settings/')).text()).toContain('<base href="/">')
+    expect(await (await get(dev, 'orivon://settings/')).text()).toContain('<base href="/pages/settings/">')
     expect(fetchDev).toHaveBeenLastCalledWith('http://localhost:5173/pages/settings/index.html')
     expect(await (await get(dev, 'orivon://settings/@vite/client')).text()).toBe('module')
-    expect(fetchDev).toHaveBeenLastCalledWith('http://localhost:5173/@vite/client')
+    expect(fetchDev).toHaveBeenLastCalledWith('http://localhost:5173/@vite/client', undefined)
     fetchDev.mockClear()
     expect((await get(dev, 'orivon://settings/@fs/etc/passwd')).status).toBe(404)
     expect(fetchDev).not.toHaveBeenCalled()
   })
+
+  it('forwards a stylesheet link\'s Accept header, so the dev server answers with plain CSS, not the HMR-wrapping module it serves a script import', async () => {
+    const fetchDev = vi.fn(async () => new Response('body{}', { headers: { 'content-type': 'text/css' } }))
+    const dev = handler('http://localhost:5173', fetchDev)
+    const styleRequest = new Request('orivon://settings/pages/settings/style.css', { headers: { accept: 'text/css,*/*;q=0.1' } })
+
+    await dev(styleRequest)
+
+    expect(fetchDev).toHaveBeenLastCalledWith('http://localhost:5173/pages/settings/style.css', 'text/css,*/*;q=0.1')
+  })
+
+  it('reaches an /@fs/ file inside src/ or node_modules/ only when given the roots it sits under', async () => {
+    const fetchDev = vi.fn(async () => new Response('module', { headers: { 'content-type': 'text/javascript' } }))
+    const projectRoot = '/home/user/orivon-mvp'
+    const devFsRoots = [`${projectRoot}/src`, `${projectRoot}/node_modules`]
+    const withRoot = createInternalHandler({ rendererRoot: ROOT, devServerUrl: 'http://localhost:5173', readFile, fetchDev, devFsRoots })
+    const withoutRoot = handler('http://localhost:5173', fetchDev)
+
+    expect((await get(withRoot, `orivon://settings/@fs${projectRoot}/src/protocols/builtin.ts`)).status).toBe(200)
+    expect(fetchDev).toHaveBeenLastCalledWith(`http://localhost:5173/@fs${projectRoot}/src/protocols/builtin.ts`, undefined)
+    expect((await get(withRoot, `orivon://settings/@fs${projectRoot}/package.json`)).status).toBe(404)
+    expect((await get(withoutRoot, `orivon://settings/@fs${projectRoot}/src/protocols/builtin.ts`)).status).toBe(404)
+  })
 })
 
 describe('withRootBase', () => {
-  it('goes in the head, or in front when there is none', () => {
+  it('goes in the head, or in front when there is none, at the base given', () => {
     expect(withRootBase('<html><head lang="en"><meta></head></html>')).toBe('<html><head lang="en"><base href="/"><meta></head></html>')
     expect(withRootBase('<p>x</p>')).toBe('<base href="/"><p>x</p>')
+    expect(withRootBase('<head></head>', '/pages/settings/')).toBe('<head><base href="/pages/settings/"></head>')
   })
 })
