@@ -2,6 +2,7 @@
 // app's page script: it drives `child_process` the way ported Node code does.
 
 import { execFile, fork, spawn } from 'child_process'
+import { Worker } from 'worker_threads'
 
 export interface ChildProcessResults {
   readonly echo: { events: string[], stdout: string }
@@ -10,6 +11,7 @@ export interface ChildProcessResults {
   readonly forked: { reply?: unknown, fileText?: string, exitCode?: number | null }
   readonly killed: { events: string[] }
   readonly component: { events: string[], stdout: string, stderr: string, fileText?: string }
+  readonly thread: { portReply?: string, workerReply?: unknown, fileText?: string, terminatedWith?: number }
   readonly error?: string
 }
 
@@ -76,13 +78,26 @@ async function run (): Promise<ChildProcessResults> {
   const componentFinished = await componentEvents
   const written = await orivon.fs.readFile('from-component.txt').catch(() => undefined)
 
+  progress.push('thread')
+  const thread = new Worker('/thread.js', { workerData: { text: 'written by a thread' } })
+  const channel = new MessageChannel()
+  const portReply = new Promise<string>((resolve) => { channel.port1.onmessage = (event: MessageEvent) => resolve(event.data as string) })
+  const workerReply = new Promise((resolve) => thread.once('message', resolve))
+  // Node's ambient worker_threads types want its own MessagePort in the transfer list, not the DOM one a bundled app actually has.
+  ;(thread.postMessage as (value: unknown, transferList: readonly unknown[]) => void)({ ping: 'hi from the page', port: channel.port2 }, [channel.port2])
+  const [threadPortReply, threadWorkerReply] = await Promise.all([portReply, workerReply])
+  const threadFileText = new TextDecoder().decode(await orivon.fs.readFile('from-thread.txt'))
+  const terminatedWith = await thread.terminate()
+  progress.push('thread done')
+
   return {
     component: { events: componentFinished, stdout: componentOut, stderr: componentErr, ...(written === undefined ? {} : { fileText: new TextDecoder().decode(written) }) },
     echo: { events: await echoEvents, stdout },
     native: await failure('/bin/native'),
     missing: await failure('git'),
     forked: { reply, fileText, exitCode },
-    killed: { events: await killedEvents }
+    killed: { events: await killedEvents },
+    thread: { portReply: threadPortReply, workerReply: threadWorkerReply, fileText: threadFileText, terminatedWith }
   }
 }
 
