@@ -12,8 +12,10 @@ the OS has since reused its pid for;
 this process's own profile, the list, changes to it, and "open"; `profiles-domain.ts` is what the Profiles,
 Private and Settings pages may ask of it.
 
-**What it depends on.** `node:fs`, `node:os`, `node:child_process`; `electron` only as a type
-(`start-launch.ts` is handed the `app`). [`../shell/`](../shell/) is never imported.
+**What it depends on.** `node:fs`, `node:os`, `node:child_process`;
+[`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (`profile-store.ts`'s
+own writes); `electron` only as a type (`start-launch.ts` is handed the `app`).
+[`../shell/`](../shell/) is never imported.
 
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts) or any store that reads the data
 directory: the launch has to run before one exists.

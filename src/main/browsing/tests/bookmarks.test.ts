@@ -15,16 +15,18 @@ import {
   type Bookmark
 } from '../bookmarks.js'
 
-// BookmarkStore imports writeFile straight from node:fs/promises, so mocking
-// the module is the only way to hold one specific write open from outside
-// and prove flushPendingWrite() genuinely waits for it. `fsGate` is declared
+// BookmarkStore writes through writeFileAtomicAsync (atomic-write.ts), which
+// itself calls node:fs/promises's writeFile on the temp file -- mocking the
+// module is the only way to hold one specific write open from outside and
+// prove flushPendingWrite() genuinely waits for it. `fsGate` is declared
 // through vi.hoisted because vi.mock's factory runs before the rest of this
 // file and would otherwise not see it. Every other fs/promises export, and
 // writeFile itself once nothing is gating it, passes straight through.
 //
-// `failNextWith`: lets a test make the next writeFile call reject instead of
-// landing, to prove flushPendingWrite() reports a genuine failure instead of
-// resolving as though the write succeeded.
+// `failNextWith`: lets a test make the next writeFile call land a partial,
+// garbled write and then reject, simulating a process that dies mid-write --
+// the failure atomic-write.ts's temp-file-then-rename shape exists to
+// survive, since the garbage lands in the temp file, never the real path.
 const fsGate = vi.hoisted(() => ({
   release: null as Promise<void> | null,
   writeFileCallCount: 0,
@@ -45,6 +47,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       const failure = fsGate.failNextWith
       if (failure !== null) {
         fsGate.failNextWith = null
+        await actual.writeFile(file, 'CORRUPTED-PARTIAL-WRITE', encoding)
         throw failure
       }
       await actual.writeFile(file, data, encoding)
@@ -438,6 +441,23 @@ describe('BookmarkStore', () => {
     errorSpy.mockRestore()
   }, 1000)
 
+  it('a write that fails leaves the previously persisted file intact, not truncated', async () => {
+    const store = new BookmarkStore(filePath)
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
+    await store.flushPendingWrite()
+    const before = await readFile(filePath, 'utf8')
+
+    const failure = new Error('ENOSPC: no space left on device')
+    fsGate.failNextWith = failure
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    store.add({ url: 'https://b.example/', title: 'B', favicon: null })
+    await expect(store.flushPendingWrite()).rejects.toBe(failure)
+
+    expect(await readFile(filePath, 'utf8')).toBe(before)
+    errorSpy.mockRestore()
+  }, 2000)
+
   it('resolves immediately, without throwing, when nothing has ever been scheduled', async () => {
     const store = new BookmarkStore(filePath)
     await expect(store.flushPendingWrite()).resolves.toBeUndefined()
@@ -457,7 +477,7 @@ describe('BookmarkStore', () => {
       { url: 'https://a.example/', title: 'A', favicon: null },
       { url: 'https://b.example/', title: 'B', favicon: null }
     ])
-  }, 1000)
+  }, 2000)
 
   it('notifies onChange listeners on add and remove', () => {
     const store = new BookmarkStore(filePath)

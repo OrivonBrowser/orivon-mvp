@@ -9,7 +9,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { writeFileAtomic } from '../../broker/grants/node-ledger-storage.js'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 
 /** The one shape this file needs from Electron's `safeStorage` -- the
  * ASYNC trio only. The sync one can block the main process on a keyring
