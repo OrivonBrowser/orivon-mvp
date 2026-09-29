@@ -54,7 +54,7 @@ describe('session-bound attribution', () => {
     expect(response.ok).toBe(true)
   })
 
-  it('denies a subframe speaking for its top frame\'s origin, even from the right session (T-3: embed guests and web contexts)', async () => {
+  it('denies a subframe speaking for its top frame\'s origin, even from the right session (embed guests and web contexts)', async () => {
     const response = await handleControlRequest(
       stubBroker([]), subframeFor(APP, APP_SESSION), envelope('app.manifest', undefined),
       undefined, undefined, undefined, undefined, sessionRule(() => true)
