@@ -2,7 +2,7 @@
 // against Node's own behaviour on the same calls.
 
 import { describe, expect, it, vi } from 'vitest'
-import assert, { AssertionError, deepEqual, deepStrictEqual, equal, ok, rejects, strictEqual, throws } from '../assert.js'
+import assert, { AssertionError, deepEqual, deepStrictEqual, equal, fail, ok, rejects, strictEqual, throws } from '../assert.js'
 import timers from '../timers.js'
 import timersPromises from '../timers-promises.js'
 
@@ -55,6 +55,15 @@ describe('assert', () => {
   it('carries strict, whose equal and deepEqual are the strict forms', () => {
     expect(() => assert.strict.equal(1, '1' as unknown as number)).toThrow(AssertionError)
     expect(() => assert.strict.deepEqual({ a: 1 }, { a: '1' })).toThrow(AssertionError)
+  })
+
+  // A287: real on the default export under the name `fail`, but the module's
+  // own top-level `fail` identifier is an internal helper -- so a bundled
+  // CommonJS require('assert')'s namespace needs its own `fail` export too.
+  it('fail is a real named export, and throws AssertionError', () => {
+    expect(fail).toBe(assert.fail)
+    expect(() => fail('boom')).toThrow(AssertionError)
+    expect(() => fail()).toThrow(expect.objectContaining({ code: 'ERR_ASSERTION', operator: 'fail' }))
   })
 })
 

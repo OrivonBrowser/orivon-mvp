@@ -59,4 +59,13 @@ describe('a bundled CommonJS require() names the gap (A287)', () => {
     const result = await runBundledConsumer(consumer('os', 'mod.hostname()'))
     expect(result.name).toBe('no-throw')
   })
+
+  it('a member real only on the shim\'s default export still resolves through the namespace: require(\'util\').isArray works', async () => {
+    const result = await runBundledConsumer(`
+      const mod = require('util');
+      try { globalThis.__A287_RESULT = { name: typeof mod.isArray, api: mod.isArray([1, 2, 3]), message: undefined } }
+      catch (error) { globalThis.__A287_RESULT = { name: error.name, api: error.api, message: error.message } }
+    `)
+    expect(result).toMatchObject({ name: 'function', api: true })
+  })
 })

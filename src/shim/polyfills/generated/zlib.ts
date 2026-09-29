@@ -34,4 +34,4 @@ export const zstdDecompressSync = refusingExport('zstdDecompressSync', classify)
  * as DATA, not a function, and a throwing stand-in would misreport its own type (A169).
  * Checked by the freshness test above, so a member that changes shape is still seen.
  */
-export const DATA_GAPS: readonly string[] = ["constants"]
+export const DATA_GAPS: readonly string[] = ["codes"]
