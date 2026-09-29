@@ -42,6 +42,20 @@ export function createChildHostRegistry (
    * LATER child at the same origin, with a fresh host, is watched again. */
   const watching = new Set<string>()
 
+  /** F6: a document with a connect already IN FLIGHT is refused a second,
+   * concurrent one -- keyed by the sender frame's own object identity (a
+   * `WeakSet`, so a closed document's entry is simply forgotten rather than
+   * ever needing an explicit removal for that reason). Cleared the moment
+   * the in-flight attempt settles, success or failure alike: this guards
+   * the overlap window, never a lifetime cap on one document -- a page
+   * reconnecting after its earlier connection died (F5: a crashed host, or
+   * the handshake's own port closing) must still get a fresh one.
+   * `../../preload/expose-child-host-connect.ts`'s own bridge already never
+   * asks twice while it holds a live or in-flight connection either way;
+   * this is the defence for a frame that reached this channel some other
+   * way. */
+  const connecting = new WeakSet<object>()
+
   function watchForEmpty (origin: string): void {
     if (watching.has(origin)) return
     watching.add(origin)
@@ -54,24 +68,41 @@ export function createChildHostRegistry (
   async function connect (event: ControlEvent): Promise<void> {
     const origin = originFromSenderFrame(event.senderFrame)
     if (origin === null) return
-    if (!getBroker().app.isRegisteredSync(origin)) return
+    const broker = getBroker()
+    if (!broker.app.isRegisteredSync(origin)) {
+      // F2/F5: the app may have just been removed (or never finished
+      // registering) while a host it built earlier -- with children still
+      // running -- lives on; nothing else notices that on its own.
+      void pool.close(origin)
+      return
+    }
 
-    watchForEmpty(origin)
-    const host = await pool.getOrCreate(origin)
+    const frame = event.senderFrame
+    if (frame !== null) {
+      if (connecting.has(frame)) return
+      connecting.add(frame)
+    }
 
-    // RE-DERIVE, never reuse the origin from above: `getOrCreate` awaited the
-    // host's first document load, which the calling frame could navigate
-    // across in the meantime (deliver-port.ts's own rule, same reason).
-    const frame: PortDeliveryFrame | null = event.senderFrame
-    if (frame === null || originFromSenderFrame(frame) !== origin) return
-
-    const { port1, port2 } = new MessageChannelMain()
-    host.postPagePort(port1)
     try {
-      frame.postMessage(CHILD_HOST_PORT_CHANNEL, null, [port2])
-    } catch {
-      // The frame went away between the check above and this call -- ordinary,
-      // not adversarial. The host's own end (port1) is simply never used.
+      watchForEmpty(origin)
+      const host = await pool.getOrCreate(origin)
+
+      // RE-DERIVE, never reuse the origin from above: `getOrCreate` awaited the
+      // host's first document load, which the calling frame could navigate
+      // across in the meantime (deliver-port.ts's own rule, same reason).
+      const reFrame: PortDeliveryFrame | null = event.senderFrame
+      if (reFrame === null || originFromSenderFrame(reFrame) !== origin) return
+
+      const { port1, port2 } = new MessageChannelMain()
+      host.postPagePort(port1)
+      try {
+        reFrame.postMessage(CHILD_HOST_PORT_CHANNEL, null, [port2])
+      } catch {
+        // The frame went away between the check above and this call -- ordinary,
+        // not adversarial. The host's own end (port1) is simply never used.
+      }
+    } finally {
+      if (frame !== null) connecting.delete(frame)
     }
   }
 

@@ -25,7 +25,15 @@ export const childrenSubsystem: Subsystem = {
     const pool = createChildHostPool(getBroker)
     const registry = createChildHostRegistry(getBroker, pool, tracker)
 
-    ipcMain.on(CHILD_HOST_CONNECT_CHANNEL, (event) => { void registry.connect(event) })
+    // F5: an uncaught rejection here reaches index.ts's own
+    // `unhandledRejection` handler, which is `app.exit(1)` -- the whole
+    // browser, for a failure as ordinary as the host's first document load
+    // losing a race with the app quitting. `registry.connect` itself never
+    // rejects for anything a page could trigger (README.md's own sender
+    // check), only for a build or a delivery that failed.
+    ipcMain.on(CHILD_HOST_CONNECT_CHANNEL, (event) => {
+      registry.connect(event).catch((error: unknown) => { console.error('[children] a child-host connect failed', error) })
+    })
     // Every host this process ever opened, whatever origin: nothing may
     // outlive the process (ADR-0046's own scope is one running app).
     app.on('before-quit', () => { void registry.closeAll() })

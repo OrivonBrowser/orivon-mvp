@@ -134,3 +134,18 @@ export const CHILD_HOST_CONNECT_CHANNEL = 'orivon-children:connect'
  * `WebFrameMain.postMessage` -- `PORT_CHANNEL`'s own pattern, a separate
  * channel since this one carries no handle id to tag the delivery with. */
 export const CHILD_HOST_PORT_CHANNEL = 'orivon-children:page-port'
+
+/** Main -> the hidden child host itself (never a page): delivers one page's
+ * own end of the per-page `MessageChannelMain` (`src/main/children/
+ * child-host.ts`'s `postPagePort`), over `WebFrameMain.postMessage` on the
+ * host's own `mainFrame` -- the host's preload (`src/preload/child-host.ts`)
+ * is the only listener. */
+export const CHILD_HOST_PAGE_CHANNEL = 'orivon-children:host-page'
+
+/** The hidden child host's own preload -> main, fire-and-forget, once its
+ * `orivon` and its `ChildHost` relay both exist: `child-host.ts`'s `build()`
+ * waits for this (bounded) before ever handing a page a port, so a preload
+ * that threw partway through (the sandboxed-bundling faults `src/preload/
+ * README.md` measures) is caught and its host closed, never left running
+ * with no `orivon:child-host:page` listener at all (W2). */
+export const CHILD_HOST_READY_CHANNEL = 'orivon-children:host-ready'

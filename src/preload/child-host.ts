@@ -13,6 +13,7 @@
 import { ipcRenderer } from 'electron'
 import type { Orivon } from '../contracts/capability-api.js'
 import { LIMITS } from '../contracts/index.js'
+import { CHILD_HOST_PAGE_CHANNEL, CHILD_HOST_READY_CHANNEL } from '../main/channels.js'
 import { installOrivon } from './surface/main-world-socket.js'
 import { buildOrivonBridge } from './surface/orivon.js'
 import { createChildHost } from '../shim/worker/host.js'
@@ -47,8 +48,12 @@ if (isChildHostDocument()) {
   const orivon = target.orivon as Orivon
 
   const host = createChildHost(orivon)
-  ipcRenderer.on('orivon:child-host:page', (event) => {
+  ipcRenderer.on(CHILD_HOST_PAGE_CHANNEL, (event) => {
     const port = event.ports[0]
     if (port !== undefined) host.addPage(port)
   })
+  // W2: told to `child-host.ts`'s own `build()`, which waits (bounded) for
+  // this before ever handing a page a port -- everything above ran without
+  // throwing, so this document really can relay children.
+  ipcRenderer.send(CHILD_HOST_READY_CHANNEL)
 }
