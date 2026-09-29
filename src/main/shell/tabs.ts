@@ -49,8 +49,6 @@ export class TabManager {
   /** The tabs shown two at a time. Public: split commands and the tab menu work it directly. */
   readonly splits: SplitController
   private readonly backdrop: TabShell['backdrop']
-  /** A page holding the whole area (HTML fullscreen): nothing else is shown. */
-  private fullscreenId: string | null = null
   private readonly searchUrl: ((query: string) => string) | undefined
 
   constructor (
@@ -90,12 +88,9 @@ export class TabManager {
       openTab: (url) => { this.createTab(url) },
       adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
       atCapacity: () => this.atCapacity(),
-      htmlFullscreenChanged: (id, entered) => {
-        // Only the tab in front is given the window: the shell refuses any other, and a refusal must leave nothing shown.
-        if (entered && id === this.activeId) this.fullscreenId = id
-        else if (!entered && this.fullscreenId === id) this.fullscreenId = null
-        shell?.htmlFullscreenChanged(id, entered)
-      },
+      // HtmlFullscreen (../fullscreen.ts) decides whether this is the tab in
+      // front, and holds the answer; `fullscreenId` above reads it back.
+      htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       isClosing: () => this.disposed,
       devtools: shell?.devtools
     }
@@ -116,6 +111,14 @@ export class TabManager {
   private add (id: string, record: TabRecord): void {
     this.tabs.set(id, record)
     this.order.push(id)
+  }
+
+  /** The tab holding the whole window, if any: read from `HtmlFullscreen`
+   * (../fullscreen.ts), the one place that state lives, and clamped to the
+   * tab in front -- a tab left behind keeps no claim it has not heard of yet. */
+  private get fullscreenId (): string | null {
+    const id = this.shell?.fullscreenTabId?.() ?? null
+    return id === this.activeId ? id : null
   }
 
   onStateChange (cb: (state: TabsSnapshot) => void): void {
@@ -321,8 +324,6 @@ export class TabManager {
   /** Puts the views on screen as the plan says: the tab in front, or the two panes of a split, sized. */
   private syncViews (): void {
     if (this.disposed) return
-    // A page holds the window only while it is the tab in front: a tab that closed or was left has no claim.
-    if (this.fullscreenId !== this.activeId) this.fullscreenId = null
     const plan = this.splits.plan(this.activeId, this.getTabBounds(), this.fullscreenId)
     const panes = plan.panes.flatMap(({ id, bounds }) => {
       const view = this.tabs.get(id)?.view
