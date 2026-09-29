@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Sandbox Page",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/e2e-extensions-sandbox-page.test.ts: a manifest sandbox.pages document, which real Chrome gives no chrome.* API at all.",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "sandbox": {
+    "pages": ["sandbox.html"]
+  },
+  "permissions": ["tabs"]
+}

@@ -357,6 +357,29 @@
     underlying primitive. `capture()` is not implemented: an MV3 extension
     using an offscreen document (patch 32) always calls `getMediaStreamId`
     and does its own `getUserMedia`, never `capture()`.
+37. **A page declared in the extension's own manifest `sandbox.pages` gets no `chrome.*` at all,
+    the way real Chrome's CSP `sandbox` directive gives it none -- fixed at both ends.**
+    Measured directly (a real sandbox.html document, a fixture with every permission this
+    library implements): before this patch it got 15 full `chrome.*` namespaces (`tabs`,
+    `storage`, `cookies`, `declarativeNetRequest`, `windows`, ...), including a working
+    `chrome.tabs.query` -- extensions put untrusted code (templates, `eval`) in a sandboxed page
+    specifically because it cannot reach extension APIs. `src/preload.ts`: before calling
+    `injectExtensionAPIs()`, asks main synchronously (`ipcRenderer.sendSync`, a new
+    `orivon-extensions:sandbox-page-query` channel -- `src/main/channels.ts`'s own
+    `EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL` doc says why the literal is duplicated rather than
+    imported) whether THIS frame is one of its own extension's declared `sandbox.pages`; main
+    answers from `event.senderFrame`'s own URL and the extension's REAL loaded manifest, never
+    from anything the query itself could pass. Also checks `location.origin === 'null'`
+    (opaque) first, cheaper and needing no round trip -- forward-compatible only: measured, this
+    Electron build does NOT give a sandboxed page an opaque origin the way real Chrome does, so
+    the main-process query is what actually catches today's case. `router.ts`'s
+    `onExtensionMessage` refuses independently, on every message, from the SAME two signals read
+    off `event.senderFrame` and the extension's own resolved manifest (`isSandboxPageUrl`, a new
+    exported matcher using Chrome's own `sandbox.pages` glob grammar, `*` matching any run of
+    characters) -- defense in depth: even a `crx-msg` that somehow reached the router without
+    going through the preload's own gate is refused the same way. Measured after: `chrome.tabs`
+    is `undefined` in the sandboxed page, and a direct `chrome.tabs.query` attempt never reaches
+    a real call.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

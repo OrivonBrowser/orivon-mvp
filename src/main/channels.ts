@@ -123,3 +123,20 @@ export const EXTENSION_SW_HEALTH_CHECK_CHANNEL = 'orivon-extension-sw-health-che
 
 /** Extension service worker -> main: the boolean answer to the check above. */
 export const EXTENSION_SW_HEALTH_REPLY_CHANNEL = 'orivon-extension-sw-health-reply'
+
+/** A `chrome-extension://` frame's own preload (the vendored library's
+ * `preload.ts`) -> main, synchronous (`ipcRenderer.sendSync`/
+ * `event.returnValue`): is THIS frame one of its own extension's manifest
+ * `sandbox.pages`? Real Chrome gives such a page no `chrome.*` at all
+ * (extensions put untrusted code there precisely because it cannot reach
+ * extension APIs); this is what the preload asks, before deciding whether
+ * to inject any, so a sandboxed page's own document_start script never
+ * sees one even briefly. Main derives the answer entirely from
+ * `event.senderFrame`'s own URL (never a payload) --
+ * `src/main/extensions/extension-host.ts`. The literal string is
+ * duplicated in `vendor/electron-chrome-extensions/src/preload.ts` rather
+ * than imported: `vendor/` may not depend on anything under `src/`
+ * (`src/main/extensions/README.md`'s own boundary), the same reason that
+ * file's `extension-host.ts` duplicates `EXTENSIONS_DEFAULT_PARTITION`
+ * instead of importing it. */
+export const EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL = 'orivon-extensions:sandbox-page-query'

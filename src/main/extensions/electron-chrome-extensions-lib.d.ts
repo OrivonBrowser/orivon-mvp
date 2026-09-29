@@ -79,6 +79,12 @@ declare module 'orivon:crx-extensions-router' {
   export function setEventListenerFilter (
     filter: ((extensionId: string, eventName: string, args: readonly unknown[]) => readonly unknown[] | undefined) | undefined
   ): void
+
+  /** True if `url`'s own path matches one of `pages` (an extension's
+   * manifest `sandbox.pages`) -- router.ts's own matcher, reused by
+   * extension-host.ts's preload-time sandbox-page query so the two ask the
+   * identical question. */
+  export function isSandboxPageUrl (pages: readonly string[] | undefined, url: string): boolean
 }
 
 declare module 'orivon:crx-extensions-cookies' {
