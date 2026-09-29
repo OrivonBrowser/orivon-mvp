@@ -63,8 +63,10 @@ export function routePopup (
 
 export interface PopupHost {
   atCapacity: () => boolean
-  /** `active` false opens the tab behind the current one: a middle click or a plain ctrl+click. */
-  openTab: (url: string, active: boolean) => void
+  /** `active` false opens the tab behind the current one: a middle click or a plain ctrl+click.
+   * Returns the tab's webContents -- see `windowOpenHandler`'s no-guest branch, which adopts it
+   * rather than building its own unpartitioned, unsanitized view. */
+  openTab: (url: string, active: boolean) => WebContents | undefined
   /** `url` is what the popup was opened at, for anything the tab decides from it.
    * `active` -- see `openTab`'s own doc. */
   adoptPopup: (view: WebContentsView, partition: string | undefined, url: string, active: boolean) => void
@@ -90,10 +92,37 @@ function guestOf (options: object): WebContents | undefined {
   return (options as { webContents?: WebContents }).webContents
 }
 
+const MAX_NEW_WINDOWS_PER_MINUTE = 5
+const NEW_WINDOW_MIN_SPACING_MS = 1_000
+const MINUTE_MS = 60_000
+
+/** One opener tab's own new-window budget: `HandlerDetails` carries no per-open user-gesture
+ * flag to check instead (absent from Electron 44's type), and a page's own synthetic, untrusted
+ * `dispatchEvent` click still reaches `windowOpenHandler` with a real 'new-window' disposition
+ * (measured) -- so nothing here stops a script from firing as many as it likes. `allow()` records
+ * an accepted open and refuses one closer than a second to the last, or beyond five within a
+ * rolling minute; a caller past either limit falls back to an ordinary tab instead of refusing
+ * the link outright. Closed over per `windowOpenHandler` call, so its state is naturally scoped
+ * to one opener tab and gone once that tab's own handler is. */
+function newWindowLimiter (): { allow: () => boolean } {
+  const openedAt: number[] = []
+  return {
+    allow: () => {
+      const now = Date.now()
+      while (openedAt.length > 0 && now - (openedAt[0] as number) > MINUTE_MS) openedAt.shift()
+      if (openedAt.length >= MAX_NEW_WINDOWS_PER_MINUTE) return false
+      if (openedAt.length > 0 && now - (openedAt[openedAt.length - 1] as number) < NEW_WINDOW_MIN_SPACING_MS) return false
+      openedAt.push(now)
+      return true
+    }
+  }
+}
+
 export function windowOpenHandler (
   host: PopupHost,
   opener: () => PopupOpener
 ): (details: HandlerDetails) => WindowOpenHandlerResponse {
+  const limiter = newWindowLimiter()
   return (details) => {
     if (host.atCapacity()) return { action: 'deny' }
     const from = opener()
@@ -109,29 +138,36 @@ export function windowOpenHandler (
       outlivesOpener: true,
       overrideBrowserWindowOptions: { webPreferences: host.webPreferencesFor(details.url) },
       createWindow: (options) => {
+        const guest = guestOf(options)
+        // No guest (guestOf's own doc): there is nothing of Chromium's to adopt, so `routePopup`'s
+        // 'adopt' above meant only "this URL's own partition equals the opener's", never "skip the
+        // ordinary tab pipeline". Route through it exactly as any other tab open does: it
+        // recomputes the correct partition from the URL itself (partitionForTarget) and applies
+        // sanitizeDirectUrl. Building a view here directly, with `options.webPreferences` (no
+        // partition -- webPreferencesFor's own doc says why: Chromium fixes a REAL guest's
+        // partition to its opener's at creation) used to land it in session.defaultSession instead,
+        // loading the opener's own origin from the network with its app-tab flag still set --
+        // network-served code then ran with whatever grants the broker keys to that origin, since
+        // it checks only the sender frame's origin (T6/T18/T21). A shift-click's new-window open
+        // (disposition 'new-window') already goes through the same safe pipeline via openWindow.
+        if (guest === undefined) {
+          if (details.disposition === 'new-window' && limiter.allow()) {
+            const opened = host.openWindow(details.url)
+            if (opened !== undefined) return opened
+          }
+          const opened = host.openTab(details.url, active)
+          if (opened !== undefined) return opened
+          // Never reached in practice (atCapacity() was already false at this handler's own
+          // entry, synchronously before Electron ever calls this callback) -- kept because
+          // createWindow's contract still requires returning SOME real WebContents. Blank and
+          // unpartitioned, but never loaded: it touches no network and holds no grants either way.
+          return new WebContentsView({}).webContents
+        }
         // webPreferences again, not only webContents: adopting without them
         // drops the preload, measured against Electron 44, and the popup
         // then has no orivon surface at all.
         const webPreferences = options.webPreferences !== undefined ? { webPreferences: options.webPreferences } : {}
-        const guest = guestOf(options)
-        // Chrome opens a shift-click in a new window, not a tab; a real window.open() popup with
-        // features gets a guest even at this disposition (the OAuth pattern above) and keeps
-        // adopting into a tab, opener intact.
-        if (guest === undefined && details.disposition === 'new-window') {
-          const opened = host.openWindow(details.url)
-          if (opened !== undefined) return opened
-        }
-        // No guest (guestOf's own doc): build the view ourselves, the way TabFactory.content()
-        // would for an ordinary tab, and load it -- Electron never navigates a view constructed
-        // here on its own. Given `webContents: undefined` directly instead, WebContentsView's
-        // constructor throws synchronously, and this process has no top-level catch for that
-        // (index.ts's `exitOnUncaught` turns any uncaught exception into a full exit, by design).
-        const view = guest === undefined ? new WebContentsView(webPreferences) : new WebContentsView({ webContents: guest, ...webPreferences })
-        if (guest === undefined) {
-          void view.webContents.loadURL(details.url).catch((error) => {
-            console.error('[orivon] a modifier-click tab failed to load its first URL:', error)
-          })
-        }
+        const view = new WebContentsView({ webContents: guest, ...webPreferences })
         host.adoptPopup(view, from.partition, details.url, active)
         return view.webContents
       }

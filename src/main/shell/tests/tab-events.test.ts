@@ -198,17 +198,43 @@ describe('wireView -- window.open', () => {
     expect(host.openWindow).not.toHaveBeenCalled()
   })
 
-  it('builds and loads its own view for a modifier-click open, which carries no guest webContents', () => {
+  it('routes a modifier-click open with no guest webContents through the ordinary tab pipeline, never a view of its own', () => {
     const wc = fakeContents()
-    const host = fakeHost()
+    const opened = fakeContents('https://other.example/')
+    const openTab = vi.fn((): never => opened as never)
+    const host = fakeHost({ openTab })
     wireView('tab-1', record(wc, undefined, host))
 
     const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'background-tab' })
     const returned = response.createWindow?.({ webPreferences: {} } as never)
 
-    expect(adoptedViews[0]?.options).not.toHaveProperty('webContents')
-    expect((returned as unknown as FakeContents).loadURL).toHaveBeenCalledWith('https://other.example/')
-    expect(host.adoptPopup).toHaveBeenCalledWith(adoptedViews[0], undefined, false)
+    expect(openTab).toHaveBeenCalledWith('https://other.example/', false)
+    expect(returned).toBe(opened)
+    expect(adoptedViews).toHaveLength(0)
+    expect(host.adoptPopup).not.toHaveBeenCalled()
+  })
+
+  it('routes a same-origin middle-click inside a cache-served app through the ordinary tab pipeline, never an unpartitioned view of its own', () => {
+    // The bug this guards: routePopup returns 'adopt' here (the target's own
+    // partition -- cache-served, ADR-0044 -- equals the opener's), but a
+    // middle click never carries a guest to adopt (guestOf's own doc). The
+    // fix routes through openTab/createTab (correct partition AND
+    // sanitizeDirectUrl) instead of building an unpartitioned view that
+    // would load the app's origin into session.defaultSession, network-
+    // served, with the broker still keying the app's grants to that origin.
+    const wc = fakeContents(`${APP}/`)
+    const opened = fakeContents(`${APP}/other`)
+    const openTab = vi.fn((): never => opened as never)
+    const host = fakeHost({ openTab })
+    wireView('tab-1', record(wc, APP_PARTITION, host))
+
+    const response = openHandler(wc)({ url: `${APP}/other`, disposition: 'background-tab' })
+    const returned = response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(openTab).toHaveBeenCalledWith(`${APP}/other`, false)
+    expect(returned).toBe(opened)
+    expect(adoptedViews).toHaveLength(0)
+    expect(host.adoptPopup).not.toHaveBeenCalled()
   })
 
   it('opens a shift-click (new-window, no guest) in a new window rather than adopting a tab here', () => {
@@ -225,6 +251,50 @@ describe('wireView -- window.open', () => {
     expect(returned).toBe(openedContents)
     expect(adoptedViews).toHaveLength(0)
     expect(host.adoptPopup).not.toHaveBeenCalled()
+  })
+
+  it('rate-limits new-window opens per tab: one a second, and a small cap within a minute, falling back to an ordinary tab past either', () => {
+    // Electron's HandlerDetails carries no per-open user-gesture flag (measured against 44's own
+    // type), and a page's own synthetic, untrusted dispatchEvent click still reaches here with a
+    // real 'new-window' disposition (measured against a real launch) -- so a script could open
+    // windows without bound if nothing here budgeted them.
+    const wc = fakeContents()
+    const openWindow = vi.fn((): never => fakeContents('https://other.example/') as never)
+    const host = fakeHost({ openWindow })
+    wireView('tab-1', record(wc, undefined, host))
+    const openOnce = (): void => { openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' }).createWindow?.({ webPreferences: {} } as never) }
+
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(0)
+      openOnce()
+      expect(openWindow).toHaveBeenCalledTimes(1)
+
+      // Under a second later: too soon, falls back to an ordinary (foreground) tab instead.
+      vi.setSystemTime(500)
+      openOnce()
+      expect(openWindow).toHaveBeenCalledTimes(1)
+      expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true)
+
+      // Spaced a full second apart, up to the cap: each opens a real window.
+      for (let seconds = 2; seconds <= 5; seconds++) {
+        vi.setSystemTime(seconds * 1000)
+        openOnce()
+      }
+      expect(openWindow).toHaveBeenCalledTimes(5)
+
+      // A sixth, even spaced a full second later, exceeds the rolling-minute cap.
+      vi.setSystemTime(6_000)
+      openOnce()
+      expect(openWindow).toHaveBeenCalledTimes(5)
+
+      // Past a minute since the first, the oldest opens age out and one more is allowed again.
+      vi.setSystemTime(61_000)
+      openOnce()
+      expect(openWindow).toHaveBeenCalledTimes(6)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('opens noopener as today\'s disconnected tab', () => {

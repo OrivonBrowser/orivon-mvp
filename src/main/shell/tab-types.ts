@@ -141,8 +141,10 @@ export interface TabViewHost {
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
   forgetTab: (id: string) => void
   /** `active` false leaves the tab strip's current tab in front: a middle
-   * click or a plain ctrl+click, from popups.ts's `windowOpenHandler`. */
-  openTab: (url: string, active?: boolean) => void
+   * click or a plain ctrl+click, from popups.ts's `windowOpenHandler`. Returns the new (or, at
+   * the tab ceiling, the existing active) tab's webContents, so a no-guest popup open can adopt
+   * a correctly-partitioned, sanitized tab instead of building its own unpartitioned view. */
+  openTab: (url: string, active?: boolean) => WebContents | undefined
   /** Makes Chromium's own popup webContents, already in `partition`, a tab.
    * `active` -- see `openTab`'s own doc. */
   adoptPopup: (view: WebContentsView, partition: string | undefined, active?: boolean) => void
