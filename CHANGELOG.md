@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
+  `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
+  popups and options pages work on every website; blocking rules and apps holding permissions come next.
 - **A Settings page, and the browser features a person lives in.** `orivon://settings` has a section for
   everything Orivon implements: appearance (theme, bookmarks bar, page zoom), search, tabs and windows,
   profiles, privacy and data, the apps that hold permissions, the Ethereum light client, remappable
