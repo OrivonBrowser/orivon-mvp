@@ -118,6 +118,8 @@ export interface ModuleSpec {
   readonly padding?: number
   /** More exported functions, after the main one. */
   readonly extra?: ReadonlyArray<{ readonly name: string, readonly params: readonly number[], readonly results: readonly number[], readonly locals?: number, readonly body: number[][] }>
+  /** Imports `env.memory` with these limits instead of defining and exporting one, as a napi-rs build does. */
+  readonly importMemory?: { readonly initial: number, readonly maximum: number, readonly shared?: boolean }
 }
 
 export const TYPE = { I32, I64 } as const
@@ -133,6 +135,7 @@ export function buildModule (spec: ModuleSpec): Uint8Array<ArrayBuffer> {
   types.push(signature(spec.params, spec.results))
   for (const fn of extra) types.push(signature(fn.params, fn.results))
   const imports = spec.imports.map((entry, index) => [...bytes(entry.module), ...bytes(entry.name), 0x00, ...uleb(index)])
+  if (spec.importMemory !== undefined) imports.push([...bytes('env'), ...bytes('memory'), 0x02, spec.importMemory.shared === true ? 0x03 : 0x01, ...uleb(spec.importMemory.initial), ...uleb(spec.importMemory.maximum)])
   const call = (name: string): number[] => {
     const index = spec.imports.findIndex((entry) => entry.name === name)
     if (index === -1) throw new Error(`${name} is not among the module's imports`)
@@ -148,9 +151,9 @@ export function buildModule (spec: ModuleSpec): Uint8Array<ArrayBuffer> {
     ...section(2, vector(imports)),
     ...section(3, vector(bodies.map((_body, index) => uleb(firstType + index)))),
     ...(spec.table === true ? section(4, vector([[0x70, 0x00, 0x00]])) : []),
-    ...section(5, vector([[0x00, 0x01]])),
+    ...(spec.importMemory === undefined ? section(5, vector([[0x00, 0x01]])) : []),
     ...section(7, vector([
-      [...bytes('memory'), 0x02, 0x00],
+      ...(spec.importMemory === undefined ? [[...bytes('memory'), 0x02, 0x00]] : []),
       [...bytes(spec.exportName), 0x00, ...uleb(spec.imports.length)],
       ...extra.map((fn, index) => [...bytes(fn.name), 0x00, ...uleb(spec.imports.length + 1 + index)]),
       ...(spec.table === true ? [[...bytes('__indirect_function_table'), 0x01, 0x00]] : [])

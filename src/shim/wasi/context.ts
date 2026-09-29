@@ -9,6 +9,7 @@ import { type Op, fsCall } from './effects.js'
 import { Filetype, type Filestat, GuestMemory } from './memory.js'
 import { FdTable, inodeFor } from './fds.js'
 import type { Sink, StdinSource } from './stdio.js'
+import { msToNs } from './time.js'
 import { WasiTerminated, type WasiTerminationReason } from './termination.js'
 
 /** The part of orivon.fs a WASI program can reach. A Worker's proxy provides the same shape. */
@@ -87,11 +88,10 @@ export class HostContext {
 }
 
 export function filestatOf (path: string, stat: FileStat): Filestat {
-  const wholeMs = Math.trunc(stat.mtimeMs)
   return {
     ino: inodeFor(path),
     filetype: stat.isDirectory ? Filetype.DIRECTORY : stat.isFile ? Filetype.REGULAR_FILE : Filetype.UNKNOWN,
     size: BigInt(stat.size),
-    mtimNs: BigInt(wholeMs) * 1_000_000n + BigInt(Math.round((stat.mtimeMs - wholeMs) * 1_000_000))
+    mtimNs: msToNs(stat.mtimeMs)
   }
 }

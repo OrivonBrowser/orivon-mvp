@@ -510,7 +510,7 @@ describe('exposeOrivon -- P-F11 continued: net.listen (A114, d-0028)', () => {
     // Deliver the SERVER's own port over PORT_CHANNEL -- socket-bridge.ts's
     // listener is kind-agnostic (its own header), the same one net.connect's
     // test above uses.
-    const serverPort = fakeMessagePort() as { postMessage: () => void, onmessage?: (e: { data: unknown }) => void, close: () => void }
+    const serverPort = fakeMessagePort() as { postMessage: () => void, onmessage?: (e: { data: unknown, ports: unknown[] }) => void, close: () => void }
     portListener?.({ ports: [serverPort] }, { handleId: 'srv-1' })
 
     const server = await listening
@@ -522,15 +522,15 @@ describe('exposeOrivon -- P-F11 continued: net.listen (A114, d-0028)', () => {
     const reading = reader.read()
     await Promise.resolve() // let pull() fire and post the reused accept-demand credit message
 
-    // The accepted connection's OWN port, delivered inline on the AcceptedMessage
-    // (A114/d-0028) -- never a second PORT_CHANNEL round trip.
+    // The accepted connection's OWN port, transferred with the AcceptedMessage
+    // (A114/d-0028) rather than inside it -- never a second PORT_CHANNEL round trip.
     const acceptedPort = fakeMessagePort()
     serverPort.onmessage?.({
       data: {
         kind: 'accepted', handleId: 'srv-1', socketId: 'acc-1',
-        remoteAddress: '1.2.3.4', remotePort: 5555, localAddress: '10.0.0.5', localPort: 4001,
-        port: acceptedPort
-      }
+        remoteAddress: '1.2.3.4', remotePort: 5555, localAddress: '10.0.0.5', localPort: 4001
+      },
+      ports: [acceptedPort]
     })
 
     const { value: socket } = (await reading) as { value: { id: string, readable: unknown, writable: unknown } }

@@ -17,6 +17,13 @@ README.
 
 **Owner stream.** `shim`.
 
+**A napi-rs build loads as napi-rs's own loaders load it** (`load.ts`'s `napiRsConventions`):
+Node-API is offered from `env` as well as its own namespaces, an imported `env.memory` is supplied at
+the size the binary declares (`imported-memory.ts`), and each `__napi_register__*` export runs
+before the module initializes. A napi-rs 3 build linked against emnapi 2's archive loads on the
+stable emnapi runtime this loader uses: plain calls, strings, async work and file reads pass
+against a real one ([`tests/napi-rs.test.ts`](tests/napi-rs.test.ts), opt-in).
+
 **Where a build is looked for** (`resolve.ts`): beside the `.node` path on the app's origin, as
 `<file>.node.wasm`, `<file>.wasm` (emnapi) or `<file>.wasm32-wasi.wasm` (napi-rs). None found is
 `ERR_DLOPEN_FAILED` with `reason: 'excluded'`, naming the three paths.

@@ -13,6 +13,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A spawned program can open sockets**: `spawn` runs a WASI 0.2 component from the jco output
+  shipped beside it, its files and sockets reaching `orivon.fs` and `orivon.net` under the app's
+  grants (ADR-0040). A Rust program built for `wasm32-wasip2` runs, whether it blocks on `std::net`
+  or runs tokio.
 - **A Settings page, and the browser features a person lives in.** `orivon://settings` has a section for
   everything Orivon implements: appearance (theme, bookmarks bar, page zoom), search, tabs and windows,
   profiles, privacy and data, the apps that hold permissions, the Ethereum light client, remappable
@@ -96,6 +100,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A native addon built with napi-rs loads**: its WebAssembly build gets Node-API and memory the way
+  napi-rs's own loaders provide them, which a real napi-rs 3 addon needs.
+- **An app that listens for TCP connections receives them**: the broker now hands each accepted
+  connection's port over by transfer alone, which Electron requires.
 - **The toolbar no longer creates a session partition for every website visited.**
 - **An OIDC sign-in that leaves an app's tab and returns can complete.**
 - **Entering fullscreen keeps the page's keyboard focus.**

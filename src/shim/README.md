@@ -18,6 +18,7 @@
 | [`http/`](http/) | `http` and `https`, over `net/`'s real socket |
 | [`polyfills/`](polyfills/) | The core polyfills |
 | [`wasi/`](wasi/) | A WASI preview1 host over `orivon.fs`, and Node's `wasi` module over it |
+| [`wasi-p2/`](wasi-p2/) | A WASI 0.2 host over `orivon.fs` and `orivon.net`, for a component `spawn` runs from jco's output |
 | [`worker/`](worker/) | What a child needs to run in a Web Worker, its `orivon.*` calls carried to the page |
 | [`child-process/`](child-process/) | Node's `child_process` over those Workers |
 | [`addon/`](addon/) | Native addons, loaded as their WebAssembly builds through emnapi |

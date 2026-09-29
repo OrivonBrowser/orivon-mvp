@@ -3,10 +3,16 @@
 // MessagePort that carries the Worker's orivon.* calls to the page
 // (orivon-server.ts, orivon-client.ts).
 
-/** Runs a WASI program: `module` is compiled on the page, so the Worker only instantiates it. */
+/** What a Worker is handed to run: a compiled preview1 module, or where a component's jco output is. */
+export type SpawnProgram =
+  | { readonly kind: 'core', readonly module: WebAssembly.Module }
+  /** `glue` is the output's JavaScript, `base` the URL its core modules are named against. */
+  | { readonly kind: 'component', readonly glue: string, readonly base: string }
+
+/** Runs a WASI program: a preview1 module compiled on the page, or a component's jco output the Worker imports. */
 export interface SpawnStart {
   readonly type: 'spawn'
-  readonly module: WebAssembly.Module
+  readonly program: SpawnProgram
   readonly args: readonly string[]
   readonly env: Readonly<Record<string, string>>
   readonly preopens: Readonly<Record<string, string>>

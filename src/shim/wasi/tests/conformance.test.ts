@@ -10,7 +10,7 @@
 //
 // Last run against 609c446139956ff30239f87cb18af1dc6128bed2: 63 of 72 pass, in each mode.
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { cp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -19,45 +19,9 @@ import { createWasiHost } from '../host.js'
 import { bindInstanceMemory, runCommand, suspendingImports } from '../instantiate.js'
 import { WasiExit } from '../termination.js'
 import { hasJspi, jspiWebAssembly } from './support/jspi.js'
+import { KNOWN_FAILURES, type Program, programs } from './support/testsuite.js'
 
 const SUITE = process.env.ORIVON_WASI_TESTSUITE
-const LANGUAGES = ['assemblyscript', 'c', 'rust'] as const
-
-/** Programs that fail for a reason outside the host: each needs something orivon.fs does not have. */
-const KNOWN_FAILURES: Readonly<Record<string, string>> = {
-  'rust/fd_filestat_set': 'sets file times',
-  'rust/path_filestat': 'sets file times',
-  'rust/nofollow_errors': 'creates a symbolic link',
-  'rust/path_exists': 'creates a symbolic link',
-  'rust/path_link': 'creates a hard link',
-  'rust/path_symlink_trailing_slashes': 'creates a symbolic link',
-  'rust/readlink': 'creates a symbolic link',
-  'rust/symlink_create': 'creates a symbolic link',
-  'rust/symlink_filestat': 'creates a symbolic link'
-}
-
-interface Spec {
-  readonly args?: readonly string[]
-  readonly env?: Readonly<Record<string, string>>
-  readonly root?: string
-  readonly exit_code?: number
-  readonly stdout?: string
-}
-
-interface Program { readonly name: string, readonly dir: string, readonly file: string, readonly spec: Spec }
-
-function programs (suite: string): Program[] {
-  return LANGUAGES.flatMap((language) => {
-    const dir = join(suite, 'tests', language, 'testsuite', 'wasm32-wasip1')
-    if (!existsSync(dir)) return []
-    return readdirSync(dir).filter((file) => file.endsWith('.wasm')).sort().map((file) => {
-      const specPath = join(dir, file.replace(/\.wasm$/, '.json'))
-      const spec = existsSync(specPath) ? JSON.parse(readFileSync(specPath, 'utf8')) as Spec : {}
-      return { name: `${language}/${file.replace(/\.wasm$/, '')}`, dir, file, spec }
-    })
-  })
-}
-
 /** `_start` called directly on the synchronous imports, as an addon's exports are. */
 function runSynchronously (instance: WebAssembly.Instance, host: ReturnType<typeof createWasiHost>): number {
   bindInstanceMemory(instance, host)

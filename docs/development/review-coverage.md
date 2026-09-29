@@ -144,7 +144,6 @@ see in the PR itself.
 |---|---|---|
 | `/code-review`, high effort, run by a forked reviewer | The WASI host's effect generators and drivers, `src/shim/worker/sync-channel.ts` with the server and client changes, and the addon loader's synchronous fs | 9 findings, all fixed in the same branch with a test where one applies: a refused synchronous reply left what it opened open on the page; a reply that failed to encode left the Worker waiting forever; `fd_renumber` became a suspending import; one revoked call disabled an addon for good; the reply writer pinned the last reply; an invalid reply channel threw on the page; stdin read end of input silently under the synchronous driver; sub-millisecond `poll_oneoff` waits began yielding; and the limit retry and the driver loop existed twice |
 
-
 ### The whole-repository review: `main`, the WASI stack, the shell, and their fixes in #36 and #38 (2026-09-28)
 
 | Mechanism | Scope | Outcome |
@@ -156,3 +155,10 @@ see in the PR itself.
 | Alignment and privacy lane | All pending work | Stack and shell aligned; their colliding ids resolved by renumbering the shell |
 | `/code-review`, high effort, run by the verify lanes | #36's diff; #38's whole branch | #36: the first fs fix refused in-root symlinks, so it was reverted and A283 records the fix it needs. #38: a DevTools teardown crash, a split at the tab limit, and a private window that lost the sandbox switch in CI; all fixed |
 | Gate, smoke and e2e, headless | #36 and #38 | Typecheck, unit, the 12 guards, smoke and e2e pass; the two FreeTube e2e files fail on `main` as well (the network) |
+
+### `stream/wasi-p2`: a WASI 0.2 host for spawned components (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | `src/shim/wasi-p2/`, component resolution in `child_process`, the Worker's component path | 12 findings, all fixed in the same branch with a test where one applies: the glue check failed open, so a fallback page made a missing program ENOEXEC; a late connect, listen or bind after drop leaked its handle; a listener leaked queued connections and could hang; an empty write while busy trapped; a shared address sent the wrong resolved name; error codes crossed interfaces; lookup failures had the wrong code; a revoked grant did not stop the component; a mapped address was accepted; clocks, randomness and the path checks existed twice; two docs lines were false; and several finish, send and shutdown edges departed from the spec |
+| Real programs built outside the repository, run against the hosts (opt-in tests) | A Rust `std` program and a tokio program for `wasm32-wasip2`; a napi-rs 3 addon | Four gaps no fixture showed, each fixed or recorded: UDP's stream resource classes were missing, so no such program instantiated; a napi-rs build's imported memory and registration exports were unsupported, so none loaded; `finish-listen` and UDP `finish-bind` answered `would-block`, which fails every tokio listener and UDP bind; tokio's own name resolution traps for want of a thread, which the WASI 0.2 README now states with the workaround |
