@@ -79,7 +79,8 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
       deps.broker.declinedCapabilitiesFor(origin)
     ])
 
-    const context: LoadContext = { grantedPatterns: patternSetFromGrants(grants), versionFloor, acknowledgedRollbackVersion, declinedCapabilities }
+    const hasPersistedGrants = deps.broker.app.persistedAppsSync().some((app) => app.origin === origin && Object.keys(app.grants).length > 0)
+    const context: LoadContext = { grantedPatterns: patternSetFromGrants(grants), versionFloor, acknowledgedRollbackVersion, declinedCapabilities, hasPersistedGrants }
     const result = await deps.loader.load(hintedUrl, context)
     // S4-5: registerApp/consent for an accepted install, and driving each
     // of the other four outcomes to a decision, all live in

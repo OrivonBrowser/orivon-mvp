@@ -147,6 +147,12 @@ export interface LoadContext {
    * requires that value be a legal one to assign, not merely an omittable key.
    */
   readonly declinedCapabilities?: readonly CapabilityKind[] | undefined
+  /**
+   * Whether grants for this origin are saved on disk from an earlier run,
+   * loaded or not: persisted grants become live only when the origin
+   * registers, which a missing pin would otherwise let happen silently.
+   */
+  readonly hasPersistedGrants?: boolean
 }
 
 export interface Loader {
@@ -261,19 +267,11 @@ async function decideAndRoute (
   // restore, disk corruption) -- so an origin the ledger already knows gets
   // no shortcut past the floor and widening checks below, exactly like a pin
   // that exists but fails to parse.
-  // versionFloor alone is not enough: `raiseFloor` (grant-ledger.ts) only
-  // ever RAISES the floor, so an origin whose every registered version has
-  // been '0.0.0' never moves it off that default, however many times
-  // `registerApp` has actually run for it. A live grant closes exactly that
-  // gap: `grantedPatterns` (built fresh from `broker.app.grants(origin)` for
-  // every `load()` call) is non-empty only when the ledger already holds a
-  // grant for this origin THIS SESSION, which only a prior `registerApp` --
-  // never a bare fetch -- can have put there. `grant-without-install.ts`'s
-  // loopback path is the one other way `grantedPatterns` can hold something
-  // with nothing ever pinned, but that path serves origins install-origin.ts
-  // refuses before `decideAndRoute` is ever reached (that file's own
-  // header), so it never contributes a false positive here.
-  const hasPriorAuthority = context.versionFloor !== '0.0.0' || Object.keys(context.grantedPatterns).length > 0
+  // Any of three facts shows prior authority: a raised floor, a live grant,
+  // or grants saved on disk. The floor alone misses an app whose every
+  // version has been 0.0.0 (it only ever rises), and live grants alone miss
+  // saved ones that registration would restore.
+  const hasPriorAuthority = context.versionFloor !== '0.0.0' || Object.keys(context.grantedPatterns).length > 0 || context.hasPersistedGrants === true
   if (rawPin === undefined && !hasPriorAuthority) {
     // TOFU (ADR-0005): nothing was ever pinned for this origin, and the
     // ledger shows no grant or version floor for it either, so there is no

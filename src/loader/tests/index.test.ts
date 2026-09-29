@@ -527,6 +527,22 @@ describe('createLoader: refetch against an existing pin', () => {
     expect(result.outcome).toBe('needs-reconsent')
   })
 
+  it('a missing pin for an origin at 0.0.0 whose grants are only saved on disk is not treated as a first visit (T19)', async () => {
+    const storage = memoryStorage()
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.0.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>new code, never approved')}
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    // No grant is live yet this run: saved grants load only when the origin
+    // registers, which is what a silent first-visit install would do.
+    const result = await loader.load(ORIGIN, { ...NO_GRANTS, hasPersistedGrants: true })
+
+    // Nothing is live to compare against, so the person is asked for the
+    // whole declared set; what matters is that it is asked at all.
+    expect(result.outcome).toBe('needs-capability-prompt')
+  })
+
   it('a missing pin for an origin the ledger has never registered (versionFloor at its default) is still ordinary TOFU', async () => {
     const storage = memoryStorage()
     const routes: Record<string, RouteSpec> = {
