@@ -1,11 +1,11 @@
-import { statSync } from 'node:fs'
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, readFile as fsReadFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createBroker } from '../../index.js'
 import { nodeFs } from '../node-fs-adapter.js'
-import { originHash } from '../../grants/origin-hash.js'
+import { appDataRoot, originHash } from '../../grants/origin-hash.js'
 
 // The real filesystem adapter's own suite -- split out of
 // node-adapters.test.ts under code-guidelines.md Rule 2, paired with
@@ -300,5 +300,77 @@ describe('nodeFs.diskUsage', () => {
     expect(await fs.diskUsage?.(root)).toBe(15)
     expect(await fs.diskUsage?.(join(root, 'dir'))).toBe(5)
     expect(await fs.diskUsage?.(join(root, 'missing'))).toBe(0)
+  })
+})
+
+// T13b: an app's own files now live under `app-data/<hash>/files`,
+// SEPARATE from the loader's own `apps/<hash>` state (pinned code,
+// staging, pin.json) -- `rootFor` moves whatever an earlier version of
+// this adapter wrote under the old, shared `apps/<hash>/files` layout the
+// first time an origin's `fs` is touched this process.
+describe('nodeFs.rootFor -- the one-time move off the old apps/<hash>/files layout', () => {
+  const ORIGIN = 'https://app.example'
+
+  it('moves an existing apps/<hash>/files directory to app-data/<hash>/files, keeping every file', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const oldRoot = join(userData, 'apps', originHash(ORIGIN), 'files')
+    mkdirSync(join(oldRoot, 'sub'), { recursive: true })
+    writeFileSync(join(oldRoot, 'a.bin'), new Uint8Array([1, 2, 3]))
+    writeFileSync(join(oldRoot, 'sub', 'b.bin'), new Uint8Array([4, 5]))
+
+    const fs = nodeFs(userData)
+    const newRoot = fs.rootFor(ORIGIN)
+
+    expect(newRoot).toBe(join(appDataRoot(userData, ORIGIN), 'files'))
+    expect(existsSync(oldRoot)).toBe(false) // moved, not copied
+    expect(Array.from(await fsReadFile(join(newRoot, 'a.bin')))).toEqual([1, 2, 3])
+    expect(Array.from(await fsReadFile(join(newRoot, 'sub', 'b.bin')))).toEqual([4, 5])
+  })
+
+  it('an origin with nothing under the old layout just gets a fresh new-layout root, same as any other first use', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const fs = nodeFs(userData)
+
+    const root = fs.rootFor(ORIGIN)
+
+    expect(root).toBe(join(appDataRoot(userData, ORIGIN), 'files'))
+    expect(existsSync(root)).toBe(true)
+  })
+
+  it('runs at most once per origin -- a second rootFor call does not touch an already-migrated, already-populated directory', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const oldRoot = join(userData, 'apps', originHash(ORIGIN), 'files')
+    mkdirSync(oldRoot, { recursive: true })
+    writeFileSync(join(oldRoot, 'a.bin'), new Uint8Array([1]))
+    const fs = nodeFs(userData)
+
+    const first = fs.rootFor(ORIGIN)
+    writeFileSync(join(first, 'b.bin'), new Uint8Array([2])) // written AFTER the migration
+    const second = fs.rootFor(ORIGIN)
+
+    expect(second).toBe(first)
+    expect(Array.from(await fsReadFile(join(second, 'a.bin')))).toEqual([1]) // the migrated file
+    expect(Array.from(await fsReadFile(join(second, 'b.bin')))).toEqual([2]) // survived the second call
+  })
+
+  it('NEVER LOSES DATA: when both the old and new roots already exist, leaves both alone and logs rather than picking a side', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const oldRoot = join(userData, 'apps', originHash(ORIGIN), 'files')
+    const newRoot = join(appDataRoot(userData, ORIGIN), 'files')
+    mkdirSync(oldRoot, { recursive: true })
+    writeFileSync(join(oldRoot, 'old.bin'), new Uint8Array([9]))
+    mkdirSync(newRoot, { recursive: true })
+    writeFileSync(join(newRoot, 'new.bin'), new Uint8Array([8]))
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const fs = nodeFs(userData)
+    const root = fs.rootFor(ORIGIN)
+
+    expect(root).toBe(newRoot)
+    expect(existsSync(oldRoot)).toBe(true) // left in place, never deleted
+    expect(existsSync(join(oldRoot, 'old.bin'))).toBe(true)
+    expect(existsSync(join(newRoot, 'new.bin'))).toBe(true)
+    expect(logged).toHaveBeenCalled()
+    logged.mockRestore()
   })
 })

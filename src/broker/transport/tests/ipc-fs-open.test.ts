@@ -213,6 +213,38 @@ describe('fs.read / fs.write / fs.fstat / fs.truncate / fs.sync -- the ownership
   })
 })
 
+describe('fs.open discards a handle abandoned by its own timeout, instead of leaking it', () => {
+  it('closes the handle and never registers it once the caller\'s own timeout has already fired', async () => {
+    const calls: BrokerCall[] = []
+    const file = fakeFile({ id: 'abandoned-1' })
+    // The raw open itself lands AFTER this call's own timeout budget --
+    // withTimeout() (../ipc.ts) still lets it run to completion in the
+    // background rather than cancel it; what must not happen is the handle
+    // it eventually produces being registered under an id the caller, long
+    // since answered 'timeout', will never learn.
+    const broker = stubBroker(calls, {
+      open: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        return file
+      }
+    })
+    const fsTransport: FsTransport = { registry: createPortRegistry() }
+
+    const response = await handleControlRequest(
+      broker, frameFor(APP), envelope('fs.open', { path: 'piece.bin', flags: 'w+' }, 1),
+      undefined, undefined, undefined, fsTransport
+    )
+    expect(response).toMatchObject({ ok: false, code: 'timeout' })
+
+    // The abandoned open is still running in the background -- give it
+    // time to resolve before checking what dispatch() did with it.
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(file.close).toHaveBeenCalledOnce()
+    expect(fsTransport.registry.get(APP, 'abandoned-1')).toBeUndefined()
+  })
+})
+
 describe('fs.close -- idempotent, the one silent no-op (matching Handle.close()\'s own contract)', () => {
   it('closes a live handle and is safe to call again for the same id', async () => {
     const file = fakeFile({ id: 'h1' })

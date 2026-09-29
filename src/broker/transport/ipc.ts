@@ -15,7 +15,7 @@
 // why. Only `brokerIpcSubsystem`, which nothing in ipc.test.ts calls,
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
-import { dialog, ipcMain, MessageChannelMain, session as electronSession } from 'electron'
+import { BrowserWindow, dialog, ipcMain, MessageChannelMain, session as electronSession } from 'electron'
 import type { MessagePortMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
@@ -34,6 +34,7 @@ import { createPortRegistry } from './relay/port-registry.js'
 import type { RateLimiter } from './token-bucket.js'
 import { admitControlCall, createControlLimiter } from './control-limiter.js'
 import type { ControlLimiter } from './control-limiter.js'
+import { additionalProtectedRoots, notifyPickRefused } from './picker-guard-wiring.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
 import { handleSyncFsReadRequest } from './sync-fs.js'
 import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
@@ -363,28 +364,43 @@ function realPortPair (): PortPair {
  * `message` is macOS-only (Electron's own `OpenDialogOptions` doc); passed
  * unconditionally because Electron silently ignores it elsewhere rather
  * than erroring, confirmed against Electron's own docs (context7,
- * 2026-09-16) before writing this.
+ * 2026-09-16) before writing this. The delete warning must be seen on
+ * every platform, so it ALSO goes in `title` -- the one field Electron
+ * renders on every platform's own folder/file dialog; `message` still
+ * carries the fuller macOS text unchanged.
+ *
+ * `origin`, NEVER JUST `appName`, is what names the requester: the
+ * ORIGINAL wording named no origin at all, and a registered app's
+ * self-declared `appName` is the app's own claim about itself -- an
+ * attacker origin can declare whatever friendly name it likes. `origin`
+ * is derived from the sender's frame (T3) and cannot be spoofed the way a
+ * manifest's `name` can, so it is what actually appears; `appName`, when
+ * present, is added alongside it for a person who recognises the app by
+ * name, never in its place.
  */
-export function describePickerDialog (opts: { directory: boolean, multiple: boolean, appName: string | undefined }): { title: string, buttonLabel: string, message: string } {
-  const named = opts.appName === undefined ? undefined : `"${opts.appName}"`
+export function describePickerDialog (opts: { directory: boolean, multiple: boolean, appName: string | undefined, origin: string }): { title: string, buttonLabel: string, message: string } {
+  const requester = opts.appName === undefined ? opts.origin : `"${opts.appName}" (${opts.origin})`
   if (opts.directory) {
+    const warning = 'it can read, change and delete everything in this folder, including files you add to it later'
     return {
-      title: named === undefined ? 'Choose a folder to access' : `Choose a folder for ${named} to access`,
+      title: `Choose a folder for ${requester} -- ${warning}`,
       buttonLabel: 'Allow access to this folder',
-      message: 'This app will be able to read, change and delete everything in this folder, including files you add to it later.'
+      message: `This app will be able to read, change and delete everything in this folder, including files you add to it later. Requested by ${requester}.`
     }
   }
   if (opts.multiple) {
+    const warning = 'it can read and change these files, including emptying them'
     return {
-      title: named === undefined ? 'Choose files to access' : `Choose files for ${named} to access`,
+      title: `Choose files for ${requester} -- ${warning}`,
       buttonLabel: 'Allow access to these files',
-      message: 'This app will be able to read and change these files, including emptying them.'
+      message: `This app will be able to read and change these files, including emptying them. Requested by ${requester}.`
     }
   }
+  const warning = 'it can read and change this file, including emptying it'
   return {
-    title: named === undefined ? 'Choose a file to access' : `Choose a file for ${named} to access`,
+    title: `Choose a file for ${requester} -- ${warning}`,
     buttonLabel: 'Allow access to this file',
-    message: 'This app will be able to read and change this file, including emptying it.'
+    message: `This app will be able to read and change this file, including emptying it. Requested by ${requester}.`
   }
 }
 
@@ -426,12 +442,27 @@ export const brokerIpcSubsystem: Subsystem = {
       // the owner-approved/derived wording (d-0032) from describePickerDialog
       // above -- see that function's own doc for what is verbatim-approved
       // and what is derived.
-      pickPath: async ({ directory, multiple, appName }) => {
+      //
+      // PARENTED TO THE FOCUSED WINDOW: the real sender's own
+      // `BrowserWindow` is not on this function's signature (`ControlEvent`
+      // carries only `senderFrame`, structural-typed for testability --
+      // this file's own header). A page can only reach this call at all
+      // with a fresh user activation (checked in the isolated-world
+      // preload before the IPC is even sent), so the focused window is, in
+      // practice, the sender's own -- a real cross-window dialog-parenting fix belongs
+      // with `ControlEvent` gaining the sender's `WebContents`, which the
+      // session lane's own attribution work may already add; noted rather
+      // than duplicated here to avoid two competing changes to this same
+      // handler.
+      pickPath: async ({ directory, multiple, appName, origin }) => {
         const properties: Array<'openFile' | 'openDirectory' | 'multiSelections'> = directory
           ? ['openDirectory']
           : (multiple ? ['openFile', 'multiSelections'] : ['openFile'])
-        const { title, buttonLabel, message } = describePickerDialog({ directory, multiple, appName })
-        const result = await dialog.showOpenDialog({ properties, title, buttonLabel, message })
+        const { title, buttonLabel, message } = describePickerDialog({ directory, multiple, appName, origin })
+        const parent = BrowserWindow.getFocusedWindow()
+        const result = parent === null
+          ? await dialog.showOpenDialog({ properties, title, buttonLabel, message })
+          : await dialog.showOpenDialog(parent, { properties, title, buttonLabel, message })
         return result.canceled ? { canceled: true } : { canceled: false, paths: result.filePaths }
       },
       // ADR-0033: the identity seed, OS-keyring-backed (Electron
@@ -448,7 +479,10 @@ export const brokerIpcSubsystem: Subsystem = {
       webContextHost: createWebContextHost(() => {
         if (ctx.broker === undefined) throw fail('internal', 'the broker is not published yet')
         return ctx.broker
-      })
+      }),
+      // The picker guard's real inputs -- `./picker-guard-wiring.ts`'s own header.
+      additionalProtectedRoots: additionalProtectedRoots(ctx.app),
+      notifyPickRefused
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
     // fs.open's own per-origin lookup (A184) -- the same generic
