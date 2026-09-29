@@ -5,7 +5,7 @@ entirely.
 
 | Entry | What it is |
 |---|---|
-| (top level) | The chrome view: tab strip (sharing its row with the native window buttons, and dragging a tab out of it: `tab-drag.ts`), toolbar and bookmarks bar, in its own `WebContentsView` above the active tab |
+| (top level) | The chrome view: tab strip (sharing its row with the native window buttons, and dragging a tab out of it: `tab-drag.ts`), the empty tail past the new-tab button in the manual drag mode (`strip-drag.ts`, Linux/X11 only -- `src/main/shell/drag-mode.ts` decides), toolbar and bookmarks bar, in its own `WebContentsView` above the active tab |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
 | [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
 | [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches, its Web3 Score and site data pages |
@@ -59,7 +59,12 @@ them, so this view's CSP stays `img-src 'self' data:`; the renderer never fetche
 
 **Icons are hand-drawn inline SVG**, no icon font or library (Rule 8;
 [`ADR-0002`](../../docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)), with paths
-matching `orivon-browser-v2` ported from lucide (ISC), credited in `icons.ts`. A control with no
+matching `orivon-browser-v2` ported from lucide (ISC), credited in `icons.ts`. The `svg`/`path`/
+`circle`/`rect`/`line` primitives live in `pages/shared/svg-primitives.ts` and `icons.ts`
+re-exports them for the rest of this directory -- under `pages/` rather than here so a page's own
+dev-mode request for them stays inside the one prefix route.ts serves an `orivon://` page's module
+graph from. `pages/shared/icons.ts` builds the shell's own pages' icons (Settings' nav, History's
+marks) on the same primitives, drawn for those pages rather than ported. A control with no
 behaviour yet ships `disabled` with an honest `title`, never omitted or silently clickable
 (A32).
 

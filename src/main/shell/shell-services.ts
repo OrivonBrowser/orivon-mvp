@@ -22,6 +22,7 @@ import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
+import { TearDragController } from './tear-drag.js'
 import { WindowRegistry } from './window-registry.js'
 import { TabLifecycle } from './tab-lifecycle.js'
 
@@ -35,6 +36,9 @@ export interface ShellServices {
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
   readonly shortcutStore: ShortcutStore
+  /** The floating preview a tab shows once dragged out of its strip, and the mark it leaves on whichever
+   * window's strip it is over -- one for the whole process, since only one tab can be mid-drag (tear-drag.ts). */
+  readonly tearDrag: TearDragController
   /** Every window's tab lifecycle, mirrored here (tab-lifecycle.ts) -- one
    * instance for the whole process, so a subscriber (the extension host)
    * hears every window, not just the one it happened to attach to first. */
@@ -74,6 +78,7 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
+    tearDrag: new TearDragController(() => windows.all()),
     tabLifecycle: new TabLifecycle(),
     windows,
     zoom: new ZoomService(zoomStore, settings),

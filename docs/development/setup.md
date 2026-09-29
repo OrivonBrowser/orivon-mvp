@@ -87,8 +87,14 @@ OS keyboard focus, so a build or test run does not interrupt whatever you are ty
 window. If a window flashes on screen but your cursor and keystrokes stay wherever they already
 were, that is this working as intended, not a bug.
 
-Mechanism: `src/main/shell/window.ts`'s `showOnce()` calls `win.showInactive()` instead of `win.show()`
-when `ORIVON_WINDOW_NO_FOCUS=1` is set. It is **never** set for a real user's own launch
+**It only ever applies to a launch's own first window.** A new window, a tab torn off into one of
+its own, a tab moved to a new window, and the macOS `activate` recreation all take focus at once
+regardless of the switch -- there is no "second window" case the unattended-launch switch is for.
+
+Mechanism: `src/main/shell/window-frame.ts`'s `showWhenReady()` calls `win.showInactive()` instead
+of `win.show()` when `ORIVON_WINDOW_NO_FOCUS=1` is set **and** the window is the one
+`index.ts` opened at `firstOfLaunch: true` (`src/main/shell/window-options.ts`'s own doc on
+`ShellWindowOptions.firstOfLaunch`). It is **never** set for a real user's own launch
 (`npm start`, or a packaged build). Only:
 
 - `npm run dev`, via `scripts/dev.mjs`;

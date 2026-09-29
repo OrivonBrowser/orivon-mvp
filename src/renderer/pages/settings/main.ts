@@ -2,8 +2,10 @@
 // the middle, and a search box that finds any row. Every address is a place in
 // it (`orivon://settings/search`), so the address bar always says where the
 // person is and a link goes straight to a section.
+import { gearIcon } from '../shared/icons.js'
 import { h, replaceChildren } from '../shared/dom.js'
 import type { Row, Section } from './model.js'
+import { groupLabelFor, NAV_ICON } from './nav.js'
 import { pathFor, placeFor } from './router.js'
 import { renderRow } from './rows.js'
 import { searchRows } from './search.js'
@@ -24,18 +26,33 @@ let sections: readonly Section[] = []
 let current: Section = { id: '', title: '', rows: [] }
 let highlight: string | null = null
 
-function renderSectionBody (section: Section): HTMLElement {
-  // A row that opens a group gets its heading first.
+/** A section's rows, one `.card` per group when its rows carry one (a muted
+ * heading above each card, reading the way the sidebar's own group labels
+ * do), or one card for the whole section when none of its rows do. */
+function renderRows (rows: readonly Row[]): HTMLElement[] {
+  if (!rows.some((row) => row.group !== undefined)) return [h('div', { className: 'card' }, ...rows.map((row) => renderRow(row, state)))]
+  const out: HTMLElement[] = []
   let group: string | undefined
-  const rows = section.rows.filter(isShown).flatMap((row) => {
-    const heading = row.group !== undefined && row.group !== group ? h('h3', { className: 'group', textContent: row.group }) : null
-    group = row.group
-    return heading === null ? [renderRow(row, state)] : [heading, renderRow(row, state)]
-  })
+  let inGroup: HTMLElement[] = []
+  const flush = (): void => { if (inGroup.length > 0) out.push(h('div', { className: 'card' }, ...inGroup)) }
+  for (const row of rows) {
+    if (row.group !== group) {
+      flush()
+      inGroup = []
+      group = row.group
+      if (group !== undefined) out.push(h('h3', { className: 'group-label', textContent: group }))
+    }
+    inGroup.push(renderRow(row, state))
+  }
+  flush()
+  return out
+}
+
+function renderSectionBody (section: Section): HTMLElement {
   return h('section', { className: 'section' },
     h('h2', { textContent: section.title }),
     section.intro === undefined ? null : h('p', { className: 'intro', textContent: section.intro }),
-    h('div', { className: 'card' }, ...rows))
+    ...renderRows(section.rows.filter(isShown)))
 }
 
 function renderSearchBody (query: string): HTMLElement {
@@ -48,18 +65,29 @@ function renderSearchBody (query: string): HTMLElement {
       type: 'button',
       onclick: () => { go(section, row.id) }
     },
-    h('span', { className: 'hit-section', textContent: section.title }),
-    h('span', { className: 'hit-label', textContent: row.label }),
-    row.help === undefined ? null : h('span', { className: 'hit-help', textContent: row.help })))))
+    h('div', { className: 'hit-body' },
+      h('span', { className: 'hit-label', textContent: row.label }),
+      row.help === undefined ? null : h('span', { className: 'hit-help', textContent: row.help })),
+    h('span', { className: 'hit-section', textContent: section.title })))))
 }
 
+/** The sidebar list: a muted group heading before the first section of each
+ * group, then the section itself, icon and label together in its `.nav-item`. */
 function renderNav (): void {
-  replaceChildren(nav, ...sections.map((section) => h('li', null, h('a', {
-    className: section.id === current.id && search.value.trim() === '' ? 'nav-item current' : 'nav-item',
-    href: pathFor(section),
-    textContent: section.title,
-    onclick: (event: MouseEvent) => { event.preventDefault(); go(section) }
-  }))))
+  const items: HTMLElement[] = []
+  let previous: Section | undefined
+  for (const section of sections) {
+    const groupLabel = groupLabelFor(section, previous)
+    if (groupLabel !== null) items.push(h('li', { className: 'nav-group', textContent: groupLabel }))
+    const drawIcon = NAV_ICON[section.id]
+    items.push(h('li', null, h('a', {
+      className: section.id === current.id && search.value.trim() === '' ? 'nav-item current' : 'nav-item',
+      href: pathFor(section),
+      onclick: (event: MouseEvent) => { event.preventDefault(); go(section) }
+    }, drawIcon === undefined ? null : drawIcon(), h('span', { className: 'nav-label', textContent: section.title }))))
+    previous = section
+  }
+  replaceChildren(nav, ...items)
 }
 
 function render (): void {
@@ -120,8 +148,10 @@ async function start (): Promise<void> {
 
   document.getElementById('app')?.append(
     h('div', { className: 'layout' },
-      h('header', { className: 'top' }, h('h1', { textContent: 'Settings' }), search),
-      h('nav', { className: 'nav' }, nav),
+      h('nav', { className: 'sidebar' },
+        h('div', { className: 'sidebar-head' }, gearIcon(), h('h1', { textContent: 'Settings' })),
+        search,
+        h('div', { className: 'nav-scroll' }, nav)),
       content))
   render()
 }
