@@ -30,7 +30,6 @@ import { HtmlFullscreen } from './fullscreen.js'
 import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
 import { chromeContextMenuHost } from './chrome-context-menu.js'
-import { devModeEnabled } from '../dev/dev-mode.js'
 import type { ShellWindowOptions } from './window-options.js'
 import { showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady } from './window-frame.js'
@@ -332,7 +331,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // The address bar's Cut/Copy/Paste: the same menu a tab gets, plus Inspect
   // where chrome-context-menu.ts's gate allows it.
   chrome.webContents.on('context-menu', (_event, params) => {
-    showContextMenu(chrome.webContents, params, chromeContextMenuHost(devModeEnabled, services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }))
+    showContextMenu(chrome.webContents, params, chromeContextMenuHost(services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }))
   })
 
   // Queue item 4.4's permissions surface, now a panel inside this window
