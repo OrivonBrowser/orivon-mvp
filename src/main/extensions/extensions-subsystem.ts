@@ -1,14 +1,19 @@
-// Registers extensions on `afterReady`: loads every enabled registry entry
-// into `session.defaultSession`, then publishes install/uninstall/enable/
+// Registers extensions on `afterReady`: constructs the electron-chrome-
+// extensions library (ADR-0043) on session.defaultSession, then loads every
+// enabled registry entry into it, then publishes install/uninstall/enable/
 // list to `ctx.extensions`. Listed after `verifierSubsystem` in
-// `../subsystems.ts` -- README.md's Design notes say why.
+// `../subsystems.ts` -- README.md's Design notes say why. The library must
+// exist BEFORE the first loadExtension() call, so its own 'extension-loaded'
+// listener sees every extension (extension-host.ts's own header).
 
+import { join } from 'node:path'
 import { session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishExtensions } from '../registry.js'
 import { readRegistry } from './registry-runner.js'
 import { installFromFile, installFromFolder, setEnabled, uninstall, type InstallContext, type InstallOutcome } from './install-runner.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
+import { createExtensionHost } from './extension-host.js'
 import type { InstalledExtension } from './registry.js'
 
 export interface ExtensionsApi {
@@ -43,6 +48,13 @@ async function loadEnabledExtensions (userDataPath: string): Promise<void> {
 export const extensionsSubsystem: Subsystem = {
   name: 'extensions',
   afterReady: async (ctx: SubsystemContext) => {
+    // ONE '../', not two: main is bundled into a single out/main/index.js
+    // (electron.vite.config.ts), so import.meta.dirname is out/main/ for
+    // every file's code regardless of its original src/ nesting -- the same
+    // reason tabs.ts's own join(import.meta.dirname, '../preload/app.js')
+    // has one, not the two its src/main/shell/ nesting might suggest.
+    createExtensionHost(join(import.meta.dirname, '../preload/extension-api.js'))
+
     const userDataPath = ctx.app.getPath('userData')
     await loadEnabledExtensions(userDataPath)
 

@@ -100,6 +100,21 @@ export class TabFactory {
     const id = makeTabId()
     const record = this.recordFor(view, partition, { isDashboardTab: isDashboard })
     wireView(id, record)
+    this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
+    return { id, record, target }
+  }
+
+  /** A URL a trusted main-process caller has already checked against its own
+   * policy (today: the extension host's extension-url-policy.ts) -- same
+   * session/app-tab handling as content(), without its sanitizeDirectUrl
+   * gate, which refuses chrome-extension: outright. */
+  trusted (target: string): BuiltTab & { readonly target: string } {
+    const partition = partitionForTarget(target, this.broker())
+    const view = makeTabView(this.appPreload, partition, appTabArgsFor(target, this.broker()))
+    const id = makeTabId()
+    const record = this.recordFor(view, partition)
+    wireView(id, record)
+    this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record, target }
   }
 
@@ -112,6 +127,7 @@ export class TabFactory {
     wireView(id, record)
     guardInternalView(view, page, (target) => { record.host.openTab(target) })
     this.internalPages?.register(view.webContents, page)
+    this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record }
   }
 
@@ -121,6 +137,7 @@ export class TabFactory {
     const id = makeTabId()
     const record = this.recordFor(view, partition)
     wireView(id, record)
+    this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record }
   }
 }

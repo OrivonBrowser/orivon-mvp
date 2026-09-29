@@ -80,6 +80,15 @@ describe('partitionForTarget -- isolation follows consent, not installation', ()
   it('has no partition for a target with no derivable origin', () => {
     expect(partitionForTarget('about:blank', granted(APP))).toBeUndefined()
   })
+
+  it('leaves a chrome-extension: target on the default session, same as any other target with no derivable origin', () => {
+    // The trusted path an extension-opened tab takes (tabs.ts's
+    // openTrusted(), extension-url-policy.ts's own gate) relies on this:
+    // originFromUrl only derives http(s) origins, so a chrome-extension:
+    // target -- where every extension actually runs -- never matches an
+    // app's grant or cache coverage and always stays on session.defaultSession.
+    expect(partitionForTarget('chrome-extension://abcdefghijklmnopabcdefghijklmnop/page.html', granted(APP))).toBeUndefined()
+  })
 })
 
 describe('partitionChanged -- when a navigation must swap the view', () => {

@@ -6,10 +6,13 @@
          (src/main/favicon.ts). Deliberately NOT https: -- favicons are
          fetched and re-encoded to data: URLs in main, so this privileged
          view still makes zero network requests of its own; see
-         favicon.ts's header for the full reasoning. -->
+         favicon.ts's header for the full reasoning. crx: -- added for the
+         toolbar's extension icons (ADR-0043): <browser-action-list>'s own
+         icon <img> requests go through the crx: scheme's handler
+         (src/main/pages/internal-session.ts registers it), img-src only. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: crx:"
     />
     <title>Orivon</title>
     <link rel="stylesheet" href="./style.css" />
@@ -110,11 +113,13 @@
             <line x1="4" y1="18" x2="20" y2="18" /><circle cx="16" cy="18" r="2" fill="currentColor" />
           </svg>
         </button>
-        <button class="iconbtn" type="button" disabled title="Extensions — not in v0">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" />
-          </svg>
-        </button>
+        <!-- One button per extension with a browser action (ADR-0043); shows
+             nothing when none has one. `partition` addresses the session
+             every extension runs in (src/main/extensions/extension-host.ts's
+             EXTENSIONS_DEFAULT_PARTITION, its partition.ts resolver maps it
+             to session.defaultSession) -- defined by src/preload/shell.ts's
+             injectBrowserAction(), after its own URL gate passes. -->
+        <browser-action-list partition="orivon-extensions-default" alignment="right" aria-label="Extensions"></browser-action-list>
         <button class="iconbtn" type="button" disabled title="Sidebar — not in v0">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect width="18" height="18" x="3" y="3" rx="2" /><path d="M15 3v18" />

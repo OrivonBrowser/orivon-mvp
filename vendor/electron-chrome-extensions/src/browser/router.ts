@@ -50,6 +50,20 @@ interface RoutingDelegateObserver {
 let gRoutingDelegate: RoutingDelegate
 
 /**
+ * Orivon patch: an optional predicate `crx-msg-remote` is checked against
+ * before being routed to another session's observer -- unset, every sender
+ * in an observed session may address any other observed session's tabs and
+ * windows APIs (browserAction.activate among them). Set once, before the
+ * first remote message arrives (extension-host.ts's attachExtensionShell).
+ */
+type RemoteMessageSenderCheck = (event: IpcAnyEvent) => boolean
+let gRemoteMessageSenderCheck: RemoteMessageSenderCheck | undefined
+
+export function setRemoteMessageSenderCheck(check: RemoteMessageSenderCheck): void {
+  gRemoteMessageSenderCheck = check
+}
+
+/**
  * Handles event routing IPCs and delivers them to the observer with the
  * associated session.
  */
@@ -115,6 +129,12 @@ class RoutingDelegate {
     ...args: any[]
   ) => {
     d(`received remote '${handlerName}' for '${sessionPartition}'`, args)
+
+    // Orivon patch: refuses a remote call before it reaches any observer,
+    // when a sender check is set.
+    if (gRemoteMessageSenderCheck && !gRemoteMessageSenderCheck(event)) {
+      throw new Error(`${handlerName} refused: sender is not allowed to call a remote session`)
+    }
 
     const ses =
       sessionPartition === DEFAULT_SESSION

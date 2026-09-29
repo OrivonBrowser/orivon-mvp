@@ -2,20 +2,28 @@
 
 **What lives here.** The CRX3 verifier, the zip unpacker, the installed-extension registry
 (`<userData>/extensions/registry.json`), the install/uninstall/enable runner, the install prompt,
-and the subsystem that loads every enabled entry into `session.defaultSession` at boot.
+the subsystem that loads every enabled entry into `session.defaultSession` at boot, and the
+extension host (`extension-host.ts`) that wires the electron-chrome-extensions library into the
+shell (ADR-0043) through the URL policy (`extension-url-policy.ts`) it applies to every URL an
+extension asks to open.
 
-**What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`, `registry.ts`
-and `unpack-runner.ts`'s pure `checkZipEntryPath`), `node:crypto`, `node:fs`, `node:path`,
-`adm-zip`, `pbf`, [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
+**What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`, `registry.ts`,
+`extension-url-policy.ts` and `unpack-runner.ts`'s pure `checkZipEntryPath`), `node:crypto`,
+`node:fs`, `node:path`, `adm-zip`, `pbf`,
+[`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
 (durable: the manifest facts, the stripped-manifest copy, the install prompt's words),
 [`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
 `writeFileAtomic`, and, for `crx.ts` and `install-runner.ts`,
 [`vendor/electron-chrome-web-store`](../../../vendor/electron-chrome-web-store)'s `id.ts`
-(`convertHexadecimalToIDAlphabet`, `generateId`).
+(`convertHexadecimalToIDAlphabet`, `generateId`). `extension-host.ts` reaches the vendored
+`electron-chrome-extensions` library through the three virtual specifiers
+`electron-chrome-extensions-lib.d.ts` declares (that file's own header says why), never its real path.
 
 **What it must never import.** [`src/renderer/`](../../renderer/): this is main-process code,
 same rule as the rest of `src/main/` (`../README.md`). Nothing under `vendor/` beyond an import
-(`crx3.ts` is the one exception this directory does NOT import -- see Design notes for why).
+(`crx3.ts` is the one exception this directory does NOT import -- see Design notes for why;
+`electron-chrome-extensions/src/browser/{index,partition,router}.ts` are the same exception,
+reached only through the virtual specifiers above).
 
 **Tied to Electron**, except the four files named above.
 
@@ -48,6 +56,21 @@ not typecheck under the root tsconfig's `exactOptionalPropertyTypes` -- measured
 -p tsconfig.json` reports two `TS2375` errors at its own lines the moment anything under `src/`
 imports it. `crx3-format.ts` reads the same four fields, with the same `pbf` library and message
 shapes, with types that satisfy the flag.
+
+**`extension-host.ts` reaches `ElectronChromeExtensions` through a virtual specifier, not its real
+path -- the same problem as `crx3-format.ts` above, at a much larger scale.** Importing
+`vendor/electron-chrome-extensions/src/browser/index.ts` by its real path pulls its whole tree
+(`api/*.ts`, `store.ts`, `router.ts`, `popup.ts`, `manifest.ts`) into the root tsconfig's stricter
+settings -- measured, ~66 diagnostics across 16 files that satisfy `vendor/tsconfig.json`'s own,
+deliberately looser ones (ADR-0043: "its TypeScript checks under `vendor/tsconfig.json`").
+Patching all of it would mean reformatting most of the vendored tree, the opposite of what
+ADR-0043 asks for. `electron-chrome-extensions-lib.d.ts` declares ambient types for
+`orivon:crx-extensions`/`-partition`/`-router`, three specifiers no real file matches; tsc falls
+back to those declarations, and `electron.vite.config.ts`'s `main.resolve.alias` maps each to the
+real vendored file for Rollup to bundle. `src/preload/shell.ts`'s own import of
+`vendor/.../src/browser-action.ts` (a shallow, single-file leaf: only `electron`) instead got
+patched directly (UPSTREAM.md's patches 7-8), the same choice `crx3-format.ts` made for a small
+file -- this boundary is for the one import that is genuinely too large to patch its way through.
 
 **Who updates an extension is always shown** (the owner's requirement, `registry.ts`'s own doc on
 `InstalledExtension.updater`): every entry carries an `updater` independent of `source`, because

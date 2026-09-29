@@ -69,6 +69,18 @@ if (process.stdout.moveCursor === undefined) {
 
 export default defineConfig({
   main: {
+    // Maps the virtual specifiers electron-chrome-extensions-lib.d.ts
+    // declares to the real vendored files, for BUNDLING only -- tsc never
+    // sees this file, so it resolves those specifiers through the .d.ts's
+    // ambient declarations instead of opening the real, more loosely typed
+    // vendor source (that file's own header has the full reasoning).
+    resolve: {
+      alias: {
+        'orivon:crx-extensions': resolve(root, 'vendor/electron-chrome-extensions/src/browser/index.ts'),
+        'orivon:crx-extensions-partition': resolve(root, 'vendor/electron-chrome-extensions/src/browser/partition.ts'),
+        'orivon:crx-extensions-router': resolve(root, 'vendor/electron-chrome-extensions/src/browser/router.ts')
+      }
+    },
     // Folds src/main/dev-grant.ts's compiled-in flag to a literal boolean --
     // `false` unless ORIVON_ENABLE_DEV_GRANT=1 was set (scripts/build-e2e.mjs
     // is the only caller that sets it) -- so the production minifier can

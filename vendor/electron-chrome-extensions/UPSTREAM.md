@@ -26,6 +26,40 @@
    `new Response(new Uint8Array(iconImage.toPNG()), ...)`. Reason: the DOM lib bundled with
    Orivon's TypeScript 7 no longer accepts a `Buffer<ArrayBufferLike>` as `BodyInit`; the bytes
    are unchanged.
+4. **`navigateTab` impl hook.** `src/browser/impl.ts`: added an optional
+   `navigateTab?(tab, url)` to `ChromeExtensionImpl`. `src/browser/api/tabs.ts`'s `update()`
+   calls it instead of `tab.loadURL(url)` directly when the app supplied one. Reason: a
+   `chrome.tabs.update({ url })` call must pass through Orivon's own URL policy
+   (`src/main/extensions/extension-url-policy.ts`), the same as a created tab; without this hook
+   the library loads the URL unchecked.
+5. **`crx-msg-remote` sender check.** `src/browser/router.ts`: added
+   `setRemoteMessageSenderCheck(check)` and an optional module-level predicate, checked in
+   `onRemoteMessage` before a remote call reaches any observer. Reason: `crx-msg-remote` (the
+   `browserAction.activate`/`getState`/`addObserver`/`removeObserver` calls a
+   `<browser-action-list>` makes) is otherwise open to any sender in any session this process
+   observes; Orivon restricts it to a chrome view (`extension-host.ts`'s `attachExtensionShell`).
+   `crx-msg` is unchanged: it is naturally scoped to a `chrome-extension:` page or service worker
+   already (`src/preload.ts` only calls `injectExtensionAPIs()` there), and requires a
+   `extensionId` registered in the calling session.
+6. **One `registerSchemesAsPrivileged` call site.** `src/browser/api/browser-action.ts`: removed
+   the module-level `protocol.registerSchemesAsPrivileged([{ scheme: 'crx', ... }])` call.
+   Reason: ADR-0041 gives Orivon exactly one call site for that API
+   (`src/main/pages/internal-session.ts`, before ready); `crx` is registered there instead, with
+   the same `bypassCSP` privilege.
+7. **`override` on two accessors.** `src/browser-action.ts`'s `BrowserActionElement`:
+   `get id()`/`set id()` (override `Element.id`) now say `override`. Reason: root tsconfig's
+   `noImplicitOverride`, which `vendor/tsconfig.json` does not set; no behaviour change.
+8. **Three fields widened to `| undefined`.** `src/browser-action.ts`'s `BrowserActionElement`:
+   `updateId?: number`, `badge?: HTMLDivElement` and `pendingIcon?: HTMLImageElement` each gained
+   `| undefined` -- the class already assigns `undefined` to all three. Reason: root tsconfig's
+   `exactOptionalPropertyTypes`, which `vendor/tsconfig.json` does not set; no behaviour change.
+
+`src/browser/index.ts`, `partition.ts` and `router.ts` are reached only through the virtual
+specifiers `src/main/extensions/electron-chrome-extensions-lib.d.ts` declares, never their real
+path -- that file's own header, and `src/main/extensions/README.md`'s Design notes, say why. Their
+own diagnostics under the root tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are
+therefore not patched: nothing in `src/` opens those files directly, and `vendor/tsconfig.json`'s
+own, looser check already covers them as authored.
 
 Nothing else changed; upstream code is not reformatted.
 
