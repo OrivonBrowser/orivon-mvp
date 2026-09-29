@@ -4,7 +4,7 @@
 .page { max-width: 860px; margin: 0 auto; padding: 40px 24px 64px; }
 
 .head { margin-bottom: 20px; }
-.head h1 { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; color: var(--waccent); }
+.head h1 { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; color: var(--waccent-text); }
 .head h1 .icon { width: 24px; height: 24px; }
 .count { margin: 4px 0 0 36px; color: var(--wink-dim); font-size: 13px; }
 
@@ -53,7 +53,7 @@
 .target:hover .title { text-decoration: underline; }
 .title, .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .title { color: var(--wink-strong); }
-.url { color: var(--waccent); font-size: 12.5px; }
+.url { color: var(--waccent-text); font-size: 12.5px; }
 
 .remove {
   flex: none;
@@ -73,7 +73,7 @@
 .entry:hover .remove, .remove:focus-visible { opacity: 1; }
 .remove:hover { background: var(--wdanger-wash); color: var(--wdanger); }
 
-.link-btn { padding: 2px 6px; border: none; border-radius: 6px; background: none; color: var(--waccent); cursor: pointer; }
+.link-btn { padding: 2px 6px; border: none; border-radius: 6px; background: none; color: var(--waccent-text); cursor: pointer; }
 .link-btn:hover { text-decoration: underline; }
 
 .empty {
