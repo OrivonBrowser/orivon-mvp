@@ -42,11 +42,14 @@ page) is reported and dropped rather than raised: it happens inside event handle
 clearing rewrites the file), so an address a person cleared is not left readable in it. That is not a claim about
 what the disk itself keeps.
 
-**Search of three characters or more uses an FTS5 trigram index**, an external-content table over
+**Search of three characters or more probes an FTS5 trigram index**, an external-content table over
 `pages(title, url)` kept in step by triggers on `pages` -- including the bulk `UPDATE`/`DELETE` `removeRange` runs,
-since SQLite fires the same row-level triggers for those. A search under three characters, too short for a trigram
-to resolve, keeps the plain `LIKE` scan. Every statement `list`, `count` and the rest run more than once is
-prepared once, in the constructor, and reused.
+since SQLite fires the same row-level triggers for those. A sparse term (most searches) is read through that
+index; a dense one, at or above `searchDensityLimit` matches -- a common substring like `https://` -- falls back
+to the plain `LIKE` scan instead, which walks the last-visit index and can stop after one page rather than
+gathering every match first. A search under three characters, too short for a trigram to resolve, always takes
+that `LIKE` path. Every statement `list`, `count` and the rest run more than once is prepared once, in the
+constructor, and reused.
 
 **A file that cannot be used is left alone.** If the database is damaged or from a newer version, history is off
 for that run and Settings says why; the file is neither deleted nor replaced, so nothing a person could recover is

@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import type { StatementSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MAX_TITLE_LENGTH, MAX_URL_LENGTH } from '../history-store.js'
 import { SqliteHistoryStore } from '../sqlite-history-store.js'
@@ -165,6 +166,93 @@ describe('search: substrings, case, literal % and _, agreement between the FTS a
 
     history.removeRange(0, 10_000)
     expect(history.list({ search: 'searchable' })).toEqual([])
+  })
+
+  /** Runs the same query list() runs, but as one plain LIKE statement -- the thing both the sparse (FTS) and
+   * dense (LIKE fallback) paths are checked against, so the check does not depend on which path list() took. */
+  function rawLike (db: DatabaseSync, term: string, after?: { lastVisit: number, id: number }): number[] {
+    const pattern = `%${term.replace(/[\\%_]/g, (character) => `\\${character}`)}%`
+    const where = after === undefined
+      ? "(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')"
+      : "(last_visit < ? OR (last_visit = ? AND id < ?)) AND (title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')"
+    const params = after === undefined ? [pattern, pattern] : [after.lastVisit, after.lastVisit, after.id, pattern, pattern]
+    return (db.prepare(`SELECT id FROM pages WHERE ${where} ORDER BY last_visit DESC, id DESC LIMIT 200`).all(...params) as Array<{ id: number }>)
+      .map((row) => row.id)
+  }
+
+  /** The statements object is private; tests reach it to spy on which one a call actually reached -- proof
+   * the equivalence checks below exercise the path they claim to, not two paths that happen to agree. */
+  function statementsOf (history: SqliteHistoryStore): { list: { fts: StatementSync, like: StatementSync } } {
+    return (history as unknown as { statements: { list: { fts: StatementSync, like: StatementSync } } }).statements
+  }
+
+  it('a sparse term (below the density threshold) returns what a raw LIKE query would, with and without after, reading it through the FTS join', () => {
+    const history = store()
+    history.record(A, 'Weekly Review', 1000)
+    history.record(B, 'Monthly Review', 2000)
+    history.record('https://c.example/', 'Quarterly Review', 3000)
+    history.record('https://d.example/', 'Unrelated', 4000)
+    history.flush()
+    const db = (history as unknown as { db: DatabaseSync }).db
+    const { fts, like } = statementsOf(history).list
+    const ftsSpy = vi.spyOn(fts, 'all')
+    const likeSpy = vi.spyOn(like, 'all')
+
+    expect(history.list({ search: 'review' }).map((entry) => entry.id).sort())
+      .toEqual(rawLike(db, 'review').sort())
+
+    const after = { lastVisit: 3000, id: history.list().find((entry) => entry.lastVisit === 3000)?.id ?? -1 }
+    expect(history.list({ search: 'review', after }).map((entry) => entry.id))
+      .toEqual(rawLike(db, 'review', after))
+
+    expect(ftsSpy).toHaveBeenCalledTimes(1) // the plain history.list() above; `after` uses ftsAfter instead
+    expect(likeSpy).not.toHaveBeenCalled()
+    ftsSpy.mockRestore()
+    likeSpy.mockRestore()
+  })
+
+  it('a dense term (at or above the density threshold) returns what a raw LIKE query would, with and without after, reading it through the LIKE fallback', () => {
+    // With the threshold lowered to 5, six pages sharing "common" make the term dense: the probe (LIMIT 5)
+    // finds 5 without exhausting the true count, so list() takes the LIKE fallback instead of the FTS join.
+    const history = new SqliteHistoryStore(':memory:', { searchDensityLimit: 5 })
+    for (let n = 0; n < 6; n += 1) history.record(`https://site${String(n)}.example/`, `Common Page ${String(n)}`, 1000 + n)
+    history.record('https://other.example/', 'Something else', 5000)
+    history.flush()
+    const db = (history as unknown as { db: DatabaseSync }).db
+    const { fts, like } = statementsOf(history).list
+    const ftsSpy = vi.spyOn(fts, 'all')
+    const likeSpy = vi.spyOn(like, 'all')
+
+    expect(history.list({ search: 'common' }).map((entry) => entry.id).sort())
+      .toEqual(rawLike(db, 'common').sort())
+
+    const after = { lastVisit: 1003, id: history.list().find((entry) => entry.lastVisit === 1003)?.id ?? -1 }
+    expect(history.list({ search: 'common', after }).map((entry) => entry.id))
+      .toEqual(rawLike(db, 'common', after))
+
+    expect(likeSpy).toHaveBeenCalledTimes(1) // the plain history.list() above; `after` uses likeAfter instead
+    expect(ftsSpy).not.toHaveBeenCalled()
+    ftsSpy.mockRestore()
+    likeSpy.mockRestore()
+  })
+
+  it('the dense (LIKE fallback) path still pages correctly: no page skips or repeats a match', () => {
+    const history = new SqliteHistoryStore(':memory:', { searchDensityLimit: 5 })
+    for (let n = 0; n < 20; n += 1) history.record(`https://site${String(n)}.example/`, `Common Page ${String(n)}`, 1000 + n)
+    history.flush()
+
+    const seen: number[] = []
+    let after: { lastVisit: number, id: number } | undefined
+    for (;;) {
+      const page = history.list({ search: 'common', limit: 3, ...(after === undefined ? {} : { after }) })
+      if (page.length === 0) break
+      seen.push(...page.map((entry) => entry.id))
+      const last = page.at(-1)
+      if (last === undefined) break
+      after = { lastVisit: last.lastVisit, id: last.id }
+    }
+    expect(seen).toHaveLength(20)
+    expect(new Set(seen).size).toBe(20)
   })
 })
 

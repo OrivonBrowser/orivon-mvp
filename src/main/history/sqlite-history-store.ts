@@ -3,7 +3,11 @@
 // pages visited outside it. Writes wait a moment and go in one transaction, so
 // a page that redirects three times is one write, not three. Every statement
 // this runs more than once is prepared once, in the constructor or on first
-// use, and reused -- never re-prepared per call.
+// use, and reused -- never re-prepared per call. A search of three characters
+// or more probes how many rows a trigram FTS5 index would return for it: a
+// sparse term is read through that index, a dense one (a common substring
+// like "https://") through the LIKE scan instead, which walks the last-visit
+// index and can stop at one page rather than gathering every match first.
 import { DatabaseSync } from 'node:sqlite'
 import type { StatementSync } from 'node:sqlite'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
@@ -21,6 +25,10 @@ const MAX_PAGES = 100_000
 const TRIM_CHECK_EVERY = 1000
 /** Below this, the trigram index cannot resolve a match, so `list` keeps the plain `LIKE` scan. */
 const FTS_MIN_SEARCH_LENGTH = 3
+/** A term this common or more (probed before every FTS search) reads through `LIKE` instead: MATCH would
+ * gather most of the table before ORDER BY/LIMIT could cut it off, where LIKE walks the last-visit index
+ * and stops at one page. */
+const FTS_DENSITY_LIMIT = 500
 
 type Change =
   | { readonly type: 'visit', readonly url: string, readonly title: string, readonly at: number }
@@ -61,6 +69,9 @@ export class SqliteHistoryStore implements HistoryStore {
     removeRangeDeleteVisits: StatementSync
     removeRangeUpdatePages: StatementSync
     removeRangeDeleteEmptyPages: StatementSync
+    /** How many rows (up to `searchDensityLimit`) a trigram search would return: what `list` checks to choose
+     * the FTS path or the LIKE fallback. */
+    searchDensityProbe: StatementSync
     /** One per WHERE shape `list` can need: with or without `after`, and none/LIKE/FTS for `search`. */
     list: {
       plain: StatementSync
@@ -72,8 +83,16 @@ export class SqliteHistoryStore implements HistoryStore {
     }
   }
 
-  /** `path` may be `:memory:`. Throws if the file is not a database this can use. `limits` is for tests. */
-  constructor (path: string, private readonly limits: { readonly maxPages: number, readonly checkEvery: number } = { maxPages: MAX_PAGES, checkEvery: TRIM_CHECK_EVERY }) {
+  private readonly limits: { readonly maxPages: number, readonly checkEvery: number, readonly searchDensityLimit: number }
+
+  /** `path` may be `:memory:`. Throws if the file is not a database this can use. `limits` is for tests: any
+   * field left out keeps its production default. */
+  constructor (path: string, limits: { readonly maxPages?: number, readonly checkEvery?: number, readonly searchDensityLimit?: number } = {}) {
+    this.limits = {
+      maxPages: limits.maxPages ?? MAX_PAGES,
+      checkEvery: limits.checkEvery ?? TRIM_CHECK_EVERY,
+      searchDensityLimit: limits.searchDensityLimit ?? FTS_DENSITY_LIMIT
+    }
     this.db = new DatabaseSync(path)
     try {
       this.db.exec('PRAGMA journal_mode = WAL')
@@ -97,6 +116,9 @@ export class SqliteHistoryStore implements HistoryStore {
             last_visit = COALESCE((SELECT MAX(at) FROM visits WHERE page_id = pages.id), 0)
         `),
         removeRangeDeleteEmptyPages: this.db.prepare('DELETE FROM pages WHERE visit_count = 0'),
+        searchDensityProbe: this.db.prepare(
+          `SELECT COUNT(*) AS n FROM (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ? LIMIT ${String(this.limits.searchDensityLimit)})`
+        ),
         list: {
           plain: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages ${LIST_ORDER}`),
           after: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages WHERE ${AFTER_CONDITION} ${LIST_ORDER}`),
@@ -248,24 +270,40 @@ export class SqliteHistoryStore implements HistoryStore {
     const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
     const after = query.after
     const search = query.search?.trim() ?? ''
-    const { list } = this.statements
     let rows: Row[]
     if (search.length >= FTS_MIN_SEARCH_LENGTH) {
       const term = ftsPhrase(search)
-      rows = (after === undefined
-        ? list.fts.all(term, limit)
-        : list.ftsAfter.all(after.lastVisit, after.lastVisit, after.id, term, limit)) as unknown as Row[]
+      rows = this.isDense(term) ? this.queryLike(likePattern(search), after, limit) : this.queryFts(term, after, limit)
     } else if (search !== '') {
-      const pattern = likePattern(search)
-      rows = (after === undefined
-        ? list.like.all(pattern, pattern, limit)
-        : list.likeAfter.all(after.lastVisit, after.lastVisit, after.id, pattern, pattern, limit)) as unknown as Row[]
+      rows = this.queryLike(likePattern(search), after, limit)
     } else {
+      const { list } = this.statements
       rows = (after === undefined
         ? list.plain.all(limit)
         : list.after.all(after.lastVisit, after.lastVisit, after.id, limit)) as unknown as Row[]
     }
     return rows.map(toEntry)
+  }
+
+  /** Whether `term` (an already-escaped FTS phrase) would return `searchDensityLimit` rows or more: too many
+   * for MATCH's join to sort and cut off with LIMIT as cheaply as the LIKE scan, which stops at one page.
+   * Ignores `after`: it estimates how common the term is, not how many pages of it remain. */
+  private isDense (term: string): boolean {
+    return (this.statements.searchDensityProbe.get(term) as { n: number }).n >= this.limits.searchDensityLimit
+  }
+
+  private queryLike (pattern: string, after: HistoryQuery['after'], limit: number): Row[] {
+    const { list } = this.statements
+    return (after === undefined
+      ? list.like.all(pattern, pattern, limit)
+      : list.likeAfter.all(after.lastVisit, after.lastVisit, after.id, pattern, pattern, limit)) as unknown as Row[]
+  }
+
+  private queryFts (term: string, after: HistoryQuery['after'], limit: number): Row[] {
+    const { list } = this.statements
+    return (after === undefined
+      ? list.fts.all(term, limit)
+      : list.ftsAfter.all(after.lastVisit, after.lastVisit, after.id, term, limit)) as unknown as Row[]
   }
 
   count (): number {
