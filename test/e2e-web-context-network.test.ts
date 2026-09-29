@@ -28,8 +28,8 @@ import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { evaluateRetrying } from './smoke-helpers.mjs'
-import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { asPage, closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { AS_PAGE_SCRIPT_URL, clearFixtureAsPageScript, setFixtureAsPageScript } from './fixture-as-page.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
@@ -37,6 +37,8 @@ import type { Grant, Manifest } from '../src/contracts/index.js'
 const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
+/** asPage's (e2e-helpers.ts) same-origin script URL: every window.orivon call below runs as a script the fixture page loaded, never through page.evaluate() (ADR-0045). */
+const AS_PAGE_URL = `${FIXTURE_URL}${AS_PAGE_SCRIPT_URL}`
 const CONTEXT_ORIGIN = 'https://example.com'
 
 const TEST_TIMEOUT_MS = 60_000
@@ -98,7 +100,7 @@ it('a context whose opener holds https.connect for example.com:443 can fetch its
 
       const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
-      const result = await evaluateRetrying(view, async () => {
+      const result = await asPage(view, setFixtureAsPageScript, AS_PAGE_URL, async () => {
         const orivon = (window as unknown as {
           orivon: { web: { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
             evaluate: (script: string) => Promise<unknown>
@@ -113,7 +115,7 @@ it('a context whose opener holds https.connect for example.com:443 can fetch its
         } finally {
           await context.close()
         }
-      }, 30_000)
+      })
 
       check(
         'a granted context reaches its own real, live origin and gets back an ok response',
@@ -121,6 +123,7 @@ it('a context whose opener holds https.connect for example.com:443 can fetch its
         JSON.stringify(result)
       )
     } finally {
+      clearFixtureAsPageScript()
       await closeElectronApp(app)
     }
   })
@@ -154,7 +157,7 @@ it('a context gathers no srflx or relay ICE candidate against a real STUN server
 
       const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
-      const result = await evaluateRetrying(view, async () => {
+      const result = await asPage(view, setFixtureAsPageScript, AS_PAGE_URL, async () => {
         const orivon = (window as unknown as {
           orivon: { web: { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
             evaluate: (script: string) => Promise<unknown>
@@ -185,7 +188,7 @@ it('a context gathers no srflx or relay ICE candidate against a real STUN server
         } finally {
           await context.close()
         }
-      }, 20_000)
+      })
 
       const types = (result as { types?: string[] }).types ?? []
       check(
@@ -194,6 +197,7 @@ it('a context gathers no srflx or relay ICE candidate against a real STUN server
         `candidate types observed: ${JSON.stringify(types)}`
       )
     } finally {
+      clearFixtureAsPageScript()
       await closeElectronApp(app)
     }
   })

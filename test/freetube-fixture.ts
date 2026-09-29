@@ -10,6 +10,7 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
+import { unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { forwardOutput } from './e2e-helpers.js'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
@@ -19,6 +20,20 @@ import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
 
 export const FREETUBE_ORIGIN = 'https://freetube-e2e.orivon.test'
 const APP_DIR = join(process.cwd(), 'test', 'apps', 'freetube')
+
+/**
+ * `serve.mjs` is a plain static file server rooted at `APP_DIR` -- so
+ * asPage's (e2e-helpers.ts) own dynamic-script requirement is met by
+ * writing straight to a file under that root, never by teaching serve.mjs
+ * a new route (it stays "a file server that executes no logic of its own",
+ * this file's own header). `/.well-known/`-adjacent name, deliberately
+ * outside it, so it is never mistaken for part of the real app's manifest.
+ */
+const AS_PAGE_SCRIPT_PATH = join(APP_DIR, '__as-page-script.js')
+export const AS_PAGE_SCRIPT_URL = '__as-page-script.js'
+export function setFreetubeAsPageScript (js: string): void { writeFileSync(AS_PAGE_SCRIPT_PATH, js, 'utf8') }
+/** Best-effort: never written yet, or an earlier run already cleaned it up. */
+export function clearFreetubeAsPageScript (): void { try { unlinkSync(AS_PAGE_SCRIPT_PATH) } catch { /* nothing to remove */ } }
 
 /**
  * Ports for the servers these tests spawn -- deliberately NOT 8874/8875, which
@@ -71,12 +86,24 @@ export interface PinnedApp {
   readonly fileCount: number
 }
 
-export async function pinRealApp (userDataDir: string): Promise<PinnedApp> {
+/**
+ * `extra`: additional pinned assets alongside the real app's own files --
+ * serving is driven by the PIN's own asset tree (`pin.ts`'s `hasAsset`),
+ * not the manifest's declared `assets` list, so an extra path pinned here
+ * is servable the same as any real one. Exists for an INSTALLED app's own
+ * window.orivon calls (ADR-0045; main-world-socket.ts's README.md Design
+ * notes): unlike a live origin's plain static server (asPage's own
+ * setFreetubeAsPageScript, above), a pinned bundle is hash-verified, so a
+ * script it needs must be part of the pin from the start, not written to
+ * disk afterward -- e2e-freetube-app.test.ts's own DETECTED_SCRIPT/
+ * DIAL_PROBE_SCRIPT.
+ */
+export async function pinRealApp (userDataDir: string, extra: readonly BundleEntry[] = []): Promise<PinnedApp> {
   const manifestText = await readFile(join(APP_DIR, '.well-known', 'orivon.json'), 'utf8')
   const manifest = JSON.parse(manifestText) as { entry: string, assets?: string[], version: string }
   const paths = [manifest.entry, ...(manifest.assets ?? [])]
 
-  const entries: BundleEntry[] = [{ path: '/.well-known/orivon.json', content: new TextEncoder().encode(manifestText) }]
+  const entries: BundleEntry[] = [{ path: '/.well-known/orivon.json', content: new TextEncoder().encode(manifestText) }, ...extra]
   for (const path of paths) {
     entries.push({ path: `/${path}`, content: new Uint8Array(await readFile(join(APP_DIR, path))) })
   }

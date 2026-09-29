@@ -68,19 +68,44 @@ the socket's whole life and `Object.freeze` prevents redefining them, not readin
 `installOrivon` wraps every page-callable leaf (`guarded`) so a call first attributes its caller
 from a stack captured with intrinsics saved at install time, before any page or extension script
 has run -- a later main-world tamper cannot reach `RealError`/`Reflect.defineProperty`/etc.
-because they are locals, not properties read fresh off `window.Error` on every call. The
-decision, over the CallSites excluding `guarded`'s own frame
+because they are locals, not properties read fresh off `window.Error` on every call. The same
+install-time capture saves references to the four `CallSite.prototype` methods `mapFrames` reads
+(`getFileName`/`getScriptNameOrSourceURL`/`isEval`/`getEvalOrigin`); every later call goes
+through the saved `Reflect.apply` on the saved reference, never a live method lookup, and a live
+method that no longer matches the saved one is itself treated as tamper, refused the same way a
+frozen `Error.prepareStackTrace` is -- main-world code that obtains its own `CallSite` (its own
+`prepareStackTrace`) cannot make a later frame lie about its origin by replacing a prototype
+method. The decision, over the CallSites excluding `guarded`'s own frame
 (`Error.captureStackTrace`'s second argument does the excluding): refuse if any frame's file
-name, script name or eval origin names a `chrome-extension://` script; otherwise refuse unless
-some frame is page code (an `http:`/`https:` URL, a `blob:` URL whose inner origin is `http(s)`,
-or an eval origin naming one); otherwise allow. Refusing when NO frame qualifies either way
-(rather than only when one names an extension) is deliberate fail-closed default-deny: a
+name, script name or eval origin CONTAINS a `chrome-extension://` script (refusing more is
+safe); otherwise refuse unless some frame is page code -- checked STARTS-WITH, and only over the
+frame's real script URL (`getFileName()`: an `http:`/`https:` URL, or a `blob:` URL whose inner
+origin is `http(s)`) or an eval origin whose innermost script URL (the URL inside the last,
+innermost `(...)` V8 nests a repeated eval origin in) starts with one of those. Page attribution
+never reads `scriptNameOrSourceURL`: a `//# sourceURL=https://...` comment lets string-compiled
+code (`eval`, `new Function`, a string passed to `setTimeout`) claim any script name it likes, so
+that field is read only for the (safely broader) extension check above, never to decide a frame
+is the page's own. Otherwise allow. Refusing when NO frame qualifies either way (rather than only
+when one names an extension) is deliberate fail-closed default-deny: a
 `setTimeout(orivon.x.bind(...))` scheduled by extension code fires with no caller stack at all,
-and a stack that cannot be captured because `Error.prepareStackTrace`/`stackTraceLimit` was
-frozen first is treated the same way, since neither can be told apart from `chrome-extension://`
-code covering its own tracks. Measured on Electron 44 at about 5 microseconds a call:
+and a stack that cannot be captured because `Error.prepareStackTrace` was frozen first, or whose
+`stackTraceLimit` cannot be raised to `Infinity` for the capture -- frozen at 0, at some other
+small value, or otherwise non-configurable, all count identically -- is treated the same way,
+since none of these can be told apart from `chrome-extension://` code covering its own tracks.
+Measured on Electron 44 at about 5 microseconds a call:
 `docs/planning/spike-results/extension-stack-probe.json`'s `mainWorld` entries. This is a
 filter, not a sandbox -- what it does not catch is stated in the security model.
+
+**A known remaining route (owner, 2026-09-29): page code that itself evaluates a string an
+extension supplies.** If a page exposes an eval gadget of its own -- a function that runs a
+string an extension handed it, scheduled by a `setTimeout` the extension controls so the call
+has no extension frame on its stack at the moment it runs -- that string executes as the page's
+own code, correctly attributed, and `window.orivon` allows it. This is not a gap in the filter:
+the code really is running as the page by the time it calls `window.orivon`, the same as any
+other case where an extension changes what a page's own script does (ADR-0045's Consequences).
+It is stated here because the sourceURL-spoofing fix above narrows a nearby, easily-confused
+route (extension code claiming to BE the page) and this one is easy to mistake for the same
+thing.
 
 **`net.connect`/`net.connectSecure`'s own unwrapped implementations reach `../routed/dial.ts`
 through a private symbol on `target`, never through `window.orivon.net`.** `dial.ts` is

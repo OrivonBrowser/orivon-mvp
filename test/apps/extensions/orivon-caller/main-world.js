@@ -40,6 +40,23 @@
     return
   }
 
+  if (location.pathname === '/orivon-fixture/sourceurl') {
+    // Bypass 3's own worked case: a `//# sourceURL=...` comment on a STRING
+    // passed to setTimeout claims a page URL for code that is really the
+    // extension's own -- main-world-socket.ts's isPage check must never
+    // read scriptNameOrSourceURL for page attribution (README.md's Design
+    // notes), so this must still refuse. String-eval'd code runs in the
+    // global scope, not this IIFE's closure -- everything it needs is
+    // inlined rather than reaching for report()/outcomeOf() above.
+    setTimeout(
+      "window.orivon.app.manifest().then(function () { document.documentElement.setAttribute('data-orivon-sourceurl', 'allowed') }, " +
+      "function (e) { document.documentElement.setAttribute('data-orivon-sourceurl', (e && typeof e === 'object' && typeof e.code === 'string') ? e.code : String(e)) })\n" +
+      '//# sourceURL=' + location.origin + '/spoofed-page.js',
+      20
+    )
+    return
+  }
+
   if (location.pathname === '/orivon-fixture/tamper') {
     // Freezes the stack-capture machinery before ANY script on this page
     // runs, document_start's own guarantee -- main-world-socket.ts's own

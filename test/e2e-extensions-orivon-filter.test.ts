@@ -59,17 +59,29 @@ function seedExtension (userDataDir: string): void {
   writeFileSync(join(userDataDir, 'extensions', 'registry.json'), serializeRegistry([entry]))
 }
 
-/** External, never inline (CSP's own point): the page's own comparison call, run on every /orivon-fixture/* path. */
+/**
+ * External, never inline (CSP's own point): the page's own comparison
+ * calls, run on every /orivon-fixture/* path. Alongside the plain call,
+ * the page's OWN `eval` and `new Function` -- proving bypass 3's fix
+ * (main-world-socket.ts's README.md Design notes) narrows page attribution
+ * to fileName/eval-origin only WITHOUT also refusing a page's genuine use
+ * of either.
+ */
 const PAGE_JS = `(async () => {
   function outcomeOf (error) {
     return (error && typeof error === 'object' && typeof error.code === 'string') ? error.code : String(error)
   }
-  try {
-    await window.orivon.app.manifest()
-    document.documentElement.setAttribute('data-orivon-page', 'allowed')
-  } catch (error) {
-    document.documentElement.setAttribute('data-orivon-page', outcomeOf(error))
+  async function run (name, fn) {
+    try {
+      await fn()
+      document.documentElement.setAttribute('data-orivon-' + name, 'allowed')
+    } catch (error) {
+      document.documentElement.setAttribute('data-orivon-' + name, outcomeOf(error))
+    }
   }
+  await run('page', () => window.orivon.app.manifest())
+  await run('page-eval', () => eval('window.orivon.app.manifest()'))
+  await run('page-newfunction', () => (new Function('return window.orivon.app.manifest()'))())
 })()`
 
 function page (): string {
@@ -114,12 +126,12 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-const WAIT_BUDGET_MS = 8_000 + 20_000 + 20_000
+const WAIT_BUDGET_MS = 8_000 + 8_000 + 20_000 + 20_000
 const TEST_TIMEOUT_MS = WAIT_BUDGET_MS + 40_000
 
-it('refuses window.orivon to a MAIN-world content script, an injected web-accessible script, chrome.scripting.executeScript and a deferred bound call, ' +
-  'refuses every call once the extension freezes Error.stackTraceLimit, and lets the page\'s own script through -- while the CSP change blocks the ' +
-  'page\'s own inline script and admits its external one', async () => {
+it('refuses window.orivon to a MAIN-world content script, an injected web-accessible script, chrome.scripting.executeScript, a //# sourceURL=-spoofed ' +
+  'string timer and a deferred bound call, refuses every call once the extension freezes Error.stackTraceLimit, and lets the page\'s own script ' +
+  '(including its own eval and new Function) through -- while the CSP change blocks the page\'s own inline script and admits its external one', async () => {
   const started = await startFixtureServer()
   server = started.server
   const origin = started.origin
@@ -156,16 +168,26 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
       const view = await navigateToFixture(app, `${origin}/orivon-fixture/`, 'orivon-fixture')
       const baseline = await waitFor(async () => await evaluateRetrying(view, () => {
         const d = document.documentElement.dataset
-        return d.orivonPage !== undefined && d.orivonMainWorld !== undefined && d.orivonInjected !== undefined && d.orivonScripting !== undefined
+        return d.orivonPage !== undefined && d.orivonMainWorld !== undefined && d.orivonInjected !== undefined && d.orivonScripting !== undefined &&
+          d.orivonPageEval !== undefined && d.orivonPageNewfunction !== undefined
       }))
       check('the page, the MAIN-world content script, the injected script and chrome.scripting all reported an outcome', baseline)
       const outcomes = await evaluateRetrying(view, () => ({ ...document.documentElement.dataset }))
       check('the page\'s own call succeeds', outcomes.orivonPage === 'allowed', JSON.stringify(outcomes))
+      check('the page\'s own eval(...) call succeeds -- bypass 3\'s fix does not also refuse genuine page eval', outcomes.orivonPageEval === 'allowed', JSON.stringify(outcomes))
+      check('the page\'s own new Function(...) call succeeds -- same as above', outcomes.orivonPageNewfunction === 'allowed', JSON.stringify(outcomes))
       check('the "world": "MAIN" content script is refused with the denied shape', outcomes.orivonMainWorld === 'denied', JSON.stringify(outcomes))
       check('the isolated content script\'s web-accessible injected <script> is refused with the denied shape', outcomes.orivonInjected === 'denied', JSON.stringify(outcomes))
       check('chrome.scripting.executeScript({ world: "MAIN" }) is refused with the denied shape', outcomes.orivonScripting === 'denied', JSON.stringify(outcomes))
       const inlineRan = await evaluateRetrying(view, () => (window as unknown as { __inlineRan?: boolean }).__inlineRan)
       check('CSP: the granted page\'s own inline <script> never ran (no \'unsafe-inline\')', inlineRan === undefined, String(inlineRan))
+
+      // ---- bypass 3: a //# sourceURL=<page-origin>/... comment on a STRING timer scheduled by extension code must still refuse ----
+      const sourceUrlView = await navigateToFixture(app, `${origin}/orivon-fixture/sourceurl`, 'orivon-fixture')
+      const sourceUrlSettled = await waitFor(async () => await evaluateRetrying(sourceUrlView, () => document.documentElement.dataset.orivonSourceurl) !== undefined)
+      check('the sourceURL-spoofed string timer settles', sourceUrlSettled)
+      const sourceUrlOutcome = await evaluateRetrying(sourceUrlView, () => document.documentElement.dataset.orivonSourceurl)
+      check('a //# sourceURL=-spoofed string timer scheduled by extension code is refused with the denied shape', sourceUrlOutcome === 'denied', String(sourceUrlOutcome))
 
       // ---- a deferred bound call, scheduled by the MAIN-world content script ----
       const deferredView = await navigateToFixture(app, `${origin}/orivon-fixture/deferred`, 'orivon-fixture')

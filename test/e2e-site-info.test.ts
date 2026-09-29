@@ -27,22 +27,29 @@ import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import { APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import type { ElectronApplication, Page } from 'playwright'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-async function startFixtureServer (): Promise<{ server: Server, url: string }> {
-  const server = createServer((_req, res) => {
+/** `setAsPageScript`/`/__as-page-script.js`: asPage's (e2e-helpers.ts) own hook -- window.orivon calls must run as a script the page itself loaded, never through page.evaluate() (ADR-0045). */
+async function startFixtureServer (): Promise<{ server: Server, url: string, setAsPageScript: (js: string) => void }> {
+  let asPageScript = ''
+  const server = createServer((req, res) => {
+    if (req.url?.startsWith('/__as-page-script.js') === true) {
+      res.writeHead(200, { 'content-type': 'text/javascript' })
+      res.end(asPageScript)
+      return
+    }
     res.writeHead(200, { 'content-type': 'text/html' })
     res.end('<title>fixture-a</title><body>fixture A</body>')
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('fixture server did not bind a port')
-  return { server, url: `http://127.0.0.1:${String(address.port)}/` }
+  return { server, url: `http://127.0.0.1:${String(address.port)}/`, setAsPageScript: (js: string) => { asPageScript = js } }
 }
 
 /** Popup windows are found by URL, never by `app.windows()` object
@@ -107,7 +114,7 @@ it(
   'a switched-off capability revokes for real, through the real broker',
   async () => {
     await runPhase('site-info-turn-off', async (check) => {
-      const { server, url } = await startFixtureServer()
+      const { server, url, setAsPageScript } = await startFixtureServer()
       let app: ElectronApplication | undefined
       try {
         app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
@@ -152,7 +159,7 @@ it(
         // reached -- not the popup's own re-render of itself.
         const view = (app as ElectronApplication).windows().find((w) => w.url() === url)
         if (view === undefined) throw new Error('fixture tab view not found')
-        const grantsAfterOff = await view.evaluate(async () => {
+        const grantsAfterOff = await asPage(view, setAsPageScript, `${url}__as-page-script.js`, async () => {
           const orivon = (globalThis as unknown as { orivon: { app: { grants: () => Promise<Array<{ capability: string }>> } } }).orivon
           return (await orivon.app.grants()).map((g) => g.capability)
         })

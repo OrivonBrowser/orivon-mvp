@@ -27,9 +27,30 @@ interface CallerFrame { fileName?: string, scriptNameOrSourceURL?: string, evalO
 function callerIsRefused (frames: readonly CallerFrame[]): boolean {
   const isExtension = (f: CallerFrame): boolean =>
     hasSource(f.fileName, ['chrome-extension://']) || hasSource(f.scriptNameOrSourceURL, ['chrome-extension://']) || hasSource(f.evalOrigin, ['chrome-extension://'])
+  // Page attribution uses ONLY the frame's real script URL (fileName), or
+  // an eval origin whose INNERMOST script URL starts with a page prefix --
+  // never scriptNameOrSourceURL, which a `//# sourceURL=...` comment lets
+  // string-compiled extension code spoof to any value it likes (README.md's
+  // Design notes). STARTS-WITH, not contains: unlike extension detection
+  // above, a spoofed prefix elsewhere in the string must not count.
+  const startsWithAny = (text: unknown, prefixes: readonly string[]): boolean =>
+    typeof text === 'string' && prefixes.some((prefix) => text.startsWith(prefix))
+  // V8 shapes a (possibly nested) eval origin as "eval at <fn> (eval at
+  // <fn> (URL:line:col))" -- parens nest left to right, so the LAST '('
+  // up to its next ')' is always the innermost, real-script URL, however
+  // many eval layers deep.
+  const innermostEvalScriptUrl = (evalOrigin: string): string | undefined => {
+    const openIndex = evalOrigin.lastIndexOf('(')
+    if (openIndex === -1) return undefined
+    const closeIndex = evalOrigin.indexOf(')', openIndex)
+    if (closeIndex === -1) return undefined
+    const match = /^(.*):\d+:\d+$/.exec(evalOrigin.slice(openIndex + 1, closeIndex))
+    return match === null ? undefined : match[1]
+  }
   const isPage = (f: CallerFrame): boolean => {
     const p = ['http://', 'https://', 'blob:http://', 'blob:https://']
-    return hasSource(f.fileName, p) || hasSource(f.scriptNameOrSourceURL, p) || hasSource(f.evalOrigin, p)
+    if (startsWithAny(f.fileName, p)) return true
+    return typeof f.evalOrigin === 'string' && startsWithAny(innermostEvalScriptUrl(f.evalOrigin), p)
   }
   if (frames.some(isExtension)) return true
   return !frames.some(isPage)
@@ -94,6 +115,28 @@ describe('callerIsRefused (pure decision rule)', () => {
   })
   it('allows when a page frame is present among several non-extension, non-page frames', () => {
     expect(callerIsRefused([OPAQUE, PAGE_HTTPS, OPAQUE])).toBe(false)
+  })
+
+  // Bypass: a spoofable name (scriptNameOrSourceURL) counted as page code --
+  // `//# sourceURL=https://...` on string-compiled extension code has no
+  // real fileName and no eval origin, so before the fix this frame alone
+  // made isPage() true. Fixed: page attribution never reads
+  // scriptNameOrSourceURL.
+  const SOURCEURL_SPOOFED_ONLY = { scriptNameOrSourceURL: 'https://example.test/a.js' }
+  it('refuses a frame whose ONLY page-looking field is scriptNameOrSourceURL (a sourceURL-comment spoof)', () => {
+    expect(callerIsRefused([SOURCEURL_SPOOFED_ONLY])).toBe(true)
+  })
+  it('still refuses that spoof even alongside an unrelated opaque frame', () => {
+    expect(callerIsRefused([OPAQUE, SOURCEURL_SPOOFED_ONLY])).toBe(true)
+  })
+
+  const NESTED_PAGE_EVAL = { evalOrigin: 'eval at innerEval (eval at <anonymous> (https://example.test/app.js:4:2))' }
+  it('allows a nested eval origin whose INNERMOST script URL is the page (parens nest left to right)', () => {
+    expect(callerIsRefused([NESTED_PAGE_EVAL])).toBe(false)
+  })
+  const NESTED_EXTENSION_EVAL_OUTER_PAGE = { evalOrigin: 'eval at <anonymous> (https://example.test/app.js:1:1)', scriptNameOrSourceURL: 'chrome-extension://abcdefghijklmnop/content.js' }
+  it('an extension scriptNameOrSourceURL still refuses even when evalOrigin alone would read as page (extension detection is unaffected by the isPage fix)', () => {
+    expect(callerIsRefused([NESTED_EXTENSION_EVAL_OUTER_PAGE])).toBe(true)
   })
 })
 
@@ -178,35 +221,41 @@ describe('installOrivon: real caller attribution', () => {
 
   describe('tamper paths', () => {
     /**
-     * Runs entirely inside a throwaway `vm` realm -- its OWN `Error`, never
-     * this process's real one. `installOrivon` captures `RealError = Error`
-     * at call time (its own top-level const), so rebuilding it fresh inside
-     * this context (the P-F6 test's own technique, `new Function` from its
-     * source text) makes ITS captured `Error` this realm's, letting the
-     * tamper below freeze `Error.prepareStackTrace` non-configurably
-     * without corrupting the real one every other test in this file (and
-     * this process's own error reporting) depends on.
+     * Shared by every tamper script below -- runs entirely inside a
+     * throwaway `vm` realm -- its OWN `Error`, never this process's real
+     * one. `installOrivon` captures `RealError = Error` at call time (its
+     * own top-level const), so rebuilding it fresh inside this context (the
+     * P-F6 test's own technique, `new Function` from its source text) makes
+     * ITS captured `Error` this realm's, letting a tamper freeze/replace
+     * `Error`'s own machinery without corrupting the real one every other
+     * test in this file (and this process's own error reporting) depends on.
      */
+    const FAKE_BRIDGE_SRC = `
+      function fakeBridge () {
+        const ok = () => Promise.resolve({ orivonApiVersion: 0 })
+        return { appManifest: ok, appGrants: async () => [], appRequestGrant: async () => false,
+          fsReadFile: ok, fsWriteFile: ok, fsReadFileSync: () => ({ id: '', ok: true, result: new Uint8Array() }),
+          fsMkdir: ok, fsReaddir: async () => [], fsStat: ok, fsRm: ok, fsRename: ok, fsOpen: ok,
+          fsUserSelected: async () => [], fsUserSelectedDirectory: async () => null,
+          idPublicKey: ok, idSign: ok, secretsAvailable: async () => false, secretsEncrypt: ok, secretsDecrypt: ok,
+          webOpenContext: ok, webSetEmbedScript: ok, netConnect: ok, netConnectSecure: ok, netUdpBind: ok,
+          netListen: ok, netLookup: async () => [] }
+      }
+    `
+
     function tamperedCall (): unknown {
       const context = vm.createContext({})
       // Compiled AS an https: URL itself, so every top-level statement here
       // -- including the final call -- already carries a real page frame,
       // with no nested script needed: a script's OWN frame is attributed to
-      // where it was compiled, not to who runs it (this file's own header).
+      // where it was compiled, not to who runs it (this describe block's
+      // own header).
       const script = new vm.Script(`
-        function fakeBridge () {
-          const ok = () => Promise.resolve({ orivonApiVersion: 0 })
-          return { appManifest: ok, appGrants: async () => [], appRequestGrant: async () => false,
-            fsReadFile: ok, fsWriteFile: ok, fsReadFileSync: () => ({ id: '', ok: true, result: new Uint8Array() }),
-            fsMkdir: ok, fsReaddir: async () => [], fsStat: ok, fsRm: ok, fsRename: ok, fsOpen: ok,
-            fsUserSelected: async () => [], fsUserSelectedDirectory: async () => null,
-            idPublicKey: ok, idSign: ok, secretsAvailable: async () => false, secretsEncrypt: ok, secretsDecrypt: ok,
-            webOpenContext: ok, webSetEmbedScript: ok, netConnect: ok, netConnectSecure: ok, netUdpBind: ok,
-            netListen: ok, netLookup: async () => [] }
-        }
+        ${FAKE_BRIDGE_SRC}
         const installOrivon = ${installOrivon.toString()}
         const target = {}
         installOrivon(fakeBridge(), ${JSON.stringify(LIMITS)}, target)
+        // orivon:locked-global -- this Error is the throwaway vm realm's own, simulating a tampering extension under test, never a real page's global
         Object.defineProperty(Error, 'prepareStackTrace', { value: undefined, writable: false, configurable: false })
         target.orivon.app.manifest()
       `, { filename: 'https://orivon-test.example/app.js' })
@@ -219,6 +268,60 @@ describe('installOrivon: real caller attribution', () => {
 
     it('did not touch this process\'s own Error.prepareStackTrace', () => {
       expect(Object.getOwnPropertyDescriptor(Error, 'prepareStackTrace')?.configurable).not.toBe(false)
+    })
+
+    // Bypass: stackTraceLimit frozen at a small NON-ZERO value (1) used to
+    // pass unrefused -- only a freeze at exactly 0 was treated as tamper.
+    // Fixed: any limit that cannot be raised to Infinity is a tamper,
+    // whatever value it was frozen at.
+    function stackLimitTamperedCall (): unknown {
+      const context = vm.createContext({})
+      const script = new vm.Script(`
+        ${FAKE_BRIDGE_SRC}
+        const installOrivon = ${installOrivon.toString()}
+        const target = {}
+        installOrivon(fakeBridge(), ${JSON.stringify(LIMITS)}, target)
+        // orivon:locked-global -- this Error is the throwaway vm realm's own, simulating a tampering extension under test, never a real page's global
+        Object.defineProperty(Error, 'stackTraceLimit', { value: 1, writable: false, configurable: false })
+        target.orivon.app.manifest()
+      `, { filename: 'https://orivon-test.example/app.js' })
+      return script.runInContext(context)
+    }
+
+    it('a stackTraceLimit frozen at a small NON-ZERO value (1) refuses too -- not just a freeze at 0', async () => {
+      await expect(stackLimitTamperedCall()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
+    })
+
+    // Bypass: CallSite.prototype methods read live -- main-world code that
+    // obtains a CallSite (its own prepareStackTrace) can replace
+    // getFileName on the shared prototype to report a page URL for a frame
+    // that is really an extension's. Fixed: installOrivon saves references
+    // to these methods AT INSTALL, before this tamper runs, and always
+    // calls those; a live/saved mismatch is itself treated as tamper.
+    function callSitePrototypeTamperedCall (): unknown {
+      const context = vm.createContext({})
+      // Compiled as chrome-extension:, so the bare (untampered) rule would
+      // already refuse it on isExtension alone -- the point of this test is
+      // that the tamper cannot flip that outcome to 'allowed' by making
+      // getFileName() lie and report a page URL instead.
+      const script = new vm.Script(`
+        ${FAKE_BRIDGE_SRC}
+        const installOrivon = ${installOrivon.toString()}
+        const target = {}
+        installOrivon(fakeBridge(), ${JSON.stringify(LIMITS)}, target)
+        const holder = {}
+        const savedPrepare = Error.prepareStackTrace
+        Error.prepareStackTrace = (_e, s) => s
+        Error.captureStackTrace(holder)
+        Object.getPrototypeOf(holder.stack[0]).getFileName = () => 'https://spoofed.example/page.js'
+        Error.prepareStackTrace = savedPrepare
+        target.orivon.app.manifest()
+      `, { filename: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/content.js' })
+      return script.runInContext(context)
+    }
+
+    it('a CallSite.prototype.getFileName replaced after install cannot spoof a page URL for an extension frame', async () => {
+      await expect(callSitePrototypeTamperedCall()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
     })
   })
 })
