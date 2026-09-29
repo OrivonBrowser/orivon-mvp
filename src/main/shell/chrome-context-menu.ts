@@ -1,11 +1,11 @@
 // What the chrome's own right-click menu (window.ts) offers: the same edit
 // commands every page gets, plus Inspect Element where developer tools are
-// allowed. DevToolsGate.allowed() alone is not enough here -- it treats a
-// page as gated only when isShellPage() names it (settings, ...), and the
-// chrome view is not one of those, so it would pass whenever the
-// developer.tools setting is on, dev mode or not. devModeEnabled() is the
-// gate that actually keeps the chrome's own privileged page out of reach
-// outside dev mode.
+// allowed. DevToolsGate.allowed() already refuses the chrome's own webContents
+// outside dev mode (shell-ui-page.ts's isShellUiPage(), wired in
+// shell-services.ts, names every view in the shell's own session, not only a
+// registered internal page). devModeEnabled() here is a second, cheaper gate
+// in front of it -- one privileged view's own check, kept in case the two
+// are ever wired apart again.
 import type { BaseWindow, WebContents } from 'electron'
 import type { DevToolsGate } from '../devtools/devtools-service.js'
 import type { ContextMenuHost } from './context-menu.js'
