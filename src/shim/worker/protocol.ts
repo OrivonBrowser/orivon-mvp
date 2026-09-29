@@ -31,11 +31,32 @@ export interface ForkStart {
   readonly orivon: MessagePort
 }
 
+/** Imports an app module as a `worker_threads` thread: Node's `process`, minus IPC, plus `parentPort` and `workerData`. */
+export interface ThreadStart {
+  readonly type: 'thread'
+  /** Absolute URL of the module; a blob Worker has no base URL of the app's. */
+  readonly url: string
+  readonly argv: readonly string[]
+  readonly env: Readonly<Record<string, string>>
+  readonly cwd: string
+  readonly threadId: number
+  readonly workerData: unknown
+  readonly name: string
+  /** The thread's end of a `MessageChannel` whose other end is the `Worker` instance. */
+  readonly parentPort: MessagePort
+  readonly orivon: MessagePort
+  /** Whether the matching `Worker` option was set: false routes that stream to the parent's own instead of piping it. */
+  readonly stdin: boolean
+  readonly stdout: boolean
+  readonly stderr: boolean
+}
+
 export type StreamName = 'stdout' | 'stderr'
 
 export type ToWorker =
   | SpawnStart
   | ForkStart
+  | ThreadStart
   | { readonly type: 'stdin', readonly data: Uint8Array }
   | { readonly type: 'stdin-end' }
   /** The page has taken the last chunk of `stream`: the Worker may send the next. */
@@ -55,6 +76,8 @@ export type FromWorker =
   /** `signal` is set when the child did not end by returning or calling exit. */
   | { readonly type: 'exit', readonly code: number | null, readonly signal: string | null }
   | { readonly type: 'failed', readonly error: WireError }
+  /** An uncaught error or rejection, raw rather than a WireError: Chromium structured-clones an Error, which a worker_threads.Worker's 'error' event wants as itself, not a plain record. */
+  | { readonly type: 'crash', readonly error: unknown }
   | { readonly type: 'ipc', readonly message: unknown }
   | { readonly type: 'disconnect' }
 

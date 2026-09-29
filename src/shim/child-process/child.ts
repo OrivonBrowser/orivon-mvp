@@ -179,6 +179,8 @@ export class ChildProcess extends EventEmitter {
     if (message.type === 'started') { this.#started = true; this.emit('spawn') }
     else if (message.type === 'output') this.#output(message.stream, message.data)
     else if (message.type === 'ipc') this.emit('message', message.message)
+    // No child_process listener names this: it exists so worker_threads.Worker (thread.ts), which wraps a ChildProcess, can relay an uncaught error as its own 'error' event.
+    else if (message.type === 'crash') this.emit('crash', message.error)
     else if (message.type === 'disconnect' && this.connected) { this.connected = false; this.emit('disconnect') }
     else if (message.type === 'failed') {
       this.emit('error', Object.assign(new Error(message.error.message), { code: message.error.code ?? 'ENOEXEC' }))

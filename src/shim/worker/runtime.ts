@@ -7,6 +7,7 @@ import './early-globals.js'
 import type { ParentChannel } from './parent.js'
 import type { ToWorker } from './protocol.js'
 import { type ForkScope, runFork } from './runtime-fork.js'
+import { runThread } from './runtime-thread.js'
 import { runSpawn } from './runtime-spawn.js'
 
 const scope = globalThis as unknown as ForkScope & {
@@ -23,5 +24,6 @@ scope.onmessage = (event) => {
   const message = event.data
   if (message.type === 'spawn') void runSpawn(message, parent).finally(() => { scope.close() })
   else if (message.type === 'fork') void runFork(message, parent, scope, async (url) => await import(url))
+  else if (message.type === 'thread') void runThread(message, parent, scope, async (url) => await import(url))
   else for (const handler of handlers) handler(message)
 }

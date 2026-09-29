@@ -1,6 +1,9 @@
 // Inside the Worker: gives an app module the Node process a forked child
 // has (argv, env, send/'message', disconnect, exit, stdio) and the same
-// shim globals and orivon an app tab has, then imports it.
+// shim globals and orivon an app tab has, then imports it. setupChildProcess
+// is the part a thread needs too (runtime-thread.ts): argv/env/cwd, output
+// posting, process.exit ending only the child, and uncaught-error handling.
+// IPC (send/connected/disconnect) is fork-only, since a thread has none.
 
 import { Buffer } from 'buffer'
 import { Readable } from 'stream'
@@ -27,27 +30,48 @@ export interface ForkScope extends GlobalsTarget {
 type SendCallback = (error: Error | null) => void
 
 /** Thrown by process.exit to unwind the code after it; the runtime swallows it. */
-class ForkExit extends Error {}
+class ChildExit extends Error {}
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
-interface ForkProcess extends Mutable<ShimProcess> {
+type BaseProcess = Mutable<ShimProcess> & { stdin: Readable }
+
+interface ForkProcess extends BaseProcess {
   connected: boolean
-  stdin: Readable
   send (message: unknown, ...rest: unknown[]): boolean
   disconnect (): void
+}
+
+/** Where a nested worker_threads.Worker's ref()/unref() reach this fork's own Liveness, so a ref'd thread keeps the fork alive (thread.ts). */
+export const FORK_LIVENESS_SYMBOL = Symbol.for('orivon.worker.fork-liveness')
+
+export interface ChildProcessSetup {
+  readonly proc: BaseProcess
+  readonly liveness: Liveness
+  readonly write: (stream: StreamName) => BaseProcess['stdout']['write']
+  /** Posts 'exit' and closes the scope; each caller decides what still counts as pending. */
+  readonly end: (code: number | null, signal?: string | null) => void
+  /** An uncaught error or rejection: an app 'uncaughtException' listener may swallow it, otherwise it ends the child with code 1. */
+  readonly crash: (error: unknown) => void
 }
 
 function serialize (message: unknown, serialization: ForkStart['serialization']): unknown {
   return serialization === 'json' ? JSON.parse(JSON.stringify(message) ?? 'null') : message
 }
 
-export async function runFork (start: ForkStart, parent: ParentChannel, scope: ForkScope, load: (url: string) => Promise<unknown>): Promise<void> {
+/**
+ * The Node process a forked child and a thread both get: argv/env/cwd,
+ * stdout/stderr posting, process.exit ending only this child, and uncaught
+ * errors reaching 'error' the same way Node's would. Node's rule for when a
+ * child ends on its own applies to both: nothing pending, and whatever each
+ * caller's own ref counts as still open (an IPC channel for a fork, a ref'd
+ * parentPort listener for a thread).
+ */
+export function setupChildProcess (scope: ForkScope, parent: ParentChannel, start: { argv: readonly string[], env: Readonly<Record<string, string>>, cwd: string, orivon: MessagePort }): ChildProcessSetup {
   // The runtime installed these before its polyfills loaded (early-globals.ts); a test scope has none yet.
   if (scope.process === undefined) installGlobals({ root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR }, scope)
-  const proc = scope.process as ForkProcess
+  const proc = scope.process as BaseProcess
   let exited = false
-  // Node's rule for when a child ends on its own: nothing pending and the IPC channel closed.
   const liveness: Liveness = new Liveness(() => {
     if (exited) return
     const code = proc.exitCode ?? 0
@@ -57,7 +81,6 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
     end(code)
   }, (run) => { later(run) })
   const later = trackScope(scope as Parameters<typeof trackScope>[0], liveness)
-  liveness.ref()
   scope.orivon = createOrivonClient(start.orivon, liveness)
   scope.Buffer = Buffer
 
@@ -78,10 +101,37 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
   proc.argv = [...start.argv]
   proc.env = { ...start.env }
   proc.cwd = () => start.cwd
-  proc.connected = true
   proc.stdout.write = write('stdout') as typeof proc.stdout.write
   proc.stderr.write = write('stderr') as typeof proc.stderr.write
   proc.stdin = new Readable({ read () {} })
+  proc.exit = ((code?: number) => {
+    if (code !== undefined) proc.exitCode = code
+    proc.emit('exit', proc.exitCode ?? 0)
+    end(proc.exitCode ?? 0)
+    throw new ChildExit()
+  }) as typeof proc.exit
+
+  const crash = (error: unknown): void => {
+    if (error instanceof ChildExit || exited) return
+    if (proc.emit('uncaughtException', error, 'uncaughtException')) return
+    // Raw, not a WireError: a worker_threads.Worker relays this as its own 'error' event (child.ts's 'crash'); fork has no listener for it.
+    parent.post({ type: 'crash', error })
+    write('stderr')(`${String((error as Error)?.stack ?? error)}\n`)
+    end(1)
+  }
+  scope.addEventListener('error', (event) => { event.preventDefault(); crash((event as ErrorEvent).error) })
+  scope.addEventListener('unhandledrejection', (event) => { event.preventDefault(); crash((event as PromiseRejectionEvent).reason) })
+
+  return { proc, liveness, write, end, crash }
+}
+
+export async function runFork (start: ForkStart, parent: ParentChannel, scope: ForkScope, load: (url: string) => Promise<unknown>): Promise<void> {
+  const { proc: baseProc, liveness, crash } = setupChildProcess(scope, parent, start)
+  const proc = baseProc as ForkProcess
+  // The IPC channel itself is a reason to stay alive, released only when it closes (closeChannel below).
+  liveness.ref()
+  ;(scope as unknown as Record<symbol, Liveness>)[FORK_LIVENESS_SYMBOL] = liveness
+  proc.connected = true
   proc.send = (message: unknown, ...rest: unknown[]): boolean => {
     const callback = rest.find((arg): arg is SendCallback => typeof arg === 'function')
     if (!proc.connected) {
@@ -104,12 +154,6 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
     parent.post({ type: 'disconnect' })
     closeChannel()
   }
-  proc.exit = ((code?: number) => {
-    if (code !== undefined) proc.exitCode = code
-    proc.emit('exit', proc.exitCode ?? 0)
-    end(proc.exitCode ?? 0)
-    throw new ForkExit()
-  }) as typeof proc.exit
 
   const deliver = (message: ToWorker): void => {
     if (message.type === 'ipc') proc.emit('message', message.message)
@@ -136,16 +180,6 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
       return result
     }
   }
-
-  // An uncaught error ends a Node child with code 1 and its stack on stderr.
-  const crash = (error: unknown): void => {
-    if (error instanceof ForkExit || exited) return
-    if (proc.emit('uncaughtException', error, 'uncaughtException')) return
-    write('stderr')(`${String((error as Error)?.stack ?? error)}\n`)
-    end(1)
-  }
-  scope.addEventListener('error', (event) => { event.preventDefault(); crash((event as ErrorEvent).error) })
-  scope.addEventListener('unhandledrejection', (event) => { event.preventDefault(); crash((event as PromiseRejectionEvent).reason) })
 
   parent.post({ type: 'started' })
   liveness.ref()
