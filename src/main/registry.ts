@@ -20,10 +20,11 @@
 // This module imports nothing from electron at runtime: `App` is a type-only
 // import, erased by verbatimModuleSyntax. That erasure is what makes the two
 // functions below unit testable without launching Electron.
-import type { App } from 'electron'
+import type { App, BaseWindow, WebContents } from 'electron'
 import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader, LoadResult } from '../loader/index.js'
 import type { GrantedWithoutInstall } from './install/grant-without-install.js'
+import type { DialogCaller } from './consent/request-grant.js'
 import type { CapabilityRequest } from '../contracts/index.js'
 
 export interface SubsystemContext {
@@ -73,8 +74,14 @@ export interface SubsystemContext {
    * Undefined until `requestGrantSubsystem`'s `afterReady` runs; a subsystem
    * reading this must be listed after it in `subsystems.ts`, which itself
    * must be listed after `brokerIpcSubsystem`.
+   *
+   * `caller` (`./consent/request-grant.js`'s `DialogCaller`) is built by
+   * whoever calls this -- `../broker/transport/ipc.ts`'s CONTROL handler,
+   * from the real sending `WebContents` -- so the dialog this may show can
+   * be parented to the calling tab's window and skipped or discounted once
+   * that tab is gone or has moved on (`docs/architecture/security-model.md`).
    */
-  readonly requestGrant: ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined
+  readonly requestGrant: ((origin: string, request: CapabilityRequest, caller?: DialogCaller) => Promise<boolean>) | undefined
   /**
    * `../app-install.js`'s `installFromHint`, closed over this process's one
    * `Broker`/`Loader` and the real install-time consent dialog (d-0025,
@@ -86,8 +93,29 @@ export interface SubsystemContext {
    * until this subsystem's `afterReady` runs; a subsystem reading this must
    * be listed after it, which itself must be listed after both
    * `brokerIpcSubsystem` and `loaderSubsystem`.
+   *
+   * `caller` is the same `DialogCaller` `requestGrant` above takes, built by
+   * `./install/manifest-hint.ts` from the frame that reported the hint.
    */
-  readonly installApp: ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>) | undefined
+  readonly installApp: ((hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>) | undefined
+  /**
+   * Resolves the window CURRENTLY holding a tab's `WebContents`, or
+   * undefined if none can be found (the tab closed, or moved somewhere this
+   * process lost track of) -- the one piece of the shell's own state
+   * (`./shell/window-registry.js`'s `WindowRegistry`) a consent dialog needs,
+   * to parent itself to the tab that asked rather than floating free of
+   * every window on screen.
+   *
+   * Published in `main/index.ts` itself, once the shell's `WindowRegistry`
+   * exists -- NOT a subsystem: every subsystem's `afterReady` runs during
+   * `runAfterReady`, before `createShellServices` ever builds one, so
+   * nothing here could publish it any earlier. A reader must therefore treat
+   * `undefined` as routine even late in startup, and always call THROUGH
+   * this accessor rather than capture its value -- see
+   * `requestGrantSubsystem`'s and `manifestHintSubsystem`'s own wiring for
+   * the lazy-thunk shape that makes that safe.
+   */
+  readonly windowForSender: ((sender: WebContents) => BaseWindow | undefined) | undefined
   /**
    * Which Electron session an origin's documents actually belong in --
    * `undefined` (the default session) unless the origin holds a live grant
@@ -135,9 +163,10 @@ function createPublishedSlot<T> (label: string, hazard: string): {
 
 const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would create two disagreeing grant ledgers for one running app')
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
-const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
-const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>>('installApp', 'a second one could close over a different Broker or Loader instance than the one every other subsystem reads')
+const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest, caller?: DialogCaller) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
+const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>>('installApp', 'a second one could close over a different Broker or Loader instance than the one every other subsystem reads')
 const sessionForOriginSlot = createPublishedSlot<(origin: string) => unknown>('sessionForOrigin', 'a second one could disagree with the first about which session an origin belongs in, and every broker channel must apply the same answer')
+const windowForSenderSlot = createPublishedSlot<(sender: WebContents) => BaseWindow | undefined>('windowForSender', 'a second one could disagree about which window currently holds a given tab')
 
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
@@ -156,16 +185,20 @@ class SubsystemContextImpl implements SubsystemContext {
     return loaderSlot.get(this)
   }
 
-  get requestGrant (): ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined {
+  get requestGrant (): ((origin: string, request: CapabilityRequest, caller?: DialogCaller) => Promise<boolean>) | undefined {
     return requestGrantSlot.get(this)
   }
 
-  get installApp (): ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>) | undefined {
+  get installApp (): ((hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>) | undefined {
     return installAppSlot.get(this)
   }
 
   get sessionForOrigin (): ((origin: string) => unknown) | undefined {
     return sessionForOriginSlot.get(this)
+  }
+
+  get windowForSender (): ((sender: WebContents) => BaseWindow | undefined) | undefined {
+    return windowForSenderSlot.get(this)
   }
 }
 
@@ -196,18 +229,23 @@ export function publishLoader (ctx: SubsystemContext, loader: Loader): void {
 }
 
 /** The one sanctioned way to set `ctx.requestGrant` -- see `publishBroker`'s own doc; same guarantee, same reason. */
-export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origin: string, request: CapabilityRequest) => Promise<boolean>): void {
+export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origin: string, request: CapabilityRequest, caller?: DialogCaller) => Promise<boolean>): void {
   requestGrantSlot.publish(ctx, requestGrant)
 }
 
 /** The one sanctioned way to set `ctx.installApp` -- see `publishBroker`'s own doc; same guarantee, same reason. */
-export function publishInstallApp (ctx: SubsystemContext, installApp: (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>): void {
+export function publishInstallApp (ctx: SubsystemContext, installApp: (hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>): void {
   installAppSlot.publish(ctx, installApp)
 }
 
 /** The one sanctioned way to set `ctx.sessionForOrigin` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishSessionForOrigin (ctx: SubsystemContext, sessionForOrigin: (origin: string) => unknown): void {
   sessionForOriginSlot.publish(ctx, sessionForOrigin)
+}
+
+/** The one sanctioned way to set `ctx.windowForSender` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishWindowForSender (ctx: SubsystemContext, windowForSender: (sender: WebContents) => BaseWindow | undefined): void {
+  windowForSenderSlot.publish(ctx, windowForSender)
 }
 
 export interface Subsystem {

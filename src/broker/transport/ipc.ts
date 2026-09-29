@@ -16,7 +16,7 @@
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
 import { dialog, ipcMain, MessageChannelMain, session as electronSession } from 'electron'
-import type { MessagePortMain } from 'electron'
+import type { MessagePortMain, WebContents } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
@@ -83,7 +83,8 @@ async function dispatch (
   transport: PortTransport | undefined,
   requestGrantCtx: RequestGrantCtx | undefined,
   fsTransport: FsTransport | undefined,
-  abandoned: AbortSignal
+  abandoned: AbortSignal,
+  windowForSender?: (sender: unknown) => unknown
 ): Promise<unknown> {
   if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
 
@@ -91,7 +92,12 @@ async function dispatch (
     case 'app.manifest':
     case 'app.grants':
     case 'app.requestGrant':
-      return await dispatchApp(broker, origin, method, payload, requestGrantCtx)
+      // Both closures re-read `event.sender` LIVE, whenever the dialog
+      // actually calls them (A153), never a value captured here.
+      return await dispatchApp(broker, origin, method, payload, requestGrantCtx, {
+        window: () => windowForSender?.(event.sender),
+        stillOn: (checkedOrigin) => !event.sender.isDestroyed() && originFromSenderFrame(event.sender.mainFrame) === checkedOrigin
+      })
     case 'fs.readFile':
     case 'fs.writeFile':
     case 'fs.mkdir':
@@ -202,6 +208,10 @@ async function withTimeout<T> (work: (abandoned: AbortSignal) => Promise<T>, tim
  * against, keeps exercising everything else unchanged; real wiring always
  * supplies it, and an `app.requestGrant` call that just changed the answer
  * reloads the calling document into it.
+ *
+ * `windowForSender`, when supplied, resolves a tab's window for
+ * `dispatch()`'s `app.requestGrant` case alone; omitted, that dialog shows
+ * unparented, the same optionality `sessionForOrigin` already has.
  */
 export async function handleControlRequest (
   broker: Broker,
@@ -211,7 +221,8 @@ export async function handleControlRequest (
   limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
   fsTransport?: FsTransport,
-  sessionForOrigin?: (origin: string) => unknown
+  sessionForOrigin?: (origin: string) => unknown,
+  windowForSender?: (sender: unknown) => unknown
 ): Promise<ResponseEnvelope<unknown>> {
   // The envelope itself is untrusted, not just its payload. Reading
   // `envelope.id` off a null or non-object value throws a TypeError straight
@@ -247,7 +258,7 @@ export async function handleControlRequest (
 
   try {
     const result = await withTimeout(
-      async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned),
+      async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned, windowForSender),
       envelope.timeoutMs
     )
     // The one call that can change, mid-request, which session `origin`
@@ -285,10 +296,11 @@ export function registerBrokerIpc (
   limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
   fsTransport?: FsTransport,
-  sessionForOrigin?: (origin: string) => unknown
+  sessionForOrigin?: (origin: string) => unknown,
+  windowForSender?: (sender: unknown) => unknown
 ): void {
   ipc.handle(CONTROL_CHANNEL, async (event, envelope) =>
-    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport, sessionForOrigin))
+    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport, sessionForOrigin, windowForSender))
 }
 
 /**
@@ -472,7 +484,9 @@ export const brokerIpcSubsystem: Subsystem = {
     // `Subsystem.critical`, which this subsystem already carries).
     if (ctx.sessionForOrigin === undefined) throw fail('internal', 'ctx.sessionForOrigin is not published -- session-attribution subsystem is missing or misordered')
     // `ctx` itself, not a captured `ctx.requestGrant` -- see RequestGrantCtx's own doc (ipc-validation.ts) for why.
-    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport, ctx.sessionForOrigin)
+    // A lazy read of `ctx.windowForSender`, same reason `webContextHost` above is a thunk:
+    // it publishes only once the shell exists, well after this runs.
+    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport, ctx.sessionForOrigin, (sender) => ctx.windowForSender?.(sender as WebContents))
 
     // ./sync-fs-policy.ts's createSyncFsPolicy calls straight through to
     // broker.fs.confineSync -- ADR-0016's synchronous grant-check/
