@@ -28,6 +28,7 @@ import type { ShellServices } from '../shell/shell-services.js'
 import type { SubsystemContext } from '../registry.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { mintTabCaptureGrant, wasTabCaptureGrantConsumed } from '../sessions/tab-capture-grants.js'
+import { setTabCaptureMediaAppRefusalCheck } from '../sessions/permission-gate.js'
 import { appOrigin } from '../shell/devtools-app-origin.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
@@ -35,7 +36,7 @@ import { extensionIdFromScope, watchForMissedServiceWorkerPreload } from './exte
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL } from '../channels.js'
 import { hasApiOrHostAccess, hasApiPermission, hasHostAccess } from './extension-host-access.js'
-import { clearInvocation, hasRecentInvocation, recordInvocation } from './extension-tab-invocation.js'
+import { clearInvocation, clearInvocationsForExtension, hasRecentInvocation, recordInvocation } from './extension-tab-invocation.js'
 
 /** The `<browser-action-list partition="...">` token that resolves to
  * `session.defaultSession`, where every extension runs -- the default
@@ -251,8 +252,17 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   setTabHostAccessCheck(hasHostAccess)
   setTabCaptureInvocationRecorder(recordTabCaptureInvocation)
   setTabCaptureInvocationCheck(hasRecentInvocation)
-  setTabCaptureGrantRecorder((extensionId) => { mintTabCaptureGrant(extensionId, Date.now()) })
+  setTabCaptureGrantRecorder((extensionId, targetTabId) => { mintTabCaptureGrant(extensionId, targetTabId, Date.now()) })
   setTabCaptureConsumedCheck(wasTabCaptureGrantConsumed)
+  // Orivon patch (UPSTREAM.md patch 33; item K): the activeTab-style
+  // invocation ledger (extension-tab-invocation.ts) otherwise survives a
+  // disable/uninstall/crash -- the same 'extension-unloaded' signal
+  // offscreen.ts's own listener and tab-capture.ts's own listener already
+  // key their own teardown off.
+  const invocationSessionExtensions = session.defaultSession.extensions || session.defaultSession
+  invocationSessionExtensions.addListener('extension-unloaded', (_event, extension) => {
+    clearInvocationsForExtension(extension.id)
+  })
   // Orivon patch (UPSTREAM.md patch 37): the vendored preload's own
   // synchronous query, before it ever calls injectExtensionAPIs() --
   // isSenderDeclaredSandboxPage's own doc.
@@ -426,10 +436,17 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   // default session tabCapture's own tab store tracks -- the same
   // predicate shell-services.ts's own DevTools prompt uses for the
   // identical "is this tab an app I granted, not an ordinary site" question.
-  setTabCaptureAppRefusalCheck((tab) => {
+  const tabCaptureAppRefusal = (tab: WebContents): boolean => {
     const origin = appOrigin(originFromUrl, tab)
     return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
-  })
+  }
+  setTabCaptureAppRefusalCheck(tabCaptureAppRefusal)
+  // (item I, second half) The same predicate, registered a second time for
+  // permission-gate.ts's own re-check inside the 'media' REQUEST handler --
+  // setTabCaptureMediaAppRefusalCheck's own doc says why a single
+  // registration point (this file's own `setTabCaptureAppRefusalCheck`,
+  // read only by the vendored tab-capture.ts) is not enough on its own.
+  setTabCaptureMediaAppRefusalCheck(tabCaptureAppRefusal)
 
   services.tabLifecycle.subscribe({
     tabCreated: (wc, win) => {
