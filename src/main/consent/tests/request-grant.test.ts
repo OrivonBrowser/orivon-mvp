@@ -603,10 +603,10 @@ describe('requestGrant: an abandoned call never shows its dialog', () => {
   })
 })
 
-// Defect: two different tabs asking for the identical (origin, capability,
-// patterns) at once must never share one dialog or its eventual answer --
-// sharing would let the second tab's page silently receive the first tab's
-// answer, parented to the first tab's window.
+// Two different tabs asking for the identical (origin, capability, patterns)
+// at once must never share one dialog or its eventual answer -- sharing
+// would let the second tab's page silently receive the first tab's answer,
+// parented to the first tab's window.
 describe('requestGrant: PendingGrantRequests never shares across callers or pattern sets', () => {
   it('two different callers requesting the same (origin, capability) each get their own dialog', async () => {
     const calls: BrokerCall[] = []

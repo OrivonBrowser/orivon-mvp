@@ -72,11 +72,10 @@ describe('session-bound attribution', () => {
   })
 })
 
-// The reload defect.ts's redesign removed: app.requestGrant no longer
-// reloads the calling document. Attribution is decided when a document
-// commits (src/main/sessions/session-attribution.ts), so a document that
-// asked and won stays attributed through its own reply and every call
-// after it, and moves session only on its next navigation.
+// app.requestGrant no longer reloads the calling document. Attribution is
+// decided when a document commits (src/main/sessions/session-attribution.ts),
+// so a document that asked and won stays attributed through its own reply
+// and every call after it, and moves session only on its next navigation.
 describe('app.requestGrant never reloads the calling document', () => {
   function fakeCtx (result: boolean): RequestGrantCtx {
     return { requestGrant: async () => result }
