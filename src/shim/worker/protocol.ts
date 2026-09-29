@@ -81,6 +81,22 @@ export type FromWorker =
   | { readonly type: 'ipc', readonly message: unknown }
   | { readonly type: 'disconnect' }
 
+/**
+ * What `ChildProcess` (../child-process/child.ts) needs from whatever is
+ * actually running its child: the real, same-process `Worker` `launch.ts`
+ * makes, or a remote adapter over a child host's own port (ADR-0046,
+ * ../child-process/host-client.ts) -- `ChildProcess` itself never cares
+ * which. A real `Worker` already satisfies this structurally; a remote
+ * adapter can too, without a cast, since neither implements the rest of
+ * `Worker`'s own DOM surface.
+ */
+export interface WorkerLike {
+  onmessage: ((event: MessageEvent<FromWorker>) => void) | null
+  onerror: ((event: ErrorEvent) => void) | null
+  postMessage (message: ToWorker): void
+  terminate (): void
+}
+
 export function toWireError (error: unknown): WireError {
   if (typeof error !== 'object' || error === null) return { name: 'Error', message: String(error) }
   const { name, message, code } = error as { name?: unknown, message?: unknown, code?: unknown }
