@@ -43,8 +43,8 @@ export function frameFor (origin: string, session: unknown = DEFAULT_SESSION): C
 }
 
 /** `frameFor`, but the frame is a SUBFRAME of its own WebContents -- for a
- * test asserting T-3's own refusal (a subframe, an embed guest, or a
- * web-context document may never speak for its top frame's origin). */
+ * test asserting that a subframe, an embed guest or a web-context document
+ * never speaks for its top frame's origin. */
 export function subframeFor (origin: string, session: unknown = DEFAULT_SESSION): ControlEvent {
   const senderFrame = { url: `${origin}/index.html`, origin, postMessage: vi.fn() }
   const mainFrame = { url: `${origin}/`, origin, postMessage: vi.fn() }
