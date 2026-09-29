@@ -16,6 +16,9 @@ export interface StripDragHost {
   moveStart: (x: number, y: number) => void
   moveTo: (x: number, y: number) => void
   moveEnd: (x: number, y: number) => void
+  /** The drag ended in a `pointercancel`, not a release: its coordinates can be 0,0, nowhere the
+   * pointer actually was, so the move ends here with no edge-snap action, unlike `moveEnd`. */
+  moveCancel: () => void
 }
 
 export function makeStripDraggable (el: HTMLElement, host: StripDragHost): void {
@@ -49,13 +52,13 @@ export function makeStripDraggable (el: HTMLElement, host: StripDragHost): void 
     host.moveTo(event.screenX, event.screenY)
   })
 
-  const end = (event: PointerEvent): void => {
+  const end = (event: PointerEvent, cancelled: boolean): void => {
     if (start === null) return
-    if (dragging) host.moveEnd(event.screenX, event.screenY)
+    if (dragging) { if (cancelled) host.moveCancel(); else host.moveEnd(event.screenX, event.screenY) }
     if (el.hasPointerCapture(start.pointerId)) el.releasePointerCapture(start.pointerId)
     start = null
     dragging = false
   }
-  el.addEventListener('pointerup', end)
-  el.addEventListener('pointercancel', end)
+  el.addEventListener('pointerup', (event) => { end(event, false) })
+  el.addEventListener('pointercancel', (event) => { end(event, true) })
 }

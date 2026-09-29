@@ -106,10 +106,21 @@ export function shellActions (parts: WindowParts): ShellActions {
     dragTab: (id, point) => {
       const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)
       tabs.splits.setPreview(zone)
-      if (point === null) services.tearDrag.clear()
-      else services.tearDrag.update(entry, id, zone !== null, topHeight)
+      // point === null: the pointer is back inside the strip, which happens on every in-strip
+      // pointermove of a drag that has not (or not yet) torn out -- never a reason to tear down the
+      // floating preview or throw away the capture `beginTabDrag` started; `endTabDrag` is the only
+      // thing that does that, once the drag genuinely ends. tick()'s own poll already hides the
+      // preview when the real cursor is back over this window's own strip.
+      if (point !== null) services.tearDrag.update(entry, id, zone !== null, topHeight)
     },
-    beginTabDrag: (id) => { services.tearDrag.prewarm(entry, id) },
+    beginTabDrag: (id) => {
+      // Matches other browsers: dragging a background tab brings it to the front. It also means
+      // its view is attached again, so the capture beginTabDrag's own prewarm takes is not of an
+      // empty, detached page.
+      tabs.activateTab(id)
+      services.tearDrag.prewarm(entry, id)
+    },
+    endTabDrag: () => { services.tearDrag.clear() },
     dropTab: (id, screenPoint, client) => {
       tabs.splits.setPreview(null)
       services.tearDrag.clear()
@@ -151,6 +162,9 @@ export function shellActions (parts: WindowParts): ShellActions {
       const zone = edgeZoneFor(point, workArea)
       if (zone === 'maximize') window.maximize()
       else if (zone !== null) window.setBounds(halfOfWorkArea(workArea, zone))
-    }
+    },
+    // A pointercancel's own coordinates are not where the pointer actually was: just stop tracking
+    // the move, with no edge-snap action (unlike windowMoveEnd).
+    windowMoveCancel: () => { moveGrab = null }
   }
 }

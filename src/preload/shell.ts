@@ -78,6 +78,9 @@ export interface OrivonShell {
   dragTab: (id: string, x?: number, y?: number) => void
   /** A tab was let go outside the strip: where on the screen, and where in this window. */
   dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => void
+  /** The drag ended without a tear-out: let go inside the strip, or cancelled outright. Releases
+   * the capture `beginTabDrag` started, whether or not it was ever shown. */
+  endTabDrag: () => void
   /** Asks main for the right-click menu of a tab. */
   showTabMenu: (id: string) => void
   /** Toggles maximize/restore -- the manual drag mode's own double click (dragMode below). */
@@ -88,6 +91,9 @@ export interface OrivonShell {
   windowMoveStart: (x: number, y: number) => void
   windowMoveTo: (x: number, y: number) => void
   windowMoveEnd: (x: number, y: number) => void
+  /** The move ended in a `pointercancel`, not a release: its coordinates are not where the pointer
+   * actually was, so this ends the move with no edge-snap action, unlike `windowMoveEnd`. */
+  windowMoveCancel: () => void
   onState: (listener: (state: ShellState) => void) => () => void
   /** Commands main asks the chrome to carry out itself: focusing the address bar, or (while a tab from
    * ANY window is being dragged) drawing or clearing this window's own cross-window drop mark. */
@@ -157,11 +163,13 @@ const api: OrivonShell = {
   beginTabDrag: (id: string) => { send({ type: 'tabDragStart', id }) },
   dragTab: (id: string, x?: number, y?: number) => { send(x === undefined || y === undefined ? { type: 'dragTab', id } : { type: 'dragTab', id, x, y }) },
   dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => { send({ type: 'dropTab', id, x, y, clientX, clientY }) },
+  endTabDrag: () => { send({ type: 'endTabDrag' }) },
   showTabMenu: (id: string) => { send({ type: 'tabMenu', id }) },
   toggleMaximize: () => { send({ type: 'toggleMaximize' }) },
   windowMoveStart: (x: number, y: number) => { send({ type: 'windowMoveStart', x, y }) },
   windowMoveTo: (x: number, y: number) => { send({ type: 'windowMoveTo', x, y }) },
   windowMoveEnd: (x: number, y: number) => { send({ type: 'windowMoveEnd', x, y }) },
+  windowMoveCancel: () => { send({ type: 'windowMoveCancel' }) },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe
    * function; the listener is a closure, not the raw ipcRenderer, so the

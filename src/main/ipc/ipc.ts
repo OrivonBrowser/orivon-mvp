@@ -88,6 +88,9 @@ export type ShellCommand =
   | { type: 'dragTab'; id: string; x?: number; y?: number }
   /** A tab was let go outside the strip: `x`, `y` where on the screen, `clientX`, `clientY` where in this window. */
   | { type: 'dropTab'; id: string; x: number; y: number; clientX: number; clientY: number }
+  /** The drag ended without a tear-out: let go inside the strip, or cancelled. Releases the
+   * capture `tabDragStart` began, whether or not it was ever shown as a floating preview. */
+  | { type: 'endTabDrag' }
   /** The right-click menu of a tab, which main shows (it lists the other windows). */
   | { type: 'tabMenu'; id: string }
   /** A double click on the empty tail of the strip, in the manual drag mode drag-mode.ts's `dragModeFor`
@@ -99,6 +102,8 @@ export type ShellCommand =
   | { type: 'windowMoveStart'; x: number; y: number }
   | { type: 'windowMoveTo'; x: number; y: number }
   | { type: 'windowMoveEnd'; x: number; y: number }
+  /** The move ended in a `pointercancel`, not a release: no edge-snap action, unlike `windowMoveEnd`. */
+  | { type: 'windowMoveCancel' }
 
 /**
  * BOTH object identity AND URL, matching `newtab-ipc.ts`'s own
@@ -126,11 +131,13 @@ export interface ShellActions {
   beginTabDrag: (id: string) => void
   dragTab: (id: string, at: { x: number, y: number } | null) => void
   dropTab: (id: string, screen: { x: number, y: number }, client: { x: number, y: number }) => void
+  endTabDrag: () => void
   showTabMenu: (id: string) => void
   toggleMaximize: () => void
   windowMoveStart: (point: { x: number, y: number }) => void
   windowMoveTo: (point: { x: number, y: number }) => void
   windowMoveEnd: (point: { x: number, y: number }) => void
+  windowMoveCancel: () => void
 }
 
 export function registerShellIpc (
@@ -227,6 +234,9 @@ export function registerShellIpc (
       case 'dropTab':
         if (typeof command.id === 'string' && [command.x, command.y, command.clientX, command.clientY].every(Number.isFinite)) actions.dropTab(command.id, { x: command.x, y: command.y }, { x: command.clientX, y: command.clientY })
         return
+      case 'endTabDrag':
+        actions.endTabDrag()
+        return
       case 'tabMenu':
         if (typeof command.id === 'string') actions.showTabMenu(command.id)
         return
@@ -241,6 +251,9 @@ export function registerShellIpc (
         return
       case 'windowMoveEnd':
         if (Number.isFinite(command.x) && Number.isFinite(command.y)) actions.windowMoveEnd({ x: command.x, y: command.y })
+        return
+      case 'windowMoveCancel':
+        actions.windowMoveCancel()
         return
     }
   })

@@ -168,7 +168,8 @@ function renderTabs (state: ShellState): void {
       hover: (id, x, y) => { shell.dragTab(id, x, y) },
       dropTab: (id, x, y, clientX, clientY) => { shell.dropTab(id, x, y, clientX, clientY) },
       // Let go in the strip, the order on screen is already the order main is about to confirm.
-      finished: (tornOut) => { if (tornOut || tabsRenderDeferred) renderTabs(currentState) }
+      finished: (tornOut) => { if (tornOut || tabsRenderDeferred) renderTabs(currentState) },
+      dragEnded: () => { shell.endTabDrag() }
     })
     // Middle-click closes a tab, matching every other browser. Guarded on
     // mousedown too: Windows arms Blink's middle-click autoscroll on
@@ -328,7 +329,8 @@ if (shell.dragMode === 'manual') {
     toggleMaximize: () => { shell.toggleMaximize() },
     moveStart: (x, y) => { shell.windowMoveStart(x, y) },
     moveTo: (x, y) => { shell.windowMoveTo(x, y) },
-    moveEnd: (x, y) => { shell.windowMoveEnd(x, y) }
+    moveEnd: (x, y) => { shell.windowMoveEnd(x, y) },
+    moveCancel: () => { shell.windowMoveCancel() }
   })
 }
 

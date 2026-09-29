@@ -46,6 +46,10 @@ export interface TabDragHost {
   dropTab: (id: string, screenX: number, screenY: number, clientX: number, clientY: number) => void
   /** The drag is over. `tornOut`: the tab is on its way to another window, so the strip is to go back to what main last said. */
   finished: (tornOut: boolean) => void
+  /** The drag has genuinely ended -- dropped in the strip, torn out, or cancelled -- distinct from
+   * `hover(id)`'s own "back inside the strip" signal, which also fires on every in-strip move of a
+   * drag that is still under way. Releases the capture `dragStarted` began. */
+  dragEnded: () => void
 }
 
 let dragging = false
@@ -106,6 +110,7 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     clear()
     if (wasActive) {
       host.hover(id)
+      host.dragEnded()
       if (redraw) host.finished(tornOut)
     } else {
       // After the click that follows a press: redrawn now, it would have no tab to land on.
