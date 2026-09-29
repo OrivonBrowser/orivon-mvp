@@ -67,5 +67,6 @@ cache all reach the very next load with nothing to re-register.
 [`app-install-subsystem.ts`](app-install-subsystem.ts) registers it once, at startup, on
 [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts)'s default-session owner,
 last among that session's `onHeadersReceived` handlers so Orivon's own policy is applied after
-anything else. A cache-served origin is excluded even when it also holds a grant: its CSP is set
-inside the `protocol.handle` response instead, which this handler never sees (A110).
+anything else. A cache-served origin's network-delivered document, committed in the default session
+before its tab moves to the app's partition, gets this policy too; its pinned copy, served through
+`protocol.handle`, never reaches this handler and carries its CSP from `csp.ts` (A110).
