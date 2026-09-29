@@ -109,7 +109,9 @@ export class TabFactory {
         // (see makeTabView's own doc): a site with no CSS background of its
         // own renders white, as the web expects, and painting it dark first
         // would make a transparent-background site look wrong in dark mode.
-        backgroundColor: isDashboard ? APP_DARK_WASH : undefined,
+        // `exactOptionalPropertyTypes` refuses an explicit `undefined` for an
+        // optional property, hence the spread rather than a ternary value.
+        ...(isDashboard ? { backgroundColor: APP_DARK_WASH } : {}),
         target
       }
     )
