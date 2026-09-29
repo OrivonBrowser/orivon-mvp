@@ -215,6 +215,16 @@ describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
     expect(response.headers.get('content-security-policy')).toBe(DEFAULT_CSP)
   })
 
+  // F11: content-type here is always derived from the pinned path's own
+  // extension, never sniffed from bytes -- nosniff stops a browser that DOES
+  // sniff from overriding that and running a pinned, non-script asset as one.
+  it('sets X-Content-Type-Options: nosniff on every pinned response', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const response = await handler(new Request(`${ORIGIN}/`))
+
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+
   it('widens connect-src to the live granted tcp.connect patterns', async () => {
     const handler = await createAppRequestHandler(await installedStorage(), ORIGIN, async () => ['api.example.com:443'])
     const response = await handler(new Request(`${ORIGIN}/`))
