@@ -25,13 +25,14 @@ const { hasApiPermission, hasHostAccess } = await import('../extension-host-acce
 // The exact check extension-host.ts installs in production (createExtensionHost).
 setCookieHostAccessCheck(hasHostAccess)
 
-function manifestWith (permissions: readonly string[], hostPermissions?: readonly string[]): Record<string, unknown> {
+function manifestWith (permissions: readonly string[], hostPermissions?: readonly string[], contentScriptMatches?: readonly string[]): Record<string, unknown> {
   return {
     manifest_version: 3,
     name: 'x',
     version: '1.0.0',
     ...(permissions.length > 0 ? { permissions } : {}),
-    ...(hostPermissions === undefined ? {} : { host_permissions: hostPermissions })
+    ...(hostPermissions === undefined ? {} : { host_permissions: hostPermissions }),
+    ...(contentScriptMatches === undefined ? {} : { content_scripts: [{ matches: contentScriptMatches, js: ['content.js'] }] })
   }
 }
 
@@ -96,6 +97,16 @@ describe('chrome.cookies: host access on top of the permission', () => {
 
     await expect(
       router.onExtensionMessage(frameEvent(session), 'ext', 'cookies.set', { url: 'https://b.example/', name: 'sid', value: 'v' })
+    ).rejects.toThrow(/host access/)
+    expect(cookiesSet).not.toHaveBeenCalled()
+  })
+
+  it('refuses cookies.set for a URL matched only by a content-script pattern, not a host permission', async () => {
+    const { session, router, cookiesSet } = setup([])
+    session.extensions.getExtension = vi.fn(() => ({ id: 'ext', manifest: manifestWith(['cookies'], undefined, ['<all_urls>']) })) as any
+
+    await expect(
+      router.onExtensionMessage(frameEvent(session), 'ext', 'cookies.set', { url: 'https://a.example/', name: 'sid', value: 'v' })
     ).rejects.toThrow(/host access/)
     expect(cookiesSet).not.toHaveBeenCalled()
   })

@@ -98,11 +98,18 @@ in its slot) whose write succeeded but whose load failed afterward has its own j
 removed, the same as a same-version reinstall's own rollback already did.
 
 **chrome.cookies and chrome.tabs gate on host access, not only on holding the `cookies`/`tabs`
-API permission.** `extension-host-access.ts`'s `hasApiPermission`/`hasHostAccess`/
-`hasApiOrHostAccess` read an extension's OWN loaded manifest (`event.extension.manifest`) the same
-way `readExtensionManifest` reads one at install time, and match its `hostPatterns` against a URL
-with Chrome's own match-pattern grammar
+API permission -- and host access means `hostPermissions` (explicit host_permissions and MV2's
+host-pattern entries in `permissions`), never a content_scripts match on its own.**
+`extension-host-access.ts`'s `hasApiPermission`/`hasHostAccess`/`hasApiOrHostAccess` read an
+extension's OWN loaded manifest (`event.extension.manifest`) the same way `readExtensionManifest`
+reads one at install time, and match its `hostPermissions` against a URL with Chrome's own
+match-pattern grammar
 ([`../../broker/policy/extension-host-patterns.ts`](../../broker/policy/extension-host-patterns.ts)).
+`extension-manifest.ts`'s own doc on `hostPermissions` says why a content-script match does not
+count: Chrome keeps two separate host sets (explicit_hosts vs. scriptable_hosts,
+`extensions/docs/permissions.md` in Chromium's own source), and only explicit_hosts gates API
+access. `hostPatterns`, the union of both, stays reserved for the install prompt's wording, which
+Chrome's own prompt warns about either kind of host reach.
 `extension-host.ts`'s `createExtensionHost` installs three hooks the vendored library calls back
 into, the same shape as the sender-id check (`extension-sender-id-check.ts`): `setEventListenerFilter`
 (router.ts, UPSTREAM.md patch 15) gates or strips a broadcast event per listener --

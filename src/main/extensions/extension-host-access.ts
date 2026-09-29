@@ -1,11 +1,15 @@
 // The host-access decision chrome.cookies and chrome.tabs both gate on now
 // (README.md's Design notes): whether a loaded extension's OWN manifest
-// covers a given URL. Reuses readExtensionManifest's hostPatterns
+// covers a given URL. Reuses readExtensionManifest's hostPermissions
 // extraction (broker/policy/extension-manifest.ts) so a loaded extension's
 // runtime manifest (`event.extension.manifest`, read here as `unknown`
 // since it arrives through a vendored library's own type) is parsed the
 // same way an install-time one is, then matched with Chrome's own
 // match-pattern grammar (broker/policy/extension-host-patterns.ts).
+//
+// hostPermissions, never hostPatterns: extension-manifest.ts's own doc on
+// the two fields says why -- a content_scripts match pattern lets an
+// extension inject a script there, not call a host-gated API.
 //
 // No electron import: this file is a thin, pure-ish adapter between the
 // two policy modules above and the vendored setters' own `unknown`-typed
@@ -25,15 +29,16 @@ export function hasApiPermission (manifest: unknown, name: string): boolean {
   return Array.isArray(permissions) && permissions.includes(name)
 }
 
-/** True when `manifest`'s own host_permissions/permissions/content_scripts
- * cover `url`. `undefined` never matches -- a tab or cookie with no
- * resolvable URL yet (a still-loading tab, a malformed cookie domain)
- * carries nothing a host pattern could cover. */
+/** True when `manifest`'s own explicit host_permissions (plus MV2's
+ * host-pattern entries in `permissions`) cover `url` -- never a
+ * content_scripts match alone. `undefined` never matches -- a tab or
+ * cookie with no resolvable URL yet (a still-loading tab, a malformed
+ * cookie domain) carries nothing a host pattern could cover. */
 export function hasHostAccess (manifest: unknown, url: string | undefined): boolean {
   if (url === undefined) return false
   const result = readExtensionManifest(manifest)
   if (!result.ok) return false
-  return matchesAnyHostPattern(result.facts.hostPatterns, url)
+  return matchesAnyHostPattern(result.facts.hostPermissions, url)
 }
 
 /** Chrome's own rule for chrome.cookies and the sensitive chrome.tabs
