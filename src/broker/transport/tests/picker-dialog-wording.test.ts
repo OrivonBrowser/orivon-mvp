@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { describePickerDialog } from '../ipc.js'
+import { describePickerDialog } from '../picker-dialog.js'
 
 // `pickPath`'s real `dialog.showOpenDialog` call cannot be exercised from
-// this suite (../ipc.ts's own header: `dialog` is a real Electron value
-// import, untouched by anything ipc.test.ts calls) -- `describePickerDialog`
+// this suite (../picker-dialog.ts's own header: `dialog` is a real Electron
+// value import, untouched by anything ipc.test.ts calls) -- `describePickerDialog`
 // is the pure text-building half, split out so the owner-approved wording
 // (d-0032) has a real regression test rather than living only in a comment.
 //
