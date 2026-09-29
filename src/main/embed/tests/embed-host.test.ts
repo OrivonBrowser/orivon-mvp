@@ -231,8 +231,8 @@ describe('configureEmbedSession -- onBeforeRequest resolves through the guest se
   })
 })
 
-// F7: a shown page reaches the verifier the same ordinary way a tab does,
-// so whatever it puts on its own request for the partition header must be
+// A shown page reaches the verifier the same ordinary way a tab does, so
+// whatever it puts on its own request for the partition header must be
 // stripped and replaced with its OWN top-level page's origin -- never left
 // as whatever the page set, and never left unset for a page's own document
 // request either.
