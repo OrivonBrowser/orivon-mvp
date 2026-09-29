@@ -38,17 +38,24 @@ describe('wrapSandboxedPreloadBody', () => {
   it('wraps the chunk so a redeclared name only shadows the outer parameter, never collides with it', () => {
     const plugin = wrapSandboxedPreloadBody()
     const rendered = (plugin.renderChunk as (code: string, chunk: unknown, options: unknown) => { code: string, map: null })
-      .call({}, REDECLARING_CHUNK, {}, {})
+      .call({}, REDECLARING_CHUNK, { name: 'child-host' }, {})
     expect(() => compileFunction(rendered.code, SANDBOXED_PRELOAD_PARAMS)).not.toThrow()
   })
 
   it('wraps in a self-invoking function, so the chunk still runs as a plain CommonJS module body', () => {
     const plugin = wrapSandboxedPreloadBody()
     const rendered = (plugin.renderChunk as (code: string, chunk: unknown, options: unknown) => { code: string, map: null })
-      .call({}, 'module.exports = { ok: true };\n', {}, {})
+      .call({}, 'module.exports = { ok: true };\n', { name: 'child-host' }, {})
     const fn = compileFunction(rendered.code, ['exports', 'require', 'module'])
     const moduleObject: { exports: unknown } = { exports: {} }
     fn.call(moduleObject, moduleObject.exports, () => { throw new Error('not used') }, moduleObject)
     expect(moduleObject.exports).toEqual({ ok: true })
+  })
+
+  it('leaves every other preload\'s chunk untouched', () => {
+    const plugin = wrapSandboxedPreloadBody()
+    const rendered = (plugin.renderChunk as (code: string, chunk: unknown, options: unknown) => unknown)
+      .call({}, REDECLARING_CHUNK, { name: 'app' }, {})
+    expect(rendered).toBeNull()
   })
 })

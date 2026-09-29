@@ -80,10 +80,13 @@ const PAGE_BUFFER_SOURCE = normalizePath(resolve(root, 'src/preload/page-buffer.
  * more layer of function scope around the whole chunk defuses this for any such name, not just
  * `Buffer`.
  */
-export function wrapSandboxedPreloadBody (): Plugin {
+export function wrapSandboxedPreloadBody (entries: ReadonlySet<string> = new Set(['child-host'])): Plugin {
   return {
     name: 'orivon:wrap-sandboxed-preload-body',
-    renderChunk (code) {
+    // Only the preloads that bundle shim code (today the child host's) need it; every other
+    // preload's output stays exactly what it was.
+    renderChunk (code, chunk) {
+      if (!entries.has(chunk.name)) return null
       return { code: `(function () {\n${code}\n})();\n`, map: null }
     }
   }

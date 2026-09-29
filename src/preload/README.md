@@ -104,7 +104,7 @@ delete it. Two other routes were measured and rejected:
 ADR-0017 requires be written down) are in [`routed/README.md`](routed/README.md)'s Design notes.
 
 **[`child-host.ts`](child-host.ts) is the one preload whose build needs
-`wrapSandboxedPreloadBody`** (`electron.vite.config.ts`, applied to every preload's output). It
+`wrapSandboxedPreloadBody`** (`electron.vite.config.ts`, applied to the child host's preload, the one that bundles shim code; every other preload's output is left as built). It
 alone pulls in `../shim/child-process/child.ts`, whose `stream` import brings in a bundled
 `readable-stream`, whose own `require('buffer')`/`require('util')` resolve through
 `shimNodeSpecifiers` to the shim's polyfills -- landing a real, unwrapped top-level `Buffer`
