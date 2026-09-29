@@ -7,7 +7,8 @@
 // output beside it, its glue imported by the Worker under the served CSP; and
 // a `worker_threads` thread over /thread.js gets its workerData, round-trips
 // a message and a MessageChannel port it was passed, reaches the broker
-// through its own `fs.promises`, and ends when `terminate()` is called. A
+// through its own `fs.promises`, shares a SharedArrayBuffer in workerData
+// with the page that started it, and ends when `terminate()` is called. A
 // second app, granted one TCP address, spawns a component whose socket
 // reaches a real echo server through the broker; a third spawns a component
 // that listens, and its page connects to it, as an app reaches its daemon.
@@ -47,6 +48,9 @@ const MANIFEST: Manifest = {
   version: '1.0.0',
   entry: 'index.html',
   assets: ['app.js', 'child.js', 'thread.js', 'bin/echo.wasm', 'bin/native', ...Object.keys(COMPONENT_FILES).map((path) => path.slice(1))],
+  // A worker_threads thread's own e2e case needs SharedArrayBuffer, which only a cross-origin
+  // isolated app gets.
+  crossOriginIsolated: true,
   capabilities: { fs: { quotaBytes: 1_048_576 } }
 }
 
@@ -134,9 +138,10 @@ it('spawns a WASI program and forks an app module in Workers, refuses a native p
       check('a WASI 0.2 component ran from its jco output: spawn, exit 1 for its code 3, close', JSON.stringify(results.component?.events) === JSON.stringify(['spawn', 'exit 1 null']), detail)
       check('the component echoed stdin to stdout and wrote stderr', results.component?.stdout === 'from a component\n' && results.component.stderr === 'done\n', detail)
       check('the component\'s file write reached the app\'s files through the broker', results.component?.fileText === 'written by a component\n', detail)
-      check('a worker_threads thread round-tripped a message, and a MessageChannel port it was passed reached it', results.thread?.portReply === 'pong via port' && JSON.stringify(results.thread.workerReply) === JSON.stringify({ echoedPing: 'hi from the page', wroteText: 'written by a thread' }), detail)
+      check('a worker_threads thread round-tripped a message, and a MessageChannel port it was passed reached it', results.thread?.portReply === 'pong via port' && JSON.stringify(results.thread.workerReply) === JSON.stringify({ echoedPing: 'hi from the page', wroteText: 'written by a thread', sawFromPage: 111 }), detail)
       check('the thread\'s fs.promises write reached the app\'s files through the broker', results.thread?.fileText === 'written by a thread', detail)
       check('terminate() resolved with the thread\'s exit code', results.thread?.terminatedWith !== undefined, detail)
+      check('a SharedArrayBuffer in workerData reached the thread, and both sides saw the same memory: never routed through the app\'s child host', results.thread?.sawFromPage === 111 && results.thread.afterThreadWrote === 222, detail)
     })
 
     await runPhase('a component\'s socket', async (check) => {

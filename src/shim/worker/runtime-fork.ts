@@ -65,7 +65,7 @@ function serialize (message: unknown, serialization: ForkStart['serialization'])
  * caller's own ref counts as still open (an IPC channel for a fork, a ref'd
  * parentPort listener for a thread).
  */
-export function setupChildProcess (scope: ForkScope, parent: ParentChannel, start: { argv: readonly string[], env: Readonly<Record<string, string>>, cwd: string, orivon: MessagePort }): ChildProcessSetup {
+export function setupChildProcess (scope: ForkScope, parent: ParentChannel, start: { type: 'fork' | 'thread', argv: readonly string[], env: Readonly<Record<string, string>>, cwd: string, orivon: MessagePort }): ChildProcessSetup {
   // The runtime installed these before its polyfills loaded (early-globals.ts); a test scope has none yet.
   if (scope.process === undefined) installGlobals({ root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR }, scope)
   const proc = scope.process as BaseProcess
@@ -112,9 +112,23 @@ export function setupChildProcess (scope: ForkScope, parent: ParentChannel, star
   const crash = (error: unknown): void => {
     if (error instanceof ChildExit || exited) return
     if (proc.emit('uncaughtException', error, 'uncaughtException')) return
-    // Raw, not a WireError: a worker_threads.Worker relays this as its own 'error' event (child.ts's 'crash'); fork has no listener for it.
-    parent.post({ type: 'crash', error })
-    write('stderr')(`${String((error as Error)?.stack ?? error)}\n`)
+    if (start.type === 'thread') {
+      // Raw, not a WireError: a worker_threads.Worker relays this as its own 'error' event
+      // (child.ts's 'crash'). Node prints nothing to stderr for a thread's own uncaught error,
+      // only the 'error' event, so there is no write('stderr') on this branch.
+      try {
+        parent.post({ type: 'crash', error })
+      } catch {
+        // Not every thrown value survives structured clone (a non-cloneable `cause`, a thrown
+        // Symbol, a rejected Event, ...); fall back to one that does, so the app still gets an
+        // 'error' event instead of losing the crash path to a second, unhandled error.
+        parent.post({ type: 'crash', error: new Error(String((error as { message?: unknown } | null)?.message ?? error)) })
+      }
+    } else {
+      // A fork has no listener for 'crash': Node prints an uncaught exception's stack to a
+      // forked child's stderr, which this reproduces.
+      write('stderr')(`${String((error as Error)?.stack ?? error)}\n`)
+    }
     end(1)
   }
   scope.addEventListener('error', (event) => { event.preventDefault(); crash((event as ErrorEvent).error) })

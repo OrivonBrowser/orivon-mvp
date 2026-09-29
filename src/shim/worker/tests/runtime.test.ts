@@ -1,6 +1,6 @@
-// The Worker runtime's two halves, run in-process against a fake parent
-// channel: spawn over a real WASI program (JSPI enabled), fork over a module
-// the test plays itself.
+// The Worker runtime's three halves, run in-process against a fake parent
+// channel: spawn over a real WASI program (JSPI enabled), fork and thread
+// over a module the test plays itself.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
@@ -12,6 +12,7 @@ import type { ParentChannel } from '../parent.js'
 import type { FromWorker, ToWorker } from '../protocol.js'
 import { type ForkScope, runFork } from '../runtime-fork.js'
 import { runSpawn } from '../runtime-spawn.js'
+import { runThread } from '../runtime-thread.js'
 
 let disk: RealDiskFs | undefined
 let server: OrivonServer | undefined
@@ -155,21 +156,22 @@ describe.skipIf(!hasJspi)('runSpawn', () => {
   })
 })
 
-describe('runFork', () => {
-  function fakeScope (): ForkScope & { closed: () => boolean, dispatch: (event: Event) => void } {
-    const target = new EventTarget()
-    let closed = false
-    return Object.assign(target, {
-      setTimeout: globalThis.setTimeout.bind(globalThis),
-      clearTimeout: globalThis.clearTimeout.bind(globalThis),
-      setInterval: globalThis.setInterval.bind(globalThis),
-      clearInterval: globalThis.clearInterval.bind(globalThis),
-      close: () => { closed = true },
-      closed: () => closed,
-      dispatch: (event: Event) => target.dispatchEvent(event)
-    }) as unknown as ForkScope & { closed: () => boolean, dispatch: (event: Event) => void }
-  }
+/** Shared by `runFork` and `runThread` below: `setupChildProcess` is common to both. */
+function fakeScope (): ForkScope & { closed: () => boolean, dispatch: (event: Event) => void } {
+  const target = new EventTarget()
+  let closed = false
+  return Object.assign(target, {
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    setInterval: globalThis.setInterval.bind(globalThis),
+    clearInterval: globalThis.clearInterval.bind(globalThis),
+    close: () => { closed = true },
+    closed: () => closed,
+    dispatch: (event: Event) => target.dispatchEvent(event)
+  }) as unknown as ForkScope & { closed: () => boolean, dispatch: (event: Event) => void }
+}
 
+describe('runFork', () => {
   function forkStart (port: MessagePort, serialization: 'json' | 'advanced' = 'json'): Parameters<typeof runFork>[0] {
     return { type: 'fork', url: 'https://app.test/child.js', argv: ['node', '/child.js', 'a'], env: { MODE: 'test' }, cwd: '/orivon/app', serialization, orivon: port }
   }
@@ -274,6 +276,18 @@ describe('runFork', () => {
     expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 1, signal: null })
   })
 
+  it('never posts \'crash\' for a fork (only a worker_threads.Worker listens for it), even for an error structured clone alone could not carry', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    // A non-cloneable `cause`: posting this unconditionally, as 'crash' used to be, threw before
+    // the stack ever reached stderr and before 'exit' was posted -- a regression for fork.
+    const uncloneable = Object.assign(new Error('fork boom'), { cause: { oops () {} } })
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => { throw uncloneable })
+    expect(parent.posts.some((post) => post.type === 'crash')).toBe(false)
+    expect(output(parent, 'stderr')).toMatch(/fork boom/)
+    expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 1, signal: null })
+  })
+
   it('lets an uncaughtException listener keep the child alive, as in Node', async () => {
     const scope = fakeScope()
     const parent = fakeParent()
@@ -284,5 +298,35 @@ describe('runFork', () => {
     scope.dispatch(Object.assign(new Event('error', { cancelable: true }), { error: new Error('later') }))
     expect(seen).toHaveLength(1)
     expect(parent.posts.some((post) => post.type === 'exit')).toBe(false)
+  })
+})
+
+describe('runThread', () => {
+  function threadStart (port: MessagePort): Parameters<typeof runThread>[0] {
+    const { port1 } = new MessageChannel()
+    return {
+      type: 'thread', url: 'https://app.test/thread.js', argv: ['node', '/thread.js'], env: {}, cwd: '/orivon/app',
+      threadId: 1, workerData: undefined, name: 'test thread', parentPort: port1, orivon: port,
+      stdin: false, stdout: false, stderr: false
+    }
+  }
+
+  it('posts \'crash\' for an uncaught error, and never writes to stderr -- Node prints nothing for a thread, only the \'error\' event a worker_threads.Worker relays this as', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    await runThread(threadStart(await orivonPort()), parent, scope, async () => { throw new Error('thread boom') })
+    expect(parent.posts).toContainEqual({ type: 'crash', error: expect.objectContaining({ message: 'thread boom' }) })
+    expect(output(parent, 'stderr')).toBe('')
+    expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 1, signal: null })
+  })
+
+  it('falls back to a plain Error when the thrown value cannot survive structured clone, instead of losing the crash path entirely', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    const uncloneable = { message: 'uncloneable', oops () {} }
+    await runThread(threadStart(await orivonPort()), parent, scope, async () => { throw uncloneable })
+    const crash = parent.posts.find((post): post is Extract<FromWorker, { type: 'crash' }> => post.type === 'crash')
+    expect((crash?.error as { message?: unknown } | undefined)?.message).toBe('uncloneable')
+    expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 1, signal: null })
   })
 })

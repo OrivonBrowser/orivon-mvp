@@ -117,7 +117,13 @@ export async function launchChild (
   const host = await getHostConnection()
   if (child.stopped) return
   if (host !== undefined) {
-    child.attach(createRemoteWorker(host, hostStart, extraTransfer), { dispose: async () => {} })
+    try {
+      child.attach(createRemoteWorker(host, hostStart, extraTransfer), { dispose: async () => {} })
+    } catch (error) {
+      // A non-cloneable value in hostStart (never workerData's own thread routing: threads never
+      // reach here) throws from the post inside createRemoteWorker synchronously, same call.
+      child.fail(error as Error)
+    }
     return
   }
 
@@ -149,7 +155,16 @@ export async function launchChild (
     child.fail(Object.assign(new Error(`the child cannot start: ${String((error as Error)?.message ?? error)}`), { code: 'ENOEXEC', errno: -8 }))
     return
   }
-  worker.postMessage({ ...base, orivon: channel.port2 } as ToWorker, [channel.port2, ...extraTransfer])
+  try {
+    worker.postMessage({ ...base, orivon: channel.port2 } as ToWorker, [channel.port2, ...extraTransfer])
+  } catch (error) {
+    // Neither leaked: nothing else will ever terminate this Worker or dispose this server once
+    // `child.fail()` has already reported the start as never having happened.
+    worker.terminate()
+    void server.dispose()
+    child.fail(error as Error)
+    return
+  }
   child.attach(worker, server)
 }
 

@@ -17,8 +17,10 @@ export const threadModules = new Map<string, (scope: ForkScope) => void | Promis
 
 export const workers: InProcessWorker[] = []
 
-/** Set to make the next Worker fail to construct, as a page whose CSP refuses one does. */
-export const failNext = { worker: false }
+/** Set to make the next Worker fail to construct, as a page whose CSP refuses one does; or the
+ * next real `postMessage` to it throw, as a non-cloneable value would from `launchChild()`'s own
+ * post to a real Worker (a case this fake, message-by-reference harness otherwise never hits). */
+export const failNext = { worker: false, postMessage: false }
 
 export class InProcessWorker {
   onmessage: ((event: { data: FromWorker }) => void) | null = null
@@ -34,6 +36,10 @@ export class InProcessWorker {
   }
 
   postMessage (message: ToWorker): void {
+    if (failNext.postMessage) {
+      failNext.postMessage = false
+      throw new DOMException('could not be cloned', 'DataCloneError')
+    }
     queueMicrotask(() => {
       if (this.terminated) return
       if (message.type === 'spawn') void runSpawn(message, this.#parent(), jspiWebAssembly, async (glue) => instantiateFrom(await (await fetch(glue)).text(), jspiWebAssembly))

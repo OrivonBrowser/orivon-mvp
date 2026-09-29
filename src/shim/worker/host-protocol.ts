@@ -4,7 +4,7 @@
 // real Worker it starts. This file is the one extra hop a host-routed child
 // adds in front of that.
 
-import type { ForkStart, FromWorker, SpawnStart, ThreadStart, ToWorker } from './protocol.js'
+import type { ForkStart, FromWorker, SpawnStart, ToWorker } from './protocol.js'
 
 /** A spawn's start, minus what only the host can supply: the compiled
  * program (a `WebAssembly.Module` does not survive the page -> host hop --
@@ -14,14 +14,13 @@ import type { ForkStart, FromWorker, SpawnStart, ThreadStart, ToWorker } from '.
  * duplicated). */
 export type HostSpawnStart = Omit<SpawnStart, 'orivon' | 'program'> & { readonly command: string }
 
-/** A fork's or a thread's start, minus only `orivon` -- everything else,
- * `parentPort` included, is already a plain URL, plain data, or a
- * `MessagePort` that crosses the extra hop the same way it crosses into a
- * same-process Worker today. */
+/** A fork's start, minus only `orivon` -- everything else is already a plain
+ * URL or plain data. A `worker_threads` thread never reaches here: it stays a
+ * local Worker of whatever started it (ADR-0046's amendment), so there is no
+ * `HostThreadStart`. */
 export type HostForkStart = Omit<ForkStart, 'orivon'>
-export type HostThreadStart = Omit<ThreadStart, 'orivon'>
 
-export type HostStart = HostSpawnStart | HostForkStart | HostThreadStart
+export type HostStart = HostSpawnStart | HostForkStart
 
 /**
  * One message on the page's own shared connection port (the one
@@ -36,8 +35,10 @@ export interface StartChildMessage {
   readonly port: MessagePort
   readonly start: HostStart
   /** Every OTHER transferable the real start message will carry once the
-   * host rebuilds it for the real Worker -- a thread's own `parentPort` and
-   * any `transferList` the app asked for. Empty for spawn and fork. */
+   * host rebuilds it for the real Worker. Always empty today: a spawn and a
+   * fork carry none, and a `worker_threads` thread -- the one kind that
+   * would (its own `parentPort`, and any `transferList` the app asked for)
+   * -- never reaches the host at all. */
   readonly extra: readonly Transferable[]
 }
 
