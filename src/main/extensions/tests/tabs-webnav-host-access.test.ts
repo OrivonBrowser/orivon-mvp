@@ -26,13 +26,14 @@ const { hasApiOrHostAccess } = await import('../extension-host-access.js')
 // The exact check extension-host.ts installs in production (createExtensionHost).
 setTabUrlAccessCheck((manifest: unknown, url: string | undefined) => hasApiOrHostAccess(manifest, 'tabs', url))
 
-function manifestWith (permissions: readonly string[], hostPermissions?: readonly string[]): Record<string, unknown> {
+function manifestWith (permissions: readonly string[], hostPermissions?: readonly string[], contentScriptMatches?: readonly string[]): Record<string, unknown> {
   return {
     manifest_version: 3,
     name: 'x',
     version: '1.0.0',
     ...(permissions.length > 0 ? { permissions } : {}),
-    ...(hostPermissions === undefined ? {} : { host_permissions: hostPermissions })
+    ...(hostPermissions === undefined ? {} : { host_permissions: hostPermissions }),
+    ...(contentScriptMatches === undefined ? {} : { content_scripts: [{ matches: contentScriptMatches, js: ['content.js'] }] })
   }
 }
 
@@ -111,6 +112,18 @@ describe('chrome.tabs: url/title/favIconUrl gated on tabs or matching host permi
     const resultB = await router.onExtensionMessage(frameEvent(session), 'ext', 'tabs.get', 2)
     expect(resultA.url).toBe('https://a.example/')
     expect(resultB.url).toBeUndefined()
+  })
+
+  it('strips url/title from tabs.get for a tab matched only by a content-script pattern, not a host permission', async () => {
+    const tab = fakeTab(1, 'https://a.example/', 'A')
+    const session = fakeSession()
+    const router = new ExtensionRouter(session)
+    new TabsAPI({ router, session, store: fakeStore([tab]) } as any)
+    session.extensions.getExtension = vi.fn(() => ({ id: 'ext', manifest: manifestWith([], undefined, ['<all_urls>']) })) as any
+
+    const result = await router.onExtensionMessage(frameEvent(session), 'ext', 'tabs.get', 1)
+    expect(result.url).toBeUndefined()
+    expect(result.title).toBeUndefined()
   })
 
   it('excludes a stripped tab from a tabs.query url filter instead of matching it by accident', async () => {

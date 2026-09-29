@@ -128,6 +128,39 @@ describe('readExtensionManifest', () => {
     expect(result.facts.apiPermissions).toEqual(['storage', 'tabs'])
   })
 
+  it('collects hostPermissions from host_permissions and MV2 pattern entries in permissions only, never content_scripts matches', () => {
+    const raw = {
+      manifest_version: 2,
+      name: 'MV2 fixture',
+      version: '1.0.0',
+      host_permissions: ['https://a.example/*'],
+      permissions: ['storage', '*://*.example.com/*', 'tabs'],
+      content_scripts: [
+        { matches: ['https://a.example/*'] },
+        { matches: ['<all_urls>'] }
+      ]
+    }
+    const result = readExtensionManifest(raw)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.facts.hostPermissions).toEqual(['*://*.example.com/*', 'https://a.example/*'])
+    expect(result.facts.hostPatterns).toEqual(['*://*.example.com/*', '<all_urls>', 'https://a.example/*'])
+  })
+
+  it('excludes optional_host_permissions from both hostPermissions and hostPatterns', () => {
+    const raw = {
+      manifest_version: 3,
+      name: 'optional host fixture',
+      version: '1.0.0',
+      optional_host_permissions: ['https://a.example/*']
+    }
+    const result = readExtensionManifest(raw)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.facts.hostPermissions).toEqual([])
+    expect(result.facts.hostPatterns).toEqual([])
+  })
+
   it('reports mainWorldScripts only from content_scripts entries declaring world MAIN', () => {
     const raw = {
       manifest_version: 3,
