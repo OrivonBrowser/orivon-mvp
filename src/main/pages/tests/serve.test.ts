@@ -109,9 +109,10 @@ describe('withRootBase', () => {
 })
 
 describe('isDevServerRequest', () => {
-  it('is the dev server\'s own host, the HMR socket included, whatever the scheme', () => {
+  it('is the hot-reload socket to the dev server\'s own host, and no plain request to it', () => {
     expect(isDevServerRequest('ws://localhost:5173/?token=x', 'http://localhost:5173')).toBe(true)
-    expect(isDevServerRequest('http://localhost:5173/@vite/client', 'http://localhost:5173')).toBe(true)
+    expect(isDevServerRequest('http://localhost:5173/@vite/client', 'http://localhost:5173')).toBe(false)
+    expect(isDevServerRequest('http://localhost:5173/@fs/etc/passwd', 'http://localhost:5173')).toBe(false)
   })
 
   it('is never a different host or port, or anything at all without a dev server', () => {

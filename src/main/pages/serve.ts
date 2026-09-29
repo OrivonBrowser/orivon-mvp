@@ -52,16 +52,16 @@ export function internalCsp (devServerUrl: string | undefined): string {
   ].join('; ')
 }
 
-/** Whether `url` names the dev server's own address -- the one thing a page
- * in this session may reach on the network besides `orivon://` itself, in
- * development: the HMR client's own WebSocket, which internal-session.ts's
- * network lock (a second lock on the same door `internalCsp` already
- * guards) otherwise refuses along with everything else. `false` whenever
- * there is no dev server at all (a built launch), the safe default. */
+/** Whether `url` is the dev server's hot-reload socket: in development, the
+ * one network request a page in this session may make besides `orivon://`
+ * itself. A WebSocket to the dev server's own host only: everything else a
+ * page fetches from the dev server goes through the handler and its route
+ * checks, never straight to the server, so `/@fs/` stays refused. */
 export function isDevServerRequest (url: string, devServerUrl: string | undefined): boolean {
   if (devServerUrl === undefined) return false
   try {
-    return new URL(url).host === new URL(devServerUrl).host
+    const target = new URL(url)
+    return (target.protocol === 'ws:' || target.protocol === 'wss:') && target.host === new URL(devServerUrl).host
   } catch {
     return false
   }
