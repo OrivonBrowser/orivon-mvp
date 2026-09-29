@@ -114,6 +114,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   when no address was given.
 - **History search answers at once on a long history**, whether most pages match or almost none do.
 - **A private window keeps the keyboard shortcuts** of the profile that opened it.
+- **A `.eth` or `ipfs://` site can be framed only by a page of its own origin**, so another site cannot
+  lay it under its own page to steer the person's clicks; an app granted `web.embed` for it still shows it.
 - **A native addon built with napi-rs loads**: its WebAssembly build gets Node-API and memory the way
   napi-rs's own loaders provide them, which a real napi-rs 3 addon needs.
 - **An app that listens for TCP connections receives them**: the broker now hands each accepted

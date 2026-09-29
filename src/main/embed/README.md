@@ -24,6 +24,19 @@ never a pinned bundle, and nothing about serving one applies to it.
 
 ## Design notes
 
+**`did-attach-webview` learns which app a guest belongs to from the guest's own `session`, not
+from re-reading the embedder's top frame.** `will-attach-webview` picks the guest's partition
+through `partitionReady(appOrigin)`, which records `appOrigin` against that partition's `Session`
+object the first time it configures it. `did-attach-webview` gets no origin of its own, only the
+new guest `WebContents`; it looks `guest.session` up in that same map. This works only because
+Electron hands back the SAME `Session` object from `session.fromPartition(partition)` and from
+the attached guest's own `webContents.session` -- proven, not assumed, by
+[`../../../test/e2e-embed.test.ts`](../../../test/e2e-embed.test.ts)'s `inEmbedPartition` check,
+which is also this design's regression guard. Keying on the guest's session rather than queuing
+origins per embedder needs no ordering assumption at all: two `<webview>`s attaching on the same
+or different tabs, in any order or interleaving, each resolve to the app whose grant configured
+the partition they actually ended up in.
+
 **Attached through `app.on('web-contents-created')`, not in `tab-view.ts`'s per-view wiring.**
 The same reason [`../sessions/permission-gate.ts`](../sessions/permission-gate.ts) attaches
 through `session-created`: the event reaches every `WebContents` this process ever makes, so a
