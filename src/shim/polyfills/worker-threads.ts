@@ -9,7 +9,7 @@
 import { refuseShim } from '../errors.js'
 import { Worker } from '../child-process/thread.js'
 import { NodeMessagePort, createMessageChannel } from '../worker/node-port.js'
-import { WORKER_THREADS_SYMBOL, type WorkerThreadsGlobals } from '../worker/runtime-thread.js'
+import { WORKER_THREADS_SYMBOL, type WorkerThreadsGlobals } from '../worker/symbols.js'
 import { nodeModule } from './module-proxy.js'
 
 export { Worker }
@@ -58,12 +58,12 @@ export class MessageChannel {
 export const MessagePort = NodeMessagePort
 export const BroadcastChannel = globalThis.BroadcastChannel
 
-function receiveMessageOnPort (): never {
+export function receiveMessageOnPort (): never {
   throw refuseShim('worker_threads.receiveMessageOnPort', 'not-applicable',
     'a web MessagePort cannot be read synchronously: read its \'message\' event instead')
 }
 
-function moveMessagePortToContext (): never {
+export function moveMessagePortToContext (): never {
   throw refuseShim('worker_threads.moveMessagePortToContext', 'unimplemented',
     'moving a port to another vm context needs a vm context of its own, which this shim does not build (vm.createContext)')
 }

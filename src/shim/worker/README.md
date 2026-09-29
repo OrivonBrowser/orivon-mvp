@@ -74,10 +74,10 @@ double-counted. `unref()`, `close()`, or the last listener going away all releas
 **A `worker_threads.Worker` nested in a forked child keeps that child alive while it is ref'd**
 (the default): `runtime-fork.ts` publishes its own `Liveness` under `FORK_LIVENESS_SYMBOL`, which
 `thread.ts`'s `Worker` reads off `globalThis` at construction and refs; nothing does outside a
-fork, where nothing here ever exits on its own. Both this and `runtime-thread.ts`'s own
-`WORKER_THREADS_SYMBOL` (what a thread's own `isMainThread`/`parentPort`/`workerData` and a
-nested-thread refusal read) are registered symbols, so every bundle's copy of the shim agrees on
-the same one.
+fork, where nothing here ever exits on its own. Both this and `WORKER_THREADS_SYMBOL` (what a
+thread's own `isMainThread`/`parentPort`/`workerData` and a nested-thread refusal read) are
+registered symbols in `symbols.ts`, a leaf module, so every bundle's copy of the shim agrees on
+the same one and the page's `worker_threads` names them without importing the runtime.
 
 **The stdout sink posts a copy of each chunk**, never the host's own array: transferring it would
 detach it, and the host reads its length afterwards for `fd_write`'s byte count, which a libc

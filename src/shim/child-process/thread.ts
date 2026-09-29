@@ -11,8 +11,7 @@ import { refuseShim } from '../errors.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { createWarnOnce } from '../warn-once.js'
 import { unwrapPorts, wrapPort } from '../worker/node-port.js'
-import { FORK_LIVENESS_SYMBOL } from '../worker/runtime-fork.js'
-import { WORKER_THREADS_SYMBOL } from '../worker/runtime-thread.js'
+import { FORK_LIVENESS_SYMBOL, WORKER_THREADS_SYMBOL } from '../worker/symbols.js'
 import { ChildProcess } from './child.js'
 import { moduleUrl } from './fork.js'
 import { environmentOf, launch, type SpawnOptions } from './spawn.js'
@@ -51,7 +50,8 @@ export class Worker extends EventEmitter {
   readonly #port: ReturnType<typeof wrapPort>
   readonly #outerLiveness: { ref: () => void, unref: () => void } | undefined
   #refd = true
-  #exit: Promise<number> | undefined
+  #exitCode: number | undefined
+  #exit: Promise<number | undefined> | undefined
 
   constructor (filename: string | URL, options: WorkerOptions = {}) {
     super()
@@ -91,7 +91,10 @@ export class Worker extends EventEmitter {
     child.on('error', (error: unknown) => { this.emit('error', error) })
     child.on('crash', (error: unknown) => { this.emit('error', error) })
     child.once('exit', () => { this.#releaseOuterRef() })
-    child.once('close', () => { this.emit('exit', exitCodeOf(child)) })
+    child.once('close', () => {
+      this.#exitCode = exitCodeOf(child)
+      this.emit('exit', this.#exitCode)
+    })
 
     this.stdin = options.stdin === true ? child.stdin : null
     this.stdout = options.stdout === true ? child.stdout : null
@@ -132,8 +135,9 @@ export class Worker extends EventEmitter {
     this.#port.postMessage(value, transferList)
   }
 
-  /** Ends the thread now, as Node's does with code 1, whatever it was doing; resolves once it has. */
-  terminate (): Promise<number> {
+  /** Ends the thread now, as Node's does with code 1, whatever it was doing; resolves once it has, and with `undefined` for a thread that had already exited, as Node's does. */
+  terminate (): Promise<number | undefined> {
+    if (this.#exitCode !== undefined) return Promise.resolve(undefined)
     this.#exit ??= new Promise((resolve) => { this.once('exit', (code: number) => { resolve(code) }) })
     this.#child.kill()
     return this.#exit

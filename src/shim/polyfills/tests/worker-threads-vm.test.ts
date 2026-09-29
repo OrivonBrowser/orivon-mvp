@@ -3,8 +3,8 @@
 // or a nested thread (worker_threads) refuses by name when used.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { WORKER_THREADS_SYMBOL } from '../../worker/runtime-thread.js'
-import workerThreads, {
+import { WORKER_THREADS_SYMBOL } from '../../worker/symbols.js'
+import workerThreads, { receiveMessageOnPort as namespaceReceive,
   BroadcastChannel, MessageChannel, MessagePort, Worker, getEnvironmentData, isMainThread, isMarkedAsUntransferable,
   markAsUntransferable, parentPort, setEnvironmentData, threadId, workerData
 } from '../worker-threads.js'
@@ -58,6 +58,8 @@ describe('worker_threads', () => {
     delete (globalThis as Record<symbol, unknown>)[WORKER_THREADS_SYMBOL]
     const { receiveMessageOnPort, moveMessagePortToContext } = workerThreads as unknown as { receiveMessageOnPort: () => unknown, moveMessagePortToContext: () => unknown }
     expect(() => receiveMessageOnPort()).toThrow(refusal('worker_threads.receiveMessageOnPort', 'not-applicable'))
+    // A bundled CommonJS require() gets the namespace, not the default export: the refusal must be there too.
+    expect(() => namespaceReceive()).toThrow(refusal('worker_threads.receiveMessageOnPort', 'not-applicable'))
     expect(() => moveMessagePortToContext()).toThrow(refusal('worker_threads.moveMessagePortToContext', 'unimplemented'))
   })
 

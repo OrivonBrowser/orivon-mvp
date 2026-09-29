@@ -13,6 +13,7 @@ import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
 import { Liveness, trackScope } from './liveness.js'
 import { createOrivonClient } from './orivon-client.js'
 import type { ParentChannel } from './parent.js'
+import { FORK_LIVENESS_SYMBOL } from './symbols.js'
 import type { ForkStart, StreamName, ToWorker } from './protocol.js'
 
 export interface ForkScope extends GlobalsTarget {
@@ -41,9 +42,6 @@ interface ForkProcess extends BaseProcess {
   send (message: unknown, ...rest: unknown[]): boolean
   disconnect (): void
 }
-
-/** Where a nested worker_threads.Worker's ref()/unref() reach this fork's own Liveness, so a ref'd thread keeps the fork alive (thread.ts). */
-export const FORK_LIVENESS_SYMBOL = Symbol.for('orivon.worker.fork-liveness')
 
 export interface ChildProcessSetup {
   readonly proc: BaseProcess

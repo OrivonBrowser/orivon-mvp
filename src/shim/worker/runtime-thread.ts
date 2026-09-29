@@ -13,16 +13,7 @@ import type { ParentChannel } from './parent.js'
 import type { ThreadStart } from './protocol.js'
 import { type ForkScope, setupChildProcess } from './runtime-fork.js'
 import { wrapPort } from './node-port.js'
-
-/** Where the worker_threads polyfill reads isMainThread/threadId/parentPort/workerData, set before the app module imports it. */
-export const WORKER_THREADS_SYMBOL = Symbol.for('orivon.worker_threads')
-
-export interface WorkerThreadsGlobals {
-  readonly threadId: number
-  readonly workerData: unknown
-  readonly parentPort: ReturnType<typeof wrapPort>
-  readonly resourceLimits: Record<string, never>
-}
+import { WORKER_THREADS_SYMBOL, type WorkerThreadsGlobals } from './symbols.js'
 
 export async function runThread (start: ThreadStart, parent: ParentChannel, scope: ForkScope, load: (url: string) => Promise<unknown>): Promise<void> {
   const { proc, liveness, crash } = setupChildProcess(scope, parent, start)

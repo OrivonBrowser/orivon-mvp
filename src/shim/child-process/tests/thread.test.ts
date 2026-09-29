@@ -8,8 +8,7 @@ import type { Orivon } from '../../../contracts/capability-api.js'
 import { OrivonShimError } from '../../errors.js'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
 import type { NodeMessagePort } from '../../worker/node-port.js'
-import { FORK_LIVENESS_SYMBOL } from '../../worker/runtime-fork.js'
-import { WORKER_THREADS_SYMBOL, type WorkerThreadsGlobals } from '../../worker/runtime-thread.js'
+import { FORK_LIVENESS_SYMBOL, WORKER_THREADS_SYMBOL, type WorkerThreadsGlobals } from '../../worker/symbols.js'
 import { fork } from '../fork.js'
 import { Worker } from '../thread.js'
 import { forkModules, threadModules } from './support/in-process-worker.js'
@@ -88,6 +87,8 @@ describe('Worker', () => {
     const worker = new Worker('/quiet.js')
     const code = await new Promise((resolve) => worker.once('exit', resolve))
     expect(code).toBe(0)
+    // Node resolves terminate() on a thread that has already exited, with undefined.
+    expect(await worker.terminate()).toBeUndefined()
   })
 
   it('reports process.exit(3) as its own exit code', async () => {
