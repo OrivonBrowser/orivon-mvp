@@ -22,18 +22,14 @@ import { toOrivonError } from '../orivon-error.js'
 // still never touching `ipcRenderer` directly from the PAGE (it stays a
 // plain proxied closure, exactly like every other method here; only this
 // preload script's own `fsReadFileSyncEnvelope` touches `ipcRenderer.
-// sendSync` itself). It is SPLIT INTO TWO FUNCTIONS,
-// `fsReadFileSyncEnvelope`/`fsReadFileSyncThrowing` -- see their own docs --
-// because a THROWN value does not survive `contextBridge`'s function-proxy
-// boundary intact (found live, not in a unit test); a RETURNED one does, so
-// the envelope crosses as data and the real `OrivonError` is thrown on
-// whichever side of the boundary the call already ends up on.
-// `./control-call.ts`'s `call()` is the only thing that touches
-// `ipcRenderer.invoke` (the raw MessagePortMain/ipcRenderer never crossing
-// into the main world is this whole directory's rule, not just this
-// file's); each method's own timeout budget lives there too. net.listen's
-// own bridge closure (netListenBridge) lives in ./net.ts alongside
-// net.connect/net.udpBind/net.lookup's, for the same reason.
+// sendSync` itself). `./control-call.ts`'s `call()` is the only thing that
+// touches `ipcRenderer.invoke` (the raw MessagePortMain/ipcRenderer never
+// crossing into the main world is this whole directory's rule, not just
+// this file's); each method's own timeout budget lives there too.
+// net.listen's own bridge closure (netListenBridge) lives in ./net.ts
+// alongside net.connect/net.udpBind/net.lookup's, for the same reason.
+//
+// `exposeFallback()` below is fail-closed -- why: README.md's Design notes.
 
 async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
 async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
@@ -119,7 +115,7 @@ async function fsOpen (path: string, flags: string): Promise<MainWorldFileBridge
  */
 const PICKER_TIMEOUT_MS = TIMEOUT_MS.grant
 
-/** `orivon.fs.userSelected`'s FILE shape (A194, d-0032). `exposeFallback`'s own `userSelected` closure routes here for every call except `{ directory: true }`, which goes to `fsUserSelectedDirectory` below (A195). */
+/** `orivon.fs.userSelected`'s FILE shape (A194, d-0032). `exposeOrivon`'s own `bridge.fsUserSelected` reaches here; `fsUserSelectedDirectory` below is its `{ directory: true }` counterpart (A195). */
 async function fsUserSelected (opts?: { multiple?: boolean }): Promise<readonly MainWorldFileBridge[]> {
   const descriptors = await call<readonly FsHandleDescriptor[]>('fs.userSelected', opts ?? {}, PICKER_TIMEOUT_MS)
   return descriptors.map((descriptor) => buildFileBridge(descriptor.id))
@@ -182,27 +178,11 @@ async function fsUserSelectedDirectory (): Promise<MainWorldDirectoryBridge | nu
  * throw needs to happen on builds the real `OrivonError` there:
  * `../main-world-socket.ts`'s `installOrivon` does this for the
  * `executeInMainWorld` path (see its own `readFileSync`, reusing its own
- * `toOrivonError`); `fsReadFileSyncThrowing` below does it for
- * `exposeFallback`.
+ * `toOrivonError`). `exposeFallback` below never calls this: its own
+ * `readFileSync` refuses before touching `ipcRenderer` at all.
  */
 function fsReadFileSyncEnvelope (path: string): ResponseEnvelope<Uint8Array> {
   return ipcRenderer.sendSync(SYNC_CONTROL_CHANNEL, { path }) as ResponseEnvelope<Uint8Array>
-}
-
-/**
- * `exposeFallback`'s own `readFileSync`: throws in the isolated world, built
- * the same way `call()` builds one, so an app's `catch` sees an identical
- * shape whichever `fs` method failed. Only used when `executeInMainWorld` is
- * absent or throws -- there is no main-world code running in that case (that
- * is the whole reason `installOrivon` never runs) for the throw to happen
- * inside instead, unlike `fsReadFileSyncEnvelope`'s other caller.
- */
-function fsReadFileSyncThrowing (path: string): Uint8Array {
-  const response = fsReadFileSyncEnvelope(path)
-  if (response.ok) return response.result
-  throw toOrivonError(response.code, response.platformCode === undefined
-    ? { message: response.message }
-    : { message: response.message, platformCode: response.platformCode })
 }
 
 async function idPublicKey (curve: string): Promise<Uint8Array> { return await call('id.publicKey', { curve }, TIMEOUT_MS.id) }
@@ -224,9 +204,10 @@ async function secretsDecrypt (ciphertext: Uint8Array): Promise<Uint8Array> {
  * surface, which takes one options object -- so it needs this thin wrapper
  * around `webOpenContextBridge`, which still wants them merged into one
  * `{ origin, width?, height? }` for the CONTROL_CHANNEL payload
- * (surface/web.ts's own `exactOptionalPropertyTypes` flattening). See
- * `exposeFallback`'s own doc on this method for what wiring
- * `webOpenContextBridge` straight through used to do instead.
+ * (surface/web.ts's own `exactOptionalPropertyTypes` flattening). Wiring
+ * `webOpenContextBridge` straight through as `openContext` would silently
+ * drop `origin` (a bare string has no `.origin` field), reaching the broker
+ * as `{ origin: undefined }`.
  */
 async function webOpenContext (origin: string, options?: { width?: number, height?: number }): Promise<MainWorldWebContextBridge> {
   const opts: { origin: string, width?: number, height?: number } = { origin }
@@ -241,66 +222,54 @@ async function webSetEmbedScript (source: string): Promise<void> {
 }
 
 /**
- * The stream-less `net` surface: used both when `executeInMainWorld` is
- * absent and when it exists but throws -- one implementation, not two
- * copies quietly drifting apart. `net.lookup` (d-0030) is included here,
- * unlike `connect`/`connectSecure`/`udpBind`: it resolves to plain data,
- * never a live handle, so it needs none of the main-world stream wrapping
- * that makes the other three unsafe to expose without `executeInMainWorld`
- * (`exposeOrivon`'s own doc below) -- exactly `fs.readFile`'s own reasoning.
+ * What every method on `exposeFallback`'s surface does instead of
+ * forwarding. `installOrivon`'s `guarded` (main-world-socket.ts) is the only
+ * place a caller is attributed to the page, so an extension's script can be
+ * refused (ADR-0045); `exposeFallback` crosses `contextBridge.
+ * exposeInMainWorld` with no such attribution, so a page and a MAIN-world
+ * extension script reaching a method here are indistinguishable. Refusing
+ * every call keeps this surface fail-closed rather than granting extension
+ * code the page's own access merely because `executeInMainWorld` was
+ * unavailable or threw.
+ */
+function deniedRejection (): Promise<never> {
+  return Promise.reject(toOrivonError('denied', { message: 'orivon: refused -- this surface has no caller-attribution filter' }))
+}
+/** `deniedRejection`'s synchronous twin, for `fs.readFileSync` alone -- matches its own never-a-Promise shape, exactly like `main-world-socket.ts`'s `guarded(fn, true)`. */
+function deniedThrow (): never {
+  throw toOrivonError('denied', { message: 'orivon: refused -- this surface has no caller-attribution filter' })
+}
+
+/**
+ * The surface exposed when `executeInMainWorld` is absent or throws
+ * (`exposeOrivon`'s own doc below). Every method keeps its real shape -- an
+ * app's `typeof window.orivon.fs.open === 'function'` feature check still
+ * passes -- but refuses rather than forwards: this file cannot attribute a
+ * caller to the page the way `installOrivon`'s `guarded` does, so forwarding
+ * would hand a MAIN-world extension script the same access as the page.
+ * Logged once, so a silently fail-closed `window.orivon` is still visible.
  */
 function exposeFallback (): void {
+  console.error('[orivon] window.orivon has no caller-attribution filter on this path (executeInMainWorld is absent or failed); every capability call will be refused')
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
-    app: { manifest: appManifest, grants: appGrants, requestGrant: appRequestGrant },
+    app: { manifest: deniedRejection, grants: deniedRejection, requestGrant: deniedRejection },
     fs: {
-      readFile: fsReadFile,
-      writeFile: fsWriteFile,
-      readFileSync: fsReadFileSyncThrowing,
-      mkdir: fsMkdir,
-      readdir: fsReaddir,
-      stat: fsStat,
-      rm: fsRm,
-      rename: fsRename,
-      open: fsOpen,
-      // Routes on `opts?.directory`, matching capability-api.ts's own
-      // overload split (A195) -- `fsUserSelectedDirectory` for the folder
-      // shape, `fsUserSelected` (unchanged) for the file one.
-      userSelected: async (opts?: { directory?: boolean, multiple?: boolean }) => {
-        if (opts?.directory === true) return await fsUserSelectedDirectory()
-        return await fsUserSelected(opts?.multiple === undefined ? undefined : { multiple: opts.multiple })
-      }
+      readFile: deniedRejection,
+      writeFile: deniedRejection,
+      readFileSync: deniedThrow,
+      mkdir: deniedRejection,
+      readdir: deniedRejection,
+      stat: deniedRejection,
+      rm: deniedRejection,
+      rename: deniedRejection,
+      open: deniedRejection,
+      userSelected: deniedRejection
     },
-    id: {
-      publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
-      sign: async (opts: { curve: string, payload: Uint8Array }) => await idSign(opts.curve, opts.payload)
-    },
-    secrets: {
-      available: secretsAvailable,
-      encrypt: secretsEncrypt,
-      decrypt: secretsDecrypt
-    },
-    net: {
-      lookup: async (opts: { hostname: string }) => await netLookupBridge(opts)
-    },
-    // Included here despite net.connect/etc. above being excluded: unlike
-    // those, WebContext needs no main-world-native stream (surface/web.ts's
-    // own header) -- exactly fs.open's own reasoning for staying in this
-    // fallback path.
-    //
-    // web.context: `OrivonWeb.openContext` (capability-api.ts) is the one
-    // capability on this whole surface that DOESN'T take a single options
-    // object -- `origin` is its own positional argument, `options` a
-    // separate, optional one. Wiring `webOpenContextBridge` (which takes one
-    // merged `{ origin, width?, height? }`) straight through as `openContext`
-    // silently dropped `origin` (a bare string has no `.origin` field), so
-    // every call reached the broker as `{ origin: undefined }` and was
-    // rejected 'invalid'. `webOpenContext` above restores the contract's
-    // own two-argument shape.
-    web: {
-      openContext: webOpenContext,
-      setEmbedScript: webSetEmbedScript
-    }
+    id: { publicKey: deniedRejection, sign: deniedRejection },
+    secrets: { available: deniedRejection, encrypt: deniedRejection, decrypt: deniedRejection },
+    net: { lookup: deniedRejection },
+    web: { openContext: deniedRejection, setEmbedScript: deniedRejection }
   })
 }
 
@@ -309,16 +278,18 @@ function exposeFallback (): void {
  * per-world, but never called twice from the same script -- each caller
  * (app.ts, newtab.ts's fallback branch) calls it exactly once.
  *
- * FAIL-CLOSED: `contextBridge.executeInMainWorld` is `@experimental`
- * (electron.d.ts) -- confirmed working live (a throwaway probe: a
- * sandboxed preload, a function argument proxied and callable from the
- * main world, a callback passed back through it, a real main-world
- * ReadableStream built this way behaving normally for page code), but if
+ * FAIL-CLOSED, twice over: `contextBridge.executeInMainWorld` is
+ * `@experimental` (electron.d.ts) -- confirmed working live (a throwaway
+ * probe: a sandboxed preload, a function argument proxied and callable from
+ * the main world, a callback passed back through it, a real main-world
+ * ReadableStream built this way behaving normally for page code) -- but if
  * it is ever unavailable, OR THROWS (a serialisation refusal, a CSP issue,
  * an `@experimental` API not actually ready), this falls back to
- * `exposeFallback()` WITHOUT `net` rather than ship a `net.connect` whose
- * return value is not a real `TcpSocket` -- the exact failure mode
- * ADR-0002 exists to prevent for this interface -- or, worse, abort the
+ * `exposeFallback()`, whose every method refuses rather than forwards
+ * (that file's own doc): `installOrivon`'s caller-attribution filter
+ * (ADR-0045) only exists inside the `executeInMainWorld` path, so ship
+ * nothing capability-bearing rather than grant a MAIN-world extension
+ * script the same unfiltered access as the page, or, worse, abort the
  * whole preload script and leave the page with no `window.orivon` at all.
  */
 export function exposeOrivon (): void {

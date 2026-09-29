@@ -139,7 +139,7 @@ function boot (runtime: Runtime): void {
       return
     }
 
-    const shell = createShellServices(app.getPath('userData'), ctx, runtime)
+    const shell = createShellServices(app.getPath('userData'), runtime, ctx)
     // Wires every window's tab lifecycle into the extensions library
     // (extensionsSubsystem.afterReady already constructed it, above) and
     // hands its icon requests the chrome view's own session.

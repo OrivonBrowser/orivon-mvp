@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
-import { LIMITS, fakeBridge, fakeServerBridgeResult, fakeSocketBridgeResult, tick } from './main-world-socket.test-helpers.js'
+import { LIMITS, asPage, fakeBridge, fakeServerBridgeResult, fakeSocketBridgeResult, tick } from './main-world-socket.test-helpers.js'
 
 describe('installOrivon -- net.listen backpressure (highWaterMark: 0, end to end)', () => {
   function listenTarget (server = fakeServerBridgeResult()): {
@@ -21,7 +21,7 @@ describe('installOrivon -- net.listen backpressure (highWaterMark: 0, end to end
   } {
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(fakeSocketBridgeResult(), undefined, undefined, undefined, server), LIMITS, target)
-    return { orivon: target.orivon as never, server }
+    return { orivon: asPage(target.orivon) as never, server }
   }
 
   it('an unread server accepts none -- reportAccepted is never called before the page reads', async () => {
@@ -79,7 +79,7 @@ describe('installOrivon -- net.listen wiring', () => {
   } {
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(fakeSocketBridgeResult(), undefined, undefined, undefined, server), LIMITS, target)
-    return { orivon: target.orivon as never, server }
+    return { orivon: asPage(target.orivon) as never, server }
   }
 
   it('resolves to a TcpServer-shaped object with a real WHATWG connections stream', async () => {

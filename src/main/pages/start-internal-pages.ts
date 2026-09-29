@@ -22,10 +22,13 @@ import { profilesDomain } from '../launch/profiles-domain.js'
 import { historyDomain } from '../history/history-domain.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
 import { createPermissionsController } from '../permissions/permissions.js'
 import type { SubsystemContext } from '../registry.js'
 import type { InternalDomain } from './internal-ipc.js'
 import { registerInternalIpc } from './internal-ipc.js'
+import { cleanOrphanedAppPartitions } from './orphaned-app-partitions.js'
 import { internalSession } from './internal-session.js'
 
 /** Facts about this build, for the About section. */
@@ -69,7 +72,15 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       history: services.history,
       zoom: services.zoomStore,
       websites: session.defaultSession,
-      appSessions: async () => (await permissions.list()).map((app) => session.fromPartition(partitionFor(app.origin))),
+      // Only a CACHE-SERVED app still has a partition of its own to clear:
+      // a granted-without-install app shares session.defaultSession, which
+      // `websites` above already reaches. Calling session.fromPartition on
+      // the others would only mint a fresh, never-used, empty partition for
+      // each -- ADR-0018's own warning against probing session.fromPartition
+      // speculatively.
+      appSessions: async () => (await permissions.list())
+        .filter((app) => isOriginServedFromCacheSync(app.origin))
+        .map((app) => session.fromPartition(partitionFor(app.origin))),
       now: Date.now
     }),
     apps: appsDomain({ permissions, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
@@ -97,6 +108,9 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   // broker's four mutators -- see grant-events.ts's own header for why
   // hooking those is the whole mechanism. Undefined only before the broker
   // subsystem runs, which is always before this function is ever called.
+  // Origin-keyed, not session-keyed: fires the same way for a cache-served
+  // app's own partition and a granted-without-install app sharing
+  // session.defaultSession (see `appSessions` above for that split).
   ctx.broker?.onGrantsChanged(() => { services.internalPages.publish('apps.changed', undefined, ['settings']) })
   // One underlying change, two pages: the History page's own list and count,
   // and Settings' Privacy section (which shows the same count). Published as
@@ -113,4 +127,17 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   if (!services.profiles.isPrivate) {
     onTelemetryChanged(() => { services.internalPages.publish('usage.changed', undefined, ['settings']) })
   }
+  // Fire-and-forget, like the update check below it in index.ts: a one-time
+  // cleanup, never the window's own critical path. orphaned-app-partitions.ts's
+  // own header has the full reasoning. A second, throwaway LoaderStorage
+  // (nodeLoaderStorage is a stateless closure over userDataPath, same as
+  // loader/subsystem.ts's own instance) so this cleanup can tell "a pin
+  // exists on disk" apart from "serving is live for this run" without
+  // threading the loader's own storage instance through SubsystemContext.
+  void permissions.list()
+    .then(async (apps) => {
+      const pinnedOrigins = new Set(await nodeLoaderStorage(app.getPath('userData')).listPinnedOrigins())
+      await cleanOrphanedAppPartitions(app.getPath('userData'), apps, isOriginServedFromCacheSync, pinnedOrigins)
+    })
+    .catch((error: unknown) => { console.error('[orivon] clearing an orphaned app partition failed:', error) })
 }

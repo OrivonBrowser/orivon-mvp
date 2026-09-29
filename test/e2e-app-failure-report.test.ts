@@ -21,7 +21,7 @@ import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, mainOutput, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
-import { PORT_APP_FREETUBE, startOwnServer, grantOriginOnly, readAppManifest } from './freetube-fixture.js'
+import { AS_PAGE_SCRIPT_URL, PORT_APP_FREETUBE, clearFreetubeAsPageScript, grantOriginOnly, readAppManifest, setFreetubeAsPageScript, startOwnServer } from './freetube-fixture.js'
 
 const ORIGIN = `http://127.0.0.1:${String(PORT_APP_FREETUBE)}`
 
@@ -33,15 +33,24 @@ const SILENCE_SETTLE_MS = 2_000
 const TEST_TIMEOUT_MS =
   ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 4 + 8_000 * 8 + APP_CLOSE_RACE_MS + 40_000
 
-/** Appends a module script that throws while evaluating -- the shape of the
+/**
+ * Appends a module script that throws while evaluating -- the shape of the
  * failure this exists for, not a plain `console.error` that would prove far
- * less. Built as source text because it is handed to `page.evaluate`. */
-const throwInPage = (message: string): string => `
-  const script = document.createElement('script')
-  script.type = 'module'
-  script.textContent = 'throw new TypeError(' + ${JSON.stringify(JSON.stringify(message))} + ')'
-  document.body.append(script)
-`
+ * less. EXTERNAL, never inline: the granted origin's CSP has no
+ * 'unsafe-inline' (ADR-0045), so a `script.textContent` throw no longer
+ * runs at all -- it is written to the freetube fixture's own static root
+ * (freetube-fixture.ts's setFreetubeAsPageScript) and loaded by `src`
+ * instead, cache-busted since both calls below reuse the same URL.
+ */
+async function throwInPage (view: ReturnType<typeof findChrome>, message: string): Promise<void> {
+  setFreetubeAsPageScript(`throw new TypeError(${JSON.stringify(message)})`)
+  await view.evaluate((url: string) => {
+    const script = document.createElement('script')
+    script.type = 'module'
+    script.src = url
+    document.body.append(script)
+  }, `${ORIGIN}/${AS_PAGE_SCRIPT_URL}?t=${String(Date.now())}`)
+}
 
 const ORDINARY = 'ORDINARY TAB ERROR, must stay unreported'
 const APP = "Cannot assign to read only property 'fetch' of object '#<Window>'"
@@ -73,7 +82,7 @@ it(
         const plain = findViewShowing(app, chrome, `${ORIGIN}/`)
         if (plain === undefined) throw new Error('no view showing the origin before the grant')
 
-        await plain.evaluate(throwInPage(ORDINARY))
+        await throwInPage(plain, ORDINARY)
         await new Promise((resolve) => setTimeout(resolve, SILENCE_SETTLE_MS))
         const quiet = !mainOutput(app).includes(ORDINARY)
         check(
@@ -98,7 +107,7 @@ it(
         const routed = await appTab.evaluate(() => !/\[native code\]/.test(String(globalThis.fetch)))
         check('the second view really is a registered app tab, so the two halves differ only by the flag', routed)
 
-        await appTab.evaluate(throwInPage(APP))
+        await throwInPage(appTab, APP)
         const seen = await waitFor(
           () => mainOutput(app as NonNullable<typeof app>).includes(`[orivon][app ${ORIGIN}/?app]`) &&
             mainOutput(app as NonNullable<typeof app>).includes(APP),
@@ -113,6 +122,7 @@ it(
       } finally {
         if (app !== undefined) await closeElectronApp(app)
         if (server !== undefined) await killChild(server)
+        clearFreetubeAsPageScript()
       }
     })
   },

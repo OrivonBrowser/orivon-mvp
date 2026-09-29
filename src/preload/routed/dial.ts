@@ -7,7 +7,7 @@
 // routed socket from this page closes, or after a short back-off (the
 // allowance is per origin, and the rate limiter answers 'limit' too), up to a
 // bounded wait. README.md's Design notes have the numbers.
-import type { FetchRouteSocket, FetchRouteTarget, RoutedSlot, RoutedSocket } from './types.js'
+import type { FetchRouteSocket, FetchRouteTarget, InternalNet, RoutedSlot, RoutedSocket } from './types.js'
 
 /** Mirrors the literals `installRoutedDial` keeps inside its own body; see ./wire.ts's ROUTED_MAX_HEAD_BYTES for why they exist twice. */
 export const ROUTED_QUEUE_MAX_WAIT_MS = 120_000
@@ -19,10 +19,16 @@ export function installRoutedDial (
 ): void {
   if (!isAppTab) return
   const slot = (target as Record<symbol, RoutedSlot | undefined>)[Symbol.for('orivon.routed-network')]
-  if (slot?.wire === undefined || target.orivon?.net === undefined) return
+  // The UNWRAPPED net.connect/connectSecure, never window.orivon.net:
+  // dialling runs from a callback with no page frame of its own, exactly
+  // what ../surface/main-world-socket.ts's own extension-code check refuses
+  // by design (../surface/README.md's Design notes) -- this reads the
+  // private slot that check's own file leaves for this purpose instead.
+  const internalNet = (target as Record<symbol, InternalNet | undefined>)[Symbol.for('orivon.internal-net')]
+  if (slot?.wire === undefined || internalNet === undefined) return
   // Fresh bindings, so the narrowing above holds inside every nested function.
   const wire = slot.wire
-  const net = target.orivon.net
+  const net = internalNet
 
   const QUEUE_MAX_WAIT_MS = 120_000
   const LIMIT_RETRY_MS = 500

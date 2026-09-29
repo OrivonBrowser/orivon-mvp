@@ -14,7 +14,7 @@
 // GATED ON `isAppTab`, decided SYNCHRONOUSLY in main before this ever runs
 // -- see this directory's README.md's Design notes for why, and for the
 // divergences from a real browser's fetch() that remain.
-import type { FetchRouteTarget, RoutedFetchInit, RoutedFetchRequestLike, RoutedSlot } from './types.js'
+import type { FetchRouteTarget, InternalNet, RoutedFetchInit, RoutedFetchRequestLike, RoutedSlot } from './types.js'
 
 // Re-exported so no import site changes.
 export type { FetchRouteSocket, FetchRouteTarget } from './types.js'
@@ -25,7 +25,12 @@ export function installFetchRoute (
 ): void {
   if (!isAppTab) return
   const core = (target as Record<symbol, RoutedSlot | undefined>)[Symbol.for('orivon.routed-network')]?.core
-  if (core === undefined) return
+  // Attribution, not just routing -- an extension's MAIN-world fetch() must
+  // reach only what the page's OWN native fetch would (README.md's Design
+  // notes). installOrivon's own check, read through the same private slot
+  // ../dial.ts already reads, never copied.
+  const callerIsPage = (target as Record<symbol, InternalNet | undefined>)[Symbol.for('orivon.internal-net')]?.callerIsPage
+  if (core === undefined || callerIsPage === undefined) return
 
   const nativeFetch = typeof target.fetch === 'function' ? target.fetch.bind(target) : undefined
 
@@ -68,7 +73,10 @@ export function installFetchRoute (
     }
     const base = typeof target.location?.href === 'string' ? target.location.href : undefined
     const url = new URL(rawUrl, base)
-    if (!core!.routes(url)) return await native(input, init)
+    // Attribution runs SYNCHRONOUSLY, before any `await` -- exactly like `../
+    // surface/main-world-socket.ts`'s `guarded`, and for the same reason: an
+    // async continuation has no caller frame left to capture.
+    if (!core!.routes(url) || !callerIsPage!(routedFetch)) return await native(input, init)
     if (url.username !== '' || url.password !== '') throw new TypeError('Request cannot be constructed from a URL that includes credentials')
 
     // As in real fetch(): init overrides the Request's own, and null is no signal.

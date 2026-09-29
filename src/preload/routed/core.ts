@@ -227,9 +227,18 @@ export function installRoutedCore (
   slot.core = { routes, request }
 }
 
-/** Removes the shared slot from the page's window once every installer has read it. */
+/**
+ * Removes the shared slot from the page's window once every installer has
+ * read it -- and, always, ../surface/main-world-socket.ts's own private
+ * internal-net slot (../surface/README.md's Design notes), whether or not
+ * this tab turned out to need the routed path at all: ../expose-fetch-
+ * route.ts's own exposeFetchRoute() calls this unconditionally for exactly
+ * that reason.
+ */
 export function releaseRoutedSlot (
   target: object = typeof window === 'undefined' ? {} : window
 ): void {
-  delete (target as Record<symbol, unknown>)[Symbol.for('orivon.routed-network')]
+  const holder = target as Record<symbol, unknown>
+  delete holder[Symbol.for('orivon.routed-network')]
+  delete holder[Symbol.for('orivon.internal-net')]
 }
