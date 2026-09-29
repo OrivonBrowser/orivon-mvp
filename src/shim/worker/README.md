@@ -50,7 +50,17 @@ addon's file calls refuse with `NOSYS`. The synchronous twin sits under
 shim finds the same one. It is not part of the contract, and `window.orivon` has none. A reply
 carries no stream, so a call returning one refuses, and the page closes what that call opened. **Never make a synchronous call from the
 thread that serves it**: it waits forever, which is why `tests/sync-channel.test.ts` runs the
-Worker end in a `worker_threads` thread.
+Worker end in a `worker_threads` thread. Every path-based `fs` `*Sync` call ([`../fs/`](../fs/))
+rides this same twin, one `orivon.fs` member at a time; `readFileSync`/`existsSync` alone also work
+outside a Worker, over the runtime's own synchronous channel
+([`ADR-0016`](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)).
+
+**`child_process.spawnSync`/`execSync`/`execFileSync` are not an `orivon.*` call, so they carry
+their own request kind over the same channel** (`orivon-server.ts`'s `CallBody`'s `spawnSync`
+variant, `sync-channel.ts`'s `Symbol.for('orivon.spawnSync')` on the Worker's `orivon`). `serveOrivon`
+takes an optional `runSpawnSync` to answer it, given only where a Worker's `orivon.*` is served
+([`../child-process/`](../child-process/)'s `spawn.ts`'s `launch()`) -- the grandchild it starts
+runs on THIS thread, asynchronously, same as any other child; only the Worker that asked blocks.
 
 **Disposing the server closes every handle the Worker still holds**, so a killed child leaves no
 slot open in the broker's per-app handle table.

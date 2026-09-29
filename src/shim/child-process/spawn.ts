@@ -13,6 +13,7 @@ import type { ToWorker } from '../worker/protocol.js'
 import { ChildProcess, type StdioMode } from './child.js'
 import type { SpawnProgram } from '../worker/protocol.js'
 import { loadProgram, spawnError } from './program.js'
+import { runSpawnSync, type SpawnSyncRequest } from './spawn-sync.js'
 
 export type StdioOption = StdioMode | 'ipc' | 'overlapped' | null | undefined
 
@@ -79,7 +80,12 @@ export function launch (child: ChildProcess, name: string, start: (orivon: Messa
   const channel = new MessageChannel()
   try {
     worker = createChildWorker(name)
-    server = serveOrivon(channel.port1, getOrivon())
+    // A Worker's own spawnSync/execSync/execFileSync (SPAWN_SYNC,
+    // worker/sync-channel.ts): served on THIS thread, over the SAME spawn()
+    // every other child goes through -- never a synchronous call from the
+    // thread that serves it (worker/README.md's rule; only the Worker that
+    // asked blocks, over the sync channel).
+    server = serveOrivon(channel.port1, getOrivon(), async (payload) => await runSpawnSync(spawn, payload as SpawnSyncRequest))
   } catch (error) {
     // A page whose CSP refuses the Worker, or that has no orivon: a spawn failure, reported as one.
     child.fail(Object.assign(new Error(`the child cannot start: ${String((error as Error)?.message ?? error)}`), { code: 'ENOEXEC', errno: -8 }))
