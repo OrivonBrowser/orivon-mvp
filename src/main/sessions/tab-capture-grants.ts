@@ -91,29 +91,49 @@ export function wasTabCaptureGrantConsumed (extensionId: string, targetTabId: nu
  *  - that extension minted a still-live grant for EXACTLY `capturedTabId`
  *    (the request handler's own `contents.id` -- Electron hands the
  *    CAPTURED TAB there for this call shape, never the requester's),
- *  - `mediaTypes` is empty.
+ *  - `mediaTypes` is empty,
+ *  - `isMainFrame` is true.
  *
- * The last point is load-bearing: measured
- * directly, a real tab-capture `getUserMedia({ audio: { mandatory: {
- * chromeMediaSource: 'tab', ... } } })` request carries `mediaTypes: []`,
- * while an ordinary device request -- `getUserMedia({ audio: true })` or
- * `{ video: true }` -- carries the kinds actually asked for, `['audio']`
- * or `['audio','video']`. Without this, an extension holding a live
- * tabCapture grant (minted once, for the tab it was invoked on) could call
- * `getUserMedia({ audio: true, video: true })` on its OWN page and
- * silently receive the real microphone and camera: `contents` for THAT
- * call is the extension's own page, not the captured tab, so the
- * tab-identity check alone already refuses it, and the shape check refuses
- * it a second, independent way.
+ * The `mediaTypes` check is load-bearing but NOT, on its own, enough:
+ * measured directly, a real tab-capture `getUserMedia({ audio: {
+ * mandatory: { chromeMediaSource: 'tab', ... } } })` request carries
+ * `mediaTypes: []`, while an ordinary device request -- `getUserMedia({
+ * audio: true })` or `{ video: true }` -- carries the kinds actually asked
+ * for, `['audio']` or `['audio','video']`. Without it, an extension
+ * holding a live tabCapture grant (minted once, for the tab it was
+ * invoked on) could call `getUserMedia({ audio: true, video: true })` on
+ * its OWN page and silently receive the real microphone and camera:
+ * `contents` for THAT call is the extension's own page, not the captured
+ * tab, so the tab-identity check alone already refuses it, and the shape
+ * check refuses it a second, independent way.
+ *
+ * `isMainFrame` closes a SEPARATE gap `mediaTypes`/`contents.id` cannot:
+ * measured directly, `getUserMedia({ mandatory: { chromeMediaSource:
+ * 'desktop' } })` ALSO reports `mediaTypes: []` -- the same empty shape as
+ * a real tab capture -- and Electron's real tab-capture succeeding at all
+ * (measured, with `--use-fake-device-for-media-stream`) confirms this
+ * carve-out is exploitable, not merely theoretical. A web-accessible
+ * `chrome-extension://` page the extension injects as an `<iframe>` into
+ * the SAME tab it minted a grant for shares that tab's own `WebContents`
+ * (a page and its iframes are one `WebContents`; an iframe is a
+ * `WebFrameMain` within it, never a separate `WebContents` of its own), so
+ * `contents.id` there equals `capturedTabId` too -- matching every check
+ * above. `PermissionRequest.isMainFrame` (electron.d.ts: "whether the
+ * frame making the request is the main frame") is the one signal left:
+ * every legitimate tab-capture/offscreen-document request measured here
+ * reports `true`; an iframe's own request, by the same documented
+ * contract, does not.
  */
 export function isTabCaptureMediaRequestAllowed (
   securityOrigin: string | undefined,
   capturedTabId: number,
   mediaTypes: readonly string[] | undefined,
+  isMainFrame: boolean,
   now: number,
 ): boolean {
   const extensionId = extensionIdFromChromeExtensionOrigin(securityOrigin)
   if (extensionId === undefined) return false
   if (mediaTypes === undefined || mediaTypes.length > 0) return false
+  if (!isMainFrame) return false
   return hasLiveTabCaptureGrant(extensionId, capturedTabId, now)
 }

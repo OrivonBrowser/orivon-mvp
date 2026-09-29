@@ -115,12 +115,18 @@ export function setTabCaptureMediaAppRefusalCheck (check: MediaAppRefusalCheck):
  * itself, never the captured tab, and carries `mediaTypes` naming what it
  * asked for (`['audio','video']`), where a tab-capture request's own
  * `mediaTypes` measures empty (`[]`). `isTabCaptureMediaRequestAllowed`
- * checks both: `contents.id` must equal the exact tab the extension's own
- * `getMediaStreamId()` call named, AND `mediaTypes` must be empty. Without
- * either check, an extension holding one live tabCapture grant (minted
- * once, for whichever tab it was invoked on) could call
- * `getUserMedia({audio:true,video:true})` on its own page and silently
- * receive the real mic and camera.
+ * checks `contents.id` against the exact tab the extension's own
+ * `getMediaStreamId()` call named, `mediaTypes` empty, AND
+ * `details.isMainFrame`. Without the first two, an extension holding one
+ * live tabCapture grant (minted once, for whichever tab it was invoked on)
+ * could call `getUserMedia({audio:true,video:true})` on its own page and
+ * silently receive the real mic and camera. `isMainFrame` closes a
+ * SEPARATE gap those two cannot: `getUserMedia({mandatory:
+ * {chromeMediaSource:'desktop'}})` ALSO measures `mediaTypes: []`, and a
+ * web-accessible extension page injected as an `<iframe>` into the SAME
+ * tab a grant names shares that tab's own `contents.id` (a page and its
+ * iframes are one `WebContents`) -- `tab-capture-grants.ts`'s own doc has
+ * the full measurement.
  *
  * Allowing the REQUEST (never the check) is also the one real signal that a
  * genuine `getUserMedia('tab')` call is in flight for this grant -- marked
@@ -149,8 +155,14 @@ function allowTabCaptureMediaRequest (contents: WebContents, details: object | u
   const mediaTypes = details !== undefined && 'mediaTypes' in details && Array.isArray(details.mediaTypes)
     ? details.mediaTypes as string[]
     : undefined
+  // Defaults to `false` (refuse) when absent, never `true`: `isMainFrame`
+  // is a documented field of every real MediaAccessPermissionRequest
+  // (electron.d.ts), so its absence here means `details` itself is not the
+  // shape this carve-out expects, and the safe reading of "not confirmed
+  // main-frame" is "refuse it".
+  const isMainFrame = details !== undefined && 'isMainFrame' in details && details.isMainFrame === true
   const now = Date.now()
-  const allowed = isTabCaptureMediaRequestAllowed(origin, contents.id, mediaTypes, now)
+  const allowed = isTabCaptureMediaRequestAllowed(origin, contents.id, mediaTypes, isMainFrame, now)
   if (!allowed) return false
   // Re-run against `contents` -- the captured tab, for this call
   // shape -- one more time, right before actually granting: see
