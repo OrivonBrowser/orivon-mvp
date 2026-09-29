@@ -109,7 +109,12 @@ that never included it.
 ([`ADR-0030`](docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)). A light
 client proves what the name points to, the content comes from IPFS with every block hashed
 against its CID, and a verifier on loopback serves only bytes that passed. From there the page is
-an ordinary one: the same hint, the same one dialog, the same pin, which also records the CID.
+an ordinary one: the same hint, the same one dialog, the same pin, which also records the CID. The
+address bar and every other surface that shows an origin show it as `ipfs://<name>`, since the
+content it loads is always IPFS content in this build
+([`ADR-0038`](docs/decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md));
+typing or linking either `ipfs://<name>` or `ipns://<name>` opens the name's own
+`https://<name>.eth` origin, unchanged.
 
 **An `ipfs://` or `ipns://` address is shown as itself and served over HTTPS**
 ([`ADR-0038`](docs/decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md)).

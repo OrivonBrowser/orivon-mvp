@@ -19,6 +19,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **`worker_threads` and `vm` import**: `worker_threads` answers as Node's main thread does, and
   `vm` runs code in the page's own context; starting a thread, or a context of its own, refuses
   by name.
+- **A `.eth` name is shown as `ipfs://<name>`** wherever an address or origin is shown; typing or
+  linking either `ipfs://<name>` or `ipns://<name>` opens the name's own, unchanged origin
+  (ADR-0038).
 - **A spawned program can open sockets**: `spawn` runs a WASI 0.2 component from the jco output
   shipped beside it, its files and sockets reaching `orivon.fs` and `orivon.net` under the app's
   grants (ADR-0040). A Rust program built for `wasm32-wasip2` runs, whether it blocks on `std::net`
@@ -106,6 +109,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A crash while bookmarks or a profile are being saved leaves the previous file whole.**
+- **A second start with no window open shows a window only once it is drawn**, on its new-tab page
+  when no address was given.
+- **History search answers at once on a long history**, whether most pages match or almost none do.
+- **A private window keeps the keyboard shortcuts** of the profile that opened it.
 - **A native addon built with napi-rs loads**: its WebAssembly build gets Node-API and memory the way
   napi-rs's own loaders provide them, which a real napi-rs 3 addon needs.
 - **An app that listens for TCP connections receives them**: the broker now hands each accepted

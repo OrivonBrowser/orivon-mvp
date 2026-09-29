@@ -81,6 +81,9 @@ export interface TabShell {
   readonly window: BaseWindow
   /** A tab's page entered or left HTML fullscreen. */
   htmlFullscreenChanged: (id: string, entered: boolean) => void
+  /** The tab currently holding the whole window, if any (`HtmlFullscreen.tabId`, ../fullscreen.ts):
+   * the one place that state lives. Absent in tests that never raise HTML fullscreen. */
+  fullscreenTabId?: () => string | null
   /** The URL that searches for a query, under the chosen search engine. Absent in tests: the default engine. */
   searchUrl?: (query: string) => string
   /** Where a tab opened as one of the shell's own pages is recorded. Absent in tests. */
