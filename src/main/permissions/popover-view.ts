@@ -104,9 +104,14 @@ export interface PopoverSpec {
    * any `toggle()` call ever supplies one) -- the main menu is the only
    * caller today; permissions and site-info both need a different origin's
    * data on each open and stay on the ordinary create/destroy path.
-   * Pre-built once, after the window is idle (`setImmediate`), so the FIRST
-   * click never pays the build cost either. `onShow` is how a warm popup's
-   * own page is told to refresh, since its document is never reloaded.
+   * NOT built at construction: every window would otherwise carry a hidden
+   * renderer process nobody may ever open (`npm run smoke`'s own two-window
+   * count, and every e2e launch, measures exactly this). `prewarm()` on the
+   * returned `PopoverView` builds it on demand instead -- the caller decides
+   * when that is worth doing (menu-panel.ts: the toolbar button's own hover/
+   * focus). A `toggle()` reaching a still-unbuilt warm popup builds it then,
+   * the same as any other click. `onShow` is how a warm popup's own page is
+   * told to refresh, since its document is never reloaded.
    */
   readonly warm?: boolean
   /** Called every time the popup becomes visible, warm or not, after it is
@@ -122,6 +127,11 @@ export interface PopoverView {
   toggle: (anchor: PopoverAnchor, extraArgs: readonly string[]) => void
   close: () => void
   isOpen: () => boolean
+  /** Builds a `warm` popup's view now, if it is not already built -- a no-op
+   * for a non-`warm` popup (nothing to build ahead of an open it always pays
+   * for) and a no-op if already built. Idempotent: safe to call from a hover
+   * handler that can fire more than once. */
+  prewarm: () => void
 }
 
 /** Exported for its own unit tests (popover-view.test.ts): pure geometry, no view or IPC involved. */
@@ -259,9 +269,6 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   }
 
   if (spec.warm === true) {
-    // Built once the window has nothing more urgent to do, so the first
-    // click never pays this view's own construction cost.
-    setImmediate(() => { ensureWarmView() })
     // A `warm` view lives past any number of OS/app theme changes; a
     // non-warm popup instead picks up the current theme fresh on every
     // `construct()` call, so it needs no listener of its own here.
@@ -288,6 +295,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
       show(anchor, extraArgs)
     },
     close: hide,
-    isOpen: () => shown !== null
+    isOpen: () => shown !== null,
+    prewarm () { if (spec.warm === true) ensureWarmView() }
   }
 }

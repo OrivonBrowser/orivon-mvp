@@ -146,7 +146,7 @@ describe('createPopoverView: background colour set before the view is ever shown
 })
 
 describe('createPopoverView: a `warm` popup (menu-panel.ts\'s own case)', () => {
-  it('is built once, before the first toggle, via setImmediate', async () => {
+  it('is NOT built at construction -- every window would otherwise carry a hidden renderer process', () => {
     createPopoverView(fakeWin() as never, fakeContentView() as never, {
       dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
@@ -154,18 +154,52 @@ describe('createPopoverView: a `warm` popup (menu-panel.ts\'s own case)', () => 
     })
 
     expect(vi.mocked(WebContentsView)).not.toHaveBeenCalled()
-    await new Promise((resolve) => { setImmediate(resolve) })
+  })
+
+  it('prewarm() builds it once, ahead of any toggle -- idempotent on a second call', () => {
+    const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
+      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
+      background: BACKGROUND, warm: true, registerIpc: () => () => {}
+    })
+
+    popover.prewarm()
+    expect(vi.mocked(WebContentsView)).toHaveBeenCalledTimes(1)
+    popover.prewarm()
     expect(vi.mocked(WebContentsView)).toHaveBeenCalledTimes(1)
   })
 
-  it('hides instead of destroying, and reuses the SAME view on the next show', async () => {
+  it('prewarm() on a non-warm popup is a no-op: it always builds fresh on its own open anyway', () => {
+    const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
+      dirname: '/app', entryPath: '/permissions/', fallbackHtml: '../renderer/permissions/index.html',
+      preloadRelPath: '../preload/permissions.js', urlArgName: 'orivon-permissions-url', align: 'right',
+      background: BACKGROUND, registerIpc: () => () => {}
+    })
+
+    popover.prewarm()
+    expect(vi.mocked(WebContentsView)).not.toHaveBeenCalled()
+  })
+
+  it('a toggle reaching a not-yet-prewarmed popup builds it then, the same as any other click', () => {
+    const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
+      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
+      background: BACKGROUND, warm: true, registerIpc: () => () => {}
+    })
+
+    expect(vi.mocked(WebContentsView)).not.toHaveBeenCalled()
+    popover.toggle(ANCHOR, [])
+    expect(vi.mocked(WebContentsView)).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides instead of destroying, and reuses the SAME view on the next show', () => {
     const onShow = vi.fn()
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
       dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, warm: true, onShow, registerIpc: () => () => {}
     })
-    await new Promise((resolve) => { setImmediate(resolve) })
+    popover.prewarm()
 
     popover.toggle(ANCHOR, [])
     expect(onShow).toHaveBeenCalledTimes(1)
@@ -183,13 +217,13 @@ describe('createPopoverView: a `warm` popup (menu-panel.ts\'s own case)', () => 
     expect(vi.mocked(WebContentsView)).toHaveBeenCalledTimes(1)
   })
 
-  it('repaints the warm view on a live OS/app theme change, even while hidden', async () => {
-    createPopoverView(fakeWin() as never, fakeContentView() as never, {
+  it('repaints the warm view on a live OS/app theme change, even while hidden', () => {
+    const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
       dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, warm: true, registerIpc: () => () => {}
     })
-    await new Promise((resolve) => { setImmediate(resolve) })
+    popover.prewarm()
     calls.length = 0
 
     nativeThemeState.shouldUseDarkColors = true
@@ -198,14 +232,14 @@ describe('createPopoverView: a `warm` popup (menu-panel.ts\'s own case)', () => 
     expect(calls).toEqual(['setBackgroundColor:#2b2c31'])
   })
 
-  it('destroys the warm view when the window closes', async () => {
+  it('destroys the warm view when the window closes', () => {
     const win = fakeWin()
-    createPopoverView(win as never, fakeContentView() as never, {
+    const popover = createPopoverView(win as never, fakeContentView() as never, {
       dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, warm: true, registerIpc: () => () => {}
     })
-    await new Promise((resolve) => { setImmediate(resolve) })
+    popover.prewarm()
 
     const closedHandler = win.on.mock.calls.find(([event]) => event === 'closed')?.[1] as (() => void) | undefined
     expect(closedHandler).toBeDefined()

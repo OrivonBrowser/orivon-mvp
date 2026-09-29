@@ -15,6 +15,10 @@ export interface MenuPanel {
   toggle: (anchor: PopoverAnchor) => void
   close: () => void
   isOpen: () => boolean
+  /** Builds the menu's view now, if the toolbar button's own hover/focus
+   * asked for it ahead of a click -- see popover-view.ts's own doc on why
+   * this is not done at window construction. */
+  prewarm: () => void
 }
 
 export function createMenuPanel (
@@ -57,5 +61,5 @@ export function createMenuPanel (
       return () => {}
     }
   })
-  return { toggle: (anchor) => { popover.toggle(anchor, []) }, close: popover.close, isOpen: popover.isOpen }
+  return { toggle: (anchor) => { popover.toggle(anchor, []) }, close: popover.close, isOpen: popover.isOpen, prewarm: popover.prewarm }
 }

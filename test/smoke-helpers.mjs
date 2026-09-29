@@ -46,11 +46,20 @@ export function findChrome (app) {
   return win
 }
 
-/** Non-chrome views, as Playwright pages -- lets a check read a tab's OWN
- * location rather than trusting the toolbar's rendering of it (T25: the
- * address bar is a display layer and can lie independently). */
+/** Every popup shell/popover-view.ts builds, by its own renderer entry --
+ * never a real tab, so `tabViews()` below must never count one as one. A
+ * `warm` popup (the main menu) is the reason this exclusion is needed at
+ * all: its webContents can outlive being closed (popoverShown's own doc), so
+ * `app.windows()` keeps listing it long after a script that opened and
+ * closed it would otherwise expect the "just the tabs" count to settle back
+ * down. */
+const POPOVER_URL_PARTS = ['/menu/', '/permissions/', '/site-info/']
+
+/** Non-chrome, non-popover views, as Playwright pages -- lets a check read a
+ * tab's OWN location rather than trusting the toolbar's rendering of it
+ * (T25: the address bar is a display layer and can lie independently). */
 export function tabViews (app, chrome) {
-  return app.windows().filter((w) => w !== chrome)
+  return app.windows().filter((w) => w !== chrome && !POPOVER_URL_PARTS.some((part) => w.url().includes(part)))
 }
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms))
