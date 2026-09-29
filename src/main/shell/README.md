@@ -90,6 +90,14 @@ page's `sessionStorage` lives in its view, not its partition (measured in Electr
 fresh view would break an OIDC login that keeps its state there while the provider has the tab.
 Only app partitions are parked; the open-web side of a swap still loses its history.
 
+**[`tab-view.ts`](tab-view.ts): how many live tabs sit at each origin is tracked module-wide, not
+per `TabManager`.** Two windows' tabs on the same origin share one broker origin table
+(`../../broker/broker-contracts.ts`'s `dropOrigin`), so a per-window count would let one window's
+tab close tear down handles a tab in another window still holds. `wireView()`'s `did-navigate` and
+`'destroyed'` handlers are where a document's count moves; both run unconditionally, ahead of the
+handlers' own `shown()` gate, because a parked or background view's navigation changes this count
+exactly as a visible one's does.
+
 **[`tabs.ts`](tabs.ts): `TabManager`'s `ctx`.** `ctx.broker` decides the `fetch()`-routing flag
 at every `makeTabView` call (`ADR-0017`) and may be `undefined`, in which case the flag is never
 set. `ctx.loader` is threaded through and read nowhere: the discovery trigger

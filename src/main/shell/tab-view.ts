@@ -183,6 +183,60 @@ function reportAppFailures (view: WebContentsView): void {
   })
 }
 
+/**
+ * How many live tab documents, across every window, currently sit at each
+ * origin -- global, not per TabManager, because two windows' tabs on the
+ * same origin share one broker origin table (handle-contracts.md's Session
+ * teardown section: closing one must not take the other's handles). Backed
+ * by two maps rather than one WeakMap-of-counts because a WebContents needs
+ * to look up and release the origin it PREVIOUSLY counted toward, not
+ * re-derive it from a URL that may already have changed or a WebContents
+ * that may already be destroyed.
+ */
+const liveDocumentsByOrigin = new Map<string, number>()
+const countedOriginByWebContents = new WeakMap<WebContents, string>()
+
+function acquireOriginDocument (wc: WebContents, origin: string | null): void {
+  if (origin === null) return
+  countedOriginByWebContents.set(wc, origin)
+  liveDocumentsByOrigin.set(origin, (liveDocumentsByOrigin.get(origin) ?? 0) + 1)
+}
+
+/** Drops this WebContents' count against whatever origin it last counted
+ * toward, and asks the broker to tear the origin's session down once NONE
+ * remain -- never on every release, or two tabs of one origin would have
+ * the first tab's close kill the second tab's handles. */
+function releaseOriginDocument (wc: WebContents, broker: Broker | undefined): void {
+  const origin = countedOriginByWebContents.get(wc)
+  if (origin === undefined) return
+  countedOriginByWebContents.delete(wc)
+  const remaining = (liveDocumentsByOrigin.get(origin) ?? 1) - 1
+  if (remaining > 0) {
+    liveDocumentsByOrigin.set(origin, remaining)
+    return
+  }
+  liveDocumentsByOrigin.delete(origin)
+  broker?.dropOrigin(origin).catch((error: unknown) => {
+    console.error('[orivon] session teardown failed for', origin, error)
+  })
+}
+
+/**
+ * Called on every committed navigation this WebContents makes, shown or
+ * parked -- a parked view's own return to `about:blank` (retireView below)
+ * is a committed navigation too, and is exactly the "navigated to another
+ * origin" case handle-contracts.md's Session teardown section names. Origin
+ * derivation, not the wired-in `did-navigate` handler's own `shown()` gate,
+ * decides whether anything happens: a background tab that navigates still
+ * changes which origin's document count it holds.
+ */
+function trackDocumentOrigin (wc: WebContents, navigatedUrl: string, broker: Broker | undefined): void {
+  const next = originFromUrl(navigatedUrl)
+  if (next === (countedOriginByWebContents.get(wc) ?? null)) return
+  releaseOriginDocument(wc, broker)
+  acquireOriginDocument(wc, next)
+}
+
 /** A popup whose opener still exists stays in its opener's session on the
  * open web: moving it to the default session would sever `window.opener`,
  * which is what the page opened it for. A move INTO an isolated app still
@@ -210,6 +264,12 @@ export function wireView (id: string, record: TabRecord): void {
   // A press in a pane is the person choosing it, in a split. Not focus, which a page loading in the other pane can take.
   wc.on('input-event', (_event, input) => { if (input.type === 'mouseDown') record.host.paneClicked(id) })
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
+    // Unconditional, ahead of the `shown()` gate below: a parked or
+    // background view's own navigation still changes which origin's
+    // document count this WebContents holds, and `retireView`'s own
+    // about:blank load is where a session teardown for the origin just left
+    // actually fires.
+    trackDocumentOrigin(wc, navigatedUrl, record.host.broker)
     if (!shown()) return
     if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
       record.favicon = null
@@ -276,7 +336,13 @@ export function wireView (id: string, record: TabRecord): void {
   // actually reachable rather than theatre. Only for the view the tab
   // shows: repartitionView() closes a swapped-out view after the record has
   // moved on, and that close must not forget a tab that is not closing.
-  wc.on('destroyed', () => { if (shown()) record.host.forgetTab(id) })
+  wc.on('destroyed', () => {
+    // Unconditional, same reason as trackDocumentOrigin above: a view closed
+    // outright (never parked to about:blank first) still ends whatever
+    // document it held, and this is the only remaining chance to release it.
+    releaseOriginDocument(wc, record.host.broker)
+    if (shown()) record.host.forgetTab(id)
+  })
 
   wc.on('enter-html-full-screen', () => { record.host.htmlFullscreenChanged(id, true) })
   wc.on('leave-html-full-screen', () => { record.host.htmlFullscreenChanged(id, false) })

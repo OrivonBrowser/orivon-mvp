@@ -89,6 +89,7 @@ export function stubBroker (
     clearDeclinedConsent: Broker['clearDeclinedConsent']
     grant: Broker['grant']
     revoke: Broker['revoke']
+    dropOrigin: Broker['dropOrigin']
   }> = {}
 ): Broker {
   const notStubbed = async (): Promise<never> => { throw new Error('this stub method was not configured for this test') }
@@ -291,6 +292,10 @@ export function stubBroker (
     },
     revokeUserSelectedPath: async () => {
       throw new Error('revokeUserSelectedPath is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
+    },
+    dropOrigin: async (origin) => {
+      calls.push({ method: 'dropOrigin', origin, args: undefined })
+      await (overrides.dropOrigin?.(origin) ?? Promise.resolve())
     }
   }
 }
