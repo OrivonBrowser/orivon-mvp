@@ -245,6 +245,10 @@ describe('formatOriginForDisplay -- the last three labels, owner decision 2026-0
     expect(formatOriginForDisplay('https://a-b-c-example-com.ipns.orivon')).toBe('ipns://...c.example.com')
   })
 
+  it('shows a .eth origin under its ipfs display scheme', () => {
+    expect(formatOriginForDisplay('https://vitalik.eth')).toBe('ipfs://vitalik.eth')
+  })
+
   it('elides a subdomain-prefix confusable to exactly its last three labels, so the reassuring prefix does not survive alone', () => {
     const confusable = 'https://accounts.google.com.attacker.example'
 
