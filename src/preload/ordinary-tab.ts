@@ -1,6 +1,7 @@
 import { exposeOrivon } from './surface/orivon.js'
 import { exposeFetchRoute } from './expose-fetch-route.js'
 import { exposeShimGlobals } from './expose-shim-globals.js'
+import { exposeChildHostConnect } from './expose-child-host-connect.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
 
 /**
@@ -24,6 +25,9 @@ export function exposeOrdinaryTabSurface (): void {
   // for a real app tab, gated on the identical --orivon-app-tab flag
   // exposeFetchRoute() reads -- see expose-shim-globals.ts's own header.
   exposeShimGlobals()
+  // ADR-0046: lets a real app tab's page reach its app's child host, gated
+  // on the same app-tab flag exposeShimGlobals() reads.
+  exposeChildHostConnect()
   // S4-2: the discovery trigger. Order relative to the calls above does
   // not matter -- this never touches window.orivon, only the DOM and
   // ipcRenderer.

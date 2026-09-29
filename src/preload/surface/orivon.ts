@@ -6,6 +6,7 @@ import { call, TIMEOUT_MS } from './control-call.js'
 import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBridge, netUdpBindBridge } from './net.js'
 import { webOpenContextBridge } from './web.js'
 import type { MainWorldWebContextBridge } from './web.js'
+import type { MainWorldBridge } from './main-world-bridges.js'
 import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
@@ -321,13 +322,17 @@ function exposeFallback (): void {
  * ADR-0002 exists to prevent for this interface -- or, worse, abort the
  * whole preload script and leave the page with no `window.orivon` at all.
  */
-export function exposeOrivon (): void {
-  if (typeof contextBridge.executeInMainWorld !== 'function') {
-    exposeFallback()
-    return
-  }
-
-  const bridge = {
+/**
+ * The proxied closures every CONTROL_CHANNEL method becomes -- what
+ * `exposeOrivon` hands `installOrivon` for an ordinary tab's own main world,
+ * and what `../child-host.ts` hands it for ADR-0046's hidden host instead,
+ * with a `target` other than `window` so nothing is ever exposed to a main
+ * world that runs no page code (`installOrivon`'s own `target` parameter,
+ * already built for exactly this: a test never mutates the one shared global
+ * environment either).
+ */
+export function buildOrivonBridge (): MainWorldBridge {
+  return {
     appManifest,
     appGrants,
     appRequestGrant,
@@ -355,6 +360,15 @@ export function exposeOrivon (): void {
     netListen: netListenBridge,
     netLookup: netLookupBridge
   }
+}
+
+export function exposeOrivon (): void {
+  if (typeof contextBridge.executeInMainWorld !== 'function') {
+    exposeFallback()
+    return
+  }
+
+  const bridge = buildOrivonBridge()
   try {
     contextBridge.executeInMainWorld({
       func: installOrivon,

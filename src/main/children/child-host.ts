@@ -119,7 +119,10 @@ interface HostRecord {
  * is built and wired in before the real broker exists. */
 export function createChildHostPool (
   getBroker: () => Broker,
-  preloadPath: string = join(import.meta.dirname, '../../preload/child-host.js')
+  // import.meta.dirname is out/main/ for every file bundled into the single
+  // main entry, whatever its own nesting under src/main/ -- tabs.ts's own
+  // join(import.meta.dirname, '../preload/app.js') is the same shape.
+  preloadPath: string = join(import.meta.dirname, '../preload/child-host.js')
 ): ChildHostPool {
   const hosts = new Map<string, Promise<HostRecord>>()
 

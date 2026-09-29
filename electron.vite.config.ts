@@ -145,6 +145,7 @@ export default defineConfig({
           menu: resolve(root, 'src/preload/menu.ts'),
           'split-frame': resolve(root, 'src/preload/split-frame.ts'),
           embed: resolve(root, 'src/preload/embed.ts'),
+          'child-host': resolve(root, 'src/preload/child-host.ts'),
           'extension-api': resolve(root, 'src/preload/extension-api.ts'),
           'web-store': resolve(
             root,
