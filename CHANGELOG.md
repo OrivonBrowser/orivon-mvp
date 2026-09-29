@@ -143,7 +143,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Security
 
 - **A site's permissions work only from a page that committed in that site's own session**: a page
-  a link or redirect reached before its tab moved, a page an app shows, or a web context is `denied`.
+  a link or redirect reached before its tab moved, a page an app shows or a web context is `denied`.
   A grant or revoke never strands an open page; a site's handles close when its last tab goes.
 - **The file picker needs a click or key press**, names the site, opens once per site at a time, and
   refuses the browser's own data, the home folder, disk roots and system folders.
