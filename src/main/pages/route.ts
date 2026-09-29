@@ -81,6 +81,7 @@ export function routeInternalRequest (requestUrl: string, dev = false, devFsRoot
       ? { kind: 'asset', path: segments.join('/') }
       : { kind: 'not-found' }
   }
-  if (segments[0] === '@fs' && !fsPathAllowed(segments, devFsRoots)) return { kind: 'not-found' }
+  // Held to the roots in any casing, not only the one spelling the dev server reads today.
+  if (segments[0]?.toLowerCase() === '@fs' && !fsPathAllowed(segments, devFsRoots)) return { kind: 'not-found' }
   return { kind: 'dev', path: `/${segments.join('/')}${url.search}` }
 }
