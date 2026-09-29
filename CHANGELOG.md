@@ -13,6 +13,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **An app's child processes outlive the tab that started them** while another tab of the app is open,
+  and end with its last page: they run in a hidden host of the app's own, with the app's grants
+  (ADR-0046).
+- **`worker_threads.Worker` runs a thread** in a Web Worker, with `parentPort`, `workerData`,
+  message ports and `terminate()`, from the page or from a forked child.
+- **A forked child or thread of a cross-origin isolated app can call every `fs` `*Sync` method**
+  and `spawnSync`/`execSync`/`execFileSync`; the page keeps `readFileSync` and `existsSync`.
+- **A CommonJS `require()` of a Node module the shim lacks a member of names the gap** when called,
+  instead of `undefined is not a function`.
 - **Tearing a tab off shows where its window will open.** A preview of the page follows the pointer; letting go
   over the page or outside every window opens the window there, in front and at once. Over another window's
   strip a line marks where the tab will land. On Linux X11 a middle click on the strip's empty end opens a tab.
@@ -114,6 +123,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A burst of short-lived sockets no longer brings the browser down.** The broker's socket streams no longer go
+  through Node's `Duplex.toWeb`, whose teardown could throw where nothing could catch it.
 - **A crash while bookmarks or a profile are being saved leaves the previous file whole.**
 - **A second start with no window open shows a window only once it is drawn**, on its new-tab page
   when no address was given.
