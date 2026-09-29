@@ -22,6 +22,9 @@ export interface FetchRouteSocket {
 export interface InternalNet {
   connect: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
   connectSecure: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
+  /** `installOrivon`'s own caller-attribution check (ADR-0045's `guarded`), shared through this
+   * slot rather than copied a third time: true when `exclude`'s caller is the page's own script. */
+  callerIsPage: (exclude: (...args: never[]) => unknown) => boolean
 }
 
 export interface FetchRouteTarget {

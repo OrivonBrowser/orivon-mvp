@@ -20,8 +20,15 @@ import { LIMITS, fakeBridge, fakeSocketBridgeResult } from './main-world-socket.
 // are private to its closure (main-world-socket.ts's own header explains
 // why -- executeInMainWorld serialises that function alone).
 // ---------------------------------------------------------------------
+const someOwn = Array.prototype.some
+const indexOfOwn = String.prototype.indexOf
+const startsWithOwn = String.prototype.startsWith
+const lastIndexOfOwn = String.prototype.lastIndexOf
+const sliceOwn = String.prototype.slice
+const execOwn = RegExp.prototype.exec
+const applyOwn = Reflect.apply
 function hasSource (text: unknown, needles: readonly string[]): boolean {
-  return typeof text === 'string' && needles.some((needle) => text.indexOf(needle) !== -1)
+  return typeof text === 'string' && applyOwn(someOwn, needles, [(needle: string) => applyOwn(indexOfOwn, text, [needle]) !== -1])
 }
 interface CallerFrame { fileName?: string, scriptNameOrSourceURL?: string, evalOrigin?: string }
 function callerIsRefused (frames: readonly CallerFrame[]): boolean {
@@ -34,17 +41,17 @@ function callerIsRefused (frames: readonly CallerFrame[]): boolean {
   // Design notes). STARTS-WITH, not contains: unlike extension detection
   // above, a spoofed prefix elsewhere in the string must not count.
   const startsWithAny = (text: unknown, prefixes: readonly string[]): boolean =>
-    typeof text === 'string' && prefixes.some((prefix) => text.startsWith(prefix))
+    typeof text === 'string' && applyOwn(someOwn, prefixes, [(prefix: string) => applyOwn(startsWithOwn, text, [prefix])])
   // V8 shapes a (possibly nested) eval origin as "eval at <fn> (eval at
   // <fn> (URL:line:col))" -- parens nest left to right, so the LAST '('
   // up to its next ')' is always the innermost, real-script URL, however
   // many eval layers deep.
   const innermostEvalScriptUrl = (evalOrigin: string): string | undefined => {
-    const openIndex = evalOrigin.lastIndexOf('(')
+    const openIndex = applyOwn(lastIndexOfOwn, evalOrigin, ['('])
     if (openIndex === -1) return undefined
-    const closeIndex = evalOrigin.indexOf(')', openIndex)
+    const closeIndex = applyOwn(indexOfOwn, evalOrigin, [')', openIndex])
     if (closeIndex === -1) return undefined
-    const match = /^(.*):\d+:\d+$/.exec(evalOrigin.slice(openIndex + 1, closeIndex))
+    const match = applyOwn(execOwn, /^(.*):\d+:\d+$/, [applyOwn(sliceOwn, evalOrigin, [openIndex + 1, closeIndex])])
     return match === null ? undefined : match[1]
   }
   const isPage = (f: CallerFrame): boolean => {
@@ -52,8 +59,8 @@ function callerIsRefused (frames: readonly CallerFrame[]): boolean {
     if (startsWithAny(f.fileName, p)) return true
     return typeof f.evalOrigin === 'string' && startsWithAny(innermostEvalScriptUrl(f.evalOrigin), p)
   }
-  if (frames.some(isExtension)) return true
-  return !frames.some(isPage)
+  if (applyOwn(someOwn, frames, [isExtension])) return true
+  return !applyOwn(someOwn, frames, [isPage])
 }
 
 /** Finds `functionName`'s full declaration text inside `source` by brace balancing -- main-world-socket.test.ts's own `extractFunctionSource`/`findMatching`, duplicated rather than imported (that file's are not exported, and both are a few lines). */
@@ -219,6 +226,19 @@ describe('installOrivon: real caller attribution', () => {
     expect((socket as { id?: string })?.id).toBe('h1')
   })
 
+  // The routed network path's own shared attribution (../routed/README.md's
+  // Design notes) -- exposed on the same private slot, never a second copy
+  // of the decision logic.
+  it('internal-net also carries callerIsPage, installOrivon\'s own attribution, usable by the routed installers', async () => {
+    const target: Record<string, unknown> = {}
+    installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
+    const internalNet = (target as Record<symbol, { callerIsPage?: (exclude: (...args: never[]) => unknown) => boolean } | undefined>)[Symbol.for('orivon.internal-net')]
+    expect(typeof internalNet?.callerIsPage).toBe('function')
+    function exclude (): boolean { return internalNet!.callerIsPage!(exclude) }
+    expect(asPageFrame(exclude)).toBe(true)
+    expect(asExtensionFrame(exclude)).toBe(false)
+  })
+
   describe('tamper paths', () => {
     /**
      * Shared by every tamper script below -- runs entirely inside a
@@ -270,10 +290,10 @@ describe('installOrivon: real caller attribution', () => {
       expect(Object.getOwnPropertyDescriptor(Error, 'prepareStackTrace')?.configurable).not.toBe(false)
     })
 
-    // Bypass: stackTraceLimit frozen at a small NON-ZERO value (1) used to
-    // pass unrefused -- only a freeze at exactly 0 was treated as tamper.
-    // Fixed: any limit that cannot be raised to Infinity is a tamper,
-    // whatever value it was frozen at.
+    // Guards: a naive check that treats ONLY a freeze at exactly 0 as tamper
+    // would pass a stackTraceLimit frozen at a small NON-ZERO value (1)
+    // unrefused. The real rule: any limit that cannot be raised to Infinity
+    // is a tamper, whatever value it was frozen at.
     function stackLimitTamperedCall (): unknown {
       const context = vm.createContext({})
       const script = new vm.Script(`
@@ -322,6 +342,45 @@ describe('installOrivon: real caller attribution', () => {
 
     it('a CallSite.prototype.getFileName replaced after install cannot spoof a page URL for an extension frame', async () => {
       await expect(callSitePrototypeTamperedCall()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
+    })
+
+    // Bypass: hasSource/callerIsRefused read String.prototype.indexOf/
+    // startsWith and Array.prototype.some LIVE, called fresh on every call
+    // rather than through a saved reference -- a MAIN-world extension
+    // script running at document_start can patch those shared prototypes
+    // before installOrivon's first real call, making its OWN
+    // chrome-extension:// frame look like page code: indexOf patched to
+    // always report "not found" defeats the CONTAINS-based extension
+    // check, and startsWith patched to always return true then makes the
+    // STARTS-WITH-based page check pass for that same frame. Fixed:
+    // every intrinsic the decision path calls is saved at install, before
+    // this tamper runs, and read only through those saved references.
+    function corePrototypeTamperedCall (): unknown {
+      const context = vm.createContext({})
+      const script = new vm.Script(`
+        ${FAKE_BRIDGE_SRC}
+        const installOrivon = ${installOrivon.toString()}
+        const target = {}
+        installOrivon(fakeBridge(), ${JSON.stringify(LIMITS)}, target)
+        // orivon:locked-global -- this vm realm's own prototypes, simulating a MAIN-world extension patching shared intrinsics after install, never the real process's own. Array.prototype.some is left native: forcing it would trip the fail-closed empty-frame path and mask the real bypass, which lives entirely in the CONTAINS/STARTS-WITH string checks below.
+        String.prototype.indexOf = function () { return -1 }
+        String.prototype.startsWith = function () { return true }
+        String.prototype.lastIndexOf = function () { return -1 }
+        String.prototype.slice = function () { return '' }
+        RegExp.prototype.exec = function () { return null }
+        target.orivon.app.manifest()
+      `, { filename: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/content.js' })
+      return script.runInContext(context)
+    }
+
+    it('patching Array.prototype.some, String.prototype.indexOf/startsWith/lastIndexOf/slice and RegExp.prototype.exec after install cannot make an extension frame look like page code', async () => {
+      await expect(corePrototypeTamperedCall()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
+    })
+
+    it('did not touch this process\'s own String/Array/RegExp prototypes', () => {
+      expect('abc'.indexOf('b')).toBe(1)
+      expect('abc'.startsWith('ab')).toBe(true)
+      expect([1, 2].some((n) => n === 2)).toBe(true)
     })
   })
 })

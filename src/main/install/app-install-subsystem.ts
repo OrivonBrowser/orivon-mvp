@@ -19,7 +19,7 @@ import { installFromHint } from './app-install.js'
 import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from '../consent/install-consent-prompt.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from '../consent/update-outcomes-prompt.js'
 import { grantableWithoutInstall, grantWithoutInstall } from './grant-without-install.js'
-import { defaultSessionGrantedOriginCsp } from './granted-origin-csp.js'
+import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './granted-origin-csp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
@@ -47,7 +47,7 @@ export const appInstallSubsystem: Subsystem = {
     // no per-origin registration needed on top of it (granted-origin-csp.ts's
     // own header explains the mechanism; RUN_LAST so Orivon's policy is
     // applied after anything else on this session).
-    webRequestOwnerFor(session.defaultSession).onHeadersReceived(RUN_LAST, () => true, defaultSessionGrantedOriginCsp(broker))
+    webRequestOwnerFor(session.defaultSession).onHeadersReceived(RUN_LAST, GRANTED_ORIGIN_CSP_FILTER, () => true, defaultSessionGrantedOriginCsp(broker))
     // ADR-0037: an L4 site's grants read without warnings on every one of
     // these -- the developer-only override is the only source of L4 today
     // (../dev/score-levels.ts), always named as an override, never as

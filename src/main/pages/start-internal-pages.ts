@@ -26,6 +26,7 @@ import { createPermissionsController } from '../permissions/permissions.js'
 import type { SubsystemContext } from '../registry.js'
 import type { InternalDomain } from './internal-ipc.js'
 import { registerInternalIpc } from './internal-ipc.js'
+import { cleanOrphanedAppPartitions } from './orphaned-app-partitions.js'
 import { internalSession } from './internal-session.js'
 
 /** Facts about this build, for the About section. */
@@ -69,12 +70,12 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       history: services.history,
       zoom: services.zoomStore,
       websites: session.defaultSession,
-      // Only a CACHE-SERVED app still has a partition of its own to clear
-      // (2026-09-29): a granted-without-install app now shares
-      // session.defaultSession, which `websites` above already reaches.
-      // Calling session.fromPartition on the others would only mint a
-      // fresh, never-used, empty partition for each -- ADR-0018's own
-      // warning against probing session.fromPartition speculatively.
+      // Only a CACHE-SERVED app still has a partition of its own to clear:
+      // a granted-without-install app shares session.defaultSession, which
+      // `websites` above already reaches. Calling session.fromPartition on
+      // the others would only mint a fresh, never-used, empty partition for
+      // each -- ADR-0018's own warning against probing session.fromPartition
+      // speculatively.
       appSessions: async () => (await permissions.list())
         .filter((app) => isOriginServedFromCacheSync(app.origin))
         .map((app) => session.fromPartition(partitionFor(app.origin))),
@@ -96,4 +97,10 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain.
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
+  // Fire-and-forget, like the update check below it in index.ts: a one-time
+  // cleanup, never the window's own critical path. orphaned-app-partitions.ts's
+  // own header has the full reasoning.
+  void permissions.list()
+    .then(async (apps) => { await cleanOrphanedAppPartitions(app.getPath('userData'), apps, isOriginServedFromCacheSync) })
+    .catch((error: unknown) => { console.error('[orivon] clearing an orphaned app partition failed:', error) })
 }

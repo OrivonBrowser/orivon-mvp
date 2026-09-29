@@ -13,30 +13,37 @@ Chrome Web Store wiring (`store-runner.ts`, `store-download-seam.ts`,
 (the row and details view model), `extensions-view-runner.ts` (reads a manifest, icon and locale
 catalogue off a loaded entry's own folder), `extensions-picker-runner.ts` (the native pickers
 Developer mode's buttons open) and `extensions-domain.ts` (the `InternalDomain` the page's
-requests go through, `../pages/README.md`).
+requests go through, `../pages/README.md`); and the host-access decision chrome.cookies and
+chrome.tabs gate on (`extension-host-access.ts`, wired into the vendored library from
+`extension-host.ts`).
 
 **What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`, `registry.ts`,
-`extensions-view.ts`, `extension-url-policy.ts`, `store-download-seam.ts` and `unpack-runner.ts`'s
-pure `checkZipEntryPath`), `node:crypto`, `node:fs`, `node:path`, `adm-zip`, `pbf`,
+`extensions-view.ts`, `extension-url-policy.ts`, `store-download-seam.ts`, `extension-host-access.ts`
+and `unpack-runner.ts`'s pure `checkZipEntryPath`), `node:crypto`, `node:fs`, `node:path`,
+`adm-zip`, `pbf`,
 [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
 (durable: the manifest facts, the stripped-manifest copy, the install prompt's words, and the
 words `extensions-view.ts` reuses for the page),
+[`../../broker/policy/extension-host-patterns.ts`](../../broker/policy/extension-host-patterns.ts)
+(durable: the Chrome match-pattern matcher `extension-host-access.ts` uses for chrome.cookies'
+and chrome.tabs' own host-access checks),
 [`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`,
 [`../settings/`](../settings/) (Developer mode is a setting there), and two vendored libraries.
 [`vendor/electron-chrome-web-store`](../../../vendor/electron-chrome-web-store): `id.ts`, and, for
 the store, `index.ts`, `installer.ts` and `types.ts`, whose `UPSTREAM.md` says how patch 4 routes
 every install through Orivon's own path. `vendor/electron-chrome-extensions`: reached by
-`extension-host.ts` only through the three virtual specifiers `electron-chrome-extensions-lib.d.ts`
+`extension-host.ts` only through the five virtual specifiers `electron-chrome-extensions-lib.d.ts`
 declares (that file's header says why), never its real path.
 
 **What it must never import.** [`src/renderer/`](../../renderer/): this is main-process code,
 same rule as the rest of `src/main/` (`../README.md`). Nothing under `vendor/` beyond an import
 (`crx3.ts` is the one exception this directory does NOT import -- see Design notes for why;
-`electron-chrome-extensions/src/browser/{index,partition,router}.ts` are the same exception,
-reached only through the virtual specifiers above).
+`electron-chrome-extensions/src/browser/{index,partition,router}.ts` and
+`electron-chrome-extensions/src/browser/api/{cookies,tabs}.ts` are the same exception, reached
+only through the virtual specifiers above).
 
-**Tied to Electron**, except the four files named above.
+**Tied to Electron**, except the files named above with no electron import.
 
 **Owner stream.** `shell`.
 
@@ -62,6 +69,36 @@ process on the first `net.fetch` -- every permission shape tested, 15 of 15 runs
 records exactly what was removed, so a later feature can serve those APIs itself from Orivon's own
 engine; the verifier's own `webRequest` listener, attached before any extension loads, is a second
 line of defence.
+
+**`readExtensionManifest`'s `version` grammar, and `finishInstall`'s own path check, are two
+independent layers over the same risk.** A `version` is Chrome's own grammar (one to four
+dot-separated integers, each 0-65535, no leading zeros) --
+[`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts) refuses
+anything else, so a value shaped like a path (`../../../../.config/autostart`) never reaches
+`install-runner.ts`'s `join(extensionsRoot, slot, version)` as a plausible version. `finishInstall`
+also refuses unless the resolved slot and version-numbered directories land strictly inside their
+own parent (`isStrictlyInsideDirectory`, the same shape `unpack-runner.ts`'s `checkZipEntryPath`
+applies to a zip entry), independent of that grammar holding. A fresh install (no previous version
+in its slot) whose write succeeded but whose load failed afterward has its own just-written folder
+removed, the same as a same-version reinstall's own rollback already did.
+
+**chrome.cookies and chrome.tabs gate on host access, not only on holding the `cookies`/`tabs`
+API permission.** `extension-host-access.ts`'s `hasApiPermission`/`hasHostAccess`/
+`hasApiOrHostAccess` read an extension's OWN loaded manifest (`event.extension.manifest`) the same
+way `readExtensionManifest` reads one at install time, and match its `hostPatterns` against a URL
+with Chrome's own match-pattern grammar
+([`../../broker/policy/extension-host-patterns.ts`](../../broker/policy/extension-host-patterns.ts)).
+`extension-host.ts`'s `createExtensionHost` installs three hooks the vendored library calls back
+into, the same shape as the sender-id check (`extension-sender-id-check.ts`): `setEventListenerFilter`
+(router.ts, UPSTREAM.md patch 15) gates or strips a broadcast event per listener --
+`cookies.onChanged` needs both the `cookies` permission and host access to the cookie's own URL;
+`tabs.onCreated`/`onUpdated` strip `url`/`pendingUrl`/`title`/`favIconUrl` unless the listener
+holds `tabs` or host access to the tab's URL; a `webNavigation.*` event needs the `webNavigation`
+permission outright. `setCookieHostAccessCheck` (api/cookies.ts, patch 16) and
+`setTabUrlAccessCheck` (api/tabs.ts, patch 18) apply the same two rules to a direct
+`chrome.cookies`/`chrome.tabs` call, not only a broadcast event. `webNavigation.getFrame`/
+`getAllFrames` require the `webNavigation` permission through router.ts's own `permission` option
+(patch 19), the same mechanism `api/cookies.ts` uses for the `cookies` permission.
 
 **[`crx3-format.ts`](crx3-format.ts) reads the CRX3 header protobuf itself, instead of importing
 `vendor/electron-chrome-web-store/src/browser/crx3.ts`.** That vendored, pbf-generated reader does

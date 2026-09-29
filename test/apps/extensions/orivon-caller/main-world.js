@@ -57,6 +57,20 @@
     return
   }
 
+  if (location.pathname === '/orivon-fixture/fetch') {
+    // The routed network path's own worked case (src/preload/routed/
+    // README.md's Design notes): a MAIN-world extension script's fetch()
+    // must reach only what the page's own native fetch would -- never the
+    // app's granted dial. The probe host below is granted to this origin's
+    // app only; an ordinary cross-origin fetch to it has no CORS headers
+    // and fails natively.
+    fetch('http://127.0.0.1:8895/probe').then(
+      (response) => { response.text().then((text) => { report('fetch-extension', 'ok:' + text) }) },
+      (error) => { report('fetch-extension', outcomeOf(error)) }
+    )
+    return
+  }
+
   if (location.pathname === '/orivon-fixture/tamper') {
     // Freezes the stack-capture machinery before ANY script on this page
     // runs, document_start's own guarantee -- main-world-socket.ts's own

@@ -43,9 +43,9 @@ async function listen (server: Server): Promise<string> {
 }
 
 // External, never inline: the granted app origin below sends no CSP header
-// of its own, so Orivon's own appended one (dropping 'unsafe-inline' from
-// script-src, owner 2026-09-29) is the only policy in force, and an inline
-// <script> would not run under it.
+// of its own, so Orivon's own appended one (no 'unsafe-inline' in
+// script-src) is the only policy in force, and an inline <script> would not
+// run under it.
 function page (title: string, scriptSrc: string): string {
   return `<!doctype html><title>${title}</title><script src="${scriptSrc}"></script>`
 }

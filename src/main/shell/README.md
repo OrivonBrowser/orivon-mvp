@@ -126,6 +126,15 @@ app from any other session opens as an ordinary tab in the app's own session, th
 pinned bundle is served (`ADR-0007`). A popup's app-tab flag follows its own URL, not its
 opener's.
 
+**`routePopup`'s `isApp` catches a gap `targetPartition === opener.partition` alone cannot see.**
+`ADR-0044` stopped a held grant from putting an origin in its own partition, so a granted,
+network-served app and an ordinary site both commonly carry `partition: undefined` -- the two
+would otherwise look identical to the partition comparison above, adopting a popup from any site
+straight into a granted app's own window with `window.opener` intact. `isApp` (`routePopup`'s own
+arg, `popupTargetIsApp` in `tab-view.ts`) checks the thing the partition check cannot: a held
+grant or cache-served status, regardless of what partition either side happens to be on. It only
+fires across a real origin change -- an app opening a popup to itself is unaffected.
+
 **[`leave-page-prompt.ts`](leave-page-prompt.ts): closing a tab never asks.** `closeTab()`
 closes the webContents without running `beforeunload` (A231).
 

@@ -10,7 +10,7 @@
 // `installXhrRoute` is SERIALISED into the main world (see ./wire.ts's
 // header); the response views are ./xhr-response.ts's, the handler
 // attributes ./events.ts's.
-import type { FetchRouteTarget, RoutedSlot, XhrBody } from './types.js'
+import type { FetchRouteTarget, InternalNet, RoutedSlot, XhrBody } from './types.js'
 
 export function installXhrRoute (
   isAppTab: boolean,
@@ -19,7 +19,9 @@ export function installXhrRoute (
   if (!isAppTab) return
   const slot = (target as Record<symbol, RoutedSlot | undefined>)[Symbol.for('orivon.routed-network')]
   const NativeXhrOrNot = target.XMLHttpRequest as (new () => XMLHttpRequest) | undefined
-  if (slot?.core === undefined || slot.events === undefined || slot.xhrBodies === undefined || typeof NativeXhrOrNot !== 'function') return
+  // Attribution, not just routing -- ./fetch.ts's own header has the reasoning; ../surface/README.md's Design notes for the shared check itself.
+  const callerIsPage = (target as Record<symbol, InternalNet | undefined>)[Symbol.for('orivon.internal-net')]?.callerIsPage
+  if (slot?.core === undefined || slot.events === undefined || slot.xhrBodies === undefined || callerIsPage === undefined || typeof NativeXhrOrNot !== 'function') return
   // Fresh bindings, so the narrowing above holds inside every nested function.
   const core = slot.core
   const events = slot.events
@@ -328,7 +330,10 @@ export function installXhrRoute (
         status: 0, statusText: '', responseURL: '', responseHeaders: [], body: undefined, controller: undefined, native: undefined
       })
       previous?.abort()
-      if (!async || !core.routes(parsed)) {
+      // Attribution runs SYNCHRONOUSLY, at open() -- the point this class
+      // itself decides routed vs. native -- exactly like ../surface/
+      // main-world-socket.ts's `guarded`.
+      if (!async || !core.routes(parsed) || !callerIsPage!(XMLHttpRequest.prototype.open)) {
         goNative(this, s, false).open(s.method, parsed.href, async, user, password)
         return
       }

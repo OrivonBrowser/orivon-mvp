@@ -40,3 +40,15 @@ another internal page included, is refused, so a page cannot borrow a sibling's 
 **Internal views are closed, not parked.** A view leaving an app's partition is parked for the tab's
 return; an internal page is opened again from the shell, and a parked view would keep the internal
 session alive under a tab showing a website.
+
+**[`orphaned-app-partitions.ts`](orphaned-app-partitions.ts): a session `clearData()` call, not a
+filesystem delete.** The alternative is removing `<userData>/Partitions/<hash>` directly, before any
+`Session` object for it exists; rejected because that layout is an Electron implementation detail,
+not a documented contract, and the codebase already has a proven, public mechanism for exactly this
+(`../privacy/clear-data.ts`'s own "Clear app data", which calls the identical `session.fromPartition(
+partitionFor(origin)).clearData()` for a cache-served app) -- reusing it costs nothing a raw delete
+would save and avoids trusting an on-disk shape that could change under a future Electron upgrade.
+The partition is left behind, empty, rather than deleted, for the same reason: Electron creates it
+again the moment anything asks for that partition string, so removing the (now-empty) directory buys
+nothing. Runs once, ever, per profile (one boolean marker, not one per origin) because no origin can
+gain a NEW orphaned partition after this ships -- a grant no longer creates one at all.

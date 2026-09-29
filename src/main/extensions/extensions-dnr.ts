@@ -88,6 +88,33 @@ export function getDnrEngine(): DnrEngine | undefined {
   return engine
 }
 
+/** Loaded extensions currently holding `declarativeNetRequest`/
+ * `...WithHostAccess` -- `dnr-webrequest.ts`'s own reason for tracking this:
+ * it registers on the default session's webRequest only while this is
+ * non-empty, and unregisters when it empties (`../sessions/README.md`'s own
+ * Design notes on `WebRequestHandlerHandle`). */
+let dnrCapableExtensions = new Set<string>()
+type DnrActiveListener = (active: boolean) => void
+let activeListeners: DnrActiveListener[] = []
+
+function notifyDnrActive(): void {
+  const active = dnrCapableExtensions.size > 0
+  for (const listener of activeListeners) {
+    listener(active)
+  }
+}
+
+/** Subscribes to whether ANY loaded extension currently holds a
+ * `declarativeNetRequest*` permission -- fires once immediately with the
+ * current answer, then again every time it changes. `dnr-webrequest.ts` is
+ * the one subscriber: it registers its three webRequest handlers only while
+ * this is true, so a person with no such extension loaded pays no webRequest
+ * round trip at all. */
+export function onDnrActiveChange(listener: DnrActiveListener): void {
+  activeListeners.push(listener)
+  listener(dnrCapableExtensions.size > 0)
+}
+
 /**
  * `entry.path` for `extensionId`, looked up fresh from the registry --
  * `dnr-api.ts`'s handlers need it to persist a runtime change
@@ -102,17 +129,26 @@ export function slotDirForLoadedExtension(userDataPath: string, extensionId: str
 export function attachExtensionsDnr(defaultSession: Session, userDataPath: string): DnrEngine {
   const dnrEngine = createDnrEngine()
   engine = dnrEngine
+  dnrCapableExtensions = new Set()
+  activeListeners = []
 
   const sessionExtensions = defaultSession.extensions
   sessionExtensions.on('extension-loaded', (_event, extension) => {
     const entry = readRegistry(userDataPath).find((candidate) => candidate.id === extension.id)
     if (entry !== undefined) {
       loadExtensionIntoEngine(dnrEngine, entry)
+      if (hasDnrPermission(entry.stripped)) {
+        dnrCapableExtensions.add(entry.id)
+        notifyDnrActive()
+      }
     }
   })
   sessionExtensions.on('extension-unloaded', (_event, extension) => {
     dnrEngine.removeExtension(extension.id)
     clearExtensionMatchLog(extension.id)
+    if (dnrCapableExtensions.delete(extension.id)) {
+      notifyDnrActive()
+    }
   })
 
   return dnrEngine

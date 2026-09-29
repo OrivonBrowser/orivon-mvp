@@ -11,17 +11,20 @@ import type {
   OnHeadersReceivedListenerDetails,
   Session,
   WebFrameMain,
+  WebRequestFilter,
 } from 'electron'
 import {
   RUN_LAST,
   webRequestOwnerFor,
   type RequestHeadersResult,
   type ResponseHeadersResult,
+  type WebRequestHandlerHandle,
 } from '../sessions/web-request-owner.js'
 import type { DnrEngine } from './dnr/dnr-engine.js'
 import { mapElectronResourceType, type ElectronResourceType } from './dnr/resource-types.js'
 import type { DnrDecision, DnrModifyOps, DnrRequest } from './dnr/types.js'
 import { recordMatches } from './dnr-match-log.js'
+import { onDnrActiveChange } from './extensions-dnr.js'
 
 /**
  * Strictly before `RUN_LAST` (the verifier's partition stamp,
@@ -32,6 +35,12 @@ import { recordMatches } from './dnr-match-log.js'
  * below it for a future handler that must still run after extension rules.
  */
 const EXTENSION_ORDER = 1000
+
+/** dNR must see every URL of the default session -- a rule can name any
+ * host, and a `redirect`/`modifyHeaders` rule's own host-permission gate
+ * (`dnr/host-permissions.ts`) runs AFTER this filter, inside `evaluate()`,
+ * never as a narrower Electron-level filter here. */
+const DNR_FILTER: WebRequestFilter = { urls: ['<all_urls>'] }
 
 /** Never `chrome-extension:`/`orivon:`. The URLs a
  * `webRequest` listener actually sees for those schemes are an extension's
@@ -213,12 +222,17 @@ export type OnRuleMatched = (tabId: number, info: DnrDecision['matchedRules'][nu
 const noopOnRuleMatched: OnRuleMatched = () => {}
 
 /** Installs all three handlers this package owns on `defaultSession`'s
- * webRequest owner. Re-evaluates the same request independently at each of
- * the three phases (a request that is cancelled/redirected at
- * `onBeforeRequest` never reaches the other two, so there is no risk of a
- * decision being "applied twice"): simpler than threading one decision
- * across phases, and the engine is fast enough (dnr/README.md's measured
- * median/p99) that recomputing costs nothing an extension would notice.
+ * webRequest owner -- but only while at least one loaded extension holds a
+ * `declarativeNetRequest*` permission (`extensions-dnr.ts`'s
+ * `onDnrActiveChange`), and removes them again once none does, so a person
+ * with no such extension loaded pays no webRequest round trip at all
+ * (`../sessions/README.md`'s own Design notes on `WebRequestHandlerHandle`).
+ * Re-evaluates the same request independently at each of the three phases
+ * (a request that is cancelled/redirected at `onBeforeRequest` never
+ * reaches the other two, so there is no risk of a decision being "applied
+ * twice"): simpler than threading one decision across phases, and the
+ * engine is fast enough (dnr/README.md's measured median/p99) that
+ * recomputing costs nothing an extension would notice.
  */
 export function installDnrWebRequestHandlers(
   defaultSession: Session,
@@ -226,62 +240,90 @@ export function installDnrWebRequestHandlers(
   onRuleMatched: OnRuleMatched = noopOnRuleMatched
 ): void {
   const owner = webRequestOwnerFor(defaultSession)
+  let handles: readonly WebRequestHandlerHandle[] = []
 
-  owner.onBeforeRequest(EXTENSION_ORDER, isInScopeUrl, (details: OnBeforeRequestListenerDetails, soFar: CallbackResponse): CallbackResponse => {
-    const engine = getEngine()
-    const scoped = engine === undefined ? null : toScopedRequest(details)
-    if (engine === undefined || scoped === null) {
-      return soFar
+  function register(): void {
+    if (handles.length > 0) {
+      return
     }
-    const decision = engine.evaluate(scoped.dnrRequest)
-    recordMatches(scoped.tabId, decision.matchedRules)
-    for (const info of decision.matchedRules) {
-      onRuleMatched(scoped.tabId, info)
+    handles = [
+      owner.onBeforeRequest(
+        EXTENSION_ORDER,
+        DNR_FILTER,
+        isInScopeUrl,
+        (details: OnBeforeRequestListenerDetails, soFar: CallbackResponse): CallbackResponse => {
+          const engine = getEngine()
+          const scoped = engine === undefined ? null : toScopedRequest(details)
+          if (engine === undefined || scoped === null) {
+            return soFar
+          }
+          const decision = engine.evaluate(scoped.dnrRequest)
+          recordMatches(scoped.tabId, decision.matchedRules)
+          for (const info of decision.matchedRules) {
+            onRuleMatched(scoped.tabId, info)
+          }
+          if (decision.cancel === true) {
+            return { cancel: true }
+          }
+          if (decision.upgradeToHttps === true) {
+            const httpsUrl = toHttpsUrl(details.url)
+            return httpsUrl === null ? soFar : { redirectURL: httpsUrl }
+          }
+          if (decision.redirectUrl !== undefined) {
+            return { redirectURL: decision.redirectUrl }
+          }
+          return soFar
+        }
+      ),
+      owner.onBeforeSendHeaders(
+        EXTENSION_ORDER,
+        DNR_FILTER,
+        isInScopeUrl,
+        (details: OnBeforeSendHeadersListenerDetails, soFar: RequestHeadersResult): RequestHeadersResult => {
+          const engine = getEngine()
+          const scoped = engine === undefined ? null : toScopedRequest(details)
+          if (engine === undefined || scoped === null) {
+            return soFar
+          }
+          const decision: DnrDecision = engine.evaluate(scoped.dnrRequest)
+          if (decision.cancel === true) {
+            return { cancel: true, requestHeaders: soFar.requestHeaders }
+          }
+          return { requestHeaders: applyRequestHeaders(soFar.requestHeaders, decision.requestHeaders) }
+        }
+      ),
+      owner.onHeadersReceived(
+        EXTENSION_ORDER,
+        DNR_FILTER,
+        isInScopeUrl,
+        (details: OnHeadersReceivedListenerDetails, soFar: ResponseHeadersResult): ResponseHeadersResult => {
+          const engine = getEngine()
+          const scoped = engine === undefined ? null : toScopedRequest(details)
+          if (engine === undefined || scoped === null) {
+            return soFar
+          }
+          const decision: DnrDecision = engine.evaluate(scoped.dnrRequest)
+          if (decision.cancel === true) {
+            return { cancel: true, responseHeaders: soFar.responseHeaders }
+          }
+          return { responseHeaders: applyResponseHeaders(soFar.responseHeaders, decision.responseHeaders) }
+        }
+      ),
+    ]
+  }
+
+  function unregister(): void {
+    for (const handle of handles) {
+      handle.remove()
     }
-    if (decision.cancel === true) {
-      return { cancel: true }
+    handles = []
+  }
+
+  onDnrActiveChange((active) => {
+    if (active) {
+      register()
+    } else {
+      unregister()
     }
-    if (decision.upgradeToHttps === true) {
-      const httpsUrl = toHttpsUrl(details.url)
-      return httpsUrl === null ? soFar : { redirectURL: httpsUrl }
-    }
-    if (decision.redirectUrl !== undefined) {
-      return { redirectURL: decision.redirectUrl }
-    }
-    return soFar
   })
-
-  owner.onBeforeSendHeaders(
-    EXTENSION_ORDER,
-    isInScopeUrl,
-    (details: OnBeforeSendHeadersListenerDetails, soFar: RequestHeadersResult): RequestHeadersResult => {
-      const engine = getEngine()
-      const scoped = engine === undefined ? null : toScopedRequest(details)
-      if (engine === undefined || scoped === null) {
-        return soFar
-      }
-      const decision: DnrDecision = engine.evaluate(scoped.dnrRequest)
-      if (decision.cancel === true) {
-        return { cancel: true, requestHeaders: soFar.requestHeaders }
-      }
-      return { requestHeaders: applyRequestHeaders(soFar.requestHeaders, decision.requestHeaders) }
-    }
-  )
-
-  owner.onHeadersReceived(
-    EXTENSION_ORDER,
-    isInScopeUrl,
-    (details: OnHeadersReceivedListenerDetails, soFar: ResponseHeadersResult): ResponseHeadersResult => {
-      const engine = getEngine()
-      const scoped = engine === undefined ? null : toScopedRequest(details)
-      if (engine === undefined || scoped === null) {
-        return soFar
-      }
-      const decision: DnrDecision = engine.evaluate(scoped.dnrRequest)
-      if (decision.cancel === true) {
-        return { cancel: true, responseHeaders: soFar.responseHeaders }
-      }
-      return { responseHeaders: applyResponseHeaders(soFar.responseHeaders, decision.responseHeaders) }
-    }
-  )
 }

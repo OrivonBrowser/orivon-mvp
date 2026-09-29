@@ -106,6 +106,60 @@
     `permission?: chrome.runtime.ManifestPermissions` gained `| undefined` -- `handle()` already
     assigns it `undefined` when no permission is given. Reason: root tsconfig's
     `exactOptionalPropertyTypes`, which `vendor/tsconfig.json` does not set; no behaviour change.
+15. **`setEventListenerFilter` per-listener event filter.** `src/browser/router.ts`: added
+    `setEventListenerFilter(filter)` and an optional module-level predicate, applied in
+    `sendEvent` to every listener's own arguments right before delivery. Returning `undefined`
+    from `filter` skips delivery to that one listener; returning a replacement array delivers
+    that instead. Reason: `cookies.onChanged` and `tabs.onCreated`/`onUpdated` broadcast the
+    same arguments to every listening extension regardless of what that extension may see --
+    patches 16 and 18 below are what `extension-host.ts` uses this hook for
+    (`src/main/extensions/README.md`'s Design notes).
+16. **`chrome.cookies`: the `cookies` permission, plus a host-access hook.** `src/browser/
+    api/cookies.ts`: every handler (`get`/`getAll`/`set`/`remove`/`getAllCookieStores`) now
+    declares `permission: 'cookies'` (router.ts's own `permission` option, patch 14 above);
+    `get`/`set`/`remove` refuse a URL the extension has no host access to, and `getAll` filters
+    its results to only the cookies it does, through an injected `setCookieHostAccessCheck(check)`
+    predicate (the same shape as patch 9's sender-id check) -- unset, or before this patch,
+    `chrome.cookies` read and wrote every cookie of the session for any extension holding no
+    permission at all. `onChanged`'s own per-listener gating is patch 15's hook, wired in
+    `extension-host.ts`. Also: `ExtensionContext`/`ExtensionEvent` imported type-only, `cookies[0]`
+    (an array read) no longer assumed defined, and the objects passed to `session.cookies.get`/
+    `set` built or cast to satisfy `exactOptionalPropertyTypes` -- reasons: root tsconfig's
+    `verbatimModuleSyntax`/`exactOptionalPropertyTypes`/`noUncheckedIndexedAccess`, none of which
+    `vendor/tsconfig.json` sets; no behaviour change from any of these four. Together, this makes
+    `api/cookies.ts` satisfy the root tsconfig too, the same choice patches 13-14 made for
+    router.ts, so `src/main/extensions/tests/` can unit-test this patch directly against the real
+    file.
+17. **Three fields imported type-only.** `src/browser/store.ts`: `ContextMenuType`,
+    `ChromeExtensionImpl` and `ExtensionEvent` each used only as a type here, now `import type`.
+    Reason: root tsconfig's `verbatimModuleSyntax` -- `store.ts` sits on the import path patch 16
+    puts under the root tsconfig too (`ExtensionContext`'s own field type); no behaviour change.
+18. **`chrome.tabs`: url/title/favIconUrl gated on `tabs` or a matching host permission.**
+    `src/browser/api/tabs.ts`: added `setTabUrlAccessCheck(check)` (patch 16's own shape) and a
+    `filterTabDetails` helper applied everywhere a `chrome.tabs.Tab` is returned or broadcast
+    (`get`/`getAllInWindow`/`getCurrent`/`create`/`update`/`query`) -- unset, or before this
+    patch, every one of those calls returned `url`/`pendingUrl`/`title`/`favIconUrl` regardless of
+    permission. `query`'s own `url`/`title` filters now exclude a tab whose matching field this
+    filter stripped, instead of treating a stripped (`undefined`) field as a non-filtering match.
+    `onCreated`/`onUpdated`'s own per-listener gating is patch 15's hook, wired in
+    `extension-host.ts`. Also: `ExtensionContext`/`ExtensionEvent`/`TabContents` imported
+    type-only, and `page-favicon-updated`'s own handler no longer assigns a possibly-`undefined`
+    array read where `TabContents.favicon` wants `string | undefined` only when actually present
+    -- reasons: root tsconfig's `verbatimModuleSyntax`/`exactOptionalPropertyTypes`, which
+    `vendor/tsconfig.json` does not set; no behaviour change beyond the query fix already
+    described. Together with patch 16's own note, this makes `api/tabs.ts` satisfy the root
+    tsconfig too, for the same testability reason.
+19. **`chrome.webNavigation`: the `webNavigation` permission.** `src/browser/
+    api/web-navigation.ts`: `getFrame` and `getAllFrames` now declare `permission:
+    'webNavigation'`. Reason: neither handler checked for any permission at all -- any loaded
+    extension could read every frame's URL in any tab. The events this class broadcasts
+    (`sendNavigationEvent`) are gated the same way, per listener, through patch 15's hook. Also:
+    `ExtensionContext`/`ExtensionEvent` imported type-only, for the same root-tsconfig reason as
+    patches 16 and 18, and for the same testability goal.
+20. **Two fields imported type-only.** `src/browser/api/windows.ts`: `ExtensionContext` and
+    `ExtensionEvent`, used only as types here, now `import type`. Reason: `tabs.ts` (patch 18)
+    imports `WindowsAPI` from this file as a value, which puts this file on the same root-tsconfig
+    import path; no behaviour change.
 
 15. **`getRouter()` on `ElectronChromeExtensions`, and a permission-check override on the
     router.** `src/browser/index.ts`: added a public `getRouter(): ExtensionRouter` returning the
@@ -127,9 +181,13 @@
 file's own header, and `src/main/extensions/README.md`'s Design notes, say why. Their own
 diagnostics under the root tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are
 therefore not patched: nothing in `src/` opens those files directly, and `vendor/tsconfig.json`'s
-own, looser check already covers them as authored. `router.ts` is the one exception: patches 13-14
-above make it satisfy the root tsconfig too, so `src/main/extensions/tests/` can unit-test patches
-5 and 9 directly against the real file, instead of only against a same-shaped local fake.
+own, looser check already covers them as authored. `router.ts`, `api/cookies.ts`, `api/tabs.ts`,
+`api/web-navigation.ts`, `api/windows.ts` and `store.ts` are the exceptions: patches 13-14 and
+16-20 above make them satisfy the root tsconfig too, so `src/main/extensions/tests/` can
+unit-test the sender-id, permission and host-access patches directly against the real files,
+instead of only against a same-shaped local fake. `context.ts`, `api/common.ts` and `impl.ts` sit
+on the same import path and needed no such patch: measured, `npx tsc --noEmit -p tsconfig.json`
+reports nothing for them as authored.
 
 Nothing else changed; upstream code is not reformatted.
 

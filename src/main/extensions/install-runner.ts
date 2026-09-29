@@ -7,7 +7,7 @@
 // dialog.
 
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, extname, join, sep } from 'node:path'
+import { dirname, extname, join, resolve, sep } from 'node:path'
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
 import type { Session } from 'electron'
 import AdmZip from 'adm-zip'
@@ -42,6 +42,22 @@ function extensionsRoot (userDataPath: string): string {
 
 function slotHash (input: Buffer): string {
   return `u-${createHash('sha256').update(input).digest('hex').slice(0, 16)}`
+}
+
+/**
+ * True when `child` resolves to a path strictly inside `parent` -- the same
+ * shape `unpack-runner.ts`'s `checkZipEntryPath` applies to a zip entry
+ * name, applied here to the slot and version-numbered directories
+ * `finishInstall` is about to write into. This check is independent of
+ * `readExtensionManifest`'s own `version` grammar (`extension-manifest.ts`):
+ * that grammar already refuses a `version` shaped like a path, but this
+ * function is the layer that holds even if a future caller, or a bug in
+ * that grammar, ever let one through.
+ */
+export function isStrictlyInsideDirectory (parent: string, child: string): boolean {
+  const resolvedParent = resolve(parent)
+  const resolvedChild = resolve(child)
+  return resolvedChild !== resolvedParent && resolvedChild.startsWith(resolvedParent + sep)
 }
 
 function readManifestObject (raw: unknown, context: string): Record<string, unknown> {
@@ -170,6 +186,9 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   // (README.md's Design notes); the key resolved above makes `id` stable
   // per slot as well.
   const slotDir = join(extensionsRoot(ctx.userDataPath), pending.slot)
+  if (!isStrictlyInsideDirectory(extensionsRoot(ctx.userDataPath), slotDir)) {
+    return { installed: false, reason: 'install refused: slot resolves outside the extensions directory' }
+  }
   const registry = readRegistry(ctx.userDataPath)
   const previousInSlot = registry.filter((existing) => existing.path.startsWith(`${slotDir}${sep}`))
 
@@ -182,6 +201,11 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   if (usedInAnotherSlot) return { installed: false, reason: 'another installed extension already uses this id' }
 
   const targetDir = join(extensionsRoot(ctx.userDataPath), pending.slot, facts.version)
+  // Independent of readExtensionManifest's own version grammar
+  // (extension-manifest.ts) -- see isStrictlyInsideDirectory's own doc.
+  if (!isStrictlyInsideDirectory(slotDir, targetDir)) {
+    return { installed: false, reason: 'install refused: version resolves outside its own slot directory' }
+  }
 
   // The old version, if this slot's id is currently loaded, is removed
   // BEFORE anything on disk changes -- Electron never holds two loaded
@@ -206,9 +230,16 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   /** Undoes the move above: whatever `targetDir` holds now (nothing, or a
    * partially or fully written new copy) is discarded, the old folder comes
    * back, and -- if it was loaded before this call started -- it is loaded
-   * again, so a failed reinstall never leaves the slot with neither copy. */
+   * again, so a failed reinstall never leaves the slot with neither copy.
+   * A FRESH install (no previous version in this slot, `asideDir`
+   * undefined) has no old folder to restore, but its own just-written
+   * `targetDir` is still removed here -- otherwise a write that succeeded
+   * followed by a load (or anything after the write) that failed left that
+   * folder behind for the next boot to find, unregistered and never
+   * cleaned up. */
   async function restoreAsideOnFailure (): Promise<void> {
     if (asideDir === undefined) {
+      rmSync(targetDir, { recursive: true, force: true })
       const previous = previousInSlot[0]
       if (wasLoaded && previous !== undefined) {
         await ctx.session.extensions.loadExtension(previous.path, { allowFileAccess: false })

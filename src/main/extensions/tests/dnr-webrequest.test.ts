@@ -1,13 +1,33 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { Session } from 'electron'
+
+// installDnrWebRequestHandlers subscribes to extensions-dnr.ts's own
+// onDnrActiveChange at module scope; this test controls when it fires
+// instead of driving a real Session's 'extension-loaded'/'-unloaded'.
+let dnrActiveListener: ((active: boolean) => void) | undefined
+vi.mock('../extensions-dnr.js', () => ({
+  onDnrActiveChange: (listener: (active: boolean) => void) => { dnrActiveListener = listener }
+}))
+
 import {
   applyRequestHeaders,
   applyResponseHeaders,
   frameIdOf,
   initiatorOf,
+  installDnrWebRequestHandlers,
   parentFrameIdOf,
   toHttpsUrl,
   toScopedRequest,
 } from '../dnr-webrequest.js'
+
+function fakeSession(): { session: Session, webRequest: Record<'onBeforeRequest' | 'onBeforeSendHeaders' | 'onHeadersReceived', ReturnType<typeof vi.fn>> } {
+  const webRequest = {
+    onBeforeRequest: vi.fn(),
+    onBeforeSendHeaders: vi.fn(),
+    onHeadersReceived: vi.fn(),
+  }
+  return { session: { webRequest } as unknown as Session, webRequest }
+}
 
 interface FakeFrame {
   readonly parent: FakeFrame | null
@@ -169,5 +189,45 @@ describe('applyResponseHeaders', () => {
     expect(applyResponseHeaders({ 'Set-Cookie': ['a=1'] }, [{ header: 'Set-Cookie', operation: 'append', value: 'b=2' }])).toEqual({
       'Set-Cookie': ['a=1', 'b=2'],
     })
+  })
+})
+
+describe('installDnrWebRequestHandlers', () => {
+  it('registers nothing while onDnrActiveChange starts inactive', () => {
+    const { session, webRequest } = fakeSession()
+    dnrActiveListener = undefined
+    installDnrWebRequestHandlers(session, () => undefined)
+    expect(dnrActiveListener).toBeDefined()
+    dnrActiveListener!(false)
+    expect(webRequest.onBeforeRequest).not.toHaveBeenCalled()
+    expect(webRequest.onBeforeSendHeaders).not.toHaveBeenCalled()
+    expect(webRequest.onHeadersReceived).not.toHaveBeenCalled()
+  })
+
+  it('registers all three handlers with <all_urls> once active, and un-registers (Electron\'s own null) once inactive again', () => {
+    const { session, webRequest } = fakeSession()
+    dnrActiveListener = undefined
+    installDnrWebRequestHandlers(session, () => undefined)
+
+    dnrActiveListener!(true)
+    expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith({ urls: ['<all_urls>'] }, expect.any(Function))
+    expect(webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith({ urls: ['<all_urls>'] }, expect.any(Function))
+    expect(webRequest.onHeadersReceived).toHaveBeenLastCalledWith({ urls: ['<all_urls>'] }, expect.any(Function))
+
+    dnrActiveListener!(false)
+    expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith(null)
+    expect(webRequest.onBeforeSendHeaders).toHaveBeenLastCalledWith(null)
+    expect(webRequest.onHeadersReceived).toHaveBeenLastCalledWith(null)
+  })
+
+  it('registering twice while already active is a no-op (no duplicate handler)', () => {
+    const { session, webRequest } = fakeSession()
+    dnrActiveListener = undefined
+    installDnrWebRequestHandlers(session, () => undefined)
+
+    dnrActiveListener!(true)
+    const callsAfterFirst = webRequest.onBeforeRequest.mock.calls.length
+    dnrActiveListener!(true)
+    expect(webRequest.onBeforeRequest.mock.calls.length).toBe(callsAfterFirst)
   })
 })

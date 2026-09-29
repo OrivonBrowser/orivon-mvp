@@ -23,9 +23,8 @@ vi.mock('electron', () => ({
   Menu: { buildFromTemplate },
   clipboard: { writeText: vi.fn() }
 }))
-// ONLY a cache-served origin gets its own partition now (2026-09-29); this
-// file's own APP is that one cache-served, isolated origin throughout, the
-// same role it played as "the granted app" before. Written as the literal
+// ONLY a cache-served origin gets its own partition; this file's own APP is
+// that one cache-served, isolated origin throughout. Written as the literal
 // string, not the APP constant below: vi.mock's factory is hoisted above
 // every const in this file, so a reference to APP here would run before it
 // is initialised.
@@ -61,7 +60,7 @@ function fakeContents (url = 'https://news.example/'): FakeContents {
 function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown> {
   return {
     preloadPath: '/preload/app.js',
-    broker: { app: { isRegisteredSync: (o: string) => o === APP } } as unknown as Broker,
+    broker: { app: { isRegisteredSync: (o: string) => o === APP, hasGrantsSync: () => false } } as unknown as Broker,
     dashboardUrl: 'http://localhost:5999/newtab/',
     window: { isDestroyed: () => false } as never,
     isShown: () => true,

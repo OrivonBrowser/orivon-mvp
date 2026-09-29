@@ -26,7 +26,7 @@ import type { IncomingMessage, Server } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { asPage, closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
 import { cspHeaderValue } from '../src/loader/serve/csp.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
@@ -36,6 +36,8 @@ const PAGE_PORT = 8886
 const WS_PORT = 8887
 const PAGE_ORIGIN = `http://${HOST}:${PAGE_PORT}`
 const PAGE_URL = `${PAGE_ORIGIN}/`
+/** asPage's (e2e-helpers.ts) own same-origin script URL, served by this file's own pageServer -- see fixture-as-page.ts's header for why this is a same-origin write rather than a new server for an unrelated purpose. */
+const AS_PAGE_SCRIPT_FULL_URL = `${PAGE_ORIGIN}/__as-page-script.js`
 const TITLE = 'Orivon WebSocket fixture'
 const GRANT_PATTERN = `${HOST}:${WS_PORT}`
 const TEST_TIMEOUT_MS = 120_000
@@ -43,8 +45,7 @@ const BIG_MESSAGE_BYTES = 200_000
 
 // External, never inline: this page is served with the granted-without-
 // installing CSP (src/loader/serve/csp.ts) that this file exists to
-// measure, and that builder's script-src has dropped 'unsafe-inline'
-// (owner, 2026-09-29).
+// measure, and that builder's script-src carries no 'unsafe-inline'.
 const PAGE_HTML = `<!doctype html><html><head><title>${TITLE}</title><script src="bootstrap.js"></script></head><body>websocket fixture</body></html>`
 const BOOTSTRAP_JS = `
 window.__violations = []
@@ -115,9 +116,18 @@ const sessions: Session[] = []
 const upgraded = new Set<Duplex>()
 const hotReloadLog: string[] = []
 
+/** asPage's (e2e-helpers.ts) own hook -- window.orivon-routed calls must run as a script the page itself loaded, never through page.evaluate() (ADR-0045). */
+let asPageScript = ''
+function setAsPageScript (js: string): void { asPageScript = js }
+
 beforeAll(async () => {
   const csp = cspHeaderValue([GRANT_PATTERN], [])
   pageServer = createServer((req, res) => {
+    if (req.url?.startsWith('/__as-page-script.js') === true) {
+      res.writeHead(200, { 'Content-Type': 'text/javascript', 'Content-Security-Policy': csp })
+      res.end(asPageScript)
+      return
+    }
     if (req.url === '/bootstrap.js') {
       res.writeHead(200, { 'Content-Type': 'text/javascript', 'Content-Security-Policy': csp })
       res.end(BOOTSTRAP_JS)
@@ -203,7 +213,7 @@ it('an app tab\'s WebSocket reaches a granted host over orivon.net, and an ungra
       // (a) THE GRANTED HOST. The page's CSP names 127.0.0.1:8887 only as a
       // bare host:port, which admits no ws: URL, so a socket that opens at
       // all opened through orivon.net.
-      const routed = await evaluateRetrying(view, async () => await new Promise<unknown[]>((resolve) => {
+      const routed = await asPage(view, setAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => await new Promise<unknown[]>((resolve) => {
         const log: unknown[] = []
         const ws = new WebSocket('ws://127.0.0.1:8887/echo', ['chat', 'superchat'])
         ws.binaryType = 'arraybuffer'

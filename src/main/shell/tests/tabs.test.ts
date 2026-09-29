@@ -99,9 +99,9 @@ vi.mock('../../browsing/favicon.js', async (importOriginal) => {
   return { ...actual, fetchFaviconDataUrlCached: vi.fn().mockResolvedValue(null) }
 })
 
-// ONLY a cache-served origin gets its own partition now (2026-09-29):
-// mocked the same way tab-view.test.ts does, since the real registry is a
-// module-level Set this file never populates otherwise.
+// ONLY a cache-served origin gets its own partition: mocked the same way
+// tab-view.test.ts does, since the real registry is a module-level Set this
+// file never populates otherwise.
 const { served } = vi.hoisted(() => ({ served: new Set<string>() }))
 vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginServedFromCacheSync: (origin: string) => served.has(origin)
@@ -136,10 +136,10 @@ function additionalArgumentsOf (view: RecordedView): string[] | undefined {
 /** A fake `SubsystemContext` for a caller-supplied set of ORIGINS THAT ARE
  * REAL INSTALLED APPS: registered with the broker (ADR-0017's app-tab fetch
  * flag) and served from the pinned cache (the only thing that earns a
- * partition now, 2026-09-29) -- what a real install always does at once, so
- * these tests keep exercising one installed app rather than the two
- * questions separately. `tab-view.test.ts` is where the
- * registered/cache-served DISTINCTION itself is proven. */
+ * partition) -- what a real install always does at once, so these tests
+ * keep exercising one installed app rather than the two questions
+ * separately. `tab-view.test.ts` is where the registered/cache-served
+ * DISTINCTION itself is proven. */
 function ctxWithRegisteredOrigins (...origins: string[]): SubsystemContext {
   const registered = new Set(origins)
   for (const origin of origins) served.add(origin)

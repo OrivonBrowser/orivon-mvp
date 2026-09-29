@@ -156,3 +156,11 @@ see in the PR itself.
 | Alignment and privacy lane | All pending work | Stack and shell aligned; their colliding ids resolved by renumbering the shell |
 | `/code-review`, high effort, run by the verify lanes | #36's diff; #38's whole branch | #36: the first fs fix refused in-root symlinks, so it was reverted and A283 records the fix it needs. #38: a DevTools teardown crash, a split at the tab limit, and a private window that lost the sandbox switch in CI; all fixed |
 | Gate, smoke and e2e, headless | #36 and #38 | Typecheck, unit, the 12 guards, smoke and e2e pass; the two FreeTube e2e files fail on `main` as well (the network) |
+
+### `stream/extensions`: Chrome extensions (2026-09-29)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort | The branch against `main`, `vendor/` limited to Orivon's patches | Ten findings, all fixed: a URL-policy check that never refused, a `.crx` able to take another extension's id, library channels trusting the named extension id, a refused store install reported as success, same-version reinstall, a corrupt registry being overwritten, and comments telling history |
+| `security-review` skill, each finding verified separately | The same diff | Three HIGH, all fixed: a manifest `version` that walked the install directory out of the extensions folder, `chrome.cookies` with no permission or host check, tab URLs and titles reaching extensions without `tabs` or host access |
+| Gate, smoke and e2e, headless | The branch | Typecheck, unit, the 12 guards and smoke pass; e2e passes except the three files whose fixture ports the unrelated local server holds, which fail identically on `main` |

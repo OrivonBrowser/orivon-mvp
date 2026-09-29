@@ -99,6 +99,30 @@ export function setPermissionCheck(check: PermissionCheck): void {
 }
 
 /**
+ * Orivon patch: an optional per-LISTENER transform/gate applied to an
+ * event's own arguments right before delivery -- unset, sendEvent/
+ * broadcastEvent deliver the identical `args` to every listener, regardless
+ * of what that particular extension may see (cookies.onChanged carrying
+ * every session cookie to every extension watching it; tabs.onCreated/
+ * onUpdated carrying a tab's url/title/favIconUrl to an extension with no
+ * tabs permission and no matching host permission; a webNavigation.* event
+ * reaching an extension with no webNavigation permission at all). Returning
+ * `undefined` skips delivery to that one listener entirely; returning a
+ * replacement array delivers that instead. Set once, before the first event
+ * fires (extension-host.ts).
+ */
+type EventListenerFilter = (
+  extensionId: string,
+  eventName: string,
+  args: readonly unknown[],
+) => readonly unknown[] | undefined
+let gEventListenerFilter: EventListenerFilter | undefined
+
+export function setEventListenerFilter(filter: EventListenerFilter | undefined): void {
+  gEventListenerFilter = filter
+}
+
+/**
  * Handles event routing IPCs and delivers them to the observer with the
  * associated session.
  */
@@ -507,12 +531,20 @@ export class ExtensionRouter {
         continue
       }
 
+      // Orivon patch: per-listener filter/gate -- see setEventListenerFilter.
+      let deliverArgs: readonly unknown[] = args
+      if (gEventListenerFilter) {
+        const filtered = gEventListenerFilter(extensionId, eventName, args)
+        if (filtered === undefined) continue
+        deliverArgs = filtered
+      }
+
       if (type === 'service-worker') {
         const scope = `chrome-extension://${extensionId}/`
         this.session.serviceWorkers
           .startWorkerForScope(scope)
           .then((serviceWorker) => {
-            serviceWorker.send(ipcName, ...args)
+            serviceWorker.send(ipcName, ...deliverArgs)
           })
           .catch((error) => {
             d('failed to send %s to %s', eventName, extensionId)
@@ -523,7 +555,7 @@ export class ExtensionRouter {
           console.error(`Unable to send '${eventName}' to extension host for ${extensionId}`)
           return
         }
-        listener.host.send(ipcName, ...args)
+        listener.host.send(ipcName, ...deliverArgs)
       }
 
       sentCount++
