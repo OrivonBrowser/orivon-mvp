@@ -18,7 +18,7 @@
 
 import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js'
 import type { CapabilityGrantSummary } from './grant-prompt-connect.js'
-import { describeConnectCapability, portsPhrase, WARNING_MARK } from './grant-prompt-connect.js'
+import { cappedRows, describeConnectCapability, portsPhrase, WARNING_MARK } from './grant-prompt-connect.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import { describeEmbedGrant } from './grant-prompt-embed.js'
 import type { PatternSet } from '../../broker/policy/update.js'
@@ -83,9 +83,17 @@ function describeWebContextGrant (patterns: readonly Pattern[]): CapabilityGrant
       return origin
     }
   })
+  // Decision 10: still one line per origin (never folded into a bare count
+  // -- "this app can act as this site" is exactly the fact this row's own
+  // header argues cannot be skimmed past), but capped at MAX_LISTED_ROWS:
+  // a manifest can declare up to MAX_PATTERNS (256) web.context origins,
+  // and a native dialog has no scrollbar for the rest.
+  const { shown, more } = cappedRows(hosts)
+  const lines = shown.map((host) => `${WARNING_MARK}Run code as ${host}, in a private, empty session.`)
+  if (more > 0) lines.push(`${WARNING_MARK}...and run code as ${String(more)} more site${more === 1 ? '' : 's'} this way.`)
   return {
     warning: true,
-    message: hosts.map((host) => `${WARNING_MARK}Run code as ${host}, in a private, empty session.`).join('\n'),
+    message: lines.join('\n'),
     explanation: 'It cannot see your account or anything you keep there.'
   }
 }

@@ -127,6 +127,17 @@ describe('describeCapabilityGrant -- port breadth for a single named host (AR-02
     expect(fullRange.message).toBe('Connect to a.example on any port')
     expect(several.message).toBe('Connect to a.example on ports 22, 443, 5432')
   })
+
+  // F5: a single named host with dozens of discrete ports used to list every
+  // one on the same line (`ports 1, 2, 3, ..., 60`) -- capped the same way
+  // every other per-item row list in this file now is (decision 10).
+  it('caps a long list of discrete ports for a single host, folding the rest into a count', () => {
+    const patterns = Array.from({ length: 60 }, (_, i) => `a.example:${String(i + 1)}`)
+    const summary = describeCapabilityGrant('tcp.connect', patterns)
+
+    expect(summary.message).toContain('ports 1, 2, 3')
+    expect(summary.message).toMatch(/and 40 more/)
+  })
 })
 
 // A197: a manifest pattern naming a loopback/private/link-local address is
@@ -202,6 +213,21 @@ describe('describeCapabilityGrant -- A197: a private/loopback/link-local address
     const summary = describeCapabilityGrant('https.connect', ['*:443', '127.0.0.1:9000'])
 
     expect(summary.message).toContain('Unlimited')
+  })
+
+  // F5: A197 says every sensitive address is named, never folded into a
+  // count -- decision 10's row cap still applies on top of that: past
+  // MAX_LISTED_ROWS they fold into a trailing count of their own, in BOTH
+  // the headline and the per-address explanation, rather than growing the
+  // dialog to match however many a manifest declares (up to MAX_PATTERNS).
+  it('caps the number of sensitive addresses named individually, folding the rest into a count', () => {
+    const patterns = Array.from({ length: 60 }, (_, i) => `10.0.${String(i)}.1:443`)
+    const summary = describeCapabilityGrant('https.connect', patterns)
+
+    expect(summary.warning).toBe(true)
+    expect(summary.message).toContain('10.0.0.1')
+    expect(summary.message).toMatch(/and 40 more/)
+    expect(summary.explanation).toMatch(/40 more address/)
   })
 })
 
