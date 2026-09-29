@@ -18,7 +18,7 @@ import { isDevEthName } from '../dev/eth-resolver.js'
 import { internalUrl, parseInternalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { SubsystemContext } from '../registry.js'
-import { BLANK_URL, TabFactory } from './tab-factory.js'
+import { BLANK_URL, TabFactory, type BuiltTab } from './tab-factory.js'
 import { clearOfPairs, moveInOrder } from './tab-order.js'
 import { PaneHost } from './pane-host.js'
 import { SplitController } from './split-controller.js'
@@ -30,8 +30,7 @@ import type { TabState, TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost }
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 export class TabManager {
-  /** One record per tab, so favicon state and the view share one lifetime:
-   * a second, parallel map is the leak class this avoids. */
+  /** One record per tab: a second, parallel map is the leak class this avoids. */
   private readonly tabs = new Map<string, TabRecord>()
   /** Tab strip order, kept apart from the Map's insertion order. */
   private readonly order: string[] = []
@@ -88,6 +87,7 @@ export class TabManager {
       forgetTab: (id) => { this.forgetTab(id, false) },
       openTab: (url, active, loadOptions) => this.liveWebContents(this.createTab(url, active, loadOptions)),
       adoptPopup: (view, partition, active) => { this.adoptPopup(view, partition, active) },
+      openBlobTab: (url, partition, active, loadOptions) => this.liveWebContents(this.openBlobTab(url, partition, active, loadOptions)),
       openWindow: (url, loadOptions) => shell?.openWindow?.(url, loadOptions),
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
@@ -113,8 +113,7 @@ export class TabManager {
     this.order.push(id)
   }
 
-  /** The tab holding the whole window: `HtmlFullscreen`'s answer (../fullscreen.ts), the one
-   * place that state lives, and only while that tab is still the one in front. */
+  /** The tab holding the whole window (`HtmlFullscreen`'s answer, ../fullscreen.ts), only while still in front. */
   private get fullscreenId (): string | null {
     const id = this.shell?.fullscreenTabId?.() ?? null
     return id === this.activeId ? id : null
@@ -148,24 +147,30 @@ export class TabManager {
     }
   }
 
-  /** `active` false leaves the new tab's view detached, behind the current tab, until a later
-   * `activateTab` -- popups.ts's `windowOpenHandler` on a middle click or a plain ctrl+click.
-   * `loadOptions` -- its own `loadOptionsFor`'s doc: a modifier-click form submit's referrer/POST body. */
-  createTab (url?: string, active = true, loadOptions?: LoadURLOptions): string {
-    if (this.atCapacity()) {
-      // Refuse rather than crash -- see MAX_TABS above. A caller that uses
-      // the id (a split's partner) checks atCapacity() first.
-      return this.activeId ?? ''
-    }
-
-    const { id, record, target } = this.factory.content(url)
-    this.add(id, record)
-    // Attached before it navigates: a detached view's first paint has
-    // nowhere live to land (pane-host.ts's own fix is the other half).
-    if (active) this.activateTab(id)
+  // `active` false leaves the view detached (nowhere live to land, pane-host.ts's fix is the other
+  // half) behind the current tab, until a later `activateTab` -- popups.ts's `windowOpenHandler` on
+  // a middle/ctrl-click. `loadOptions` -- `loadOptionsFor`'s doc: a form submit's referrer/POST body.
+  private addAndShow (built: BuiltTab & { target: string }, active: boolean, loadOptions?: LoadURLOptions): string {
+    this.add(built.id, built.record)
+    if (active) this.activateTab(built.id)
     else this.emitState()
-    void record.view.webContents.loadURL(target, loadOptions)
-    return id
+    void built.record.view.webContents.loadURL(built.target, loadOptions)
+    return built.id
+  }
+
+  /** `active`/`loadOptions` -- `addAndShow`'s own doc. Refuses rather than crashes at MAX_TABS
+   * -- a caller that uses the id (a split's partner) checks atCapacity() first. */
+  createTab (url?: string, active = true, loadOptions?: LoadURLOptions): string {
+    if (this.atCapacity()) return this.activeId ?? ''
+    return this.addAndShow(this.factory.content(url), active, loadOptions)
+  }
+
+  /** A same-origin blob: URL a no-guest popup open wants (popups.ts's own doc), directly in
+   * `partition` -- the opener's own; skips `createTab`'s partitionForTarget/sanitizeDirectUrl,
+   * neither of which fits a URL with no origin of its own that nobody could ever type. */
+  openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions): string {
+    if (this.atCapacity()) return this.activeId ?? ''
+    return this.addAndShow(this.factory.blob(url, partition), active, loadOptions)
   }
 
   /** createTab() for a trusted caller (the extension host): skips the sanitizeDirectUrl gate that refuses chrome-extension: outright, since its own policy already checked `target`. */
@@ -203,8 +208,7 @@ export class TabManager {
     return this.disposed || this.order.length >= MAX_TABS
   }
 
-  /** A popup Chromium already created, with its opener, in the opener's session (./popups.ts).
-   * It navigates itself; nothing is loaded here. `active` -- see `createTab`'s own doc. */
+  /** A popup Chromium already created (./popups.ts); it navigates itself. `active` -- `addAndShow`'s doc. */
   private adoptPopup (view: WebContentsView, partition: string | undefined, active = true): void {
     const { id, record } = this.factory.popup(view, partition)
     this.add(id, record)
@@ -240,8 +244,7 @@ export class TabManager {
     return !this.atCapacity()
   }
 
-  /** Lets go of a tab without closing it, so another window can show it. When this was the last tab the
-   * window is left empty and NOT told so (`onEmpty` is for closing a tab): whoever moved it closes the window. */
+  /** Lets go of a tab without closing it, for another window to show -- the last tab leaves this window empty and NOT told so (`onEmpty` is for closing a tab): whoever moved it closes the window. */
   takeTab (id: string): TabRecord | null {
     if (this.disposed) return null
     const record = this.tabs.get(id)
@@ -252,8 +255,7 @@ export class TabManager {
     return record
   }
 
-  /** Shows a tab another window let go of, at `index` (the end by default). Its views' handlers read `record.host`
-   * when they run, so from here on they act for this window. */
+  /** Shows a tab another window let go of, at `index` (the end by default) -- its views' handlers read `record.host` when they run, so from here on they act for this window. */
   giveTab (id: string, record: TabRecord, index?: number): void {
     if (this.disposed) return
     record.host = this.viewHost
@@ -429,10 +431,8 @@ export class TabManager {
     )
   }
 
-  /** Rejected omnibox input (a dangerous scheme, or empty) never reaches
-   * `loadURL` -- it falls back to a plain blank page rather than
-   * silently doing nothing, so a bad paste has a visible, safe result.
-   * Never the dashboard -- see BLANK_URL's own comment for why. */
+  /** Rejected omnibox input (a dangerous scheme, or empty) never reaches `loadURL` -- it falls back
+   * to a plain blank page, never the dashboard (BLANK_URL's own doc), so a bad paste is visible and safe. */
   private resolveTarget (rawInput: string): string {
     const result = parseOmniboxInput(rawInput, isDevEthName, this.searchUrl)
     if (result.kind === 'reject') return BLANK_URL

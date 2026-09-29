@@ -23,6 +23,16 @@ function seversOpener (features: string): boolean {
   })
 }
 
+/** Whether `url` is a blob: URL minted by `opener`'s own origin -- the only case one is safe to
+ * open at all: its bytes live only in the storage partition that minted it, resolvable there and
+ * nowhere else. Exported so `windowOpenHandler`'s no-guest branch can ask the identical question
+ * `routePopup` already asked, to route it to `openBlobTab` instead of `sanitizeDirectUrl`'s refusal. */
+export function blobMintedByOpener (url: string, opener: PopupOpener): boolean {
+  if (!url.startsWith('blob:')) return false
+  const minter = originFromUrl(url.slice('blob:'.length))
+  return minter !== null && minter === originFromUrl(opener.url)
+}
+
 /** `targetPartition` is the session a tab opened at `details.url` would get
  * on its own. A popup Chromium creates always shares its opener's. `isApp`
  * answers whether `details.url`'s origin holds a grant or is cache-served
@@ -35,10 +45,7 @@ export function routePopup (
 ): PopupRoute {
   // A blob: URL resolves only in the storage partition that minted it, so
   // a fresh tab in any session would load nothing.
-  if (details.url.startsWith('blob:')) {
-    const minter = originFromUrl(details.url.slice('blob:'.length))
-    return minter !== null && minter === originFromUrl(opener.url) ? 'adopt' : 'new-tab'
-  }
+  if (details.url.startsWith('blob:')) return blobMintedByOpener(details.url, opener) ? 'adopt' : 'new-tab'
   // Chromium cannot load a protocol's address itself; only a new tab turns it into the URL serving it.
   if (seversOpener(details.features) || BUILTIN_ADDRESSES.servedUrl(details.url) !== undefined) return 'new-tab'
   // A granted or cache-served origin popped open from a DIFFERENT origin
@@ -71,6 +78,9 @@ export interface PopupHost {
   /** `url` is what the popup was opened at, for anything the tab decides from it.
    * `active` -- see `openTab`'s own doc. */
   adoptPopup: (view: WebContentsView, partition: string | undefined, url: string, active: boolean) => void
+  /** `url` (a blob:, `blobMintedByOpener`'s own doc) opened directly in `partition`, the opener's
+   * own -- the one case a blob: URL is safe to open at all. `active`/`loadOptions` -- `openTab`'s own doc. */
+  openBlobTab: (url: string, partition: string | undefined, active: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
   /** `url` in a brand new window, as Chrome opens a shift-click -- undefined when the shell
    * cannot make one, so the caller opens a tab here instead. `loadOptions` -- see
    * `loadOptionsFor`'s own doc. */
@@ -114,30 +124,49 @@ function loadOptionsFor (details: HandlerDetails): LoadURLOptions | undefined {
   return options
 }
 
-const MAX_NEW_WINDOWS_PER_MINUTE = 5
+const MAX_NEW_WINDOWS_PER_MINUTE_PER_TAB = 5
 const NEW_WINDOW_MIN_SPACING_MS = 1_000
+/** A page that opens itself grows geometrically under a per-tab budget alone: each window it
+ * opens is a brand new opener tab, with its own untouched budget (5, 25, 125, ...). This bounds
+ * new-window opens across the whole process instead, whichever tab is asking -- generous enough
+ * that ordinary multi-tab browsing never notices it, tight enough that self-replication does. */
+export const MAX_NEW_WINDOWS_PER_MINUTE_PROCESS = 20
 const MINUTE_MS = 60_000
+
+interface Budget { allow: () => boolean, reset: () => void }
+
+/** A rolling-minute count, capped at `max`, at most one accepted every `minSpacingMs` (0: no
+ * spacing floor, only the cap). `reset()` exists for tests: nothing in this file calls it. */
+function newBudget (max: number, minSpacingMs = 0): Budget {
+  let openedAt: number[] = []
+  return {
+    allow: () => {
+      const now = Date.now()
+      openedAt = openedAt.filter((at) => now - at <= MINUTE_MS)
+      if (openedAt.length >= max) return false
+      if (minSpacingMs > 0 && openedAt.length > 0 && now - (openedAt[openedAt.length - 1] as number) < minSpacingMs) return false
+      openedAt.push(now)
+      return true
+    },
+    reset: () => { openedAt = [] }
+  }
+}
+
+/** Every tab's own `windowOpenHandler` shares this one -- unlike `newWindowLimiter`'s per-opener
+ * budget below, it is module-level, so it never resets per tab (closing the geometric-growth hole
+ * its own doc describes). Exported only so a test can `reset()` it between cases. */
+export const processWindowBudget: Budget = newBudget(MAX_NEW_WINDOWS_PER_MINUTE_PROCESS)
 
 /** One opener tab's own new-window budget: `HandlerDetails` carries no per-open user-gesture
  * flag to check instead (absent from Electron 44's type), and a page's own synthetic, untrusted
  * `dispatchEvent` click still reaches `windowOpenHandler` with a real 'new-window' disposition
  * (measured) -- so nothing here stops a script from firing as many as it likes. `allow()` records
  * an accepted open and refuses one closer than a second to the last, or beyond five within a
- * rolling minute; a caller past either limit falls back to an ordinary tab instead of refusing
- * the link outright. Closed over per `windowOpenHandler` call, so its state is naturally scoped
- * to one opener tab and gone once that tab's own handler is. */
-function newWindowLimiter (): { allow: () => boolean } {
-  const openedAt: number[] = []
-  return {
-    allow: () => {
-      const now = Date.now()
-      while (openedAt.length > 0 && now - (openedAt[0] as number) > MINUTE_MS) openedAt.shift()
-      if (openedAt.length >= MAX_NEW_WINDOWS_PER_MINUTE) return false
-      if (openedAt.length > 0 && now - (openedAt[openedAt.length - 1] as number) < NEW_WINDOW_MIN_SPACING_MS) return false
-      openedAt.push(now)
-      return true
-    }
-  }
+ * rolling minute; a caller past either this or `processWindowBudget` falls back to an ordinary tab
+ * instead of refusing the link outright. Closed over per `windowOpenHandler` call, so its state is
+ * naturally scoped to one opener tab and gone once that tab's own handler is. */
+function newWindowLimiter (): Budget {
+  return newBudget(MAX_NEW_WINDOWS_PER_MINUTE_PER_TAB, NEW_WINDOW_MIN_SPACING_MS)
 }
 
 export function windowOpenHandler (
@@ -158,7 +187,8 @@ export function windowOpenHandler (
       // Electron 44: a plain click or window.open() with no sizing features never produces it,
       // only a real sized popup or a genuine shift-click do), so it still deserves a window, not a
       // tab, through the same rate-limited path.
-      if (details.disposition !== 'new-window' || !limiter.allow() || host.openWindow(details.url, loadOptions) === undefined) {
+      const canOpenWindow = details.disposition === 'new-window' && processWindowBudget.allow() && limiter.allow()
+      if (!canOpenWindow || host.openWindow(details.url, loadOptions) === undefined) {
         host.openTab(details.url, active, loadOptions)
       }
       return { action: 'deny' }
@@ -171,18 +201,25 @@ export function windowOpenHandler (
       createWindow: (options) => {
         const guest = guestOf(options)
         // No guest (guestOf's own doc): there is nothing of Chromium's to adopt, so `routePopup`'s
-        // 'adopt' above meant only "this URL's own partition equals the opener's", never "skip the
-        // ordinary tab pipeline". Route through it exactly as any other tab open does: it
-        // recomputes the correct partition from the URL itself (partitionForTarget) and applies
-        // sanitizeDirectUrl. Building a view here directly, with `options.webPreferences` (no
-        // partition -- webPreferencesFor's own doc says why: Chromium fixes a REAL guest's
-        // partition to its opener's at creation) used to land it in session.defaultSession instead,
+        // 'adopt' above means only "this URL's own partition equals the opener's", never "skip the
+        // ordinary tab pipeline" -- this always routes through it exactly as any other tab open
+        // does, recomputing the correct partition from the URL itself (partitionForTarget) and
+        // applying sanitizeDirectUrl. Building a view here directly, with `options.webPreferences`
+        // (no partition -- webPreferencesFor's own doc says why: Chromium fixes a REAL guest's
+        // partition to its opener's at creation), would land it in session.defaultSession instead,
         // loading the opener's own origin from the network with its app-tab flag still set --
-        // network-served code then ran with whatever grants the broker keys to that origin, since
-        // it checks only the sender frame's origin (T6/T18/T21). A shift-click's new-window open
-        // (disposition 'new-window') already goes through the same safe pipeline via openWindow.
+        // network-served code would then run with whatever grants the broker keys to that origin,
+        // since it checks only the sender frame's origin (T6/T18/T21). A shift-click's new-window
+        // open (disposition 'new-window') already goes through the same safe pipeline via openWindow.
         if (guest === undefined) {
-          if (details.disposition === 'new-window' && limiter.allow()) {
+          // A same-origin blob: (blobMintedByOpener's own doc) is the one URL a no-guest open can
+          // safely put anywhere at all, and only in the opener's own partition -- checked ahead of
+          // the shift-click/new-window branch below, since a blob: URL has no safe "new window" of
+          // its own either; it only ever means "a tab in the session that minted it".
+          if (blobMintedByOpener(details.url, from)) {
+            const opened = host.openBlobTab(details.url, from.partition, active, loadOptions)
+            if (opened !== undefined) return opened
+          } else if (details.disposition === 'new-window' && processWindowBudget.allow() && limiter.allow()) {
             const opened = host.openWindow(details.url, loadOptions)
             if (opened !== undefined) return opened
           }
