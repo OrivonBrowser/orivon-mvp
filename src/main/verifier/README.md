@@ -18,10 +18,11 @@ imports `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../READ
 `builtin.ts`, `resolution/`), [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts),
 [`../../broker/`](../../broker/) (`grants/node-ledger-storage.ts`'s atomic write,
 `policy/pin.ts`), [`../../loader/fetch/`](../../loader/fetch/) (`verifier-origin.ts`,
-`content-root.ts`), [`../../trust/website-level.ts`](../../trust/website-level.ts), the
-top-level `registry.ts`, `node:fs`, `node:fs/promises`, `node:net`, `node:path`, and
-`multiformats` (`cid`, `bases/base36`) for the same IPNS-key shape check `ipfs/ipns.ts` applies,
-never that file itself (this directory's own boundary, below).
+`content-root.ts`), [`../../trust/website-level.ts`](../../trust/website-level.ts),
+[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts), the top-level
+`registry.ts`, `node:fs`, `node:fs/promises`, `node:net`, `node:path`, and `multiformats` (`cid`,
+`bases/base36`) for the same IPNS-key shape check `ipfs/ipns.ts` applies, never that file itself
+(this directory's own boundary, below).
 
 **What it must never import.** The verifier host's code, as opposed to its protocol types: it
 runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) talks to it.
@@ -35,19 +36,22 @@ port probe, fingerprint-only certificates, request deadlines and backoff, the ch
 What is here has no other home.
 
 **The partition stamp is on every session that can reach the verifier over Chromium's own
-networking, never on one an installed app's own content intercepts.** A `webRequest` listener
-sends its session's requests through Electron's proxy, and then a redirect a `protocol.handle`
-handler returns reaches the page with the redirect's status (`test/e2e-served-csp.test.ts`
-measures it): an installed app's own partition serves its `https` through such a handler
-(`src/loader/electron/serve.ts`'s `registerAppOrigin`, for the WHOLE scheme, not only the app's
-own host), so a listener there would break every routed redirect; a request that handler does
-not itself serve, a third-party fetch a page inside it makes, is dialled by
-`src/loader/reach/reach.ts`'s own Node-level `https`, which cannot resolve a `.eth` name either,
-so that partition never needs the stamp. An embed guest (`<webview>`, `persist:embed-` sessions)
-has no such handler: it shows another site's real document over Chromium's ordinary networking,
-so it reaches the verifier exactly as a tab does, and `src/main/embed/embed-host.ts`'s
-`configureEmbedSession` installs the identical stamp there, reusing `partition.ts` rather than
-copying it.
+networking, never on one an installed app's own content intercepts.** On the default session it
+is `installPartitionStamp`, registered through
+[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts), LAST among that session's
+`onBeforeSendHeaders` handlers so nothing earlier, an extension rule included, can set or remove
+the header underneath it. A `webRequest` listener sends its session's requests through Electron's
+proxy, and then a redirect a `protocol.handle` handler returns reaches the page with the
+redirect's status (`test/e2e-served-csp.test.ts` measures it): a cache-served app's own partition
+serves its `https` through such a handler (`src/loader/electron/serve.ts`'s `registerAppOrigin`,
+for the WHOLE scheme, not only the app's own host), and so does a web context, so a listener there
+would break every routed redirect; a request that handler does not itself serve, a third-party
+fetch a page inside it makes, is dialled by `src/loader/reach/reach.ts`'s own Node-level `https`,
+which cannot resolve a `.eth` name either, so that partition never needs the stamp. An embed guest
+(`<webview>`, `persist:embed-` sessions) has no such handler: it shows another site's real
+document over Chromium's ordinary networking, so it reaches the verifier exactly as a tab does,
+and `src/main/embed/embed-host.ts`'s `configureEmbedSession` installs the identical stamp there,
+reusing `partition.ts` rather than copying it.
 
 **The certificate check goes on every session, through `session-created`.** A partition without
 it cannot load any host the verifier serves.

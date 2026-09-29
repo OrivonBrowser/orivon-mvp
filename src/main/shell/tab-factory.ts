@@ -1,9 +1,10 @@
 // Builds a tab: its view, in the session and with the preload that kind of tab
 // needs, and its record. TabManager registers and shows what this returns.
 //
-// Three kinds, because a view's preload and session are fixed when it is made:
-// a content tab (a website or an app, or the new-tab page when no URL is given),
-// one of the shell's own pages, and a popup Chromium already created.
+// content()/trusted()/internal()/popup()/blob() -- one method per kind, because a view's preload
+// and session are fixed when it is made: a content tab (a website or an app, or the new-tab page
+// when no URL is given, or a trusted caller's own already-checked target), one of the shell's own
+// pages, a popup Chromium already created, and a same-origin blob: URL a no-guest open wants.
 import { join } from 'node:path'
 import type { WebContentsView } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
@@ -14,6 +15,8 @@ import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import { guardInternalView } from '../pages/internal-tab.js'
 import type { TabRecord, TabViewHost } from './tab-types.js'
 import { appTabArgsFor, makeTabView, partitionForTarget, wireView } from './tab-view.js'
+import { APP_DARK_WASH, resolveThemeColor } from './theme-colors.js'
+import type { ThemeColorPair } from './theme-colors.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
  * a bad window.open() URL, empty input) -- never the dashboard. Keeping
@@ -25,6 +28,11 @@ import { appTabArgsFor, makeTabView, partitionForTarget, wireView } from './tab-
  * navigate() call must never show a page that expects the dashboard's
  * own preload to exist. */
 export const BLANK_URL = 'about:blank'
+
+/** Literally pages/shared/tokens.css's own `--wbg` pair (Settings, History,
+ * Extensions, ...) -- the one internal-page consumer of this fact, so it
+ * stays local rather than moving into theme-colors.ts. */
+const INTERNAL_PAGE_BACKGROUND: ThemeColorPair = { light: '#f4f4f8', dark: '#17181c' }
 
 let nextId = 1
 function makeTabId (): string {
@@ -83,7 +91,7 @@ export class TabFactory {
     // cannot tell that apart from a real app on scheme alone, but the
     // dashboard is shell UI (ADR-0003's "browser state" tier), never app
     // content, and must never be isolated as if it were an app's own origin.
-    const partition = isDashboard ? undefined : partitionForTarget(target, this.broker())
+    const partition = isDashboard ? undefined : partitionForTarget(target)
 
     const view = makeTabView(
       isDashboard ? this.newTabPreload : this.appPreload,
@@ -95,7 +103,18 @@ export class TabFactory {
       // cannot be un-set if the user later navigates away. A non-dashboard
       // tab instead gets appTabArgsFor's ADR-0017 flag, if this origin is
       // already a registered app.
-      isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : appTabArgsFor(target, this.broker())
+      isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : appTabArgsFor(target, this.broker()),
+      {
+        // Only the dashboard and internal pages (below) get a pre-paint
+        // background -- an ordinary website tab is left at Electron's default
+        // (see makeTabView's own doc): a site with no CSS background of its
+        // own renders white, as the web expects, and painting it dark first
+        // would make a transparent-background site look wrong in dark mode.
+        // `exactOptionalPropertyTypes` refuses an explicit `undefined` for an
+        // optional property, hence the spread rather than a ternary value.
+        ...(isDashboard ? { backgroundColor: APP_DARK_WASH } : {}),
+        target
+      }
     )
     const id = makeTabId()
     const record = this.recordFor(view, partition, { isDashboardTab: isDashboard })
@@ -109,7 +128,7 @@ export class TabFactory {
    * session/app-tab handling as content(), without its sanitizeDirectUrl
    * gate, which refuses chrome-extension: outright. */
   trusted (target: string): BuiltTab & { readonly target: string } {
-    const partition = partitionForTarget(target, this.broker())
+    const partition = partitionForTarget(target)
     const view = makeTabView(this.appPreload, partition, appTabArgsFor(target, this.broker()))
     const id = makeTabId()
     const record = this.recordFor(view, partition)
@@ -121,7 +140,12 @@ export class TabFactory {
   /** One of the shell's own pages. Its view lives in the internal session with the
    * internal preload, and it stays on its page (../pages/internal-tab.ts). */
   internal (page: InternalPageId): BuiltTab {
-    const view = makeTabView(this.internalPreload, INTERNAL_PARTITION, [`--orivon-internal-page=${page}`])
+    const view = makeTabView(
+      this.internalPreload,
+      INTERNAL_PARTITION,
+      [`--orivon-internal-page=${page}`],
+      { backgroundColor: resolveThemeColor(INTERNAL_PAGE_BACKGROUND) }
+    )
     const id = makeTabId()
     const record = this.recordFor(view, INTERNAL_PARTITION, { internalPage: page })
     wireView(id, record)
@@ -139,5 +163,18 @@ export class TabFactory {
     wireView(id, record)
     this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record }
+  }
+
+  /** A same-origin blob: URL a no-guest popup open wants (popups.ts's own doc), in `partition` --
+   * the opener's own, where the blob was minted. Neither `partitionForTarget` nor
+   * `sanitizeDirectUrl` (content()'s own gates) apply to a blob: URL: it has no derivable origin
+   * of its own to compute a partition from, and nobody could ever type one into the address bar. */
+  blob (url: string, partition: string | undefined): BuiltTab & { readonly target: string } {
+    const view = makeTabView(this.appPreload, partition, appTabArgsFor(url, this.broker()))
+    const id = makeTabId()
+    const record = this.recordFor(view, partition)
+    wireView(id, record)
+    this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
+    return { id, record, target: url }
   }
 }

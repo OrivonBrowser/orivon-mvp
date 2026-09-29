@@ -14,6 +14,11 @@
 // Also covers the shield opening the Web3 Score page, and the key
 // opening the main page with a real switch rendered from a real grant.
 //
+// Also covers N2's disclosure (docs/planning/extensions-exploration.md):
+// with a fixture extension seeded and enabled, the popup's "Extensions on
+// this site" section names it, and its "Manage" link opens the real
+// orivon://extensions page.
+//
 // Hermetic: everything it touches is loopback. Uses the developer-only
 // grant hook (src/main/dev-grant.ts), same as every other e2e file that
 // needs a real, persisted grant with no native dialog to click through.
@@ -27,22 +32,30 @@ import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import { APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import { seedExtensions } from './extensions-fixtures.js'
 import type { ElectronApplication, Page } from 'playwright'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-async function startFixtureServer (): Promise<{ server: Server, url: string }> {
-  const server = createServer((_req, res) => {
+/** `setAsPageScript`/`/__as-page-script.js`: asPage's (e2e-helpers.ts) own hook -- window.orivon calls must run as a script the page itself loaded, never through page.evaluate() (ADR-0045). */
+async function startFixtureServer (): Promise<{ server: Server, url: string, setAsPageScript: (js: string) => void }> {
+  let asPageScript = ''
+  const server = createServer((req, res) => {
+    if (req.url?.startsWith('/__as-page-script.js') === true) {
+      res.writeHead(200, { 'content-type': 'text/javascript' })
+      res.end(asPageScript)
+      return
+    }
     res.writeHead(200, { 'content-type': 'text/html' })
     res.end('<title>fixture-a</title><body>fixture A</body>')
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('fixture server did not bind a port')
-  return { server, url: `http://127.0.0.1:${String(address.port)}/` }
+  return { server, url: `http://127.0.0.1:${String(address.port)}/`, setAsPageScript: (js: string) => { asPageScript = js } }
 }
 
 /** Popup windows are found by URL, never by `app.windows()` object
@@ -107,7 +120,7 @@ it(
   'a switched-off capability revokes for real, through the real broker',
   async () => {
     await runPhase('site-info-turn-off', async (check) => {
-      const { server, url } = await startFixtureServer()
+      const { server, url, setAsPageScript } = await startFixtureServer()
       let app: ElectronApplication | undefined
       try {
         app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
@@ -152,15 +165,7 @@ it(
         // reached -- not the popup's own re-render of itself.
         const view = (app as ElectronApplication).windows().find((w) => w.url() === url)
         if (view === undefined) throw new Error('fixture tab view not found')
-        // fs was this origin's only grant. Turning it off leaves the origin
-        // attributed to the default session again for the NEXT document, but
-        // this tab is still sitting, unmoved, in the app partition the
-        // earlier grant's reload moved it into -- and stays attributed
-        // regardless: it already committed there, and a revoke that changes
-        // what session the origin belongs in NEXT never re-decides an
-        // already-committed document's own attribution
-        // (src/main/sessions/session-attribution.ts).
-        const grantsAfterOff = await view.evaluate(async () => {
+        const grantsAfterOff = await asPage(view, setAsPageScript, `${url}__as-page-script.js`, async () => {
           const orivon = (globalThis as unknown as { orivon: { app: { grants: () => Promise<Array<{ capability: string }>> } } }).orivon
           return (await orivon.app.grants()).map((g) => g.capability)
         })
@@ -215,6 +220,61 @@ it(
         if (mainPopup === undefined) throw new Error('key popup did not open')
         const switchShown = await waitFor(async () => (await mainPopup.$$('.switch')).length > 0, 5_000)
         check('the main page shows the real grant as a switch', switchShown)
+      } finally {
+        if (app !== undefined) await closeElectronApp(app)
+        await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      }
+    })
+  },
+  60_000 + APP_CLOSE_RACE_MS
+)
+
+it(
+  'N2\'s disclosure: the popup names a seeded extension reaching the site, and Manage opens orivon://extensions',
+  async () => {
+    await runPhase('site-info-extensions-on-site', async (check) => {
+      const { server, url } = await startFixtureServer()
+      let app: ElectronApplication | undefined
+      try {
+        app = await launchElectron({
+          appPath: '.',
+          args: [HERMETIC_RESOLVER],
+          seedProfile: async (dir) => { seedExtensions(dir) },
+          sandbox: true
+        })
+        const chrome = await waitForChrome(app)
+        await waitForAddressBarStable(chrome)
+        await clickAddressBarRetrying(chrome, url)
+        await waitForTab(chrome, { address: url, title: 'fixture-a' })
+
+        // The key's own visibility gates on a held capability (siteSummaryFor's
+        // `asked`), same as the other tests in this file -- extensionsOnSite
+        // does not widen that gate, so a grant is still what opens the popup.
+        const origin = new URL(url).origin
+        const installed = await grantFs(app, origin)
+        check('the developer-only grant hook is installed in this build', installed)
+        await reloadAndSettle(chrome, url)
+        await waitFor(async () => (await chrome.getAttribute('#site-permissions-btn', 'hidden')) === null, 8_000)
+
+        await chrome.click('#site-permissions-btn')
+        const popupOpened = await waitFor(() => findPopup(app as ElectronApplication, '/site-info/') !== undefined, 5_000)
+        check('the key opened the site-info popup', popupOpened)
+        const popup = findPopup(app, '/site-info/')
+        if (popup === undefined) throw new Error('site-info popup did not open')
+
+        const sectionShown = await waitFor(async () => (await popup.$$('text=Extensions on this site')).length > 0, 5_000)
+        check('the "Extensions on this site" heading appeared', sectionShown)
+        const namesShown = await waitFor(async () =>
+          (await popup.$$('text=Orivon E2E Content Marker')).length > 0 &&
+          (await popup.$$('text=Orivon E2E Network Perms')).length > 0, 5_000)
+        check('both seeded fixture extensions are named -- both declare <all_urls> host access', namesShown)
+
+        await popup.click('button.nav-row:has-text("Manage")')
+        const extensionsPageOpened = await waitFor(
+          () => (app as ElectronApplication).windows().some((w) => w.url().startsWith('orivon://extensions')),
+          5_000
+        )
+        check('Manage opened the real orivon://extensions page', extensionsPageOpened)
       } finally {
         if (app !== undefined) await closeElectronApp(app)
         await new Promise<void>((resolve) => { server.close(() => { resolve() }) })

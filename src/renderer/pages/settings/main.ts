@@ -4,6 +4,7 @@
 // person is and a link goes straight to a section.
 import { gearIcon } from '../shared/icons.js'
 import { h, replaceChildren } from '../shared/dom.js'
+import { onArmEnded } from '../shared/armed.js'
 import type { Row, Section } from './model.js'
 import { groupLabelFor, NAV_ICON } from './nav.js'
 import { pathFor, placeFor } from './router.js'
@@ -137,11 +138,38 @@ async function start (): Promise<void> {
   })
 
   // A change made elsewhere, or by a control here, redraws the page; but not
-  // under a text box the person is typing in.
-  state.onChange(() => {
-    if (document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'text' && content.contains(document.activeElement)) return
+  // while the person is in the middle of something a redraw would throw
+  // away: typing, a focused control (a <select> a redraw would otherwise
+  // silently close), or a two-click confirm armed and waiting for its
+  // second click (clear-data.ts's own "Click again to clear", the only
+  // `.armed` button in Settings today, and any future one the same way).
+  //
+  // NEVER DROPPED: a checkbox or a <select> keeps focus after it is used
+  // (unlike a text box, which a person usually leaves promptly), so a push
+  // that arrived while one had focus could otherwise wait forever. Held as
+  // `renderPending` instead, and re-tried on `focusout` and whenever an
+  // armed confirm ends -- the same shape ../profiles/main.ts's own
+  // `reloadPending`/`reloadUnlessBusy` already use for the identical hazard.
+  function midInteraction (): boolean {
+    const active = document.activeElement
+    if (!(content.contains(active))) return false
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) return true
+    return content.querySelector('.armed') !== null
+  }
+  let renderPending = false
+  function renderUnlessBusy (): void {
+    if (!renderPending || midInteraction()) return
+    renderPending = false
     render()
+  }
+  state.onChange(() => {
+    renderPending = true
+    renderUnlessBusy()
   })
+  // A blur can fire just before the new element takes focus; deferred one
+  // tick so `document.activeElement` already reflects where focus landed.
+  document.addEventListener('focusout', () => { setTimeout(renderUnlessBusy) })
+  onArmEnded(renderUnlessBusy)
 
   const place = placeFor(location.pathname, sections)
   if (place.canonicalPath !== null) history.replaceState(null, '', place.canonicalPath)

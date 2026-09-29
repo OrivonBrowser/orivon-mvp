@@ -208,6 +208,69 @@ export async function waitForPageGlobal (view: ReturnType<typeof findChrome>, na
   await view.waitForFunction((global: string) => (globalThis as Record<string, unknown>)[global] !== undefined, name, { timeout: timeoutMs })
 }
 
+let asPageCounter = 0
+
+/**
+ * Runs `fn` as a script the PAGE itself loaded (a real `<script src>` at a
+ * same-origin http(s) URL), never through Playwright's own `page.evaluate()`
+ * -- which leaves no page frame at all, so main-world-socket.ts's caller-
+ * attribution filter refuses every `window.orivon` call made that way
+ * (ADR-0045; that file's own README.md Design notes). Generalises
+ * test/e2e-extensions-orivon-filter.test.ts's own PAGE_JS/page.js: `serve`
+ * must be a fixture server's own hook that makes GETting `scriptUrl` (on
+ * the SAME origin `view` is currently showing) return whatever text this
+ * call last gave it -- the individual fixture servers differ too much to
+ * share one HTTP implementation, so only the calling convention is shared
+ * here.
+ *
+ * `fn` is SERIALISED (`Function.prototype.toString()`) and re-evaluated
+ * fresh in the page: it may use `window.orivon` (or any other page global)
+ * freely, but -- exactly `installOrivon`'s own constraint
+ * (src/preload/surface/main-world-socket.ts's header) -- it must close over
+ * nothing outside its own body: no free variables, no imports. Arguments
+ * must be JSON-serialisable. Whatever `fn` returns (or throws) crosses back
+ * through a page-global this helper polls for, never through a Playwright
+ * return value.
+ */
+export async function asPage<T> (
+  view: ReturnType<typeof findChrome>,
+  serve: (js: string) => void,
+  scriptUrl: string,
+  fn: (...args: never[]) => T | Promise<T>,
+  ...args: readonly unknown[]
+): Promise<T> {
+  const marker = `__orivonAsPage${asPageCounter++}`
+  serve(`(async () => {
+    try {
+      const fn = (${fn.toString()})
+      const result = await fn(${args.map((a) => JSON.stringify(a)).join(', ')})
+      window['${marker}'] = { ok: true, result }
+    } catch (error) {
+      window['${marker}'] = {
+        ok: false,
+        name: error && typeof error === 'object' ? error.name : undefined,
+        message: error && typeof error === 'object' ? error.message : String(error),
+        code: error && typeof error === 'object' ? error.code : undefined
+      }
+    }
+  })()`)
+  await view.evaluate(({ url, marker }: { url: string, marker: string }) => {
+    const script = document.createElement('script')
+    script.src = url + (url.includes('?') ? '&' : '?') + 'asPage=' + encodeURIComponent(marker)
+    document.head.appendChild(script)
+  }, { url: scriptUrl, marker })
+  await view.waitForFunction((m: string) => (window as unknown as Record<string, unknown>)[m] !== undefined, marker, { timeout: 30_000 })
+  const outcome = await view.evaluate((m: string) => (window as unknown as Record<string, unknown>)[m], marker) as
+    { ok: true, result: T } | { ok: false, name?: string, message?: string, code?: string }
+  if (!outcome.ok) {
+    const error = new Error(outcome.message ?? 'asPage: the page script threw') as Error & { code?: string }
+    if (outcome.name !== undefined) error.name = outcome.name
+    if (outcome.code !== undefined) error.code = outcome.code
+    throw error
+  }
+  return outcome.result
+}
+
 export async function navigateToFixture (
   app: ElectronApplication,
   url: string,

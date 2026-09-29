@@ -49,9 +49,10 @@ async function watchClose (id: string): Promise<void> {
 }
 
 /**
- * The one `web.openContext` closure handed into the main world (both
- * directly, in `exposeFallback`, and via `bridge.webOpenContext` for
- * `executeInMainWorld` -- ./orivon.ts's own two paths). `closed`'s
+ * The one `web.openContext` closure handed into the main world, via
+ * `bridge.webOpenContext` for the `executeInMainWorld` path (`./orivon.ts`'s
+ * own `webOpenContext` wrapper calls this directly; its `exposeFallback`
+ * surface refuses instead of reaching this function at all). `closed`'s
  * watch loop starts the instant the context exists, so a caller that never
  * calls `evaluate`/`close` and simply awaits `closed` still sees a real
  * signal.

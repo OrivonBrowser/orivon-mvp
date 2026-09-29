@@ -45,11 +45,12 @@ import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { launchElectron } from './launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 import {
-  ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput, killChild,
+  ADDRESS_BAR_STABLE_TIMEOUT_MS, asPage, clickAddressBarRetrying, closeElectronApp, forwardOutput, killChild,
   navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
+import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
@@ -57,6 +58,9 @@ import type { Grant, Manifest } from '../src/contracts/index.js'
 const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
+
+/** asPage's (e2e-helpers.ts) own same-origin script URL, on this file's fixture origin -- see fixture-as-page.ts's own header for why this is a same-origin write rather than a new server route. */
+const AS_PAGE_SCRIPT_FULL_URL = `${FIXTURE_ORIGIN}/${AS_PAGE_SCRIPT_URL}`
 
 /** Same figure and reason as every other capability e2e file's own. */
 const APP_CLOSE_RACE_MS = 8_000
@@ -101,7 +105,7 @@ it('Phase 1: the real shell launches, and a real fs.readFileSync through the ful
         check('the fixture tab is identifiable by its own URL', view !== undefined)
 
         if (view !== undefined) {
-          const state = await evaluateRetrying(view, (): { hasReadFileSync: string, outcome: SyncCallOutcome } => {
+          const state = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, (): { hasReadFileSync: string, outcome: SyncCallOutcome } => {
             const orivon = (window as unknown as {
               orivon: { fs: { readFileSync: (path: string) => Uint8Array } }
             }).orivon
@@ -145,6 +149,7 @@ it('Phase 1: the real shell launches, and a real fs.readFileSync through the ful
         }
       } finally {
         await closeElectronApp(app)
+        clearFixtureAsPageScript()
       }
     } catch (e) {
       check('Phase 1 (real shell launch + navigation) ran without an uncaught failure', false, String((e as Error)?.stack ?? e))
@@ -192,13 +197,11 @@ it('Phase 2: a real fs grant, issued through the dev-only path, lets a real page
         if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         check('the grant returned names the fs capability', grantOutcome.grant.capability === 'fs', JSON.stringify(grantOutcome.grant))
 
-        // The dev-only hook lands on the broker directly, with no IPC round
-        // trip for anything to react to, so this document never moves into
-        // the app's own partition -- it does not need to: it already
-        // committed FIXTURE_ORIGIN, attributed, before the grant landed
-        // (src/main/sessions/session-attribution.ts), and that attribution
-        // survives a grant that changes what session the origin belongs in
-        // NEXT.
+        // The dev-only hook lands on the broker directly, and a grant moves no
+        // document: a granted network-served origin runs in the default session
+        // (ADR-0044), where this document already committed FIXTURE_ORIGIN,
+        // attributed (src/main/sessions/session-attribution.ts), so the calls
+        // below run from this same document.
         const view = beforeGrant
 
         // (a) WRITE THEN READ SYNCHRONOUSLY. writeFile is the already-proven
@@ -206,7 +209,7 @@ it('Phase 2: a real fs grant, issued through the dev-only path, lets a real page
         // precedent for net.connect) -- using it here to create the file
         // keeps this phase's own novelty limited to the one thing under
         // test, readFileSync.
-        const roundTrip = await evaluateRetrying(view, async (): Promise<{ wrote: boolean, outcome: SyncCallOutcome }> => {
+        const roundTrip = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async (): Promise<{ wrote: boolean, outcome: SyncCallOutcome }> => {
           const orivon = (window as unknown as {
             orivon: { fs: { writeFile: (path: string, data: Uint8Array) => Promise<void>, readFileSync: (path: string) => Uint8Array } }
           }).orivon
@@ -238,7 +241,7 @@ it('Phase 2: a real fs grant, issued through the dev-only path, lets a real page
         // way a missing grant is -- 'denied', synchronously, no
         // platformCode -- never a distinguishable reason (policy/paths.ts's
         // own CONFINEMENT_ERROR_CODE rule).
-        const traversal = await evaluateRetrying(view, (): SyncCallOutcome => {
+        const traversal = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, (): SyncCallOutcome => {
           const orivon = (window as unknown as { orivon: { fs: { readFileSync: (path: string) => Uint8Array } } }).orivon
           try {
             const result = orivon.fs.readFileSync('../../../etc/passwd') as unknown
@@ -259,6 +262,7 @@ it('Phase 2: a real fs grant, issued through the dev-only path, lets a real page
         )
       } finally {
         await closeElectronApp(app)
+        clearFixtureAsPageScript()
       }
     } catch (e) {
       check('Phase 2 (a real fs grant, exercised over the real IPC pipe) ran without an unexpected failure', false, String((e as Error)?.stack ?? e))

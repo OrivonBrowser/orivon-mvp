@@ -22,6 +22,7 @@ interface OrivonSiteInfo {
   clearBrowserData: () => Promise<void>
   reload: () => Promise<void>
   openAllSites: () => Promise<void>
+  openExtensions: () => Promise<void>
   reportHeight: (height: number) => void
   initialPage: 'main' | 'web3'
   origin: string | null
@@ -96,6 +97,7 @@ function renderCurrent (): void {
       onOpenWeb3: () => { void openWeb3() },
       onOpenData: () => { void openData() },
       onOpenAllSites: () => { void bridge.openAllSites() },
+      onManageExtensions: () => { void bridge.openExtensions() },
       onReload: () => { void bridge.reload() }
     })
   } else if (page === 'web3') {

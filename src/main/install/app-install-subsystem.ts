@@ -12,16 +12,19 @@
 // manifest-hint.ts (S4-2) is the real production caller of ctx.installApp;
 // see docs/open-questions.md A146 for the one gap that caller still has.
 
-import { net } from 'electron'
+import { net, session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishInstallApp } from '../registry.js'
 import { installFromHint } from './app-install.js'
 import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from '../consent/install-consent-prompt.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from '../consent/update-outcomes-prompt.js'
 import { grantableWithoutInstall, grantWithoutInstall } from './grant-without-install.js'
-import { installGrantedOriginCsp } from './granted-origin-csp.js'
+import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './granted-origin-csp.js'
+import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
+import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { withOriginQueue } from './origin-queue.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
@@ -79,13 +82,25 @@ export const appInstallSubsystem: Subsystem = {
     }
     const broker = ctx.broker
     const loader = ctx.loader
+    // One handler for every origin granted without installing, covering
+    // whichever ones hold a grant at the time each response is answered --
+    // no per-origin registration needed on top of it (granted-origin-csp.ts's
+    // own header explains the mechanism; RUN_LAST so Orivon's policy is
+    // applied after anything else on this session).
+    webRequestOwnerFor(session.defaultSession).onHeadersReceived(RUN_LAST, GRANTED_ORIGIN_CSP_FILTER, () => true, defaultSessionGrantedOriginCsp(broker))
     // ADR-0037: an L4 site's grants read without warnings on every one of
     // these -- the developer-only override is the only source of L4 today
     // (../dev/score-levels.ts), always named as an override, never as
     // observed. reconsentPrompt/rollbackChoicePrompt take no level at all:
     // neither is about a grant's breadth.
-    const consent = createInstallConsentPrompt(scoreLevelOverrideFor)
-    const perCapabilityConsent = createPerCapabilityConsentPrompt(scoreLevelOverrideFor)
+    // The extensions disclosure (docs/planning/extensions-exploration.md), the same
+    // shape ../consent/request-grant-subsystem.ts wires in.
+    const extensionsOnSite = async (origin: string): Promise<readonly string[]> => {
+      const extensions = ctx.extensions
+      return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
+    }
+    const consent = createInstallConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
+    const perCapabilityConsent = createPerCapabilityConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
     const reconsentPrompt = createReconsentPrompt()
     const capabilityPrompt = createCapabilityPrompt(scoreLevelOverrideFor)
     const rollbackChoicePrompt = createRollbackChoicePrompt()
@@ -111,10 +126,6 @@ export const appInstallSubsystem: Subsystem = {
         ))
         if (outcome.outcome === 'rejected') {
           console.warn(`[app-install] grant without installing refused for ${hintingOrigin}: ${outcome.reason}`)
-        } else {
-          // Before returning: the caller reloads the tab, and that reload's
-          // document must already carry the installed-path CSP.
-          installGrantedOriginCsp(broker, outcome.canonicalOrigin)
         }
         return outcome
       }

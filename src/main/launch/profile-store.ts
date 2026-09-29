@@ -52,6 +52,17 @@ export class ProfileStore {
     private readonly uptimeSec: () => number = uptime
   ) {}
 
+  /** The directory every profile's `profile.json` sits under, directly for
+   * the default profile or one level down in `profiles/<id>/` for any
+   * other -- the SAME value regardless of which profile's process reads it
+   * (start-launch.ts captures it before a non-default launch redirects
+   * `app.getPath('userData')` to its own directory). What
+   * `./profiles-watcher.js`'s `watchProfiles` watches: the one root every
+   * profile process's own writes are visible under. */
+  get registryDir (): string {
+    return this.home
+  }
+
   /** The directory of a profile, or null for an id that could not be one: no path is built from anything else. */
   dirOf (id: string): string | null {
     if (id === DEFAULT_PROFILE_ID) return this.home

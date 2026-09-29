@@ -24,6 +24,7 @@ export interface MainPageCallbacks {
   readonly onOpenWeb3: () => void
   readonly onOpenData: () => void
   readonly onOpenAllSites: () => void
+  readonly onManageExtensions: () => void
   readonly onReload: () => void
 }
 
@@ -189,6 +190,30 @@ export function renderMainPage (
       picks.append(row(pick.kind, pick.message, pick.warning, control))
     }
     container.append(picks)
+  }
+
+  // The extensions disclosure (docs/planning/extensions-exploration.md): which
+  // installed extensions' host access also reaches this origin. Hidden
+  // when empty -- an ordinary site with no extensions installed shows
+  // nothing here, matching every other optional section on this page.
+  if (info.extensionsOnSite.length > 0) {
+    container.append(document.createElement('hr'))
+    const extensionsHeading = document.createElement('p')
+    extensionsHeading.className = 'section-heading'
+    extensionsHeading.textContent = 'Extensions on this site'
+    container.append(extensionsHeading)
+    const extensionsNames = document.createElement('p')
+    extensionsNames.className = 'extensions-names'
+    extensionsNames.textContent = info.extensionsOnSite.join(', ')
+    container.append(extensionsNames)
+    const manageRow = document.createElement('button')
+    manageRow.type = 'button'
+    manageRow.className = 'nav-row'
+    const manageLabel = document.createElement('span')
+    manageLabel.textContent = 'Manage'
+    manageRow.append(manageLabel, chevronIcon())
+    manageRow.addEventListener('click', callbacks.onManageExtensions)
+    container.append(manageRow)
   }
 
   container.append(document.createElement('hr'))

@@ -59,6 +59,7 @@ interface RecordedView {
   options: { webPreferences?: Record<string, unknown> }
   webContents: FakeWebContents
   setBounds: ReturnType<typeof vi.fn>
+  setBackgroundColor: ReturnType<typeof vi.fn>
 }
 const createdViews: RecordedView[] = []
 
@@ -86,6 +87,7 @@ vi.mock('electron', () => ({
     // An adopted popup arrives with Chromium's own webContents.
     this.webContents = options.webContents ?? makeFakeWebContents()
     this.setBounds = vi.fn()
+    this.setBackgroundColor = vi.fn()
     createdViews.push(this)
   })
 }))
@@ -98,6 +100,14 @@ vi.mock('../../browsing/favicon.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../browsing/favicon.js')>()
   return { ...actual, fetchFaviconDataUrlCached: vi.fn().mockResolvedValue(null) }
 })
+
+// ONLY a cache-served origin gets its own partition: mocked the same way
+// tab-view.test.ts does, since the real registry is a module-level Set this
+// file never populates otherwise.
+const { served } = vi.hoisted(() => ({ served: new Set<string>() }))
+vi.mock('../../../loader/electron/serve.js', () => ({
+  isOriginServedFromCacheSync: (origin: string) => served.has(origin)
+}))
 
 const { TabManager } = await import('../tabs.js')
 const { fetchFaviconDataUrlCached } = await import('../../browsing/favicon.js')
@@ -125,25 +135,28 @@ function additionalArgumentsOf (view: RecordedView): string[] | undefined {
   return view.options.webPreferences?.['additionalArguments'] as string[] | undefined
 }
 
-/** A fake `SubsystemContext` whose broker answers from a caller-supplied set of origins --
- * everything else throws if touched, since no test here needs it. The set answers BOTH
- * `hasGrantsSync` (which decides the partition) and `isRegisteredSync` (which decides
- * ADR-0017's app-tab fetch flag), because these tests predate the two being separate and
- * assert on both: `tab-view.test.ts` is where the distinction itself is proven. */
+/** A fake `SubsystemContext` for a caller-supplied set of ORIGINS THAT ARE
+ * REAL INSTALLED APPS: registered with the broker (ADR-0017's app-tab fetch
+ * flag) and served from the pinned cache (the only thing that earns a
+ * partition) -- what a real install always does at once, so these tests
+ * keep exercising one installed app rather than the two questions
+ * separately. `tab-view.test.ts` is where the registered/cache-served
+ * DISTINCTION itself is proven. */
 function ctxWithRegisteredOrigins (...origins: string[]): SubsystemContext {
   const registered = new Set(origins)
-  const known = (origin: string): boolean => registered.has(origin)
+  for (const origin of origins) served.add(origin)
   return {
-    // dropOrigin fires on every navigation and close now (tab-view.ts's own
+    // dropOrigin fires on every navigation and close (tab-view.ts's own
     // origin-liveness tracking), whether or not a test cares -- a no-op
     // default keeps that side effect harmless here; a test asserting on it
     // supplies its own broker instead.
-    broker: { app: { isRegisteredSync: known, hasGrantsSync: known }, dropOrigin: async () => {} }
+    broker: { app: { isRegisteredSync: (origin: string) => registered.has(origin) }, dropOrigin: async () => {} }
   } as unknown as SubsystemContext
 }
 
 beforeEach(() => {
   createdViews.length = 0
+  served.clear()
   fakeContentView.addChildView.mockClear()
   fakeContentView.removeChildView.mockClear()
 })
@@ -490,6 +503,21 @@ describe('TabManager -- did-navigate repartitions a tab for a redirect, link, fo
     expect(createdViews).toHaveLength(1)
   })
 
+  it('resets the SAME view\'s background once it stops being the dashboard, so a site with no CSS background of its own does not render on the dashboard\'s dark wash', () => {
+    const manager = newManager()
+    manager.createTab() // dashboard -- makeTabView sets its own pre-paint background
+    const view = createdViews[0] as RecordedView
+    view.setBackgroundColor.mockClear()
+
+    view.webContents.emit('did-navigate', {}, 'https://app.example/')
+
+    // No repartition (asserted above): the dashboard's own dark-washed view
+    // is the one still showing this site, so its colour must have been put
+    // back to Electron's own default, not left however makeTabView set it.
+    expect(createdViews).toHaveLength(1)
+    expect(view.setBackgroundColor).toHaveBeenCalledWith('#FFFFFF')
+  })
+
   it('a did-navigate landing on about:blank never swaps -- partitionForTarget(BLANK_URL) is always undefined', () => {
     const manager = newManager()
     manager.createTab('https://a.example/')
@@ -626,9 +654,14 @@ describe('TabManager -- a tab coming back to an app it left gets the app\'s own 
   })
 
   it('builds a fresh view instead when the kept one no longer matches its origin\'s app-tab flag', () => {
+    // The partition must stay CONSTANT across the whole test (cache-served,
+    // from the start) while REGISTRATION alone flips mid-test -- that split
+    // is the scenario this test is about, so it cannot use
+    // ctxWithRegisteredOrigins, which ties both to the same origin set.
+    served.add(APP)
     const registered = new Set<string>()
     const ctx = {
-      broker: { app: { hasGrantsSync: (o: string) => o === APP, isRegisteredSync: (o: string) => registered.has(o) }, dropOrigin: async () => {} }
+      broker: { app: { isRegisteredSync: (o: string) => registered.has(o) }, dropOrigin: async () => {} }
     } as unknown as SubsystemContext
     const { manager, app, provider } = leftForProvider(ctx)
     registered.add(APP)

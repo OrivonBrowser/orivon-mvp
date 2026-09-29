@@ -35,16 +35,25 @@ function parentWindowOf (caller?: DialogCaller): BaseWindow | undefined {
 type LevelOverrideFor = (origin: string) => ScoreLevel | undefined
 const NO_OVERRIDE: LevelOverrideFor = () => undefined
 
+/** The extensions disclosure (docs/planning/extensions-exploration.md) -- the same
+ * shape `./request-grant-prompt.ts`'s own `createGrantPrompt` takes, wired
+ * to the real `../extensions/site-reach-runner.js` at the same place
+ * (`../install/app-install-subsystem.ts`), and defaults to always naming
+ * none. */
+type ExtensionsOnSite = (origin: string) => Promise<readonly string[]>
+const NO_EXTENSIONS: ExtensionsOnSite = async () => []
+
 /** Builds the real InstallConsentPrompt ./app-install-subsystem.ts wires in. */
-export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE): InstallConsentPrompt {
+export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE, extensionsOnSite: ExtensionsOnSite = NO_EXTENSIONS): InstallConsentPrompt {
   return async (origin, manifest, capabilities, held = [], caller) => {
+    const names = await extensionsOnSite(origin)
     // The tab that reported this hint may already have navigated away, or
-    // closed, by the time this actually runs -- never show a dialog for a
-    // page the person is no longer looking at (request-grant.ts's own
-    // `DialogCaller` doc).
+    // closed, by the time this actually runs (the lookup above included) --
+    // never show a dialog for a page the person is no longer looking at
+    // (request-grant.ts's own `DialogCaller` doc).
     if (caller !== undefined && !caller.stillOn(origin)) return false
 
-    const content = describeInstallConsent(origin, manifest, capabilities, held, levelOverrideFor(origin))
+    const content = describeInstallConsent(origin, manifest, capabilities, held, levelOverrideFor(origin), names)
     const options: MessageBoxOptions = {
       type: content.warning ? 'warning' : 'question',
       buttons: ['Allow', 'Deny'],
@@ -84,15 +93,17 @@ const DENY_ALL = 2
  * capability being decided this round, marks the one on screen, and marks
  * whatever this SAME sequence already decided for the others.
  */
-export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE): PerCapabilityConsentPrompt {
+export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE, extensionsOnSite: ExtensionsOnSite = NO_EXTENSIONS): PerCapabilityConsentPrompt {
   return async (origin, manifest, capabilities, caller) => {
-    // Checked before the FIRST screen of this staged sequence -- the whole
-    // sequence never starts for a page the person is no longer looking at.
+    const level = levelOverrideFor(origin)
+    const names = await extensionsOnSite(origin)
+    // Checked before the FIRST screen of this staged sequence, after the
+    // lookup above -- the whole sequence never starts for a page the person
+    // is no longer looking at.
     if (caller !== undefined && !caller.stillOn(origin)) return []
 
-    const level = levelOverrideFor(origin)
     const parent = parentWindowOf(caller)
-    const overviewContent = describeInstallConsent(origin, manifest, capabilities, [], level)
+    const overviewContent = describeInstallConsent(origin, manifest, capabilities, [], level, names)
     const overviewOptions: MessageBoxOptions = {
       type: overviewContent.warning ? 'warning' : 'question',
       buttons: OVERVIEW_BUTTONS,

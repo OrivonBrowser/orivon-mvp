@@ -4,6 +4,7 @@
 // out whole, since it is the one concern in that file with no TCP-socket
 // dependency). Not *.test.ts, so vitest does not collect it as its own suite.
 
+import vm from 'node:vm'
 import type {
   MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge
@@ -15,6 +16,49 @@ import type { ResponseEnvelope } from '../../../contracts/ipc.js'
 export const LIMITS = {
   readWindowBytes: 1_000, writeWindowBytes: 1_000,
   inboundDatagramWindow: 8, outboundDatagramWindow: 4
+}
+
+/**
+ * main-world-socket.ts's own extension-refusal check (main-world-socket-
+ * extension-filter.test.ts) means a wrapped orivon.* method now refuses any
+ * caller it cannot attribute to page code -- a plain Vitest test file's own
+ * frame is `file://...`, neither page nor extension code, so it refuses by
+ * default (fail-closed) exactly like an untraceable caller in a real
+ * browser would. `pageFrame` is a function whose OWN compiled source is
+ * permanently attributed to an `https:` URL (V8 attributes a frame to
+ * where its code was DEFINED, not where it is invoked from -- confirmed
+ * empirically against this repo's actual Error.captureStackTrace/
+ * prepareStackTrace usage, including across an `await`, where only the
+ * synchronous call chain at the moment of the call matters). Every
+ * pre-existing test in this suite that exercises a built orivon.* method
+ * and expects it to succeed reads `asPage(target.orivon)` instead of
+ * `target.orivon`, so its calls run the way a real page's own script's
+ * would -- this is what the extension-filter feature's own brief calls
+ * "code whose frames you control".
+ */
+const pageFrame = new vm.Script('(fn) => fn()', { filename: 'https://orivon-test.example/app.js' }).runInThisContext() as <T>(fn: () => T) => T
+
+/**
+ * A FRESH plain-object copy of `value`, never a `Proxy` over it: every
+ * namespace `installOrivon` exposes is frozen (non-configurable,
+ * non-writable), and a `Proxy`'s `get` trap is required to return the
+ * SAME value as a frozen data property's real one -- returning a wrapped
+ * substitute throws `TypeError: 'get' on proxy...` (found running this
+ * exact change against this exact suite). Building a separate object graph
+ * instead has no such invariant to violate. A test that asserts freezing
+ * itself (`Object.isFrozen`, or that overwriting a method throws) reads the
+ * real `target.orivon`, never this copy, for the same reason.
+ */
+export function asPage<T> (value: T): T {
+  if (typeof value !== 'object' || value === null) return value
+  const out: Record<string, unknown> = {}
+  for (const key of Object.getOwnPropertyNames(value)) {
+    const member = (value as Record<string, unknown>)[key]
+    out[key] = typeof member === 'function'
+      ? (...args: unknown[]) => pageFrame(() => Reflect.apply(member as (...a: unknown[]) => unknown, value, args))
+      : asPage(member)
+  }
+  return out as T
 }
 
 /** A fake SocketPort-shaped bridge result -- everything main-world-socket.ts needs from bridge.netConnect(). */

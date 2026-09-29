@@ -188,3 +188,38 @@ export interface BrokerFsMethods {
   userSelected(origin: string, opts: { directory: true }): Promise<FailableDirectoryHandle | null>
   userSelected(origin: string, opts?: { directory?: false, multiple?: boolean }): Promise<readonly FailableFileHandle[]>
 }
+
+/**
+ * Opens the real OS picker -- `orivon.fs.userSelected`'s own dependency,
+ * ./broker-contracts.ts's `Dial`/`Bind`/`Listen` pattern applied to a
+ * native dialog instead of a socket. `directory: true` asks for the
+ * folder-picker chrome; `multiple` is meaningless (and MUST be ignored)
+ * when `directory` is true, mirroring `capability-api.ts`'s own
+ * `userSelected` overload split -- there is no
+ * signal to pass it through as, so the injected implementation decides at
+ * this boundary, not one layer up.
+ *
+ * NO `signal` PARAMETER, unlike `Dial`/`Bind`/`Listen` -- there is no grant
+ * in flight for this to race (capability-api.ts: the picker choice IS the
+ * authorisation, minted fresh the moment it resolves), so nothing can
+ * revoke an acquisition that has not happened yet.
+ *
+ * `appName` is the origin's declared `manifest.name` (`GrantLedger.
+ * manifestFor`), `undefined` if none was registered; the dialog may show it
+ * (d-0032, `transport/ipc.ts`'s `describePickerDialog`). `origin` is the
+ * canonical origin asking, which the dialog always names, since `appName`
+ * is only the manifest's own claim.
+ */
+export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: string | undefined, origin: string }) => Promise<PickPathResult>
+
+/**
+ * `canceled: true` for a dismissed dialog -- capability-api.ts is explicit
+ * that declining a picker is never a rejected promise, so this is a plain
+ * value the caller branches on, not an error `PickPath` throws. `paths` are
+ * real host OS paths, exactly what a native `dialog.showOpenDialog` hands
+ * back; `userSelected` in ./capabilities/user-selected.ts is what turns them
+ * into confined, revocable handles.
+ */
+export type PickPathResult =
+  | { readonly canceled: true }
+  | { readonly canceled: false, readonly paths: readonly string[] }

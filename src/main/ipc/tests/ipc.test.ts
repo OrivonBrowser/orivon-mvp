@@ -48,6 +48,7 @@ function actions (overrides: Partial<ShellActions> = {}): ShellActions {
     openSiteInfo: vi.fn(),
     runCommand: vi.fn(),
     openMenu: vi.fn(),
+    prewarmMenu: vi.fn(),
     beginTabDrag: vi.fn(),
     dragTab: vi.fn(),
     dropTab: vi.fn(),

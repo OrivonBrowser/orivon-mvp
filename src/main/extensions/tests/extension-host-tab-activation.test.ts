@@ -18,10 +18,12 @@ const appOn = vi.fn()
 
 vi.mock('electron', () => ({
   app: { on: appOn },
+  ipcMain: { on: vi.fn() },
   session: {
     defaultSession: {
-      extensions: { getExtension },
-      serviceWorkers: { on: vi.fn() }
+      extensions: { getExtension, addListener: vi.fn() },
+      serviceWorkers: { on: vi.fn() },
+      webRequest: { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn(), onHeadersReceived: vi.fn() }
     },
     fromPartition: vi.fn()
   }
@@ -46,10 +48,18 @@ vi.mock('orivon:crx-extensions-partition', () => ({ setSessionPartitionResolver:
 vi.mock('orivon:crx-extensions-router', () => ({
   setRemoteMessageSenderCheck: vi.fn(),
   setMessageSenderIdCheck: vi.fn(),
-  setEventListenerFilter: vi.fn()
+  setEventListenerFilter: vi.fn(),
+  isSandboxPageUrl: vi.fn()
 }))
 vi.mock('orivon:crx-extensions-cookies', () => ({ setCookieHostAccessCheck: vi.fn() }))
 vi.mock('orivon:crx-extensions-tabs', () => ({ setTabUrlAccessCheck: vi.fn(), setTabHostAccessCheck: vi.fn() }))
+vi.mock('orivon:crx-extensions-browser-action', () => ({ setTabCaptureInvocationRecorder: vi.fn() }))
+vi.mock('orivon:crx-extensions-tab-capture', () => ({
+  setTabCaptureInvocationCheck: vi.fn(),
+  setTabCaptureAppRefusalCheck: vi.fn(),
+  setTabCaptureGrantRecorder: vi.fn(),
+  setTabCaptureConsumedCheck: vi.fn()
+}))
 
 const { createExtensionHost, attachExtensionShell } = await import('../extension-host.js')
 const { session: mockedSession } = await import('electron')
@@ -163,11 +173,19 @@ describe('extension-host: window-open policy for popups and MV2 background pages
     expect(onPopupCreated).toBeInstanceOf(Function)
 
     const setWindowOpenHandler = vi.fn()
-    onPopupCreated({ browserWindow: { webContents: { setWindowOpenHandler } } })
+    const once = vi.fn()
+    const isDestroyed = vi.fn(() => false)
+    const destroy = vi.fn()
+    onPopupCreated({ browserWindow: { webContents: { setWindowOpenHandler, once } }, isDestroyed, destroy })
 
     expect(setWindowOpenHandler).toHaveBeenCalledTimes(1)
     const handler = setWindowOpenHandler.mock.calls[0]?.[0]
     expect(handler({ url: 'https://example.com/' })).toEqual({ action: 'deny' })
+    // The popup-lifecycle wiring (tab switch/navigation closing it) also
+    // registers a one-shot cleanup on the popup's own webContents
+    // 'destroyed' -- this fake models enough of a real WebContents for
+    // that registration to succeed, the same as setWindowOpenHandler above.
+    expect(once).toHaveBeenCalledWith('destroyed', expect.any(Function))
   })
 
   it('sets the same policy on a background page\'s own webContents, never an ordinary tab\'s', () => {

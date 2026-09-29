@@ -211,10 +211,10 @@ async function withTimeout<T> (work: (abandoned: AbortSignal) => Promise<T>, tim
  * whether the calling WebContents is attributed to `origin` right now.
  * Attribution is decided once, at the document's own commit
  * (`../../main/sessions/session-attribution.ts`), not re-decided under a
- * live document on every call -- so a document that just won a grant via
- * `app.requestGrant` stays attributed through its own reply and every call
- * after it, and moves session only on its next navigation, the same swap
- * `tab-view.ts` already performs for any other cross-origin move. Optional
+ * live document on every call -- so a document already attributed stays
+ * attributed through every call until its next navigation, even if the
+ * session its origin belongs in changes meanwhile (a grant never changes
+ * it, ADR-0044; a pinned copy going away does). Optional
  * so this file's own test suite, which has nothing to attribute against,
  * keeps exercising everything else unchanged; real wiring always supplies
  * it.

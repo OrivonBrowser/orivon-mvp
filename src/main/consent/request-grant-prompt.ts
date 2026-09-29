@@ -30,9 +30,16 @@ import type { ScoreLevel } from '../../trust/website-level.js'
  *
  * `levelOverrideFor` defaults to never overriding (ADR-0037); the real
  * `../dev/score-levels.js` function is wired in at
- * `./request-grant-subsystem.ts`.
+ * `./request-grant-subsystem.ts`. `extensionsOnSite` (the extensions disclosure,
+ * docs/planning/extensions-exploration.md) is the same shape, wired to the
+ * real `../extensions/site-reach-runner.js` at the same place, and
+ * defaults to always naming none.
  */
-export function createGrantPrompt (broker: Broker, levelOverrideFor: (origin: string) => ScoreLevel | undefined = () => undefined): ConsentPrompt {
+export function createGrantPrompt (
+  broker: Broker,
+  levelOverrideFor: (origin: string) => ScoreLevel | undefined = () => undefined,
+  extensionsOnSite: (origin: string) => Promise<readonly string[]> = async () => []
+): ConsentPrompt {
   return async (origin, capability, patterns, caller) => {
     let manifest
     try {
@@ -41,13 +48,14 @@ export function createGrantPrompt (broker: Broker, levelOverrideFor: (origin: st
       return false
     }
 
+    const names = await extensionsOnSite(origin)
     // The page that asked may have navigated the tab elsewhere, or closed
-    // it, while the manifest above was being read -- never show a dialog
-    // for a page the person is no longer looking at (request-grant.ts's own
-    // `DialogCaller` doc).
+    // it, while the manifest and extensions above were being read -- never
+    // show a dialog for a page the person is no longer looking at
+    // (request-grant.ts's own `DialogCaller` doc).
     if (caller !== undefined && !caller.stillOn(origin)) return false
 
-    const content = describeGrantRequest(origin, manifest, capability, patterns, levelOverrideFor(origin))
+    const content = describeGrantRequest(origin, manifest, capability, patterns, levelOverrideFor(origin), names)
     const options: MessageBoxOptions = {
       type: content.warning ? 'warning' : 'question',
       buttons: ['Allow', 'Deny'],

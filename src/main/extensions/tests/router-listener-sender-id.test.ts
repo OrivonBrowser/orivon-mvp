@@ -22,9 +22,16 @@ const { ExtensionRouter, setMessageSenderIdCheck } = await import(
   '../../../../vendor/electron-chrome-extensions/src/browser/router.js'
 )
 
+// getExtension defaults to an already-registered extension: these tests
+// are about the sender-id check gating addListener/removeListener, not
+// about UPSTREAM.md patch 38's own registration-race wait -- a session
+// whose extension was never registered would make onAddListener wait
+// (bounded, but still asynchronously) before ever reaching the (mocked)
+// addListener call these tests assert on synchronously. The one test that
+// specifically wants "not registered" overrides this explicitly.
 function fakeSession (): Session {
   return {
-    extensions: { on: vi.fn(), getExtension: vi.fn() },
+    extensions: { on: vi.fn(), getExtension: vi.fn(() => ({ id: 'stub-extension', manifest: {} })) },
     serviceWorkers: { on: vi.fn() }
   } as unknown as Session
 }

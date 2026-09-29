@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { asPage } from './main-world-socket.test-helpers.js'
 
 // `orivon.fs.userSelected` needs a fresh user gesture, checked in
 // THIS isolated world before `call()` ever sends the CONTROL_CHANNEL
@@ -6,7 +7,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // by concern") once orivon.test.ts reached its own 800-line test budget;
 // every other `fs.userSelected` test lives there and defaults this gate to
 // "active" in its own `beforeEach` so it is not incidentally re-tested by
-// every wiring assertion that has nothing to do with it.
+// every wiring assertion that has nothing to do with it. Every call goes
+// through `asPage`, so the `window.orivon` caller filter (ADR-0045) lets it
+// reach this gate rather than refusing it first with the same 'denied'.
 
 const invoke = vi.fn()
 const on = vi.fn()
@@ -55,7 +58,7 @@ describe('exposeOrivon -- fs.userSelected needs a fresh user gesture', () => {
     invoke.mockResolvedValue(okEnvelope([]))
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { userSelected: (opts?: { directory?: boolean }) => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { fs: { userSelected: (opts?: { directory?: boolean }) => Promise<unknown> } }
 
     await expect(orivon.fs.userSelected()).rejects.toMatchObject({ code: 'denied' })
     await expect(orivon.fs.userSelected({ directory: true })).rejects.toMatchObject({ code: 'denied' })
@@ -69,7 +72,7 @@ describe('exposeOrivon -- fs.userSelected needs a fresh user gesture', () => {
     const target = installViaFakeMainWorld()
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { userSelected: () => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { fs: { userSelected: () => Promise<unknown> } }
 
     await expect(orivon.fs.userSelected()).rejects.toMatchObject({ code: 'denied' })
     expect(invoke).not.toHaveBeenCalled()
@@ -81,7 +84,7 @@ describe('exposeOrivon -- fs.userSelected needs a fresh user gesture', () => {
     invoke.mockResolvedValue(okEnvelope([]))
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { userSelected: () => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { fs: { userSelected: () => Promise<unknown> } }
 
     await expect(orivon.fs.userSelected()).resolves.toEqual([])
     expect(invoke).toHaveBeenCalledTimes(1)
