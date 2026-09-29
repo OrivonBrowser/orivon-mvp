@@ -1,5 +1,5 @@
-import { ExtensionContext } from '../context'
-import { ExtensionEvent } from '../router'
+import type { ExtensionContext } from '../context'
+import type { ExtensionEvent } from '../router'
 import { validateExtensionUrl } from './common'
 import debug from 'debug'
 

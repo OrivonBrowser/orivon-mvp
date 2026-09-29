@@ -1,6 +1,6 @@
 import * as electron from 'electron'
-import { ExtensionContext } from '../context'
-import { ExtensionEvent } from '../router'
+import type { ExtensionContext } from '../context'
+import type { ExtensionEvent } from '../router'
 import debug from 'debug'
 
 const d = debug('electron-chrome-extensions:webNavigation')
@@ -45,8 +45,13 @@ const getFrameDetails = (
 export class WebNavigationAPI {
   constructor(private ctx: ExtensionContext) {
     const handle = this.ctx.router.apiHandler()
-    handle('webNavigation.getFrame', this.getFrame.bind(this))
-    handle('webNavigation.getAllFrames', this.getAllFrames.bind(this))
+    // Orivon patch: both handlers now declare `permission: 'webNavigation'`
+    // -- router.ts's own onExtensionMessage already refuses a call from an
+    // extension whose manifest lacks it. The events this class broadcasts
+    // (sendNavigationEvent) are gated the same way, per listener, through
+    // the filter extension-host.ts installs with setEventListenerFilter.
+    handle('webNavigation.getFrame', this.getFrame.bind(this), { permission: 'webNavigation' })
+    handle('webNavigation.getAllFrames', this.getAllFrames.bind(this), { permission: 'webNavigation' })
 
     this.ctx.store.on('tab-added', this.observeTab.bind(this))
   }

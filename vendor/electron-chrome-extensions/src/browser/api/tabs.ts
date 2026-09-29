@@ -1,16 +1,49 @@
-import { ExtensionContext } from '../context'
-import { ExtensionEvent } from '../router'
+import type { ExtensionContext } from '../context'
+import type { ExtensionEvent } from '../router'
 import {
   getAllWindows,
   matchesPattern,
   matchesTitlePattern,
-  TabContents,
   validateExtensionUrl,
 } from './common'
+import type { TabContents } from './common'
 import { WindowsAPI } from './windows'
 import debug from 'debug'
 
 const d = debug('electron-chrome-extensions:tabs')
+
+/**
+ * Orivon patch: an optional predicate deciding whether a tab's own url,
+ * pendingUrl, title and favIconUrl may be returned to `manifest`'s
+ * extension -- unset, every chrome.tabs.* call and event returns all four
+ * regardless of permission (Chrome's own rule: the `tabs` permission, or a
+ * host permission matching the tab's URL). Set once, before the first tabs
+ * call (extension-host.ts).
+ */
+type TabUrlAccessCheck = (manifest: unknown, url: string | undefined) => boolean
+let gTabUrlAccessCheck: TabUrlAccessCheck | undefined
+
+export function setTabUrlAccessCheck(check: TabUrlAccessCheck): void {
+  gTabUrlAccessCheck = check
+}
+
+const SENSITIVE_TAB_FIELDS = ['url', 'pendingUrl', 'title', 'favIconUrl'] as const
+
+/** `details` as `event`'s own extension may see it: unchanged when
+ * `gTabUrlAccessCheck` is unset or allows it, else a SHALLOW COPY with
+ * SENSITIVE_TAB_FIELDS removed -- never a mutation in place, since
+ * `details` can be the shared `tabDetailsCache` entry every extension's
+ * call reads from. */
+function filterTabDetails(
+  event: ExtensionEvent,
+  details: Partial<chrome.tabs.Tab> | undefined,
+): Partial<chrome.tabs.Tab> | undefined {
+  if (!details) return details
+  if (!gTabUrlAccessCheck || gTabUrlAccessCheck(event.extension.manifest, details.url)) return details
+  const filtered = { ...details }
+  for (const field of SENSITIVE_TAB_FIELDS) delete (filtered as any)[field]
+  return filtered
+}
 
 export class TabsAPI {
   static TAB_ID_NONE = -1
@@ -63,7 +96,8 @@ export class TabsAPI {
     })
 
     const faviconHandler = (event: Electron.Event, favicons: string[]) => {
-      ;(tab as TabContents).favicon = favicons[0]
+      const [favicon] = favicons
+      if (favicon !== undefined) (tab as TabContents).favicon = favicon
       this.onUpdated(tabId)
     }
     tab.on('page-favicon-updated', faviconHandler)
@@ -133,7 +167,7 @@ export class TabsAPI {
   private get(event: ExtensionEvent, tabId: number) {
     const tab = this.ctx.store.getTabById(tabId)
     if (!tab) return { id: TabsAPI.TAB_ID_NONE }
-    return this.getTabDetails(tab)
+    return filterTabDetails(event, this.getTabDetails(tab))
   }
 
   private getAllInWindow(event: ExtensionEvent, windowId: number = TabsAPI.WINDOW_ID_CURRENT) {
@@ -148,12 +182,12 @@ export class TabsAPI {
       return browserWindow.id === windowId
     })
 
-    return tabs.map(this.getTabDetails.bind(this))
+    return tabs.map(this.getTabDetails.bind(this)).map((details) => filterTabDetails(event, details))
   }
 
   private getCurrent(event: ExtensionEvent) {
     const tab = this.ctx.store.getActiveTabOfCurrentWindow()
-    return tab ? this.getTabDetails(tab) : undefined
+    return tab ? filterTabDetails(event, this.getTabDetails(tab)) : undefined
   }
 
   private async create(event: ExtensionEvent, details: chrome.tabs.CreateProperties = {}) {
@@ -163,7 +197,7 @@ export class TabsAPI {
     if (details.active) {
       queueMicrotask(() => this.onActivated(tab.id))
     }
-    return tabDetails
+    return filterTabDetails(event, tabDetails)
   }
 
   private insertCSS(event: ExtensionEvent, tabId: number, details: chrome.tabs.InjectDetails) {
@@ -181,6 +215,7 @@ export class TabsAPI {
 
     const filteredTabs = Array.from(this.ctx.store.tabs)
       .map(this.getTabDetails.bind(this))
+      .map((details) => filterTabDetails(event, details))
       .filter((tab) => {
         if (!tab) return false
         if (isSet(info.active) && info.active !== tab.active) return false
@@ -196,11 +231,19 @@ export class TabsAPI {
         if (isSet(info.frozen) && info.frozen !== tab.frozen) return false
         if (isSet(info.groupId) && info.groupId !== tab.groupId) return false
         if (isSet(info.status) && info.status !== tab.status) return false
-        if (isSet(info.title) && typeof info.title === 'string' && typeof tab.title === 'string') {
-          if (!matchesTitlePattern(info.title, tab.title)) return false
+        // Orivon patch: `isSet(info.title)`/`isSet(info.url)` no longer only
+        // guard the pattern match -- filterTabDetails above may have
+        // stripped tab.title/tab.url for THIS extension, and a query that
+        // filters on either must exclude that tab, not silently pass it
+        // (Chrome's own rule: those filters see only what the extension
+        // itself may see).
+        if (isSet(info.title)) {
+          if (typeof tab.title !== 'string') return false
+          if (typeof info.title === 'string' && !matchesTitlePattern(info.title, tab.title)) return false
         }
-        if (isSet(info.url) && typeof tab.url === 'string') {
-          if (typeof info.url === 'string' && !matchesPattern(info.url, tab.url!)) {
+        if (isSet(info.url)) {
+          if (typeof tab.url !== 'string') return false
+          if (typeof info.url === 'string' && !matchesPattern(info.url, tab.url)) {
             return false
           } else if (
             Array.isArray(info.url) &&
@@ -275,7 +318,7 @@ export class TabsAPI {
 
     this.onUpdated(tabId)
 
-    return this.createTabDetails(tab)
+    return filterTabDetails(event, this.createTabDetails(tab))
   }
 
   private remove(event: ExtensionEvent, id: number | number[]) {

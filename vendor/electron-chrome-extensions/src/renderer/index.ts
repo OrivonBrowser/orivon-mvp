@@ -369,6 +369,13 @@ export const injectExtensionAPIs = () => {
       },
 
       cookies: {
+        // Orivon patch: chrome.cookies is injected only for an extension
+        // whose manifest declares the `cookies` permission -- the real
+        // gate is main-side (router.ts's own `permission` check on every
+        // handler here, api/cookies.ts's UPSTREAM.md entry), this is
+        // belt-and-suspenders so a page without the permission never even
+        // sees the API object.
+        shouldInject: () => Array.isArray(manifest.permissions) && manifest.permissions.includes('cookies'),
         factory: (base) => {
           return {
             ...base,
@@ -592,6 +599,10 @@ export const injectExtensionAPIs = () => {
       },
 
       webNavigation: {
+        // Orivon patch: same shape as chrome.cookies above -- the real
+        // gate is main-side (router.ts's `permission` check, this file's
+        // UPSTREAM.md entry).
+        shouldInject: () => Array.isArray(manifest.permissions) && manifest.permissions.includes('webNavigation'),
         factory: (base) => {
           return {
             ...base,
