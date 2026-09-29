@@ -201,6 +201,35 @@ describe('the callback open/read/write/close family', () => {
     expect(bytesWritten).toBe(4)
   })
 
+  // Node's other fs.write form -- write-file-atomic's sync path and loggers
+  // are the common callers; before this fix, a string reached the broker
+  // as `data` and was rejected (`isFsHandleWriteParams` requires a
+  // Uint8Array), so this threw instead of writing.
+  it('write(fd, string[, position[, encoding]], callback): the string form, not just buffer', async () => {
+    const fake = installFakeOrivon()
+    const fs = await import('../handle.js')
+    const fd = await new Promise<number>((resolve, reject) => {
+      fs.open('piece-0', 'w+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+    })
+    const bytesWritten = await new Promise<number>((resolve, reject) => {
+      fs.write(fd, 'hello\n', (err, n) => (err !== null ? reject(err) : resolve(n)))
+    })
+    expect(bytesWritten).toBe(6)
+    expect(new TextDecoder().decode(fake.bytes())).toBe('hello\n')
+  })
+
+  it('write(fd, string, position, encoding, callback): position and encoding both honoured', async () => {
+    const fake = installFakeOrivon(new Uint8Array([0, 0, 0]))
+    const fs = await import('../handle.js')
+    const fd = await new Promise<number>((resolve, reject) => {
+      fs.open('piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+    })
+    await new Promise<void>((resolve, reject) => {
+      fs.write(fd, '68656c6c6f', 1, 'hex', (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect([...fake.bytes()]).toEqual([0, 0x68, 0x65, 0x6c, 0x6c, 0x6f])
+  })
+
   it('fstat/ftruncate/fsync route through the open handle', async () => {
     installFakeOrivon(new Uint8Array([1, 2, 3]))
     const fs = await import('../handle.js')
@@ -316,6 +345,19 @@ describe('the *Sync fd family (openSync/readSync/writeSync/fstatSync/closeSync)'
     expect(fs.writeSync(fd, new Uint8Array([9]), 0, 1, 0)).toBe(1)
     expect(fs.fstatSync(fd).size).toBe(3)
     expect(() => fs.closeSync(fd)).not.toThrow()
+  })
+
+  // write-file-atomic's own sync path (and loggers generally) call this
+  // form; before this fix the string reached `handle.write` as a Buffer
+  // argument in the wrong position, so it threw instead of writing.
+  it('writeSync(fd, string[, position[, encoding]]): the string form, not just buffer', async () => {
+    installBothFamilies(new Uint8Array(5))
+    const fs = await import('../handle.js')
+    const fd = fs.openSync('x', 'r+')
+    expect(fs.writeSync(fd, 'hello')).toBe(5)
+    const readBack = new Uint8Array(5)
+    expect(fs.readSync(fd, readBack, 0, 5, 0)).toBe(5)
+    expect(new TextDecoder().decode(readBack)).toBe('hello')
   })
 
   it('an fd opened by fs.open fails EBADF over fs.closeSync, naming fs.open as the family that actually holds it', async () => {

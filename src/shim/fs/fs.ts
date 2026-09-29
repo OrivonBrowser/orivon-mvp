@@ -115,13 +115,26 @@ export function existsSync (path: PathLike): boolean {
   return existsSyncCore(path, (confined) => getOrivon().fs.readFileSync(confined))
 }
 
-/** ADR-0016's Worker amendment: works only in a Worker of a cross-origin isolated app (core-sync.ts's doStatSync); elsewhere it throws the same named refusal it always has. */
-export function statSync (path: PathLike): NodeStats {
-  return doStatSync(path)
+export interface StatSyncOptions { throwIfNoEntry?: boolean }
+
+/** statSync/lstatSync's shared `{ throwIfNoEntry: false }`: Node returns `undefined` for a missing path instead of throwing ENOENT (measured) -- any OTHER failure (a denial, EACCES) still throws, exactly as it always did. */
+function statOrUndefined (run: () => NodeStats, throwIfNoEntry: boolean | undefined): NodeStats | undefined {
+  if (throwIfNoEntry === false) {
+    try { return run() } catch (error) {
+      if ((error as { code?: string }).code === 'ENOENT') return undefined
+      throw error
+    }
+  }
+  return run()
 }
 
-export function lstatSync (path: PathLike): NodeStats {
-  return doLstatSync(path)
+/** ADR-0016's Worker amendment: works only in a Worker of a cross-origin isolated app (core-sync.ts's doStatSync); elsewhere it throws the same named refusal it always has. */
+export function statSync (path: PathLike, options?: StatSyncOptions): NodeStats | undefined {
+  return statOrUndefined(() => doStatSync(path), options?.throwIfNoEntry)
+}
+
+export function lstatSync (path: PathLike, options?: StatSyncOptions): NodeStats | undefined {
+  return statOrUndefined(() => doLstatSync(path), options?.throwIfNoEntry)
 }
 
 export function writeFileSync (path: PathLike, data: unknown, options?: WriteFileOptions | string | null): void {

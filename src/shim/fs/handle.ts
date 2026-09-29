@@ -22,7 +22,8 @@
 import type { FileHandle } from '../../contracts/handles.js'
 import { getOrivon } from '../orivon-global.js'
 import { toNodeStats, type NodeStats } from './stats.js'
-import { confine, fsError, guarded, toConfinedPath, type PathLike } from './paths.js'
+import { encode } from '../encoding.js'
+import { confine, confineSync, fsError, guarded, type PathLike } from './paths.js'
 import { refuseShim } from '../errors.js'
 import {
   assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootDirectoryHandleSync, rootReadError, rootTruncateError, rootWriteError
@@ -260,17 +261,39 @@ export function read (
 
 type WriteCallback = (error: Error | null, bytesWritten: number, buffer: Uint8Array) => void
 
-/** `fs.write(fd, buffer[, offset[, length[, position]]], callback)` -- every trailing arg after `buffer` is optional, matching real Node's own defaults (offset 0, the rest of the buffer, the fd's current cursor). */
+/**
+ * `fs.write(fd, buffer[, offset[, length[, position]]], callback)` -- every
+ * trailing arg after `buffer` is optional, matching real Node's own defaults
+ * (offset 0, the rest of the buffer, the fd's current cursor). Node's other
+ * form, `fs.write(fd, string[, position[, encoding]], callback)`, shares
+ * `../encoding.js`'s `encode()` with `fs.writeFile` -- the same utf8 default
+ * and the same invalid-encoding error, never a second copy of that table.
+ */
 export function write (fd: number, buffer: Uint8Array, callback: WriteCallback): void
 export function write (fd: number, buffer: Uint8Array, offset: number, callback: WriteCallback): void
 export function write (fd: number, buffer: Uint8Array, offset: number, length: number, callback: WriteCallback): void
 export function write (fd: number, buffer: Uint8Array, offset: number, length: number, position: number | null, callback: WriteCallback): void
-export function write (fd: number, buffer: Uint8Array, ...args: readonly unknown[]): void {
+export function write (fd: number, data: string, callback: WriteCallback): void
+export function write (fd: number, data: string, position: number | null, callback: WriteCallback): void
+export function write (fd: number, data: string, position: number | null, encoding: string, callback: WriteCallback): void
+export function write (fd: number, data: Uint8Array | string, ...args: readonly unknown[]): void {
   const callback = args[args.length - 1] as WriteCallback
   const rest = args.slice(0, -1)
-  const offset = typeof rest[0] === 'number' ? rest[0] : 0
-  const length = typeof rest[1] === 'number' ? rest[1] : buffer.length - offset
-  const position = rest.length > 2 ? rest[2] as number | null : null
+  let buffer: Uint8Array
+  let offset: number
+  let length: number
+  let position: number | null
+  if (typeof data === 'string') {
+    position = typeof rest[0] === 'number' ? rest[0] : null
+    buffer = encode(data, typeof rest[1] === 'string' ? rest[1] : undefined)
+    offset = 0
+    length = buffer.length
+  } else {
+    buffer = data
+    offset = typeof rest[0] === 'number' ? rest[0] : 0
+    length = typeof rest[1] === 'number' ? rest[1] : buffer.length - offset
+    position = rest.length > 2 ? rest[2] as number | null : null
+  }
   const handle = openByFd.get(fd)
   if (handle === undefined) { callback(badFdAsync(fd, 'write'), 0, buffer); return }
   handle.write(buffer, offset, length, position).then(
@@ -343,7 +366,7 @@ class SyncNodeFileHandle {
   }
 
   static open (path: PathLike, flags: string): SyncNodeFileHandle {
-    const confined = toConfinedPath(path, 'open')
+    const confined = confineSync(path, 'open', 'fs.openSync')
     if (isRootPath(confined)) {
       assertRootOpenAllowed(flags)
       const fd = nextFd++
@@ -409,10 +432,21 @@ export function readSync (
   return handle.read(buffer, offset, length, position).bytesRead
 }
 
-export function writeSync (fd: number, buffer: Uint8Array, offset = 0, length: number = buffer.length - offset, position: number | null = null): number {
+/** `fs.writeSync(fd, buffer[, offset[, length[, position]]])`, and Node's other form, `fs.writeSync(fd, string[, position[, encoding]])` -- the exported `write`'s own doc comment says why the string form shares `encode()` rather than a second copy of it. */
+export function writeSync (fd: number, buffer: Uint8Array, offset?: number, length?: number, position?: number | null): number
+export function writeSync (fd: number, data: string, position?: number | null, encoding?: string): number
+export function writeSync (fd: number, data: Uint8Array | string, a?: number | null, b?: number | string, c?: number | null): number {
   const handle = openByFdSync.get(fd)
   if (handle === undefined) throw badFdSync(fd, 'write')
-  return handle.write(buffer, offset, length, position).bytesWritten
+  if (typeof data === 'string') {
+    const position = typeof a === 'number' ? a : null
+    const buffer = encode(data, typeof b === 'string' ? b : undefined)
+    return handle.write(buffer, 0, buffer.length, position).bytesWritten
+  }
+  const offset = typeof a === 'number' ? a : 0
+  const length = typeof b === 'number' ? b : data.length - offset
+  const position = c === undefined ? null : c
+  return handle.write(data, offset, length, position).bytesWritten
 }
 
 export function fstatSync (fd: number): NodeStats {

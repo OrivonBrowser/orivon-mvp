@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../../contracts/capability-api.js'
-import { VIRTUAL_ROOT } from '../../virtual-root.js'
+import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../../virtual-root.js'
 import { Buffer } from 'buffer'
 
 const SYNCHRONOUS = Symbol.for('orivon.synchronous')
@@ -235,17 +235,37 @@ describe('the Worker-only *Sync calls, over the synchronous twin', () => {
   it('statSync/lstatSync call the twin\'s stat with the confined path, and map its errors', async () => {
     const calls = installSyncTwin({ stat: (path: string) => { if (path === 'missing') throw orivonError('notFound', 'ENOENT'); return { size: 3, isFile: true, isDirectory: false, mtimeMs: 5 } } })
     const fs = await import('../fs.js')
-    expect(fs.statSync('settings.json').size).toBe(3)
-    expect(fs.lstatSync('settings.json').size).toBe(3)
+    expect(fs.statSync('settings.json')?.size).toBe(3)
+    expect(fs.lstatSync('settings.json')?.size).toBe(3)
     expect(() => fs.statSync('missing')).toThrow(expect.objectContaining({ code: 'ENOENT' }))
     expect(calls.map((c) => c.member)).toEqual(['stat', 'stat', 'stat'])
     expect(calls[0]?.args).toEqual(['settings.json'])
   })
 
+  // Finding 13: statSync/lstatSync used to ignore this option entirely and
+  // always throw ENOENT, breaking `const s = statSync(p, { throwIfNoEntry:
+  // false }); if (s) ...` -- Node returns `undefined` instead (measured), but
+  // only for a MISSING path: any other failure still throws.
+  it('{ throwIfNoEntry: false }: undefined for a missing path, still throws for any other failure', async () => {
+    installSyncTwin({
+      stat: (path: string) => {
+        if (path === 'missing') throw orivonError('notFound', 'ENOENT')
+        if (path === 'secret') throw orivonError('denied')
+        return { size: 3, isFile: true, isDirectory: false, mtimeMs: 5 }
+      }
+    })
+    const fs = await import('../fs.js')
+    expect(fs.statSync('missing', { throwIfNoEntry: false })).toBeUndefined()
+    expect(fs.lstatSync('missing', { throwIfNoEntry: false })).toBeUndefined()
+    expect(fs.statSync('settings.json', { throwIfNoEntry: false })?.size).toBe(3)
+    expect(() => fs.statSync('secret', { throwIfNoEntry: false })).toThrow(expect.objectContaining({ code: 'denied' }))
+    expect(() => fs.statSync('missing')).toThrow(expect.objectContaining({ code: 'ENOENT' }))
+  })
+
   it('statSync of the root is answered locally, without asking the twin', async () => {
     const calls = installSyncTwin({ stat: () => { throw new Error('should not be called') } })
     const fs = await import('../fs.js')
-    expect(fs.statSync(VIRTUAL_ROOT).isDirectory()).toBe(true)
+    expect(fs.statSync(VIRTUAL_ROOT)?.isDirectory()).toBe(true)
     expect(calls).toEqual([])
   })
 
@@ -315,5 +335,107 @@ describe('the Worker-only *Sync calls, over the synchronous twin', () => {
     expect(path.startsWith('orivon-')).toBe(true)
     expect(path.length).toBe('orivon-'.length + 12)
     expect(created).toEqual([path])
+  })
+})
+
+describe('every *Sync export creates os.tmpdir() on first use, like the async twins (finding 5)', () => {
+  /** A twin over a Set of directories that actually exist: `mkdir` (non-recursive) fails ENOENT unless its parent is already in the set, matching a broker that starts with the tmpdir missing. */
+  function installTmpdirTwin (): { dirs: Set<string>, calls: string[] } {
+    const dirs = new Set<string>(['.'])
+    const calls: string[] = []
+    const parent = (p: string): string => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '.'
+    installSyncTwin({
+      stat: (p: string) => { calls.push(`stat ${p}`); if (!dirs.has(p)) throw orivonError('notFound', 'ENOENT'); return { size: 0, isFile: false, isDirectory: true, mtimeMs: 0 } },
+      mkdir: (p: string, o?: { recursive?: boolean }) => { calls.push(`mkdir ${p}`); if (o?.recursive !== true && !dirs.has(parent(p))) throw orivonError('notFound', 'ENOENT'); dirs.add(p) },
+      readdir: (p: string) => { calls.push(`readdir ${p}`); if (!dirs.has(p)) throw orivonError('notFound', 'ENOENT'); return [] },
+      rename: (from: string, to: string) => { calls.push(`rename ${from} ${to}`); if (!dirs.has(parent(from))) throw orivonError('notFound', 'ENOENT'); dirs.add(to) },
+      rm: (p: string) => { calls.push(`rm ${p}`); if (!dirs.has(parent(p))) throw orivonError('notFound', 'ENOENT') },
+      open: (p: string) => {
+        calls.push(`open ${p}`)
+        if (!dirs.has(parent(p))) throw orivonError('notFound', 'ENOENT')
+        return {
+          read: () => new Uint8Array(),
+          write: (o: { data: Uint8Array }) => o.data.length,
+          stat: () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }),
+          truncate: () => {},
+          sync: () => {},
+          close: () => {}
+        }
+      }
+    })
+    return { dirs, calls }
+  }
+
+  // Node's os.tmpdir() always exists; this shim's confined root starts
+  // empty, so every path-based *Sync call under it must create the
+  // directory the first time it is used, exactly like fs/paths.ts's async
+  // `confine()` already does for the callback/promise family.
+  it('statSync/lstatSync/accessSync', async () => {
+    installTmpdirTwin()
+    const fs = await import('../fs.js')
+    expect(fs.statSync(VIRTUAL_TMPDIR)?.isDirectory()).toBe(true)
+    expect(fs.lstatSync(VIRTUAL_TMPDIR)?.isDirectory()).toBe(true)
+    expect(() => fs.accessSync(VIRTUAL_TMPDIR)).not.toThrow()
+  })
+
+  it('realpathSync', async () => {
+    installTmpdirTwin()
+    const fs = await import('../fs.js')
+    expect(fs.realpathSync(VIRTUAL_TMPDIR)).toBe(VIRTUAL_TMPDIR)
+  })
+
+  it('existsSync', async () => {
+    installTmpdirTwin()
+    const fs = await import('../fs.js')
+    expect(fs.existsSync(VIRTUAL_TMPDIR)).toBe(true)
+  })
+
+  it('mkdtempSync', async () => {
+    installTmpdirTwin()
+    const fs = await import('../fs.js')
+    expect(() => fs.mkdtempSync(`${VIRTUAL_TMPDIR}/app-`)).not.toThrow()
+  })
+
+  it('readdirSync', async () => {
+    installTmpdirTwin()
+    const fs = await import('../fs.js')
+    expect(fs.readdirSync(VIRTUAL_TMPDIR)).toEqual([])
+  })
+
+  it('rmdirSync and rmSync', async () => {
+    const { dirs } = installTmpdirTwin()
+    dirs.add('tmp/leftover')
+    const fs = await import('../fs.js')
+    expect(() => fs.rmSync(`${VIRTUAL_TMPDIR}/leftover`)).not.toThrow()
+  })
+
+  it('renameSync and unlinkSync', async () => {
+    installTmpdirTwin()
+    const fs = await import('../fs.js')
+    expect(() => fs.renameSync(`${VIRTUAL_TMPDIR}/a`, `${VIRTUAL_TMPDIR}/b`)).not.toThrow()
+    expect(() => fs.unlinkSync(`${VIRTUAL_TMPDIR}/b`)).not.toThrow()
+  })
+
+  it('copyFileSync', async () => {
+    const dirs = new Set<string>(['.'])
+    installSyncTwin({
+      mkdir: (p: string) => { dirs.add(p) },
+      readFile: () => new TextEncoder().encode('bytes'),
+      writeFile: () => {}
+    })
+    const fs = await import('../fs.js')
+    expect(() => fs.copyFileSync(`${VIRTUAL_TMPDIR}/src.txt`, `${VIRTUAL_TMPDIR}/dest.txt`, undefined)).not.toThrow()
+  })
+
+  it('openSync, and appendFileSync/writeFileSync with a non-\'w\' flag over the same open path', async () => {
+    installTmpdirTwin()
+    const fs = await import('../fs.js')
+    expect(() => fs.openSync(`${VIRTUAL_TMPDIR}/x.log`, 'a')).not.toThrow()
+  })
+
+  it('appendFileSync', async () => {
+    installTmpdirTwin()
+    const fs = await import('../fs.js')
+    expect(() => fs.appendFileSync(`${VIRTUAL_TMPDIR}/x.log`, 'hi')).not.toThrow()
   })
 })

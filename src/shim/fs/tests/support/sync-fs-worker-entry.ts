@@ -22,8 +22,8 @@ const results = {
   mkdir: outcome(() => { fs.mkdirSync('dir/nested', { recursive: true }); return true }),
   write: outcome(() => { fs.writeFileSync('dir/notes.txt', 'hello sync'); return true }),
   append: outcome(() => { fs.appendFileSync('dir/notes.txt', '!'); return true }),
-  stat: outcome(() => fs.statSync('dir/notes.txt').size),
-  lstat: outcome(() => fs.lstatSync('dir/notes.txt').size),
+  stat: outcome(() => fs.statSync('dir/notes.txt')?.size),
+  lstat: outcome(() => fs.lstatSync('dir/notes.txt')?.size),
   readdir: outcome(() => [...fs.readdirSync('dir')].sort()),
   readdirTypes: outcome(() => [...(fs.readdirSync('dir', { withFileTypes: true }) as ReadonlyArray<{ name: string, isDirectory: () => boolean }>)]
     .map((entry) => ({ name: entry.name, dir: entry.isDirectory() }))
