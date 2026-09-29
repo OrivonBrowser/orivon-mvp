@@ -4,14 +4,18 @@
 capability: wrappers over the `buffer`, `crypto`, `os`, `path`, `util` and `zlib` packages, and
 hand-written `assert`, `querystring`, `string_decoder`, `timers`, `url` and `stream/promises`,
 `module` (`createRequire` for a native addon's `.node` path, over [`../addon/`](../addon/)),
-`worker_threads` (what is true on Node's main thread; starting a thread refuses by name) and `vm`
+`worker_threads` (`Worker` over [`../child-process/`](../child-process/)'s Web Worker runtime,
+`isMainThread`/`parentPort`/`workerData` read at evaluation time) and `vm`
 (code run in the page's own context).
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../errors.ts`](../errors.ts),
 [`../unimplemented.ts`](../unimplemented.ts) and [`../virtual-root.ts`](../virtual-root.ts)
 (`os.ts`'s `homedir()`/`tmpdir()`); `module.ts` also on [`../addon/`](../addon/), which installs
 `process.dlopen` when it loads, and on [`../module-map.ts`](../module-map.ts) for
-`builtinModules`.
+`builtinModules`; `worker-threads.ts` also on [`../child-process/`](../child-process/)'s
+`thread.ts` for `Worker` and [`../worker/`](../worker/)'s `node-port.ts` (the Node-shaped
+`MessagePort`) and `runtime-thread.ts` (the registered symbol a thread's own copy of this module
+reads).
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README's "What it must never import".

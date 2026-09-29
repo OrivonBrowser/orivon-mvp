@@ -72,8 +72,8 @@ export function applyLifetime (child: ChildProcess, options: SpawnOptions): void
   }
 }
 
-/** Starts the Worker. The start message goes first, then whatever was written to the child meanwhile. */
-export function launch (child: ChildProcess, name: string, start: (orivon: MessagePort) => ToWorker): void {
+/** Starts the Worker. The start message goes first, then whatever was written to the child meanwhile. `extraTransfer` carries a thread's own parentPort and any transferList the app asked for; spawn and fork pass none. */
+export function launch (child: ChildProcess, name: string, start: (orivon: MessagePort) => ToWorker, extraTransfer: Transferable[] = []): void {
   let worker: Worker
   let server: ReturnType<typeof serveOrivon>
   const channel = new MessageChannel()
@@ -85,7 +85,7 @@ export function launch (child: ChildProcess, name: string, start: (orivon: Messa
     child.fail(Object.assign(new Error(`the child cannot start: ${String((error as Error)?.message ?? error)}`), { code: 'ENOEXEC', errno: -8 }))
     return
   }
-  worker.postMessage(start(channel.port2), [channel.port2])
+  worker.postMessage(start(channel.port2), [channel.port2, ...extraTransfer])
   child.attach(worker, server)
 }
 

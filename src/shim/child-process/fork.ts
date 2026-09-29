@@ -18,12 +18,12 @@ export interface ForkOptions extends SpawnOptions {
   readonly serialization?: 'json' | 'advanced'
 }
 
-/** The module's URL on the app's origin, where the app's bundler put it. */
-function moduleUrl (modulePath: string | URL, origin: string): string {
+/** The module's URL on the app's origin, where the app's bundler put it (thread.ts's Worker reuses this for the same reason). */
+export function moduleUrl (modulePath: string | URL, origin: string, api: string, subject: string): string {
   const path = modulePath instanceof URL ? modulePath.pathname : modulePath
   const url = new URL(path.startsWith('/') ? path : `/${path}`, origin)
   if (url.origin !== new URL(origin).origin) {
-    throw refuseShim('child_process.fork', 'not-applicable', 'a forked module must come from the app\'s own origin')
+    throw refuseShim(api, 'not-applicable', `${subject} must come from the app's own origin`)
   }
   return url.href
 }
@@ -46,7 +46,7 @@ export function fork (modulePath: string | URL, argsOrOptions?: readonly string[
   const { modes, ipc } = normalizeStdio(stdio, 'child_process.fork')
   if (!ipc) throw codedError(Error, 'ERR_CHILD_PROCESS_IPC_REQUIRED', 'Forked processes must have an IPC channel, missing value \'ipc\' in options.stdio')
   const origin = globalThis.location.origin
-  const url = moduleUrl(modulePath, origin)
+  const url = moduleUrl(modulePath, origin, 'child_process.fork', 'a forked module')
   const path = new URL(url).pathname
   const serialization = options.serialization ?? 'json'
   const child = new ChildProcess({ spawnfile: 'node', spawnargs: ['node', ...(options.execArgv ?? []), path, ...args], stdio: modes, ipc: true, serialization })

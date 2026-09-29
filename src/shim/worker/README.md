@@ -1,12 +1,16 @@
 # `src/shim/worker/`: children in Web Workers
 
 **What lives here.** What a child needs to run in a Web Worker: the Worker's runtime
-(`runtime.ts`, with `runtime-spawn.ts` for a WASI program or a WASI 0.2 component and
-`runtime-fork.ts` for an app module), the page-side server and Worker-side client that carry the Worker's `orivon.*` calls to
-the page (`orivon-server.ts`, `orivon-client.ts`), the shared-memory channel for its synchronous
-calls (`sync-channel.ts`), and `launch.ts`, which starts a Worker.
-[`../child-process/`](../child-process/) is the one user today. A Worker reaches exactly what its
-page could, since it is the app's own code
+(`runtime.ts`, with `runtime-spawn.ts` for a WASI program or a WASI 0.2 component,
+`runtime-fork.ts` for an app module, and `runtime-thread.ts` for one run as a `worker_threads`
+thread, sharing `runtime-fork.ts`'s `setupChildProcess` for the Node process a child gets), the
+page-side server and Worker-side client that carry the Worker's `orivon.*` calls to the page
+(`orivon-server.ts`, `orivon-client.ts`), the shared-memory channel for its synchronous calls
+(`sync-channel.ts`), `node-port.ts` (a web `MessagePort` in Node's shape: `worker_threads`'
+`parentPort`, `MessageChannel` and `MessagePort`), and `launch.ts`, which starts a Worker.
+[`../child-process/`](../child-process/) is the one user today: `child.ts`'s `ChildProcess` and
+`spawn.ts`'s `launch()` back `fork` and `thread.ts`'s `Worker` alike. A Worker reaches exactly what
+its page could, since it is the app's own code
 ([`ADR-0040`](../../../docs/decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)).
 Durable: it uses Web Workers, `MessagePort` and JSPI, no Electron API.
 
@@ -60,6 +64,20 @@ receive it.
 closed and no timer, immediate, fetch, `orivon.*` call or open handle is pending, it emits
 `'beforeExit'`, then `'exit'`, and ends with code 0. Scheduling that must not keep it alive uses
 the unwrapped `setTimeout` that `trackScope` returns.
+
+**A thread ends on its own the same way, minus the IPC channel** (`runtime-thread.ts`): what
+keeps it alive instead is a ref'd `parentPort` listener. `node-port.ts`'s wrapper calls back only
+on the 0-to-1 or 1-to-0 edge of "ref'd, started, and at least one `'message'`/`'messageerror'`
+listener", never on every listener change, since a caller's own ref count would otherwise be
+double-counted. `unref()`, `close()`, or the last listener going away all release it.
+
+**A `worker_threads.Worker` nested in a forked child keeps that child alive while it is ref'd**
+(the default): `runtime-fork.ts` publishes its own `Liveness` under `FORK_LIVENESS_SYMBOL`, which
+`thread.ts`'s `Worker` reads off `globalThis` at construction and refs; nothing does outside a
+fork, where nothing here ever exits on its own. Both this and `runtime-thread.ts`'s own
+`WORKER_THREADS_SYMBOL` (what a thread's own `isMainThread`/`parentPort`/`workerData` and a
+nested-thread refusal read) are registered symbols, so every bundle's copy of the shim agrees on
+the same one.
 
 **The stdout sink posts a copy of each chunk**, never the host's own array: transferring it would
 detach it, and the host reads its length afterwards for `fd_write`'s byte count, which a libc

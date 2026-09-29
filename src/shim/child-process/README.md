@@ -8,6 +8,10 @@ operating-system process
 or a WASI 0.2 component over [`../wasi-p2/`](../wasi-p2/), which can open sockets; `fork` runs an
 app module with `process.send` and an IPC channel. Durable: no Electron API.
 
+Also `thread.ts`'s `Worker`, `worker_threads`' target (`../polyfills/worker-threads.ts`), not
+`child_process`'s: it lives beside `fork` because it wraps the same `ChildProcess` and reuses
+`spawn.ts`'s `launch()`, minus IPC and plus its own `parentPort` `MessageChannel`.
+
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../worker/`](../worker/),
 [`../wasi/`](../wasi/), [`../wasi-p2/`](../wasi-p2/) (`run.ts`, to check a component's jco output), `../fs/paths.ts`, `../node-errors.ts`, `../errors.ts`,
 `../orivon-global.ts`, `../warn-once.ts`, `../polyfills/module-proxy.ts`, and the `buffer`,
