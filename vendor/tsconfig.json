@@ -16,7 +16,9 @@
   },
   "include": [
     "electron-chrome-extensions/src/**/*.ts",
-    "electron-chrome-web-store/src/**/*.ts"
+    "electron-chrome-web-store/src/**/*.ts",
+    "firefox-dnr/src/**/*.mjs",
+    "firefox-dnr/adapters/**/*.mjs"
   ],
   "exclude": ["node_modules"]
 }
