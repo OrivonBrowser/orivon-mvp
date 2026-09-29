@@ -45,7 +45,9 @@ not work), and `menu-panel.ts` is the popover that shows it, built on
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
 `permission-gate.ts`'s notification store, handed to the permissions panel),
 [`../dev/`](../dev/) (the developer-mode flag, the score-level override, the local resolvers),
-[`../verifier/`](../verifier/), plus the top-level `channels.ts` and `registry.ts`.
+[`../verifier/`](../verifier/), the stores and services a window reads ([`../settings/`](../settings/),
+[`../history/`](../history/), [`../zoom/`](../zoom/), [`../devtools/`](../devtools/),
+[`../pages/`](../pages/), [`../launch/`](../launch/)), plus the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).
 Locally: [`tab-view.ts`](tab-view.ts) and [`tab-types.ts`](tab-types.ts) must never import
