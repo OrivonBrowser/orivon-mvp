@@ -54,6 +54,22 @@ function appSessionFor (origin: string, broker: Broker): Session {
 }
 
 /**
+ * Every scheme the host session must answer `answer` on for `origin`: always
+ * both `https` and `http` -- an app served from its own network server may be
+ * plain `http:` (a local development origin, say), and the host's document
+ * request must never fall through to that real server, whose own SPA
+ * fallback could serve the app's own page (and run its code) inside the
+ * host, with none of the CSP the host sets -- plus `origin`'s own scheme
+ * when it is neither of those (`registerAppOrigin`'s own derivation; no
+ * origin uses a third scheme today, but a future one must not silently go
+ * unhandled here the way `http` did).
+ */
+function schemesFor (origin: string): readonly string[] {
+  const own = new URL(origin).protocol.replace(':', '')
+  return own === 'https' || own === 'http' ? ['https', 'http'] : ['https', 'http', own]
+}
+
+/**
  * Wires the host's own session: deny every permission (nothing here can ever
  * show the person a dialog to answer one), no downloads, WebRTC's native
  * dial closed the same way an isolated WebContext's is, and `protocol.handle`
@@ -62,7 +78,10 @@ function appSessionFor (origin: string, broker: Broker): Session {
  * request to the session `origin`'s own tabs already load from -- so a
  * child's module, program and network requests are answered exactly as a
  * page's would be, the pinned bundle for a cached app or its own server for
- * a network-served one.
+ * a network-served one. Handled on every scheme in `schemesFor`, with the
+ * SAME function: the document is answered "exactly at `wellKnownUrl(origin)`,
+ * whatever the scheme" first, and everything else falls through to
+ * `appSession.fetch` identically.
  */
 async function configureHostSession (hostSession: Session, origin: string, broker: Broker): Promise<void> {
   hostSession.setPermissionCheckHandler(() => false)
@@ -90,8 +109,10 @@ async function configureHostSession (hostSession: Session, origin: string, broke
     }
     return await appSession.fetch(request)
   }
-  if (hostSession.protocol.isProtocolHandled('https')) hostSession.protocol.unhandle('https')
-  hostSession.protocol.handle('https', answer)
+  for (const scheme of schemesFor(origin)) {
+    if (hostSession.protocol.isProtocolHandled(scheme)) hostSession.protocol.unhandle(scheme)
+    hostSession.protocol.handle(scheme, answer)
+  }
 }
 
 export interface ChildHost {
