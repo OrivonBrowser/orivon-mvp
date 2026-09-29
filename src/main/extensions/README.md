@@ -16,7 +16,9 @@ Developer mode's buttons open) and `extensions-domain.ts` (the `InternalDomain` 
 requests go through, `../pages/README.md`); and the host-access decision chrome.cookies and
 chrome.tabs gate on (`extension-host-access.ts`, wired into the vendored library from
 `extension-host.ts`); the activeTab-style invocation ledger `chrome.tabCapture` gates on
-(`extension-tab-invocation.ts`); the one list of manifest permission names this app actually serves,
+(`extension-tab-invocation.ts`) and the toolbar-click recorder that fills and clears it on a real
+`WebContents` (`extension-tab-capture-invocation.ts`); the one list of manifest permission names
+this app actually serves,
 which `extensions-subsystem.ts` uses before its first `loadExtension()` to filter the
 `ExtensionLoadWarning` lines Electron's own native permission schema logs for one of them
 (`extension-known-permissions.ts`); and, for the same reason a person deciding about a site's
@@ -47,7 +49,7 @@ words `extensions-view.ts` reuses for the page),
 (durable: the Chrome match-pattern matcher `extension-host-access.ts` uses for chrome.cookies'
 and chrome.tabs' own host-access checks, and `site-reach.ts` uses for a person's own popups),
 [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts)'s `originFromUrl` (durable;
-`extension-host.ts`'s own activeTab-style invocation ledger and its `chrome.tabCapture`
+`extension-tab-capture-invocation.ts`'s own recorder and `extension-host.ts`'s `chrome.tabCapture`
 app-refusal check both key on it),
 [`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`,
