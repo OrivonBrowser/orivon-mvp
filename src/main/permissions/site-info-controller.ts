@@ -18,6 +18,8 @@ import type { DeliveryLevel, PinCoverageEvidence } from '../../trust/delivery-la
 import type { ScoreLevel } from '../../trust/website-level.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 import type { NameEvidence } from '../verifier/name-evidence.js'
+import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
+import type { ExtensionLister } from '../extensions/site-reach-runner.js'
 
 export interface SiteSummary {
   /** Whether the site has asked for at least one Orivon capability or
@@ -26,8 +28,8 @@ export interface SiteSummary {
   readonly warning: boolean
 }
 
-const EMPTY_SITE_INFO = (origin: string): SiteInfo => ({
-  origin, displayOrigin: origin, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing'
+const EMPTY_SITE_INFO = (origin: string, extensionsOnSite: readonly string[] = []): SiteInfo => ({
+  origin, displayOrigin: origin, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite
 })
 
 /** The loader-adjacent facts `../browsing/site-trust.js` needs but does not
@@ -69,25 +71,35 @@ export interface SiteInfoController {
 }
 
 export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources): SiteInfoController {
+  // N2's disclosure (docs/planning/extensions-exploration.md) -- see
+  // README.md's Design notes for why this is computed once, ahead of the
+  // registered/unregistered branch `siteInfoFor` makes below.
+  async function extensionsFor (origin: string): Promise<readonly string[]> {
+    const extensions: ExtensionLister | undefined = ctx.extensions
+    if (extensions === undefined) return []
+    return await extensionNamesForOrigin(extensions, origin, trustSources.isOriginServedFromCacheSync)
+  }
+
   async function siteInfoFor (url: string): Promise<SiteInfo> {
     const origin = originFromUrl(url)
     // No canonical origin (about:, chrome://, a malformed url) -- nothing
     // to show, and no address for `broker` to look anything up under.
     if (origin === null) return EMPTY_SITE_INFO(url)
+    const extensionsOnSite = await extensionsFor(origin)
     const broker = ctx.broker
-    if (broker === undefined || !broker.app.isRegisteredSync(origin)) return EMPTY_SITE_INFO(origin)
+    if (broker === undefined || !broker.app.isRegisteredSync(origin)) return EMPTY_SITE_INFO(origin, extensionsOnSite)
     try {
       const [manifest, grants, pickedPaths] = await Promise.all([
         broker.app.manifest(origin),
         broker.app.grants(origin),
         broker.app.pickedPaths(origin)
       ])
-      return buildSiteInfo(origin, manifest, grants, pickedPaths, true, trustSources.levelOverrideFor(origin))
+      return buildSiteInfo(origin, manifest, grants, pickedPaths, true, trustSources.levelOverrideFor(origin), extensionsOnSite)
     } catch {
       // A registered origin whose manifest read transiently fails -- the
       // same "drop the row rather than throw into a renderer" stance
       // permissions.ts's own describeOrigin takes.
-      return EMPTY_SITE_INFO(origin)
+      return EMPTY_SITE_INFO(origin, extensionsOnSite)
     }
   }
 

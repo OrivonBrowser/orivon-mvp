@@ -4,6 +4,12 @@ import { hasApiOrHostAccess, hasApiPermission, hasHostAccess } from '../extensio
 const MANIFEST_WITH_COOKIES = { manifest_version: 3, name: 'x', version: '1.0.0', permissions: ['cookies'] }
 const MANIFEST_WITH_HOST = { manifest_version: 3, name: 'x', version: '1.0.0', host_permissions: ['https://a.example/*'] }
 const MANIFEST_BARE = { manifest_version: 3, name: 'x', version: '1.0.0' }
+const MANIFEST_WITH_CONTENT_SCRIPT_ONLY = {
+  manifest_version: 3,
+  name: 'x',
+  version: '1.0.0',
+  content_scripts: [{ matches: ['<all_urls>'], js: ['content.js'] }]
+}
 
 describe('hasApiPermission', () => {
   it('is true when the named permission is declared', () => {
@@ -33,6 +39,10 @@ describe('hasHostAccess', () => {
 
   it('is false for a manifest readExtensionManifest itself refuses', () => {
     expect(hasHostAccess({ manifest_version: 3, name: 'x' }, 'https://a.example/path')).toBe(false)
+  })
+
+  it('is false for a URL covered only by a content_scripts match, with no host_permissions', () => {
+    expect(hasHostAccess(MANIFEST_WITH_CONTENT_SCRIPT_ONLY, 'https://a.example/path')).toBe(false)
   })
 })
 

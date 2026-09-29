@@ -22,6 +22,7 @@ import { historyDomain } from '../history/history-domain.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
 import { createPermissionsController } from '../permissions/permissions.js'
 import type { SubsystemContext } from '../registry.js'
 import type { InternalDomain } from './internal-ipc.js'
@@ -99,8 +100,15 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
   // Fire-and-forget, like the update check below it in index.ts: a one-time
   // cleanup, never the window's own critical path. orphaned-app-partitions.ts's
-  // own header has the full reasoning.
+  // own header has the full reasoning. A second, throwaway LoaderStorage
+  // (nodeLoaderStorage is a stateless closure over userDataPath, same as
+  // loader/subsystem.ts's own instance) so this cleanup can tell "a pin
+  // exists on disk" apart from "serving is live for this run" without
+  // threading the loader's own storage instance through SubsystemContext.
   void permissions.list()
-    .then(async (apps) => { await cleanOrphanedAppPartitions(app.getPath('userData'), apps, isOriginServedFromCacheSync) })
+    .then(async (apps) => {
+      const pinnedOrigins = new Set(await nodeLoaderStorage(app.getPath('userData')).listPinnedOrigins())
+      await cleanOrphanedAppPartitions(app.getPath('userData'), apps, isOriginServedFromCacheSync, pinnedOrigins)
+    })
     .catch((error: unknown) => { console.error('[orivon] clearing an orphaned app partition failed:', error) })
 }

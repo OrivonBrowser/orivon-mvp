@@ -100,4 +100,28 @@ describe('createGrantPrompt', () => {
 
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'question', message: 'Unlimited network access' }))
   })
+
+  it('N2\'s disclosure: defaults to naming no extensions, so every pre-existing call above is unaffected', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const consent = createGrantPrompt(brokerWithManifest(manifestWith({ fs: {} })))
+
+    await consent(ORIGIN, 'fs', [])
+
+    expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.not.stringContaining('Extensions that can also act on this site')
+    }))
+  })
+
+  it('N2\'s disclosure: an injected extensionsOnSite is fetched for the origin and rendered into detail', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const extensionsOnSite = vi.fn(async (origin: string) => origin === ORIGIN ? ['Ad Blocker'] : [])
+    const consent = createGrantPrompt(brokerWithManifest(manifestWith({ fs: {} })), undefined, extensionsOnSite)
+
+    await consent(ORIGIN, 'fs', [])
+
+    expect(extensionsOnSite).toHaveBeenCalledWith(ORIGIN)
+    expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.stringContaining('Extensions that can also act on this site: Ad Blocker.')
+    }))
+  })
 })

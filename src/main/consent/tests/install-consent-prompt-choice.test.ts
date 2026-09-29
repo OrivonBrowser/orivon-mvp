@@ -137,4 +137,14 @@ describe('createPerCapabilityConsentPrompt', () => {
     expect(showMessageBox.mock.calls[0]?.[0]).toMatchObject({ type: 'warning' })
     expect(showMessageBox.mock.calls[1]?.[0]).toMatchObject({ type: 'warning' })
   })
+
+  it('N2\'s disclosure: an injected extensionsOnSite reaches the overview screen', async () => {
+    const extensionsOnSite = vi.fn(async (origin: string) => origin === ORIGIN ? ['Ad Blocker'] : [])
+    showMessageBox.mockResolvedValueOnce({ response: 0 }) // allow all
+    await createPerCapabilityConsentPrompt(undefined, extensionsOnSite)(ORIGIN, manifest(), CAPABILITIES)
+
+    expect(extensionsOnSite).toHaveBeenCalledWith(ORIGIN)
+    const overviewArgs = showMessageBox.mock.calls[0]?.[0]
+    expect(overviewArgs?.detail).toContain('Extensions that can also act on this site: Ad Blocker.')
+  })
 })

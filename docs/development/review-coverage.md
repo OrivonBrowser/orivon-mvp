@@ -164,3 +164,11 @@ see in the PR itself.
 | `/code-review`, high effort | The branch against `main`, `vendor/` limited to Orivon's patches | Ten findings, all fixed: a URL-policy check that never refused, a `.crx` able to take another extension's id, library channels trusting the named extension id, a refused store install reported as success, same-version reinstall, a corrupt registry being overwritten, and comments telling history |
 | `security-review` skill, each finding verified separately | The same diff | Three HIGH, all fixed: a manifest `version` that walked the install directory out of the extensions folder, `chrome.cookies` with no permission or host check, tab URLs and titles reaching extensions without `tabs` or host access |
 | Gate, smoke and e2e, headless | The branch | Typecheck, unit, the 12 guards and smoke pass; e2e passes except the three files whose fixture ports the unrelated local server holds, which fail identically on `main` |
+
+### `stream/ext-sessions`: granted apps in the default session, and the `window.orivon` filter (2026-09-29)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort | The branch against `stream/extensions` | Ten findings, all fixed or stated: the filter calling built-ins a page could patch, the routed `fetch`/XHR/WebSocket giving extension code an app's `net` grant, a fallback exposing `window.orivon` unfiltered, a site's popup keeping its opener into a granted app, orphaned app partitions, a listener with no filter on every request, the developer-tools prompt; bound methods planted in page-called slots are stated in ADR-0045 |
+| `security-review` skill | The same diff | One MEDIUM, fixed: a same-origin `<object>` document got no granted-app CSP (webRequest reports it as `object`), reopening the inline-script route; `object-src 'none'` added. Service-worker-served documents getting no Orivon CSP is stated in T22, T52 and ADR-0045 |
+| Gate, smoke and e2e, headless | The branch | Typecheck, unit, the 12 guards and smoke pass; e2e passes except the three port-collision files and `e2e-freetube-live-origin`, whose live-network playback check also fails on `main` |

@@ -14,8 +14,21 @@ export interface ExtensionManifestFacts {
   readonly version: string
   readonly description?: string
   /** Sorted, unique: host_permissions, MV2's host-pattern entries inside
-   * `permissions`, and every content_scripts[].matches entry. */
+   * `permissions`, and every content_scripts[].matches entry. Display only
+   * -- see `hostPermissions` for what an API access decision must use
+   * instead, and why. */
   readonly hostPatterns: readonly string[]
+  /** Sorted, unique: host_permissions and MV2's host-pattern entries inside
+   * `permissions`, never content_scripts[].matches. Chrome tracks these as
+   * two separate sets (explicit_hosts vs. scriptable_hosts) and keeps API
+   * access on explicit_hosts alone -- a content script's match pattern only
+   * lets it inject there, per Chromium's own extensions/docs/permissions.md
+   * ("we treat both explicit hosts and scriptable hosts the same [for
+   * messaging]... the distinction is only to... restrict what we provide
+   * the extension" for the API surface). `optional_host_permissions` is
+   * excluded too: it is not granted until the extension requests it at
+   * runtime, a separate prompt this field does not anticipate. */
+  readonly hostPermissions: readonly string[]
   /** `permissions`, with host-pattern-shaped entries (MV2) filtered out. */
   readonly apiPermissions: readonly string[]
   /** `optional_permissions`, same filter. */
@@ -122,9 +135,12 @@ export function readExtensionManifest (raw: unknown): ExtensionManifestResult {
   const hostPermissions = stringArray(ownProperty(raw, 'host_permissions', isArray))
   const contentScripts = readContentScripts(ownProperty(raw, 'content_scripts', isArray))
 
-  const hostPatterns = sortedUnique([
+  const explicitHostPermissions = sortedUnique([
     ...hostPermissions,
-    ...permissions.filter(isHostPatternLike),
+    ...permissions.filter(isHostPatternLike)
+  ])
+  const hostPatterns = sortedUnique([
+    ...explicitHostPermissions,
     ...contentScripts.flatMap((entry) => entry.matches)
   ])
   const apiPermissions = sortedUnique(permissions.filter((entry) => !isHostPatternLike(entry)))
@@ -147,6 +163,7 @@ export function readExtensionManifest (raw: unknown): ExtensionManifestResult {
     version,
     ...(description === undefined ? {} : { description }),
     hostPatterns,
+    hostPermissions: explicitHostPermissions,
     apiPermissions,
     optionalApiPermissions,
     mainWorldScripts,

@@ -59,6 +59,8 @@ export function cspHeaderValue (connectPatterns: readonly Pattern[], securePatte
     "default-src 'self'",
     directive('script-src', SCRIPT_SOURCES),
     "style-src 'self' 'unsafe-inline'",
+    // See README.md's Design notes for why this is 'none' rather than left to default-src.
+    "object-src 'none'",
     directive('connect-src', [...withLocal, ...connectTokens, ...reach]),
     directive('img-src', [...withLocal, ...reach]),
     directive('font-src', [...withLocal, ...reach]),

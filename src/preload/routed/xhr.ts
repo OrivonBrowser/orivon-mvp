@@ -333,7 +333,7 @@ export function installXhrRoute (
       // Attribution runs SYNCHRONOUSLY, at open() -- the point this class
       // itself decides routed vs. native -- exactly like ../surface/
       // main-world-socket.ts's `guarded`.
-      if (!async || !core.routes(parsed) || !callerIsPage!(XMLHttpRequest.prototype.open)) {
+      if (!async || !core.routes(parsed) || !callerIsPage!(routedOpen)) {
         goNative(this, s, false).open(s.method, parsed.href, async, user, password)
         return
       }
@@ -471,6 +471,15 @@ export function installXhrRoute (
     get onloadend (): unknown { return events.getHandler(this, 'loadend') }
     set onloadend (v: unknown) { events.setHandler(this, 'loadend', v) }
   }
+
+  // Captured once, right after the class is built, so open()'s own
+  // callerIsPage check has a fixed reference to exclude from the stack
+  // capture -- XMLHttpRequest.prototype.open is a normal writable property,
+  // and reading it again at call time would hand callerIsPage whatever
+  // main-world code has since put there instead of the function actually
+  // executing, same as ./fetch.ts/./websocket.ts/./eventsource.ts's own
+  // local function/class references.
+  const routedOpen = XMLHttpRequest.prototype.open
 
   // An interface object's own descriptor: replaceable, and not enumerable (ADR-0021).
   Object.defineProperty(target, 'XMLHttpRequest', { value: XMLHttpRequest, writable: true, configurable: true, enumerable: false })

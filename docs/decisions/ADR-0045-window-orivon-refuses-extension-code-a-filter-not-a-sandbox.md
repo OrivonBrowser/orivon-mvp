@@ -83,6 +83,10 @@ away, in the manner of ADR-0021.
   pinned app could keep its own inline scripts through `'sha256-...'` sources Orivon computes
   from the HTML it serves; that is not built.
 - Each call pays the capture, about 5 microseconds measured.
+- A document a service worker serves from its own cache never reaches `onHeadersReceived`, so a
+  granted app that precaches its shell can run with `'unsafe-inline'` restored once a service
+  worker controls it; the call-stack refusal on `window.orivon` itself does not depend on CSP
+  and still applies there.
 
 ## Reversibility
 

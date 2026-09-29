@@ -15,18 +15,21 @@ catalogue off a loaded entry's own folder), `extensions-picker-runner.ts` (the n
 Developer mode's buttons open) and `extensions-domain.ts` (the `InternalDomain` the page's
 requests go through, `../pages/README.md`); and the host-access decision chrome.cookies and
 chrome.tabs gate on (`extension-host-access.ts`, wired into the vendored library from
-`extension-host.ts`).
+`extension-host.ts`); and, for the same reason a person deciding about a site's permissions
+should see who else can act on it, `site-reach.ts` (which enabled extensions' host access covers
+a given origin) and `site-reach-runner.ts` (the real manifest reads behind it), reused by
+`../consent/` and `../permissions/`.
 
 **What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`, `registry.ts`,
-`extensions-view.ts`, `extension-url-policy.ts`, `store-download-seam.ts`, `extension-host-access.ts`
-and `unpack-runner.ts`'s pure `checkZipEntryPath`), `node:crypto`, `node:fs`, `node:path`,
+`extensions-view.ts`, `extension-url-policy.ts`, `store-download-seam.ts`, `extension-host-access.ts`,
+`site-reach.ts`, `site-reach-runner.ts` and `unpack-runner.ts`'s pure `checkZipEntryPath`), `node:crypto`, `node:fs`, `node:path`,
 `adm-zip`, `pbf`,
 [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
 (durable: the manifest facts, the stripped-manifest copy, the install prompt's words, and the
 words `extensions-view.ts` reuses for the page),
 [`../../broker/policy/extension-host-patterns.ts`](../../broker/policy/extension-host-patterns.ts)
 (durable: the Chrome match-pattern matcher `extension-host-access.ts` uses for chrome.cookies'
-and chrome.tabs' own host-access checks),
+and chrome.tabs' own host-access checks, and `site-reach.ts` uses for a person's own popups),
 [`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`,
 [`../settings/`](../settings/) (Developer mode is a setting there), and two vendored libraries.
@@ -74,6 +77,18 @@ seconds to a single e2e run seeding four real extensions (dNR's own vendored rul
 `extension-host.ts`'s call site instead) reaches this file's generic hook without this file ever
 importing that caller's module itself.
 
+**[`site-reach.ts`](site-reach.ts) returns none for an origin served from its pinned cache,
+without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
+including a granted app -- but `GRANTED_APPS_CLAUSE`
+(`../../broker/policy/extension-manifest.ts`) already carries the one exception: "except an app
+running from its pinned copy". Naming extensions on such an origin's site-info popup or grant
+prompt would say something false, so this file matches that exception exactly rather than
+letting its own answer drift from what the install prompt and the extensions page already say.
+The check is an injected predicate (`isOriginServedFromCacheSync`, real implementation in
+`../../loader/electron/serve.ts`), so this file stays pure and testable against a fake, the same
+shape [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts)'s
+`SiteTrustSources` already uses it in.
+
 **Why `loadableManifest` (`../../broker/policy/extension-manifest.ts`) strips `webRequest*`,
 `declarativeNetRequest*` and `nativeMessaging`, and why `extensions-subsystem.ts` is listed in
 `../subsystems.ts` right after `verifierSubsystem`.** Measured
@@ -97,11 +112,18 @@ in its slot) whose write succeeded but whose load failed afterward has its own j
 removed, the same as a same-version reinstall's own rollback already did.
 
 **chrome.cookies and chrome.tabs gate on host access, not only on holding the `cookies`/`tabs`
-API permission.** `extension-host-access.ts`'s `hasApiPermission`/`hasHostAccess`/
-`hasApiOrHostAccess` read an extension's OWN loaded manifest (`event.extension.manifest`) the same
-way `readExtensionManifest` reads one at install time, and match its `hostPatterns` against a URL
-with Chrome's own match-pattern grammar
+API permission -- and host access means `hostPermissions` (explicit host_permissions and MV2's
+host-pattern entries in `permissions`), never a content_scripts match on its own.**
+`extension-host-access.ts`'s `hasApiPermission`/`hasHostAccess`/`hasApiOrHostAccess` read an
+extension's OWN loaded manifest (`event.extension.manifest`) the same way `readExtensionManifest`
+reads one at install time, and match its `hostPermissions` against a URL with Chrome's own
+match-pattern grammar
 ([`../../broker/policy/extension-host-patterns.ts`](../../broker/policy/extension-host-patterns.ts)).
+`extension-manifest.ts`'s own doc on `hostPermissions` says why a content-script match does not
+count: Chrome keeps two separate host sets (explicit_hosts vs. scriptable_hosts,
+`extensions/docs/permissions.md` in Chromium's own source), and only explicit_hosts gates API
+access. `hostPatterns`, the union of both, stays reserved for the install prompt's wording, which
+Chrome's own prompt warns about either kind of host reach.
 `extension-host.ts`'s `createExtensionHost` installs three hooks the vendored library calls back
 into, the same shape as the sender-id check (`extension-sender-id-check.ts`): `setEventListenerFilter`
 (router.ts, UPSTREAM.md patch 15) gates or strips a broadcast event per listener --

@@ -132,3 +132,15 @@ describe('buildSiteInfo -- identity fields', () => {
     expect(info.claimedName).toBe('Test app')
   })
 })
+
+describe('buildSiteInfo -- extensionsOnSite', () => {
+  it('defaults to none -- every pre-existing call above is unaffected', () => {
+    const info = buildSiteInfo(APP, manifestWith({}), [], [], true)
+    expect(info.extensionsOnSite).toEqual([])
+  })
+
+  it('carries whatever the caller computed straight through, never recomputing it', () => {
+    const info = buildSiteInfo(APP, manifestWith({}), [], [], true, undefined, ['Ad Blocker', 'Password Manager'])
+    expect(info.extensionsOnSite).toEqual(['Ad Blocker', 'Password Manager'])
+  })
+})

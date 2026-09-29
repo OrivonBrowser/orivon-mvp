@@ -35,18 +35,15 @@ function hasDnrPermission(stripped: InstalledExtension['stripped']): boolean {
  * `webRequest*` permissions and the `declarative_net_request` key, but never
  * touches `host_permissions` or `content_scripts`, so the loaded copy's own
  * host patterns are exactly the original's. The one call site (`loadExtensionIntoEngine`,
- * below) is deliberately funneled through this single function: `readExtensionManifest`'s
- * `hostPatterns` fact currently includes content-script match patterns, not
- * only `host_permissions`, which a separate change is giving its own
- * explicit `hostPermissions` fact -- swapping this function's `parsed.facts.hostPatterns`
- * read for `parsed.facts.hostPermissions` will be the entire change needed
- * here once that fact exists.
+ * below) reads `hostPermissions`, the explicit host permissions only: a
+ * content script's match patterns let an extension inject there, not act on
+ * its requests, so they grant no redirect or modifyHeaders power.
  */
 function hostAccessPatternsFor(entry: InstalledExtension): readonly string[] {
   try {
     const raw: unknown = JSON.parse(readFileSync(join(entry.path, 'manifest.json'), 'utf8'))
     const parsed = readExtensionManifest(raw)
-    return parsed.ok ? parsed.facts.hostPatterns : []
+    return parsed.ok ? parsed.facts.hostPermissions : []
   } catch (error) {
     console.error(`[dnr] ${entry.id}: could not read its own loaded manifest.json for host patterns: ${String(error)}`)
     return []

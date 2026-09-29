@@ -23,6 +23,8 @@ import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './gra
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
+import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 
 const GRANT_MANIFEST_TIMEOUT_MS = 5_000
 
@@ -53,8 +55,14 @@ export const appInstallSubsystem: Subsystem = {
     // (../dev/score-levels.ts), always named as an override, never as
     // observed. reconsentPrompt/rollbackChoicePrompt take no level at all:
     // neither is about a grant's breadth.
-    const consent = createInstallConsentPrompt(scoreLevelOverrideFor)
-    const perCapabilityConsent = createPerCapabilityConsentPrompt(scoreLevelOverrideFor)
+    // N2's disclosure (docs/planning/extensions-exploration.md), the same
+    // shape ../consent/request-grant-subsystem.ts wires in.
+    const extensionsOnSite = async (origin: string): Promise<readonly string[]> => {
+      const extensions = ctx.extensions
+      return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
+    }
+    const consent = createInstallConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
+    const perCapabilityConsent = createPerCapabilityConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
     const reconsentPrompt = createReconsentPrompt()
     const capabilityPrompt = createCapabilityPrompt(scoreLevelOverrideFor)
     const rollbackChoicePrompt = createRollbackChoicePrompt()
