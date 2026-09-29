@@ -418,6 +418,21 @@
     listener, on every call it ever made; concurrent callers racing the same extension id (a
     crx-msg and one or more crx-add-listener calls, all from the same still-loading extension)
     now await the identical promise instead.
+39. **`isSandboxPageUrl`: a linear-time glob match, replacing a backtracking regex built from
+    the extension's own manifest; normalised the way Chromium normalises before comparing.**
+    The regex this replaced (`pattern.split('*').map(escapeRegExp).join('.*')`, anchored)
+    is correct but a pattern with several `*`s is the textbook catastrophic-backtracking shape,
+    and this runs synchronously on the main thread, on every page load and every `crx-msg` --
+    measured: `'a*'.repeat(8) + 'b'` against a 40-character near-miss string already took over a
+    second with the old regex; the new matcher (`matchesGlob`: split on `*`, `indexOf` each
+    literal piece in order, anchored ends) resolves a 5000-character version in under a
+    millisecond. `MAX_SANDBOX_PAGES` (200) and `MAX_STARS_PER_PATTERN` (8) additionally cap the
+    work any one manifest can demand, on top of the matcher's own linear bound. Also normalises
+    both sides the way Chromium does: a manifest `sandbox.pages` entry's own leading `/` is
+    stripped (Chrome accepts `"/sandbox.html"` and `"sandbox.html"` as the same declaration),
+    and the URL's pathname is percent-decoded (`%2E` and `.` name the same file) before
+    comparison; a pathname that fails to decode matches nothing, rather than being compared
+    still encoded.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

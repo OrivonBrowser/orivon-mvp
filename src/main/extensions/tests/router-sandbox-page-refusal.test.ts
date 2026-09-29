@@ -56,6 +56,49 @@ describe('isSandboxPageUrl', () => {
   it('is false for a malformed URL, rather than throwing', () => {
     expect(isSandboxPageUrl(['sandbox.html'], 'not a url')).toBe(false)
   })
+
+  it('strips a leading slash from a manifest entry, the way Chrome treats "/sandbox.html" and "sandbox.html" as the same page (UPSTREAM.md patch 39)', () => {
+    expect(isSandboxPageUrl(['/sandbox.html'], `chrome-extension://${EXT_ID}/sandbox.html`)).toBe(true)
+  })
+
+  it('percent-decodes the URL pathname before matching (UPSTREAM.md patch 39)', () => {
+    expect(isSandboxPageUrl(['sandbox page.html'], `chrome-extension://${EXT_ID}/sandbox%20page.html`)).toBe(true)
+  })
+
+  it('is false for a pathname with a malformed percent-sequence, rather than comparing it encoded (UPSTREAM.md patch 39)', () => {
+    expect(isSandboxPageUrl(['sandbox.html%'], `chrome-extension://${EXT_ID}/sandbox.html%`)).toBe(false)
+  })
+
+  it('matches a many-star pattern against a long near-miss string in linear time, not exponential (ReDoS; UPSTREAM.md patch 39)', () => {
+    // The classic catastrophic-backtracking shape for the OLD
+    // regex-based matcher this replaces: `^a.*a.*a.*a.*a.*a.*a.*a.*b$`
+    // against a long run of 'a's with no trailing 'b' forces a regex
+    // engine to try every possible split point for every star before
+    // giving up. 8 stars, at MAX_STARS_PER_PATTERN -- exercises the real
+    // linear matcher, not the cap's own short-circuit above it.
+    const pattern = 'a*'.repeat(8) + 'b'
+    const pathname = 'a'.repeat(5000)
+    const url = `chrome-extension://${EXT_ID}/${pathname}`
+
+    const started = Date.now()
+    const result = isSandboxPageUrl([pattern], url)
+    const elapsed = Date.now() - started
+
+    expect(result).toBe(false)
+    expect(elapsed).toBeLessThan(200)
+  })
+
+  it('refuses a pattern with more stars than MAX_STARS_PER_PATTERN outright, rather than matching it', () => {
+    const tooManyStars = 'a*'.repeat(20) + 'b'
+    expect(isSandboxPageUrl([tooManyStars], `chrome-extension://${EXT_ID}/${'a'.repeat(50)}b`)).toBe(false)
+  })
+
+  it('only considers the first MAX_SANDBOX_PAGES entries of an oversized pages list', () => {
+    const pages = Array.from({ length: 250 }, (_, i) => `page-${String(i)}.html`)
+    pages.push('sandbox.html') // entry 250, past the 200-entry cap
+    expect(isSandboxPageUrl(pages, `chrome-extension://${EXT_ID}/sandbox.html`)).toBe(false)
+    expect(isSandboxPageUrl(pages, `chrome-extension://${EXT_ID}/page-0.html`)).toBe(true)
+  })
 })
 
 describe('ExtensionRouter.onExtensionMessage refuses a sandboxed page', () => {

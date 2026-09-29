@@ -90,34 +90,89 @@ async function waitForRegisteredExtension (
   return await promise
 }
 
-/** Escapes every regex-special character in `str`, for use inside a larger
- * pattern built from user-controlled-but-not-attacker-controlled pieces
- * (an extension's own manifest.sandbox.pages entries below). */
-function escapeRegExp (str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// Orivon patch (UPSTREAM.md patch 39): isSandboxPageUrl runs synchronously
+// on the main thread for every page load and every crx-msg -- these two
+// caps bound the work a single (however malformed) manifest can demand,
+// regardless of the linear matcher below already being immune to
+// backtracking. Chrome itself has no declared limit on either; these exist
+// only as a floor under this process's own responsiveness.
+const MAX_SANDBOX_PAGES = 200
+const MAX_STARS_PER_PATTERN = 8
+
+/**
+ * Linear-time match of one Chrome-style glob (`*` = any run of characters,
+ * everything else literal -- the only operator `sandbox.pages` grammar
+ * has) against `text`. Orivon patch (UPSTREAM.md patch 39): replaces a
+ * regex built from `pattern.split('*').map(escapeRegExp).join('.*')` --
+ * correct, but a pattern with several `*`s is a backtracking regex built
+ * from the extension's OWN manifest and run on every page load and every
+ * crx-msg, on the main thread: a pathological pattern
+ * (`'a*a*a*a*a*a*a*a*a*a*a*a*a*a*!'`) against a long, almost-matching
+ * string is the textbook catastrophic-backtracking shape. This never
+ * builds a regex at all: split on `*`, then `indexOf` each literal piece
+ * in order, anchoring the first piece to the start and the last to the
+ * end -- O(pattern length + text length) however many stars the pattern
+ * has.
+ */
+function matchesGlob (pattern: string, text: string): boolean {
+  const parts = pattern.split('*')
+  if (parts.length === 1) return pattern === text
+
+  const first = parts[0] ?? ''
+  if (!text.startsWith(first)) return false
+  const last = parts[parts.length - 1] ?? ''
+  if (!text.endsWith(last)) return false
+
+  let pos = first.length
+  const end = text.length - last.length
+  if (pos > end) return false // not even room for the two anchors, let alone anything between
+
+  for (let i = 1; i < parts.length - 1; i++) {
+    const piece = parts[i] ?? ''
+    if (piece.length === 0) continue // adjacent '**', or a '*' beside another
+    const found = text.indexOf(piece, pos)
+    if (found === -1 || found > end) return false
+    pos = found + piece.length
+  }
+  return pos <= end
 }
 
 /**
- * Orivon patch (UPSTREAM.md patch 37): true if `url`'s own path matches one
- * of `pages` (an extension's manifest `sandbox.pages`, Chrome's own glob
- * grammar: `*` matches any run of characters, everything else literal).
- * Exported through `orivon:crx-extensions-router`
+ * Orivon patch (UPSTREAM.md patch 37, normalisation added by patch 39):
+ * true if `url`'s own path matches one of `pages` (an extension's manifest
+ * `sandbox.pages`). Exported through `orivon:crx-extensions-router`
  * (electron-chrome-extensions-lib.d.ts) so extension-host.ts's own
  * preload-time query (the vendored preload decides whether to inject any
  * chrome.* at all) answers the identical question onExtensionMessage below
  * asks on every message -- one matcher, not two that could drift apart.
+ * Normalises both sides the way Chromium does before comparing a
+ * `sandbox.pages` entry against a real request: a manifest entry's own
+ * leading `/` is stripped (Chrome accepts `"/sandbox.html"` and
+ * `"sandbox.html"` as the same declaration), and the URL's pathname is
+ * percent-decoded (`%2E` and `.` name the same file) as well as having its
+ * own leading `/` stripped. A pathname that fails to decode (a malformed
+ * percent-sequence) matches nothing, rather than being compared encoded --
+ * silently accepting the wrong string here would be worse than refusing.
  */
 export function isSandboxPageUrl (pages: readonly string[] | undefined, url: string): boolean {
   if (pages === undefined || pages.length === 0) return false
-  let pathname: string
+  let rawPathname: string
   try {
-    pathname = new URL(url).pathname.replace(/^\//, '')
+    rawPathname = new URL(url).pathname
   } catch {
     return false
   }
-  return pages.some((page) => {
-    const pattern = page.split('*').map(escapeRegExp).join('.*')
-    return new RegExp(`^${pattern}$`).test(pathname)
+  let pathname: string
+  try {
+    pathname = decodeURIComponent(rawPathname).replace(/^\//, '')
+  } catch {
+    return false
+  }
+  return pages.slice(0, MAX_SANDBOX_PAGES).some((page) => {
+    const stars = page.split('*').length - 1
+    if (stars > MAX_STARS_PER_PATTERN) return false
+    const pattern = page.replace(/^\//, '')
+    return matchesGlob(pattern, pathname)
   })
 }
 
