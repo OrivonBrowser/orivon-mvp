@@ -22,12 +22,12 @@ import { isSandboxPageUrl, setEventListenerFilter, setMessageSenderIdCheck, setR
 import { setCookieHostAccessCheck } from 'orivon:crx-extensions-cookies'
 import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensions-tabs'
 import { setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
-import { setTabCaptureAppRefusalCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
+import { setTabCaptureAppRefusalCheck, setTabCaptureConsumedCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
 import { createShellWindow } from '../shell/window.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import type { SubsystemContext } from '../registry.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { mintTabCaptureGrant } from '../sessions/tab-capture-grants.js'
+import { mintTabCaptureGrant, wasTabCaptureGrantConsumed } from '../sessions/tab-capture-grants.js'
 import { appOrigin } from '../shell/devtools-app-origin.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
@@ -252,6 +252,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   setTabCaptureInvocationRecorder(recordTabCaptureInvocation)
   setTabCaptureInvocationCheck(hasRecentInvocation)
   setTabCaptureGrantRecorder((extensionId) => { mintTabCaptureGrant(extensionId, Date.now()) })
+  setTabCaptureConsumedCheck(wasTabCaptureGrantConsumed)
   // Orivon patch (UPSTREAM.md patch 37): the vendored preload's own
   // synchronous query, before it ever calls injectExtensionAPIs() --
   // isSenderDeclaredSandboxPage's own doc.

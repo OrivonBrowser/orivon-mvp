@@ -17,7 +17,7 @@ import { windowShowing } from '../shell/showing-window.js'
 import { createExternalLinks } from './external-links.js'
 import { NotificationDecisions } from './notification-decisions.js'
 import { createSiteNotifications } from './site-notifications.js'
-import { isTabCaptureMediaAllowed } from './tab-capture-grants.js'
+import { extensionIdFromChromeExtensionOrigin, isTabCaptureMediaAllowed, markTabCaptureGrantConsumed } from './tab-capture-grants.js'
 
 /**
  * Permissions this browser allows outright; `isAllowed` below adds the one
@@ -89,12 +89,37 @@ function isAllowed (permission: string, details: object | undefined): boolean {
  * "did this extension mint a still-live tabCapture grant recently" --
  * `tab-capture-grants.ts`'s own doc says why that is the right question:
  * the id itself is already Electron's own single-purpose, 10-second token.
+ *
+ * Allowing the REQUEST (never the check) is also the one real signal that a
+ * genuine `getUserMedia('tab')` call is in flight for this grant -- marked
+ * consumed on the way out, so `tab-capture.ts`'s own safety net stops
+ * treating this extension's capture as "maybe never redeemed" the moment
+ * Electron actually asks permission for it, however long the real capture
+ * goes on to run. MEASURED why the check handler must never mark this:
+ * `setPermissionCheckHandler` fires repeatedly and speculatively for a
+ * `chrome-extension://` page (camera/microphone availability probing this
+ * library's own preload, or Chromium's own media-device enumeration) with
+ * no `getUserMedia()` call behind it at all -- marking consumption there
+ * released FALSE positives in a fixture that minted a grant and never
+ * redeemed it, well before the real 10s window. `setPermissionRequestHandler`
+ * fires only for an actual, one-time media-access attempt; that is the
+ * one Chromium contract this file leans on.
  */
+function allowTabCaptureMediaRequest (origin: string | undefined): boolean {
+  const now = Date.now()
+  const allowed = isTabCaptureMediaAllowed(origin, now)
+  if (allowed) {
+    const extensionId = extensionIdFromChromeExtensionOrigin(origin)
+    if (extensionId !== undefined) markTabCaptureGrantConsumed(extensionId, now)
+  }
+  return allowed
+}
+
 function isTabCaptureMediaRequest (details: object | undefined): boolean {
   const origin = details !== undefined && 'securityOrigin' in details && typeof details.securityOrigin === 'string'
     ? details.securityOrigin
     : undefined
-  return isTabCaptureMediaAllowed(origin, Date.now())
+  return allowTabCaptureMediaRequest(origin)
 }
 
 let decisions: NotificationDecisions | undefined
@@ -145,6 +170,10 @@ function denyByDefault (target: Session): void {
   // here, and notifications answer from what the person already said.
   target.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) => {
     if (permission === 'notifications') return siteNotifications.check(requestingOrigin, details.embeddingOrigin)
+    // Never marks consumption here -- allowTabCaptureMediaRequest's own doc
+    // says why: this handler fires speculatively, with no getUserMedia()
+    // call behind it, and marking on it released a still-unredeemed grant
+    // early (measured).
     if (permission === 'media') return isTabCaptureMediaAllowed(requestingOrigin, Date.now())
     return isAllowed(permission, details)
   })

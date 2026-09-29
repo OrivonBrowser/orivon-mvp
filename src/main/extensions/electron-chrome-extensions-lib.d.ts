@@ -122,4 +122,9 @@ declare module 'orivon:crx-extensions-tab-capture' {
   /** Called once per successful getMediaStreamId, so permission-gate.ts's
    * own 'media' carve-out (tab-capture-grants.ts) knows to allow it. */
   export function setTabCaptureGrantRecorder (recorder: (extensionId: string) => void): void
+  /** True once permission-gate.ts has actually allowed a 'media' request
+   * for this extension (tab-capture-grants.ts's wasTabCaptureGrantConsumed)
+   * -- the real "did a capture actually start" signal the safety net in
+   * tab-capture.ts checks once, at the minted id's own validity window. */
+  export function setTabCaptureConsumedCheck (check: (extensionId: string) => boolean): void
 }
