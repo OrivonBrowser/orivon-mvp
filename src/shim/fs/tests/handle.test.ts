@@ -276,3 +276,88 @@ describe('the callback open/read/write/close family', () => {
     })
   })
 })
+
+// openByFd (fs.open/fs.promises.open) and openByFdSync (fs.openSync) are
+// two separate tables (this file's own `openByFdSync` doc comment says why
+// they were not unified even though the broker itself could address the
+// same handle either way) -- an fd real in one family must still fail
+// EBADF, not silently succeed or hang, when handed to the other family, and
+// the message must name which family actually holds it.
+describe('the *Sync fd family (openSync/readSync/writeSync/fstatSync/closeSync)', () => {
+  const SYNCHRONOUS = Symbol.for('orivon.synchronous')
+
+  /** Both families' `open` on the same fake orivon, so a single test can open through either one. */
+  function installBothFamilies (bytes: Uint8Array): void {
+    ;(globalThis as GlobalWithOrivon & Record<symbol, unknown>).orivon = {
+      fs: { open: async () => createFakeFileHandle(bytes).handle },
+      [SYNCHRONOUS]: {
+        fs: {
+          open: () => ({
+            read: ({ position, length }: { position: number, length: number }) => bytes.subarray(position, Math.min(position + length, bytes.length)),
+            write: ({ position, data }: { position: number, data: Uint8Array }) => { bytes.set(data, position); return data.length },
+            stat: () => ({ size: bytes.length, isFile: true, isDirectory: false, mtimeMs: 0 }),
+            truncate: () => {},
+            sync: () => {},
+            close: () => {}
+          })
+        }
+      }
+    } as unknown as Orivon
+  }
+
+  it('openSync/readSync/writeSync/fstatSync/closeSync round-trip over the synchronous twin, on their own table', async () => {
+    installBothFamilies(new Uint8Array([1, 2, 3]))
+    const fs = await import('../handle.js')
+    const fd = fs.openSync('x', 'r+')
+    expect(typeof fd).toBe('number')
+    const buffer = new Uint8Array(3)
+    expect(fs.readSync(fd, buffer, 0, 3, 0)).toBe(3)
+    expect([...buffer]).toEqual([1, 2, 3])
+    expect(fs.writeSync(fd, new Uint8Array([9]), 0, 1, 0)).toBe(1)
+    expect(fs.fstatSync(fd).size).toBe(3)
+    expect(() => fs.closeSync(fd)).not.toThrow()
+  })
+
+  it('an fd opened by fs.open fails EBADF over fs.closeSync, naming fs.open as the family that actually holds it', async () => {
+    installBothFamilies(new Uint8Array(0))
+    const fs = await import('../handle.js')
+    const fd = await new Promise<number>((resolve, reject) => {
+      fs.open('piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+    })
+    let caught: (Error & { code?: string }) | undefined
+    try { fs.closeSync(fd) } catch (error) { caught = error as Error & { code?: string } }
+    expect(caught?.code).toBe('EBADF')
+    expect(caught?.message).toMatch(/fs\.open\b/)
+  })
+
+  it('an fd opened by fs.openSync fails EBADF over the callback fs.close, naming fs.openSync as the family that actually holds it', async () => {
+    installBothFamilies(new Uint8Array(0))
+    const fs = await import('../handle.js')
+    const fd = fs.openSync('x', 'r+')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.close(fd, (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('EBADF')
+    expect(error.message).toMatch(/fs\.openSync/)
+  })
+
+  it('an fd opened by fs.openSync fails EBADF over fs.read/fs.write/fs.fstat too, naming fs.openSync', async () => {
+    installBothFamilies(new Uint8Array(1))
+    const fs = await import('../handle.js')
+    const fd = fs.openSync('x', 'r+')
+    const buffer = new Uint8Array(1)
+    const readError = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.read(fd, buffer, 0, 1, 0, (err) => resolve(err as Error & { code?: string }))
+    })
+    const writeError = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.write(fd, buffer, (err) => resolve(err as Error & { code?: string }))
+    })
+    const statError = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.fstat(fd, (err) => resolve(err as Error & { code?: string }))
+    })
+    for (const error of [readError, writeError, statError]) {
+      expect(error.code).toBe('EBADF')
+      expect(error.message).toMatch(/fs\.openSync/)
+    }
+  })
+})
