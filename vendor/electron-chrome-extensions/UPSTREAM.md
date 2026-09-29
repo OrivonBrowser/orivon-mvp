@@ -568,7 +568,7 @@
     `sandbox` directive, giving it a genuinely opaque origin -- the real fix behind patch 37's
     own opaque-origin checks.** New `src/main/extensions/extension-sandbox-csp.ts`, registered
     through `../sessions/web-request-owner.ts` (never `session.webRequest` directly). Reason
-    (`docs/decisions/resolved-questions.md` A299): patch 37 alone stops a `chrome.*` binding from being
+    (`docs/decisions/resolved-questions.md` A302): patch 37 alone stops a `chrome.*` binding from being
     injected into the sandboxed page itself, but Electron still serves it at its extension's own
     `chrome-extension://<id>` origin -- measured, this let a sandboxed iframe framed by an
     ordinary extension page reach `parent.chrome` and `parent.document` directly (same-origin,

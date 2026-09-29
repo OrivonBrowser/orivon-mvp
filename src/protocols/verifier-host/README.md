@@ -27,10 +27,21 @@ and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
 
 ## Design notes
 
-**Every request leaves through [`egress.ts`](egress.ts), over Electron's `net`**, so a configured
-proxy applies. A CCIP-Read URL, which a name's resolver contract chooses, gets the loader's install
-guard, but `net` cannot pin a request to the address that was checked: a name that re-resolves in
-between is a residual window (`open-questions.md` A66). The one path around `net` is
-[`dns-fallback.ts`](dns-fallback.ts), only for a gateway that had no proxy configured when the
-host started (ADR-0030's 2026-09-26 amendment); taking it for a proxied gateway would silently
-bypass that proxy, and the check being a snapshot is `security-model.md` T40's residual.
+**Every request leaves through [`egress.ts`](egress.ts), over Electron's `net`, except a CCIP-Read
+request when no proxy is configured, and the DNS-tamper fallback below.** A configured proxy
+applies to everything else. A CCIP-Read URL, which a name's resolver contract chooses, is checked
+the same way either way (https, port 443, every address public unicast), but only dialled through
+[`direct-fetch.ts`](direct-fetch.ts) at the address `resolveHost` already checked -- closing the
+rebind window a second, unpinned resolution would otherwise leave (`net` cannot pin a request to
+an address a check already resolved, confirmed against Electron 44's API, the same gap
+`open-questions.md`'s A66 names for a different caller) -- when `HostConfig.ccipDirect` says main
+found no proxy in front of the default session. With one configured, the request goes back through
+`net` by hostname instead: a proxy must keep doing the resolving, never be silently gone around for
+one kind of request (T20), so the residual rebind window is accepted there rather than closed by
+bypassing it. `ccipDirect` is a snapshot taken once, when the host starts
+(`main/verifier/verifier-subsystem.ts`'s `ccipDirectFor`, checked against a generic URL since a
+CCIP-Read destination is not known yet); a proxy turned on mid-run is not seen until the host
+restarts, the same shape as `security-model.md` T40's own snapshot. The one OTHER path around
+`net` is [`dns-fallback.ts`](dns-fallback.ts), only for a gateway that had no proxy configured when
+the host started (ADR-0030's 2026-09-26 amendment); taking it for a proxied gateway would silently
+bypass that proxy, and the check being a snapshot is T40's residual there too.

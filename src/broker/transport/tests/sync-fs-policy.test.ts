@@ -40,6 +40,7 @@ async function realBroker (): Promise<{ broker: Broker, userData: string }> {
     listen: notUsed,
     resolve: notUsed,
     resolveLookup: notUsed,
+    proxyConfigured: async () => false,
     now: () => Date.now(),
     fs: nodeFs(userData),
     keychain: { getSeed: notUsed },

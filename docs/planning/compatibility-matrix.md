@@ -297,7 +297,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `storage.managed_schema` | ❌ | No enterprise policy delivery in this build |
 | `declarative_net_request` (ruleset key) | ⚠️ | Read and recorded, not applied; the API it would drive is a stub (Table 7c) |
 | `content_security_policy` | ⚠️ | Chromium enforces an extension's own declared CSP; not separately measured |
-| `sandbox` (sandboxed pages) | ✅ | No `chrome.*` API reaches one, and it is served with Chrome's own CSP `sandbox` directive, giving it a genuinely opaque origin (`d-0207`) |
+| `sandbox` (sandboxed pages) | ✅ | No `chrome.*` API reaches one, and it is served with Chrome's own CSP `sandbox` directive, giving it a genuinely opaque origin (`d-0208`) |
 | `file_browser_handlers`, `file_handlers` | ➖ | ChromeOS / native file-handler surfaces with no equivalent here |
 | `default_locale`, `_locales/*/messages.json` (`__MSG_...`) | ✅ | The extensions page resolves a name/description/icon reference the same way Chrome does |
 | `oauth2` | ❌ | No `chrome.identity` (Table 7c), so this key drives nothing |

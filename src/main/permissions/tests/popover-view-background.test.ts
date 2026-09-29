@@ -50,6 +50,7 @@ function fakeWebContents (): FakeWebContents {
 // contentView's addChildView/removeChildView push onto the SAME `calls`
 // array, so a test can assert relative ORDER, not just that each happened.
 vi.mock('electron', () => ({
+  app: { isPackaged: false },
   WebContentsView: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.webContents = fakeWebContents()
     this.setBackgroundColor = vi.fn((color: string) => { calls.push(`setBackgroundColor:${color}`) })
@@ -68,7 +69,7 @@ vi.mock('electron', () => ({
   }
 }))
 
-vi.mock('../../shell/renderer-entry.js', () => ({ rendererEntryUrl: () => 'file:///popup.html' }))
+vi.mock('../../shell/renderer-entry.js', () => ({ rendererEntryUrl: () => 'file:///popup.html', validatedDevServerUrl: () => undefined }))
 vi.mock('../../shell/shell-session.js', () => ({ SHELL_PARTITION: 'persist:orivon-shell' }))
 
 const { createPopoverView } = await import('../popover-view.js')

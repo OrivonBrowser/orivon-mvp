@@ -57,8 +57,8 @@ export function createSiteInfoPanel (
     urlArgName: 'orivon-site-info-url',
     align: 'left',
     background: PANEL_POPOVER_BACKGROUND,
-    registerIpc: (webContents, onContentHeight) => {
-      registerSiteInfoIpc(webContents, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openAllSites, openExtensions, onContentHeight)
+    registerIpc: (webContents, url, onContentHeight) => {
+      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openAllSites, openExtensions, onContentHeight)
       return () => {}
     }
   })

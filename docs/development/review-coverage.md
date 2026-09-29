@@ -199,6 +199,15 @@ see in the PR itself.
 | `/code-review`, high effort, second pass over the fixes | The same diff | Nine findings, all fixed: clearing a full history taking ~40 s through per-row secure deletes (now one bulk path, ~0.3 s); the automatic trim rebuilding the index on the navigation path; a single forgotten page left in the write-ahead log; a count scanning every page; startup never marking itself started after a failed first window; a temp file name two processes could share; a close error hiding a write error; no test through the real writer; a redundant gate |
 | Gate, smoke and e2e, headless | The branch | Typecheck, unit, the 12 guards and smoke pass; e2e passes, the files on ports the unrelated local server holds run as port-swapped copies |
 
+### `stream/security-audit-fixes`: fixes for a whole-repository security review (2026-09-29)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Security review in five areas (loader, shell, transport, verifier, policy) by reviewer agents, with unit proofs of concept and runtime probes kept outside the repository | `main` at `82d2d3d` | About forty findings. Two high: a granted origin's live network document was served its grants in whatever session a link had left it in, and a picked folder holding the browser's data let a page read other apps' storage and plant grants. Eight medium, the rest low or informational. All fixed in this branch except what `A299`-`A301` hold and the aggregate cache cap `ADR-0012` decided against |
+| Conductor review of each fix branch before merge | The fix branches | Caught a CCIP fix that went around a configured proxy, a verifier budget one page could hold for every site, a magnet grammar that refused BitTorrent v2 links, a loader check that missed apps at version 0.0.0, and finding IDs in comments; all fixed |
+| `/code-review`, high effort, forked reviewer | The branch against `main` | 10 findings, all fixed: the session check, applied per call, stranded open pages after a grant or revoke and raced a reload after `app.requestGrant` (now decided when a document commits); a queued grant dialog could show after its caller timed out, and one answer was shared across tabs; the picker's protected folders were a startup snapshot and missed `/proc`, `/sys` and `/dev`; IPNS floors could roll back across a host restart and were not flushed at quit; a missing pin at version 0.0.0 read as a first visit; the data-root migration ran on every call; the proxy cache and a verifier buffer reservation had no bound |
+| Gate, smoke and e2e, headless | The branch | Typecheck, 8399 unit tests, the 12 guards and smoke pass; e2e 66 files pass and the four opt-in files skip. `e2e-freetube-real`, run by hand with the ports checkout, fails identically on `main` (the watch page's metadata fetch fails upstream) |
+
 ### `stream/ext-sessions`: granted apps in the default session, and the `window.orivon` filter (2026-09-29)
 
 | Mechanism | Scope | Outcome |

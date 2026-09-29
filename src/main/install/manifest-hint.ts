@@ -19,13 +19,15 @@
 // that file already exists for).
 
 import { ipcMain } from 'electron'
+import type { WebContents } from 'electron'
 import { MANIFEST_HINT_CHANNEL } from '../channels.js'
-import { originFromSenderFrame } from '../../broker/policy/origin.js'
+import { isAttributedSession, originFromSenderFrame } from '../../broker/policy/origin.js'
 import type { SenderFrameLike } from '../../broker/policy/origin.js'
 import type { LoadResult } from '../../loader/index.js'
 import type { GrantedWithoutInstall } from './grant-without-install.js'
 import { createTokenBucketLimiter } from '../../broker/transport/token-bucket.js'
 import type { RateLimiter } from '../../broker/transport/token-bucket.js'
+import type { DialogCaller } from '../consent/request-grant.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 
 /** The one shape this file needs from an ipcMain.on event -- structural, matching origin.ts's own SenderFrameLike so a test never needs a real Electron event. */
@@ -34,14 +36,16 @@ export interface ManifestHintEvent {
   /**
    * The tab that reported the hint, when the caller has one. Optional and
    * structural so a test drives this listener with a plain object, exactly
-   * as `senderFrame` already is.
+   * as `senderFrame` already is. `mainFrame` is `isAttributedSession`'s own
+   * comparison; `session` is read by the injected `attributed` predicate
+   * (../../broker/policy/origin.js).
    */
-  readonly sender?: { reload: () => void, isDestroyed: () => boolean }
+  readonly sender?: { reload: () => void, isDestroyed: () => boolean, mainFrame: SenderFrameLike | null, session: unknown }
 }
 
 /** The one method this module needs from electron's real `IpcMain` for this channel -- structural, matching ../broker/transport/ipc.ts's own IpcMainLike/IpcMainOnLike, so a test double never needs the real type. */
 /** The published `ctx.installApp` (registry.ts) -- the ONE install entry point, already closing over the real consent prompt. */
-export type InstallApp = (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>
+export type InstallApp = (hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>
 
 export interface IpcMainOnLike {
   on: (channel: string, listener: (event: ManifestHintEvent, hintedUrl: unknown) => void) => void
@@ -76,20 +80,37 @@ export function createManifestHintListener (
     capacity: HINT_RATE_LIMIT_CAPACITY,
     refillPerSecond: HINT_RATE_LIMIT_REFILL_PER_SECOND,
     now: () => Date.now()
-  })
+  }),
+  attributed?: (sender: unknown, origin: string) => boolean,
+  windowForSender?: (sender: unknown) => unknown
 ): (event: ManifestHintEvent, hintedUrl: unknown) => void {
   return (event, hintedUrl) => {
     if (typeof hintedUrl !== 'string') return
     const origin = originFromSenderFrame(event.senderFrame)
     if (origin === null) return
+    // Same check, same reason, as ../../broker/transport/ipc.ts's own
+    // CONTROL_CHANNEL handler -- see isAttributedSession's doc
+    // (../../broker/policy/origin.js).
+    if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) return
     if (!limiter.tryConsume(origin)) return
+
+    // Built fresh, never cached: `installApp`'s own consent dialog can be
+    // answered well after this line runs (A153), and both closures below
+    // re-read `event.sender`'s LIVE state at whatever moment the dialog
+    // actually checks them, not the state captured here. A tab already gone
+    // by this point (`event.sender` undefined, or already destroyed) never
+    // resolves a window and never reads as still on `origin`.
+    const caller: DialogCaller = {
+      window: () => event.sender === undefined ? undefined : windowForSender?.(event.sender),
+      stillOn: (checkedOrigin) => event.sender !== undefined && !event.sender.isDestroyed() && originFromSenderFrame(event.sender.mainFrame) === checkedOrigin
+    }
 
     // installFromHint documents itself as never rejecting outside its own
     // exhaustiveness guard (app-install.ts's own header) -- caught anyway,
     // matching src/main/tabs.ts's captureFavicon: an ipcMain.on listener
     // that throws becomes an unhandled rejection nothing in this process
     // catches, and this channel is reachable from any ordinary tab.
-    installApp(origin, hintedUrl)
+    installApp(origin, hintedUrl, caller)
       .then((result) => {
         // Driving needs-reconsent/needs-capability-prompt/needs-rollback-
         // choice/rejected toward a user-visible outcome is a later lane's
@@ -127,8 +148,13 @@ export function createManifestHintListener (
 }
 
 /** Thin wiring: one `ipcMain.on` registration over createManifestHintListener. */
-export function registerManifestHintIpc (ipc: IpcMainOnLike, installApp: InstallApp): void {
-  ipc.on(MANIFEST_HINT_CHANNEL, createManifestHintListener(installApp))
+export function registerManifestHintIpc (
+  ipc: IpcMainOnLike,
+  installApp: InstallApp,
+  attributed?: (sender: unknown, origin: string) => boolean,
+  windowForSender?: (sender: unknown) => unknown
+): void {
+  ipc.on(MANIFEST_HINT_CHANNEL, createManifestHintListener(installApp, undefined, attributed, windowForSender))
 }
 
 /**
@@ -151,6 +177,10 @@ export const manifestHintSubsystem: Subsystem = {
       console.warn('[orivon] ctx.installApp is undefined; the manifest-hint discovery trigger is disabled this run')
       return
     }
-    registerManifestHintIpc(ipcMain, ctx.installApp)
+    // A lazy read of ctx.windowForSender, same reason as ../../broker/
+    // transport/ipc.ts's own brokerIpcSubsystem wiring: it is published in
+    // main/index.ts once the shell exists, well after this subsystem's
+    // afterReady runs.
+    registerManifestHintIpc(ipcMain, ctx.installApp, ctx.senderAttributed, (sender) => ctx.windowForSender?.(sender as WebContents))
   }
 }

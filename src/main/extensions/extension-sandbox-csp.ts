@@ -1,6 +1,6 @@
 // Gives a manifest sandbox.pages document the same CSP `sandbox` directive
 // real Chrome gives it, so it gets an opaque ("null") origin -- measured
-// directly (docs/decisions/resolved-questions.md A299): Electron serves such a page at
+// directly (docs/decisions/resolved-questions.md A302): Electron serves such a page at
 // its extension's own `chrome-extension://<id>` origin, unlike Chrome,
 // which is what lets it reach the extension's storage, or a framing
 // extension page's DOM and that page's chrome.* (patch 37 alone only stops

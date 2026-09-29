@@ -2,6 +2,7 @@
 // for it while it is down, and restarts it with backoff after it exits.
 
 import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientState } from '../../protocols/verifier-host/protocol.js'
+import { isFromHost, isHostReplyValue } from './host-messages.js'
 
 /** The slice of Electron's UtilityProcess this file uses. */
 export interface HostProcess {
@@ -35,6 +36,7 @@ const MAX_BACKOFF_MS = 60_000
 const STABLE_AFTER_MS = 60_000
 
 interface Pending {
+  kind: HostRequest['kind']
   resolve: (value: unknown) => void
   reject: (error: Error) => void
 }
@@ -67,7 +69,13 @@ export class HostSupervisor {
     const child = this.deps.fork()
     this.child = child
     this.startedAt = this.now()
-    child.on('message', (message) => { this.receive(message as FromHost) })
+    child.on('message', (message) => {
+      // The host runs every untrusted parser this app has; a message it
+      // posts is checked structurally, never merely cast, before anything
+      // here acts on it.
+      if (!isFromHost(message)) { console.error('[verifier] dropped a malformed message from the host:', message); return }
+      this.receive(message)
+    })
     child.on('exit', (code) => { this.exited(child, `the verifier host exited with code ${String(code)}`) })
 
     const result = this.deps.config()
@@ -109,7 +117,7 @@ export class HostSupervisor {
     if (child === undefined) throw new Error('the verifier host is not running')
     const id = this.nextId++
     return await new Promise<HostReplies[K]>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject })
+      this.pending.set(id, { kind: request.kind, resolve: resolve as (value: unknown) => void, reject })
       this.setTimer(() => {
         if (this.pending.delete(id)) reject(new Error(`the verifier host did not answer ${request.kind} within ${String(timeoutMs)} ms`))
       }, timeoutMs)
@@ -134,8 +142,16 @@ export class HostSupervisor {
         const pending = this.pending.get(message.id)
         if (pending === undefined) return
         this.pending.delete(message.id)
-        if (message.ok) pending.resolve(message.value)
-        else pending.reject(new Error(message.message))
+        if (!message.ok) { pending.reject(new Error(message.message)); break }
+        // The id alone says which request this answers; only its own kind's
+        // shape is accepted, so a reply cannot hand a `provenance` waiter
+        // something only `mount` or `status` could truthfully answer.
+        if (!isHostReplyValue(pending.kind, message.value)) {
+          console.error(`[verifier] dropped a malformed ${pending.kind} reply from the host`)
+          pending.reject(new Error(`the verifier host answered ${pending.kind} with something that is not one`))
+          break
+        }
+        pending.resolve(message.value)
       }
     }
   }

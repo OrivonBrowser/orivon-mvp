@@ -13,9 +13,9 @@
 // `transparent: true` window, which the shell's is not, by design. A
 // separate view sized to the popup needs none of that.
 
-import { WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
+import { app, WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
 import { join } from 'node:path'
-import { rendererEntryUrl } from '../shell/renderer-entry.js'
+import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
 import { SHELL_PARTITION } from '../shell/shell-session.js'
 import { onThemeUpdated, resolveThemeColor } from '../shell/theme-colors.js'
@@ -74,13 +74,16 @@ export interface PopoverSpec {
   /**
    * Registers whatever `PERMISSIONS_COMMAND_CHANNEL`-shaped IPC this popup
    * owns for its `webContents`, wired to resize via `onContentHeight`.
-   * Returns the teardown `close()` runs when the popup is actually
-   * destroyed -- typically `ipcMain.removeHandler`. Called once per fresh
-   * `WebContentsView` (once ever for a `warm` popup, once per open
-   * otherwise), matching the channel's own lifecycle (`ipcMain.handle`
+   * `url` is the exact address this popup was loaded at (`lockNavigation`
+   * already refuses any other), so the registered handler can check it the
+   * same way `../ipc/ipc.ts`'s own `isFromChrome` checks the chrome view's
+   * URL alongside its identity. Returns the teardown `close()` runs when the
+   * popup is actually destroyed -- typically `ipcMain.removeHandler`. Called
+   * once per fresh `WebContentsView` (once ever for a `warm` popup, once per
+   * open otherwise), matching the channel's own lifecycle (`ipcMain.handle`
    * throws if registered twice).
    */
-  readonly registerIpc: (webContents: WebContents, onContentHeight: (height: number) => void) => () => void
+  readonly registerIpc: (webContents: WebContents, url: string, onContentHeight: (height: number) => void) => () => void
   /** The largest this popup may grow to before its own content scrolls,
    * independent of `room` below (which still applies on top of this): a
    * fixed cap for a popup whose list can run long (permissions, site-info),
@@ -177,7 +180,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
    * the command channel, and the blur-closes-it behaviour. Shared by a fresh
    * (non-`warm`) open and a `warm` popup's own one-time construction. */
   function construct (extraArgs: readonly string[]): WebContentsView {
-    const url = rendererEntryUrl(spec.dirname, process.env['ELECTRON_RENDERER_URL'], spec.entryPath, spec.fallbackHtml)
+    const url = rendererEntryUrl(spec.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), spec.entryPath, spec.fallbackHtml)
 
     const popup = new WebContentsView({
       webPreferences: {
@@ -205,7 +208,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     lockNavigation(popup.webContents, url)
     popup.setBorderRadius(CORNER_RADIUS)
 
-    removeIpc = spec.registerIpc(popup.webContents, (contentHeight) => {
+    removeIpc = spec.registerIpc(popup.webContents, url, (contentHeight) => {
       // Guarded on `shown === popup`: a height reported by a popup that is
       // hidden (or, for a non-warm popup, already destroyed) must not resize
       // whatever replaced it. `currentAnchor` is null exactly when `shown` is,

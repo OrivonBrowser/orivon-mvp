@@ -52,8 +52,10 @@ re-hint that would widen a held grant is refused.
 
 **[`granted-origin-csp.ts`](granted-origin-csp.ts): such an origin gets the installed CSP**
 (`d-0050`), because a port that works on its own server and breaks once installed was never
-tested against what it ships into. It is appended to the server's own policy, on documents only,
-so a worker from that server carries none and is more permissive than an installed one. A
+tested against what it ships into. It is appended to the server's own policy, on documents and
+on a worker's own script (a `script` response, provisionally, as the filter's own doc says); the
+isolation headers stay on documents, since COOP/COEP on the wrong response can break a working
+page. A
 hot-reload WebSocket on the page's own host and port passes `connect-src 'self'` (measured in
 Electron 44); one on another port is refused (A241).
 

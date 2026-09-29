@@ -5,7 +5,8 @@ active tab's `WebContentsView` below, or the two panes of a split. A process hol
 windows: `shell-services.ts` is what they share, and `window-registry.ts` is how a page's IPC finds the
 window holding it. `window-frame.ts` is the native window itself and `window-options.ts` says how a new one
 opens. `tabs.ts` owns the tab collection, with `tab-view.ts`, `tab-types.ts`, `tab-factory.ts` and
-`tab-parking.ts` as its parts. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
+`tab-parking.ts` as its parts, and `tab-origin-liveness.ts` as `tab-view.ts`'s own per-origin
+live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
 menu, and `window-actions.ts` is what the chrome's buttons and menus ask of their window. `drag-mode.ts`
@@ -120,6 +121,15 @@ closes the view, because closing announces its own end at once and that call mus
 page's `sessionStorage` lives in its view, not its partition (measured in Electron 44), so a
 fresh view would break an OIDC login that keeps its state there while the provider has the tab.
 Only app partitions are parked; the open-web side of a swap still loses its history.
+
+**[`tab-origin-liveness.ts`](tab-origin-liveness.ts): how many live tabs sit at each origin is
+tracked module-wide, not per `TabManager`.** Two windows' tabs on the same origin share one broker
+origin table (`../../broker/broker-contracts.ts`'s `dropOrigin`), so a per-window count would let
+one window's tab close tear down handles a tab in another window still holds. `tab-view.ts`'s
+`wireView()` calls into it from the `did-navigate` and `'destroyed'` handlers, where a document's
+count moves; both run unconditionally, ahead of the handlers' own `shown()` gate, because a
+parked or background view's navigation changes this count
+exactly as a visible one's does.
 
 **[`tabs.ts`](tabs.ts): `TabManager`'s `ctx`.** `ctx.broker` decides the `fetch()`-routing flag
 at every `makeTabView` call (`ADR-0017`) and may be `undefined`, in which case the flag is never

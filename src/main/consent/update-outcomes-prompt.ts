@@ -5,10 +5,16 @@
 // ./grant-prompt-render.ts composes, never composes them itself.
 
 import { dialog } from 'electron'
-import type { MessageBoxOptions } from 'electron'
+import type { BaseWindow, MessageBoxOptions } from 'electron'
 import { describeCapabilityPrompt, describeReconsent, describeRollbackChoice } from './grant-prompt-render.js'
 import type { CapabilityPromptPrompt, ReconsentPrompt, RollbackChoicePrompt } from './update-outcomes.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
+import type { DialogCaller } from './request-grant.js'
+
+/** The window to parent a dialog to, given a `DialogCaller`, or undefined for neither -- see install-consent-prompt.ts's own copy of this cast for why it exists at all. */
+function parentWindowOf (caller?: DialogCaller): BaseWindow | undefined {
+  return caller?.window() as BaseWindow | undefined
+}
 
 /** `defaultId`/`cancelId` both point at "keep the current version" -- an
  * update is never the safer default to fall into on a dismissed or
@@ -19,7 +25,9 @@ const KEEP_CURRENT_BUTTON_INDEX = 1
 
 /** Builds the real ReconsentPrompt ./app-install-subsystem.ts wires in. */
 export function createReconsentPrompt (): ReconsentPrompt {
-  return async (origin, manifest) => {
+  return async (origin, manifest, caller) => {
+    if (caller !== undefined && !caller.stillOn(origin)) return false
+
     const content = describeReconsent(origin, manifest)
     const options: MessageBoxOptions = {
       type: 'question',
@@ -30,7 +38,8 @@ export function createReconsentPrompt (): ReconsentPrompt {
       message: content.message,
       detail: content.detail
     }
-    const { response } = await dialog.showMessageBox(options)
+    const parent = parentWindowOf(caller)
+    const { response } = parent === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options)
     return response === 0
   }
 }
@@ -41,7 +50,9 @@ export function createReconsentPrompt (): ReconsentPrompt {
  * still applies to it -- silencing the warning here is exactly what an L4
  * site earns, not an exception carved out of it. */
 export function createCapabilityPrompt (levelOverrideFor: (origin: string) => ScoreLevel | undefined = () => undefined): CapabilityPromptPrompt {
-  return async (origin, manifest, requestedPatterns) => {
+  return async (origin, manifest, requestedPatterns, caller) => {
+    if (caller !== undefined && !caller.stillOn(origin)) return false
+
     const content = describeCapabilityPrompt(origin, manifest, requestedPatterns, levelOverrideFor(origin))
     const options: MessageBoxOptions = {
       type: content.warning ? 'warning' : 'question',
@@ -52,14 +63,17 @@ export function createCapabilityPrompt (levelOverrideFor: (origin: string) => Sc
       message: content.message,
       detail: content.detail
     }
-    const { response } = await dialog.showMessageBox(options)
+    const parent = parentWindowOf(caller)
+    const { response } = parent === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options)
     return response === 0
   }
 }
 
 /** Builds the real RollbackChoicePrompt ./app-install-subsystem.ts wires in. */
 export function createRollbackChoicePrompt (): RollbackChoicePrompt {
-  return async (origin, manifest, versionFloor) => {
+  return async (origin, manifest, versionFloor, caller) => {
+    if (caller !== undefined && !caller.stillOn(origin)) return false
+
     const content = describeRollbackChoice(origin, manifest, versionFloor)
     const options: MessageBoxOptions = {
       type: 'warning',
@@ -70,7 +84,8 @@ export function createRollbackChoicePrompt (): RollbackChoicePrompt {
       message: content.message,
       detail: content.detail
     }
-    const { response } = await dialog.showMessageBox(options)
+    const parent = parentWindowOf(caller)
+    const { response } = parent === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options)
     return response === 0
   }
 }

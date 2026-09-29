@@ -9,7 +9,7 @@ import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdp
 import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
-import type { BrokerFs, BrokerFsMethods } from './fs-contracts.js'
+import type { BrokerFs, BrokerFsMethods, PickPath } from './fs-contracts.js'
 import type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 import type { BrokerEmbedMethods } from './embed-contracts.js'
 import type { BrokerSecretsMethods, Keychain } from './secrets-contracts.js'
@@ -29,50 +29,15 @@ import type {
   TcpSocket
 } from '../contracts/index.js'
 
-// RawFileStat, OpenedFile and BrokerFs itself live in ./fs-contracts.js now
-// (split out once `open`'s types pushed this file past Rule 2's 500 lines)
-// -- re-exported so no existing `from '../broker-contracts.js'` import site
-// needs to change.
-export type { BrokerFs, BrokerFsMethods, OpenedFile, RawFileStat } from './fs-contracts.js'
+// RawFileStat, OpenedFile, BrokerFs itself and the picker's PickPath live in
+// ./fs-contracts.js (split out once `open`'s types pushed this file past
+// Rule 2's 500 lines) -- re-exported so no existing
+// `from '../broker-contracts.js'` import site needs to change.
+export type { BrokerFs, BrokerFsMethods, OpenedFile, PickPath, PickPathResult, RawFileStat } from './fs-contracts.js'
 export type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 export type { BrokerEmbedMethods } from './embed-contracts.js'
 export type { BrokerSecretsMethods, Keychain } from './secrets-contracts.js'
 export type { PickedPath } from './grants/picked-path-ledger.js'
-
-/**
- * Opens the real OS picker -- `orivon.fs.userSelected`'s own dependency,
- * the `Dial`/`Bind`/`Listen` pattern applied to a native dialog instead of a
- * socket. `directory: true` asks for the folder-picker chrome; `multiple`
- * is meaningless (and MUST be ignored) when `directory` is true, mirroring
- * `capability-api.ts`'s own `userSelected` overload split -- there is no
- * signal to pass it through as, so the injected implementation decides at
- * this boundary, not one layer up.
- *
- * NO `signal` PARAMETER, unlike `Dial`/`Bind`/`Listen` -- there is no grant
- * in flight for this to race (capability-api.ts: the picker choice IS the
- * authorisation, minted fresh the moment it resolves), so nothing can
- * revoke an acquisition that has not happened yet.
- *
- * `appName` is the requesting origin's own declared `manifest.name`
- * (`GrantLedger.manifestFor`, read by `capabilities/user-selected.ts` before
- * calling this), `undefined` only if no manifest was ever registered for
- * the origin. An implementation may use it to name the app in the dialog's
- * own chrome (d-0032) -- `transport/ipc.ts`'s `describePickerDialog` is the
- * real one that does.
- */
-export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: string | undefined }) => Promise<PickPathResult>
-
-/**
- * `canceled: true` for a dismissed dialog -- capability-api.ts is explicit
- * that declining a picker is never a rejected promise, so this is a plain
- * value the caller branches on, not an error `PickPath` throws. `paths` are
- * real host OS paths, exactly what a native `dialog.showOpenDialog` hands
- * back; `userSelected` in ./capabilities/user-selected.ts is what turns them
- * into confined, revocable handles.
- */
-export type PickPathResult =
-  | { readonly canceled: true }
-  | { readonly canceled: false, readonly paths: readonly string[] }
 
 /**
  * What `orivon.net.connect` needs from a live TCP connection, minus the
@@ -201,12 +166,20 @@ export interface ListenedServer {
  */
 export type Listen = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<ListenedServer>
 
+/**
+ * T20: true when a proxy applies to `url`, so a net capability must refuse
+ * rather than go around it with Node's own sockets. Never rejects: an
+ * implementation that cannot tell answers true (./transport/proxy-probe.ts).
+ */
+export type ProxyProbe = (url: string) => Promise<boolean>
+
 export interface CreateBrokerOptions {
   readonly dial: Dial
   readonly dialSecure: DialSecure
   readonly bind: Bind
   readonly listen: Listen
   readonly resolve: Resolver
+  readonly proxyConfigured: ProxyProbe
   /** `orivon.net.lookup`'s real DNS call (d-0030) -- ../adapters/node-adapters.ts's `resolveLookup`. */
   readonly resolveLookup: (hostname: string) => Promise<readonly LookupAddress[]>
   /** Clock, read once per grant -- `Grant.grantedAt`. Injected so a test can freeze it. */
@@ -224,6 +197,11 @@ export interface CreateBrokerOptions {
    */
   readonly ledgerStorage?: LedgerStorage
   readonly webContextHost?: WebContextHost
+  /** The picker guard's real inputs beyond `fs.dataRoot()`: every other profile directory, and where private sessions live and how to recognise one by name. Both called fresh per pick, not once at broker creation, so one created after startup is covered like an existing one (./transport/picker-guard-wiring.ts). */
+  readonly additionalProtectedRoots?: () => readonly string[]
+  readonly privateSessionGuard?: () => { readonly tempDir: string, readonly isPrivateDirName: (name: string) => boolean }
+  /** Tells the person why their pick was refused, injected like `webContextHost` so the picker guard never imports `electron` itself. Omitted, the refusal stays silent to the person; the app-facing outcome (a plain cancellation, never a distinguishable error) is identical either way. */
+  readonly notifyPickRefused?: (info: { readonly origin: string, readonly appName: string | undefined, readonly reason: string }) => void
 }
 
 /**
@@ -486,4 +464,10 @@ export interface Broker {
    * pushing its own event. Returns the unsubscribe.
    */
   onGrantsChanged(listener: (origin: string) => void): () => void
+  /**
+   * Session teardown, not revocation (handle-contracts.md): closes every
+   * live handle of `origin` gracefully, `fs.userSelected` ones included.
+   * Idempotent; an origin with no handles is the common case.
+   */
+  dropOrigin(origin: string): Promise<void>
 }

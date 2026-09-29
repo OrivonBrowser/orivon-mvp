@@ -5,7 +5,7 @@
 import type { Pattern } from '../../contracts/index.js'
 import { ANY_SITE } from '../../broker/policy/embed-origin.js'
 import type { CapabilityGrantSummary } from './grant-prompt-connect.js'
-import { WARNING_MARK } from './grant-prompt-connect.js'
+import { joinCapped, WARNING_MARK } from './grant-prompt-connect.js'
 
 /**
  * ADR-0039's `web.embed`. At the warning level, whatever the origins: the
@@ -28,9 +28,11 @@ export function describeEmbedGrant (patterns: readonly Pattern[]): CapabilityGra
       return origin
     }
   })
+  // Decision 10: capped, "and N more" -- a manifest can declare up to
+  // MAX_PATTERNS (256) embed origins, all joined onto this one line.
   return {
     warning: true,
-    message: `${WARNING_MARK}Show pages from ${hosts.join(', ')} inside itself, and read and change what they show`,
+    message: `${WARNING_MARK}Show pages from ${joinCapped(hosts)} inside itself, and read and change what they show`,
     explanation
   }
 }

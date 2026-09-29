@@ -14,7 +14,7 @@ import { notificationDecisions } from '../sessions/permission-gate.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
 import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { localDdocFor } from '../dev/local-ddoc.js'
-import { rendererEntryUrl } from './renderer-entry.js'
+import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import { lockNavigation } from './lock-navigation.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabManager, type Bounds } from './tabs.js'
@@ -56,7 +56,7 @@ const CHROME_HEIGHT = CHROME_TOP_ROWS + BOOKMARKS_BAR_HEIGHT
 
 /** The new-tab page's own URL: the dev server's nested path, or the built file. */
 export function resolveDashboardUrl (): string {
-  return rendererEntryUrl(import.meta.dirname, process.env['ELECTRON_RENDERER_URL'], '/newtab/', '../renderer/newtab/index.html')
+  return rendererEntryUrl(import.meta.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/newtab/', '../renderer/newtab/index.html')
 }
 
 /** One shell window. `services` are what every window of this process shares;
@@ -67,7 +67,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate)
   const { win } = frame
 
-  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
+  const devServerUrl = validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL'])
   // The chrome's own resolved URL -- computed before construction so both
   // the preload's expected-URL argument and the load target name the exact
   // same string, the pattern `--orivon-newtab-url` already establishes

@@ -12,7 +12,12 @@ each site's notification answer; `tab-prompts.ts` is what each tab remembers bet
 through `CreateBrokerOptions.webContextHost`. `web-request-owner.ts` is the one place anything
 registers Electron's own `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived` on a session
 it covers, composing every registered handler through `web-request-compose.ts`'s pure ordering
-logic; see this file's Design notes below.
+logic; see this file's Design notes below. `session-attribution.ts` publishes
+`ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
+claims, decided at that document's own commit and reused afterward rather than re-decided live,
+reusing [`../shell/tab-view.ts`](../shell/tab-view.ts)'s own `partitionForTarget` rule so every
+renderer-reachable broker channel can refuse a call whose WebContents never committed the origin
+it claims in the session it belongs in.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
@@ -20,22 +25,23 @@ logic; see this file's Design notes below.
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the two
 questions, `external-link-prompt.ts` and `notification-prompt.ts`; `showing-window.ts`;
-`exclusive-access-notice.ts`; `lock-navigation.ts`), the top-level `registry.ts`. Only
-`permission-gate.ts`, `web-context-host.ts` and `web-request-owner.ts` import `electron`: the
-decision files, `web-request-compose.ts` included, are unit-tested under plain vitest.
+`exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), the
+top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`
+and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
+included, are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in
 [`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) instead: that file stays
 Electron-free by its own rule, which is why this directory exists. The partition, the view
 construction and the network confinement have to live somewhere Electron-shaped, and this is it.
 
-**Durable or tied to Electron.** `permission-gate.ts`, `web-context-host.ts` and
-`web-request-owner.ts` are tied to Electron's `Session`; the decision files
-(`web-request-compose.ts` included), the notification store and `tab-capture-grants.ts` are plain
-Node and would survive an engine change.
+**Durable or tied to Electron.** `permission-gate.ts`, `web-context-host.ts`,
+`web-request-owner.ts` and `session-attribution.ts` are tied to Electron's `Session`; the decision
+files (`web-request-compose.ts` included), the notification store and `tab-capture-grants.ts` are
+plain Node and would survive an engine change.
 
-**Owner stream.** `shell` (`permission-gate.ts`); `ADR-0019` (`web-context-host.ts`).
-Maintenance only.
+**Owner stream.** `shell` (`permission-gate.ts`, `session-attribution.ts`); `ADR-0019`
+(`web-context-host.ts`). Maintenance only.
 
 ## Design notes
 
@@ -102,6 +108,22 @@ runs only on a private session bus
 are the only thing keeping every name above away from a document running another site's script;
 they look like duplication and are not. The grant ledger is untouched by the gate: it governs
 `orivon.*` capabilities, not Chromium's own.
+
+**[`session-attribution.ts`](session-attribution.ts) decides attribution at a document's own
+commit, never by re-checking a live document against the CURRENT state.** A live re-check
+sounds simpler, but it strands every already-open, already-attributed document of an origin the
+instant that origin's session changes: an origin whose pinned copy goes away moves from its own
+partition back to the default session, and a tab still showing it would be denied even
+`app.requestGrant`, because its `WebContents` never moves on its own. A grant or a revoke does
+not move an origin at all: a granted network-served origin runs in the default session
+(`ADR-0044`), exactly where an ungranted one runs. Recording what a document's session
+was found to be at its own last main-frame `did-navigate`, and trusting that record afterward,
+lets an already-attributed document keep calling successfully until it next navigates -- the same
+navigation that already triggers `../shell/tab-view.ts`'s own partition swap for any other
+cross-origin move. A cache-served (pinned) origin is the one exception, checked live and strictly
+regardless of any record, because its bundle is only ever intercepted inside its own partition
+(`ADR-0007`): a document attributed to it must run there at every call, not merely at whatever
+moment it committed.
 
 **[`web-context-host.ts`](web-context-host.ts): two WebRTC belts, and why the discard-port
 proxy does not break the context's own `fetch()`.** `protocol.handle` and

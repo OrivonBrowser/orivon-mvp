@@ -174,7 +174,7 @@ it('Phase 2: a real fs grant, issued through the dev-only path, lets a real page
     try {
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
-        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        const beforeGrant = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
         // THE GRANT, through the production dev-only route (queue item 0.3),
         // exercised inside THIS launched app's own main process via
@@ -196,6 +196,13 @@ it('Phase 2: a real fs grant, issued through the dev-only path, lets a real page
         )
         if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         check('the grant returned names the fs capability', grantOutcome.grant.capability === 'fs', JSON.stringify(grantOutcome.grant))
+
+        // The dev-only hook lands on the broker directly, and a grant moves no
+        // document: a granted network-served origin runs in the default session
+        // (ADR-0044), where this document already committed FIXTURE_ORIGIN,
+        // attributed (src/main/sessions/session-attribution.ts), so the calls
+        // below run from this same document.
+        const view = beforeGrant
 
         // (a) WRITE THEN READ SYNCHRONOUSLY. writeFile is the already-proven
         // async path (e2e-capability-boundary.test.ts's own Phase 2

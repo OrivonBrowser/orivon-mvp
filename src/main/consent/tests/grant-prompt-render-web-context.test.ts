@@ -47,6 +47,19 @@ describe('describeCapabilityGrant -- web.context (ADR-0019)', () => {
     expect(row.message).not.toMatch(/other/i)
   })
 
+  // A manifest can declare up to MAX_PATTERNS (256) web.context origins --
+  // decision 10's "row lists capped" applies here, on top of never folding
+  // into a count: the first MAX_LISTED_ROWS origins keep their own line, the
+  // rest fold into one final "and N more" line.
+  it('caps the number of origin lines, folding the rest into one final line, for a manifest naming far more than fit', () => {
+    const origins = Array.from({ length: 256 }, (_, i) => `https://site-${String(i)}.example`)
+    const row = describeCapabilityGrant('web.context', origins)
+    const lines = row.message.split('\n')
+    expect(lines.length).toBeLessThan(30)
+    expect(lines[0]).toContain('site-0.example')
+    expect(lines.at(-1)).toMatch(/236 more sites/)
+  })
+
   it('describeGrantRequest -- the one-capability prompt renders web.context the same way, through the same function', () => {
     const manifest = manifestWith({ web: { contexts: ['https://www.youtube.com'] } })
     const content = describeGrantRequest(ORIGIN, manifest, 'web.context', ['https://www.youtube.com'])

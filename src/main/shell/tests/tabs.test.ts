@@ -146,7 +146,11 @@ function ctxWithRegisteredOrigins (...origins: string[]): SubsystemContext {
   const registered = new Set(origins)
   for (const origin of origins) served.add(origin)
   return {
-    broker: { app: { isRegisteredSync: (origin: string) => registered.has(origin) } }
+    // dropOrigin fires on every navigation and close (tab-view.ts's own
+    // origin-liveness tracking), whether or not a test cares -- a no-op
+    // default keeps that side effect harmless here; a test asserting on it
+    // supplies its own broker instead.
+    broker: { app: { isRegisteredSync: (origin: string) => registered.has(origin) }, dropOrigin: async () => {} }
   } as unknown as SubsystemContext
 }
 
@@ -657,7 +661,7 @@ describe('TabManager -- a tab coming back to an app it left gets the app\'s own 
     served.add(APP)
     const registered = new Set<string>()
     const ctx = {
-      broker: { app: { isRegisteredSync: (o: string) => registered.has(o) } }
+      broker: { app: { isRegisteredSync: (o: string) => registered.has(o) }, dropOrigin: async () => {} }
     } as unknown as SubsystemContext
     const { manager, app, provider } = leftForProvider(ctx)
     registered.add(APP)

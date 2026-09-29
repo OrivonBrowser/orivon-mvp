@@ -43,13 +43,12 @@ directories:
 files:
   - out/**/*
   - package.json
-# Nothing from node_modules is listed. package.json declares zero runtime
-# "dependencies" (only devDependencies, needed to build, not to run) -- webtorrent and
-# every app-side library are shipped as pre-built app assets fetched into `userData` at
-# runtime, never a shell dependency (build-plan.md "Platform policy" #1, ADR-0005). So
-# there is nothing under node_modules/ this packaged app needs at runtime, and omitting
-# it entirely is a second, independent guarantee against shipping the wrong thing --
-# not just the intended thing, but only the intended thing.
+# This list replaces electron-builder's default glob for SOURCE files only. The
+# production tree of package.json's "dependencies" (the ENS resolver's, the IPFS/IPNS
+# reader's and the renderer shims' packages) is still copied into app.asar's own
+# node_modules/: electron-vite bundles some of them into out/ and leaves the rest to be
+# required from there at run time. webtorrent and every app-side library are not shell
+# dependencies: they are app assets fetched into `userData` (ADR-0005).
 
 asar: true
 # On by default in electron-builder; stated explicitly because it is a deliberate
@@ -94,6 +93,27 @@ publish: null
 # channel keyed to a GitHub token. v0 checks and notifies instead (a separate,
 # already-scoped build step) -- this key exists so that decision cannot be silently
 # undone by a future contributor passing `--publish` without reading either doc.
+
+# --- Electron fuses ------------------------------------------------------------------
+# Toggles written into the packaged Electron binary after packing and before signing
+# (app-builder-lib calls @electron/fuses; field names are its FuseV1Options). A fuse not
+# listed keeps Electron's default.
+electronFuses:
+  # ELECTRON_RUN_AS_NODE, NODE_OPTIONS and --inspect would let a same-user process run
+  # the browser binary as plain Node or attach a debugger to it. Nothing relies on them:
+  # the verifier host starts through utilityProcess.fork, which this fuse does not
+  # affect, and src/main/launch/peer-spawn.ts strips ELECTRON_RUN_AS_NODE itself.
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  # The cookie database is encrypted with the OS keyring, as in Chrome.
+  enableCookieEncryption: true
+  # App code loads only from app.asar, and the asar's header hash is checked first.
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
+  # grantFileProtocolExtraPrivileges keeps Electron's default (on): every renderer entry
+  # is a file:// page in a packaged build, and turning it off stops file:// fetch and
+  # service workers, which is untested here.
 
 # --- Cross-platform URL-scheme registration -----------------------------------------
 # `schemes: [http, https]`, not a custom `orivon://` scheme -- Orivon is applying to be

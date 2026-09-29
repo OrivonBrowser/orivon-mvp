@@ -35,7 +35,8 @@ describe('dispatchFs/dispatchApp/dispatchId fail closed on an unrouted method, i
   it('dispatchApp throws internal rather than resolving undefined -- fails against the unfixed code (no default case), which resolves undefined', async () => {
     const broker = stubBroker([])
 
-    await expect(dispatchApp(broker, APP, UNROUTED as unknown as AppControlMethod, {}, undefined))
+    const caller = { window: () => undefined, stillOn: () => true }
+    await expect(dispatchApp(broker, APP, UNROUTED as unknown as AppControlMethod, {}, undefined, caller))
       .rejects.toMatchObject({ code: 'internal' })
   })
 

@@ -15,8 +15,8 @@
 // why. Only `brokerIpcSubsystem`, which nothing in ipc.test.ts calls,
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
-import { dialog, ipcMain, MessageChannelMain } from 'electron'
-import type { MessagePortMain } from 'electron'
+import { ipcMain, MessageChannelMain, session as electronSession } from 'electron'
+import type { MessagePortMain, WebContents } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
@@ -26,6 +26,7 @@ import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapt
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
+import { cachingProxyProbe } from './proxy-probe.js'
 import { createWebContextHost } from '../../main/sessions/web-context-host.js'
 import { createElectronKeychain } from '../../main/keyring/electron-keychain.js'
 import { SESSION_ONLY_STORAGE } from '../../main/keyring/seed-store.js'
@@ -33,10 +34,12 @@ import { createPortRegistry } from './relay/port-registry.js'
 import type { RateLimiter } from './token-bucket.js'
 import { admitControlCall, createControlLimiter } from './control-limiter.js'
 import type { ControlLimiter } from './control-limiter.js'
+import { additionalProtectedRoots, notifyPickRefused, privateSessionGuard } from './picker-guard-wiring.js'
+import { createPickPath } from './picker-dialog.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
 import { handleSyncFsReadRequest } from './sync-fs.js'
 import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
-import { originFromSenderFrame } from '../policy/origin.js'
+import { isAttributedSession, originFromSenderFrame } from '../policy/origin.js'
 import { fail } from '../errors.js'
 import { toFailureResponse } from './response-envelope.js'
 import { dispatchApp } from './dispatch/app.js'
@@ -82,7 +85,8 @@ async function dispatch (
   transport: PortTransport | undefined,
   requestGrantCtx: RequestGrantCtx | undefined,
   fsTransport: FsTransport | undefined,
-  abandoned: AbortSignal
+  abandoned: AbortSignal,
+  windowForSender?: (sender: unknown) => unknown
 ): Promise<unknown> {
   if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
 
@@ -90,7 +94,16 @@ async function dispatch (
     case 'app.manifest':
     case 'app.grants':
     case 'app.requestGrant':
-      return await dispatchApp(broker, origin, method, payload, requestGrantCtx)
+      // Both closures re-read `event.sender` LIVE, whenever the dialog
+      // actually calls them (A153), never a value captured here. `id` is
+      // `event.sender` itself: a stable per-tab identity for
+      // PendingGrantRequests, distinct from the fresh closures above, which
+      // this same tab gets a new pair of on every call.
+      return await dispatchApp(broker, origin, method, payload, requestGrantCtx, {
+        window: () => windowForSender?.(event.sender),
+        stillOn: (checkedOrigin) => !event.sender.isDestroyed() && originFromSenderFrame(event.sender.mainFrame) === checkedOrigin,
+        id: event.sender
+      }, abandoned)
     case 'fs.readFile':
     case 'fs.writeFile':
     case 'fs.mkdir':
@@ -193,6 +206,22 @@ async function withTimeout<T> (work: (abandoned: AbortSignal) => Promise<T>, tim
  * (never throttled; 'internal' from dispatch() if a call needing one of the
  * last two runs without it) -- real wiring always supplies every one of
  * them, see `brokerIpcSubsystem`.
+ *
+ * `attributed`, when supplied, is `isAttributedSession`'s injected predicate:
+ * whether the calling WebContents is attributed to `origin` right now.
+ * Attribution is decided once, at the document's own commit
+ * (`../../main/sessions/session-attribution.ts`), not re-decided under a
+ * live document on every call -- so a document already attributed stays
+ * attributed through every call until its next navigation, even if the
+ * session its origin belongs in changes meanwhile (a grant never changes
+ * it, ADR-0044; a pinned copy going away does). Optional
+ * so this file's own test suite, which has nothing to attribute against,
+ * keeps exercising everything else unchanged; real wiring always supplies
+ * it.
+ *
+ * `windowForSender`, when supplied, resolves a tab's window for
+ * `dispatch()`'s `app.requestGrant` case alone; omitted, that dialog shows
+ * unparented, the same optionality `attributed` already has.
  */
 export async function handleControlRequest (
   broker: Broker,
@@ -201,7 +230,9 @@ export async function handleControlRequest (
   transport?: PortTransport,
   limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
-  fsTransport?: FsTransport
+  fsTransport?: FsTransport,
+  attributed?: (sender: unknown, origin: string) => boolean,
+  windowForSender?: (sender: unknown) => unknown
 ): Promise<ResponseEnvelope<unknown>> {
   // The envelope itself is untrusted, not just its payload. Reading
   // `envelope.id` off a null or non-object value throws a TypeError straight
@@ -219,6 +250,15 @@ export async function handleControlRequest (
     return { id: envelope.id, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
   }
 
+  // A document can commit `origin` while its WebContents still sits in the
+  // wrong Electron session for it -- see isAttributedSession's own doc
+  // (policy/origin.ts) for when and why. Checked right after origin
+  // derivation, before the rate limiter spends any of this origin's budget
+  // on a call that is refused either way.
+  if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) {
+    return { id: envelope.id, ok: false, code: 'denied', message: 'this document is not in the session its origin belongs to' }
+  }
+
   // Checked before dispatch() ever runs, so a throttled call never reaches
   // the broker at all (A38). Which budget a method draws on, and why one of
   // them paces instead of refusing: ./control-limiter.ts.
@@ -228,7 +268,7 @@ export async function handleControlRequest (
 
   try {
     const result = await withTimeout(
-      async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned),
+      async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned, windowForSender),
       envelope.timeoutMs
     )
     return { id: envelope.id, ok: true, result }
@@ -252,10 +292,12 @@ export function registerBrokerIpc (
   transport: PortTransport,
   limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
-  fsTransport?: FsTransport
+  fsTransport?: FsTransport,
+  attributed?: (sender: unknown, origin: string) => boolean,
+  windowForSender?: (sender: unknown) => unknown
 ): void {
   ipc.handle(CONTROL_CHANNEL, async (event, envelope) =>
-    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport))
+    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport, attributed, windowForSender))
 }
 
 /**
@@ -272,9 +314,9 @@ export interface IpcMainOnLike {
 }
 
 /** Thin wiring over `handleSyncFsReadRequest`, sharing `limiter` with `registerBrokerIpc` so this channel cannot be used to dodge CONTROL_CHANNEL's rate limit. */
-export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, limiter?: RateLimiter): void {
+export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, limiter?: RateLimiter, attributed?: (sender: unknown, origin: string) => boolean): void {
   ipc.on(SYNC_CONTROL_CHANNEL, (event, payload) => {
-    event.returnValue = handleSyncFsReadRequest(policy, event, payload, limiter)
+    event.returnValue = handleSyncFsReadRequest(policy, event, payload, limiter, attributed)
   })
 }
 
@@ -311,51 +353,6 @@ function realPortPair (): PortPair {
 }
 
 /**
- * The text `pickPath`'s real `dialog.showOpenDialog` call shows. Kept as a
- * pure function, separate from the `electron` call itself, so it is
- * testable the same way the rest of this file is (this file's own header,
- * "TESTABLE WITHOUT ELECTRON") -- `dialog` is a real Electron value import
- * and cannot be exercised from this suite.
- *
- * FOLDER WORDING IS OWNER-APPROVED VERBATIM (`d-0032`, 2026-09-16): three
- * drafts were proposed, and the owner chose the strongest, on the reasoning
- * that "read and write" understated what a folder grant really lets an app
- * do. `message`'s "including files you add to it later" is the load-bearing
- * phrase -- the thing people misread about a folder pick -- and is not
- * trimmed for length. FILE/multi-file wording follows the same voice but is
- * DERIVED, not separately owner-reviewed word for word: `permissions.ts`'s
- * `describePickedPath` carries the identical reasoning for why it says
- * "change" rather than claim a delete a `FileHandle` cannot perform.
- *
- * `message` is macOS-only (Electron's own `OpenDialogOptions` doc); passed
- * unconditionally because Electron silently ignores it elsewhere rather
- * than erroring, confirmed against Electron's own docs (context7,
- * 2026-09-16) before writing this.
- */
-export function describePickerDialog (opts: { directory: boolean, multiple: boolean, appName: string | undefined }): { title: string, buttonLabel: string, message: string } {
-  const named = opts.appName === undefined ? undefined : `"${opts.appName}"`
-  if (opts.directory) {
-    return {
-      title: named === undefined ? 'Choose a folder to access' : `Choose a folder for ${named} to access`,
-      buttonLabel: 'Allow access to this folder',
-      message: 'This app will be able to read, change and delete everything in this folder, including files you add to it later.'
-    }
-  }
-  if (opts.multiple) {
-    return {
-      title: named === undefined ? 'Choose files to access' : `Choose files for ${named} to access`,
-      buttonLabel: 'Allow access to these files',
-      message: 'This app will be able to read and change these files, including emptying them.'
-    }
-  }
-  return {
-    title: named === undefined ? 'Choose a file to access' : `Choose a file for ${named} to access`,
-    buttonLabel: 'Allow access to this file',
-    message: 'This app will be able to read and change this file, including emptying it.'
-  }
-}
-
-/**
  * Builds the production `Broker` and registers it on `ipcMain`. The one
  * place this module's `electron` value imports are used.
  *
@@ -381,21 +378,17 @@ export const brokerIpcSubsystem: Subsystem = {
       listen: listenTcp,
       resolve: resolveHost,
       resolveLookup,
+      // T20's fail-closed check (security-model.md, docs/open-questions.md
+      // A263), asked of the SAME session every ordinary page loads through
+      // -- not a per-app or per-context one, since every net capability
+      // shares one system/OS proxy question, not an app-scoped one.
+      proxyConfigured: cachingProxyProbe(async (url) => await electronSession.defaultSession.resolveProxy(url)),
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
-      // orivon.fs.userSelected's real OS picker (L5-userselected). Carries
-      // the owner-approved/derived wording (d-0032) from describePickerDialog
-      // above -- see that function's own doc for what is verbatim-approved
-      // and what is derived.
-      pickPath: async ({ directory, multiple, appName }) => {
-        const properties: Array<'openFile' | 'openDirectory' | 'multiSelections'> = directory
-          ? ['openDirectory']
-          : (multiple ? ['openFile', 'multiSelections'] : ['openFile'])
-        const { title, buttonLabel, message } = describePickerDialog({ directory, multiple, appName })
-        const result = await dialog.showOpenDialog({ properties, title, buttonLabel, message })
-        return result.canceled ? { canceled: true } : { canceled: false, paths: result.filePaths }
-      },
+      // orivon.fs.userSelected's real OS picker (L5-userselected), worded and
+      // parented as `./picker-dialog.ts`'s own doc explains.
+      pickPath: createPickPath(),
       // ADR-0033: the identity seed, OS-keyring-backed (Electron
       // `safeStorage`) or, absent a reachable keyring, generated fresh for
       // this process alone -- see ../../main/keyring/seed-store.ts for the
@@ -410,7 +403,11 @@ export const brokerIpcSubsystem: Subsystem = {
       webContextHost: createWebContextHost(() => {
         if (ctx.broker === undefined) throw fail('internal', 'the broker is not published yet')
         return ctx.broker
-      })
+      }),
+      // The picker guard's real inputs -- `./picker-guard-wiring.ts`'s own header.
+      additionalProtectedRoots: () => additionalProtectedRoots(ctx.app),
+      privateSessionGuard,
+      notifyPickRefused
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
     // fs.open's own per-origin lookup (A184) -- the same generic
@@ -426,8 +423,17 @@ export const brokerIpcSubsystem: Subsystem = {
     // runs twice, so a later subsystem is guaranteed to read this same
     // instance rather than a second, disagreeing one.
     publishBroker(ctx, broker)
+    // subsystems.ts lists ../../main/sessions/session-attribution.ts's own
+    // subsystem above this one precisely so this is never undefined here --
+    // thrown rather than silently skipping the check below, since a broker
+    // channel enforcing origin without session would be a capability
+    // enforcing less than it claims to (registry.ts's own doc on
+    // `Subsystem.critical`, which this subsystem already carries).
+    if (ctx.senderAttributed === undefined) throw fail('internal', 'ctx.senderAttributed is not published -- session-attribution subsystem is missing or misordered')
     // `ctx` itself, not a captured `ctx.requestGrant` -- see RequestGrantCtx's own doc (ipc-validation.ts) for why.
-    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport)
+    // A lazy read of `ctx.windowForSender`, same reason `webContextHost` above is a thunk:
+    // it publishes only once the shell exists, well after this runs.
+    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport, ctx.senderAttributed, (sender) => ctx.windowForSender?.(sender as WebContents))
 
     // ./sync-fs-policy.ts's createSyncFsPolicy calls straight through to
     // broker.fs.confineSync -- ADR-0016's synchronous grant-check/
@@ -435,6 +441,6 @@ export const brokerIpcSubsystem: Subsystem = {
     // just wired, so a grant issued through any route (the app loader's
     // permission prompt later, src/main/dev-grant.ts's hook today) is live
     // for this channel the instant it lands on that one instance.
-    registerSyncFsIpc(ipcMain, createSyncFsPolicy(broker), limiter)
+    registerSyncFsIpc(ipcMain, createSyncFsPolicy(broker), limiter, ctx.senderAttributed)
   }
 }

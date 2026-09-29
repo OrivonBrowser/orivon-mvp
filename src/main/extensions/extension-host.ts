@@ -219,7 +219,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   // synchronous query, before it ever calls injectExtensionAPIs() --
   // extension-sandbox-page-query.ts's own doc.
   registerSandboxPageQuery()
-  // Orivon patch (UPSTREAM.md patch 40): the real A299 fix -- gives a
+  // Orivon patch (UPSTREAM.md patch 40): the real A302 fix -- gives a
   // manifest sandbox.pages document Chrome's own CSP `sandbox`, so it
   // actually gets an opaque origin, rather than only withholding chrome.*
   // (patch 37) from a page that still runs at the extension's own origin.

@@ -12,7 +12,15 @@ const MANIFEST = {
   capabilities: { net: { https: { connect: ['api.example.com:443'] } } }
 }
 
-function fakeBroker (registered = false, held: ReadonlyArray<{ capability: string, patterns: readonly string[] }> = []): { broker: Broker, registerApp: ReturnType<typeof vi.fn>, grant: ReturnType<typeof vi.fn> } {
+function fakeBroker (
+  registered = false,
+  held: ReadonlyArray<{ capability: string, patterns: readonly string[] }> = [],
+  // What `broker.app.manifest` reads back for an ALREADY-registered origin --
+  // the widensInvisibleLimits gate reads this for whichever held kind's
+  // curves/quota/socket count it compares against. Defaults to MANIFEST
+  // itself, matching every test that never varies it.
+  previouslyRegisteredManifest: unknown = MANIFEST
+): { broker: Broker, registerApp: ReturnType<typeof vi.fn>, grant: ReturnType<typeof vi.fn> } {
   const registerApp = vi.fn(async () => {})
   const grant = vi.fn(async () => ({}))
   const grants = held.map((entry, index) => ({ id: `g${String(index)}`, origin: 'http://127.0.0.1:8874', grantedAt: 0, ...entry }))
@@ -22,7 +30,7 @@ function fakeBroker (registered = false, held: ReadonlyArray<{ capability: strin
     declinedCapabilitiesFor: async () => undefined,
     recordDeclinedCapabilities: async () => {},
     clearDeclinedConsent: async () => {},
-    app: { isRegisteredSync: () => registered, grants: async () => grants }
+    app: { isRegisteredSync: () => registered, grants: async () => grants, manifest: async () => previouslyRegisteredManifest }
   } as unknown as Broker
   return { broker, registerApp, grant }
 }

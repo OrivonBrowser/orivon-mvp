@@ -170,6 +170,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   verifier host no longer crashes on a 999 status or stalls on a 101, and every run certificate
   parses.
 
+### Security
+
+- **A site's permissions work only from a page that committed in that site's own session**: a page
+  a link or redirect reached before its tab moved, a page an app shows or a web context is `denied`.
+  A grant or revoke never strands an open page; a site's handles close when its last tab goes.
+- **The file picker needs a click or key press**, names the site, opens once per site at a time, and
+  refuses the browser's own data, the home folder, disk roots and system folders.
+- **`orivon.net` refuses to open sockets or resolve names while a system proxy applies** (T20).
+- **Consent dialogs belong to the tab that asked**: shown over its window, dropped if it left, one
+  at a time per site, lists capped; `app.requestGrant` does not re-ask what the person declined.
+- **An fs quota holds against sparse positional writes**, an app's files sit in their own root apart
+  from its code, and a widened curve list, quota or socket count asks again.
+- **The verifier caps the memory one page can hold**, dials CCIP-Read at a checked address on
+  port 443, validates and caps its IPNS records, checks its host's messages, and stamps shown
+  pages.
+- **Packaged builds turn off RunAsNode, NODE_OPTIONS and `--inspect`**, encrypt cookies and check
+  `app.asar`; the address bar hides userinfo, and a `magnet:` link must parse before it leaves.
+
 ### Resolved
 
 - **The week-0 spike**: gates 0, 1a, 1b and 2 pass; see `docs/planning/spike-verdict.md`.

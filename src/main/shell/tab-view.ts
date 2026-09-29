@@ -18,6 +18,7 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
+import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
 
@@ -276,6 +277,12 @@ export function wireView (id: string, record: TabRecord): void {
   // A press in a pane is the person choosing it, in a split. Not focus, which a page loading in the other pane can take.
   wc.on('input-event', (_event, input) => { if (input.type === 'mouseDown') record.host.paneClicked(id) })
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
+    // Unconditional, ahead of the `shown()` gate below: a parked or
+    // background view's own navigation still changes which origin's
+    // document count this WebContents holds, and `retireView`'s own
+    // about:blank load is where a session teardown for the origin just left
+    // actually fires.
+    trackDocumentOrigin(wc, navigatedUrl, record.host.broker)
     if (!shown()) return
     if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
       record.favicon = null
@@ -384,7 +391,14 @@ export function wireView (id: string, record: TabRecord): void {
   // actually reachable rather than theatre. Only for the view the tab
   // shows: repartitionView() closes a swapped-out view after the record has
   // moved on, and that close must not forget a tab that is not closing.
-  wc.on('destroyed', () => { if (shown()) record.host.forgetTab(id) })
+  wc.on('destroyed', () => {
+    // Unconditional, same reason as the trackDocumentOrigin call above: a
+    // view closed outright (never parked to about:blank first) still ends
+    // whatever document it held, and this is the only remaining chance to
+    // release it.
+    releaseOriginDocument(wc, record.host.broker)
+    if (shown()) record.host.forgetTab(id)
+  })
 
   wc.on('enter-html-full-screen', () => { record.host.htmlFullscreenChanged(id, true) })
   wc.on('leave-html-full-screen', () => { record.host.htmlFullscreenChanged(id, false) })

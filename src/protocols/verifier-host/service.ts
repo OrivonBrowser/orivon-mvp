@@ -31,8 +31,14 @@ export interface HostDeps {
   /** The DNS-tamper fallback's own egress (dns-fallback.ts), reached only
    * for a gateway in `config.unproxiedGateways` once `fetch` has failed it
    * transport-wise and a DNS-over-HTTPS answer disagreed with the system
-   * resolver's. */
+   * resolver's. GET/HEAD only, no redirect. */
   readonly directFetch: DirectFetch
+  /** CCIP-Read's own egress (egress.ts's `guardedCcipRequest`): pinned to
+   * the address `resolveHost` already checked, so a re-resolving fetch can
+   * never dial somewhere else than what was checked. Unlike `directFetch`
+   * above, allows the POST form and follows a redirect (the caller decides
+   * whether to, per hop). */
+  readonly ccipFetch: DirectFetch
 }
 
 export interface RunningHost {

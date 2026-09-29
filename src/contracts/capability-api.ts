@@ -18,9 +18,9 @@
 //      file that does not: a local file read is sub-millisecond, and an
 //      async-only fs does not slow a ported app's startup config read down,
 //      it makes the call absent (the dependency calling it has no await to
-//      offer). The mechanism -- ipcRenderer.sendSync today, an
-//      Atomics.wait-in-a-Worker route later -- is invisible to the app
-//      either way.
+//      offer). The mechanism -- ipcRenderer.sendSync on the page, a
+//      shared-memory channel in a Worker of a cross-origin isolated app --
+//      is invisible to the app either way.
 //   3. Handles, not ambient authority. connect() returns a handle; later
 //      operations reference it. Capability is checked ONCE, at acquisition,
 //      which avoids TOCTOU and avoids re-authorising on every call.
@@ -256,11 +256,11 @@ export interface OrivonFs {
   readFile(path: string): Promise<Uint8Array>
   writeFile(path: string, data: Uint8Array): Promise<void>
   /**
-   * Synchronous read (ADR-0016). The renderer genuinely blocks until this
-   * returns, over the runtime's synchronous renderer-to-main channel today
-   * -- an `Atomics.wait`-in-a-Worker route is deferred, not rejected, as a
-   * future swap for the same mechanism, and both present this exact
-   * signature, so no app can tell which one answered it.
+   * Synchronous read (ADR-0016). The caller genuinely blocks until this
+   * returns: on the page, over the runtime's synchronous renderer-to-main
+   * channel; in a Worker of a cross-origin isolated app, in `Atomics.wait`
+   * over shared memory. Both present this exact signature, so no app can
+   * tell which one answered it.
    *
    * The one exception design rule 2 grants (see this file's header comment)
    * and it is narrow on purpose: permitted because `readFileSync`-shaped
@@ -271,9 +271,9 @@ export interface OrivonFs {
    *
    * Same confinement and the same closed error set as `readFile`, but
    * THROWN rather than rejected -- a synchronous call has no Promise to
-   * reject. A chatty caller freezes the renderer for the duration of every
-   * call; that cost is the app's own and is visible, not a reason to widen
-   * this exception to any other `fs` method.
+   * reject. On the page a chatty caller freezes the renderer for the
+   * duration of every call; that cost is the app's own and is visible, not a
+   * reason to widen this exception to any other `fs` method here.
    */
   readFileSync(path: string): Uint8Array
   open(path: string, flags: string): Promise<FileHandle>
@@ -310,6 +310,15 @@ export interface OrivonFs {
    * shape below does. Cancelling the file picker resolves an empty array;
    * declining either dialog is never a rejected promise, because declining
    * a picker is not a failure.
+   *
+   * A USER ACTIVATION IS REQUIRED, as the web's own pickers require one: a
+   * click or key press in the calling page a moment before. Called without
+   * one, this rejects 'denied' and shows no dialog, so a page cannot raise an
+   * OS dialog on its own. SOME FOLDERS ARE REFUSED: the browser's own data
+   * directory, any folder inside it or containing it, a filesystem root, and
+   * the home folder itself. The picker says why, and the call resolves as a
+   * cancellation (null, or an empty array), since the person chose nothing
+   * the app may have.
    */
   userSelected(opts: { directory: true }): Promise<DirectoryHandle | null>
   userSelected(opts?: { directory?: false, multiple?: boolean }): Promise<readonly FileHandle[]>

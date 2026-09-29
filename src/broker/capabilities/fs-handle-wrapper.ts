@@ -129,8 +129,33 @@ export function createFileHandleWrapper ({ handleTable, ledger }: FileHandleWrap
       fail: (code, platformCode) => { handleTable.fail(key, entry.id, code, platformCode) },
       onUnlink: (listener) => { handleTable.onUnlink(key, entry.id, listener) },
       read: async (opts) => await runFileIo(key, entry.id, async () => await fields.read(opts)),
+      /**
+       * Charges the file's APPARENT-SIZE GROWTH, not `opts.data.length`
+       * -- a positional write at `position` past the current end extends the
+       * file to `position + data.length` on disk (a sparse hole in between,
+       * on every filesystem this runs on), so writing one byte at a huge
+       * offset must charge the whole gap it opens, not the one byte
+       * actually sent. `capabilities/fs.ts`'s own `writeFile` already
+       * charges and refunds in this same unit (apparent size, via
+       * `fileSize`'s `stat().size`); this is that same unit applied to a
+       * positional write instead of a whole-file one, so a write through
+       * either path is refunded by the same accounting that charged it --
+       * see fs-capability-extended.test.ts's "quota" suite for what used to
+       * go wrong when a handle write charged bytes-sent while everything
+       * downstream (writeFile's own shrink refund) trusted apparent size.
+       *
+       * `currentSize` is read fresh, not cached: a STALE (too-small) size
+       * only ever makes `growth` an OVER-estimate (charging more than a
+       * strictly-correct read would), which is the safe direction for a
+       * quota to err in under concurrent writes to the same handle -- see
+       * `truncate`'s own `withTruncateLock` for the one place in this file
+       * that needs a real lock instead, because THAT charge must never be
+       * an under-estimate.
+       */
       write: async (opts) => {
-        if (!ledger.reserveFsBytes(key, opts.data.length)) {
+        const { size: currentSize } = await runFileIo(key, entry.id, async () => await fields.stat())
+        const growth = Math.max(0, opts.position + opts.data.length - currentSize)
+        if (growth > 0 && !ledger.reserveFsBytes(key, growth)) {
           throw fail('limit', "this write would exceed the app's declared storage quota")
         }
         let started = false
@@ -140,12 +165,12 @@ export function createFileHandleWrapper ({ handleTable, ledger }: FileHandleWrap
             try {
               return await fields.write(opts)
             } catch (error) {
-              ledger.releaseFsBytes(key, opts.data.length) // nothing landed -- unmapped, runFileIo maps it below
+              if (growth > 0) ledger.releaseFsBytes(key, growth) // nothing landed -- unmapped, runFileIo maps it below
               throw error
             }
           })
         } catch (error) {
-          if (!started) ledger.releaseFsBytes(key, opts.data.length)
+          if (!started && growth > 0) ledger.releaseFsBytes(key, growth)
           throw error
         }
       },

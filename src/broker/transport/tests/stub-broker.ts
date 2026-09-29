@@ -89,12 +89,13 @@ export function stubBroker (
     clearDeclinedConsent: Broker['clearDeclinedConsent']
     grant: Broker['grant']
     revoke: Broker['revoke']
+    dropOrigin: Broker['dropOrigin']
   }> = {}
 ): Broker {
   const notStubbed = async (): Promise<never> => { throw new Error('this stub method was not configured for this test') }
   const notStubbedSync = (): never => { throw new Error('this stub method was not configured for this test') }
   return {
-    embed: { originsSync: () => undefined, scriptSync: () => undefined, attach: notStubbedSync, setScript: notStubbed },
+    embed: { originsSync: () => undefined, scriptSync: () => undefined, attach: notStubbedSync, setScript: notStubbed, forgetScript: () => {} },
     app: {
       manifest: async (origin) => {
         calls.push({ method: 'app.manifest', origin, args: undefined })
@@ -294,6 +295,10 @@ export function stubBroker (
     },
     // Satisfies `Broker`; no ipc.ts-facing test here drives a live-update
     // listener, so subscribing is a no-op that never fires.
-    onGrantsChanged: () => () => {}
+    onGrantsChanged: () => () => {},
+    dropOrigin: async (origin) => {
+      calls.push({ method: 'dropOrigin', origin, args: undefined })
+      await (overrides.dropOrigin?.(origin) ?? Promise.resolve())
+    }
   }
 }

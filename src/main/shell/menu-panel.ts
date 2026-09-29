@@ -50,8 +50,8 @@ export function createMenuPanel (
     // scroll/focus state on every open, the way a fresh popup's first load
     // already does simply by starting over.
     onShow: (webContents) => { webContents.send(MENU_SHOWN_CHANNEL) },
-    registerIpc: (webContents, onContentHeight) => {
-      registerMenuIpc(webContents, {
+    registerIpc: (webContents, url, onContentHeight) => {
+      registerMenuIpc(webContents, url, {
         items: () => menuItems(shortcuts),
         run: (id) => {
           popover.close()

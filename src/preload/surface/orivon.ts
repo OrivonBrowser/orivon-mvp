@@ -115,8 +115,28 @@ async function fsOpen (path: string, flags: string): Promise<MainWorldFileBridge
  */
 const PICKER_TIMEOUT_MS = TIMEOUT_MS.grant
 
+/**
+ * `orivon.fs.userSelected` pops a native OS dialog, which Electron shows
+ * with no gesture requirement of its own -- unchecked, a page could pop
+ * one on load, unprompted, or hundreds of them at once. Checked HERE, in
+ * the isolated world, BEFORE `call()` ever sends the IPC: no activation
+ * means 'denied' with NO DIALOG SHOWN, not a broker-side refusal after the
+ * native picker has already appeared. `navigator.userActivation` is a real
+ * DOM API the isolated world shares with the page's own document --
+ * contextIsolation gives each world its own JavaScript state, not its own
+ * `navigator` -- so a transient click or keypress in the page turns this on for the same
+ * task the page's own event handler is running in, exactly like every
+ * other `navigator.userActivation` consumer.
+ */
+function requireUserActivation (): void {
+  if (navigator.userActivation?.isActive !== true) {
+    throw toOrivonError('denied', { message: 'orivon.fs.userSelected needs a user gesture (a click or keypress) to show a picker' })
+  }
+}
+
 /** `orivon.fs.userSelected`'s FILE shape (A194, d-0032). `exposeOrivon`'s own `bridge.fsUserSelected` reaches here; `fsUserSelectedDirectory` below is its `{ directory: true }` counterpart (A195). */
 async function fsUserSelected (opts?: { multiple?: boolean }): Promise<readonly MainWorldFileBridge[]> {
+  requireUserActivation()
   const descriptors = await call<readonly FsHandleDescriptor[]>('fs.userSelected', opts ?? {}, PICKER_TIMEOUT_MS)
   return descriptors.map((descriptor) => buildFileBridge(descriptor.id))
 }
@@ -154,6 +174,7 @@ function buildDirectoryBridge (id: string): MainWorldDirectoryBridge {
 
 /** `orivon.fs.userSelected`'s FOLDER shape (A195). `null` on a cancelled pick, matching capability-api.ts's own folder cancel contract -- never a rejection. */
 async function fsUserSelectedDirectory (): Promise<MainWorldDirectoryBridge | null> {
+  requireUserActivation()
   const descriptor = await call<FsHandleDescriptor | null>('fs.userSelected', { directory: true }, PICKER_TIMEOUT_MS)
   return descriptor === null ? null : buildDirectoryBridge(descriptor.id)
 }
