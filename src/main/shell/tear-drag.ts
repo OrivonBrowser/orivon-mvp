@@ -9,20 +9,19 @@
 // window: only one tab can be mid-drag at a time, and where it ends up can
 // be any window, not just the one it started in.
 //
-// Measured feasibility (shell-polish probes, 2026-09-29): a frameless,
-// transparent, non-focusable, always-on-top, click-through `BaseWindow`
-// moved by `setPosition` every ~16ms does not disturb the dragging view's own
-// pointer capture (1-9ms per call), and `capturePage` of a tab takes ~57ms
-// cold, 11-18ms warm -- both cheap enough to run on every drag without the
-// window itself feeling laggy.
-import { BaseWindow, screen, WebContentsView } from 'electron'
+// A frameless, transparent, non-focusable, always-on-top, click-through
+// `BaseWindow` moved by `setPosition` on every poll tick does not disturb the
+// dragging view's own pointer capture, and capturing a tab's page is cheap
+// enough (tens of milliseconds, cold or warm) to run on every drag without
+// the window itself feeling laggy.
+import { BaseWindow, nativeTheme, screen, WebContentsView } from 'electron'
 import type { NativeImage } from 'electron'
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
-import { crossWindowTargetFor } from './tab-move.js'
+import { inTop, crossWindowTargetFor } from './tab-move.js'
 import { captureTabPage } from './tab-view.js'
 import type { ShellWindow } from './window-registry.js'
 
-const POLL_MS = 16 // ~60Hz, the plan's own measured-safe rate
+const POLL_MS = 16 // ~60Hz: fast enough to track the pointer smoothly, cheap enough to run every drag
 const MAX_PREVIEW_WIDTH = 480
 const PREVIEW_SHARE = 1 / 3
 const CHIP_WIDTH = 168
@@ -49,10 +48,19 @@ img{display:block;width:${String(width)}px;height:${String(height)}px;object-fit
 </style></head><body><img src="${dataUrl}"></body></html>`
 }
 
-function chipHtml (title: string): string {
+// Same surface/ink relationship as src/renderer/style.css's --wsurface/--wink tokens (the active tab's own
+// background), so the chip reads as a small tab rather than a colour the rest of the chrome never uses.
+const CHIP_SURFACE_DARK = '#2b2c31'
+const CHIP_SURFACE_LIGHT = '#f2f2f7'
+const CHIP_INK_DARK = '#e6e7e8'
+const CHIP_INK_LIGHT = 'rgba(0, 0, 0, 0.90)'
+
+function chipHtml (title: string, dark: boolean): string {
+  const surface = dark ? CHIP_SURFACE_DARK : CHIP_SURFACE_LIGHT
+  const ink = dark ? CHIP_INK_DARK : CHIP_INK_LIGHT
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;background:transparent;overflow:hidden;font-family:system-ui,sans-serif}
-.chip{width:${String(CHIP_WIDTH - 8)}px;height:${String(CHIP_HEIGHT - 8)}px;margin:4px;border-radius:8px;background:#2b2c31;color:#e6e7e8;
+.chip{width:${String(CHIP_WIDTH - 8)}px;height:${String(CHIP_HEIGHT - 8)}px;margin:4px;border-radius:8px;background:${surface};color:${ink};
 display:flex;align-items:center;padding:0 10px;font-size:12px;box-shadow:0 6px 16px rgba(0,0,0,0.35);opacity:0.92;
 overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 </style></head><body><div class="chip">${escapeHtml(title)}</div></body></html>`
@@ -64,6 +72,7 @@ export class TearDragController {
   private timer: ReturnType<typeof setInterval> | null = null
   private mode: 'thumbnail' | 'chip' | null = null
   private markedWindow: ShellWindow | null = null
+  private markedIndex: number | null = null
   private source: ShellWindow | null = null
   private tabId: string | null = null
   private thumbnail: string | null = null
@@ -117,6 +126,7 @@ export class TearDragController {
   private clearMark (): void {
     const marked = this.markedWindow
     this.markedWindow = null
+    this.markedIndex = null
     if (marked !== null && !marked.window.isDestroyed() && !marked.chrome.webContents.isDestroyed()) {
       marked.chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'dragMarkClear' })
     }
@@ -150,7 +160,16 @@ export class TearDragController {
       skipTaskbar: true,
       show: false
     })
-    this.view = new WebContentsView({ webPreferences: { contextIsolation: false, sandbox: true } })
+    // No preload, sandboxed, contextIsolation on, and javascript off outright: its documents are static
+    // markup this file builds itself (a thumbnail `<img>`, a chip's `<div>`), never a page with anything to
+    // run. `setWindowOpenHandler`/`will-navigate`/`will-redirect` are refused all the same, defence in depth
+    // against a future change to what this view loads -- its own `loadURL` calls below are not navigations
+    // Electron fires these events for.
+    this.view = new WebContentsView({ webPreferences: { contextIsolation: true, javascript: false, sandbox: true } })
+    const { webContents } = this.view
+    webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    webContents.on('will-navigate', (event) => { event.preventDefault() })
+    webContents.on('will-redirect', (event) => { event.preventDefault() })
     // A transparent BaseWindow paints its child view's own background
     // opaque unless told otherwise (electron.d.ts's own note on `transparent`).
     this.view.setBackgroundColor('#00000000')
@@ -170,18 +189,26 @@ export class TearDragController {
     if (win === null || win.isDestroyed() || source === null || source.window.isDestroyed() || this.tabId === null) { this.clear(); return }
     const point = screen.getCursorScreenPoint()
 
-    if (this.inZone) {
-      // Parked off-screen, not destroyed: it reappears at once, with no new capture, if the pointer leaves
-      // the split zone again without the drag having ended.
+    // A split preview is showing instead (never both at once), or the pointer is back over this window's
+    // own strip and toolbar, where letting go does nothing (window-actions.ts's own dropTab): parked
+    // off-screen, not destroyed, so it reappears at once, with no new capture, if the pointer moves on.
+    if (this.inZone || inTop(source.window.getBounds(), point, this.topHeight)) {
       win.setPosition(-this.size.width, -this.size.height)
       this.clearMark()
       return
     }
 
     const target = crossWindowTargetFor(source, point, this.windows(), this.topHeight)
-    if (target?.window !== this.markedWindow) this.clearMark()
-    if (target !== null) {
+    if (target === null) {
+      this.clearMark()
+    } else if (target.window !== this.markedWindow) {
+      this.clearMark() // a different window than the one last marked, if any
       this.markedWindow = target.window
+      this.markedIndex = target.index
+      target.window.chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'dragMark', index: target.index })
+    } else if (target.index !== this.markedIndex) {
+      // Same window, a different place in its strip: no clear/resend cycle, just the new index.
+      this.markedIndex = target.index
       target.window.chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'dragMark', index: target.index })
     }
 
@@ -202,7 +229,7 @@ export class TearDragController {
   private render (): void {
     if (this.view === null) return
     if (this.mode === 'chip') {
-      void this.view.webContents.loadURL(`data:text/html,${encodeURIComponent(chipHtml(this.title))}`)
+      void this.view.webContents.loadURL(`data:text/html,${encodeURIComponent(chipHtml(this.title, nativeTheme.shouldUseDarkColors))}`)
     } else if (this.thumbnail !== null) {
       void this.view.webContents.loadURL(`data:text/html,${encodeURIComponent(thumbnailHtml(this.thumbnail, this.size.width, this.size.height))}`)
     }

@@ -3,14 +3,15 @@
 // driven from JS instead. Pure: no Electron, so the decision is testable
 // without a window.
 //
-// Measured (shell-polish probes, 2026-09-29): under real X11 input, a
-// `-webkit-app-region: drag` region delivers NO DOM event for any pointer
-// button -- Chromium's Linux window-event filter treats the whole area as a
-// caption and consumes the click before it reaches the page, and Electron 44
-// has no `startMove()` to fall back on. That is Linux-and-X11-specific: it
-// was not measured on Wayland, and native Wayland compositors do not route
-// input through the same caption-click path X11 window managers do, so the
-// native drag region is left alone there, as it is on Windows and macOS.
+// Under real X11 input, a `-webkit-app-region: drag` region delivers no DOM
+// event for any pointer button -- Chromium's Linux window-event filter
+// treats the whole area as a caption and consumes the click before it
+// reaches the page, and Electron 44 has no `startMove()` to fall back on.
+// That is Linux-and-X11-specific and unconfirmed on Wayland: native Wayland
+// compositors do not route input through the same caption-click path X11
+// window managers do, so the native drag region is left alone there
+// (provisionally, pending a real Wayland session to check), as it is on
+// Windows and macOS.
 
 export type DragMode = 'native' | 'manual'
 

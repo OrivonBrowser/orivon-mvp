@@ -119,10 +119,11 @@ export function shellActions (parts: WindowParts): ShellActions {
         tabs.splits.split(active, id, zone)
         return
       }
-      // Let go over the page but not at an edge, or over the window's own top: it stays where it was.
-      const { width, height } = window.getContentBounds()
-      const inWindow = client.x >= 0 && client.x < width && client.y >= 0 && client.y < height
-      if (inWindow) return
+      // Not a split: over another window's strip, moves there; over this window's own top rows (strip and
+      // toolbar), stays where it was, matching the floating preview parking there instead of following the
+      // pointer (tear-drag.ts's own tick()); anywhere else -- this window's own page, or outside every
+      // window -- opens a window of its own, the floating preview's own promise. `dropTab` (tab-move.ts)
+      // decides which, from `screenPoint` alone.
       dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
     },
     showTabMenu: showTabMenuFor,

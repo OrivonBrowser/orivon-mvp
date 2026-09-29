@@ -181,6 +181,40 @@ it('takes a tab out into a window of its own when it is dragged out of the windo
   }
 }, TEST_TIMEOUT_MS)
 
+// The floating preview shown once a tab tears out promises a window wherever it is let go over open
+// space -- releasing over this window's OWN page, away from every split edge, must match that promise
+// rather than leaving the tab where it was (the previous behaviour: an `inWindow` guard in
+// window-actions.ts's dropTab refused this case outright).
+it('opens a tab dragged out over its own page, away from a split edge, in a window of its own', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await openTabs(app, chrome, '/dropped')
+    const dragged = chrome.locator('.tab', { hasText: 'Page /dropped' })
+    await dragged.waitFor({ state: 'visible' })
+    const box = await dragged.boundingBox()
+    if (box === null) throw new Error('the tab has no box')
+    const area = await app.evaluate(({ BaseWindow }) => {
+      const bounds = BaseWindow.getAllWindows()[0]?.getContentBounds()
+      return { width: bounds?.width ?? 0, height: bounds?.height ?? 0 }
+    })
+
+    await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await chrome.mouse.down()
+    // The window's own centre: well past the strip, and well inside every split edge's 12% band on
+    // every side, so this can only land as "the page, no edge" -- never a split, never outside the window.
+    await chrome.mouse.move(area.width / 2, area.height / 2, { steps: 10 })
+    await chrome.mouse.up()
+
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== chrome) as Page
+    expect(await waitFor(async () => (await titles(second)).join() === 'Page /dropped')).toBe(true)
+    expect(await titles(chrome)).not.toContain('Page /dropped')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('shows a tab\'s own new window at once, without waiting on ready-to-show', async () => {
   const { app, chrome } = await launched()
   try {

@@ -35,10 +35,12 @@ export function moveToNewWindow (from: ShellWindow, id: string, openWindow: (opt
 }
 
 export interface Point { readonly x: number, readonly y: number }
-interface Rect { readonly x: number, readonly y: number, readonly width: number, readonly height: number }
+export interface Rect { readonly x: number, readonly y: number, readonly width: number, readonly height: number }
 
-/** Whether a point of the screen is within a window's top `height` pixels: its tab strip and toolbar. */
-function inTop (bounds: Rect, point: Point, height: number): boolean {
+/** Whether a point of the screen is within a window's top `height` pixels: its tab strip and toolbar.
+ * Exported for tear-drag.ts's own use: the floating preview hides there too, so what it shows matches
+ * what letting go there does (nothing). */
+export function inTop (bounds: Rect, point: Point, height: number): boolean {
   return point.x >= bounds.x && point.x < bounds.x + bounds.width && point.y >= bounds.y && point.y < bounds.y + height
 }
 
