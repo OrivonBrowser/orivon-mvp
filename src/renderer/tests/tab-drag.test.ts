@@ -50,7 +50,7 @@ describe('a tab held by the pointer', () => {
     }
     return { el: el as unknown as HTMLElement, fire: (type, event = {}) => { for (const handler of handlers.get(type) ?? []) handler({ button: 0, target: { closest: () => null }, pointerId: 1, clientX: 10, clientY: 10, ...event }) } }
   }
-  const host = (finished: () => void): TabDragHost => ({ tabs: () => [], partnerOf: () => null, stripHeight: () => 36, moveTab: vi.fn(), hover: vi.fn(), dropTab: vi.fn(), finished })
+  const host = (finished: () => void): TabDragHost => ({ tabs: () => [], partnerOf: () => null, stripHeight: () => 36, moveTab: vi.fn(), dragStarted: vi.fn(), hover: vi.fn(), dropTab: vi.fn(), finished })
 
   it('listens for Escape once, however many tabs the strip has drawn', async () => {
     const added: string[] = []
@@ -78,5 +78,34 @@ describe('a tab held by the pointer', () => {
 
     vi.runAllTimers()
     expect(finished).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('tells the host a genuine drag has begun once the press moves past the threshold, not on a plain press', async () => {
+    vi.stubGlobal('window', { addEventListener: vi.fn(), innerWidth: 800 })
+    const { makeTabDraggable } = await import('../tab-drag.js')
+    const dragStarted = vi.fn()
+    const tab = fakeTab()
+    makeTabDraggable(tab.el, 'tab-1', { ...host(vi.fn()), dragStarted })
+
+    tab.fire('pointerdown')
+    expect(dragStarted).not.toHaveBeenCalled()
+    tab.fire('pointermove', { clientX: 30, clientY: 10 })
+    expect(dragStarted).toHaveBeenCalledExactlyOnceWith('tab-1')
+  })
+
+  it('gives main a point only once the tab is torn out, matching the .torn class', async () => {
+    vi.stubGlobal('window', { addEventListener: vi.fn(), innerWidth: 800 })
+    const { makeTabDraggable } = await import('../tab-drag.js')
+    const hover = vi.fn()
+    const tab = fakeTab()
+    makeTabDraggable(tab.el, 'tab-1', { ...host(vi.fn()), hover })
+
+    tab.fire('pointerdown')
+    tab.fire('pointermove', { clientX: 30, clientY: 10 }) // begins the drag, still well inside the strip
+    expect(hover).toHaveBeenLastCalledWith('tab-1')
+
+    const tornY = 36 + TEAR_DISTANCE_PX + 5
+    tab.fire('pointermove', { clientX: 30, clientY: tornY })
+    expect(hover).toHaveBeenLastCalledWith('tab-1', 30, tornY)
   })
 })

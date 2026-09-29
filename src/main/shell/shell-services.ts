@@ -22,6 +22,7 @@ import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
+import { TearDragController } from './tear-drag.js'
 import { WindowRegistry } from './window-registry.js'
 
 export interface ShellServices {
@@ -34,6 +35,9 @@ export interface ShellServices {
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
   readonly shortcutStore: ShortcutStore
+  /** The floating preview a tab shows once dragged out of its strip, and the mark it leaves on whichever
+   * window's strip it is over -- one for the whole process, since only one tab can be mid-drag (tear-drag.ts). */
+  readonly tearDrag: TearDragController
   readonly windows: WindowRegistry
   readonly zoom: ZoomService
   readonly zoomStore: ZoomStore
@@ -69,6 +73,7 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
+    tearDrag: new TearDragController(() => windows.all()),
     windows,
     zoom: new ZoomService(zoomStore, settings),
     zoomStore

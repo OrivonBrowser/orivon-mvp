@@ -43,7 +43,21 @@ function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoCon
 
 
 function actions (overrides: Partial<ShellActions> = {}): ShellActions {
-  return { openPermissions: vi.fn(), openSiteInfo: vi.fn(), runCommand: vi.fn(), openMenu: vi.fn(), dragTab: vi.fn(), dropTab: vi.fn(), showTabMenu: vi.fn(), ...overrides }
+  return {
+    openPermissions: vi.fn(),
+    openSiteInfo: vi.fn(),
+    runCommand: vi.fn(),
+    openMenu: vi.fn(),
+    beginTabDrag: vi.fn(),
+    dragTab: vi.fn(),
+    dropTab: vi.fn(),
+    showTabMenu: vi.fn(),
+    toggleMaximize: vi.fn(),
+    windowMoveStart: vi.fn(),
+    windowMoveTo: vi.fn(),
+    windowMoveEnd: vi.fn(),
+    ...overrides
+  }
 }
 
 function dispatch (command: unknown, senderFrame: unknown = CHROME_FRAME): unknown {

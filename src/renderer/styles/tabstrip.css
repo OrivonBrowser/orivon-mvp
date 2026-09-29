@@ -3,6 +3,7 @@
    are quoted from orivon-browser-v2 (visual reference only, ADR-0002). */
 
 .tabrow {
+  position: relative; /* anchors .drop-mark, the cross-window insertion line (main.ts) */
   height: 36px;
   display: flex;
   align-items: flex-end;
@@ -14,6 +15,35 @@
   scrollbar-width: none;
 }
 .tabrow::-webkit-scrollbar { display: none; }
+
+/* The line another window's strip shows while a tab dragged from elsewhere
+   is over it (main.ts's dragMark/dragMarkClear commands; the index comes
+   from tear-drag.ts's own poll, on the main-process side, sharing its
+   arithmetic with an actual drop -- tab-move.ts's `crossWindowTargetFor`).
+   Its `left` is set from script; there is nothing to lay out here. */
+.drop-mark {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--waccent);
+  pointer-events: none;
+}
+
+/* The empty tail after the new-tab button (index.html). In the native drag
+   mode it needs no rule of its own -- an untagged descendant of #tabrow's
+   own .drag class stays part of that drag region. In the manual mode
+   (drag-mode.ts's dragModeFor, main.ts sets [data-drag-mode]) it is
+   ordinary no-drag content instead, wired up in JS (strip-drag.ts). */
+.tabstrip-tail {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 8px;
+}
+html[data-drag-mode="manual"] .tabstrip-tail {
+  -webkit-app-region: no-drag;
+}
 
 .tab {
   position: relative;

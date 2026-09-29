@@ -1,6 +1,7 @@
 // What the chrome's buttons and menus ask of their window beyond the tab
 // collection: opening one popover closes the others, and a tab can be sent to
 // another window. Assembled per window from the pieces window.ts made.
+import { screen } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellActions } from '../ipc/ipc.js'
 import type { PermissionsPanel } from '../permissions/permissions-panel.js'
@@ -15,6 +16,13 @@ import { cascadeFrom } from './window-options.js'
 import type { ShellWindowOptions } from './window-options.js'
 import type { Bounds } from './tab-types.js'
 import type { ShellWindow } from './window-registry.js'
+import { edgeZoneFor, grabFor, halfOfWorkArea, positionFor, restorePositionFor } from './window-move.js'
+import type { DragGrab } from './window-move.js'
+
+/** How close to a page's edge a dragged tab has to be for it to split, WHILE a drag is under way -- narrower
+ * than `zoneAt`'s own default share (split-model.ts), used for a plain drop, so a tab is easy to tear off
+ * rather than getting caught by a wide edge band on the way to open space. */
+const TAB_DRAG_SPLIT_SHARE = 0.12
 
 /** What the site-info popover last opened on, so its "Site settings" row can open the all-sites list beside it. */
 export interface SiteInfoMemory {
@@ -43,6 +51,9 @@ function windowLabel (other: ShellWindow, position: number): string {
 export function shellActions (parts: WindowParts): ShellActions {
   const { entry, services, panels, memory, openWindow, topHeight, area } = parts
   const { tabs, window } = entry
+
+  /** Captured once at the start of a manual window move (drag-mode.ts), null between drags. */
+  let moveGrab: DragGrab | null = null
 
   const showTabMenuFor = (id: string): void => {
     const { tabs: all } = tabs.getState()
@@ -93,13 +104,17 @@ export function shellActions (parts: WindowParts): ShellActions {
       panels.menu.toggle(anchor)
     },
     dragTab: (id, point) => {
-      const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point)
+      const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)
       tabs.splits.setPreview(zone)
+      if (point === null) services.tearDrag.clear()
+      else services.tearDrag.update(entry, id, zone !== null, topHeight)
     },
-    dropTab: (id, screen, client) => {
+    beginTabDrag: (id) => { services.tearDrag.prewarm(entry, id) },
+    dropTab: (id, screenPoint, client) => {
       tabs.splits.setPreview(null)
+      services.tearDrag.clear()
       const active = tabs.getState().activeTabId
-      const zone = splitZoneFor(active, id, area(), client)
+      const zone = splitZoneFor(active, id, area(), client, TAB_DRAG_SPLIT_SHARE)
       if (zone !== null && active !== null) {
         tabs.splits.split(active, id, zone)
         return
@@ -108,8 +123,30 @@ export function shellActions (parts: WindowParts): ShellActions {
       const { width, height } = window.getContentBounds()
       const inWindow = client.x >= 0 && client.x < width && client.y >= 0 && client.y < height
       if (inWindow) return
-      dropTab(entry, id, screen, services.windows.all(), openWindow, topHeight)
+      dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
     },
-    showTabMenu: showTabMenuFor
+    showTabMenu: showTabMenuFor,
+    toggleMaximize: () => { if (window.isMaximized()) window.unmaximize(); else window.maximize() },
+    windowMoveStart: (point) => { moveGrab = grabFor(point, window.getBounds()) },
+    windowMoveTo: (point) => {
+      if (moveGrab === null) return
+      if (window.isMaximized()) {
+        window.unmaximize()
+        const restored = window.getBounds()
+        const to = restorePositionFor(point, restored.width, moveGrab)
+        window.setPosition(to.x, to.y)
+        moveGrab = grabFor(point, window.getBounds())
+      } else {
+        const to = positionFor(point, moveGrab)
+        window.setPosition(to.x, to.y)
+      }
+    },
+    windowMoveEnd: (point) => {
+      moveGrab = null
+      const workArea = screen.getDisplayNearestPoint(point).workArea
+      const zone = edgeZoneFor(point, workArea)
+      if (zone === 'maximize') window.maximize()
+      else if (zone !== null) window.setBounds(halfOfWorkArea(workArea, zone))
+    }
   }
 }
