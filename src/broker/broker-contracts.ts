@@ -53,18 +53,11 @@ export type { PickedPath } from './grants/picked-path-ledger.js'
  * authorisation, minted fresh the moment it resolves), so nothing can
  * revoke an acquisition that has not happened yet.
  *
- * `appName` is the requesting origin's own declared `manifest.name`
- * (`GrantLedger.manifestFor`, read by `capabilities/user-selected.ts` before
- * calling this), `undefined` only if no manifest was ever registered for
- * the origin. An implementation may use it to name the app in the dialog's
- * own chrome (d-0032) -- `transport/ipc.ts`'s `describePickerDialog` is the
- * real one that does.
- *
- * `origin` is the canonical origin asking, always present and never
- * attacker-chosen the way `appName` is (a manifest's declared `name` is the
- * app's own claim about itself) -- the dialog names the ORIGIN, not just
- * the name, so a page cannot pick a friendly `appName` to launder what it
- * actually is.
+ * `appName` is the origin's declared `manifest.name` (`GrantLedger.
+ * manifestFor`), `undefined` if none was registered; the dialog may show it
+ * (d-0032, `transport/ipc.ts`'s `describePickerDialog`). `origin` is the
+ * canonical origin asking, which the dialog always names, since `appName`
+ * is only the manifest's own claim.
  */
 export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: string | undefined, origin: string }) => Promise<PickPathResult>
 
@@ -208,17 +201,9 @@ export interface ListenedServer {
 export type Listen = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<ListenedServer>
 
 /**
- * T20's fail-closed check (security-model.md, docs/open-questions.md A263):
- * true when a proxy applies to `url` and the calling net capability must
- * refuse rather than reach the network directly with Node's own
- * `net`/`dgram`/`dns`, none of which honour Chromium's proxy settings. Main
- * wires this to `session.defaultSession.resolveProxy(url)`, true for any
- * answer but the literal `'DIRECT'` -- Chromium's own word for "nothing
- * applies here" (../main/verifier/proxy-check.ts's `unproxiedGateways` reads
- * the same answer the other way, for a different caller). MUST NOT reject:
- * an implementation that cannot tell answers `true`, the same fail-closed
- * direction every check in ./capabilities/net.ts already takes, so a caller
- * here needs no separate error path for it.
+ * T20: true when a proxy applies to `url`, so a net capability must refuse
+ * rather than go around it with Node's own sockets. Never rejects: an
+ * implementation that cannot tell answers true (./transport/proxy-probe.ts).
  */
 export type ProxyProbe = (url: string) => Promise<boolean>
 
@@ -246,14 +231,7 @@ export interface CreateBrokerOptions {
    */
   readonly ledgerStorage?: LedgerStorage
   readonly webContextHost?: WebContextHost
-  /**
-   * Every OTHER profile and live private-session directory, beyond
-   * `fs.dataRoot()` (this session's own) -- the picker guard's full
-   * account of "every profile and private-session directory, not only the
-   * current userData" (`./capabilities/user-selected.ts`'s
-   * `createPickGuardCheck`; `../transport/picker-guard-wiring.ts` computes
-   * these for real). Omitted (every test) means "just this session's own".
-   */
+  /** Every other profile and live private-session directory the picker must refuse, beyond `fs.dataRoot()` (./transport/picker-guard-wiring.ts). */
   readonly additionalProtectedRoots?: readonly string[]
   /** Tells the person why their pick was refused, injected like `webContextHost` so the picker guard never imports `electron` itself. Omitted, the refusal stays silent to the person; the app-facing outcome (a plain cancellation, never a distinguishable error) is identical either way. */
   readonly notifyPickRefused?: (info: { readonly origin: string, readonly appName: string | undefined, readonly reason: string }) => void
@@ -513,17 +491,9 @@ export interface Broker {
    */
   revokeUserSelectedPath(origin: string, pickId: string): Promise<boolean>
   /**
-   * Session teardown, not revocation (handle-contracts.md's "Session
-   * teardown is not revocation"): every one of `origin`'s live handles
-   * closes gracefully -- FIN, buffered writes flushed, `closed` rejecting
-   * with `sessionEnded` rather than `revoked` -- because the app was
-   * closed, navigated away from, or crashed, not because a grant was
-   * withdrawn. Unlike `revoke`, this also takes `fs.userSelected` handles,
-   * the other half of the FileHandle exception: a picker choice outlives a
-   * grant revocation but not the session that made it.
-   *
-   * Idempotent, and safe to call for an origin holding no live handles at
-   * all -- the common case, since most origins never acquire one.
+   * Session teardown, not revocation (handle-contracts.md): closes every
+   * live handle of `origin` gracefully, `fs.userSelected` ones included.
+   * Idempotent; an origin with no handles is the common case.
    */
   dropOrigin(origin: string): Promise<void>
 }
