@@ -1439,6 +1439,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** extensions build plan package 4's MV3 service-worker API surface
 
+### A292: A cache-served app's network document runs with its grants until the tab swaps session **[AI-REC]**
+
+- **Question:** A navigation into a cache-served origin commits the network-delivered document in
+  the default session, with `window.orivon` and the app's grants, before did-navigate moves the
+  tab into the app's partition -- the host, not the pin, supplied that code.
+- **Why it matters:** pinning is meant to keep a changed host from running with the app's grants (T18).
+- **Options:** the broker refuses a cache-served origin's calls outside its own partition, via a
+  predicate main injects (rec.); repartition on will-navigate/will-redirect before the commit.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing in this build; the granted-origin CSP and window.orivon filter apply meanwhile.
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared

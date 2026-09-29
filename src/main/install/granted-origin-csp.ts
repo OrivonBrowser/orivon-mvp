@@ -6,16 +6,18 @@
 // installed once at startup rather than once per grant. See README.md's
 // Design notes.
 //
-// Such an origin is served by its own server, never through protocol.handle,
-// so onHeadersReceived does fire for its documents (A110 is about
-// protocol.handle responses only) -- and a cache-served origin is excluded
-// below even if it also holds a grant: ITS CSP is set inside the
-// protocol.handle response instead, which this handler never sees (A110
-// again -- onHeadersReceived does not fire for that response at all).
+// This handler covers every granted origin's document that reaches the
+// default session, including one that is also cache-served: a navigation
+// into a cache-served origin commits its network-delivered document here,
+// in the default session, before the tab's partition swap moves later
+// requests to protocol.handle (A292) -- that document needs this policy
+// exactly as much as one that is never cache-served. The pinned copy's own
+// response, served through protocol.handle, never reaches onHeadersReceived
+// at all (A110), so it carries its own policy from csp.ts regardless.
 
 import type { OnHeadersReceivedListenerDetails, WebRequestFilter } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
-import { isOriginServedFromCacheSync, liveCspHeaderFor } from '../../loader/electron/serve.js'
+import { liveCspHeaderFor } from '../../loader/electron/serve.js'
 import { ISOLATION_HEADERS } from '../../loader/serve/csp.js'
 import type { HeadersReceivedHandler } from '../sessions/web-request-owner.js'
 
@@ -77,13 +79,13 @@ export function withIsolationHeaders (headers: Record<string, string[]>): Record
 }
 
 /**
- * The default session's one `onHeadersReceived` handler for every origin
- * granted without being installed. Reads the live grant, and the cache
- * registry, fresh per response -- a grant, a revoke, a manifest change or an
- * origin starting/stopping being cache-served all reach the very next
- * document load, with nothing to re-register. Only for a document: a worker
- * script the server sends without the policy is that server's own to fix,
- * same as the installed path's own handler.
+ * The default session's one `onHeadersReceived` handler for every granted
+ * origin's document that commits there, whether or not that origin is also
+ * cache-served. Reads the live grant fresh per response -- a grant, a
+ * revoke or a manifest change all reach the very next document load, with
+ * nothing to re-register. Only for a document: a worker script the server
+ * sends without the policy is that server's own to fix, same as the
+ * installed path's own handler.
  *
  * A handler that throws (a broker read failing, for instance) is caught by
  * the owner itself (web-request-owner.ts), which passes the response
@@ -93,7 +95,7 @@ export function withIsolationHeaders (headers: Record<string, string[]>): Record
 export function defaultSessionGrantedOriginCsp (broker: Broker): HeadersReceivedHandler {
   return async (details, current) => {
     const origin = documentOriginOf(details)
-    if (origin === null || isOriginServedFromCacheSync(origin) || broker.app.hasGrantsSync(origin) !== true) return current
+    if (origin === null || broker.app.hasGrantsSync(origin) !== true) return current
     const [csp, isolated] = await Promise.all([
       liveCspHeaderFor(broker, origin),
       broker.app.manifest(origin).then((manifest) => manifest.crossOriginIsolated === true).catch(() => false)

@@ -13,8 +13,9 @@ domains live beside what they serve (`../settings/`, `../history/`, `../launch/`
 
 **What it depends on.** `electron`; [`../settings/`](../settings/) (the settings domain);
 [`../browsing/omnibox.ts`](../browsing/omnibox.ts) (`sanitizeDirectUrl`, for what a page may open in an
-ordinary tab); [`../shell/shell-services.ts`](../shell/shell-services.ts) (type only) and the top-level
-`channels.ts` and `registry.ts`.
+ordinary tab); [`../shell/shell-services.ts`](../shell/shell-services.ts) (type only); the top-level
+`channels.ts` and `registry.ts`; and [`../../loader/`](../../loader/) (`appRootDirectoryName`, for
+`orphaned-app-partitions.ts`'s own on-disk check).
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule), and
 [`../shell/tabs.ts`](../shell/tabs.ts): `TabManager` calls this directory, never the reverse.
@@ -50,15 +51,21 @@ partitionFor(origin)).clearData()` for a cache-served app) -- reusing it costs n
 would save and avoids trusting an on-disk shape that could change under a future Electron upgrade.
 The partition is left behind, empty, rather than deleted, for the same reason: Electron creates it
 again the moment anything asks for that partition string, so removing the (now-empty) directory buys
-nothing. Runs once, ever, per profile (one boolean marker, not one per origin) because no origin can
-gain a NEW orphaned partition after this ships -- a grant no longer creates one at all.
+nothing. Runs once, ever, per profile (one boolean marker, not one per origin): a grant creates no
+partition, so no origin gains a new orphaned one for a later run to find.
 
-**Why `orphanedGrantOrigins` also takes `pinnedOrigins`, separate from `isCacheServed`.**
-`isCacheServed` answers "is serving live, THIS run" (`../../loader/electron/serve.ts`'s in-memory
-`servedPartitions`); a pin can exist on disk for an origin whose serving failed to restore this
-run (`restorePinnedServing`'s own per-origin failure tolerance), for which `isCacheServed` is
-false even though the origin is not orphaned at all. Skipping every origin with a pin on disk,
-whatever `isCacheServed` says, is what keeps that origin's data intact and its restore retryable
-on a later run; `start-internal-pages.ts` reads the pin list through a second, throwaway
-`nodeLoaderStorage` instance rather than threading the loader's own one through
+**Why `orphanedGrantOrigins` also takes `pinnedOrigins`, separate from `isCacheServed`, and why
+`cleanOrphanedAppPartitions` stats the app directory besides.** `isCacheServed` answers "is serving
+live, THIS run" (`../../loader/electron/serve.ts`'s in-memory `servedPartitions`); a pin can exist on
+disk for an origin whose serving failed to restore this run (`restorePinnedServing`'s own per-origin
+failure tolerance), for which `isCacheServed` is false even though the origin is not orphaned at all.
+`pinnedOrigins` catches that case cheaply for the common one, but its own read
+(`listPinnedOrigins`) can itself fail to see an installed app -- an unreadable `apps` directory, or
+one unreadable `pin.json` -- without raising past its own `catch`. The on-disk check in
+`cleanOrphanedAppPartitions` is what actually decides an origin is installed, by statting its own
+app directory directly rather than trusting either read; a stat failure that is not "the directory
+does not exist" aborts the whole run instead of guessing, so a profile where that read is blocked
+gets a real retry once whatever blocked it is fixed, rather than a marker that says done regardless.
+`start-internal-pages.ts` reads the pin list through a second, throwaway `nodeLoaderStorage`
+instance rather than threading the loader's own one through
 `SubsystemContext`.

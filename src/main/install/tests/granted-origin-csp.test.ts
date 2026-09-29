@@ -132,11 +132,13 @@ describe('defaultSessionGrantedOriginCsp -- the default session\'s one handler f
     expect(await handler(details({}), SEED)).toBe(SEED)
   })
 
-  it('leaves a cache-served origin untouched even when it also holds a grant -- its CSP is set inside the protocol.handle response instead (A110)', async () => {
+  it('gives a cache-served origin\'s document in the default session the policy too, when it holds a grant -- a navigation into it commits here before the tab\'s partition swap, and that document must not run with the app\'s grants and no policy', async () => {
     served.add(ORIGIN)
     try {
+      liveCspHeaderFor.mockResolvedValueOnce(CSP)
       const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true }))
-      expect(await handler(details({}), SEED)).toBe(SEED)
+      const result = await handler(details({}), SEED)
+      expect(result.responseHeaders['Content-Security-Policy']).toEqual([CSP])
     } finally {
       served.clear()
     }
