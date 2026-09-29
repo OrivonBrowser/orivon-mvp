@@ -11,9 +11,9 @@
 
 /** How far the pointer moves before a press becomes a drag, so a click is still a click. */
 export const DRAG_THRESHOLD_PX = 5
-/** How far below or above the strip the pointer goes before the tab is taken out of it. Owner-reported: 44px
- * read as "hard to get the tab out of the strip with the mouse" -- shrunk so a small, deliberate downward
- * movement tears a tab loose, rather than needing a long drag past most of a toolbar's height. */
+/** How far below or above the strip the pointer goes before the tab is taken out of it: small enough that a
+ * short, deliberate downward movement tears a tab loose, rather than needing a long drag past most of a
+ * toolbar's height. */
 export const TEAR_DISTANCE_PX = 18
 
 /** The place among the other tabs, whose centres are `centres`, that a tab dragged to `x` takes. */
