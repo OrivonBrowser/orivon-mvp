@@ -62,7 +62,10 @@ program retrying against a grant that is gone would spin. The host throws the pr
 termination, which unwinds the component as a trap.
 
 **A bind is made at listen**, since `orivon.net` binds and listens in one call: `finish-bind`
-always succeeds, and an address in use is reported by `finish-listen` (`tcp.ts`).
+always succeeds, and an address in use is reported by `finish-listen` (`tcp.ts`). An ephemeral
+(port 0) listen is confined to the app's granted range exactly like an explicit one (ADR-0034),
+so a program that listens twice on a single-port grant collides with its own ephemeral listen and
+sees `address-in-use` -- correct, not a bug.
 
 **Sockets block only where POSIX does.** A connect and a lookup are started at once and answered
 `would-block` until `orivon.net` settles, and the program waits on a pollable: a non-blocking

@@ -9,7 +9,6 @@
 import { lookup } from 'node:dns/promises'
 import { connect as netConnect, createServer } from 'node:net'
 import type { Server, Socket } from 'node:net'
-import { Duplex } from 'node:stream'
 import type { CloseReason } from '../handles/handle-contracts.js'
 import type { Dial, DialedSocket, Listen, ListenedServer } from '../broker-contracts.js'
 import type { PortRange } from '../policy/bind.js'
@@ -17,6 +16,7 @@ import { countPorts, portAt, randomStart } from './port-pick.js'
 import type { Resolver } from '../policy/connect.js'
 import { fail, isOrivonErrorLike } from '../errors.js'
 import type { LookupAddress } from '../../contracts/index.js'
+import { socketReadable, socketWritable } from './socket-streams.js'
 
 export { nodeFs } from './node-fs-adapter.js'
 
@@ -142,11 +142,13 @@ export const DIAL_TIMEOUT_MS = 30_000
 
 /**
  * One dial attempt. `readable`/`writable` are real WHATWG streams
- * (`node:stream`'s `Duplex.toWeb`) so `DialedSocket`'s type is honestly
- * satisfied -- `broker.net.connect` cannot type-check otherwise -- even
- * though nothing on the control channel forwards them to a renderer
- * directly (../transport/relay/port-pump.ts relays `readable`'s bytes over a
- * MessageChannelMain port instead; see ../transport/ipc.ts).
+ * (./socket-streams.ts's own hand-written adapter, not `node:stream`'s
+ * `Duplex.toWeb` -- see that file's header and README.md's Design notes for
+ * why) so `DialedSocket`'s type is honestly satisfied -- `broker.net.connect`
+ * cannot type-check otherwise -- even though nothing on the control channel
+ * forwards them to a renderer directly (../transport/relay/port-pump.ts
+ * relays `readable`'s bytes over a MessageChannelMain port instead; see
+ * ../transport/ipc.ts).
  */
 function dialOne (address: string, port: number, signal: AbortSignal): Promise<DialedSocket> {
   return new Promise((resolve, reject) => {
@@ -177,10 +179,9 @@ function dialOne (address: string, port: number, signal: AbortSignal): Promise<D
     })
     socket.once('connect', () => {
       settle()
-      const { readable, writable } = Duplex.toWeb(socket)
       resolve({
-        readable: readable as ReadableStream<Uint8Array>,
-        writable: writable as WritableStream<Uint8Array>,
+        readable: socketReadable(socket),
+        writable: socketWritable(socket),
         remoteAddress: socket.remoteAddress ?? address,
         remotePort: socket.remotePort ?? port,
         localAddress: socket.localAddress ?? '',
@@ -268,18 +269,17 @@ function outcomeFor (reason: CloseReason): { ok: true, value: null } | { ok: fal
 
 /**
  * Wraps a just-accepted raw socket the same way `dialOne` wraps a dialled
- * one -- same `Duplex.toWeb` construction, same `destroySocket` close table,
- * because an accepted connection and a dialled one are the same kind of
- * live TCP socket once established (handle-contracts.md's "TcpSocket"
+ * one -- same ./socket-streams.ts construction, same `destroySocket` close
+ * table, because an accepted connection and a dialled one are the same kind
+ * of live TCP socket once established (handle-contracts.md's "TcpSocket"
  * section draws no distinction). Sharing `DialedSocket` as the shape for
  * both, rather than a second near-identical interface, is Rule 3 applied to
  * the type as well as the function.
  */
 function wrapAccepted (socket: Socket): DialedSocket {
-  const { readable, writable } = Duplex.toWeb(socket)
   return {
-    readable: readable as ReadableStream<Uint8Array>,
-    writable: writable as WritableStream<Uint8Array>,
+    readable: socketReadable(socket),
+    writable: socketWritable(socket),
     remoteAddress: socket.remoteAddress ?? '',
     remotePort: socket.remotePort ?? 0,
     localAddress: socket.localAddress ?? '',

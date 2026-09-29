@@ -2,6 +2,7 @@ import type { OrivonErrorCode } from '../../../contracts/errors.js'
 import type { WriteAbortMessage, WriteAckMessage, WriteEndMessage, WriteFailedMessage, WriteMessage } from '../../../contracts/ipc.js'
 import { CREDIT_COALESCE_BYTES, WRITE_HEARTBEAT_MS } from '../../../contracts/ipc.js'
 import { errnoOf } from '../../errors.js'
+import { WRITABLE_ALREADY_ENDED_CODE } from '../../adapters/socket-streams.js'
 
 // The WRITE half of the credit-window relay (contracts/ipc.ts,
 // handle-contracts.md's "Backpressure: a credit window"), run BACKWARDS
@@ -83,17 +84,17 @@ function toWriteFailed (handleId: string, code: OrivonErrorCode, error?: unknown
 }
 
 /**
- * True for the write() rejection Node produces when OUR OWN writable
- * already ended on its own -- confirmed empirically (Node 24.11.1) as the
- * shape a peer FIN leaves behind under `allowHalfOpen: false`
- * (docs/open-questions.md A69): an AbortError carrying no real transport
- * errno. Distinct from a genuine transport failure (ECONNRESET, EPIPE, ...),
- * which always carries one.
+ * True for the write() rejection `../../adapters/socket-streams.ts` produces
+ * when OUR OWN writable already ended on its own -- the peer FIN leaves
+ * behind under `allowHalfOpen: false` (docs/open-questions.md A69). A
+ * dedicated code from that adapter's own up-front `socket.writable` check,
+ * not an inference from an error's `name`/`code` -- see that file's header.
+ * Distinct from a genuine transport failure (ECONNRESET, EPIPE, ...), which
+ * `mapSocketError` maps instead.
  */
 function isWritableAlreadyEnded (error: unknown): boolean {
   return typeof error === 'object' && error !== null &&
-    (error as { name?: unknown }).name === 'AbortError' &&
-    (error as { code?: unknown }).code === 'ABORT_ERR'
+    (error as { code?: unknown }).code === WRITABLE_ALREADY_ENDED_CODE
 }
 
 export function createPortSink (options: PortSinkOptions): PortSink {

@@ -257,6 +257,23 @@ describe('listenTcp against a real TCP client', () => {
 
     await first.destroy('closed')
   })
+
+  // Correct behaviour, not a bug (ADR-0034): an ephemeral (port 0) listen is
+  // confined to the app's granted range the same as an explicit one, so a
+  // program that listens twice on a single-port grant -- once ephemeral,
+  // once naming that same port -- collides with itself. `platformCode`
+  // pins the genuine EADDRINUSE `../socket-streams.ts`'s WASI-facing
+  // counterpart (`../../../shim/wasi-p2/addresses.ts`'s socketErrorCode)
+  // maps to `address-in-use`, already proven by
+  // `shim/wasi-p2/tests/sockets.test.ts`'s own listen-failure case.
+  it('an ephemeral listen and an explicit one on a single-port grant collide with the real EADDRINUSE', async () => {
+    const range = [{ lo: 30021, hi: 30021 }]
+    const ephemeral = await listenTcp(range, neverAborts())
+
+    await expect(listenTcp(range, neverAborts())).rejects.toMatchObject({ code: 'limit', platformCode: 'EADDRINUSE' })
+
+    await ephemeral.destroy('closed')
+  })
 })
 
 describe('net.listen end to end: a real accepted connection, a real denial, a real revocation cascade', () => {
