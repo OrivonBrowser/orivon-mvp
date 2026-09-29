@@ -89,7 +89,7 @@ export const appInstallSubsystem: Subsystem = {
     const reconsentPrompt = createReconsentPrompt()
     const capabilityPrompt = createCapabilityPrompt(scoreLevelOverrideFor)
     const rollbackChoicePrompt = createRollbackChoicePrompt()
-    publishInstallApp(ctx, async (hintingOrigin, hintedUrl) => {
+    publishInstallApp(ctx, async (hintingOrigin, hintedUrl, caller) => {
       // A loopback origin can never reach installFromHint's own consent:
       // install-origin.ts refuses it for not being https and not being
       // public unicast, before a manifest is ever read. It is granted
@@ -106,7 +106,8 @@ export const appInstallSubsystem: Subsystem = {
         // queue costs nothing and closes the same race for both.
         const outcome = await withOriginQueue(hintingOrigin, async () => await grantWithoutInstall(
           { broker, fetchManifest: fetchGrantManifest, consent, perCapabilityConsent },
-          hintingOrigin
+          hintingOrigin,
+          caller
         ))
         if (outcome.outcome === 'rejected') {
           console.warn(`[app-install] grant without installing refused for ${hintingOrigin}: ${outcome.reason}`)
@@ -117,7 +118,7 @@ export const appInstallSubsystem: Subsystem = {
         }
         return outcome
       }
-      return await installFromHint({ broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }, hintingOrigin, hintedUrl)
+      return await installFromHint({ broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }, hintingOrigin, hintedUrl, caller)
     })
   }
 }

@@ -32,6 +32,18 @@ survive an engine change; the three `*-prompt.ts` files are tied to Electron's `
 
 ## Design notes
 
+**[`request-grant.ts`](request-grant.ts)'s `DialogCaller`: the tab that asked is a pair of
+closures, never an Electron object.** Every dialog here is bound to the tab whose page triggered
+it -- parented to that tab's window, shown only while the tab is still alive and on the origin
+that asked, and re-checked once more when the person answers, since a dialog can be up for up to
+120 seconds (A153) and the page is free to navigate or close in that window. `window()`/`stillOn()`
+carry that state across the Electron boundary as plain functions so `request-grant.ts`,
+`install-consent.ts` and `update-outcomes.ts` can all reason about it without importing `electron`
+themselves; the three `*-prompt.ts` files build the real closures from a live `WebContents`, and
+`../../broker/transport/ipc.ts` and `../install/manifest-hint.ts` build them again independently,
+at the two places an Electron sender frame actually exists, rather than sharing one Electron-typed
+helper across a boundary neither side should depend on.
+
 **Every pattern is rendered from the parsed form, never a second guess at the raw string.**
 Patterns go through `hostSpecKind` and `parsePattern`
 ([`../../broker/policy/connect-patterns.ts`](../../broker/policy/connect-patterns.ts)), the

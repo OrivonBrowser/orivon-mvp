@@ -17,6 +17,7 @@
 import { MAX_MANIFEST_BYTES, parseManifest } from '../../loader/manifest/manifest.js'
 import { requestInstallConsent } from '../consent/install-consent.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from '../consent/install-consent.js'
+import type { DialogCaller } from '../consent/request-grant.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { patternSetFromGrants, widensAuthority } from '../../broker/policy/update.js'
 import type { PatternSet } from '../../broker/policy/update.js'
@@ -114,7 +115,7 @@ function widensHeldGrants (held: PatternSet, declared: PatternSet): boolean {
  * against the registered manifest, so an unregistered origin has nothing for
  * it to grant against.
  */
-export async function grantWithoutInstall (deps: GrantWithoutInstallDeps, origin: string): Promise<GrantWithoutInstallOutcome> {
+export async function grantWithoutInstall (deps: GrantWithoutInstallDeps, origin: string, caller?: DialogCaller): Promise<GrantWithoutInstallOutcome> {
   let response: { ok: boolean, status: number, text: string }
   try {
     response = await deps.fetchManifest(`${origin}/.well-known/orivon.json`)
@@ -186,6 +187,6 @@ export async function grantWithoutInstall (deps: GrantWithoutInstallDeps, origin
     }
   }
   await deps.broker.registerApp(origin, result.manifest)
-  await requestInstallConsent(deps.broker, deps.consent, origin, result.manifest, deps.perCapabilityConsent)
+  await requestInstallConsent(deps.broker, deps.consent, origin, result.manifest, deps.perCapabilityConsent, caller)
   return { outcome: 'granted-without-install', canonicalOrigin: origin, newlyRegistered: !alreadyRegistered }
 }

@@ -16,7 +16,7 @@
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishRequestGrant } from '../registry.js'
 import { requestGrant } from './request-grant.js'
-import type { PendingGrantRequests } from './request-grant.js'
+import type { PendingGrantPrompts, PendingGrantRequests } from './request-grant.js'
 import { createGrantPrompt } from './request-grant-prompt.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 
@@ -34,6 +34,11 @@ export const requestGrantSubsystem: Subsystem = {
     // for the same capability gets one dialog, not one per call -- see
     // PendingGrantRequests's own doc (./request-grant.js).
     const pending: PendingGrantRequests = new Map()
-    publishRequestGrant(ctx, async (origin, request) => await requestGrant(broker, consent, origin, request, pending))
+    // A second map, also for this running app's whole lifetime: serialises
+    // the dialog itself across DIFFERENT capabilities of the same origin, so
+    // a page cannot stack one dialog per capability it asks for at once --
+    // see PendingGrantPrompts's own doc.
+    const prompts: PendingGrantPrompts = new Map()
+    publishRequestGrant(ctx, async (origin, request, caller) => await requestGrant(broker, consent, origin, request, pending, caller, prompts))
   }
 }

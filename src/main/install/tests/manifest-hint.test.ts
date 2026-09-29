@@ -8,6 +8,9 @@ import type { LoadResult } from '../../../loader/index.js'
 
 const REJECTED: LoadResult = { outcome: 'rejected', reason: 'unused' }
 
+/** The shape of the `DialogCaller` the real listener always builds and passes as `installApp`'s third argument -- asserted structurally, since its two closures are fresh per call. */
+const ANY_CALLER = expect.objectContaining({ window: expect.any(Function), stillOn: expect.any(Function) })
+
 /** The published `ctx.installApp`, spied. This listener takes that one
  * function rather than `AppInstallDeps`, so these tests assert at the seam
  * the production wiring actually uses -- see the listener's own doc for why
@@ -61,7 +64,7 @@ describe('createManifestHintListener', () => {
     // The FRAME's origin is what reaches the install path; the reported
     // href is passed through untouched for installFromHint's own
     // same-origin check to judge.
-    expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`)
+    expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`, ANY_CALLER)
   })
 
   describe('session-bound attribution', () => {
@@ -82,7 +85,7 @@ describe('createManifestHintListener', () => {
       listener(frameFor(APP, APP_SESSION), `${APP}/manifest.json`)
       await flush()
 
-      expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`)
+      expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`, ANY_CALLER)
     })
 
     it('never checks the session when no sessionForOrigin is injected', async () => {
@@ -92,7 +95,7 @@ describe('createManifestHintListener', () => {
       listener(frameFor(APP, DEFAULT_SESSION), `${APP}/manifest.json`)
       await flush()
 
-      expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`)
+      expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`, ANY_CALLER)
     })
   })
 

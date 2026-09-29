@@ -27,10 +27,11 @@ import type { LoadContext, LoadInstalled, LoadResult, Loader } from '../../loade
 import { requestInstallConsent } from './install-consent.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from './install-consent.js'
 import { grantChangedCapabilities } from './grant-changed-capabilities.js'
+import type { DialogCaller } from './request-grant.js'
 
-export type ReconsentPrompt = (origin: string, manifest: Manifest) => Promise<boolean>
-export type CapabilityPromptPrompt = (origin: string, manifest: Manifest, requestedPatterns: PatternSet) => Promise<boolean>
-export type RollbackChoicePrompt = (origin: string, manifest: Manifest, versionFloor: string) => Promise<boolean>
+export type ReconsentPrompt = (origin: string, manifest: Manifest, caller?: DialogCaller) => Promise<boolean>
+export type CapabilityPromptPrompt = (origin: string, manifest: Manifest, requestedPatterns: PatternSet, caller?: DialogCaller) => Promise<boolean>
+export type RollbackChoicePrompt = (origin: string, manifest: Manifest, versionFloor: string, caller?: DialogCaller) => Promise<boolean>
 
 export interface UpdateOutcomeDeps {
   readonly broker: Broker
@@ -57,13 +58,13 @@ export interface UpdateOutcomeDeps {
  * grants untouched (grant-ledger.ts's own doc), so re-registering the same
  * or an older manifest is a no-op on top of what is already there.
  */
-async function finishInstall (deps: UpdateOutcomeDeps, result: LoadInstalled): Promise<LoadInstalled> {
+async function finishInstall (deps: UpdateOutcomeDeps, result: LoadInstalled, caller?: DialogCaller): Promise<LoadInstalled> {
   try {
     await deps.broker.registerApp(result.canonicalOrigin, result.manifest)
   } catch (error) {
     console.error('[app-install] registerApp failed after a successful install; the bundle is installed but its version floor was not persisted', result.canonicalOrigin, error)
   }
-  await requestInstallConsent(deps.broker, deps.consent, result.canonicalOrigin, result.manifest, deps.perCapabilityConsent)
+  await requestInstallConsent(deps.broker, deps.consent, result.canonicalOrigin, result.manifest, deps.perCapabilityConsent, caller)
   return result
 }
 
@@ -76,10 +77,10 @@ async function finishInstall (deps: UpdateOutcomeDeps, result: LoadInstalled): P
  * `acknowledgedRollbackVersion` moved forward -- never recomputed from
  * scratch.
  */
-export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResult, context: LoadContext): Promise<LoadResult> {
+export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResult, context: LoadContext, caller?: DialogCaller): Promise<LoadResult> {
   switch (result.outcome) {
     case 'installed':
-      return await finishInstall(deps, result)
+      return await finishInstall(deps, result, caller)
 
     case 'rejected':
     case 'up-to-date':
@@ -89,29 +90,38 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
       if (deps.reconsentPrompt === undefined) return result
       let accepted: boolean
       try {
-        accepted = await deps.reconsentPrompt(result.canonicalOrigin, result.manifest)
+        accepted = caller === undefined
+          ? await deps.reconsentPrompt(result.canonicalOrigin, result.manifest)
+          : await deps.reconsentPrompt(result.canonicalOrigin, result.manifest, caller)
       } catch (error) {
         console.error('[app-install] the reconsent prompt threw; treating this update as declined', result.canonicalOrigin, error)
         return result
       }
+      // The tab that reported this update may be gone or elsewhere by now --
+      // treated like a decline (nothing installed), with no record of one:
+      // this outcome never writes a decline in the first place.
+      if (caller !== undefined && !caller.stillOn(result.canonicalOrigin)) return result
       if (!accepted) return result
       // NO SECOND FETCH: `result.tree`/`result.entries` are exactly the
       // bytes the person was just shown -- see Loader.installFetched's own
       // doc for why re-fetching here would be a correctness defect, not a
       // missed optimisation.
       const installed = await deps.loader.installFetched(result.canonicalOrigin, result.manifest, result.tree, result.entries, result.declaration, result.content)
-      return installed.outcome === 'installed' ? await finishInstall(deps, installed) : installed
+      return installed.outcome === 'installed' ? await finishInstall(deps, installed, caller) : installed
     }
 
     case 'needs-capability-prompt': {
       if (deps.capabilityPrompt === undefined) return result
       let accepted: boolean
       try {
-        accepted = await deps.capabilityPrompt(result.canonicalOrigin, result.manifest, result.requestedPatterns)
+        accepted = caller === undefined
+          ? await deps.capabilityPrompt(result.canonicalOrigin, result.manifest, result.requestedPatterns)
+          : await deps.capabilityPrompt(result.canonicalOrigin, result.manifest, result.requestedPatterns, caller)
       } catch (error) {
         console.error('[app-install] the capability prompt threw; treating this update as declined', result.canonicalOrigin, error)
         return result
       }
+      if (caller !== undefined && !caller.stillOn(result.canonicalOrigin)) return result
       if (!accepted) return result
       const installed = await deps.loader.installFetched(result.canonicalOrigin, result.manifest, result.tree, result.entries, result.declaration, result.content)
       if (installed.outcome !== 'installed') return installed
@@ -131,18 +141,21 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
       // patternSetFromCapabilities itself (src/loader/index.ts), so this
       // cast trusts nothing untrusted.
       await grantChangedCapabilities(deps.broker, installed.canonicalOrigin, installed.manifest, Object.keys(result.requestedPatterns) as readonly CapabilityKind[])
-      return await finishInstall(deps, installed)
+      return await finishInstall(deps, installed, caller)
     }
 
     case 'needs-rollback-choice': {
       if (deps.rollbackChoicePrompt === undefined) return result
       let accepted: boolean
       try {
-        accepted = await deps.rollbackChoicePrompt(result.canonicalOrigin, result.manifest, result.versionFloor)
+        accepted = caller === undefined
+          ? await deps.rollbackChoicePrompt(result.canonicalOrigin, result.manifest, result.versionFloor)
+          : await deps.rollbackChoicePrompt(result.canonicalOrigin, result.manifest, result.versionFloor, caller)
       } catch (error) {
         console.error('[app-install] the rollback choice prompt threw; treating this update as declined', result.canonicalOrigin, error)
         return result
       }
+      if (caller !== undefined && !caller.stillOn(result.canonicalOrigin)) return result
       if (!accepted) return result
       try {
         // A68/d-0017: acknowledges EXACTLY this version, never a per-origin
@@ -169,7 +182,7 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
         ...context,
         acknowledgedRollbackVersion: result.manifest.version
       })
-      return await driveLoadResult(deps, reconsidered, context)
+      return await driveLoadResult(deps, reconsidered, context, caller)
     }
 
     default: {

@@ -31,7 +31,26 @@ import type { CapabilityRequest, Pattern, CapabilityKind } from '../../contracts
  * prompt (breadth visible, a rendered manifest) needs to replace; nothing
  * about `requestGrant`'s own logic changes when it does.
  */
-export type ConsentPrompt = (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]) => Promise<boolean>
+export type ConsentPrompt = (origin: string, capability: CapabilityKind, patterns: readonly Pattern[], caller?: DialogCaller) => Promise<boolean>
+
+/**
+ * What a dialog needs to know about the page that asked, without owning an
+ * Electron object itself: whether it should even appear, and what to parent
+ * it to. `window` and `stillOn` are both read AT SHOW TIME, never captured
+ * once -- the whole reason this is a pair of closures and not a snapshot is
+ * that a page can navigate the tab away, or close it, at any point during
+ * the manifest read and the dialog's own wait for an answer (up to 120
+ * seconds, A153's own timing). `window` returns `unknown` rather than a real
+ * `BrowserWindow`/`BaseWindow` so this stays importable by every Electron-
+ * free file in this directory; the *-prompt.ts file that actually calls
+ * `dialog.showMessageBox` is the one place that casts it back.
+ */
+export interface DialogCaller {
+  /** The window currently holding the calling tab, or undefined if the tab cannot be resolved to one (closed, or moved somewhere this process lost track of). */
+  window: () => unknown
+  /** True while the call that asked is still alive and its top frame has not left `origin`. */
+  stillOn: (origin: string) => boolean
+}
 
 /**
  * One in-flight `requestGrant` call per (origin, capability): a second call
@@ -56,6 +75,48 @@ function pendingKey (origin: string, capability: CapabilityKind): string {
 }
 
 /**
+ * The tail of each origin's dialog queue, for one running app's whole
+ * lifetime -- a second call for the SAME origin but a DIFFERENT capability,
+ * so it shares no entry in `PendingGrantRequests` above, still waits for
+ * whatever this map says came before it. `PendingGrantRequests` alone only
+ * gives "one dialog per origin per capability"; this is what makes it "one
+ * dialog per origin, period" (plan decision 10's own wording), by delaying
+ * the CONSENT CALL itself, never the manifest read or the declined-consent
+ * check ahead of it -- those never show anything, so nothing is lost by
+ * letting every concurrent call run them right away.
+ *
+ * Not `../install/origin-queue.js`'s `withOriginQueue`: that module lives
+ * one directory over, in a tree this file's own siblings (`app-install.ts`
+ * -> `install-consent.ts`) are imported BY, so importing it here would be a
+ * cycle. `withOriginTurn` below is this file's own, much smaller version --
+ * queuing a single dialog call, not a whole task with its own re-entrancy
+ * tracking.
+ */
+export type PendingGrantPrompts = Map<string, Promise<void>>
+
+/**
+ * Runs `task` after every earlier `withOriginTurn` call for `origin` has
+ * settled, chaining onto `turns` the same way `origin-queue.ts`'s own
+ * `withOriginQueue` does. `task`'s own success or failure never affects the
+ * next caller's turn: the queued promise resolves once `task` SETTLES,
+ * whichever way, so one dialog erroring never wedges the next one.
+ */
+async function withOriginTurn<T> (origin: string, turns: PendingGrantPrompts, task: () => Promise<T>): Promise<T> {
+  const ahead = turns.get(origin) ?? Promise.resolve()
+  let release: () => void = () => {}
+  const mine = new Promise<void>((resolve) => { release = resolve })
+  const settled = ahead.then(() => mine)
+  turns.set(origin, settled)
+  await ahead
+  try {
+    return await task()
+  } finally {
+    release()
+    void settled.then(() => { if (turns.get(origin) === settled) turns.delete(origin) })
+  }
+}
+
+/**
  * The real work of one `requestGrant` call, split out so `requestGrant`
  * itself can wrap it in the in-flight de-dup above without an `await`
  * between checking `pending` and claiming a slot in it -- seeing this
@@ -66,7 +127,9 @@ async function requestGrantOnce (
   broker: Broker,
   consent: ConsentPrompt,
   origin: string,
-  request: CapabilityRequest & { capability: CapabilityKind }
+  request: CapabilityRequest & { capability: CapabilityKind },
+  caller?: DialogCaller,
+  prompts?: PendingGrantPrompts
 ): Promise<boolean> {
   let manifest
   try {
@@ -86,7 +149,21 @@ async function requestGrantOnce (
   const declined = await broker.declinedCapabilitiesFor(origin)
   if (declined?.includes(request.capability) === true) return false
 
-  const accepted = await consent(origin, request.capability, decision.patterns)
+  const askConsent = async (): Promise<boolean> => caller === undefined
+    ? await consent(origin, request.capability, decision.patterns)
+    : await consent(origin, request.capability, decision.patterns, caller)
+  const accepted = prompts === undefined ? await askConsent() : await withOriginTurn(origin, prompts, askConsent)
+
+  // The page that asked may have navigated away, or closed, before the
+  // dialog ever showed, or at any point during the up to 120 seconds it
+  // waited for an answer (A153) -- either way, whatever `accepted` says,
+  // nobody who can still see this origin actually answered it. Treated like
+  // a decline for what happens next (nothing is granted), but NOT recorded
+  // as one: nothing in this function ever writes a decline for a `false`
+  // consent() answer regardless (that only happens through the site-info
+  // popover, ../permissions/site-switches.js), so a later, genuine ask for
+  // this origin still prompts.
+  if (caller !== undefined && !caller.stillOn(origin)) return false
   if (!accepted) return false
 
   // A153 (docs/open-questions.md): `consent` above can await a real dialog
@@ -137,19 +214,27 @@ async function requestGrantOnce (
  * expected to have registered first), but from a requester's point of view
  * "nothing was ever declared" and "not declared" are the same fact.
  *
- * `pending` is the real caller's ONE map, shared across every call this
- * running app makes (`request-grant-subsystem.ts` builds it once, at
- * wiring time) -- see `PendingGrantRequests`'s own doc for what it does and
- * why it is keyed the way it is. Omitted (every existing test that calls
- * this directly), the de-dup is simply off: each call is independent, which
- * is what a test asserting one call's own behaviour wants regardless.
+ * `pending` and `prompts` are the real caller's own maps, shared across
+ * every call this running app makes (`request-grant-subsystem.ts` builds
+ * each once, at wiring time) -- see `PendingGrantRequests`'s and
+ * `PendingGrantPrompts`'s own docs for what each does. Both omitted (every
+ * existing test that calls this directly), the de-dup and the per-origin
+ * queue are simply off: each call is independent, which is what a test
+ * asserting one call's own behaviour wants regardless.
+ *
+ * `caller`, when supplied, is the tab that actually asked -- see
+ * `DialogCaller`'s own doc. Omitted, every dialog this call can reach shows
+ * unconditionally and its answer is trusted regardless of what the calling
+ * page has done since, the same as before this parameter existed.
  */
 export async function requestGrant (
   broker: Broker,
   consent: ConsentPrompt,
   origin: string,
   request: CapabilityRequest,
-  pending?: PendingGrantRequests
+  pending?: PendingGrantRequests,
+  caller?: DialogCaller,
+  prompts?: PendingGrantPrompts
 ): Promise<boolean> {
   if (!isCapabilityKind(request.capability)) return false
 
@@ -167,7 +252,7 @@ export async function requestGrant (
   // dialog, never a dynamic request.
   if (request.capability === 'web.context' || request.capability === 'web.embed') return false
 
-  if (pending === undefined) return await requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability })
+  if (pending === undefined) return await requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability }, caller, prompts)
 
   const key = pendingKey(origin, request.capability)
   const inFlight = pending.get(key)
@@ -178,7 +263,7 @@ export async function requestGrant (
   // synchronously up to its own first `await`, so a concurrent call arriving
   // before this one yields control anywhere will still find this promise
   // already in `pending` -- see PendingGrantRequests's own doc.
-  const ask = requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability })
+  const ask = requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability }, caller, prompts)
   pending.set(key, ask)
   try {
     return await ask
