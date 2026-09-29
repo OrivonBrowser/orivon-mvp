@@ -1,18 +1,22 @@
 // The write-side counterpart of ./port-pump-real-socket.test.ts: proves
 // createPortSink against a real local TCP server and a real dialTcp()/
-// Duplex.toWeb socket, not only the synthetic streams port-sink.test.ts
-// drives. Two things only a real socket can prove: bytes the sink accepts
-// actually reach a real peer, and a real peer reset reaches the sink's
-// WriteFailedMessage with the genuine errno as platformCode (mirroring
-// port-pump-real-socket's own case for the read direction).
+// ../../../adapters/socket-streams.ts socket, not only the synthetic streams
+// port-sink.test.ts drives. Three things only a real socket can prove: bytes
+// the sink accepts actually reach a real peer, a real peer reset reaches the
+// sink's WriteFailedMessage with the genuine errno as platformCode
+// (mirroring port-pump-real-socket's own case for the read direction), and
+// the A69 half-close case below.
 //
-// NOT COVERED HERE: half-close (a peer FIN leaving our writable open).
-// open-questions.md A69 -- the fix that would make that true (allowHalfOpen)
-// was found to break Duplex.toWeb's own EOF detection and was reverted, so
-// asserting it here would test a property this tree does not actually have.
+// A peer FIN still ends our writable early (allowHalfOpen: false) rather
+// than leaving it open -- setting allowHalfOpen was found to break EOF
+// detection on the read side and was reverted (docs/open-questions.md A69,
+// still open). What changed is only how the write direction reports that
+// when it happens: deterministically, from socket-streams.ts's own
+// `socket.writable` check, not from sniffing an error Node's own web-stream
+// adapter happened to produce.
 
 import { createServer, type Server, type Socket } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { dialTcp } from '../../../adapters/node-adapters.js'
 import { createPortSink } from '../port-sink.js'
 import { mapSocketError } from '../socket.js'
@@ -124,5 +128,32 @@ describe('createPortSink against a real local TCP server', () => {
     const error = await peerErrored
     expect(error.code).toBe('ECONNRESET')
     expect(await peerClosed).toBe(true)
+  }, 15_000)
+
+  it('a peer FIN auto-ending our writable (A69) fails only the write direction, not the whole handle', async () => {
+    await listen()
+    const dialed = await dialTcp(['127.0.0.1'], port, neverAborts())
+    const peer = await firstAccepted()
+    const sent: Array<WriteAckMessage | WriteFailedMessage> = []
+    const onSinkFailed = vi.fn()
+
+    const sink = createPortSink({
+      handleId: 'h1', writable: dialed.writable, send: (m) => { sent.push(m) }, windowBytes: 1_024,
+      mapError: mapSocketError, onSinkFailed
+    })
+
+    peer.end()
+    // Give allowHalfOpen: false time to actually auto-end our writable --
+    // node-adapters.test.ts's own probe confirms this needs a real tick, not
+    // just the 'end' event, on this Node version.
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    sink.handleWrite({ kind: 'write', handleId: 'h1', chunk: new Uint8Array([1, 2, 3]) })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(sent).toEqual([{ kind: 'write-failed', handleId: 'h1', code: 'closed' }])
+    expect(onSinkFailed).not.toHaveBeenCalled()
+
+    await dialed.destroy('failed')
   }, 15_000)
 })
