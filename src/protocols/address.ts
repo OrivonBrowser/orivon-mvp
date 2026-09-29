@@ -65,6 +65,11 @@ export class ProtocolAddresses {
     this.displaySchemesByTld = displaySchemesByTld
   }
 
+  /** The scheme a served name is shown with: its own for an address, its protocol's display scheme for a top-level-domain name, if it declares one. */
+  private shownScheme (served: ServedName): string | undefined {
+    return served.namespace.endsWith(':') ? served.namespace.slice(0, -1) : this.displaySchemesByTld.get(served.namespace.slice(1))
+  }
+
   /** Whether `scheme`, lowercase and without its colon, is a protocol's address scheme. */
   servesScheme (scheme: string): boolean {
     return this.schemes.has(scheme)
@@ -143,11 +148,8 @@ export class ProtocolAddresses {
     if (parsed.protocol !== 'https:' || parsed.port !== '' || parsed.username !== '' || parsed.password !== '') return url
     const tail = `${parsed.search}${parsed.hash}`
     const served = this.servedName(parsed.hostname)
-    if (served !== undefined) {
-      if (served.namespace.endsWith(':')) return `${served.namespace}//${served.name}${parsed.pathname}${tail}`
-      const displayScheme = served.namespace.startsWith('.') ? this.displaySchemesByTld.get(served.namespace.slice(1)) : undefined
-      if (displayScheme !== undefined) return `${displayScheme}://${served.name}${parsed.pathname}${tail}`
-    }
+    const shown = served === undefined ? undefined : this.shownScheme(served)
+    if (served !== undefined && shown !== undefined) return `${shown}://${served.name}${parsed.pathname}${tail}`
     const scheme = this.schemeEndpoint(parsed.hostname)
     const endpoint = /^\/([^/]+)(\/.*)?$/.exec(parsed.pathname)
     if (scheme === undefined || endpoint === null) return url
@@ -165,9 +167,7 @@ export class ProtocolAddresses {
     }
     if (parsed.protocol !== 'https:' || parsed.port !== '') return origin
     const served = this.servedName(parsed.hostname)
-    if (served === undefined) return origin
-    if (served.namespace.endsWith(':')) return `${served.namespace}//${served.name}`
-    const displayScheme = served.namespace.startsWith('.') ? this.displaySchemesByTld.get(served.namespace.slice(1)) : undefined
-    return displayScheme === undefined ? origin : `${displayScheme}://${served.name}`
+    const shown = served === undefined ? undefined : this.shownScheme(served)
+    return served === undefined || shown === undefined ? origin : `${shown}://${served.name}`
   }
 }

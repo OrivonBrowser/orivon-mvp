@@ -121,9 +121,9 @@ storage, the loader and the verifier all still key on `https://vitalik.eth`, exa
 describes.
 
 **Both `ipfs://vitalik.eth` and `ipns://vitalik.eth` open `https://vitalik.eth`**, the name's own
-origin, directly -- never through the `ipfs:`/`ipns:` scheme's own DNSLink-style resolution. A
-`.eth` name already has an origin of its own; routing it through an address scheme's canonical
-spelling would be one more hop to the same place.
+origin, directly -- never through the `ipfs:`/`ipns:` scheme's own resolution. That would look
+`vitalik.eth` up as a DNSLink name, in DNS, which does not hold `.eth` names, and would give the
+site a second origin beside the one its grants are keyed to.
 
 The owner chose `ipfs://` as the shown form. `ipns://vitalik.eth` is the form other IPFS tools
 accept for a DNSLink-style name; a copied `ipfs://vitalik.eth` is not valid outside Orivon, since

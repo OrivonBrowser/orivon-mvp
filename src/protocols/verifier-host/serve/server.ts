@@ -126,15 +126,15 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
   }
 }
 
+function redirectTo (res: ServerResponse, origin: string, path: string, search: string): void {
+  res.writeHead(301, { location: `${origin}${path}${search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
+}
+
 /**
  * `https://ipfs.orivon/<name>/<path>`, where a typed or linked `ipfs://` address
  * lands: redirected to the origin of the name's canonical spelling, so one
  * site has one origin however its address was written. No page runs here.
  */
-function redirectTo (res: ServerResponse, origin: string, path: string, search: string): void {
-  res.writeHead(301, { location: `${origin}${path}${search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
-}
-
 function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: URL, res: ServerResponse): void {
   const [, written = '', path = '/'] = /^\/([^/]*)(\/.*)?$/.exec(url.pathname) ?? []
   const shown = `${scheme}://${written.slice(0, MAX_ADDRESS_NAME)}`
