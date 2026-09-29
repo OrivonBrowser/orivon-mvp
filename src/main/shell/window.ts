@@ -3,7 +3,7 @@
 // below it, whichever tab WebContentsView is active. See docs/architecture --
 // there is no shell doc, this file and its neighbours (tabs.ts, ipc.ts)
 // are the specification.
-import { app, nativeTheme, WebContentsView, type BaseWindow } from 'electron'
+import { app, WebContentsView, type BaseWindow } from 'electron'
 import { join } from 'node:path'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron/serve.js'
@@ -34,6 +34,7 @@ import type { ShellWindowOptions } from './window-options.js'
 import { showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady, windowBackgroundColor } from './window-frame.js'
 import { recordViewBackground } from './view-background-test-hook.js'
+import { onThemeUpdated } from './theme-colors.js'
 import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
 import { searchUrlFor } from '../browsing/search-engines.js'
@@ -96,16 +97,16 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // background (createWindowFrame's `background()`) covers a torn-off
   // window shown `instant` before either view exists; it does not cover
   // THIS view's own separate surface once attached. Kept live across an OS
-  // theme change while the window stays open (nativeTheme.on('updated')
-  // below), the same pattern window-frame.ts already uses for the window's
-  // own background and title-bar overlay.
+  // theme change while the window stays open (theme-colors.ts's
+  // `onThemeUpdated` below), the same pattern window-frame.ts already uses
+  // for the window's own background and title-bar overlay.
   const chromeBackground = windowBackgroundColor(services.profiles.isPrivate)
   chrome.setBackgroundColor(chromeBackground)
   recordViewBackground(chrome.webContents.id, chromeBackground)
   win.contentView.addChildView(chrome)
   function applyChromeBackgroundForTheme (): void { chrome.setBackgroundColor(windowBackgroundColor(services.profiles.isPrivate)) }
-  nativeTheme.on('updated', applyChromeBackgroundForTheme)
-  win.on('closed', () => { nativeTheme.removeListener('updated', applyChromeBackgroundForTheme) })
+  const unregisterChromeThemeListener = onThemeUpdated(applyChromeBackgroundForTheme)
+  win.on('closed', () => { unregisterChromeThemeListener() })
   // The chrome preload is unconditionally privileged (src/preload/shell.ts
   // gates on this same URL, ipc.ts's isFromChrome checks it a second time
   // on every call) -- a view holding it must never end up attached to a

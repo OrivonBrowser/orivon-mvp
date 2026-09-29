@@ -17,6 +17,7 @@ import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-o
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { repartitionView } from './tab-parking.js'
+import { parseInternalUrl } from '../pages/internal-pages.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
 
@@ -147,19 +148,29 @@ export function tabWebPreferences (preload: string, partition: string | undefine
   }
 }
 
+/** Electron's own default: what a WebContentsView paints before anything
+ * ever calls `setBackgroundColor` on it. Named so `resetViewBackground`
+ * below reads as putting a view back to this, not to an arbitrary white. */
+const DEFAULT_BACKGROUND = '#FFFFFF'
+
 /** Builds one tab's WebContentsView, shared by tabs.ts's createTab() and
  * repartitionView().
  *
- * `opts.backgroundColor`: the white flash a fresh tab shows before it loads
- * fixed -- createTab() (tabs.ts) attaches this view to screen BEFORE
- * `loadURL`, on purpose (a detached view's first paint has nowhere live to
- * land), which means Electron's default opaque-white WebContentsView
- * background is what actually paints first, for however long the page takes
- * to load and apply its own CSS background. Only the shell's OWN pages
- * (the new-tab dashboard, orivon:// internal pages) get one here -- an
- * ordinary website's tab is deliberately left at the default, matching every
- * browser's own new-tab-vs-site distinction (a site may itself be
- * transparent/dark/light and this shell has no opinion on that).
+ * `opts.backgroundColor`: painted before this view is ever attached to the
+ * screen -- createTab() (tabs.ts) attaches it BEFORE `loadURL`, since a
+ * detached view's first paint has nowhere live to land, so whatever colour
+ * the view already carries when attached is what actually paints first, for
+ * however long the page then takes to apply its own CSS background. Only
+ * the shell's OWN pages (the new-tab dashboard, orivon:// internal pages)
+ * get one here -- an ordinary website's tab is deliberately left at the
+ * default, matching every browser's own new-tab-vs-site distinction (a site
+ * may itself be transparent/dark/light and this shell has no opinion on
+ * that). A tab built with one is reset to `DEFAULT_BACKGROUND` the moment it
+ * stops being the dashboard or an internal page (`resetViewBackground`,
+ * called from wireView's did-navigate below) -- the SAME view keeps
+ * carrying its old colour across an ordinary navigation that needs no
+ * partition swap, and a page with no CSS background of its own would
+ * otherwise render on top of it instead of the white the web expects.
  *
  * `opts.target`, when known, is what the view is about to load -- see
  * appTabOrigins below for why watchAppTab needs it. A trailing options
@@ -173,6 +184,17 @@ export function makeTabView (preload: string, partition: string | undefined, add
   }
   watchAppTab(view, additionalArguments, opts.target)
   return view
+}
+
+/** Puts a view's background back to Electron's own default -- called the
+ * moment a tab that had one (the dashboard, an internal page) stops being
+ * that (wireView's did-navigate below): the colour `makeTabView` set no
+ * longer describes this tab, and the SAME view keeps showing it forever
+ * otherwise, since Electron never repaints a view's background on its own
+ * past the first `setBackgroundColor` call. */
+function resetViewBackground (view: WebContentsView): void {
+  view.setBackgroundColor(DEFAULT_BACKGROUND)
+  recordViewBackground(view.webContents.id, DEFAULT_BACKGROUND)
 }
 
 /** The views built with APP_TAB_FLAG. Electron cannot read a view's
@@ -278,6 +300,23 @@ export function wireView (id: string, record: TabRecord): void {
     // one-way rule exists to protect.
     if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(record.host.dashboardUrl)) {
       record.isDashboardTab = false
+      // The dashboard's own dark wash (makeTabView's own doc) must not
+      // bleed through a site with no CSS background of its own -- and a
+      // navigation with nothing to swap partitions over (the common case:
+      // an ordinary site with no grants yet) reuses THIS SAME view below,
+      // never rebuilding it fresh.
+      resetViewBackground(view)
+    }
+    // guardInternalView (../pages/internal-tab.ts) refuses every navigation
+    // an internal page's OWN content could trigger, so this fires only for
+    // one path it cannot see: the address bar (tabs.ts's navigate()) typing
+    // something with no derivable origin -- about:blank, say -- straight
+    // onto this view with no partition to swap either. Same one-way rule as
+    // the dashboard's own flag just above: only ever cleared here, and the
+    // view's colour reset the moment it is.
+    if (record.internalPage !== null && parseInternalUrl(navigatedUrl)?.page !== record.internalPage) {
+      record.internalPage = null
+      resetViewBackground(view)
     }
     if (!record.isDashboardTab) {
       const swap = partitionChanged(navigatedUrl, record.partition)

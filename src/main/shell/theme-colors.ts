@@ -42,3 +42,34 @@ export const PANEL_POPOVER_BACKGROUND: ThemeColorPair = { light: '#e5e5ec', dark
 export function resolveThemeColor (pair: ThemeColorPair): string {
   return nativeTheme.shouldUseDarkColors ? pair.dark : pair.light
 }
+
+const themeUpdateListeners = new Set<() => void>()
+/** Whether the one real `nativeTheme.on('updated', ...)` below has ever been
+ * installed -- installed once per process and never removed, whatever the
+ * registry's own membership does afterward (see `onThemeUpdated`'s own doc). */
+let realListenerInstalled = false
+
+/**
+ * Registers `listener` to run on every live OS/app theme change, and returns
+ * its unregister. Every window (its own background, window.ts) and every
+ * `warm` popover (its own background, popover-view.ts) needs to hear this,
+ * and each used to add its own `nativeTheme.on('updated', ...)` -- `nativeTheme`
+ * is one process-wide `EventEmitter`, so by the 11th such listener (past
+ * Node's default max of 10, a handful of ordinary windows and popovers)
+ * `MaxListenersExceededWarning [NativeTheme]` starts printing, burying a real
+ * leak warning under a false one built into normal use.
+ *
+ * Backed by exactly ONE real listener for the whole process, installed the
+ * first time anything registers here and never removed: window/popover
+ * churn only ever adds to or removes from the `Set` below, which is what
+ * keeps the real count at one regardless of how many windows open and close
+ * over the app's life.
+ */
+export function onThemeUpdated (listener: () => void): () => void {
+  if (!realListenerInstalled) {
+    realListenerInstalled = true
+    nativeTheme.on('updated', () => { for (const fn of [...themeUpdateListeners]) fn() })
+  }
+  themeUpdateListeners.add(listener)
+  return () => { themeUpdateListeners.delete(listener) }
+}

@@ -92,7 +92,11 @@ const ANCHOR = { x: 0, y: 0, width: 10, height: 10 }
 afterEach(() => {
   calls.length = 0
   nativeThemeState.shouldUseDarkColors = false
-  nativeThemeListeners.length = 0
+  // NOT nativeThemeListeners.length = 0: popover-view.ts registers through
+  // theme-colors.ts's onThemeUpdated now (defect 2's fix), which installs
+  // the one real `nativeTheme.on('updated', ...)` once for this whole
+  // module's life and never removes it -- clearing this array between tests
+  // would desync it from that real, still-installed listener.
   nextWebContentsId = 1
   vi.mocked(WebContentsView).mockClear()
 })
@@ -224,12 +228,21 @@ describe('createPopoverView: a `warm` popup (menu-panel.ts\'s own case)', () => 
       background: BACKGROUND, warm: true, registerIpc: () => () => {}
     })
     popover.prewarm()
-    calls.length = 0
+    // THIS test's own warm view, not the shared `calls` log: onThemeUpdated
+    // (theme-colors.ts, defect 2's fix) fans one real listener out to every
+    // popover still registered, which in this file also includes earlier
+    // tests' own warm popovers (their window never fired 'closed', so they
+    // never unregistered -- correctly mirroring a real process, where a
+    // window simply garbage collected without closing would leak the same
+    // way). Asserting on this instance alone keeps the test meaningful
+    // regardless of what else is listening.
+    const view = vi.mocked(WebContentsView).mock.instances.at(-1) as unknown as { setBackgroundColor: ReturnType<typeof vi.fn> }
+    view.setBackgroundColor.mockClear()
 
     nativeThemeState.shouldUseDarkColors = true
     fireThemeUpdated()
 
-    expect(calls).toEqual(['setBackgroundColor:#2b2c31'])
+    expect(view.setBackgroundColor).toHaveBeenCalledWith('#2b2c31')
   })
 
   it('destroys the warm view when the window closes', () => {
