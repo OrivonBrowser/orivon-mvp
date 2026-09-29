@@ -16,9 +16,10 @@ export const DECIMAL = /^\d{1,20}$/
 
 /** Kept at once; the least recently touched dropped first. Any page can
  * make the host resolve any number of `.eth`/IPNS names, so this rollback
- * floor -- a cache, never a ledger -- must not grow with however many it
- * asks for. */
-export const MAX_IPNS_KEYS = 512
+ * floor must not grow with however many it asks for. The size is what it
+ * costs such a page to push one name's floor out: that many other valid
+ * IPNS names, each resolved. About 120 bytes each on disk. */
+export const MAX_IPNS_KEYS = 4096
 /** How long a run of saves waits before its one write to disk: an update a
  * page can trigger by the thousand must cost one write for the whole burst,
  * not one fsync each. */
