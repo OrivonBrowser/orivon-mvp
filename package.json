@@ -19,7 +19,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build-ordinary.mjs",
-    "start": "electron-vite preview",
+    "start": "node scripts/build-ordinary.mjs && electron-vite preview --skipBuild",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "check:natives": "node scripts/check-no-native-modules.mjs",
