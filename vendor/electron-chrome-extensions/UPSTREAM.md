@@ -251,6 +251,50 @@
     reasons, and the same "no behaviour change" stance, as patches 13-14 and 16-20's own entries.
     Reason patches 27-28 above needed this: they touch `getPopupUrl`/`clearActiveTab`, both in
     files this suite's own tests (`browser-action-popup-url.test.ts`) now import by real path.
+34. **`popup.ts`: a popup closes on more than its own `blur`.** `PopupView`'s constructor now also
+    closes it when the parent window moves, resizes or minimises (`'move'`/`'resize'`/`'minimize'`,
+    all removed again in `destroy()`), and when Escape is pressed inside it
+    (`webContents.on('before-input-event', ...)`) -- Chrome does all three. A new
+    `closeOnNextAppFocus` also arms once `maybeClose`'s own "keep it open, focus may have left the
+    app for a login form" guard triggers: on some window managers (measured on this project's own
+    X11 desktop) focus handing from the popup to whichever window the person clicked is not atomic
+    with the `blur` that reports it, so for a brief instant neither the popup nor the parent
+    reports itself focused -- indistinguishable, at that instant, from a genuine departure to
+    another app. Since `blur` fires only once, missing this reading left the popup stuck open for
+    good. The one-shot fallback listens for the next `'focus'` on any other window `getAllWindows()`
+    already knows about, or on any webContents inside the parent's own content-view tree (a tab or
+    toolbar view can gain Chromium's own internal input focus without the parent `BaseWindow`
+    itself re-firing `'focus'`, if it was never the one that lost native focus to begin with) --
+    whichever fires first closes the popup and disarms the rest. Reason: a popup that never
+    reliably closes on its own is a correctness bug independent of platform, and the added closes
+    match Chrome's own documented behaviour.
+35. **`popup.ts`: a popup can never stay permanently invisible, and no longer flashes white in
+    dark mode.** Two independent, narrow changes to the same constructor. First,
+    `armVisibilityFallback`: a preferred-size-capable popup (Electron 12+, the only case this
+    project ships) has exactly one path to `show()` -- `'preferred-size-changed'`, an event
+    Chromium's own layout/compositor pipeline emits with no guarantee of promptness, or of firing
+    at all (measured: it never fires under a GPU-less headless display). Nothing before this patch
+    gave such a popup a second way to become visible; it would stay `show: false` --
+    fully loaded and interactive over CDP, but invisible and unfocusable to a real person -- for
+    its entire life. A 500ms timer now shows it anyway, at a fixed reasonable size
+    (`FALLBACK_BOUNDS`, 320x400), if `'preferred-size-changed'` has not arrived yet; a later
+    `'preferred-size-changed'` still resizes and repositions it correctly on arrival regardless
+    (`updatePreferredSize` does not check `hidden` first). Second, the `backgroundColor` passed to
+    `new BrowserWindow(...)` -- paints before the extension's own popup page has a pixel to show --
+    now follows `nativeTheme.shouldUseDarkColors` instead of always being `'#ffffff'`. Reason: a
+    fixed light background flashed white for a moment on every popup open in dark mode.
+36. **`router.ts`: `onExtensionMessage` waits for a still-registering extension instead of
+    refusing it outright.** A genuine page of an extension whose `session.extensions.loadExtension()`
+    is already in flight can call a `crx-msg` handler (a real extension's own popup script calling
+    a chrome.\* API as its first statement, before any user interaction, wins this exact race every
+    time) before `eventSessionExtensions.getExtension(id)` reflects that load -- previously an
+    immediate `"...was sent from an unknown extension context"` throw. `waitForRegisteredExtension`
+    now waits up to `EXTENSION_REGISTRATION_WAIT_MS` (2s) for `'extension-loaded'` to name the same
+    id before giving up and refusing as before. Safe to wait rather than refuse: `extensionId` only
+    ever reaches this method non-`undefined` by way of `onRouterMessage`, which already refused the
+    call outright if `gMessageSenderIdCheck` was set and did not confirm `extensionId` names THIS
+    sender's own origin -- so an unrelated page has no way to reach this wait by naming an id that
+    is not its own, only the genuine owner gets the grace period.
 
 32. **`chrome.offscreen` and a real `chrome.runtime.getContexts`.** New
     `src/browser/api/offscreen.ts` (`OffscreenAPI`): `createDocument`/

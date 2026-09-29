@@ -49,6 +49,24 @@ interface ShellBridge { ctx: SubsystemContext, services: ShellServices }
 let bridge: ShellBridge | undefined
 let hostExtensions: ElectronChromeExtensions | undefined
 
+/** The one open browserAction popup, if any -- browser-action.ts's own
+ * activateClick destroys a previous popup before ever creating a second
+ * one, so there is never more than one to track. Read by
+ * attachExtensionShell's own `tabActivated` handler to close it on a tab
+ * switch, the same as a navigation of the active tab closes it (both set
+ * up where this is written, in the 'browser-action-popup-created' handler
+ * below). */
+let currentPopup: { isDestroyed: () => boolean, destroy: () => void } | undefined
+
+/** True for the duration of a `chrome.tabs.create`/`chrome.tabs.update({active:true})`
+ * call's own `activateTab` -- attachExtensionShell's `tabActivated` reads this to skip
+ * closing an open popup: a tab switch the EXTENSION itself just made (querying tabs,
+ * then opening one from its own popup, per test/e2e-extensions-toolbar.test.ts) must not
+ * close the very popup that asked for it, unlike a tab switch the PERSON makes by
+ * clicking the tab strip. `createTab` and `selectTab` below are the only two ways an
+ * extension can activate a tab, and neither recurses into the other. */
+let tabActivationFromExtension = false
+
 /** `session.defaultSession.extensions.getExtension` answers `null` for an id
  * it does not hold (Electron's own contract), never `undefined` -- checked
  * against both, so a URL policy check bound to this never trivially passes. */
@@ -236,9 +254,14 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
       if (details.url !== undefined && target === undefined) {
         throw new Error(`extensions: refused to open ${details.url}`)
       }
-      const opened = shellWindow.tabs.openTrusted(target)
-      if (opened === undefined) throw new Error('extensions: tab capacity reached')
-      return [opened[1], win]
+      tabActivationFromExtension = true
+      try {
+        const opened = shellWindow.tabs.openTrusted(target)
+        if (opened === undefined) throw new Error('extensions: tab capacity reached')
+        return [opened[1], win]
+      } finally {
+        tabActivationFromExtension = false
+      }
     },
 
     // The library calls selectTab/removeTab for an extension-initiated
@@ -251,7 +274,13 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     selectTab: (wc) => {
       if (shellInitiated.has(wc)) return
       const found = bridge?.services.windows.findTab(wc)
-      if (found != null) found.window.tabs.activateTab(found.tabId)
+      if (found == null) return
+      tabActivationFromExtension = true
+      try {
+        found.window.tabs.activateTab(found.tabId)
+      } finally {
+        tabActivationFromExtension = false
+      }
     },
 
     removeTab: (wc) => {
@@ -297,6 +326,26 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   hostExtensions.on('browser-action-popup-created', (popup) => {
     const wc = popup.browserWindow?.webContents
     if (wc !== undefined) setupWindowOpenPolicy(wc)
+
+    // Chrome closes a popup the moment the tab it was opened over switches
+    // or navigates away -- neither is something popup.ts (generic vendored
+    // code, ADR-0043) can know about on its own, so it is wired here from
+    // the shell's own tab-lifecycle/navigation events instead. `currentPopup`
+    // is read by attachExtensionShell's own `tabActivated` handler below;
+    // the active tab's navigation is watched directly, since tabLifecycle
+    // has no per-navigation event of its own (tab-lifecycle.ts's own doc:
+    // created/activated/closed/view-replaced only).
+    currentPopup = popup
+    const shellWindow = popup.parent === undefined || bridge === undefined
+      ? undefined
+      : bridge.services.windows.all().find((w) => w.window === popup.parent)
+    const activeTabWc = shellWindow?.tabs.activeWebContents()
+    const closePopup = (): void => { if (!popup.isDestroyed()) popup.destroy() }
+    activeTabWc?.once('did-start-navigation', closePopup)
+    popup.browserWindow?.webContents.once('destroyed', () => {
+      if (currentPopup === popup) currentPopup = undefined
+      activeTabWc?.removeListener('did-start-navigation', closePopup)
+    })
   })
   app.on('web-contents-created', (_event, contents) => {
     if (contents.session === session.defaultSession && contents.getType() === 'backgroundPage') {
@@ -369,6 +418,14 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       hostExtensions?.addTab(wc, win)
     },
     tabActivated: (wc) => {
+      // Chrome closes an open browserAction popup the moment the PERSON
+      // switches tabs -- 'browser-action-popup-created' wires the same
+      // close for the active tab's own navigation; this is the other half.
+      // Never for a switch the popup's own extension just made through
+      // chrome.tabs.create/update (tabActivationFromExtension's own doc):
+      // test/e2e-extensions-toolbar.test.ts deliberately keeps the popup
+      // open and interactive across its own chrome.tabs.create() call.
+      if (!tabActivationFromExtension && currentPopup !== undefined && !currentPopup.isDestroyed()) currentPopup.destroy()
       if (trackedTabs.has(wc)) {
         notifyShell(wc, (t) => hostExtensions?.selectTab(t))
         return
