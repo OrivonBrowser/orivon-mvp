@@ -139,6 +139,24 @@ export function findViewShowing (app, chrome, url) {
   return tabViews(app, chrome).find((w) => w.url() === url)
 }
 
+/**
+ * Whether the popover whose URL contains `urlPart` (e.g. `/menu/`) is
+ * currently attached to the screen. NOT the same question as "does its
+ * webContents exist" -- a `warm` popover (shell/popover-view.ts, the main
+ * menu) keeps its webContents alive while hidden rather than destroying it,
+ * so `app.windows()` still lists it long after it closed. Reads the e2e-only
+ * hook (shell/view-background-test-hook.ts's `recordPopoverShown`), present
+ * only in a dev-grant-enabled build (`npm run test:e2e`'s own build step).
+ */
+export async function popoverShown (app, urlPart) {
+  return await app.evaluate(({ webContents }, part) => {
+    const target = webContents.getAllWebContents().find((wc) => wc.getURL().includes(part))
+    if (target === undefined) return false
+    const shown = globalThis.__orivonDevPopoverShown
+    return shown !== undefined && shown.has(target.id)
+  }, urlPart)
+}
+
 /** ONE read of a tab view's own location and title. Deliberately not a poll --
  * a caller asserting an absence must settle first, then read once (rule 3). */
 export async function readTabDocument (view) {

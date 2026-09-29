@@ -9,7 +9,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
-import { bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 let server: Server
 let siteUrl = ''
@@ -204,7 +204,11 @@ it('opens the main menu from the toolbar, lists commands under their keys, and r
     await menu.locator('.item', { hasText: 'Open Settings' }).click()
 
     expect(await waitFor(() => settingsPage(app) !== undefined)).toBe(true)
-    expect(await waitFor(() => menuPage() === undefined)).toBe(true)
+    // Not menuPage() === undefined: the menu is kept warm (shell/popover-
+    // view.ts's `warm`), so its webContents survives being hidden and
+    // app.windows() keeps listing it -- popoverShown reads whether it is
+    // actually attached to the screen instead.
+    expect(await waitFor(async () => !(await popoverShown(app, '/menu/')))).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
