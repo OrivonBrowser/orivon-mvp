@@ -1,6 +1,6 @@
 # ADR-0038: An address scheme is shown as itself and served over HTTPS, under one routed suffix
 
-- **Status:** accepted
+- **Status:** accepted, amended 2026-09-29
 - **Date:** 2026-09-28
 - **Type:** architecture
 - **Decided by:** owner, for serving over HTTPS rather than a custom scheme, for `ipfs://` and
@@ -34,7 +34,8 @@ An address scheme is shown as itself and served over HTTPS:
   canonical spelling is refused, so one site has one origin. The endpoint serves only redirects
   and error pages, never a page.
 - **A top-level domain stays its own host.** A `.eth` name is `https://<name>.eth` (`ADR-0030`);
-  ENS registers `.eth` through the same function.
+  ENS registers `.eth` through the same function. Such a name is shown with its protocol's
+  display scheme, `ipfs://<name>` for `.eth` (amended 2026-09-29, below).
 
 `ipfs://` and `ipns://` are the first two schemes, both served by the IPFS protocol. An
 `ipfs://` address names its content, so it is proven by construction; `ipns://<key>` is proven by
@@ -110,6 +111,28 @@ second reason, a namespace Orivon must own and defend, does carry over, and is a
   origin, bounded as `.eth` lookups are (`ADR-0030`): per-site caches, shared slots, capped memory.
 - **A link to an address never reaches the OS.** An app that claims `ipfs:` on this machine is not
   offered it; the tab loads the address instead.
+
+## Amendment, 2026-09-29: a .eth name is shown as ipfs://<name>
+
+A protocol's descriptor may name a `displayScheme`: the address scheme a name under one of its
+top-level domains is shown with. ENS names `ipfs`, so `https://vitalik.eth` is shown, everywhere
+an address or origin is shown, as `ipfs://vitalik.eth`. The name's origin is unchanged: grants,
+storage, the loader and the verifier all still key on `https://vitalik.eth`, exactly as `ADR-0030`
+describes.
+
+**Both `ipfs://vitalik.eth` and `ipns://vitalik.eth` open `https://vitalik.eth`**, the name's own
+origin, directly -- never through the `ipfs:`/`ipns:` scheme's own resolution. That would look
+`vitalik.eth` up as a DNSLink name, in DNS, which does not hold `.eth` names, and would give the
+site a second origin beside the one its grants are keyed to.
+
+The owner chose `ipfs://` as the shown form. `ipns://vitalik.eth` is the form other IPFS tools
+accept for a DNSLink-style name; a copied `ipfs://vitalik.eth` is not valid outside Orivon, since
+elsewhere `ipfs://` takes only a CID, never a name that still needs resolving.
+
+*Provisional*: in this build every name the verifier loads for a `.eth` name is IPFS content
+(`ADR-0030`), so the descriptor can simply name the shown prefix. Once a second data gatherer can
+serve a `.eth` name, the shown prefix should come from what actually loaded the page, not from a
+fixed field on the protocol's descriptor.
 
 ## Reversibility
 

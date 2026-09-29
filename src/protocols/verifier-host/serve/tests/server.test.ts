@@ -299,4 +299,10 @@ describe('the loopback server, for an address scheme', () => {
     expect((await get('/', { host: `${ROOT}.nope.orivon` })).status).toBe(421)
     expect((await get('/', { host: 'example.com' })).status).toBe(421)
   })
+
+  it('sends a top-level-domain name written under an address scheme straight to its own origin', async () => {
+    const reply = await get('/vitalik.eth/p?q=1', { host: 'ipns.orivon' })
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe('https://vitalik.eth/p?q=1')
+  })
 })
