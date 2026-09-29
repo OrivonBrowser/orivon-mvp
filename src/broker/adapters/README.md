@@ -41,14 +41,16 @@ per-datagram floor enforces both the byte and the count bound (A86). `send` reso
 `CLOSE_DRAIN_TIMEOUT_MS`'s doc in `node-adapters.ts`, `node-fs-adapter.ts`'s `openFile` doc, and
 A184.
 
-**TCP sockets are wrapped in WHATWG streams by hand (`socket-streams.ts`), not by
+**TCP and TLS sockets are wrapped in WHATWG streams by hand (`socket-streams.ts`), not by
 `node:stream`'s `Duplex.toWeb`.** That adapter's own `finished()`-driven bookkeeping has a
 confirmed, currently-unfixed Node engine bug
 ([nodejs/node#63761](https://github.com/nodejs/node/issues/63761)): under socket teardown churn
 it can throw a bare `TypeError` (`Cannot read properties of undefined (reading 'error')`) out of
-a socket's own async completion, with nowhere for `dialOne`'s or `wrapAccepted`'s caller to catch
-it -- taking the whole Electron main process down through `index.ts`'s `uncaughtException`
-policy. `socket-streams.ts`'s own readable/writable pair tracks one local `settled` flag per
+a socket's own async completion, with nowhere for `dialOne`'s, `wrapAccepted`'s or
+`tls-adapter.ts`'s `dialOneSecure`'s caller to catch it -- taking the whole Electron main process
+down through `index.ts`'s `uncaughtException` policy. A `TLSSocket` is a `net.Socket`
+(`tls-adapter.ts`'s own header), so the same pair of functions covers both without a TLS-specific
+copy. `socket-streams.ts`'s own readable/writable pair tracks one local `settled` flag per
 direction instead, so a racing `reader.cancel()`, `writer.abort()` and the handle table's own
 `destroySocket` call can never reach a second `controller.close()`/`controller.error()` call.
 One behavioural difference this carries: the A69 half-close case (a peer FIN auto-ending our

@@ -375,11 +375,32 @@ export const listenTcp: Listen = async (ranges: readonly PortRange[], signal) =>
     else socket.destroy()
   }
 
+  /**
+   * A queued connection carries no listener at all until `accept()` later
+   * hands it to `wrapAccepted`, whose own `socketReadable`/`socketWritable`
+   * attach theirs synchronously. Node's rule for `'error'` is to rethrow when
+   * an emitter has zero listeners for it, so a peer that resets a queued
+   * connection before `accept()` would otherwise reach `index.ts`'s
+   * `uncaughtException` policy and take the whole process down. This no-op
+   * listener absorbs that; `wrapAccepted`'s own listener joins it once the
+   * socket is actually accepted; and the matching `'close'` listener drops a
+   * torn-down connection out of `queue` so a later `accept()` never hands the
+   * app a dead socket.
+   */
+  function guardQueued (socket: Socket): void {
+    socket.on('error', () => {})
+    socket.once('close', () => {
+      const index = queue.indexOf(socket)
+      if (index !== -1) queue.splice(index, 1)
+    })
+  }
+
   bound.on('connection', (socket) => {
     if (destroyed) { resetIncoming(socket); return }
     const waiter = waiters.shift()
     if (waiter !== undefined) { waiter.resolve(wrapAccepted(socket)); return }
     if (queue.length >= LISTEN_ACCEPT_QUEUE_LIMIT) { resetIncoming(socket); return }
+    guardQueued(socket)
     queue.push(socket)
   })
   // The listening socket itself dying underneath us (EMFILE on a later

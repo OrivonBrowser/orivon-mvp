@@ -16,6 +16,7 @@ import type { Server } from 'node:tls'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createDialTls, dialTls } from '../tls-adapter.js'
 import { generateTlsFixture } from './tls-adapter.test-helpers.js'
+import { WRITABLE_ALREADY_ENDED_CODE } from '../socket-streams.js'
 
 function neverAborts (): AbortSignal {
   return new AbortController().signal
@@ -82,5 +83,26 @@ describe('dialTls performs a real handshake with real certificate verification',
       // proof this path is not silently trusting the fixture CA it never received.
       code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
     })
+  })
+
+  it('a write after the peer FIN auto-ended our writable fails only that direction (../socket-streams.ts, not node:stream Duplex.toWeb)', async () => {
+    // The regression this pins: a TLS socket used to reach node:stream's
+    // Duplex.toWeb, whose A69 half-close case rejects with an AbortError
+    // that ../../transport/relay/port-sink.ts's isWritableAlreadyEnded no
+    // longer recognises -- failing the WHOLE handle instead of only the
+    // write direction. socket-streams.test.ts's identical TCP case is what
+    // this mirrors.
+    const dial = createDialTls({ ca: fixtureCa })
+    const socket = await dial({ host: 'localhost', port }, {}, neverAborts())
+
+    const reader = socket.readable.getReader()
+    await reader.read() // the server ends its side immediately (done: true)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    const writer = socket.writable.getWriter()
+    await expect(writer.write(new Uint8Array([1]))).rejects.toMatchObject({
+      code: WRITABLE_ALREADY_ENDED_CODE
+    })
+    await socket.destroy('failed')
   })
 })

@@ -5,8 +5,9 @@ import { errnoOf } from '../../errors.js'
 // The READ half of the credit-window relay contracts/ipc.ts and
 // handle-contracts.md's "Backpressure" specify. Pure and Electron-free, like
 // ./policy/ -- `readable` is already a real WHATWG ReadableStream by the time
-// this file sees it (Duplex.toWeb, ../ipc.ts's dialOne), and `send` is
-// injected, so this module runs under plain Node/vitest with no
+// this file sees it (../../adapters/socket-streams.ts's own hand-written
+// adapter, via ../../adapters/node-adapters.ts's dialOne/wrapAccepted), and
+// `send` is injected, so this module runs under plain Node/vitest with no
 // MessagePortMain at all. See README.md, Design notes, for the write-half
 // boundary and the credit-trust history.
 
