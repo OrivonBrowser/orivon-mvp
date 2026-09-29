@@ -29,6 +29,9 @@ export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
  */
 const PUBLIC_ADDRESS_CSP = 'treat-as-public-address'
 
+/** Served content, and the error page shown in its place, may be framed only by their own origin: nothing else has a reason to embed either. */
+const FRAME_ANCESTORS_SELF_CSP = "frame-ancestors 'self'"
+
 /** A host with no port or the default one: every other port would be another origin for the same name. */
 const HOST = /^([\x21-\x39\x3b-\x7e]+)(?::443)?$/
 
@@ -76,7 +79,7 @@ function sendError (res: ServerResponse, shown: string, error: unknown): void {
   const { status, html } = renderErrorPage(failure, shown, detail)
   const headers: Record<string, string> = {
     'content-type': 'text/html; charset=utf-8',
-    'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}`,
+    'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`,
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff'
   }
@@ -141,7 +144,7 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
     const name = registry.canonicalName(scheme, decoded)
     const origin = registry.addresses.originFor(scheme, name)
     if (origin === undefined) throw new ResolutionError('unsupported', `${scheme}://${name} is too long, or not lowercase, to be a host of its own`)
-    res.writeHead(301, { location: `${origin}${path}${url.search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
+    res.writeHead(301, { location: `${origin}${path}${url.search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}` }).end()
   } catch (error) {
     sendError(res, shown, error instanceof URIError ? new ResolutionError('invalid-name', `${shown} is not a valid address`) : error)
   }
@@ -199,7 +202,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       'accept-ranges': 'bytes',
       // Revalidated every time: a name can point elsewhere tomorrow, and the root CID says whether it has.
       'cache-control': 'no-cache',
-      'content-security-policy': PUBLIC_ADDRESS_CSP,
+      'content-security-policy': `${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`,
       etag
     }
     const range = parseRange(req.headers.range ?? null, file.size)
