@@ -78,7 +78,9 @@ export default defineConfig({
       alias: {
         'orivon:crx-extensions': resolve(root, 'vendor/electron-chrome-extensions/src/browser/index.ts'),
         'orivon:crx-extensions-partition': resolve(root, 'vendor/electron-chrome-extensions/src/browser/partition.ts'),
-        'orivon:crx-extensions-router': resolve(root, 'vendor/electron-chrome-extensions/src/browser/router.ts')
+        'orivon:crx-extensions-router': resolve(root, 'vendor/electron-chrome-extensions/src/browser/router.ts'),
+        'orivon:crx-extensions-cookies': resolve(root, 'vendor/electron-chrome-extensions/src/browser/api/cookies.ts'),
+        'orivon:crx-extensions-tabs': resolve(root, 'vendor/electron-chrome-extensions/src/browser/api/tabs.ts')
       }
     },
     // Folds src/main/dev-grant.ts's compiled-in flag to a literal boolean --

@@ -1,8 +1,8 @@
 import { BrowserWindow, webContents } from 'electron'
 import { EventEmitter } from 'node:events'
-import { ContextMenuType } from './api/common'
-import { ChromeExtensionImpl } from './impl'
-import { ExtensionEvent } from './router'
+import type { ContextMenuType } from './api/common'
+import type { ChromeExtensionImpl } from './impl'
+import type { ExtensionEvent } from './router'
 
 export class ExtensionStore extends EventEmitter {
   /** Tabs observed by the extensions system. */

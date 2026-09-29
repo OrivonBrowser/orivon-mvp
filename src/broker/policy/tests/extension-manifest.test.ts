@@ -45,6 +45,46 @@ describe('readExtensionManifest', () => {
       reason: 'missing or non-string version'
     },
     {
+      label: 'a version that is a path traversal attempt',
+      raw: { manifest_version: 3, name: 'x', version: '../x' },
+      wantOk: false,
+      reason: 'version must be 1-4 dot-separated integers, each 0-65535, no leading zeros: got "../x"'
+    },
+    {
+      label: 'a version smuggling a traversal segment past the first dot',
+      raw: { manifest_version: 3, name: 'x', version: '1.0/../../x' },
+      wantOk: false,
+      reason: 'version must be 1-4 dot-separated integers, each 0-65535, no leading zeros: got "1.0/../../x"'
+    },
+    {
+      label: 'a version with five dot-separated parts',
+      raw: { manifest_version: 3, name: 'x', version: '1.0.0.0.0' },
+      wantOk: false,
+      reason: 'version must be 1-4 dot-separated integers, each 0-65535, no leading zeros: got "1.0.0.0.0"'
+    },
+    {
+      label: 'a version part over 65535',
+      raw: { manifest_version: 3, name: 'x', version: '65536' },
+      wantOk: false,
+      reason: 'version must be 1-4 dot-separated integers, each 0-65535, no leading zeros: got "65536"'
+    },
+    {
+      label: 'a version part with a leading zero',
+      raw: { manifest_version: 3, name: 'x', version: '01' },
+      wantOk: false,
+      reason: 'version must be 1-4 dot-separated integers, each 0-65535, no leading zeros: got "01"'
+    },
+    {
+      label: 'a well-formed three-part version',
+      raw: { manifest_version: 3, name: 'x', version: '1.2.3' },
+      wantOk: true
+    },
+    {
+      label: 'a bare zero version',
+      raw: { manifest_version: 3, name: 'x', version: '0' },
+      wantOk: true
+    },
+    {
       label: 'an orivon key, rejected not ignored',
       raw: { ...VALID_MV3, orivon: { permissions: ['self'] } },
       wantOk: false,

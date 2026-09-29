@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os'
 import { createHash, createPrivateKey, generateKeyPairSync, sign as signWithKey, type KeyObject } from 'node:crypto'
 import AdmZip from 'adm-zip'
 import Pbf from 'pbf'
-import { installFromFile, installFromFolder, installFromStoreCrx, resolveSlotKey, setEnabled, uninstall, type InstallContext } from '../install-runner.js'
+import {
+  installFromFile, installFromFolder, installFromStoreCrx, isStrictlyInsideDirectory, resolveSlotKey, setEnabled,
+  uninstall, type InstallContext
+} from '../install-runner.js'
 import { readRegistry } from '../registry-runner.js'
 import { convertHexadecimalToIDAlphabet, generateId } from '../../../../vendor/electron-chrome-web-store/src/browser/id.js'
 
@@ -116,6 +119,28 @@ describe('installFromFolder', () => {
       expect(outcome).toEqual({ installed: false, reason: 'declined by the person' })
       expect(existsSync(join(userDataPath, 'extensions'))).toBe(false)
       expect(readRegistry(userDataPath)).toEqual([])
+    })
+  })
+
+  it('on a fresh install whose load fails, removes the folder it just wrote instead of leaving it behind', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session, loaded, setFailNextLoad } = fakeSession()
+      setFailNextLoad(new Error('boom: simulated first-ever load failure'))
+      await expect(installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)).rejects.toThrow('boom')
+
+      // Nothing was loaded, and nothing was left on disk under extensions/
+      // for a later boot to trip over -- the write happened (that is the
+      // point of this test), but a failed load must not leave it behind.
+      expect(loaded.size).toBe(0)
+      expect(readRegistry(userDataPath)).toEqual([])
+      const extensionsDir = join(userDataPath, 'extensions')
+      const slotDirs = existsSync(extensionsDir) ? readdirSync(extensionsDir) : []
+      for (const slot of slotDirs) {
+        const versionDirs = readdirSync(join(extensionsDir, slot)).filter((name) => name !== 'key.pub')
+        expect(versionDirs).toEqual([])
+      }
     })
   })
 
@@ -641,5 +666,28 @@ describe('installFromStoreCrx', () => {
       // The version actually loaded is still the first, narrow one.
       expect(held?.version).toBe('1.0.0')
     })
+  })
+})
+
+// The second, grammar-independent layer README.md's Design notes describes:
+// finishInstall refuses a targetDir/slotDir that does not resolve strictly
+// inside its own parent, the same shape unpack-runner.ts's checkZipEntryPath
+// uses for a zip entry -- tested directly here, not only through a `version`
+// string readExtensionManifest's own grammar check already refuses.
+describe('isStrictlyInsideDirectory', () => {
+  it('is true for an ordinary child directory', () => {
+    expect(isStrictlyInsideDirectory('/a/extensions/slot', '/a/extensions/slot/1.0.0')).toBe(true)
+  })
+
+  it('is false for the parent itself', () => {
+    expect(isStrictlyInsideDirectory('/a/extensions/slot', '/a/extensions/slot')).toBe(false)
+  })
+
+  it('is false for a path that escapes via ..', () => {
+    expect(isStrictlyInsideDirectory('/a/extensions/slot', '/a/extensions/slot/../../../../.config/autostart')).toBe(false)
+  })
+
+  it('is false for a sibling directory with the parent as a string prefix', () => {
+    expect(isStrictlyInsideDirectory('/a/extensions/slot', '/a/extensions/slot-evil/x')).toBe(false)
   })
 })

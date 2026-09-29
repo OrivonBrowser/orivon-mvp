@@ -50,6 +50,21 @@ function sortedUnique (entries: readonly string[]): readonly string[] {
   return [...new Set(entries)].sort()
 }
 
+/** Chrome's own manifest `version` grammar (developer.chrome.com/docs/
+ * extensions/reference/manifest/version): one to four dot-separated
+ * integers, each 0-65535, no leading zeros except a bare "0". Refused
+ * rather than repaired (this file's own stance on untrusted input) --
+ * install-runner.ts's finishInstall joins this string straight into the
+ * path it writes the loaded copy to (its own doc, and
+ * src/main/extensions/README.md's Design notes), so a value shaped like a
+ * path (`../../../../x`) must never pass this grammar as a plausible
+ * version. */
+function isValidExtensionVersion (version: string): boolean {
+  const parts = version.split('.')
+  if (parts.length < 1 || parts.length > 4) return false
+  return parts.every((part) => /^(0|[1-9]\d*)$/.test(part) && Number(part) <= 65535)
+}
+
 function stringArray (value: unknown): readonly string[] {
   return isArray(value) ? value.filter(isString) : []
 }
@@ -95,6 +110,12 @@ export function readExtensionManifest (raw: unknown): ExtensionManifestResult {
   if (name === undefined) return { ok: false, reason: 'missing or non-string name' }
   const version = ownProperty(raw, 'version', isString)
   if (version === undefined) return { ok: false, reason: 'missing or non-string version' }
+  if (!isValidExtensionVersion(version)) {
+    return {
+      ok: false,
+      reason: `version must be 1-4 dot-separated integers, each 0-65535, no leading zeros: got ${JSON.stringify(version)}`
+    }
+  }
 
   const permissions = stringArray(ownProperty(raw, 'permissions', isArray))
   const optionalPermissions = stringArray(ownProperty(raw, 'optional_permissions', isArray))
