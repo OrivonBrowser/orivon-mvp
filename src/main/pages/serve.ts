@@ -88,12 +88,11 @@ const notFound = (devServerUrl: string | undefined): Response => reply('Not foun
 
 /** Deep links (`orivon://settings/privacy`) resolve the page's relative asset
  * URLs against their own path; pinning the base keeps them right however deep
- * the link goes. Once built, every page's assets are flattened into one
- * `assets/` directory reached by a relative climb out of `pages/<page>/`, so
- * the root, `/`, is the right base at any depth (the default here). In
- * development the page's own HTML is unbundled -- `./main.ts`, `./style.css`,
- * relative to the page's own folder on the dev server -- so the base must be
- * that folder instead, `/pages/<page>/` (serve.ts's only other caller). */
+ * the link goes. Once built, a page's assets are flattened into one shared
+ * `assets/` directory reached by a relative climb, so the root, `/` (the
+ * default here), is the right base at any depth. In development the page's
+ * own HTML is unbundled, so its relative references resolve against its own
+ * folder on the dev server instead -- the caller below passes `/pages/<page>/`. */
 export function withRootBase (html: string, base = '/'): string {
   return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (open) => `${open}<base href="${base}">`) : `<base href="${base}">${html}`
 }
