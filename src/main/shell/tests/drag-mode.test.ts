@@ -23,4 +23,19 @@ describe('dragModeFor', () => {
     // discover -- this is the environment a headless/e2e run actually sees.
     expect(dragModeFor('linux', { XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: undefined })).toBe('manual')
   })
+
+  it('is manual on a real Wayland desktop once Electron is told to render through X11 anyway', () => {
+    const waylandDesktop = { XDG_SESSION_TYPE: 'wayland' }
+    // Without the switch or the hint, a native Wayland session still reads as native above.
+    expect(dragModeFor('linux', waylandDesktop)).toBe('native')
+
+    // `--ozone-platform=x11`, passed in the way `app.commandLine.getSwitchValue` reports it.
+    expect(dragModeFor('linux', waylandDesktop, 'x11')).toBe('manual')
+    // A switch for some other platform is not the same thing.
+    expect(dragModeFor('linux', waylandDesktop, 'wayland')).toBe('native')
+
+    // `ELECTRON_OZONE_PLATFORM_HINT=x11`, the environment variable Chromium itself reads for the
+    // same choice, has the same effect with no switch at all.
+    expect(dragModeFor('linux', { ...waylandDesktop, ELECTRON_OZONE_PLATFORM_HINT: 'x11' })).toBe('manual')
+  })
 })
