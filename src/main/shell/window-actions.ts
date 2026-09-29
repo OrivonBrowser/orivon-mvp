@@ -113,13 +113,10 @@ export function shellActions (parts: WindowParts): ShellActions {
       // preview when the real cursor is back over this window's own strip.
       if (point !== null) services.tearDrag.update(entry, id, zone !== null, topHeight)
     },
-    beginTabDrag: (id) => {
-      // Matches other browsers: dragging a background tab brings it to the front. It also means
-      // its view is attached again, so the capture beginTabDrag's own prewarm takes is not of an
-      // empty, detached page.
-      tabs.activateTab(id)
-      services.tearDrag.prewarm(entry, id)
-    },
+    // The dragged tab stays where it is in the stack: dragging a background tab onto the page in
+    // front is how a split is made. A background tab's view is detached, so its capture comes back
+    // empty and the floating preview shows the tab's title instead.
+    beginTabDrag: (id) => { services.tearDrag.prewarm(entry, id) },
     endTabDrag: () => { services.tearDrag.clear() },
     dropTab: (id, screenPoint, client) => {
       tabs.splits.setPreview(null)
