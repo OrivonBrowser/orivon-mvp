@@ -43,13 +43,22 @@ directories:
 files:
   - out/**/*
   - package.json
-# Nothing from node_modules is listed. package.json declares zero runtime
-# "dependencies" (only devDependencies, needed to build, not to run) -- webtorrent and
-# every app-side library are shipped as pre-built app assets fetched into `userData` at
-# runtime, never a shell dependency (build-plan.md "Platform policy" #1, ADR-0005). So
-# there is nothing under node_modules/ this packaged app needs at runtime, and omitting
-# it entirely is a second, independent guarantee against shipping the wrong thing --
-# not just the intended thing, but only the intended thing.
+# This list does NOT mean "nothing from node_modules ships": it replaces
+# electron-builder's default SOURCE-file glob, a separate thing from the production
+# dependency tree it resolves from package.json's "dependencies" and copies into
+# `app.asar`'s own `node_modules/` regardless -- confirmed against a real
+# `npx electron-builder --linux dir`, whose `release/linux-unpacked/resources/
+# app.asar` contains a `node_modules/` with `viem`, `multiformats`, `ipfs-unixfs`,
+# `ipns` and the rest of the eighteen packages listed there (`npx asar list`).
+# package.json's "dependencies" are the real npm packages the ENS resolver
+# (src/protocols/ens/), the IPFS/IPNS reader (src/protocols/ipfs/) and the renderer's
+# polyfilled shims (src/shim/module-map.ts) need, some bundled into `out/` by
+# electron-vite's build and some left external to be required from this
+# electron-builder-populated `node_modules/` at runtime -- both paths ship, and
+# neither needed a `files` entry of its own. webtorrent and every app-side library
+# are unaffected by any of this: they stay pre-built app assets fetched into
+# `userData` at runtime, never a shell dependency (build-plan.md "Platform policy"
+# #1, ADR-0005).
 
 asar: true
 # On by default in electron-builder; stated explicitly because it is a deliberate
@@ -94,6 +103,55 @@ publish: null
 # channel keyed to a GitHub token. v0 checks and notifies instead (a separate,
 # already-scoped build step) -- this key exists so that decision cannot be silently
 # undone by a future contributor passing `--publish` without reading either doc.
+
+# --- Electron fuses ------------------------------------------------------------------
+# Compile-time toggles burned into the packaged Electron binary itself, applied after
+# packing and before signing (node_modules/app-builder-lib/out/platformPackager.js's
+# doAddElectronFuses -> @electron/fuses, already an app-builder-lib dependency --
+# nothing new to install). Field names are `FuseV1Options`' own
+# (node_modules/@electron/fuses/dist/config.js's own definitions, and
+# node_modules/app-builder-lib/scheme.json's `FuseOptionsV1`), not electron-builder's
+# invention. A field left out of this block keeps Electron's own shipped default for
+# that fuse, exactly as if this key did not exist.
+electronFuses:
+  runAsNode: false
+  # Off: the ELECTRON_RUN_AS_NODE environment variable, if honoured, re-execs this
+  # binary as a plain Node process with none of the app's own sandboxing -- a
+  # same-user attacker (or a stray leftover export) could run arbitrary code under
+  # a name that looks like the browser. Checked first: src/main/verifier/
+  # verifier-subsystem.ts forks the verifier host through `utilityProcess.fork`
+  # (Electron's own API, which @electron/fuses' own runAsNode description says does
+  # NOT depend on this fuse -- only a Node `child_process.fork` of the Electron
+  # binary itself would), and src/main/launch/peer-spawn.ts already strips this same
+  # variable from a spawned peer's own environment. Nothing in src/ or scripts/
+  # relies on it being honoured by a packaged build.
+  enableCookieEncryption: true
+  # Off by default, so Chromium's cookie database sits in plaintext on disk today
+  # (a verifier finding: F4). On here asks the OS keyring/DPAPI to encrypt it instead,
+  # matching Chrome's own default.
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  # NODE_OPTIONS and --inspect(-brk) both hand a same-user attacker a debugger or an
+  # arbitrary module preload against the packaged binary. Nothing here depends on
+  # either: DevTools (shell F1, src/main/shell/context-menu.ts and the shell's own
+  # menu) opens Chromium's own devtools, never Node's inspector, and dev-mode
+  # (src/main/dev/dev-mode.ts) is a separate, unpackaged-only code path.
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
+  # Together: a packaged launch may load app code only from its own app.asar, not a
+  # loose `app/` folder or the bundled `default_app.asar`, and that asar's own header
+  # hash is checked before anything inside it runs -- an asar replaced or appended to
+  # on disk after packaging is refused rather than trusted.
+  #
+  # grantFileProtocolExtraPrivileges: left unset, i.e. Electron's own default (on).
+  # Off would stop a `file://` page from using `fetch()` on another `file://` asset
+  # and from registering a service worker (@electron/fuses' own description) --
+  # every renderer entry this app loads (chrome, tabs' dashboard, the toolbar
+  # popups, the welcome screen) is a `file://` page in a packaged build
+  # (renderer-entry.ts), and the orivon-electron skill records this exact
+  # `file://`-as-secure-context service-worker path as already relied on for a
+  # ported app's media playback. Untested with the fuse off; a packaged build
+  # confirming it still works would let this be turned off too.
 
 # --- Cross-platform URL-scheme registration -----------------------------------------
 # `schemes: [http, https]`, not a custom `orivon://` scheme -- Orivon is applying to be
