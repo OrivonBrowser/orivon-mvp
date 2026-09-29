@@ -12,9 +12,11 @@
 // (fs/handle.ts) and fs.createReadStream/createWriteStream
 // (fs/streams.ts, over that same local FileHandle) are real; see each
 // file's own header. FileHandle#createReadStream/createWriteStream -- a
-// different surface -- still refuses. Every synchronous
-// export except readFileSync and existsSync (both over ADR-0016's one sync
-// call) is a named refusal (fs/unsupported.ts).
+// different surface -- still refuses.
+//
+// SYNCHRONOUS EXPORTS: readFileSync/existsSync work everywhere (ADR-0016);
+// every other *Sync export works only in a Worker (fs/core-sync.ts), else
+// refuses (fs/unsupported.ts) -- README.md's own Design notes has the detail.
 //
 // EVERY OTHER fs MEMBER (A135) names its gap: `chmod`/`chown` are
 // 'not-applicable' (no POSIX uid/gid/mode model), everything else is
@@ -22,7 +24,10 @@
 
 import { type NodeStats } from './stats.js'
 import { syncUnsupported } from './unsupported.js'
-import { open, openHandle, close, read, write, fstat, ftruncate, fsync, type NodeCallback } from './handle.js'
+import {
+  open, openHandle, openSync, close, closeSync, read, readSync, write, writeSync, fstat, fstatSync,
+  ftruncate, fsync, type NodeCallback
+} from './handle.js'
 import { createReadStream, createWriteStream } from './streams.js'
 import { promises } from './promises.js'
 import { FS_CONSTANTS } from './constants.js'
@@ -31,6 +36,10 @@ import {
   doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRename, doRm, doStat, doUnlink, doWriteFile,
   type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
 } from './core.js'
+import {
+  doAccessSync, doAppendFileSync, doCopyFileSync, doLstatSync, doMkdirSync, doMkdtempSync, doReaddirSync,
+  doRenameSync, doRmSync, doRmdirSync, doStatSync, doUnlinkSync, doWriteFileSync, existsSyncCore
+} from './core-sync.js'
 import type { NodeDirent } from './stats.js'
 import { decode, encodingOf } from '../encoding.js'
 import { toConfinedPath, type PathLike } from './paths.js'
@@ -39,7 +48,7 @@ import { refusingProxy } from '../unimplemented.js'
 import { refuseShim } from '../errors.js'
 import { toNodeError } from '../node-errors.js'
 
-export { open, close, read, write, fstat, ftruncate, fsync } from './handle.js'
+export { open, close, read, write, fstat, ftruncate, fsync, openSync, closeSync, readSync, writeSync, fstatSync } from './handle.js'
 export { createReadStream, createWriteStream } from './streams.js'
 export { promises } from './promises.js'
 // Named as well as on the default export below: a bundled `require('fs')`
@@ -94,36 +103,72 @@ export function readFileSync (path: PathLike, options?: ReadFileOptions | string
 }
 
 /**
- * Over readFileSync, the one synchronous orivon.fs call (ADR-0016): a file it
- * can read exists, and so does a directory, which fails EISDIR. It cannot
- * tell a missing path from one it may not read, so both are false, as Node's
- * own existsSync reports any failure. The cost is a whole-file read per call.
+ * On the page: over readFileSync, the one synchronous orivon.fs call
+ * (ADR-0016) -- a file it can read exists, and so does a directory, which
+ * fails EISDIR. It cannot tell a missing path from one it may not read, so
+ * both are false, as Node's own existsSync reports any failure. In a Worker
+ * with the synchronous twin, a stat answers it directly (core-sync.ts's
+ * existsSyncCore) -- no whole-file read.
  */
 export function existsSync (path: PathLike): boolean {
-  let confined: string
-  try {
-    confined = toConfinedPath(path, 'access')
-  } catch {
-    return false
-  }
-  if (isRootPath(confined)) return true
-  try {
-    getOrivon().fs.readFileSync(confined)
-    return true
-  } catch (error) {
-    return toNodeError(error).code === 'EISDIR'
-  }
+  return existsSyncCore(path, (confined) => getOrivon().fs.readFileSync(confined))
 }
 
-export const writeFileSync = syncUnsupported('fs.writeFileSync')
-export const statSync = syncUnsupported('fs.statSync')
-export const mkdirSync = syncUnsupported('fs.mkdirSync')
-export const readdirSync = syncUnsupported('fs.readdirSync')
-export const rmSync = syncUnsupported('fs.rmSync')
-export const renameSync = syncUnsupported('fs.renameSync')
-export const accessSync = syncUnsupported('fs.accessSync')
-export const appendFileSync = syncUnsupported('fs.appendFileSync')
-export const unlinkSync = syncUnsupported('fs.unlinkSync')
+/** ADR-0016's Worker amendment: works only in a Worker of a cross-origin isolated app (core-sync.ts's doStatSync); elsewhere it throws the same named refusal it always has. */
+export function statSync (path: PathLike): NodeStats {
+  return doStatSync(path)
+}
+
+export function lstatSync (path: PathLike): NodeStats {
+  return doLstatSync(path)
+}
+
+export function writeFileSync (path: PathLike, data: unknown, options?: WriteFileOptions | string | null): void {
+  doWriteFileSync(path, data, options)
+}
+
+export function appendFileSync (path: PathLike, data: unknown, options?: WriteFileOptions | string | null): void {
+  doAppendFileSync(path, data, options)
+}
+
+export function mkdirSync (path: PathLike, opts?: MkdirOptions): void {
+  doMkdirSync(path, opts)
+}
+
+export function readdirSync (path: PathLike, options?: ReaddirOptions | string | null): ReturnType<typeof doReaddirSync> {
+  return doReaddirSync(path, options)
+}
+
+export function rmSync (path: PathLike, opts?: RmOptions): void {
+  doRmSync(path, opts)
+}
+
+export function rmdirSync (path: PathLike, opts?: { recursive?: boolean }): void {
+  doRmdirSync(path, opts)
+}
+
+export function renameSync (from: PathLike, to: PathLike): void {
+  doRenameSync(from, to)
+}
+
+export function unlinkSync (path: PathLike): void {
+  doUnlinkSync(path)
+}
+
+export function accessSync (path: PathLike, _mode?: number): void {
+  doAccessSync(path)
+}
+
+export function copyFileSync (src: PathLike, dest: PathLike, mode?: number): void {
+  doCopyFileSync(src, dest, mode)
+}
+
+export function mkdtempSync (prefix: string): string {
+  return doMkdtempSync(prefix)
+}
+
+/** No async realpath exists in this shim for realpathSync to share a core with (fs/core-sync.ts's own header) -- a permanent refusal, not a gap. */
+export const realpathSync = syncUnsupported('fs.realpathSync')
 
 export function writeFile (path: PathLike, data: unknown, callback: NodeCallback<void>): void
 export function writeFile (path: PathLike, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
@@ -204,8 +249,9 @@ export function otherFsMember (prop: string) {
   return refuseShim(
     `fs.${prop}`, 'unimplemented',
     `fs.${prop} is real Node fs surface this shim has not implemented and has not decided ` +
-    'whether it will -- distinct from the *Sync gaps above, which are a decided, permanent ' +
-    'refusal (ADR-0016). See docs/planning/compatibility-matrix.md Table 3.'
+    'whether it will -- distinct from realpathSync, which is a decided, permanent refusal ' +
+    '(ADR-0016: no async realpath exists here for it to share a core with). ' +
+    'See docs/planning/compatibility-matrix.md Table 3.'
   )
 }
 
@@ -216,7 +262,8 @@ export default refusingProxy({
   readFile, readFileSync, writeFile, writeFileSync, appendFile, unlink, access,
   mkdir, readdir, stat, rm, rename, open, close, read, write, fstat, ftruncate, fsync, promises,
   createReadStream, createWriteStream,
-  statSync, mkdirSync, readdirSync, rmSync, renameSync, existsSync, accessSync, appendFileSync, unlinkSync,
+  statSync, lstatSync, mkdirSync, readdirSync, rmSync, rmdirSync, renameSync, existsSync, accessSync,
+  appendFileSync, unlinkSync, copyFileSync, mkdtempSync, realpathSync, openSync, closeSync, readSync, writeSync, fstatSync,
   // fs.constants is data (POSIX flag numbers), not a function -- a
   // throwing-function refusal (A169) would misreport its own type, so this
   // is a real object rather than routed through otherFsMember.

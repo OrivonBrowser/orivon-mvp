@@ -262,16 +262,18 @@ describe('fs.readFileSync', () => {
   })
 })
 
-describe('every other synchronous export', () => {
-  it('throws a named ADR-0016 error rather than faking a sync capability the broker does not have', async () => {
+describe('every other synchronous export, on the page', () => {
+  it('throws a named error naming where it does work, rather than faking a sync capability the page does not have', async () => {
     installFakeOrivon()
     const fs = await import('../fs.js')
-    expect(() => fs.statSync('tmp')).toThrow(/ADR-0016/)
-    expect(() => fs.mkdirSync('x')).toThrow(/ADR-0016/)
-    expect(() => fs.writeFileSync('x', 'y')).toThrow(/ADR-0016/)
-    expect(() => fs.accessSync('x')).toThrow(/ADR-0016/)
-    expect(() => fs.appendFileSync('x', 'y')).toThrow(/ADR-0016/)
-    expect(() => fs.unlinkSync('x')).toThrow(/ADR-0016/)
+    expect(() => fs.statSync('tmp')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.mkdirSync('x')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.writeFileSync('x', 'y')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.accessSync('x')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.appendFileSync('x', 'y')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.unlinkSync('x')).toThrow(/forked child or a worker_threads.Worker/)
+    // realpathSync alone still has no synchronous form anywhere -- no async realpath exists to share a core with.
+    expect(() => fs.realpathSync('x')).toThrow(/no synchronous form/)
   })
 })
 

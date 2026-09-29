@@ -16,6 +16,7 @@
 
 import { normalize } from 'path'
 import type { FileHandle, FileStat } from '../../contracts/handles.js'
+import type { SyncFileHandleWire } from './sync-orivon.js'
 import { fsError } from './paths.js'
 
 /** `.`, `./`, `a/..`, `./a/..`, ... -- any relative path whose POSIX-normalised form names the current directory itself. Never true for an absolute path or a real traversal outside it (`../x` normalises to `../x`, not `.`). */
@@ -81,6 +82,18 @@ export function rootDirectoryHandle (): FileHandle {
     stat: async (): Promise<FileStat> => ROOT_STAT,
     truncate: async () => rootTruncateError(),
     sync: async () => {}
+  }
+}
+
+/** rootDirectoryHandle's synchronous twin, for fs/handle.ts's SyncNodeFileHandle -- same three outcomes, called rather than awaited. */
+export function rootDirectoryHandleSync (): SyncFileHandleWire {
+  return {
+    read: () => rootReadError(),
+    write: () => rootWriteError(),
+    stat: (): FileStat => ROOT_STAT,
+    truncate: () => rootTruncateError(),
+    sync: () => {},
+    close: () => {}
   }
 }
 

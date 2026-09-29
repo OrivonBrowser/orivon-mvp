@@ -77,10 +77,11 @@ export function toConfinedPath (path: PathLike, syscall: string): string {
   throw fsError('EACCES', `permission denied (outside this app's files, which live under ${VIRTUAL_ROOT})`, syscall, text)
 }
 
-const TMPDIR_CONFINED = VIRTUAL_TMPDIR.slice(VIRTUAL_ROOT.length + 1)
+/** Exported for fs/core-sync.ts's own tmpdir bootstrap: the same confinement, made once from the synchronous twin instead of once from a Promise. */
+export const TMPDIR_CONFINED = VIRTUAL_TMPDIR.slice(VIRTUAL_ROOT.length + 1)
 let tmpdirReady: Promise<void> | undefined
 
-function isInTmpdir (path: PathLike): boolean {
+export function isInTmpdir (path: PathLike): boolean {
   const resolved = normalized(pathText(path))
   return resolved === VIRTUAL_TMPDIR || resolved.startsWith(`${VIRTUAL_TMPDIR}/`)
 }
