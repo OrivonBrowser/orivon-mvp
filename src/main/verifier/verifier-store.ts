@@ -76,10 +76,14 @@ export class VerifierStore {
     this.write(this.checkpointPath, checkpoint)
   }
 
+  /**
+   * Answers from the in-memory floors once loaded, never the file: a host
+   * that restarts asks this same store again before its own debounced write
+   * has landed, and a rollback protection kept only on disk would then hand
+   * the restarted host an older floor than the one it already reported.
+   */
   ipnsSequences (): Record<string, string> {
-    const stored = readJson(this.sequencesPath)
-    if (typeof stored !== 'object' || stored === null) return {}
-    return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => isIpnsKey(entry[0]) && typeof entry[1] === 'string' && DECIMAL.test(entry[1])))
+    return Object.fromEntries(this.loadedSequences())
   }
 
   /**
@@ -102,17 +106,31 @@ export class VerifierStore {
   }
 
   /** Writes whatever is pending right now, instead of waiting out the
-   * debounce: a graceful shutdown calls this so an ordinary quit loses
-   * nothing, not only a crash losing a few seconds of it. */
+   * debounce. Used by tests; `flushSync` below is what quit actually calls,
+   * since nothing after `will-quit` can be awaited. */
   async flush (): Promise<void> {
     if (this.flushTimer !== undefined) { clearTimeout(this.flushTimer); this.flushTimer = undefined }
     if (this.sequences === undefined) return
     await this.writeSequences(this.sequences)
   }
 
+  /** The quit-time equivalent of `flush`: blocking, so the process cannot
+   * exit out from under an async write the way `will-quit` otherwise would. */
+  flushSync (): void {
+    if (this.flushTimer !== undefined) { clearTimeout(this.flushTimer); this.flushTimer = undefined }
+    if (this.sequences === undefined) return
+    this.write(this.sequencesPath, Object.fromEntries(this.sequences))
+  }
+
   private loadedSequences (): Map<string, string> {
-    this.sequences ??= new Map(Object.entries(this.ipnsSequences()))
+    this.sequences ??= new Map(Object.entries(this.readSequencesFromDisk()))
     return this.sequences
+  }
+
+  private readSequencesFromDisk (): Record<string, string> {
+    const stored = readJson(this.sequencesPath)
+    if (typeof stored !== 'object' || stored === null) return {}
+    return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => isIpnsKey(entry[0]) && typeof entry[1] === 'string' && DECIMAL.test(entry[1])))
   }
 
   private scheduleFlush (): void {
