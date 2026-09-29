@@ -52,3 +52,13 @@ The partition is left behind, empty, rather than deleted, for the same reason: E
 again the moment anything asks for that partition string, so removing the (now-empty) directory buys
 nothing. Runs once, ever, per profile (one boolean marker, not one per origin) because no origin can
 gain a NEW orphaned partition after this ships -- a grant no longer creates one at all.
+
+**Why `orphanedGrantOrigins` also takes `pinnedOrigins`, separate from `isCacheServed`.**
+`isCacheServed` answers "is serving live, THIS run" (`../../loader/electron/serve.ts`'s in-memory
+`servedPartitions`); a pin can exist on disk for an origin whose serving failed to restore this
+run (`restorePinnedServing`'s own per-origin failure tolerance), for which `isCacheServed` is
+false even though the origin is not orphaned at all. Skipping every origin with a pin on disk,
+whatever `isCacheServed` says, is what keeps that origin's data intact and its restore retryable
+on a later run; `start-internal-pages.ts` reads the pin list through a second, throwaway
+`nodeLoaderStorage` instance rather than threading the loader's own one through
+`SubsystemContext`.

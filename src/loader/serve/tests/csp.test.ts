@@ -41,6 +41,10 @@ describe('cspHeaderValue -- what a pinned bundle may do with its own bytes', () 
     expect(directive(EMPTY, 'style-src')).toEqual(["'self'", "'unsafe-inline'"])
   })
 
+  it('sets object-src to none -- default-src alone would admit a same-origin <object>/<embed> document', () => {
+    expect(directive(EMPTY, 'object-src')).toEqual(["'none'"])
+  })
+
   it('sets no form-action: it never falls back to default-src, and a restriction would break a form-post sign-in flow', () => {
     expect(directive(EMPTY, 'form-action')).toBeUndefined()
   })

@@ -7,11 +7,14 @@
 // executeScript({ world: 'MAIN' }) -- against a GRANTED fixture origin,
 // and each must be refused while the page's own call succeeds. Also proves
 // the CSP half (src/loader/serve/csp.ts): a granted page's inline <script>
-// does not run at all, only its external one does; and the routed network
-// path's own attribution (src/preload/routed/README.md's Design notes): a
-// MAIN-world extension script's fetch() to a host granted only to the app
-// gets the native path's CORS failure, never the routed dial, while the
-// page's own fetch() to the same host is routed and succeeds.
+// does not run at all, only its external one does; a same-origin <object>
+// nested document never loads (object-src 'none', src/main/install/
+// granted-origin-csp.ts's own `object` resourceType handling) and its own
+// inline script never runs either; and the routed network path's own
+// attribution (src/preload/routed/README.md's Design notes): a MAIN-world
+// extension script's fetch() to a host granted only to the app gets the
+// native path's CORS failure, never the routed dial, while the page's own
+// fetch() to the same host is routed and succeeds.
 //
 // PORTS: an ephemeral one (see startFixtureServer's own comment for why),
 // and a fixed one for the routed-fetch probe (PROBE_PORT's own comment).
@@ -107,12 +110,61 @@ function page (): string {
     '</head><body>orivon-fixture</body></html>'
 }
 
+/**
+ * Finding 1 (csp.ts's `object-src 'none'`, granted-origin-csp.ts's own
+ * `object` resourceType): a same-origin `<object>` nested document, and
+ * whether ITS inline script ran. `nested.html`'s inline script, if it ever
+ * runs, reaches straight into the top window (same-origin, no restriction)
+ * and sets a marker there -- a cleaner signal than reading `contentDocument`,
+ * which a blocked object leaves in a browser-specific state.
+ */
+function objectPage (): string {
+  return '<!doctype html><html><head><title>orivon-fixture</title></head><body>' +
+    '<object data="/orivon-fixture/nested.html" type="text/html" id="obj"></object>' +
+    '<script src="/orivon-fixture/object.js"></script>' +
+    '</body></html>'
+}
+
+function nestedPage (): string {
+  return '<!doctype html><html><body>' +
+    '<script>window.top.document.documentElement.dataset.orivonNestedInline = "ran"</script>' +
+    'nested</body></html>'
+}
+
+const OBJECT_JS = `(() => {
+  const obj = document.getElementById('obj')
+  const settle = (outcome) => {
+    if (!document.documentElement.hasAttribute('data-orivon-object-load')) {
+      document.documentElement.setAttribute('data-orivon-object-load', outcome)
+    }
+    document.documentElement.setAttribute('data-orivon-object-settled', 'true')
+  }
+  obj.addEventListener('load', () => { settle('fired') })
+  obj.addEventListener('error', () => { settle('error') })
+  setTimeout(() => { settle('neither') }, 1000)
+})()`
+
 /** A plain, single-page HTTP origin on an EPHEMERAL port -- test/e2e-extensions-load.test.ts's own header explains why never a fixed one. */
 async function startFixtureServer (): Promise<{ server: Server, origin: string }> {
   const server = createServer((req, res) => {
     if (req.url === '/orivon-fixture/page.js') {
       res.writeHead(200, { 'content-type': 'text/javascript' })
       res.end(PAGE_JS)
+      return
+    }
+    if (req.url === '/orivon-fixture/object') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end(objectPage())
+      return
+    }
+    if (req.url === '/orivon-fixture/object.js') {
+      res.writeHead(200, { 'content-type': 'text/javascript' })
+      res.end(OBJECT_JS)
+      return
+    }
+    if (req.url === '/orivon-fixture/nested.html') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end(nestedPage())
       return
     }
     res.writeHead(200, { 'content-type': 'text/html' })
@@ -160,7 +212,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-const WAIT_BUDGET_MS = 8_000 + 8_000 + 8_000 + 8_000 + 20_000 + 20_000
+const WAIT_BUDGET_MS = 8_000 + 8_000 + 8_000 + 8_000 + 20_000 + 20_000 + 8_000
 const TEST_TIMEOUT_MS = WAIT_BUDGET_MS + 40_000
 
 it('refuses window.orivon to a MAIN-world content script, an injected web-accessible script, chrome.scripting.executeScript, a //# sourceURL=-spoofed ' +
@@ -270,6 +322,22 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
         'freezing Error.stackTraceLimit refuses the PAGE\'s own call as well -- the tamper poisons the shared mechanism, not just the extension\'s attribution',
         tamperOutcomes.orivonPage === 'denied',
         JSON.stringify(tamperOutcomes)
+      )
+
+      // ---- finding 1: a same-origin <object> document on the granted page never loads, and its inline script never runs ----
+      const objectView = await navigateToFixture(app, `${origin}/orivon-fixture/object`, 'orivon-fixture')
+      const objectSettled = await waitFor(async () => await evaluateRetrying(objectView, () => document.documentElement.dataset.orivonObjectSettled) !== undefined)
+      check('the <object> probe settles (fires load, fires error, or times out)', objectSettled)
+      const objectOutcomes = await evaluateRetrying(objectView, () => ({ ...document.documentElement.dataset }))
+      check(
+        'CSP: the granted page\'s same-origin <object> document never fires load -- object-src \'none\' refuses it',
+        objectOutcomes.orivonObjectLoad !== 'fired',
+        JSON.stringify(objectOutcomes)
+      )
+      check(
+        'CSP: the nested document\'s own inline script never ran -- it was never granted a browsing context to run in',
+        objectOutcomes.orivonNestedInline === undefined,
+        JSON.stringify(objectOutcomes)
       )
     } finally {
       if (app !== undefined) await closeElectronApp(app)

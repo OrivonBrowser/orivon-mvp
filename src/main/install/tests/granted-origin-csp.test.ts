@@ -12,7 +12,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({
   liveCspHeaderFor
 }))
 
-const { defaultSessionGrantedOriginCsp, documentOriginOf, withAppendedCsp } = await import('../granted-origin-csp.js')
+const { defaultSessionGrantedOriginCsp, documentOriginOf, GRANTED_ORIGIN_CSP_FILTER, withAppendedCsp } = await import('../granted-origin-csp.js')
 
 const ORIGIN = 'http://127.0.0.1:8874'
 const CSP = "default-src 'self'; script-src 'self'"
@@ -44,6 +44,12 @@ function brokerWith (opts: { hasGrant?: boolean, isolated?: boolean, manifestFai
   } as unknown as Broker
 }
 
+describe('GRANTED_ORIGIN_CSP_FILTER', () => {
+  it('includes object, alongside mainFrame/subFrame, so a nested <object>/<embed> document reaches the handler', () => {
+    expect(GRANTED_ORIGIN_CSP_FILTER.types).toEqual(expect.arrayContaining(['mainFrame', 'subFrame', 'object']))
+  })
+})
+
 describe('withAppendedCsp', () => {
   it('adds the policy when the server sent none', () => {
     expect(withAppendedCsp({ 'Content-Type': ['text/html'] }, CSP)).toEqual({
@@ -70,6 +76,15 @@ describe('documentOriginOf', () => {
 
   it('is the origin for a subFrame response too', () => {
     expect(documentOriginOf(details({ resourceType: 'subFrame', url: `${ORIGIN}/frame.html` }))).toBe(ORIGIN)
+  })
+
+  // Electron 44 reports a same-origin <object>/<embed> document's own
+  // response as resourceType 'object' (measured) -- treated as a document
+  // here too, so it gets the granted-origin CSP's no-'unsafe-inline' policy
+  // rather than falling through to the app's own, csp.ts's object-src
+  // 'none' being the other lock on the same route.
+  it('is the origin for an object response too', () => {
+    expect(documentOriginOf(details({ resourceType: 'object', url: `${ORIGIN}/nested.html` }))).toBe(ORIGIN)
   })
 
   it('is null for every non-document resource type', () => {

@@ -23,12 +23,17 @@ import type { HeadersReceivedHandler } from '../sessions/web-request-owner.js'
  * `defaultSessionGrantedOriginCsp`'s own `WebRequestFilter`: `<all_urls>`
  * because a granted origin is not known in advance (a grant can be given to
  * any origin at any time, per ADR-0044), restricted to `mainFrame`/
- * `subFrame` because `documentOriginOf` below already discards every other
- * resource type -- so this filter costs nothing beyond what the handler
- * already throws away, while sparing every subresource response (script,
- * image, stylesheet, xhr, ...) the round trip into this process at all.
+ * `subFrame`/`object` because `documentOriginOf` below already discards
+ * every other resource type -- so this filter costs nothing beyond what the
+ * handler already throws away, while sparing every subresource response
+ * (script, image, stylesheet, xhr, ...) the round trip into this process at
+ * all. `object` is a document too: Electron reports a same-origin
+ * `<object>`/`<embed>` document's own response with that resource type
+ * (measured, Electron 44), and without it here that document is served with
+ * the app's own CSP, never this one -- `csp.ts`'s `object-src 'none'` is the
+ * other lock on the same route.
  */
-export const GRANTED_ORIGIN_CSP_FILTER: WebRequestFilter = { urls: ['<all_urls>'], types: ['mainFrame', 'subFrame'] }
+export const GRANTED_ORIGIN_CSP_FILTER: WebRequestFilter = { urls: ['<all_urls>'], types: ['mainFrame', 'subFrame', 'object'] }
 
 /**
  * `headers` plus `csp` as one more Content-Security-Policy value. The
@@ -46,10 +51,13 @@ export function withAppendedCsp (headers: Record<string, string[]> | undefined, 
 /**
  * The document origin `details` is a response for, or null for anything
  * that is not a document -- a script/image/xhr/etc response must never be
- * treated as if it were the page itself.
+ * treated as if it were the page itself. `object` counts as a document:
+ * a same-origin `<object>`/`<embed>` navigates its `data`/`src` the same
+ * way a `<frame>` does, and Electron reports its response that way
+ * (measured, Electron 44).
  */
 export function documentOriginOf (details: OnHeadersReceivedListenerDetails): string | null {
-  if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return null
+  if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame' && details.resourceType !== 'object') return null
   try {
     return new URL(details.url).origin
   } catch {
