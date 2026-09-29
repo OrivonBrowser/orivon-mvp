@@ -27,7 +27,8 @@ import { toFailureResponse } from './response-envelope.js'
 
 export interface SyncControlEvent {
   readonly senderFrame: SenderFrameLike | null
-  /** `isAttributedSession`'s own two fields (policy/origin.ts) -- this
+  /** `isAttributedSession`'s own `mainFrame` comparison (policy/origin.ts),
+   * plus `session` for the injected `attributed` predicate to read -- this
    * channel never reloads a tab (unlike ./ipc.ts's CONTROL_CHANNEL), so it
    * needs neither `reload` nor `isDestroyed`. */
   readonly sender: {
@@ -86,7 +87,7 @@ export function handleSyncFsReadRequest (
   event: SyncControlEvent,
   payload: unknown,
   limiter?: RateLimiter,
-  sessionForOrigin?: (origin: string) => unknown
+  attributed?: (sender: unknown, origin: string) => boolean
 ): ResponseEnvelope<Uint8Array> {
   const origin = originFromSenderFrame(event.senderFrame)
   if (origin === null) {
@@ -95,7 +96,7 @@ export function handleSyncFsReadRequest (
 
   // Same check, same reason, as ./ipc.ts's own CONTROL_CHANNEL handler --
   // see isAttributedSession's doc (policy/origin.ts).
-  if (sessionForOrigin !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, sessionForOrigin)) {
+  if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) {
     return { id: NO_ID, ok: false, code: 'denied', message: 'this document is not in the session its origin belongs to' }
   }
 

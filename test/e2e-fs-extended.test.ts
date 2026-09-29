@@ -46,7 +46,7 @@ import { launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, closeElectronApp, forwardOutput, killChild,
-  moveIntoAttributedSession, navigateToFixture, runPhase, waitForTcpReady
+  navigateToFixture, runPhase, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -173,10 +173,13 @@ it('Phase 2: a real fs grant lets a real page build, list, stat, rename and dele
         if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
 
         // The dev-only hook lands on the broker directly, with no IPC round
-        // trip to reload this page into its now-granted session the way a
-        // real app.requestGrant call would (transport/ipc.ts) -- move it
-        // there the same way before making any granted call from it.
-        const view = await moveIntoAttributedSession(app, beforeGrant, FIXTURE_URL)
+        // trip for anything to react to, so this document never moves into
+        // the app's own partition -- it does not need to: it already
+        // committed FIXTURE_ORIGIN, attributed, before the grant landed
+        // (src/main/sessions/session-attribution.ts), and that attribution
+        // survives a grant that changes what session the origin belongs in
+        // NEXT.
+        const view = beforeGrant
 
         // (a) BUILD A REAL NESTED TREE ON REAL DISK, then list, stat, rename
         // and delete it -- one evaluate() so every step runs against the

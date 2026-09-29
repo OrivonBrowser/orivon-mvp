@@ -189,13 +189,11 @@ it(
         // ---- (4) pins the contract's own positional-origin shape (capability-api.ts's
         // `openContext(origin: string, options?: WebContextOptions)`): the OLD, WRONG
         // single-object call this file itself used to make must be refused, not silently
-        // accepted as `{ origin: undefined }` (0faed54's own bug). Run BEFORE the revoke
-        // below (5): once that drops this origin's only grant, this page's own document
-        // stops being attributed to its own session at all (isAttributedSession,
-        // policy/origin.ts -- an origin holding no grants belongs in the default
-        // session, and nothing here reloads this still-privileged document back down
-        // into it), so ANY further call from it, wrong shape or not, reads 'denied'
-        // rather than the 'invalid' this check is actually about.
+        // accepted as `{ origin: undefined }`. Runs before the revoke below (5) -- this
+        // page's own document stays attributed through that revoke (nothing here
+        // reloads it, and it does not need to: session-attribution.ts's own record of
+        // its commit outlives a grant change), so the order is a narrative choice, not
+        // a correctness requirement: either check still reads 'invalid', not 'denied'.
         const wrongShape = await evaluateRetrying(view, async () => {
           const orivon = (window as unknown as {
             orivon: { web: { openContext: (origin: unknown, options?: { width?: number, height?: number }) => Promise<unknown> } }

@@ -522,3 +522,171 @@ describe('addDeclinedCapability / clearDeclinedCapability (real broker)', () => 
     expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
   })
 })
+
+// A caller's own IPC transport times out a call it waited too long for
+// (A153) well before withOriginTurn's per-origin queue necessarily reaches
+// this call's turn -- the app already has a timeout failure by then, so the
+// dialog must never show for it.
+describe('requestGrant: an abandoned call never shows its dialog', () => {
+  it('resolves false and never calls consent() once abandoned fires before the dialog\'s turn', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined
+    })
+    const consent = vi.fn(async () => true)
+    const controller = new AbortController()
+    controller.abort()
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, undefined, undefined, controller.signal)
+
+    expect(result).toBe(false)
+    expect(consent).not.toHaveBeenCalled()
+  })
+
+  it('does not record a decline for an abandoned call -- a later, genuine ask still prompts', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined
+    })
+    const consent = vi.fn(async () => true)
+    const controller = new AbortController()
+    controller.abort()
+
+    await requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, undefined, undefined, controller.signal)
+
+    expect(calls.some((call) => call.method === 'recordDeclinedConsent')).toBe(false)
+  })
+
+  it('still shows the dialog for a call whose signal has not fired', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+    const controller = new AbortController()
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, undefined, undefined, controller.signal)
+
+    expect(result).toBe(true)
+    expect(consent).toHaveBeenCalledOnce()
+  })
+
+  it('an abandoned call queued behind a live one is skipped without blocking the live one\'s own dialog', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['*:*'] } }, fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    let resolveFirst: ((accepted: boolean) => void) | undefined
+    const consent = vi.fn((_origin: string, capability: string) => {
+      if (capability === 'tcp.connect') return new Promise<boolean>((resolve) => { resolveFirst = resolve })
+      return Promise.resolve(true)
+    })
+    const prompts = new Map<string, Promise<void>>()
+    const controller = new AbortController()
+
+    const results = Promise.all([
+      requestGrant(broker, consent, APP, { capability: 'tcp.connect' }, undefined, undefined, prompts),
+      requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, undefined, prompts, controller.signal)
+    ])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    controller.abort() // fires while the second call is still queued behind the first
+    resolveFirst?.(true)
+
+    expect(await results).toEqual([true, false])
+    expect(consent).toHaveBeenCalledTimes(1) // the abandoned call's own dialog never opened
+  })
+})
+
+// Two different tabs asking for the identical (origin, capability, patterns)
+// at once must never share one dialog or its eventual answer -- sharing
+// would let the second tab's page silently receive the first tab's answer,
+// parented to the first tab's window.
+describe('requestGrant: PendingGrantRequests never shares across callers or pattern sets', () => {
+  it('two different callers requesting the same (origin, capability) each get their own dialog', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+    const pending: PendingGrantRequests = new Map()
+    const callerA = { window: () => undefined, stillOn: () => true, id: { tab: 'a' } }
+    const callerB = { window: () => undefined, stillOn: () => true, id: { tab: 'b' } }
+
+    await Promise.all([
+      requestGrant(broker, consent, APP, { capability: 'fs' }, pending, callerA),
+      requestGrant(broker, consent, APP, { capability: 'fs' }, pending, callerB)
+    ])
+
+    expect(consent).toHaveBeenCalledTimes(2)
+    expect(pending.size).toBe(0) // both tabs' slots are released once their own answer lands
+  })
+
+  it('the same caller requesting two different pattern sets for the same capability gets a dialog for each', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['*:*'] } } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+    const pending: PendingGrantRequests = new Map()
+    const caller = { window: () => undefined, stillOn: () => true, id: { tab: 'a' } }
+
+    await Promise.all([
+      requestGrant(broker, consent, APP, { capability: 'tcp.connect', patterns: ['api.example.com:443'] }, pending, caller),
+      requestGrant(broker, consent, APP, { capability: 'tcp.connect', patterns: ['*:*'] }, pending, caller)
+    ])
+
+    expect(consent).toHaveBeenCalledTimes(2)
+  })
+
+  it('the same caller requesting the identical pattern set twice, concurrently, still shares one dialog', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['*:*'] } } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    let resolveDialog: ((accepted: boolean) => void) | undefined
+    const consent = vi.fn(async () => await new Promise<boolean>((resolve) => { resolveDialog = resolve }))
+    const pending: PendingGrantRequests = new Map()
+    const caller = { window: () => undefined, stillOn: () => true, id: { tab: 'a' } }
+
+    const results = Promise.all([
+      requestGrant(broker, consent, APP, { capability: 'tcp.connect', patterns: ['api.example.com:443'] }, pending, caller),
+      requestGrant(broker, consent, APP, { capability: 'tcp.connect', patterns: ['api.example.com:443'] }, pending, caller)
+    ])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(consent).toHaveBeenCalledTimes(1)
+    resolveDialog?.(true)
+    expect(await results).toEqual([true, true])
+  })
+
+  it('a caller-less call and a second, different caller never collide, even for the same (origin, capability)', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+    const pending: PendingGrantRequests = new Map()
+    const caller = { window: () => undefined, stillOn: () => true, id: { tab: 'a' } }
+
+    await Promise.all([
+      requestGrant(broker, consent, APP, { capability: 'fs' }, pending),
+      requestGrant(broker, consent, APP, { capability: 'fs' }, pending, caller)
+    ])
+
+    expect(consent).toHaveBeenCalledTimes(2)
+  })
+})

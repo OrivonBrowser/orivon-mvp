@@ -210,19 +210,20 @@ export async function waitForPageGlobal (view: ReturnType<typeof findChrome>, na
 
 /**
  * Moves the tab currently showing `url` into whatever Electron session its
- * origin is attributed to right now (src/broker/policy/origin.ts's
- * isAttributedSession) -- the choreography a grant made through the real
- * `app.requestGrant` IPC call gets for free (transport/ipc.ts reloads the
- * calling document itself once the answer changes which session it
- * belongs in), and a grant made through the dev-only `__orivonDevGrant`
- * hook (src/main/dev/dev-grant.ts) does not: that hook lands straight on
- * the broker, in the main process, with no IPC round trip for anything to
- * react to, so the page stays exactly where it was. A revoke that leaves
- * an origin holding no grants at all moves its attribution the OTHER way,
- * back to the default session, with just as little ceremony -- this
- * helper reloads either direction the same way, since both are "this
- * document is not in the session its origin belongs to any more" until
- * something reloads it.
+ * origin is attributed to RIGHT NOW (src/main/sessions/session-attribution.ts's
+ * senderAttributed), by reloading it.
+ *
+ * Rarely needed for an ordinary grant or revoke: attribution is decided
+ * once, at a document's own commit, and survives a later change to which
+ * session its origin belongs in next -- an already-open tab keeps calling
+ * successfully without moving, whether the change came through a real
+ * `app.requestGrant` call or the dev-only `__orivonDevGrant` hook
+ * (src/main/dev/dev-grant.ts). What still needs an explicit move: a
+ * CACHE-SERVED origin, which `senderAttributed` checks live and strictly
+ * regardless of any commit record (a pinned app's bundle is only ever
+ * intercepted inside its own partition), and any test that wants a tab
+ * driven into whatever session broker state implies right now rather than
+ * whatever its own document last committed to.
  *
  * `view.reload()` is fired and deliberately NOT awaited: a real
  * repartition (tab-view.ts's did-navigate -> partitionChanged ->

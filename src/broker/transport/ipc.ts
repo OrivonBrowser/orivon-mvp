@@ -95,11 +95,15 @@ async function dispatch (
     case 'app.grants':
     case 'app.requestGrant':
       // Both closures re-read `event.sender` LIVE, whenever the dialog
-      // actually calls them (A153), never a value captured here.
+      // actually calls them (A153), never a value captured here. `id` is
+      // `event.sender` itself: a stable per-tab identity for
+      // PendingGrantRequests, distinct from the fresh closures above, which
+      // this same tab gets a new pair of on every call.
       return await dispatchApp(broker, origin, method, payload, requestGrantCtx, {
         window: () => windowForSender?.(event.sender),
-        stillOn: (checkedOrigin) => !event.sender.isDestroyed() && originFromSenderFrame(event.sender.mainFrame) === checkedOrigin
-      })
+        stillOn: (checkedOrigin) => !event.sender.isDestroyed() && originFromSenderFrame(event.sender.mainFrame) === checkedOrigin,
+        id: event.sender
+      }, abandoned)
     case 'fs.readFile':
     case 'fs.writeFile':
     case 'fs.mkdir':
@@ -203,17 +207,21 @@ async function withTimeout<T> (work: (abandoned: AbortSignal) => Promise<T>, tim
  * last two runs without it) -- real wiring always supplies every one of
  * them, see `brokerIpcSubsystem`.
  *
- * `sessionForOrigin`, when supplied, is `isAttributedSession`'s injected
- * half: the Electron session `origin`'s own documents belong in, given
- * everything the broker itself cannot see (the loader's bundle cache).
- * Optional so this file's own test suite, which has no session to compare
- * against, keeps exercising everything else unchanged; real wiring always
- * supplies it, and an `app.requestGrant` call that just changed the answer
- * reloads the calling document into it.
+ * `attributed`, when supplied, is `isAttributedSession`'s injected predicate:
+ * whether the calling WebContents is attributed to `origin` right now.
+ * Attribution is decided once, at the document's own commit
+ * (`../../main/sessions/session-attribution.ts`), not re-decided under a
+ * live document on every call -- so a document that just won a grant via
+ * `app.requestGrant` stays attributed through its own reply and every call
+ * after it, and moves session only on its next navigation, the same swap
+ * `tab-view.ts` already performs for any other cross-origin move. Optional
+ * so this file's own test suite, which has nothing to attribute against,
+ * keeps exercising everything else unchanged; real wiring always supplies
+ * it.
  *
  * `windowForSender`, when supplied, resolves a tab's window for
  * `dispatch()`'s `app.requestGrant` case alone; omitted, that dialog shows
- * unparented, the same optionality `sessionForOrigin` already has.
+ * unparented, the same optionality `attributed` already has.
  */
 export async function handleControlRequest (
   broker: Broker,
@@ -223,7 +231,7 @@ export async function handleControlRequest (
   limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
   fsTransport?: FsTransport,
-  sessionForOrigin?: (origin: string) => unknown,
+  attributed?: (sender: unknown, origin: string) => boolean,
   windowForSender?: (sender: unknown) => unknown
 ): Promise<ResponseEnvelope<unknown>> {
   // The envelope itself is untrusted, not just its payload. Reading
@@ -247,7 +255,7 @@ export async function handleControlRequest (
   // (policy/origin.ts) for when and why. Checked right after origin
   // derivation, before the rate limiter spends any of this origin's budget
   // on a call that is refused either way.
-  if (sessionForOrigin !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, sessionForOrigin)) {
+  if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) {
     return { id: envelope.id, ok: false, code: 'denied', message: 'this document is not in the session its origin belongs to' }
   }
 
@@ -263,19 +271,6 @@ export async function handleControlRequest (
       async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned, windowForSender),
       envelope.timeoutMs
     )
-    // The one call that can change, mid-request, which session `origin`
-    // belongs in: a freshly granted capability moves it out of the default
-    // session (loader/electron/serve.ts's own carriesLiveAuthority). The
-    // document making the call is still running in whatever session it
-    // called FROM, so it is reloaded into the right one now, the same way
-    // an install reported over MANIFEST_HINT already reloads its tab
-    // (main/install/manifest-hint.ts) -- otherwise every following call
-    // from the same, unreloaded document would be denied by the check
-    // above for the rest of its life.
-    if (envelope.method === 'app.requestGrant' && result === true && sessionForOrigin !== undefined &&
-      event.sender.session !== sessionForOrigin(origin) && !event.sender.isDestroyed()) {
-      event.sender.reload()
-    }
     return { id: envelope.id, ok: true, result }
   } catch (error) {
     return toFailureResponse(envelope.id, error)
@@ -298,11 +293,11 @@ export function registerBrokerIpc (
   limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
   fsTransport?: FsTransport,
-  sessionForOrigin?: (origin: string) => unknown,
+  attributed?: (sender: unknown, origin: string) => boolean,
   windowForSender?: (sender: unknown) => unknown
 ): void {
   ipc.handle(CONTROL_CHANNEL, async (event, envelope) =>
-    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport, sessionForOrigin, windowForSender))
+    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport, attributed, windowForSender))
 }
 
 /**
@@ -319,9 +314,9 @@ export interface IpcMainOnLike {
 }
 
 /** Thin wiring over `handleSyncFsReadRequest`, sharing `limiter` with `registerBrokerIpc` so this channel cannot be used to dodge CONTROL_CHANNEL's rate limit. */
-export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, limiter?: RateLimiter, sessionForOrigin?: (origin: string) => unknown): void {
+export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, limiter?: RateLimiter, attributed?: (sender: unknown, origin: string) => boolean): void {
   ipc.on(SYNC_CONTROL_CHANNEL, (event, payload) => {
-    event.returnValue = handleSyncFsReadRequest(policy, event, payload, limiter, sessionForOrigin)
+    event.returnValue = handleSyncFsReadRequest(policy, event, payload, limiter, attributed)
   })
 }
 
@@ -434,11 +429,11 @@ export const brokerIpcSubsystem: Subsystem = {
     // channel enforcing origin without session would be a capability
     // enforcing less than it claims to (registry.ts's own doc on
     // `Subsystem.critical`, which this subsystem already carries).
-    if (ctx.sessionForOrigin === undefined) throw fail('internal', 'ctx.sessionForOrigin is not published -- session-attribution subsystem is missing or misordered')
+    if (ctx.senderAttributed === undefined) throw fail('internal', 'ctx.senderAttributed is not published -- session-attribution subsystem is missing or misordered')
     // `ctx` itself, not a captured `ctx.requestGrant` -- see RequestGrantCtx's own doc (ipc-validation.ts) for why.
     // A lazy read of `ctx.windowForSender`, same reason `webContextHost` above is a thunk:
     // it publishes only once the shell exists, well after this runs.
-    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport, ctx.sessionForOrigin, (sender) => ctx.windowForSender?.(sender as WebContents))
+    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport, ctx.senderAttributed, (sender) => ctx.windowForSender?.(sender as WebContents))
 
     // ./sync-fs-policy.ts's createSyncFsPolicy calls straight through to
     // broker.fs.confineSync -- ADR-0016's synchronous grant-check/
@@ -446,6 +441,6 @@ export const brokerIpcSubsystem: Subsystem = {
     // just wired, so a grant issued through any route (the app loader's
     // permission prompt later, src/main/dev-grant.ts's hook today) is live
     // for this channel the instant it lands on that one instance.
-    registerSyncFsIpc(ipcMain, createSyncFsPolicy(broker), limiter, ctx.sessionForOrigin)
+    registerSyncFsIpc(ipcMain, createSyncFsPolicy(broker), limiter, ctx.senderAttributed)
   }
 }

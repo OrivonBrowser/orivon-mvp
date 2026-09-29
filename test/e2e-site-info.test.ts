@@ -27,7 +27,7 @@ import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, moveIntoAttributedSession, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import type { ElectronApplication, Page } from 'playwright'
 
 afterAll(async () => {
@@ -150,15 +150,16 @@ it(
         // exposed to every ordinary tab (src/preload/app.ts) and served
         // from the SAME real broker the popup's own turnOff call just
         // reached -- not the popup's own re-render of itself.
-        const staleView = (app as ElectronApplication).windows().find((w) => w.url() === url)
-        if (staleView === undefined) throw new Error('fixture tab view not found')
+        const view = (app as ElectronApplication).windows().find((w) => w.url() === url)
+        if (view === undefined) throw new Error('fixture tab view not found')
         // fs was this origin's only grant. Turning it off leaves the origin
-        // attributed to the default session again (isAttributedSession,
-        // policy/origin.ts), but this tab is still sitting in the app
-        // partition the earlier grant moved it into, and nothing reloads it
-        // back down on its own -- move it before trusting window.orivon
-        // from it, the same choreography a real grant's own move gets.
-        const view = await moveIntoAttributedSession(app as ElectronApplication, staleView, url)
+        // attributed to the default session again for the NEXT document, but
+        // this tab is still sitting, unmoved, in the app partition the
+        // earlier grant's reload moved it into -- and stays attributed
+        // regardless: it already committed there, and a revoke that changes
+        // what session the origin belongs in NEXT never re-decides an
+        // already-committed document's own attribution
+        // (src/main/sessions/session-attribution.ts).
         const grantsAfterOff = await view.evaluate(async () => {
           const orivon = (globalThis as unknown as { orivon: { app: { grants: () => Promise<Array<{ capability: string }>> } } }).orivon
           return (await orivon.app.grants()).map((g) => g.capability)

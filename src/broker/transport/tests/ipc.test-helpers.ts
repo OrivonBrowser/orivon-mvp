@@ -33,9 +33,9 @@ export const APP_SESSION = { name: 'app' }
  * A ControlEvent whose senderFrame resolves to `origin` via
  * originFromSenderFrame, and whose sender is the frame's OWN top frame in
  * `session` (`DEFAULT_SESSION` unless a test says otherwise) -- so a test
- * that never passes `sessionForOrigin` sees the identical event this helper
- * always produced, and one that does gets to choose whether the sender's
- * session matches what it injects.
+ * that never passes an `attributed` predicate sees the identical event this
+ * helper always produced, and one that does gets to choose whether the
+ * sender's session matches what it injects.
  */
 export function frameFor (origin: string, session: unknown = DEFAULT_SESSION): ControlEvent {
   const senderFrame = { url: `${origin}/index.html`, origin, postMessage: vi.fn() }
@@ -55,6 +55,20 @@ export const NO_FRAME: ControlEvent = { senderFrame: null, sender: { mainFrame: 
 
 export function envelope (method: string, payload: unknown, timeoutMs = 1_000): RequestEnvelope<unknown> {
   return { id: 'req-1', method, payload, timeoutMs }
+}
+
+/**
+ * Builds an `attributed` predicate (`isAttributedSession`'s injected half,
+ * policy/origin.ts) from an old-style "which session does this origin
+ * belong in" function -- lets a test still express the ANSWER per origin
+ * while matching the real predicate's `(sender, origin) => boolean` shape.
+ * Stands in for the live-check fallback only: the record-based and
+ * cache-served branches live entirely inside
+ * src/main/sessions/session-attribution.ts, which this file's own
+ * `handleControlRequest` tests never reach.
+ */
+export function attributedFrom (expectedSession: (origin: string) => unknown): (sender: unknown, origin: string) => boolean {
+  return (sender, origin) => (sender as { session: unknown }).session === expectedSession(origin)
 }
 
 /** A promise that never settles -- models a broker call still in flight when a timeout fires. */

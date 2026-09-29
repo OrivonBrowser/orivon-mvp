@@ -48,7 +48,7 @@ import { launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput, killChild,
-  moveIntoAttributedSession, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
+  navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -193,10 +193,13 @@ it('Phase 2: a real fs grant, issued through the dev-only path, lets a real page
         check('the grant returned names the fs capability', grantOutcome.grant.capability === 'fs', JSON.stringify(grantOutcome.grant))
 
         // The dev-only hook lands on the broker directly, with no IPC round
-        // trip to reload this page into its now-granted session the way a
-        // real app.requestGrant call would (transport/ipc.ts) -- move it
-        // there the same way before making any granted call from it.
-        const view = await moveIntoAttributedSession(app, beforeGrant, FIXTURE_URL)
+        // trip for anything to react to, so this document never moves into
+        // the app's own partition -- it does not need to: it already
+        // committed FIXTURE_ORIGIN, attributed, before the grant landed
+        // (src/main/sessions/session-attribution.ts), and that attribution
+        // survives a grant that changes what session the origin belongs in
+        // NEXT.
+        const view = beforeGrant
 
         // (a) WRITE THEN READ SYNCHRONOUSLY. writeFile is the already-proven
         // async path (e2e-capability-boundary.test.ts's own Phase 2

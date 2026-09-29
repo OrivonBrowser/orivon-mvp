@@ -50,28 +50,54 @@ export interface DialogCaller {
   window: () => unknown
   /** True while the call that asked is still alive and its top frame has not left `origin`. */
   stillOn: (origin: string) => boolean
+  /**
+   * An opaque identity for the calling WebContents, compared only by `===`
+   * and never dereferenced -- the same "compare, don't read" treatment
+   * `isAttributedSession` gives a `Session` (`../../broker/policy/origin.js`).
+   * `PendingGrantRequests` keys its outer map on this so two different tabs
+   * asking for the same (origin, capability, patterns) never share one
+   * dialog or its answer; omitted, every caller is treated as the same
+   * identity-less one, which is what every existing caller-less call already
+   * got.
+   */
+  id?: unknown
 }
 
 /**
- * One in-flight `requestGrant` call per (origin, capability): a second call
- * for the same pair, made while the first is still awaiting its `consent`
- * dialog (or anything before it), shares that first call's eventual answer
- * instead of opening a second dialog. Keyed narrower than plan decision 10's
- * own wording ("one pending prompt per origin") on purpose: two DIFFERENT
- * capabilities requested concurrently for one origin are two different
- * questions, and applying one's answer to the other would be a correctness
- * bug (grant `fs` because `tcp.connect` happened to be approved, or the
- * reverse), not a UX nicety -- a burst of calls all asking for the SAME
- * capability, in a loop or all at once, is what this still fully closes.
+ * One in-flight `requestGrant` call per (caller, origin, capability,
+ * requested patterns): a second call for the same tuple, made while the
+ * first is still awaiting its `consent` dialog (or anything before it),
+ * shares that first call's eventual answer instead of opening a second
+ * dialog. Keyed narrower than plan decision 10's own wording ("one pending
+ * prompt per origin") on purpose: two DIFFERENT capabilities requested
+ * concurrently for one origin are two different questions, and applying
+ * one's answer to the other would be a correctness bug (grant `fs` because
+ * `tcp.connect` happened to be approved, or the reverse), not a UX nicety --
+ * a burst of calls all asking for the SAME capability, in a loop or all at
+ * once, is what this still fully closes.
  *
- * A `Map`, not a `WeakMap`: the key is a string, not an object, and entries
- * are removed (see `requestGrant` below) the instant their call settles, so
- * nothing here outlives the request it was made for.
+ * The OUTER map is keyed on `caller?.id` (`DialogCaller`'s own doc) rather
+ * than folded into the same string key as the rest: two different tabs
+ * asking for the identical (origin, capability, patterns) at once must
+ * never share a dialog or its parent window, so their pending slots must
+ * never collide, however their string keys would compare. Every caller-less
+ * call (every existing call site that omits `caller`) shares the single
+ * `undefined` outer key, preserving the one-dialog-per-tuple sharing this
+ * had before `id` existed.
+ *
+ * Inner maps, not a `WeakMap`: the inner key is a string, not an object,
+ * and entries are removed (see `requestGrant` below) the instant their call
+ * settles, so nothing here outlives the request it was made for; an empty
+ * inner map is removed too, so a tab that stops calling leaves no trace.
  */
-export type PendingGrantRequests = Map<string, Promise<boolean>>
+export type PendingGrantRequests = Map<unknown, Map<string, Promise<boolean>>>
 
-function pendingKey (origin: string, capability: CapabilityKind): string {
-  return `${origin}\u0000${capability}`
+function pendingKey (origin: string, capability: CapabilityKind, patterns: readonly Pattern[] | undefined): string {
+  // Sorted: two calls requesting the same set of patterns in a different
+  // order are the same question and must share one dialog; unsorted, they
+  // would spuriously open two.
+  const patternKey = patterns === undefined ? '' : [...patterns].sort().join('\u0000')
+  return `${origin}\u0000${capability}\u0000${patternKey}`
 }
 
 /**
@@ -129,7 +155,8 @@ async function requestGrantOnce (
   origin: string,
   request: CapabilityRequest & { capability: CapabilityKind },
   caller?: DialogCaller,
-  prompts?: PendingGrantPrompts
+  prompts?: PendingGrantPrompts,
+  abandoned?: AbortSignal
 ): Promise<boolean> {
   let manifest
   try {
@@ -149,9 +176,18 @@ async function requestGrantOnce (
   const declined = await broker.declinedCapabilitiesFor(origin)
   if (declined?.includes(request.capability) === true) return false
 
-  const askConsent = async (): Promise<boolean> => caller === undefined
-    ? await consent(origin, request.capability, decision.patterns)
-    : await consent(origin, request.capability, decision.patterns, caller)
+  // The caller's own IPC transport times out a call it has waited too long
+  // for (A153) well before withOriginTurn's queue necessarily reaches this
+  // call's turn -- the app already has its answer (a timeout failure) by
+  // then, so showing a dialog for it now would parent one to a call nobody
+  // is still waiting on. Checked right as this call's turn starts, never
+  // earlier: `abandoned` can fire at any point while this sat queued.
+  const askConsent = async (): Promise<boolean> => {
+    if (abandoned?.aborted === true) return false
+    return caller === undefined
+      ? await consent(origin, request.capability, decision.patterns)
+      : await consent(origin, request.capability, decision.patterns, caller)
+  }
   const accepted = prompts === undefined ? await askConsent() : await withOriginTurn(origin, prompts, askConsent)
 
   // The page that asked may have navigated away, or closed, before the
@@ -226,6 +262,10 @@ async function requestGrantOnce (
  * `DialogCaller`'s own doc. Omitted, every dialog this call can reach shows
  * unconditionally and its answer is trusted regardless of what the calling
  * page has done since, the same as before this parameter existed.
+ *
+ * `abandoned`, when supplied, is the caller's own IPC timeout signal --
+ * `askConsent`'s own doc, inside `requestGrantOnce`, says exactly when it is
+ * checked and why.
  */
 export async function requestGrant (
   broker: Broker,
@@ -234,7 +274,8 @@ export async function requestGrant (
   request: CapabilityRequest,
   pending?: PendingGrantRequests,
   caller?: DialogCaller,
-  prompts?: PendingGrantPrompts
+  prompts?: PendingGrantPrompts,
+  abandoned?: AbortSignal
 ): Promise<boolean> {
   if (!isCapabilityKind(request.capability)) return false
 
@@ -252,23 +293,31 @@ export async function requestGrant (
   // dialog, never a dynamic request.
   if (request.capability === 'web.context' || request.capability === 'web.embed') return false
 
-  if (pending === undefined) return await requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability }, caller, prompts)
+  if (pending === undefined) return await requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability }, caller, prompts, abandoned)
 
-  const key = pendingKey(origin, request.capability)
-  const inFlight = pending.get(key)
+  const callerId = caller?.id
+  let byCaller = pending.get(callerId)
+  if (byCaller === undefined) {
+    byCaller = new Map()
+    pending.set(callerId, byCaller)
+  }
+
+  const key = pendingKey(origin, request.capability, request.patterns)
+  const inFlight = byCaller.get(key)
   if (inFlight !== undefined) return await inFlight
 
-  // Claimed SYNCHRONOUSLY, in the same tick as the `pending.get` check just
+  // Claimed SYNCHRONOUSLY, in the same tick as the `byCaller.get` check just
   // above, with no `await` in between: calling an async function runs it
   // synchronously up to its own first `await`, so a concurrent call arriving
   // before this one yields control anywhere will still find this promise
-  // already in `pending` -- see PendingGrantRequests's own doc.
-  const ask = requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability }, caller, prompts)
-  pending.set(key, ask)
+  // already in `byCaller` -- see PendingGrantRequests's own doc.
+  const ask = requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability }, caller, prompts, abandoned)
+  byCaller.set(key, ask)
   try {
     return await ask
   } finally {
-    pending.delete(key)
+    byCaller.delete(key)
+    if (byCaller.size === 0) pending.delete(callerId)
   }
 }
 

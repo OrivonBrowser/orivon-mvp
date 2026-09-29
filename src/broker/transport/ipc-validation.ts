@@ -144,6 +144,8 @@ export interface AppRequestGrantParams { readonly capability: string, readonly p
 export interface RequestGrantCaller {
   readonly window: () => unknown
   readonly stillOn: (origin: string) => boolean
+  /** An opaque per-tab identity -- `../../main/consent/request-grant.js`'s `DialogCaller.id`, same doc, same reason. */
+  readonly id?: unknown
 }
 
 /**
@@ -160,7 +162,7 @@ export interface RequestGrantCaller {
  * module rather than in either one.
  */
 export interface RequestGrantCtx {
-  readonly requestGrant: ((origin: string, request: CapabilityRequest, caller: RequestGrantCaller) => Promise<boolean>) | undefined
+  readonly requestGrant: ((origin: string, request: CapabilityRequest, caller: RequestGrantCaller, abandoned?: AbortSignal) => Promise<boolean>) | undefined
 }
 
 export function isNetUdpBindParams (payload: unknown): payload is NetUdpBindParams {

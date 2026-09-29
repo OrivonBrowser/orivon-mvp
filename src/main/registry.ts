@@ -82,7 +82,7 @@ export interface SubsystemContext {
    * be parented to the calling tab's window and skipped or discounted once
    * that tab is gone or has moved on (`docs/architecture/security-model.md`).
    */
-  readonly requestGrant: ((origin: string, request: CapabilityRequest, caller?: DialogCaller) => Promise<boolean>) | undefined
+  readonly requestGrant: ((origin: string, request: CapabilityRequest, caller?: DialogCaller, abandoned?: AbortSignal) => Promise<boolean>) | undefined
   /**
    * `../app-install.js`'s `installFromHint`, closed over this process's one
    * `Broker`/`Loader` and the real install-time consent dialog (d-0025,
@@ -118,24 +118,25 @@ export interface SubsystemContext {
    */
   readonly windowForSender: ((sender: WebContents) => BaseWindow | undefined) | undefined
   /**
-   * Which Electron session an origin's documents actually belong in --
-   * `undefined` (the default session) unless the origin holds a live grant
-   * or is being served from the loader's bundle cache, the same rule
-   * `../shell/tab-view.js`'s `partitionForTarget` applies to a navigating
-   * tab. Every renderer-reachable broker channel (`../broker/transport/
-   * ipc.ts`'s CONTROL_CHANNEL and SYNC_CONTROL_CHANNEL, `./install/
-   * manifest-hint.ts`'s MANIFEST_HINT) reads this to refuse a call whose
-   * WebContents sits in the wrong session for the origin it claims.
+   * Whether the WebContents making a call is attributed to the origin it
+   * claims -- `isAttributedSession`'s (`../broker/policy/origin.js`)
+   * injected other half. Every renderer-reachable broker channel
+   * (`../broker/transport/ipc.ts`'s CONTROL_CHANNEL and SYNC_CONTROL_CHANNEL,
+   * `./install/manifest-hint.ts`'s MANIFEST_HINT) reads this to refuse a
+   * call from a WebContents that never committed this origin in the session
+   * it belongs in.
    *
    * Published here, not built inside `../broker/transport/ipc.ts` itself,
-   * because answering it needs the loader's cache state
-   * (`isOriginServedFromCacheSync`) and `src/broker/` must never import
-   * `src/loader/` (`../broker/README.md`). `./sessions/session-attribution.ts`
-   * is the one place that combines them; it must be listed before
-   * `brokerIpcSubsystem` in `subsystems.ts` so this is already published by
-   * the time the broker channels wire themselves up.
+   * because answering it needs facts this policy layer never reaches for
+   * itself: the loader's cache state (`isOriginServedFromCacheSync`, and
+   * `src/broker/` must never import `src/loader/`, `../broker/README.md`),
+   * and a per-document commit record only Electron's own `did-navigate`
+   * event can produce. `./sessions/session-attribution.ts` is the one place
+   * that builds it; it must be listed before `brokerIpcSubsystem` in
+   * `subsystems.ts` so this is already published by the time the broker
+   * channels wire themselves up.
    */
-  readonly sessionForOrigin: ((origin: string) => unknown) | undefined
+  readonly senderAttributed: ((sender: unknown, origin: string) => boolean) | undefined
   /**
    * `./extensions/extensions-subsystem.js`'s install/uninstall/enable/list
    * surface, closed over this process's one `session.defaultSession` and
@@ -175,9 +176,9 @@ function createPublishedSlot<T> (label: string, hazard: string): {
 
 const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would create two disagreeing grant ledgers for one running app')
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
-const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest, caller?: DialogCaller) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
+const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest, caller?: DialogCaller, abandoned?: AbortSignal) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
 const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>>('installApp', 'a second one could close over a different Broker or Loader instance than the one every other subsystem reads')
-const sessionForOriginSlot = createPublishedSlot<(origin: string) => unknown>('sessionForOrigin', 'a second one could disagree with the first about which session an origin belongs in, and every broker channel must apply the same answer')
+const senderAttributedSlot = createPublishedSlot<(sender: unknown, origin: string) => boolean>('senderAttributed', 'a second one could disagree with the first about which sender is attributed to which origin, and every broker channel must apply the same answer')
 const extensionsSlot = createPublishedSlot<ExtensionsApi>('extensions', 'a second one could load into a different session than the one every extension actually runs in')
 const windowForSenderSlot = createPublishedSlot<(sender: WebContents) => BaseWindow | undefined>('windowForSender', 'a second one could disagree about which window currently holds a given tab')
 
@@ -198,7 +199,7 @@ class SubsystemContextImpl implements SubsystemContext {
     return loaderSlot.get(this)
   }
 
-  get requestGrant (): ((origin: string, request: CapabilityRequest, caller?: DialogCaller) => Promise<boolean>) | undefined {
+  get requestGrant (): ((origin: string, request: CapabilityRequest, caller?: DialogCaller, abandoned?: AbortSignal) => Promise<boolean>) | undefined {
     return requestGrantSlot.get(this)
   }
 
@@ -206,8 +207,8 @@ class SubsystemContextImpl implements SubsystemContext {
     return installAppSlot.get(this)
   }
 
-  get sessionForOrigin (): ((origin: string) => unknown) | undefined {
-    return sessionForOriginSlot.get(this)
+  get senderAttributed (): ((sender: unknown, origin: string) => boolean) | undefined {
+    return senderAttributedSlot.get(this)
   }
 
   get extensions (): ExtensionsApi | undefined {
@@ -246,7 +247,7 @@ export function publishLoader (ctx: SubsystemContext, loader: Loader): void {
 }
 
 /** The one sanctioned way to set `ctx.requestGrant` -- see `publishBroker`'s own doc; same guarantee, same reason. */
-export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origin: string, request: CapabilityRequest, caller?: DialogCaller) => Promise<boolean>): void {
+export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origin: string, request: CapabilityRequest, caller?: DialogCaller, abandoned?: AbortSignal) => Promise<boolean>): void {
   requestGrantSlot.publish(ctx, requestGrant)
 }
 
@@ -255,9 +256,9 @@ export function publishInstallApp (ctx: SubsystemContext, installApp: (hintingOr
   installAppSlot.publish(ctx, installApp)
 }
 
-/** The one sanctioned way to set `ctx.sessionForOrigin` -- see `publishBroker`'s own doc; same guarantee, same reason. */
-export function publishSessionForOrigin (ctx: SubsystemContext, sessionForOrigin: (origin: string) => unknown): void {
-  sessionForOriginSlot.publish(ctx, sessionForOrigin)
+/** The one sanctioned way to set `ctx.senderAttributed` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishSenderAttributed (ctx: SubsystemContext, senderAttributed: (sender: unknown, origin: string) => boolean): void {
+  senderAttributedSlot.publish(ctx, senderAttributed)
 }
 
 /** The one sanctioned way to set `ctx.extensions` -- see `publishBroker`'s own doc; same guarantee, same reason. */

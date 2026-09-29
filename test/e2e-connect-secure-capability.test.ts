@@ -59,7 +59,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, forwardOutput, killChild, moveIntoAttributedSession, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { generateTlsFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -236,10 +236,13 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
       )
 
       // The dev-only hook lands on the broker directly, with no IPC round
-      // trip to reload this page into its now-granted session the way a
-      // real app.requestGrant call would (transport/ipc.ts) -- move it
-      // there the same way before making any granted call from it.
-      const view = await moveIntoAttributedSession(app, beforeGrant, FIXTURE_URL)
+      // trip for anything to react to, so this document never moves into
+      // the app's own partition -- it does not need to: it already
+      // committed FIXTURE_ORIGIN, attributed, before the grant landed
+      // (src/main/sessions/session-attribution.ts), and that attribution
+      // survives a grant that changes what session the origin belongs in
+      // NEXT.
+      const view = beforeGrant
 
       // (a) OUTSIDE the granted pattern: '127.0.0.1' is the identical TCP
       // peer as 'localhost' (the server is bound to 127.0.0.1), but
