@@ -117,3 +117,20 @@ export const EXTENSION_SW_HEALTH_CHECK_CHANNEL = 'orivon-extension-sw-health-che
 
 /** Extension service worker -> main: the boolean answer to the check above. */
 export const EXTENSION_SW_HEALTH_REPLY_CHANNEL = 'orivon-extension-sw-health-reply'
+
+/**
+ * An app tab -> main: ask for a connection to this app's child host
+ * (ADR-0046), fire-and-forget like MANIFEST_HINT_CHANNEL above -- main
+ * derives the origin from `event.senderFrame` itself, refuses a tab that is
+ * not a registered app, and delivers the port on
+ * `CHILD_HOST_PORT_CHANNEL` below rather than as this call's own reply,
+ * since a `MessagePortMain` cannot cross as an `ipcRenderer.invoke` result.
+ * See `src/main/children/`.
+ */
+export const CHILD_HOST_CONNECT_CHANNEL = 'orivon-children:connect'
+
+/** Main -> the requesting app tab, one-way: delivers the page's own end of
+ * the `MessageChannelMain` a child-host connection uses, via
+ * `WebFrameMain.postMessage` -- `PORT_CHANNEL`'s own pattern, a separate
+ * channel since this one carries no handle id to tag the delivery with. */
+export const CHILD_HOST_PORT_CHANNEL = 'orivon-children:page-port'
