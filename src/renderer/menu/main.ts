@@ -42,8 +42,14 @@ function entry (item: MenuItemView): HTMLElement {
 
 void menu.items().then((items) => {
   list.replaceChildren(...items.map(entry))
-  // The list is short and fixed: its height is the document's.
-  menu.reportHeight(Math.ceil(document.documentElement.scrollHeight))
+  // `list`'s own scrollHeight is its full, unclipped content height whatever
+  // the popup's CURRENT size already is (style.css's `.items { overflow-y:
+  // auto }` is what makes that true); `document.documentElement`'s is not --
+  // once the document itself never scrolls (style.css's `overflow: hidden`,
+  // for the popup's own rounded corners), it reports only what already fits,
+  // which is exactly the wrong number to ask main to grow the popup to.
+  const inset = list.getBoundingClientRect().top + (parseFloat(getComputedStyle(list).marginBottom) || 0)
+  menu.reportHeight(Math.ceil(list.scrollHeight + inset))
   list.querySelector<HTMLButtonElement>('.item')?.focus()
 })
 
