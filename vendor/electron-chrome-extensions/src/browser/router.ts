@@ -16,6 +16,84 @@ export type IpcEvent = Electron.IpcMainEvent | Electron.IpcMainServiceWorkerEven
 export type IpcInvokeEvent = Electron.IpcMainInvokeEvent | Electron.IpcMainServiceWorkerInvokeEvent
 export type IpcAnyEvent = IpcEvent | IpcInvokeEvent
 
+// Orivon patch (UPSTREAM.md patch 36): see waitForRegisteredExtension below.
+const EXTENSION_REGISTRATION_WAIT_MS = 2000
+
+/**
+ * A genuine page of an already-loading extension can call a crx-msg
+ * handler in the same tick its own webContents is created -- before
+ * `session.extensions.getExtension(id)` reflects the load already in
+ * flight (a real extension's popup script that calls a chrome.* API as its
+ * first statement wins this race every time; a fixture popup whose calls
+ * wait for a button click never does). `extensionId` is only ever set here
+ * from `onRouterMessage`, which already refused the call if
+ * `gMessageSenderIdCheck` was set and did not confirm `extensionId` names
+ * THIS sender's own origin -- so waiting instead of refusing outright adds
+ * no way for an unrelated page to spoof another extension's identity, only
+ * a bounded grace period for the real owner to finish registering.
+ */
+interface ExtensionRegistryEvents {
+  getExtension: (id: string) => Electron.Extension | null
+  on: (event: 'extension-loaded', listener: (event: Electron.Event, extension: Electron.Extension) => void) => unknown
+  removeListener: (event: 'extension-loaded', listener: (event: Electron.Event, extension: Electron.Extension) => void) => unknown
+}
+
+async function waitForRegisteredExtension (
+  extensions: ExtensionRegistryEvents,
+  extensionId: string,
+): Promise<Electron.Extension | undefined> {
+  const already = extensions.getExtension(extensionId)
+  if (already) return already
+  return await new Promise((resolve) => {
+    let settled = false
+    const onLoaded = (_event: Electron.Event, extension: Electron.Extension): void => {
+      if (settled || extension.id !== extensionId) return
+      settled = true
+      clearTimeout(timer)
+      extensions.removeListener('extension-loaded', onLoaded)
+      resolve(extension)
+    }
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      extensions.removeListener('extension-loaded', onLoaded)
+      resolve(extensions.getExtension(extensionId) ?? undefined)
+    }, EXTENSION_REGISTRATION_WAIT_MS)
+    extensions.on('extension-loaded', onLoaded)
+  })
+}
+
+/** Escapes every regex-special character in `str`, for use inside a larger
+ * pattern built from user-controlled-but-not-attacker-controlled pieces
+ * (an extension's own manifest.sandbox.pages entries below). */
+function escapeRegExp (str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Orivon patch (UPSTREAM.md patch 37): true if `url`'s own path matches one
+ * of `pages` (an extension's manifest `sandbox.pages`, Chrome's own glob
+ * grammar: `*` matches any run of characters, everything else literal).
+ * Exported through `orivon:crx-extensions-router`
+ * (electron-chrome-extensions-lib.d.ts) so extension-host.ts's own
+ * preload-time query (the vendored preload decides whether to inject any
+ * chrome.* at all) answers the identical question onExtensionMessage below
+ * asks on every message -- one matcher, not two that could drift apart.
+ */
+export function isSandboxPageUrl (pages: readonly string[] | undefined, url: string): boolean {
+  if (pages === undefined || pages.length === 0) return false
+  let pathname: string
+  try {
+    pathname = new URL(url).pathname.replace(/^\//, '')
+  } catch {
+    return false
+  }
+  return pages.some((page) => {
+    const pattern = page.split('*').map(escapeRegExp).join('.*')
+    return new RegExp(`^${pattern}$`).test(pathname)
+  })
+}
+
 const getSessionFromEvent = (event: IpcAnyEvent): Electron.Session => {
   if (event.type === 'service-worker') {
     return event.session
@@ -464,9 +542,42 @@ export class ExtensionRouter {
       throw new Error(`${handlerName} does not support calling from a remote session`)
     }
 
-    const extension = extensionId ? eventSessionExtensions.getExtension(extensionId) : undefined
+    // Orivon patch (UPSTREAM.md patch 37): a frame whose own real origin
+    // is opaque ("null", WebFrameMain.origin's own doc) never gets to
+    // call anything here, whatever it claims -- checked before extension
+    // resolution below, on the raw frame alone. Measured on this Electron
+    // build: a manifest sandbox.pages page does NOT actually get an opaque
+    // origin (unlike real Chrome's CSP `sandbox`), so the second check
+    // after extension resolution is what catches today's real case; this
+    // one stays as a direct defence against whatever origin the frame
+    // itself reports, forward-compatible with an Electron version that
+    // does implement it.
+    if (event.type === 'frame' && event.senderFrame?.origin === 'null') {
+      throw new Error(`${handlerName} refused: sender frame has an opaque origin`)
+    }
+
+    // Orivon patch (UPSTREAM.md patch 36): was a single unconditional
+    // `getExtension` read; see waitForRegisteredExtension's own doc.
+    let extension = extensionId ? eventSessionExtensions.getExtension(extensionId) : undefined
+    if (!extension && handler.extensionContext && extensionId !== undefined) {
+      extension = await waitForRegisteredExtension(eventSessionExtensions, extensionId)
+    }
     if (!extension && handler.extensionContext) {
       throw new Error(`${handlerName} was sent from an unknown extension context`)
+    }
+
+    // Orivon patch (UPSTREAM.md patch 37): a page the extension's OWN
+    // manifest declares under sandbox.pages gets no chrome.* API at all in
+    // real Chrome, precisely because extensions put untrusted code
+    // (templates, eval) there -- refused here from the extension's own
+    // loaded manifest, never from anything the sender claims, and
+    // regardless of handler.extensionContext, so a handler that does not
+    // otherwise require a resolved extension cannot be used to dodge it.
+    if (event.type === 'frame' && event.senderFrame != null && extension != null) {
+      const sandboxManifest: chrome.runtime.Manifest = extension.manifest
+      if (isSandboxPageUrl(sandboxManifest.sandbox?.pages, event.senderFrame.url)) {
+        throw new Error(`${handlerName} refused: sender frame is a declared sandbox page`)
+      }
     }
 
     if (handler.permission) {

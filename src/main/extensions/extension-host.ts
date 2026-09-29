@@ -11,24 +11,31 @@
 //      are created after every subsystem runs, so the impl callbacks below
 //      (createTab, createWindow, ...) reject cleanly if an extension somehow
 //      calls one before this runs.
-import { app, session } from 'electron'
+import { app, ipcMain, session } from 'electron'
 import type { BaseWindow, Session, WebContents } from 'electron'
 // Virtual specifiers (electron-chrome-extensions-lib.d.ts's own header says
 // why): electron.vite.config.ts's alias resolves each to the real vendor
 // file for bundling; tsc uses that .d.ts's ambient declaration instead.
 import { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setSessionPartitionResolver } from 'orivon:crx-extensions-partition'
-import { setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
+import { isSandboxPageUrl, setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
 import { setCookieHostAccessCheck } from 'orivon:crx-extensions-cookies'
 import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensions-tabs'
+import { setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
+import { setTabCaptureAppRefusalCheck, setTabCaptureConsumedCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
 import { createShellWindow } from '../shell/window.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import type { SubsystemContext } from '../registry.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
+import { mintTabCaptureGrant, wasTabCaptureGrantConsumed } from '../sessions/tab-capture-grants.js'
+import { appOrigin } from '../shell/devtools-app-origin.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
-import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
+import { extensionIdFromScope, watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
+import { EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL } from '../channels.js'
 import { hasApiOrHostAccess, hasApiPermission, hasHostAccess } from './extension-host-access.js'
+import { clearInvocation, hasRecentInvocation, recordInvocation } from './extension-tab-invocation.js'
 
 /** The `<browser-action-list partition="...">` token that resolves to
  * `session.defaultSession`, where every extension runs -- the default
@@ -42,6 +49,24 @@ interface ShellBridge { ctx: SubsystemContext, services: ShellServices }
 
 let bridge: ShellBridge | undefined
 let hostExtensions: ElectronChromeExtensions | undefined
+
+/** The one open browserAction popup, if any -- browser-action.ts's own
+ * activateClick destroys a previous popup before ever creating a second
+ * one, so there is never more than one to track. Read by
+ * attachExtensionShell's own `tabActivated` handler to close it on a tab
+ * switch, the same as a navigation of the active tab closes it (both set
+ * up where this is written, in the 'browser-action-popup-created' handler
+ * below). */
+let currentPopup: { isDestroyed: () => boolean, destroy: () => void } | undefined
+
+/** True for the duration of a `chrome.tabs.create`/`chrome.tabs.update({active:true})`
+ * call's own `activateTab` -- attachExtensionShell's `tabActivated` reads this to skip
+ * closing an open popup: a tab switch the EXTENSION itself just made (querying tabs,
+ * then opening one from its own popup, per test/e2e-extensions-toolbar.test.ts) must not
+ * close the very popup that asked for it, unlike a tab switch the PERSON makes by
+ * clicking the tab strip. `createTab` and `selectTab` below are the only two ways an
+ * extension can activate a tab, and neither recurses into the other. */
+let tabActivationFromExtension = false
 
 /** `session.defaultSession.extensions.getExtension` answers `null` for an id
  * it does not hold (Electron's own contract), never `undefined` -- checked
@@ -152,6 +177,57 @@ function setupWindowOpenPolicy (contents: WebContents): void {
   })
 }
 
+/** Tabs a (extensionId, tab) pair already has its clear-on-navigate/
+ * clear-on-close listeners attached for -- recordTabCaptureInvocation runs
+ * on every toolbar click, and a person can click the same extension's
+ * action on the same tab many times over a long-lived tab's life; without
+ * this, each click would add another pair of listeners that never comes
+ * off, an unbounded leak on that WebContents. recordInvocation/
+ * clearInvocation are themselves idempotent Set operations, so only the
+ * listener wiring needs the guard. */
+const wiredInvocations = new WeakMap<WebContents, Set<string>>()
+
+/** browser-action.ts's activateClick calls this on every toolbar click --
+ * extension-tab-invocation.ts's own ledger says why this exists at all
+ * (Chrome's tabCapture rule). Cleared the moment the tab navigates to a
+ * different origin or is closed, mirroring activeTab's own real lifetime;
+ * `tab.getURL()` at grant time is the origin measured against, not the
+ * origin the CLICK happened on, since both are the same thing here (the
+ * click always happens on the tab as it exists right now). */
+function recordTabCaptureInvocation (extensionId: string, tab: WebContents): void {
+  recordInvocation(extensionId, tab.id)
+
+  const wired = wiredInvocations.get(tab) ?? new Set<string>()
+  wiredInvocations.set(tab, wired)
+  if (wired.has(extensionId)) return
+  wired.add(extensionId)
+
+  const grantedOrigin = originFromUrl(tab.getURL())
+  const clear = (): void => { clearInvocation(extensionId, tab.id) }
+  const onNavigate = (): void => {
+    if (tab.isDestroyed() || originFromUrl(tab.getURL()) === grantedOrigin) return
+    clear()
+    tab.removeListener('destroyed', clear)
+    tab.removeListener('did-navigate', onNavigate)
+    wired.delete(extensionId)
+  }
+  tab.once('destroyed', clear)
+  tab.on('did-navigate', onNavigate)
+}
+
+/** Answers EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL (channels.ts's own doc)
+ * entirely from `frame`'s own URL -- an id parsed the same way
+ * extension-sw-preload-recovery.ts's own worker-scope check does, and the
+ * REAL loaded manifest read back from the session, never anything the
+ * calling preload's query itself could pass. */
+function isSenderDeclaredSandboxPage (frame: Electron.WebFrameMain | null): boolean {
+  if (frame === null) return false
+  const id = extensionIdFromScope(frame.url)
+  if (id === undefined) return false
+  const manifest = session.defaultSession.extensions.getExtension(id)?.manifest as { sandbox?: { pages?: string[] } } | undefined
+  return isSandboxPageUrl(manifest?.sandbox?.pages, frame.url)
+}
+
 /** Constructs the library, once, before any extension loads. `preloadPath`
  * is `extensions-subsystem.ts`'s bundle of `vendor/.../src/preload.ts` PLUS
  * Orivon's own service-worker-preload health check
@@ -173,6 +249,16 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   setCookieHostAccessCheck(hasHostAccess)
   setTabUrlAccessCheck((manifest, url) => hasApiOrHostAccess(manifest, 'tabs', url))
   setTabHostAccessCheck(hasHostAccess)
+  setTabCaptureInvocationRecorder(recordTabCaptureInvocation)
+  setTabCaptureInvocationCheck(hasRecentInvocation)
+  setTabCaptureGrantRecorder((extensionId) => { mintTabCaptureGrant(extensionId, Date.now()) })
+  setTabCaptureConsumedCheck(wasTabCaptureGrantConsumed)
+  // Orivon patch (UPSTREAM.md patch 37): the vendored preload's own
+  // synchronous query, before it ever calls injectExtensionAPIs() --
+  // isSenderDeclaredSandboxPage's own doc.
+  ipcMain.on(EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL, (event) => {
+    event.returnValue = isSenderDeclaredSandboxPage(event.senderFrame)
+  })
 
   hostExtensions = new ElectronChromeExtensions({
     license: 'GPL-3.0',
@@ -189,9 +275,14 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
       if (details.url !== undefined && target === undefined) {
         throw new Error(`extensions: refused to open ${details.url}`)
       }
-      const opened = shellWindow.tabs.openTrusted(target)
-      if (opened === undefined) throw new Error('extensions: tab capacity reached')
-      return [opened[1], win]
+      tabActivationFromExtension = true
+      try {
+        const opened = shellWindow.tabs.openTrusted(target)
+        if (opened === undefined) throw new Error('extensions: tab capacity reached')
+        return [opened[1], win]
+      } finally {
+        tabActivationFromExtension = false
+      }
     },
 
     // The library calls selectTab/removeTab for an extension-initiated
@@ -204,7 +295,13 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     selectTab: (wc) => {
       if (shellInitiated.has(wc)) return
       const found = bridge?.services.windows.findTab(wc)
-      if (found != null) found.window.tabs.activateTab(found.tabId)
+      if (found == null) return
+      tabActivationFromExtension = true
+      try {
+        found.window.tabs.activateTab(found.tabId)
+      } finally {
+        tabActivationFromExtension = false
+      }
     },
 
     removeTab: (wc) => {
@@ -250,6 +347,26 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   hostExtensions.on('browser-action-popup-created', (popup) => {
     const wc = popup.browserWindow?.webContents
     if (wc !== undefined) setupWindowOpenPolicy(wc)
+
+    // Chrome closes a popup the moment the tab it was opened over switches
+    // or navigates away -- neither is something popup.ts (generic vendored
+    // code, ADR-0043) can know about on its own, so it is wired here from
+    // the shell's own tab-lifecycle/navigation events instead. `currentPopup`
+    // is read by attachExtensionShell's own `tabActivated` handler below;
+    // the active tab's navigation is watched directly, since tabLifecycle
+    // has no per-navigation event of its own (tab-lifecycle.ts's own doc:
+    // created/activated/closed/view-replaced only).
+    currentPopup = popup
+    const shellWindow = popup.parent === undefined || bridge === undefined
+      ? undefined
+      : bridge.services.windows.all().find((w) => w.window === popup.parent)
+    const activeTabWc = shellWindow?.tabs.activeWebContents()
+    const closePopup = (): void => { if (!popup.isDestroyed()) popup.destroy() }
+    activeTabWc?.once('did-start-navigation', closePopup)
+    popup.browserWindow?.webContents.once('destroyed', () => {
+      if (currentPopup === popup) currentPopup = undefined
+      activeTabWc?.removeListener('did-start-navigation', closePopup)
+    })
   })
   app.on('web-contents-created', (_event, contents) => {
     if (contents.session === session.defaultSession && contents.getType() === 'backgroundPage') {
@@ -305,6 +422,14 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   bridge = { ctx, services }
 
   setRemoteMessageSenderCheck((event) => event.type === 'frame' && isFromChromeView(event.sender))
+  // ADR-0044 moved a granted, network-served app's tab into this SAME
+  // default session tabCapture's own tab store tracks -- the same
+  // predicate shell-services.ts's own DevTools prompt uses for the
+  // identical "is this tab an app I granted, not an ordinary site" question.
+  setTabCaptureAppRefusalCheck((tab) => {
+    const origin = appOrigin(originFromUrl, tab)
+    return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
+  })
 
   services.tabLifecycle.subscribe({
     tabCreated: (wc, win) => {
@@ -314,6 +439,14 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       hostExtensions?.addTab(wc, win)
     },
     tabActivated: (wc) => {
+      // Chrome closes an open browserAction popup the moment the PERSON
+      // switches tabs -- 'browser-action-popup-created' wires the same
+      // close for the active tab's own navigation; this is the other half.
+      // Never for a switch the popup's own extension just made through
+      // chrome.tabs.create/update (tabActivationFromExtension's own doc):
+      // test/e2e-extensions-toolbar.test.ts deliberately keeps the popup
+      // open and interactive across its own chrome.tabs.create() call.
+      if (!tabActivationFromExtension && currentPopup !== undefined && !currentPopup.isDestroyed()) currentPopup.destroy()
       if (trackedTabs.has(wc)) {
         notifyShell(wc, (t) => hostExtensions?.selectTab(t))
         return

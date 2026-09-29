@@ -8,9 +8,11 @@ import type { IntroPlan } from './intro-state.js'
 import { rendererEntryUrl } from './renderer-entry.js'
 import type { TabManager } from './tabs.js'
 import { SHELL_PARTITION } from './shell-session.js'
+import { APP_DARK_WASH } from './theme-colors.js'
 
-// The app's own dark, the page's fade-in happens over it.
-const BACKDROP = '#0d0e14'
+// The page's fade-in happens over the app's own dark wash (theme-colors.ts) --
+// the same value the new-tab dashboard's own background is.
+const BACKDROP = APP_DARK_WASH
 const TRANSPARENT = '#00000000'
 const ERR_ABORTED = -3
 

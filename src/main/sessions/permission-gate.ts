@@ -17,6 +17,7 @@ import { windowShowing } from '../shell/showing-window.js'
 import { createExternalLinks } from './external-links.js'
 import { NotificationDecisions } from './notification-decisions.js'
 import { createSiteNotifications } from './site-notifications.js'
+import { extensionIdFromChromeExtensionOrigin, isTabCaptureMediaAllowed, markTabCaptureGrantConsumed } from './tab-capture-grants.js'
 
 /**
  * Permissions this browser allows outright; `isAllowed` below adds the one
@@ -74,6 +75,53 @@ function isAllowed (permission: string, details: object | undefined): boolean {
   return permission === 'fileSystem' && details !== undefined && 'isDirectory' in details && details.isDirectory === false
 }
 
+/**
+ * `media` stays denied by default (a page asking for camera/microphone) --
+ * this is the one carve-out, for chrome.tabCapture's own `getUserMedia({
+ * audio: { mandatory: { chromeMediaSource: 'tab', ... } } })` call. Measured
+ * directly (docs/planning's tabCapture/offscreen probe): the request
+ * handler's OWN `contents` argument is the CAPTURED TAB's webContents, not
+ * the requester's, for this exact call shape -- only `details.securityOrigin`
+ * names the requesting `chrome-extension://` origin, so gating on `contents`
+ * would check the wrong page's origin entirely. The check handler's
+ * `requestingOrigin` argument, by contrast, IS the requester. Neither
+ * argument carries the actual `chromeMediaSourceId`, so this can only ask
+ * "did this extension mint a still-live tabCapture grant recently" --
+ * `tab-capture-grants.ts`'s own doc says why that is the right question:
+ * the id itself is already Electron's own single-purpose, 10-second token.
+ *
+ * Allowing the REQUEST (never the check) is also the one real signal that a
+ * genuine `getUserMedia('tab')` call is in flight for this grant -- marked
+ * consumed on the way out, so `tab-capture.ts`'s own safety net stops
+ * treating this extension's capture as "maybe never redeemed" the moment
+ * Electron actually asks permission for it, however long the real capture
+ * goes on to run. MEASURED why the check handler must never mark this:
+ * `setPermissionCheckHandler` fires repeatedly and speculatively for a
+ * `chrome-extension://` page (camera/microphone availability probing this
+ * library's own preload, or Chromium's own media-device enumeration) with
+ * no `getUserMedia()` call behind it at all -- marking consumption there
+ * released FALSE positives in a fixture that minted a grant and never
+ * redeemed it, well before the real 10s window. `setPermissionRequestHandler`
+ * fires only for an actual, one-time media-access attempt; that is the
+ * one Chromium contract this file leans on.
+ */
+function allowTabCaptureMediaRequest (origin: string | undefined): boolean {
+  const now = Date.now()
+  const allowed = isTabCaptureMediaAllowed(origin, now)
+  if (allowed) {
+    const extensionId = extensionIdFromChromeExtensionOrigin(origin)
+    if (extensionId !== undefined) markTabCaptureGrantConsumed(extensionId, now)
+  }
+  return allowed
+}
+
+function isTabCaptureMediaRequest (details: object | undefined): boolean {
+  const origin = details !== undefined && 'securityOrigin' in details && typeof details.securityOrigin === 'string'
+    ? details.securityOrigin
+    : undefined
+  return allowTabCaptureMediaRequest(origin)
+}
+
 let decisions: NotificationDecisions | undefined
 
 /** Every session's one store of per-site notification answers, so a site
@@ -113,6 +161,7 @@ function denyByDefault (target: Session): void {
   target.setPermissionRequestHandler((contents, permission, callback, details) => {
     if (permission === 'openExternal') return answerWhenAsked(externalLinks(contents, details), callback)
     if (permission === 'notifications') return answerWhenAsked(siteNotifications.request(contents, details), callback)
+    if (permission === 'media') return callback(isTabCaptureMediaRequest(details))
     const allowed = isAllowed(permission, details)
     if (allowed) noteForNotice(contents, permission)
     callback(allowed)
@@ -121,6 +170,11 @@ function denyByDefault (target: Session): void {
   // here, and notifications answer from what the person already said.
   target.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) => {
     if (permission === 'notifications') return siteNotifications.check(requestingOrigin, details.embeddingOrigin)
+    // Never marks consumption here -- allowTabCaptureMediaRequest's own doc
+    // says why: this handler fires speculatively, with no getUserMedia()
+    // call behind it, and marking on it released a still-unredeemed grant
+    // early (measured).
+    if (permission === 'media') return isTabCaptureMediaAllowed(requestingOrigin, Date.now())
     return isAllowed(permission, details)
   })
   // WebHID/WebUSB/Web Serial have no capability path at all in v0
