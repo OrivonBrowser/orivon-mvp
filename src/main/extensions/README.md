@@ -22,10 +22,12 @@ which `extensions-subsystem.ts` uses before its first `loadExtension()` to filte
 (`extension-known-permissions.ts`); and, for the same reason a person deciding about a site's
 permissions should see who else can act on it, `site-reach.ts` (which enabled extensions' host
 access covers a given origin) and `site-reach-runner.ts` (the real manifest reads behind it),
-reused by `../consent/` and `../permissions/`. `extension-host.ts` also answers the vendored
-preload's own synchronous "is this frame a declared sandbox page" query
+reused by `../consent/` and `../permissions/`. `extension-sandbox-page-query.ts` answers the
+vendored preload's own synchronous "is this frame a declared sandbox page" query
 (`EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL`, `../channels.ts`) from the sender's real URL and its
-extension's real loaded manifest -- UPSTREAM.md patch 37's own doc.
+extension's real loaded manifest -- UPSTREAM.md patch 37's own doc; and `extension-sandbox-csp.ts`
+serves a manifest `sandbox.pages` document Chrome's own CSP `sandbox` directive, so it actually
+gets an opaque origin rather than only withholding `chrome.*` (UPSTREAM.md patch 40).
 
 **What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`,
 `electron-chrome-extensions-lib.d.ts`, `extension-host-access.ts`, `extension-known-permissions.ts`,
@@ -34,6 +36,10 @@ extension's real loaded manifest -- UPSTREAM.md patch 37's own doc.
 `registry-runner.ts`, `registry.ts`, `site-reach.ts`, `site-reach-runner.ts`, `store-download-seam.ts`,
 `store-runner.ts`, `store-test-hook.ts` and `unpack-runner.ts`), `node:crypto`, `node:fs`, `node:path`,
 `adm-zip`, `pbf`,
+[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts)'s `webRequestOwnerFor`/
+`RUN_LAST` and [`../install/granted-origin-csp.ts`](../install/granted-origin-csp.ts)'s
+`withAppendedCsp` (`extension-sandbox-csp.ts`'s own dependencies -- the same header-composition
+seam `granted-origin-csp.ts` itself uses, reused rather than duplicated),
 [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
 (durable: the manifest facts, the stripped-manifest copy, the install prompt's words, and the
 words `extensions-view.ts` reuses for the page),

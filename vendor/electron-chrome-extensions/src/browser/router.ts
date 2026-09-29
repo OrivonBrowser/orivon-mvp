@@ -640,16 +640,18 @@ export class ExtensionRouter {
       throw new Error(`${handlerName} does not support calling from a remote session`)
     }
 
-    // Orivon patch (UPSTREAM.md patch 37): a frame whose own real origin
-    // is opaque ("null", WebFrameMain.origin's own doc) never gets to
-    // call anything here, whatever it claims -- checked before extension
-    // resolution below, on the raw frame alone. Measured on this Electron
-    // build: a manifest sandbox.pages page does NOT actually get an opaque
-    // origin (unlike real Chrome's CSP `sandbox`), so the second check
-    // after extension resolution is what catches today's real case; this
-    // one stays as a direct defence against whatever origin the frame
-    // itself reports, forward-compatible with an Electron version that
-    // does implement it.
+    // Orivon patch (UPSTREAM.md patch 37, live since patch 40): a frame
+    // whose own real origin is opaque ("null", WebFrameMain.origin's own
+    // doc) never gets to call anything here, whatever it claims -- checked
+    // before extension resolution below, on the raw frame alone.
+    // extension-sandbox-csp.ts (src/main/extensions/) is what actually
+    // makes this true for a manifest sandbox.pages page: it serves those
+    // responses with Chrome's own CSP `sandbox` directive, which does give
+    // Electron's WebFrameMain.origin the literal string "null" here --
+    // measured directly. Before that patch this never fired for a
+    // sandbox.pages page on this Electron build (unlike real Chrome), so
+    // the second check below (the manifest's own sandbox.pages list) was
+    // the only one that caught it; both apply now, independently.
     if (event.type === 'frame' && event.senderFrame?.origin === 'null') {
       throw new Error(`${handlerName} refused: sender frame has an opaque origin`)
     }
