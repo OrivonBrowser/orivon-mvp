@@ -153,6 +153,18 @@ describe('a tab moved to a new window', () => {
     expect(ids(from.manager)).toHaveLength(1)
   })
 
+  it('shows the new window at once: a moved tab is already rendered, nothing here is worth waiting on', () => {
+    const from = side()
+    from.manager.createTab('https://a.example/')
+    const tab = from.manager.createTab('https://b.example/')
+    const fresh = side()
+    const openWindow = vi.fn((options: { first?: (tabs: InstanceType<typeof TabManager>) => void }) => { options.first?.(fresh.manager) })
+
+    moveToNewWindow(from.entry, tab, openWindow)
+
+    expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ instant: true }))
+  })
+
   it('opens on a new tab when the tab has gone by the time the window is ready', () => {
     const from = side()
     from.manager.createTab('https://a.example/')

@@ -55,3 +55,31 @@ it('showOnce falls back to the ordinary show() when the switch is explicitly off
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+// window-options.ts's own doc: ORIVON_WINDOW_NO_FOCUS=1 may leave unfocused
+// ONLY the launch's own first window (index.ts's two call sites pass
+// `firstOfLaunch: true` there and nowhere else) -- a window opened
+// afterward always takes the ordinary show() branch, so an unattended test
+// or dev run that opens a second window does not silently mask a real
+// focus-stealing bug in whatever opened it.
+it('a second window always takes the ordinary show() branch, even under the same launch\'s ORIVON_WINDOW_NO_FOCUS=1', async () => {
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+  try {
+    await waitFor(() => mainOutput(app).includes(NO_FOCUS_MARKER))
+    const beforeCount = mainOutput(app).split(NO_FOCUS_MARKER).length - 1
+    expect(beforeCount).toBe(1) // the launch's own first window, and only it
+
+    const chrome = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
+    if (chrome === undefined) throw new Error('no chrome window to open a second one from')
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { newWindow: () => void } }).orivonShell.newWindow() })
+    await waitFor(() => app.windows().filter((w) => w.url().endsWith('/renderer/index.html')).length === 2)
+
+    // Absence cannot be polled for -- the fallback timer is the longest
+    // this window could still take to show, so waiting it out and reading
+    // once is what proves the marker never appears a second time.
+    await delay(SHOW_FALLBACK_MS + 500)
+    expect(mainOutput(app).split(NO_FOCUS_MARKER).length - 1).toBe(beforeCount)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
