@@ -6,22 +6,18 @@ import { sleep } from '../effects.js'
 import { Errno } from '../errno.js'
 import { encodeUtf8, unsigned } from '../memory.js'
 import { WasiExit } from '../termination.js'
+import { monotonicNs, randomBytes, realtimeNs } from '../time.js'
 import type { ImportFamily } from './family.js'
 import { Clock, EventType, SUBSCRIPTION_CLOCK_ABSTIME } from './flags.js'
 
-/** crypto.getRandomValues refuses more than this per call. */
+/** How much random_get draws at a time, so a large request never allocates at once. */
 const RANDOM_CHUNK = 65_536
 const SUBSCRIPTION_SIZE = 48
 const EVENT_SIZE = 32
 const RESOLUTION_NS = 1_000n
-function msToNs (ms: number): bigint {
-  const whole = Math.trunc(ms)
-  return BigInt(whole) * 1_000_000n + BigInt(Math.round((ms - whole) * 1_000_000))
-}
-
 function now (clock: number): bigint | undefined {
-  if (clock === Clock.REALTIME) return msToNs(performance.timeOrigin + performance.now())
-  if (clock === Clock.MONOTONIC) return msToNs(performance.now())
+  if (clock === Clock.REALTIME) return realtimeNs()
+  if (clock === Clock.MONOTONIC) return monotonicNs()
   return undefined
 }
 
@@ -100,13 +96,9 @@ export function environmentFunctions (ctx: HostContext): ImportFamily {
       },
       random_get: (ptr: number, rawLen: number) => {
         const len = unsigned(rawLen)
-        // Filled in a scratch buffer and copied: getRandomValues refuses a
-        // view over a shared memory, which a threaded build's is.
-        const scratch = new Uint8Array(Math.min(len, RANDOM_CHUNK))
         for (let offset = 0; offset < len; offset += RANDOM_CHUNK) {
           const size = Math.min(RANDOM_CHUNK, len - offset)
-          crypto.getRandomValues(scratch.subarray(0, size))
-          ctx.memory.bytes(unsigned(ptr) + offset, size).set(scratch.subarray(0, size))
+          ctx.memory.bytes(unsigned(ptr) + offset, size).set(randomBytes(size))
         }
         return Errno.SUCCESS
       },

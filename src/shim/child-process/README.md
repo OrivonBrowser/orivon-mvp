@@ -4,11 +4,12 @@
 child is WebAssembly or JavaScript in a Web Worker ([`../worker/`](../worker/)), never an
 operating-system process
 ([`ADR-0040`](../../../docs/decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)):
-`spawn`, `execFile` and `exec` run a WASI program from the app's bundle over [`../wasi/`](../wasi/);
-`fork` runs an app module with `process.send` and an IPC channel. Durable: no Electron API.
+`spawn`, `execFile` and `exec` run a WASI program from the app's bundle over [`../wasi/`](../wasi/),
+or a WASI 0.2 component over [`../wasi-p2/`](../wasi-p2/), which can open sockets; `fork` runs an
+app module with `process.send` and an IPC channel. Durable: no Electron API.
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../worker/`](../worker/),
-[`../wasi/`](../wasi/), `../fs/paths.ts`, `../node-errors.ts`, `../errors.ts`,
+[`../wasi/`](../wasi/), [`../wasi-p2/`](../wasi-p2/) (`run.ts`, to check a component's jco output), `../fs/paths.ts`, `../node-errors.ts`, `../errors.ts`,
 `../orivon-global.ts`, `../warn-once.ts`, `../polyfills/module-proxy.ts`, and the `buffer`,
 `events` and `stream` polyfills.
 
@@ -18,7 +19,9 @@ README.
 **Owner stream.** `shim`.
 
 **How a command resolves** (`program.ts`): a path on the app's own origin, tried as given and with
-`.wasm` added. A WebAssembly program runs; a native program (ELF, PE, Mach-O, a `#!` script) is
+`.wasm` added. A preview1 program runs; a WASI 0.2 component runs from the jco output the port
+ships beside it, under `<program>.p2/`, which may also be shipped alone ([`../wasi-p2/`](../wasi-p2/)
+says how, and a raw component refuses as `ENOEXEC` naming the command); a native program (ELF, PE, Mach-O, a `#!` script) is
 refused by name as `ENOEXEC` with `reason: 'excluded'`; anything missing is `ENOENT`, Node's own
 answer, so "is the tool installed" checks take their ordinary branch. A port whose code spawns a
 computed path ships the WebAssembly build at that path, or its bridge rewrites the path.

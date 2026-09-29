@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { hasJspi, jspiWebAssembly } from '../../wasi/tests/support/jspi.js'
 import { echoProgram, failingProgram, reportWrittenProgram, trappingProgram } from '../../wasi/tests/support/programs.js'
+import { instantiateFrom, tourFixture } from '../../wasi-p2/tests/support/component-fixture.js'
 import { type OrivonServer, serveOrivon } from '../orivon-server.js'
 import type { ParentChannel } from '../parent.js'
 import type { FromWorker, ToWorker } from '../protocol.js'
@@ -60,7 +61,7 @@ async function orivonPort (): Promise<MessagePort> {
 
 describe.skipIf(!hasJspi)('runSpawn', () => {
   async function spawnStart (bytes: Uint8Array<ArrayBuffer>): Promise<Parameters<typeof runSpawn>[0]> {
-    return { type: 'spawn', module: new jspiWebAssembly.Module(bytes), args: ['prog'], env: {}, preopens: { '/': '/orivon/app' }, orivon: await orivonPort() }
+    return { type: 'spawn', program: { kind: 'core', module: new jspiWebAssembly.Module(bytes) }, args: ['prog'], env: {}, preopens: { '/': '/orivon/app' }, orivon: await orivonPort() }
   }
 
   it('feeds stdin to the program and delivers its stdout, then reports its exit code', async () => {
@@ -125,6 +126,32 @@ describe.skipIf(!hasJspi)('runSpawn', () => {
     const foreign = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 2, 9, 1, 3, 101, 110, 118, 1, 102, 0, 0])
     await runSpawn(await spawnStart(foreign), parent, jspiWebAssembly)
     expect(parent.posts).toEqual([{ type: 'failed', error: expect.objectContaining({ code: 'ENOEXEC' }) }])
+  })
+
+  it('runs a component\'s jco output: stdin to stdout, a file through the page\'s orivon.fs, stderr, and its exit', async () => {
+    const fixture = tourFixture()
+    vi.stubGlobal('fetch', async (url: string) => {
+      const core = fixture.cores.get(new URL(url).pathname.replace('/bin/tour.p2/', ''))
+      return core === undefined ? new Response(null, { status: 404 }) : new Response(core as Uint8Array<ArrayBuffer>)
+    })
+    const parent = fakeParent()
+    const start: Parameters<typeof runSpawn>[0] = {
+      type: 'spawn',
+      program: { kind: 'component', glue: 'https://app.test/bin/tour.p2/tour.js', base: 'https://app.test/bin/tour.p2/' },
+      args: ['tour'],
+      env: {},
+      preopens: { '/': '/orivon/app' },
+      orivon: await orivonPort()
+    }
+    const running = runSpawn(start, parent, jspiWebAssembly, async () => instantiateFrom(fixture.glue, jspiWebAssembly))
+    parent.send({ type: 'stdin', data: new TextEncoder().encode('through a worker\n') })
+    parent.send({ type: 'stdin-end' })
+    await running
+    vi.unstubAllGlobals()
+    expect(output(parent, 'stdout')).toBe('through a worker\n')
+    expect(output(parent, 'stderr')).toBe('done\n')
+    expect(await disk?.readRealFile('from-component.txt')).toBe('written by a component\n')
+    expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 1, signal: null })
   })
 })
 

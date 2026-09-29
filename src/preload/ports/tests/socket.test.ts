@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSocketPort } from '../socket.js'
+import { createSocketPort, wrapPort } from '../socket.js'
 import { CREDIT_COALESCE_BYTES, WRITE_SILENCE_TIMEOUT_MS } from '../../../contracts/ipc.js'
 import { LIMITS } from '../../../contracts/limits.js'
 
@@ -438,5 +438,21 @@ describe('createSocketPort -- d-0021: an oversized write is split at LIMITS.writ
     await expect(written).rejects.toMatchObject({ code: 'reset' })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(port.sent).toHaveLength(2) // the third piece was never sent
+  })
+})
+
+describe('wrapPort', () => {
+  it('sets a transferred port back on its message as `port`, since it never travels inside the message', async () => {
+    const channel = new MessageChannel()
+    const carried = new MessageChannel()
+    const received = new Promise<unknown>((resolve) => { wrapPort(channel.port2).onMessage(resolve) })
+    channel.port1.postMessage({ kind: 'accepted', handleId: 'h' }, [carried.port1])
+    const message = await received as { kind: string, port?: unknown }
+    expect(message.kind).toBe('accepted')
+    expect(message.port).toBeInstanceOf(MessagePort)
+    channel.port1.close()
+    channel.port2.close()
+    carried.port2.close()
+    ;(message.port as MessagePort).close()
   })
 })

@@ -11,6 +11,7 @@ import { createChildWorker } from '../worker/launch.js'
 import { serveOrivon } from '../worker/orivon-server.js'
 import type { ToWorker } from '../worker/protocol.js'
 import { ChildProcess, type StdioMode } from './child.js'
+import type { SpawnProgram } from '../worker/protocol.js'
 import { loadProgram, spawnError } from './program.js'
 
 export type StdioOption = StdioMode | 'ipc' | 'overlapped' | null | undefined
@@ -102,16 +103,16 @@ async function start (child: ChildProcess, command: string, args: readonly strin
     child.fail(spawnError('ENOENT', command, args, `cwd ${options.cwd ?? ''} is outside the app's files`))
     return
   }
-  let module: WebAssembly.Module
+  let program: SpawnProgram
   try {
-    module = await loadProgram(command, args)
+    program = await loadProgram(command, args)
   } catch (error) {
     child.fail(error as Error)
     return
   }
   if (child.stopped) return
   const env = environmentOf(options.env)
-  launch(child, `child_process ${command}`, (orivon) => ({ type: 'spawn', module, args: child.spawnargs, env, preopens, orivon }))
+  launch(child, `child_process ${command}`, (orivon) => ({ type: 'spawn', program, args: child.spawnargs, env, preopens, orivon }))
 }
 
 export function spawn (command: string, argsOrOptions?: readonly string[] | SpawnOptions, maybeOptions?: SpawnOptions): ChildProcess {

@@ -18,6 +18,7 @@
 | [`http/`](http/) | `http` and `https`, over `net/`'s real socket |
 | [`polyfills/`](polyfills/) | The core polyfills |
 | [`wasi/`](wasi/) | A WASI preview1 host over `orivon.fs`, and Node's `wasi` module over it |
+| [`wasi-p2/`](wasi-p2/) | A WASI 0.2 host over `orivon.fs` and `orivon.net`, for a component `spawn` runs from jco's output |
 | [`worker/`](worker/) | What a child needs to run in a Web Worker, its `orivon.*` calls carried to the page |
 | [`child-process/`](child-process/) | Node's `child_process` over those Workers |
 | [`addon/`](addon/) | Native addons, loaded as their WebAssembly builds through emnapi |
@@ -79,7 +80,9 @@ member throws a named `OrivonShimError` when **called**, never when read, so fea
 (`typeof`, `?.`, destructuring) cannot crash. The cost: `typeof` says `'function'`, which is true
 of real Node for almost all of this surface. A member Node exposes as **data** (`fs.constants`,
 `dns.promises`) must be listed in `refusingProxy`'s `known` with a real value; a throwing stand-in
-would lie about its type.
+would lie about its type. The refusal reaches a caller through the default export: an ESM
+default import, or a bundler's interop that hands `require()` the default. esbuild hands
+`require()` the module's namespace instead, where an unbuilt member is `undefined` (A287).
 
 **Why a second error class.** A Node-stdlib gap and an Electron desktop-shell gap are different
 situations for a porting developer (code-guidelines Rule 3), so this package has its own
