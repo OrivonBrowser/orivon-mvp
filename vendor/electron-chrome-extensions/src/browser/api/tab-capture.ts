@@ -105,6 +105,14 @@ export function setTabCaptureConsumedCheck (check: ConsumedCheck): void {
 }
 
 interface CapturedTabRecord {
+  /** Captured once, the moment the tab is first seen here (still alive at
+   * that point), and read from THIS field everywhere after -- never from
+   * `tab.id` again. Electron's own `WebContents` throws "Object has been
+   * destroyed" reading almost any property, `.id` included, once destroyed;
+   * the tab's own `'destroyed'` listener below fires exactly when that is
+   * already true, so reading `tab.id` from inside it (or from anything it
+   * calls) crashes the whole process the moment a captured tab closes. */
+  tabId: number
   previousMuted: boolean
   capturedBy: Set<string>
   /** Stored so `releaseCapture` can remove it: attaching it with
@@ -184,11 +192,29 @@ export class TabCaptureAPI {
     if (!isHttpOrHttpsUrl(targetTab.getURL())) {
       throw new Error('tabCapture.getMediaStreamId: refused -- only an http(s) tab may be captured.')
     }
+    // Captured once, while `targetTab` is definitely alive (it was just
+    // resolved from the store above) -- every later use in this method, and
+    // everything `beginCapture`/`scheduleUnconsumedRelease` do with it, reads
+    // THIS value, never `targetTab.id` again (`CapturedTabRecord.tabId`'s
+    // own doc says why).
+    const targetTabId = targetTab.id
+    if (this.capturedTabs.get(targetTab)?.capturedBy.has(extensionId) === true) {
+      // Chrome's own refusal (tabCapture's real controller): a second
+      // `getMediaStreamId` for a tab this SAME extension is already
+      // capturing is refused outright, never re-minted. Without this, a
+      // second call reset `tab-capture-grants.ts`'s own `consumed` bit back
+      // to false for this (extension, tab) pair, and the fresh mint's own
+      // 10-second safety net later found "not consumed" and ended the
+      // FIRST, still-running capture out from under it (unmuting the tab
+      // and firing 'stopped' while the extension's own first stream was
+      // still live).
+      throw new Error('tabCapture.getMediaStreamId: refused -- Cannot capture a tab with an active stream.')
+    }
     if (gAppRefusalCheck?.(targetTab) === true) {
       throw new Error('tabCapture.getMediaStreamId: refused -- the target tab belongs to a granted app.')
     }
 
-    if (gInvocationCheck?.(extensionId, targetTab.id) !== true) {
+    if (gInvocationCheck?.(extensionId, targetTabId) !== true) {
       throw new Error(NOT_INVOKED_MESSAGE)
     }
 
@@ -204,9 +230,9 @@ export class TabCaptureAPI {
     }
 
     const streamId = targetTab.getMediaSourceId(consumer)
-    gGrantRecorder?.(extensionId, targetTab.id)
-    this.beginCapture(extensionId, targetTab, consumer)
-    this.scheduleUnconsumedRelease(extensionId, targetTab)
+    gGrantRecorder?.(extensionId, targetTabId)
+    this.beginCapture(extensionId, targetTab, targetTabId, consumer)
+    this.scheduleUnconsumedRelease(extensionId, targetTab, targetTabId)
     return streamId
   }
 
@@ -225,11 +251,15 @@ export class TabCaptureAPI {
    * Releases ONLY `targetTab`'s own capture, never every tab this
    * extension holds: an extension minting a grant for tab A and, separately,
    * a still-live grant for tab B, must have A's own unconsumed timer leave
-   * B alone. The old code called `releaseExtensionCaptures(extensionId)`
-   * here, which released every tab at once -- exactly the bug. */
-  private scheduleUnconsumedRelease (extensionId: string, targetTab: Electron.WebContents): void {
+   * B alone -- releasing every tab this extension holds at once would be
+   * exactly that bug. `targetTabId` is `getMediaStreamId`'s own captured
+   * value, read here rather than `targetTab.id` again: this timer's own
+   * callback runs up to ten seconds later, by which point the tab may
+   * already be destroyed (closed before its own grant was ever redeemed),
+   * and reading `.id` from it then would throw. */
+  private scheduleUnconsumedRelease (extensionId: string, targetTab: Electron.WebContents, targetTabId: number): void {
     setTimeout(() => {
-      if (gConsumedCheck?.(extensionId, targetTab.id) !== true) this.endCapture(extensionId, targetTab)
+      if (gConsumedCheck?.(extensionId, targetTabId) !== true) this.endCapture(extensionId, targetTab, targetTabId)
     }, TAB_CAPTURE_SAFETY_NET_MS)
   }
 
@@ -249,12 +279,12 @@ export class TabCaptureAPI {
    * same way). One extension capturing a tab twice, or two different
    * extensions capturing the same tab, share one `previousMuted` and are
    * only actually unmuted once every capturer has released it. */
-  private beginCapture (extensionId: string, tab: Electron.WebContents, consumer: Electron.WebContents): void {
+  private beginCapture (extensionId: string, tab: Electron.WebContents, tabId: number, consumer: Electron.WebContents): void {
     let record = this.capturedTabs.get(tab)
     if (!record) {
-      const onDestroyed = (): void => { this.releaseAllCapturesOfTab(tab) }
+      const onDestroyed = (): void => { this.releaseAllCapturesOfTab(tab, tabId) }
       const onNavigate = (): void => { this.recheckCaptureStillAllowed(tab) }
-      record = { previousMuted: tab.audioMuted, capturedBy: new Set(), onDestroyed, onNavigate }
+      record = { tabId, previousMuted: tab.audioMuted, capturedBy: new Set(), onDestroyed, onNavigate }
       this.capturedTabs.set(tab, record)
       tab.setAudioMuted(true)
       tab.once('destroyed', onDestroyed)
@@ -272,12 +302,12 @@ export class TabCaptureAPI {
     if (!extTabs) { extTabs = new Set(); this.extensionCaptures.set(extensionId, extTabs) }
     extTabs.add(tab)
 
-    this.captureRecords.set(captureKey(extensionId, tab.id), { consumer })
+    this.captureRecords.set(captureKey(extensionId, record.tabId), { consumer })
     this.observeConsumerTeardown(consumer)
 
     if (isNewCapture) {
       this.ctx.router.sendEvent(extensionId, 'tabCapture.onStatusChanged', {
-        tabId: tab.id, status: 'active', fullscreen: false,
+        tabId: record.tabId, status: 'active', fullscreen: false,
       })
     }
   }
@@ -294,17 +324,16 @@ export class TabCaptureAPI {
     if (!refused) return
     const record = this.capturedTabs.get(tab)
     if (!record) return
-    for (const extensionId of Array.from(record.capturedBy)) this.endCapture(extensionId, tab)
+    for (const extensionId of Array.from(record.capturedBy)) this.endCapture(extensionId, tab, record.tabId)
   }
 
   /** Watches the actual CONSUMER of a capture -- the offscreen
    * document by default, or the `consumerTabId` tab when the extension
-   * named one explicitly -- rather than assuming it is always the offscreen
-   * document (the old code's `observeOffscreenTeardown` did). Both
-   * `'destroyed'` and `'render-process-gone'` end every capture that used
-   * this exact consumer: a renderer crash leaves the consumer's webContents
-   * alive but unable to ever receive the stream again, the same practical
-   * effect as it closing.
+   * named one explicitly -- never assuming it is always the offscreen
+   * document. Both `'destroyed'` and `'render-process-gone'` end every
+   * capture that used this exact consumer: a renderer crash leaves the
+   * consumer's webContents alive but unable to ever receive the stream
+   * again, the same practical effect as it closing.
    *
    * DECIDED, and deliberately NOT built: a periodic `isCurrentlyAudible()`
    * poll on the consumer, to catch "the extension stopped the track but
@@ -335,7 +364,7 @@ export class TabCaptureAPI {
         const extensionId = key.slice(0, separator)
         const targetTabId = Number(key.slice(separator + 1))
         const tab = this.ctx.store.getTabById(targetTabId)
-        if (tab) this.endCapture(extensionId, tab)
+        if (tab) this.endCapture(extensionId, tab, targetTabId)
       }
     }
     consumer.once('destroyed', onConsumerGone)
@@ -346,13 +375,17 @@ export class TabCaptureAPI {
     const tabs = this.extensionCaptures.get(extensionId)
     if (!tabs) return
     this.extensionCaptures.delete(extensionId)
-    for (const tab of Array.from(tabs)) this.endCapture(extensionId, tab)
+    for (const tab of Array.from(tabs)) {
+      const tabId = this.capturedTabs.get(tab)?.tabId
+      if (tabId === undefined) continue
+      this.endCapture(extensionId, tab, tabId)
+    }
   }
 
-  private releaseAllCapturesOfTab (tab: Electron.WebContents): void {
+  private releaseAllCapturesOfTab (tab: Electron.WebContents, tabId: number): void {
     const record = this.capturedTabs.get(tab)
     if (!record) return
-    for (const extensionId of Array.from(record.capturedBy)) this.endCapture(extensionId, tab)
+    for (const extensionId of Array.from(record.capturedBy)) this.endCapture(extensionId, tab, tabId)
   }
 
   /** The single choke point for ending one (extensionId, tab) capture:
@@ -361,13 +394,22 @@ export class TabCaptureAPI {
    * extension the capture stopped -- used by every release path (the
    * unconsumed-safety-net timer, a tab's own navigation/destruction, a
    * consumer's destruction/crash, and `extension-unloaded`) so all of them
-   * agree on what "ended" means. */
-  private endCapture (extensionId: string, tab: Electron.WebContents): void {
-    this.captureRecords.delete(captureKey(extensionId, tab.id))
+   * agree on what "ended" means. `tabId` is always a value the caller
+   * captured earlier, never a fresh `tab.id` read here: this runs from
+   * inside the tab's own `'destroyed'` handler among other paths, where the
+   * tab already reports destroyed and reading `.id` from it throws.
+   *
+   * Always sends `'stopped'`, even when `tab` is already destroyed: the
+   * recipient of this event is the EXTENSION (`this.ctx.router`, keyed on
+   * `extensionId`), never the tab itself, and `tabId` is already the
+   * captured number, not a fresh read off `tab` -- so nothing here needs
+   * the tab to still exist. Skipping the send whenever the tab is destroyed
+   * would silently drop this exact notification for the one case an
+   * extension most needs it: its captured tab closing out from under it. */
+  private endCapture (extensionId: string, tab: Electron.WebContents, tabId: number): void {
+    this.captureRecords.delete(captureKey(extensionId, tabId))
     this.releaseCapture(extensionId, tab)
-    if (!tab.isDestroyed()) {
-      this.ctx.router.sendEvent(extensionId, 'tabCapture.onStatusChanged', { tabId: tab.id, status: 'stopped', fullscreen: false })
-    }
+    this.ctx.router.sendEvent(extensionId, 'tabCapture.onStatusChanged', { tabId, status: 'stopped', fullscreen: false })
   }
 
   private releaseCapture (extensionId: string, tab: Electron.WebContents): void {
