@@ -55,7 +55,7 @@ export const appInstallSubsystem: Subsystem = {
     // (../dev/score-levels.ts), always named as an override, never as
     // observed. reconsentPrompt/rollbackChoicePrompt take no level at all:
     // neither is about a grant's breadth.
-    // N2's disclosure (docs/planning/extensions-exploration.md), the same
+    // The extensions disclosure (docs/planning/extensions-exploration.md), the same
     // shape ../consent/request-grant-subsystem.ts wires in.
     const extensionsOnSite = async (origin: string): Promise<readonly string[]> => {
       const extensions = ctx.extensions

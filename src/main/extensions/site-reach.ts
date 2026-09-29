@@ -2,8 +2,8 @@
 // electron, no I/O (this directory's suffix rule). Reused by the grant and
 // install-consent prompts (../consent/) and the site-info popup
 // (../permissions/), so a person deciding about a site's permissions also
-// sees which extensions can act on it: docs/planning/extensions-
-// exploration.md's N2, wired through this file's own README, Design notes.
+// sees which extensions can act on it (the extensions disclosure,
+// docs/planning/extensions-exploration.md; README.md's Design notes).
 
 import { matchesAnyHostPattern } from '../../broker/policy/extension-host-patterns.js'
 

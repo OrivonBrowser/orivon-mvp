@@ -22,7 +22,7 @@ running app.
 origin), [`../dev/score-levels.ts`](../dev/score-levels.ts) (wired in at
 `../install/app-install-subsystem.ts` and `./request-grant-subsystem.ts`),
 [`../extensions/site-reach-runner.ts`](../extensions/site-reach-runner.ts)'s
-`extensionNamesForOrigin` (N2's disclosure, wired in at the same two places), and the top-level
+`extensionNamesForOrigin` (the extensions disclosure, wired in at the same two places), and the top-level
 `registry.ts`.
 
 **What it must never import.** `electron`, in every file except the three `*-prompt.ts`. The
@@ -38,7 +38,7 @@ survive an engine change; the three `*-prompt.ts` files are tied to Electron's `
 ## Design notes
 
 **[`grant-prompt-render.ts`](grant-prompt-render.ts)'s extensions-on-site line is words only;
-the list it renders is computed nowhere in this file.** N2's disclosure
+the list it renders is computed nowhere in this file.** The extensions disclosure
 (`docs/planning/extensions-exploration.md`) needs `ctx.extensions` and a manifest read off disk
 (`../extensions/site-reach-runner.ts`), neither of which this directory's decision files may
 touch (this file's own header). `describeGrantRequest`/`describeInstallConsent` take the already-

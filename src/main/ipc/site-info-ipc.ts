@@ -50,7 +50,7 @@ export type SiteInfoCommand =
   | { type: 'clearBrowserData' }
   | { type: 'reload' }
   | { type: 'openAllSites' }
-  /** N2's disclosure's own "Manage" link (docs/planning/extensions-
+  /** The extensions disclosure's own "Manage" link (docs/planning/extensions-
    * exploration.md): opens `orivon://extensions` the same way `openAllSites`
    * opens the all-sites panel. */
   | { type: 'openExtensions' }

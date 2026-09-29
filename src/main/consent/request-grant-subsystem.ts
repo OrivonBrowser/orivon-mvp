@@ -29,7 +29,7 @@ export const requestGrantSubsystem: Subsystem = {
     }
     const broker = ctx.broker
     // ADR-0037: same developer-only override as app-install-subsystem.ts.
-    // N2's disclosure (docs/planning/extensions-exploration.md): listed
+    // The extensions disclosure (docs/planning/extensions-exploration.md): listed
     // fresh from ctx.extensions on every prompt, never cached -- extensions
     // are installed and enabled far less often than a grant prompt fires,
     // but a stale list would still be the wrong list to show. extensionsSubsystem

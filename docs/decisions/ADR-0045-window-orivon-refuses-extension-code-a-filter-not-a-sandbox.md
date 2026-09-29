@@ -20,7 +20,8 @@ plumbing calls the functions it captured before they were wrapped, so it is neve
 
 An app a person has granted permissions to is served with `script-src` without
 `'unsafe-inline'`: an inline `<script>`, an inline event handler or a `javascript:` URL does not
-run there.
+run there. The pinned path serves one policy regardless of grants, so this also covers every app
+served from its pinned copy, whether or not it currently holds one.
 
 This is a filter. It stops extension code from calling `window.orivon`, and it does not make an
 extension that runs on a page unable to affect what that page does.
@@ -86,9 +87,10 @@ away, in the manner of ADR-0021.
   callback or `async` continuation defined inside `eval` or `new Function` (an eval-based
   development build's modules among them). The same code called from a page function is
   allowed.
-- An app that needs inline scripts does not work once the person grants it a permission. A
-  pinned app could keep its own inline scripts through `'sha256-...'` sources Orivon computes
-  from the HTML it serves; that is not built.
+- An app that needs inline scripts does not work once it is served from its pinned copy or the
+  person grants it a permission, whichever comes first. A pinned app could keep its own inline
+  scripts through `'sha256-...'` sources Orivon computes from the HTML it serves; that is not
+  built.
 - Each call pays the capture, about 5 microseconds measured.
 - A document a service worker serves from its own cache never reaches `onHeadersReceived`, so a
   granted app that precaches its shell can run with `'unsafe-inline'` restored once a service

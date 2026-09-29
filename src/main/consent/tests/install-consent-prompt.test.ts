@@ -91,7 +91,7 @@ describe('createInstallConsentPrompt', () => {
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning' }))
   })
 
-  it('N2\'s disclosure: with no extensionsOnSite injected, defaults to naming none', async () => {
+  it('extensions disclosure: with no extensionsOnSite injected, defaults to naming none', async () => {
     showMessageBox.mockResolvedValueOnce({ response: 1 })
 
     await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
@@ -101,7 +101,7 @@ describe('createInstallConsentPrompt', () => {
     }))
   })
 
-  it('N2\'s disclosure: an injected extensionsOnSite is fetched for the origin and rendered into detail', async () => {
+  it('extensions disclosure: an injected extensionsOnSite is fetched for the origin and rendered into detail', async () => {
     showMessageBox.mockResolvedValueOnce({ response: 1 })
     const extensionsOnSite = vi.fn(async (origin: string) => origin === ORIGIN ? ['Ad Blocker', 'Password Manager'] : [])
 

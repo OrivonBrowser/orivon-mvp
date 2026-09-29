@@ -29,7 +29,7 @@ import type { ScoreLevel } from '../../trust/website-level.js'
 type LevelOverrideFor = (origin: string) => ScoreLevel | undefined
 const NO_OVERRIDE: LevelOverrideFor = () => undefined
 
-/** N2's disclosure (docs/planning/extensions-exploration.md) -- the same
+/** The extensions disclosure (docs/planning/extensions-exploration.md) -- the same
  * shape `./request-grant-prompt.ts`'s own `createGrantPrompt` takes, wired
  * to the real `../extensions/site-reach-runner.js` at the same place
  * (`../install/app-install-subsystem.ts`), and defaults to always naming

@@ -26,7 +26,7 @@ types), [`../../loader/`](../../loader/) (`index.ts`, `manifest/manifest.ts`),
 `request-grant.ts`), [`../browsing/site-trust.ts`](../browsing/site-trust.ts),
 [`../verifier/`](../verifier/) (`name-evidence.ts`, `verifier-subsystem.ts`),
 [`../extensions/site-reach-runner.ts`](../extensions/site-reach-runner.ts)'s
-`extensionNamesForOrigin` (`site-info-controller.ts` only -- N2's disclosure,
+`extensionNamesForOrigin` (`site-info-controller.ts` only -- the extensions disclosure,
 `docs/planning/extensions-exploration.md`),
 [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts),
 `../shell/renderer-entry.ts`, `../shell/lock-navigation.ts`, `../shell/shell-session.ts`,
@@ -41,7 +41,7 @@ shows grants or switches reaches the broker only through `permissions.ts` or
 
 ## Design notes
 
-**[`site-info-controller.ts`](site-info-controller.ts)'s `extensionsOnSite` (N2's disclosure,
+**[`site-info-controller.ts`](site-info-controller.ts)'s `extensionsOnSite` (the extensions disclosure,
 `docs/planning/extensions-exploration.md`) is computed once, ahead of the registered/
 unregistered branch in `siteInfoFor`.** Which extensions can act on a site does not depend on
 whether that site is also a registered app with its own capabilities -- the popup shows it on an

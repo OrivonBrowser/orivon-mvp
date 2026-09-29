@@ -30,7 +30,7 @@ import type { ScoreLevel } from '../../trust/website-level.js'
  *
  * `levelOverrideFor` defaults to never overriding (ADR-0037); the real
  * `../dev/score-levels.js` function is wired in at
- * `./request-grant-subsystem.ts`. `extensionsOnSite` (N2's disclosure,
+ * `./request-grant-subsystem.ts`. `extensionsOnSite` (the extensions disclosure,
  * docs/planning/extensions-exploration.md) is the same shape, wired to the
  * real `../extensions/site-reach-runner.js` at the same place, and
  * defaults to always naming none.

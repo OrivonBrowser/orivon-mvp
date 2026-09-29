@@ -71,7 +71,7 @@ export interface SiteInfoController {
 }
 
 export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources): SiteInfoController {
-  // N2's disclosure (docs/planning/extensions-exploration.md) -- see
+  // The extensions disclosure (docs/planning/extensions-exploration.md) -- see
   // README.md's Design notes for why this is computed once, ahead of the
   // registered/unregistered branch `siteInfoFor` makes below.
   async function extensionsFor (origin: string): Promise<readonly string[]> {

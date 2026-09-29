@@ -186,7 +186,7 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
   }
 }
 
-/** N2's disclosure (docs/planning/extensions-exploration.md, "disclose
+/** The extensions disclosure (docs/planning/extensions-exploration.md, "disclose
  * where it matters"; ADR-0045's residual: an extension with host access to
  * a page can put code in its main world, indistinguishable from the
  * page's own). At most three names, then a count -- the same "first few,
