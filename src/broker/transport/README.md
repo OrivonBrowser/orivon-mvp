@@ -47,6 +47,33 @@ slice (`Extract<ControlMethod, \`net.${string}\`>`).
 needs it and must not import `ipc.ts`, which imports `dispatchNet`: that is a cycle. `ipc.ts`
 re-exports it.
 
+### [`picker-dialog.ts`](picker-dialog.ts): the OS picker's wording
+
+**Folder wording is owner-approved verbatim** (`d-0032`, 2026-09-16): three drafts were proposed,
+and the owner chose the strongest, on the reasoning that "read and write" understated what a
+folder grant really lets an app do. `message`'s "including files you add to it later" is the
+load-bearing phrase -- the thing people misread about a folder pick -- and is not trimmed for
+length. File/multi-file wording follows the same voice but is DERIVED, not separately
+owner-reviewed word for word: `../../main/permissions/permissions.ts`'s `describePickedPath`
+carries the identical reasoning for why it says "change" rather than claim a delete a `FileHandle`
+cannot perform. `message` is macOS-only (Electron's own `OpenDialogOptions` doc) but passed
+unconditionally, since Electron silently ignores it elsewhere rather than erroring (confirmed
+against Electron's own docs, context7, 2026-09-16); the delete warning is repeated in `title`, the
+one field every platform's own folder/file dialog renders.
+
+**`origin`, never just `appName`, is what names the requester.** The original wording named no
+origin at all, and a registered app's self-declared `appName` is the app's own claim about itself
+-- an attacker origin can declare whatever friendly name it likes. `origin` is derived from the
+sender's frame (T3) and cannot be spoofed the way a manifest's `name` can, so it is what actually
+appears; `appName`, when present, is added alongside it, never in its place.
+
+**`createPickPath`'s dialog is parented to the focused window**, not the real sender's own
+`BrowserWindow`: `ControlEvent` carries only `senderFrame`, structural-typed for testability
+(`ipc.ts`'s own header). A page can only reach this call with a fresh user activation (checked in
+the isolated-world preload before the IPC is even sent), so the focused window is, in practice,
+the sender's own -- a real cross-window fix belongs with `ControlEvent` gaining the sender's
+`WebContents`, which the session lane's own attribution work may already add.
+
 **`ipc.ts`'s dispatch functions take structural types, not `electron`'s**, so `ipc.test.ts` runs
 the whole control channel under plain Node. Importing `electron` at module scope is still safe
 there: outside a real Electron process it resolves to a string, so a destructured value is
