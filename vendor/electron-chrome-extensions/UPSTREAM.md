@@ -6,6 +6,7 @@
 - License: GPL-3.0 (see `LICENSE.md`, `LICENSE-GPL`, `LICENSE-PATRON.md`), combinable with
   Orivon's AGPL-3.0-only under GPLv3 §13
 - Vendored from: `packages/electron-chrome-extensions/src/` (no `spec/`, no build output)
+- Modified: by the Orivon project, as the patches below list; last modified 2026-09-29
 
 ## Patches
 
