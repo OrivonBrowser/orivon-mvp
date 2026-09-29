@@ -13,12 +13,12 @@
 // `transparent: true` window, which the shell's is not, by design. A
 // separate view sized to the popup needs none of that.
 
-import { WebContentsView, nativeTheme, type BaseWindow, type View, type WebContents } from 'electron'
+import { WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
 import { join } from 'node:path'
 import { rendererEntryUrl } from '../shell/renderer-entry.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
 import { SHELL_PARTITION } from '../shell/shell-session.js'
-import { resolveThemeColor } from '../shell/theme-colors.js'
+import { onThemeUpdated, resolveThemeColor } from '../shell/theme-colors.js'
 import type { ThemeColorPair } from '../shell/theme-colors.js'
 import { recordPopoverShown, recordViewBackground } from '../shell/view-background-test-hook.js'
 
@@ -272,15 +272,19 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // A `warm` view lives past any number of OS/app theme changes; a
     // non-warm popup instead picks up the current theme fresh on every
     // `construct()` call, so it needs no listener of its own here.
+    // Registered through theme-colors.ts's `onThemeUpdated`, not a
+    // `nativeTheme.on('updated', ...)` of its own -- see window.ts's own
+    // comment on the same call for why (one process-wide EventEmitter, one
+    // direct listener per window/popover otherwise).
     const applyBackgroundForTheme = (): void => {
       if (warmView === null || warmView.webContents.isDestroyed()) return
       const color = currentBackground()
       warmView.setBackgroundColor(color)
       recordViewBackground(warmView.webContents.id, color)
     }
-    nativeTheme.on('updated', applyBackgroundForTheme)
+    const unregisterThemeListener = onThemeUpdated(applyBackgroundForTheme)
     win.on('closed', () => {
-      nativeTheme.removeListener('updated', applyBackgroundForTheme)
+      unregisterThemeListener()
       removeIpc?.()
       if (warmView !== null && !warmView.webContents.isDestroyed()) warmView.webContents.close()
     })

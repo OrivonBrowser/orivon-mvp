@@ -189,10 +189,10 @@ describe('appTabFlagChanged -- a registered app and an ordinary site can share a
   })
 })
 
-// The new-tab white flash fixed: createTab() (tabs.ts) attaches a tab's view
-// to screen BEFORE loadURL, so whatever this view's background defaults to
-// (Electron: opaque white) is what actually paints first. Only the shell's
-// own pages get a background here -- see makeTabView's own doc.
+// createTab() (tabs.ts) attaches a tab's view to screen BEFORE loadURL, so
+// whatever this view's background defaults to (Electron: opaque white) is
+// what actually paints first. Only the shell's own pages get a background
+// here -- see makeTabView's own doc.
 describe('makeTabView: an explicit backgroundColor is set on the view before it is ever shown', () => {
   it('sets it when the caller passes one (the dashboard / an internal page)', () => {
     const view = makeTabView('preload.js', undefined, undefined, { backgroundColor: '#0d0e14' })

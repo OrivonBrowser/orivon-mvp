@@ -10,12 +10,13 @@
 import { app, BaseWindow, nativeTheme, screen } from 'electron'
 import { join } from 'node:path'
 import type { Placement } from './window-options.js'
+import { onThemeUpdated } from './theme-colors.js'
 
 // Kept in sync with src/renderer/style.css's --wchrome/--wink tokens --
 // same dual-source-of-truth pattern as window.ts's CHROME_HEIGHT. The overlay
 // is native-drawn chrome outside the renderer's DOM, so CSS alone can't
-// theme it; nativeTheme.on('updated') below re-applies these on a
-// live OS theme change.
+// theme it; `onThemeUpdated` below re-applies these on a live OS theme
+// change.
 const OVERLAY_DARK = { color: '#1e1f24', symbolColor: '#e6e7e8' }
 const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
 // A private window is tinted (src/renderer/style.css's `data-private`), so it is never taken for the person's own.
@@ -119,17 +120,19 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   // the native buttons freeze at whatever theme was active on launch.
   // macOS ignores the call entirely (trafficLightPosition covers it), so
   // skip it there rather than call a method on a platform it doesn't
-  // apply to. `nativeTheme` is a singleton shared by every window this
-  // process ever creates -- the listener is removed on 'closed', or a later
-  // theme change would call setTitleBarOverlay on an already-destroyed
-  // window.
+  // apply to. Registered through theme-colors.ts's `onThemeUpdated`, not a
+  // `nativeTheme.on('updated', ...)` of its own -- `nativeTheme` is one
+  // process-wide EventEmitter, and one direct listener per window is what
+  // used to print `MaxListenersExceededWarning [NativeTheme]` from the 4th
+  // window on. Unregistered on 'closed', or a later theme change would call
+  // setTitleBarOverlay on an already-destroyed window.
   function applyOverlayForTheme (): void {
     win.setBackgroundColor(background())
     if (process.platform === 'darwin') return
     win.setTitleBarOverlay(overlay())
   }
-  nativeTheme.on('updated', applyOverlayForTheme)
-  win.on('closed', () => { nativeTheme.removeListener('updated', applyOverlayForTheme) })
+  const unregisterOverlayThemeListener = onThemeUpdated(applyOverlayForTheme)
+  win.on('closed', () => { unregisterOverlayThemeListener() })
 
   return { win, initialBounds }
 }

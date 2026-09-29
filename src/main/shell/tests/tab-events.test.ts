@@ -436,6 +436,40 @@ describe('wireView -- a popup\'s opener is cut once it navigates itself into a D
   })
 })
 
+describe('wireView -- an internal-page tab that stops being one', () => {
+  // guardInternalView (../pages/internal-tab.ts) refuses every navigation an
+  // internal page's OWN content could trigger, so the one path that reaches
+  // did-navigate with a foreign target is the address bar typing something
+  // with no derivable origin straight onto this view -- about:blank here.
+  it('clears record.internalPage and resets the SAME view\'s background, so a site with no CSS background of its own does not render on the page\'s own theme colour', () => {
+    const host = fakeHost()
+    const view = makeTabView('/preload/internal.js', 'orivon-internal', [], { backgroundColor: '#f4f4f8' })
+    const wc = view.webContents as unknown as FakeContents
+    const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: 'orivon-internal', isDashboardTab: false, internalPage: 'settings', parkedViews: new Map() } as Record_
+    wireView('tab-1', r)
+    ;(view.setBackgroundColor as ReturnType<typeof vi.fn>).mockClear()
+
+    wc.emit('did-navigate', {}, 'about:blank')
+
+    expect(r.internalPage).toBeNull()
+    expect(view.setBackgroundColor).toHaveBeenCalledWith('#FFFFFF')
+  })
+
+  it('leaves record.internalPage and the view\'s colour alone for an ordinary in-page navigation (a different path, same page)', () => {
+    const host = fakeHost()
+    const view = makeTabView('/preload/internal.js', 'orivon-internal', [], { backgroundColor: '#f4f4f8' })
+    const wc = view.webContents as unknown as FakeContents
+    const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: 'orivon-internal', isDashboardTab: false, internalPage: 'settings', parkedViews: new Map() } as Record_
+    wireView('tab-1', r)
+    ;(view.setBackgroundColor as ReturnType<typeof vi.fn>).mockClear()
+
+    wc.emit('did-navigate', {}, 'orivon://settings/privacy')
+
+    expect(r.internalPage).toBe('settings')
+    expect(view.setBackgroundColor).not.toHaveBeenCalled()
+  })
+})
+
 describe('wireView -- context menu', () => {
   it('builds a menu for a right-click in the tab', () => {
     const wc = fakeContents()
