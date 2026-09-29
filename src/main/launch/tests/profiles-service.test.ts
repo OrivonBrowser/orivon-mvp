@@ -151,4 +151,32 @@ describe('the profiles service', () => {
     expect(failing).toHaveBeenCalledTimes(1)
     expect(count()).toBe(before)
   })
+
+  describe('watching for a change another profile process made', () => {
+    it('reaches onChange once startWatching has run, and stops once stopWatching has', async () => {
+      const { service: s } = service()
+      let calls = 0
+      s.onChange(() => { calls += 1 })
+      s.startWatching()
+      try {
+        await mkdir(join(home, 'profiles', 'made-elsewhere'), { recursive: true })
+        await writeFile(join(home, 'profiles', 'made-elsewhere', 'profile.json'), JSON.stringify({ name: 'Elsewhere' }))
+        const deadline = Date.now() + 2000
+        while (calls === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+        expect(calls).toBeGreaterThan(0)
+      } finally {
+        s.stopWatching()
+      }
+
+      const before = calls
+      await writeFile(join(home, 'profile.json'), JSON.stringify({ name: 'After stop' }))
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      expect(calls).toBe(before)
+    })
+
+    it('does nothing on a second startWatching, and stopWatching before ever starting is harmless', () => {
+      const { service: s } = service()
+      expect(() => { s.startWatching(); s.startWatching(); s.stopWatching(); s.stopWatching() }).not.toThrow()
+    })
+  })
 })

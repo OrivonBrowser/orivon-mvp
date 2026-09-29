@@ -21,14 +21,20 @@ import { setSessionPartitionResolver } from 'orivon:crx-extensions-partition'
 import { setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
 import { setCookieHostAccessCheck } from 'orivon:crx-extensions-cookies'
 import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensions-tabs'
+import { setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
+import { setTabCaptureAppRefusalCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
 import { createShellWindow } from '../shell/window.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import type { SubsystemContext } from '../registry.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
+import { mintTabCaptureGrant } from '../sessions/tab-capture-grants.js'
+import { appOrigin } from '../shell/devtools-app-origin.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { hasApiOrHostAccess, hasApiPermission, hasHostAccess } from './extension-host-access.js'
+import { clearInvocation, hasRecentInvocation, recordInvocation } from './extension-tab-invocation.js'
 
 /** The `<browser-action-list partition="...">` token that resolves to
  * `session.defaultSession`, where every extension runs -- the default
@@ -152,6 +158,44 @@ function setupWindowOpenPolicy (contents: WebContents): void {
   })
 }
 
+/** Tabs a (extensionId, tab) pair already has its clear-on-navigate/
+ * clear-on-close listeners attached for -- recordTabCaptureInvocation runs
+ * on every toolbar click, and a person can click the same extension's
+ * action on the same tab many times over a long-lived tab's life; without
+ * this, each click would add another pair of listeners that never comes
+ * off, an unbounded leak on that WebContents. recordInvocation/
+ * clearInvocation are themselves idempotent Set operations, so only the
+ * listener wiring needs the guard. */
+const wiredInvocations = new WeakMap<WebContents, Set<string>>()
+
+/** browser-action.ts's activateClick calls this on every toolbar click --
+ * extension-tab-invocation.ts's own ledger says why this exists at all
+ * (Chrome's tabCapture rule). Cleared the moment the tab navigates to a
+ * different origin or is closed, mirroring activeTab's own real lifetime;
+ * `tab.getURL()` at grant time is the origin measured against, not the
+ * origin the CLICK happened on, since both are the same thing here (the
+ * click always happens on the tab as it exists right now). */
+function recordTabCaptureInvocation (extensionId: string, tab: WebContents): void {
+  recordInvocation(extensionId, tab.id)
+
+  const wired = wiredInvocations.get(tab) ?? new Set<string>()
+  wiredInvocations.set(tab, wired)
+  if (wired.has(extensionId)) return
+  wired.add(extensionId)
+
+  const grantedOrigin = originFromUrl(tab.getURL())
+  const clear = (): void => { clearInvocation(extensionId, tab.id) }
+  const onNavigate = (): void => {
+    if (tab.isDestroyed() || originFromUrl(tab.getURL()) === grantedOrigin) return
+    clear()
+    tab.removeListener('destroyed', clear)
+    tab.removeListener('did-navigate', onNavigate)
+    wired.delete(extensionId)
+  }
+  tab.once('destroyed', clear)
+  tab.on('did-navigate', onNavigate)
+}
+
 /** Constructs the library, once, before any extension loads. `preloadPath`
  * is `extensions-subsystem.ts`'s bundle of `vendor/.../src/preload.ts` PLUS
  * Orivon's own service-worker-preload health check
@@ -173,6 +217,9 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   setCookieHostAccessCheck(hasHostAccess)
   setTabUrlAccessCheck((manifest, url) => hasApiOrHostAccess(manifest, 'tabs', url))
   setTabHostAccessCheck(hasHostAccess)
+  setTabCaptureInvocationRecorder(recordTabCaptureInvocation)
+  setTabCaptureInvocationCheck(hasRecentInvocation)
+  setTabCaptureGrantRecorder((extensionId) => { mintTabCaptureGrant(extensionId, Date.now()) })
 
   hostExtensions = new ElectronChromeExtensions({
     license: 'GPL-3.0',
@@ -305,6 +352,14 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   bridge = { ctx, services }
 
   setRemoteMessageSenderCheck((event) => event.type === 'frame' && isFromChromeView(event.sender))
+  // ADR-0044 moved a granted, network-served app's tab into this SAME
+  // default session tabCapture's own tab store tracks -- the same
+  // predicate shell-services.ts's own DevTools prompt uses for the
+  // identical "is this tab an app I granted, not an ordinary site" question.
+  setTabCaptureAppRefusalCheck((tab) => {
+    const origin = appOrigin(originFromUrl, tab)
+    return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
+  })
 
   services.tabLifecycle.subscribe({
     tabCreated: (wc, win) => {

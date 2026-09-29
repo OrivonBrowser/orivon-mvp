@@ -1,20 +1,41 @@
-// An origin granted without installing (./grant-without-install.ts) gets the
-// same Content-Security-Policy on its documents that an installed app's
-// responses carry, built by the same builder from the same live grants. See
-// README.md's Design notes.
+// An origin granted without being installed gets the same
+// Content-Security-Policy on its documents that an installed app's
+// responses carry, built by the same builder from the same live grants --
+// ONE handler on the default session's webRequest owner
+// (../sessions/web-request-owner.ts), covering every such origin at once,
+// installed once at startup rather than once per grant. See README.md's
+// Design notes.
 //
-// Such an origin is served by its own server, never through protocol.handle,
-// so session.webRequest.onHeadersReceived does fire for it (A110 is about
-// protocol.handle responses only).
+// This handler covers every granted origin's document that reaches the
+// default session, including one that is also cache-served: a navigation
+// into a cache-served origin commits its network-delivered document here,
+// in the default session, before the tab's partition swap moves later
+// requests to protocol.handle (A296) -- that document needs this policy
+// exactly as much as one that is never cache-served. The pinned copy's own
+// response, served through protocol.handle, never reaches onHeadersReceived
+// at all (A110), so it carries its own policy from csp.ts regardless.
 
-import { session } from 'electron'
-import type { HeadersReceivedResponse, OnHeadersReceivedListenerDetails } from 'electron'
+import type { OnHeadersReceivedListenerDetails, WebRequestFilter } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
-import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { liveCspHeaderFor } from '../../loader/electron/serve.js'
 import { ISOLATION_HEADERS } from '../../loader/serve/csp.js'
+import type { HeadersReceivedHandler } from '../sessions/web-request-owner.js'
 
-type HeadersListener = (details: OnHeadersReceivedListenerDetails, callback: (response: HeadersReceivedResponse) => void) => void
+/**
+ * `defaultSessionGrantedOriginCsp`'s own `WebRequestFilter`: `<all_urls>`
+ * because a granted origin is not known in advance (a grant can be given to
+ * any origin at any time, per ADR-0044), restricted to `mainFrame`/
+ * `subFrame`/`object` because `documentOriginOf` below already discards
+ * every other resource type -- so this filter costs nothing beyond what the
+ * handler already throws away, while sparing every subresource response
+ * (script, image, stylesheet, xhr, ...) the round trip into this process at
+ * all. `object` is a document too: Electron reports a same-origin
+ * `<object>`/`<embed>` document's own response with that resource type
+ * (measured, Electron 44), and without it here that document is served with
+ * the app's own CSP, never this one -- `csp.ts`'s `object-src 'none'` is the
+ * other lock on the same route.
+ */
+export const GRANTED_ORIGIN_CSP_FILTER: WebRequestFilter = { urls: ['<all_urls>'], types: ['mainFrame', 'subFrame', 'object'] }
 
 /**
  * `headers` plus `csp` as one more Content-Security-Policy value. The
@@ -29,12 +50,20 @@ export function withAppendedCsp (headers: Record<string, string[]> | undefined, 
   return result
 }
 
-function isDocumentFrom (details: OnHeadersReceivedListenerDetails, origin: string): boolean {
-  if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return false
+/**
+ * The document origin `details` is a response for, or null for anything
+ * that is not a document -- a script/image/xhr/etc response must never be
+ * treated as if it were the page itself. `object` counts as a document:
+ * a same-origin `<object>`/`<embed>` navigates its `data`/`src` the same
+ * way a `<frame>` does, and Electron reports its response that way
+ * (measured, Electron 44).
+ */
+export function documentOriginOf (details: OnHeadersReceivedListenerDetails): string | null {
+  if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame' && details.resourceType !== 'object') return null
   try {
-    return new URL(details.url).origin === origin
+    return new URL(details.url).origin
   } catch {
-    return false
+    return null
   }
 }
 
@@ -50,45 +79,28 @@ export function withIsolationHeaders (headers: Record<string, string[]>): Record
 }
 
 /**
- * The `onHeadersReceived` listener for one granted origin. `cspFor` is read
- * per response, so a grant or revoke reaches the next document load;
- * `isolatedFor` (the manifest's `crossOriginIsolated`) the same way, so a
- * manifest change reaches the next load too. Unlike the installed path,
- * which sets the isolation headers on every served asset, a listener sees
- * only documents here: a worker script the server sends without them is
- * that server's own to fix.
+ * The default session's one `onHeadersReceived` handler for every granted
+ * origin's document that commits there, whether or not that origin is also
+ * cache-served. Reads the live grant fresh per response -- a grant, a
+ * revoke or a manifest change all reach the very next document load, with
+ * nothing to re-register. Only for a document: a worker script the server
+ * sends without the policy is that server's own to fix, same as the
+ * installed path's own handler.
+ *
+ * A handler that throws (a broker read failing, for instance) is caught by
+ * the owner itself (web-request-owner.ts), which passes the response
+ * through unmodified rather than hanging it -- this function does not need
+ * its own try/catch to get that behaviour.
  */
-export function grantedOriginCspListener (origin: string, cspFor: () => Promise<string>, isolatedFor: () => Promise<boolean> = async () => false): HeadersListener {
-  return (details, callback) => {
-    if (!isDocumentFrom(details, origin)) {
-      callback({})
-      return
-    }
-    // A manifest that cannot be read means "not isolated", never a document
-    // without its policy.
-    Promise.all([cspFor(), isolatedFor().catch(() => false)]).then(
-      ([csp, isolated]) => {
-        const withCsp = withAppendedCsp(details.responseHeaders, csp)
-        callback({ responseHeaders: isolated ? withIsolationHeaders(withCsp) : withCsp })
-      },
-      // The callback must always run, or the response hangs.
-      () => { callback({}) }
-    )
+export function defaultSessionGrantedOriginCsp (broker: Broker): HeadersReceivedHandler {
+  return async (details, current) => {
+    const origin = documentOriginOf(details)
+    if (origin === null || broker.app.hasGrantsSync(origin) !== true) return current
+    const [csp, isolated] = await Promise.all([
+      liveCspHeaderFor(broker, origin),
+      broker.app.manifest(origin).then((manifest) => manifest.crossOriginIsolated === true).catch(() => false)
+    ])
+    const withCsp = withAppendedCsp(current.responseHeaders, csp)
+    return { ...current, responseHeaders: isolated ? withIsolationHeaders(withCsp) : withCsp }
   }
-}
-
-/**
- * Installs the listener on `origin`'s app partition, the session its app tab
- * runs in once granted. Electron keeps one `onHeadersReceived` listener per
- * session, so calling this again for the same origin replaces it; nothing
- * else in src/ listens on an app partition's `webRequest`.
- */
-export function installGrantedOriginCsp (broker: Broker, origin: string): void {
-  session.fromPartition(partitionFor(origin)).webRequest.onHeadersReceived(
-    grantedOriginCspListener(
-      origin,
-      async () => await liveCspHeaderFor(broker, origin),
-      async () => (await broker.app.manifest(origin)).crossOriginIsolated === true
-    )
-  )
 }

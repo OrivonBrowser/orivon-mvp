@@ -19,6 +19,21 @@ const d = debug('electron-chrome-extensions:browserAction')
 // site for that API (src/main/pages/internal-session.ts, before ready);
 // 'crx' is registered there instead, with the same privileges.
 
+// Orivon patch (UPSTREAM.md, patch 33): an optional hook, the same shape as
+// router.ts's own setEventListenerFilter/setMessageSenderIdCheck, called
+// from activateClick below with the tab the toolbar action was just
+// clicked on. chrome.tabCapture.getMediaStreamId requires this -- Chrome
+// refuses to capture a tab the extension was never invoked on ("Extension
+// has not been invoked for the current page"), and nothing in this library
+// tracked that at all before this. Set once, before the first activation
+// (extension-host.ts).
+type TabCaptureInvocationRecorder = (extensionId: string, tab: Electron.WebContents) => void
+let gTabCaptureInvocationRecorder: TabCaptureInvocationRecorder | undefined
+
+export function setTabCaptureInvocationRecorder(recorder: TabCaptureInvocationRecorder): void {
+  gTabCaptureInvocationRecorder = recorder
+}
+
 interface ExtensionAction {
   color?: string
   text?: string
@@ -74,6 +89,11 @@ export class BrowserActionAPI {
   // activateClick assigns `undefined` here, which the bare `?:` form
   // refuses.
   private popup?: PopupView | undefined
+  // Orivon patch (UPSTREAM.md, patch 33): the tab `this.popup` was opened
+  // for -- getOpenPopup() below is chrome.runtime.getContexts()'s only way
+  // to report a POPUP context's tabId, since PopupView itself carries no
+  // tab of its own.
+  private popupTabId?: number | undefined
 
   private observers: Set<Electron.WebContents> = new Set()
   private queuedUpdate: boolean = false
@@ -313,6 +333,17 @@ export class BrowserActionAPI {
     this.onUpdate()
   }
 
+  // Orivon patch (UPSTREAM.md, patch 32): chrome.runtime.getContexts()'s
+  // POPUP entry, for the one extension whose popup is currently open --
+  // Chrome allows only one open popup at a time session-wide, matching
+  // `this.popup` already being a single field, not a map.
+  getOpenPopup(): { extensionId: string; webContents: Electron.WebContents; tabId: number } | undefined {
+    if (!this.popup || this.popup.isDestroyed() || this.popupTabId === undefined) return undefined
+    const webContents = this.popup.browserWindow?.webContents
+    if (webContents === undefined) return undefined
+    return { extensionId: this.popup.extensionId, webContents, tabId: this.popupTabId }
+  }
+
   private getPopupUrl(extensionId: string, tabId: number) {
     const action = this.getAction(extensionId)
     const tabPopupValue = action.tabs[tabId]?.popup
@@ -412,6 +443,7 @@ export class BrowserActionAPI {
       const toggleExtension = !this.popup.isDestroyed() && this.popup.extensionId === extensionId
       this.popup.destroy()
       this.popup = undefined
+      this.popupTabId = undefined
       if (toggleExtension) {
         d('skipping activate to close popup')
         return
@@ -423,6 +455,10 @@ export class BrowserActionAPI {
     if (!tab) {
       throw new Error(`Unable to get active tab`)
     }
+
+    // Orivon patch (UPSTREAM.md, patch 33): a click IS an invocation,
+    // whether or not it opens a popup -- both branches below count.
+    gTabCaptureInvocationRecorder?.(extensionId, tab)
 
     const popupUrl = this.getPopupUrl(extensionId, tab.id)
 
@@ -440,6 +476,7 @@ export class BrowserActionAPI {
         anchorRect,
         alignment,
       })
+      this.popupTabId = tab.id
 
       d(`opened popup: ${popupUrl}`)
 

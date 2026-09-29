@@ -6,6 +6,7 @@ import type { HistoryStatus } from '../../../main/history/history-service.js'
 import { internalBridge } from '../shared/bridge.js'
 import { h, replaceChildren } from '../shared/dom.js'
 import { clockIcon, trashIcon } from '../shared/icons.js'
+import { coalesce } from '../shared/coalesce.js'
 import { groupByDay, timeLabel } from './days.js'
 import { siteMark } from './site-mark.js'
 
@@ -143,6 +144,12 @@ clearAll.addEventListener('click', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') void load(false)
 })
+
+// A visit, a removal or a clear -- from this tab or another one open on the
+// same page -- while History sits visible. Coalesced so a fast run of
+// navigations reloads at most about once a second, not once per visit.
+const reloadOnPush = coalesce(() => { void load(false) })
+bridge.onEvent((topic) => { if (topic === 'history.changed') reloadOnPush() })
 
 document.getElementById('app')?.append(
   h('main', { className: 'page' },

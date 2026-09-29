@@ -44,7 +44,7 @@ export class SettingsState {
 
   constructor (private readonly bridge: OrivonInternal = internalBridge()) {
     this.shortcuts = new ShortcutsState(bridge, () => { this.notify() })
-    this.privacy = new PrivacyState(bridge)
+    this.privacy = new PrivacyState(bridge, () => { this.notify() })
     this.apps = new AppsState(bridge, () => { this.notify() })
     this.usage = new UsageState(bridge, () => { this.notify() })
     this.updates = new UpdatesState(bridge, () => { this.notify() })
@@ -63,11 +63,21 @@ export class SettingsState {
     this.bridge.onEvent((topic, payload) => {
       if (this.shortcuts.handle(topic, payload)) return
       if (this.web3.handle(topic, payload)) { this.notify(); return }
+      if (this.apps.handle(topic)) return
+      if (this.privacy.handle(topic)) return
+      if (this.usage.handle(topic)) return
+      if (this.updates.handle(topic, payload)) return
+      if (topic === 'profiles.changed') { void this.reloadProfiles(); return }
       if (topic !== 'settings.changed') return
       const change = payload as { key: string, value: unknown }
       this.values.set(change.key, change.value)
       this.notify()
     })
+  }
+
+  private async reloadProfiles (): Promise<void> {
+    this.profiles = await this.bridge.request('profiles', { type: 'list' }) as SettingsState['profiles']
+    this.notify()
   }
 
   value (key: string): unknown {

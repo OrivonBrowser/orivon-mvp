@@ -16,6 +16,8 @@ export interface HistoryStatus {
 }
 
 export class HistoryService {
+  private readonly listeners = new Set<() => void>()
+
   constructor (
     private readonly store: HistoryStore,
     private readonly settings: Pick<SettingsStore, 'get' | 'onChange'>,
@@ -34,11 +36,15 @@ export class HistoryService {
   }
 
   visit (url: string, title: string): void {
-    if (this.remembering) this.store.record(url, title, this.now())
+    if (!this.remembering) return
+    this.store.record(url, title, this.now())
+    this.notify()
   }
 
   titled (url: string, title: string): void {
-    if (this.remembering) this.store.setTitle(url, title)
+    if (!this.remembering) return
+    this.store.setTitle(url, title)
+    this.notify()
   }
 
   list (query?: HistoryQuery): HistoryEntry[] {
@@ -47,14 +53,17 @@ export class HistoryService {
 
   remove (id: number): void {
     this.store.remove(id)
+    this.notify()
   }
 
   removeRange (from: number, to: number): void {
     this.store.removeRange(from, to)
+    this.notify()
   }
 
   clear (): void {
     this.store.clear()
+    this.notify()
   }
 
   /** Forgets what is older than the person chose to keep. Run at start and when the choice changes. */
@@ -64,9 +73,20 @@ export class HistoryService {
     // Run at start, where a failure would end the browser on every start and leave no way into Settings to clear it.
     try {
       this.store.removeRange(0, this.now() - Number(days) * DAY_MS)
+      this.notify()
     } catch (error) {
       console.error('[orivon] history could not be pruned:', error)
     }
+  }
+
+  /** The History page, and Settings' Privacy section, both read `status()`/`list()` again on this. Returns the unsubscribe. */
+  onChange (listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  private notify (): void {
+    for (const listener of this.listeners) listener()
   }
 
   flush (): void {

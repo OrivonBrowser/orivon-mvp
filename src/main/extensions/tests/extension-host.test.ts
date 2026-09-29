@@ -3,7 +3,7 @@ import type { BaseWindow } from 'electron'
 import type { ShellServices } from '../../shell/shell-services.js'
 import type { SubsystemContext } from '../../registry.js'
 
-// extension-host.ts imports 'electron' and the five virtual specifiers
+// extension-host.ts imports 'electron' and the seven virtual specifiers
 // (electron-chrome-extensions-lib.d.ts's own header says why they exist)
 // at module scope -- all mocked, same reasoning as
 // extension-install-prompt.test.ts's own header. The mocked
@@ -51,6 +51,16 @@ vi.mock('orivon:crx-extensions-cookies', () => ({
 vi.mock('orivon:crx-extensions-tabs', () => ({
   setTabUrlAccessCheck: vi.fn(),
   setTabHostAccessCheck: vi.fn()
+}))
+
+vi.mock('orivon:crx-extensions-browser-action', () => ({
+  setTabCaptureInvocationRecorder: vi.fn()
+}))
+
+vi.mock('orivon:crx-extensions-tab-capture', () => ({
+  setTabCaptureInvocationCheck: vi.fn(),
+  setTabCaptureAppRefusalCheck: vi.fn(),
+  setTabCaptureGrantRecorder: vi.fn()
 }))
 
 const { createExtensionHost, attachExtensionShell } = await import('../extension-host.js')

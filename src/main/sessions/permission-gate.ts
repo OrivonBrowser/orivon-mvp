@@ -17,6 +17,7 @@ import { windowShowing } from '../shell/showing-window.js'
 import { createExternalLinks } from './external-links.js'
 import { NotificationDecisions } from './notification-decisions.js'
 import { createSiteNotifications } from './site-notifications.js'
+import { isTabCaptureMediaAllowed } from './tab-capture-grants.js'
 
 /**
  * Permissions this browser allows outright; `isAllowed` below adds the one
@@ -74,6 +75,28 @@ function isAllowed (permission: string, details: object | undefined): boolean {
   return permission === 'fileSystem' && details !== undefined && 'isDirectory' in details && details.isDirectory === false
 }
 
+/**
+ * `media` stays denied by default (a page asking for camera/microphone) --
+ * this is the one carve-out, for chrome.tabCapture's own `getUserMedia({
+ * audio: { mandatory: { chromeMediaSource: 'tab', ... } } })` call. Measured
+ * directly (docs/planning's tabCapture/offscreen probe): the request
+ * handler's OWN `contents` argument is the CAPTURED TAB's webContents, not
+ * the requester's, for this exact call shape -- only `details.securityOrigin`
+ * names the requesting `chrome-extension://` origin, so gating on `contents`
+ * would check the wrong page's origin entirely. The check handler's
+ * `requestingOrigin` argument, by contrast, IS the requester. Neither
+ * argument carries the actual `chromeMediaSourceId`, so this can only ask
+ * "did this extension mint a still-live tabCapture grant recently" --
+ * `tab-capture-grants.ts`'s own doc says why that is the right question:
+ * the id itself is already Electron's own single-purpose, 10-second token.
+ */
+function isTabCaptureMediaRequest (details: object | undefined): boolean {
+  const origin = details !== undefined && 'securityOrigin' in details && typeof details.securityOrigin === 'string'
+    ? details.securityOrigin
+    : undefined
+  return isTabCaptureMediaAllowed(origin, Date.now())
+}
+
 let decisions: NotificationDecisions | undefined
 
 /** Every session's one store of per-site notification answers, so a site
@@ -113,6 +136,7 @@ function denyByDefault (target: Session): void {
   target.setPermissionRequestHandler((contents, permission, callback, details) => {
     if (permission === 'openExternal') return answerWhenAsked(externalLinks(contents, details), callback)
     if (permission === 'notifications') return answerWhenAsked(siteNotifications.request(contents, details), callback)
+    if (permission === 'media') return callback(isTabCaptureMediaRequest(details))
     const allowed = isAllowed(permission, details)
     if (allowed) noteForNotice(contents, permission)
     callback(allowed)
@@ -121,6 +145,7 @@ function denyByDefault (target: Session): void {
   // here, and notifications answer from what the person already said.
   target.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) => {
     if (permission === 'notifications') return siteNotifications.check(requestingOrigin, details.embeddingOrigin)
+    if (permission === 'media') return isTabCaptureMediaAllowed(requestingOrigin, Date.now())
     return isAllowed(permission, details)
   })
   // WebHID/WebUSB/Web Serial have no capability path at all in v0

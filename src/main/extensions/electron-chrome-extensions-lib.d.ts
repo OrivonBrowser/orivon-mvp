@@ -88,3 +88,23 @@ declare module 'orivon:crx-extensions-tabs' {
    * favIconUrl visibility). */
   export function setTabHostAccessCheck (check: (manifest: unknown, url: string | undefined) => boolean): void
 }
+
+declare module 'orivon:crx-extensions-browser-action' {
+  /** Called from activateClick with the tab a toolbar click just happened
+   * on -- tab-capture.ts's own activeTab-style invocation check
+   * (extension-tab-invocation.ts is the real ledger this ends up in). The
+   * real WebContents, not just its id: extension-host.ts's own wiring
+   * attaches the navigation/destroy listeners that clear the grant. */
+  export function setTabCaptureInvocationRecorder (recorder: (extensionId: string, tab: Electron.WebContents) => void): void
+}
+
+declare module 'orivon:crx-extensions-tab-capture' {
+  export function setTabCaptureInvocationCheck (check: (extensionId: string, tabId: number) => boolean): void
+  /** True refuses the capture outright -- a granted app's own tab
+   * (extension-host.ts wires this to `broker.app.hasGrantsSync`, the same
+   * predicate shell-services.ts's own DevTools prompt uses). */
+  export function setTabCaptureAppRefusalCheck (check: (tab: Electron.WebContents) => boolean): void
+  /** Called once per successful getMediaStreamId, so permission-gate.ts's
+   * own 'media' carve-out (tab-capture-grants.ts) knows to allow it. */
+  export function setTabCaptureGrantRecorder (recorder: (extensionId: string) => void): void
+}

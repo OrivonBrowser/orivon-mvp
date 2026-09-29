@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { MENU_COMMAND_CHANNEL } from '../main/channels.js'
+import { MENU_COMMAND_CHANNEL, MENU_SHOWN_CHANNEL } from '../main/channels.js'
 import type { MenuItemView } from '../main/shell/menu-layout.js'
 
 // Loaded ONLY by the main menu popover's own view (src/main/shell/menu-panel.ts).
@@ -17,6 +17,14 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     },
     run: (id: string): void => { void ipcRenderer.invoke(MENU_COMMAND_CHANNEL, { type: 'run', id }) },
     /** Tells main how tall the list is, so the popover sizes to it. */
-    reportHeight: (height: number): void => { void ipcRenderer.invoke(MENU_COMMAND_CHANNEL, { type: 'contentHeight', height }) }
+    reportHeight: (height: number): void => { void ipcRenderer.invoke(MENU_COMMAND_CHANNEL, { type: 'contentHeight', height }) },
+    /** The menu is kept open across shows rather than reloaded each time --
+     * fired every time it becomes visible again, so the page can refresh its
+     * list and reset its own state. Returns the unsubscribe. */
+    onShow: (listener: () => void): (() => void) => {
+      const handler = (): void => { listener() }
+      ipcRenderer.on(MENU_SHOWN_CHANNEL, handler)
+      return () => { ipcRenderer.removeListener(MENU_SHOWN_CHANNEL, handler) }
+    }
   })
 }

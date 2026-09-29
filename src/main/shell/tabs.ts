@@ -22,7 +22,8 @@ import { BLANK_URL, TabFactory } from './tab-factory.js'
 import { clearOfPairs, moveInOrder } from './tab-order.js'
 import { PaneHost } from './pane-host.js'
 import { SplitController } from './split-controller.js'
-import { appTabFlagChanged, closeParkedViews, EXIT_FULLSCREEN_WORLD_ID, MAX_TABS, partitionChanged, repartitionView } from './tab-view.js'
+import { appTabFlagChanged, EXIT_FULLSCREEN_WORLD_ID, MAX_TABS, partitionChanged } from './tab-view.js'
+import { closeParkedViews, repartitionView } from './tab-parking.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabState, TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
@@ -202,9 +203,8 @@ export class TabManager {
     return this.disposed || this.order.length >= MAX_TABS
   }
 
-  /** A popup Chromium already created, with its opener, in the opener's
-   * session (./popups.ts). It navigates itself; nothing is loaded here.
-   * `active` -- see `createTab`'s own doc. */
+  /** A popup Chromium already created, with its opener, in the opener's session (./popups.ts).
+   * It navigates itself; nothing is loaded here. `active` -- see `createTab`'s own doc. */
   private adoptPopup (view: WebContentsView, partition: string | undefined, active = true): void {
     const { id, record } = this.factory.popup(view, partition)
     this.add(id, record)
@@ -380,7 +380,7 @@ export class TabManager {
     }
     const target = this.resolveTarget(rawInput)
 
-    const swap = partitionChanged(target, record.partition, this.ctx.broker)
+    const swap = partitionChanged(target, record.partition)
     if (swap !== undefined || appTabFlagChanged(target, record.view, this.ctx.broker)) {
       // swap.to can itself be undefined (PartitionSwap's own doc) -- ??
       // would wrongly read that as "no swap" and keep the old partition.

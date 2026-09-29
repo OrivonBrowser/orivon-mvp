@@ -18,8 +18,9 @@ imports `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../READ
 `builtin.ts`, `resolution/`), [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts),
 [`../../broker/`](../../broker/) (`grants/node-ledger-storage.ts`'s atomic write,
 `policy/pin.ts`), [`../../loader/fetch/`](../../loader/fetch/) (`verifier-origin.ts`,
-`content-root.ts`), [`../../trust/website-level.ts`](../../trust/website-level.ts), the
-top-level `registry.ts`, `node:fs`, `node:net`, `node:path`.
+`content-root.ts`), [`../../trust/website-level.ts`](../../trust/website-level.ts),
+[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts), the top-level
+`registry.ts`, `node:fs`, `node:net`, `node:path`.
 
 **What it must never import.** The verifier host's code, as opposed to its protocol types: it
 runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) talks to it.
@@ -32,13 +33,15 @@ Each file's own header covers its rule (one owner of `--host-resolver-rules`, th
 port probe, fingerprint-only certificates, request deadlines and backoff, the checkpoint's age).
 What is here has no other home.
 
-**The partition stamp is on the default session only** (`installPartitionStamp`). Any
-`webRequest` listener sends its session's requests through Electron's proxy, and then a redirect
-a `protocol.handle` handler returns reaches the page with the redirect's status
-(`test/e2e-served-csp.test.ts` measures it). Installed apps and web contexts serve `https`
-through such handlers, so a listener there would break every routed redirect. None of their
-pages can reach the verifier anyway: their handlers dial through Node's `https`, which cannot
-resolve a `.eth` name.
+**The partition stamp is on the default session only** (`installPartitionStamp`, registered
+through [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts), LAST among that
+session's `onBeforeSendHeaders` handlers so nothing earlier, an extension rule included, can set
+or remove the header underneath it). Any `webRequest` listener sends its session's requests
+through Electron's proxy, and then a redirect a `protocol.handle` handler returns reaches the
+page with the redirect's status (`test/e2e-served-csp.test.ts` measures it). Cache-served apps
+and web contexts serve `https` through such handlers, so a listener there would break every
+routed redirect. None of their pages can reach the verifier anyway: their handlers dial through
+Node's `https`, which cannot resolve a `.eth` name.
 
 **The certificate check goes on every session, through `session-created`.** A partition without
 it cannot load any host the verifier serves.

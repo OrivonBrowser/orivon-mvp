@@ -24,11 +24,14 @@ function seversOpener (features: string): boolean {
 }
 
 /** `targetPartition` is the session a tab opened at `details.url` would get
- * on its own. A popup Chromium creates always shares its opener's. */
+ * on its own. A popup Chromium creates always shares its opener's. `isApp`
+ * answers whether `details.url`'s origin holds a grant or is cache-served
+ * (ADR-0044/ADR-0045's own gap) -- README.md's Design notes. */
 export function routePopup (
   details: Pick<HandlerDetails, 'url' | 'features' | 'disposition'>,
   opener: PopupOpener,
-  targetPartition: string | undefined
+  targetPartition: string | undefined,
+  isApp: (url: string) => boolean
 ): PopupRoute {
   // A blob: URL resolves only in the storage partition that minted it, so
   // a fresh tab in any session would load nothing.
@@ -38,6 +41,15 @@ export function routePopup (
   }
   // Chromium cannot load a protocol's address itself; only a new tab turns it into the URL serving it.
   if (seversOpener(details.features) || BUILTIN_ADDRESSES.servedUrl(details.url) !== undefined) return 'new-tab'
+  // A granted or cache-served origin popped open from a DIFFERENT origin
+  // keeps no opener link, whatever session the two happen to share --
+  // a grant alone puts no app in its own partition (ADR-0044), so
+  // `targetPartition === opener.partition` below cannot be trusted to
+  // catch this case (both are commonly undefined at
+  // once: the app's own default-session partition and an ordinary site's).
+  // A same-origin popup (an app opening one to itself) is unaffected.
+  const targetOrigin = originFromUrl(details.url)
+  if (targetOrigin !== null && targetOrigin !== originFromUrl(opener.url) && isApp(details.url)) return 'new-tab'
   if (targetPartition === opener.partition) return 'adopt'
   // An isolated app's pinned bundle is served only in its own session.
   // Adopted anywhere else, its origin would run whatever the network sends,
@@ -64,6 +76,8 @@ export interface PopupHost {
   /** The webPreferences a tab opened at `url` would get, without a
    * partition: Chromium puts a popup in its opener's session regardless. */
   webPreferencesFor: (url: string) => WebPreferences
+  /** Whether `url`'s origin holds a grant or is cache-served -- `routePopup`'s own `isApp`. */
+  isApp: (url: string) => boolean
 }
 
 /** The webContents Chromium already built for the open, if any -- present in the `options`
@@ -85,7 +99,7 @@ export function windowOpenHandler (
     const from = opener()
     // Every browser opens a middle click or a plain ctrl+click behind the current tab.
     const active = details.disposition !== 'background-tab'
-    if (routePopup(details, from, host.partitionFor(details.url)) === 'new-tab') {
+    if (routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'new-tab') {
       host.openTab(details.url, active)
       return { action: 'deny' }
     }

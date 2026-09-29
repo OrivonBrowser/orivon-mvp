@@ -88,9 +88,10 @@ import {
   waitForTab
 } from './smoke-helpers.mjs'
 import {
-  ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput,
+  ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, forwardOutput,
   killChild, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
+import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
 import { HOST, ECHO_PORT, STATIC_PORT } from './apps/fixture/config.mjs'
 import { parseManifest } from '../src/loader/manifest/manifest.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -104,6 +105,10 @@ const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).r
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 const MANIFEST_URL = `${FIXTURE_URL}.well-known/orivon.json`
+/** asPage's (e2e-helpers.ts) own same-origin script URL, on this file's
+ * fixture origin -- see fixture-as-page.ts's own header for why this is a
+ * file the static server serves, never a route it executes logic for. */
+const AS_PAGE_SCRIPT_FULL_URL = `${FIXTURE_ORIGIN}/${AS_PAGE_SCRIPT_URL}`
 
 /**
  * Phase 1's own worst-case wait budget, walked in the order its body
@@ -296,7 +301,7 @@ it('Phase 1: the real shell launches, and a real net.connect through the full IP
           // The literal host:port here need not have anything listening --
           // checkConnect denies for want of a grant before any dial is ever
           // attempted.
-          const state = await evaluateRetrying(view, async () => {
+          const state = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
             const orivon = (window as unknown as {
               orivon: {
                 app: { grants: () => Promise<unknown> }
@@ -407,6 +412,7 @@ it('Phase 1: the real shell launches, and a real net.connect through the full IP
         // unconditionally rather than only when this `finally` itself runs
         // to completion.
         await closeElectronApp(app)
+        clearFixtureAsPageScript()
       }
     } catch (e) {
       check(
@@ -478,7 +484,7 @@ it('Phase 2: a real grant, issued through the dev-only path rather than test cod
         // hardcodes its own literal port: a value crossing evaluate()'s
         // serialization boundary as a closure, rather than as an explicit
         // argument, does not survive it.
-        const roundTrip = await evaluateRetrying(view, async () => {
+        const roundTrip = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
           const orivon = (window as unknown as {
             orivon: { net: { connect: (o: { host: string, port: number }) => Promise<{
               readable: ReadableStream<Uint8Array>
@@ -525,7 +531,7 @@ it('Phase 2: a real grant, issued through the dev-only path rather than test cod
         // denies this BEFORE any dial is attempted. A denial that happened
         // to also be unreachable would prove nothing about policy; this one
         // is denied on the pattern alone.
-        const deniedState = await evaluateRetrying(view, async () => {
+        const deniedState = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
           const orivon = (window as unknown as {
             orivon: { net: { connect: (o: { host: string, port: number }) => Promise<{ close?: () => Promise<void> } | undefined> } }
           }).orivon
@@ -554,6 +560,7 @@ it('Phase 2: a real grant, issued through the dev-only path rather than test cod
         }
       } finally {
         await closeElectronApp(app)
+        clearFixtureAsPageScript()
       }
     } catch (e) {
       check(

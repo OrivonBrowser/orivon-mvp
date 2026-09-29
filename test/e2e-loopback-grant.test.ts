@@ -47,7 +47,7 @@ afterAll(async () => {
 })
 
 const TEST_TIMEOUT_MS =
-  ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 8_000 * 6 + APP_CLOSE_RACE_MS + 30_000
+  ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 8_000 * 8 + APP_CLOSE_RACE_MS + 30_000
 
 it.skipIf(!ORDINARY_BUILD)(
   'visiting a loopback origin that advertises a manifest prompts, grants the URL, and turns the tab into an app tab -- on a plain build, with nothing installed',
@@ -161,6 +161,59 @@ it.skipIf(!ORDINARY_BUILD)(
           return (await orivon.app.grants()).map((g) => g.capability)
         })
         check(`the origin holds what its manifest declared: ${JSON.stringify(grants)}`, grants.includes('https.connect'))
+
+        // ---- A grant alone does not isolate an origin -- the tab stays on
+        // the shell's shared default session, and the CSP its grants earn is
+        // appended by the default session's ONE onHeadersReceived handler
+        // (../src/main/install/granted-origin-csp.ts). ----
+        const onDefaultSession = await app.evaluate(({ webContents, session }, url: string) => {
+          const wc = webContents.getAllWebContents().find((c) => c.getURL() === url)
+          return wc === undefined ? undefined : wc.session === session.defaultSession
+        }, `${ORIGIN}/`)
+        check('the granted tab runs on the shell\'s shared default session, not a partition of its own', onDefaultSession === true)
+
+        // The CSP this handler appends is DOCUMENT-only (granted-origin-csp.ts's
+        // own header: "so a worker from that server carries none"), so a
+        // fresh fetch('/') from the page -- an xhr/fetch resourceType, not a
+        // document -- never carries it back on its OWN response and cannot
+        // prove anything. XMLHttpRequest instead, never the ADR-0017 routed
+        // fetch this app tab's own window.fetch now is (this file's own
+        // "ACCEPTING THE PROMPT..." check above), the same substitution
+        // e2e-csp-connect-src.test.ts's header explains: connect-src governs
+        // XHR identically to fetch() per the CSP spec, so a securitypolicy-
+        // violation event on an XHR to a host outside the grant's
+        // connect-src is Chromium enforcing the appended document CSP.
+        const cspEnforced = await evaluateRetrying(view, async () => {
+          const violations: string[] = []
+          const onViolation = (e: SecurityPolicyViolationEvent): void => { violations.push(e.violatedDirective) }
+          document.addEventListener('securitypolicyviolation', onViolation)
+
+          await new Promise<{ ok: boolean, status: number }>((resolve) => {
+            try {
+              const req = new XMLHttpRequest()
+              req.open('GET', 'https://not-granted-by-this-manifest.invalid/')
+              req.onload = () => { resolve({ ok: true, status: req.status }) }
+              req.onerror = () => { resolve({ ok: false, status: req.status }) }
+              req.send()
+            } catch {
+              // A CSP refusal is not documented as always asynchronous -- if
+              // it throws synchronously instead, that is still "refused".
+              resolve({ ok: false, status: 0 })
+            }
+          })
+          // A settling delay: CSP's own violation event and the request's
+          // terminal event are not documented as strictly ordered relative
+          // to each other (e2e-csp-connect-src.test.ts's own comment).
+          await new Promise((resolve) => setTimeout(resolve, 50))
+
+          document.removeEventListener('securitypolicyviolation', onViolation)
+          return violations
+        }, 15_000)
+        check(
+          `the appended grant CSP is enforced on this document: an XHR to a host outside the granted connect-src ` +
+          `is refused by CSP, not merely by the resolver (saw ${JSON.stringify(cspEnforced)})`,
+          cspEnforced.includes('connect-src')
+        )
       } finally {
         if (app !== undefined) await closeElectronApp(app)
         if (server !== undefined) await killChild(server)

@@ -29,10 +29,19 @@ import type { ScoreLevel } from '../../trust/website-level.js'
 type LevelOverrideFor = (origin: string) => ScoreLevel | undefined
 const NO_OVERRIDE: LevelOverrideFor = () => undefined
 
+/** The extensions disclosure (docs/planning/extensions-exploration.md) -- the same
+ * shape `./request-grant-prompt.ts`'s own `createGrantPrompt` takes, wired
+ * to the real `../extensions/site-reach-runner.js` at the same place
+ * (`../install/app-install-subsystem.ts`), and defaults to always naming
+ * none. */
+type ExtensionsOnSite = (origin: string) => Promise<readonly string[]>
+const NO_EXTENSIONS: ExtensionsOnSite = async () => []
+
 /** Builds the real InstallConsentPrompt ./app-install-subsystem.ts wires in. */
-export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE): InstallConsentPrompt {
+export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE, extensionsOnSite: ExtensionsOnSite = NO_EXTENSIONS): InstallConsentPrompt {
   return async (origin, manifest, capabilities, held = []) => {
-    const content = describeInstallConsent(origin, manifest, capabilities, held, levelOverrideFor(origin))
+    const names = await extensionsOnSite(origin)
+    const content = describeInstallConsent(origin, manifest, capabilities, held, levelOverrideFor(origin), names)
     const options: MessageBoxOptions = {
       type: content.warning ? 'warning' : 'question',
       buttons: ['Allow', 'Deny'],
@@ -71,10 +80,11 @@ const DENY_ALL = 2
  * capability being decided this round, marks the one on screen, and marks
  * whatever this SAME sequence already decided for the others.
  */
-export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE): PerCapabilityConsentPrompt {
+export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE, extensionsOnSite: ExtensionsOnSite = NO_EXTENSIONS): PerCapabilityConsentPrompt {
   return async (origin, manifest, capabilities) => {
     const level = levelOverrideFor(origin)
-    const overviewContent = describeInstallConsent(origin, manifest, capabilities, [], level)
+    const names = await extensionsOnSite(origin)
+    const overviewContent = describeInstallConsent(origin, manifest, capabilities, [], level, names)
     const overview = await dialog.showMessageBox({
       type: overviewContent.warning ? 'warning' : 'question',
       buttons: OVERVIEW_BUTTONS,

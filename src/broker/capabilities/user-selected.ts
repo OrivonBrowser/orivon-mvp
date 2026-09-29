@@ -33,11 +33,15 @@ export interface UserSelectedCapabilityOptions {
   readonly ledger: GrantLedger
   readonly pickedPaths: PickedPathLedger
   readonly canonical: (origin: string) => string
+  /** `../grant-events.js`'s emitter -- a pick is exactly as much a change to
+   * what `origin` holds as a grant is (the Settings Apps list shows both),
+   * so a new one fires the same signal a grant/revoke does. */
+  readonly notifyGrantsChanged: (origin: string) => void
 }
 
 /** Builds the `userSelected` member of `Broker['fs']` -- see this file's header for why it is its own capability rather than a branch inside capabilities/fs.ts. */
 export function createUserSelectedCapability (
-  { deps, handleTable, ledger, pickedPaths, canonical }: UserSelectedCapabilityOptions
+  { deps, handleTable, ledger, pickedPaths, canonical, notifyGrantsChanged }: UserSelectedCapabilityOptions
 ): Pick<BrokerFsMethods, 'userSelected'> {
   const { toFailableFileHandle } = createFileHandleWrapper({ handleTable, ledger })
 
@@ -167,6 +171,7 @@ export function createUserSelectedCapability (
     }
 
     const pick = pickedPaths.record(key, 'directory', root, deps.now(), appName)
+    notifyGrantsChanged(key)
     const authorisedBy: Authorisation = { by: 'userSelected', pickId: pick.id }
     const entry = handleTable.acquire({ origin: key, kind: 'file', authorisedBy, destroy: () => {} })
     return toFailableDirectoryHandle(key, entry, root)
@@ -193,6 +198,7 @@ export function createUserSelectedCapability (
           throw mapIoError(error, 'fs')
         }
         const pick = pickedPaths.record(key, 'file', realPath, deps.now(), appName)
+        notifyGrantsChanged(key)
         let opened: OpenedFile
         try {
           // 'r+': the app may read and write a file it explicitly picked --

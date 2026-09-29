@@ -139,7 +139,7 @@ function boot (runtime: Runtime): void {
       return
     }
 
-    const shell = createShellServices(app.getPath('userData'), ctx, runtime)
+    const shell = createShellServices(app.getPath('userData'), runtime, ctx)
     // Wires every window's tab lifecycle into the extensions library
     // (extensionsSubsystem.afterReady already constructed it, above) and
     // hands its icon requests the chrome view's own session.
@@ -152,6 +152,11 @@ function boot (runtime: Runtime): void {
     configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient') })
     shell.history.prune()
     startInternalPages(shell, ctx)
+    // Another profile's own process can rename, add, remove or start one --
+    // profiles-watcher.ts's own header on why this is the one store the
+    // filesystem itself has to announce.
+    shell.profiles.startWatching()
+    app.once('will-quit', () => { shell.profiles.stopWatching() })
     shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, profiles: shell.profiles, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
     installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
     installZoom(app, shell.windows, shell.zoom)
