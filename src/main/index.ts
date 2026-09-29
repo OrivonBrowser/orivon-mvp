@@ -172,16 +172,24 @@ function boot (runtime: Runtime): void {
     // second launch arriving in the gap while this one is still choosing its
     // first window's options (planIntro's await, below) would otherwise run
     // the opener with no window open, creating one of its own -- two windows
-    // for one launch.
+    // for one launch. The `finally` marks it started even if that throws,
+    // so a startup failure (already fatal via the unhandledRejection handler
+    // above) does not also strand every second launch queued behind it.
     if (runtime.isPrivate) {
-      // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
-      createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') } })
-      markStarted()
+      try {
+        // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
+        createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') } })
+      } finally {
+        markStarted()
+      }
     } else {
-      // Only this first window can open on the welcome screen: the macOS
-      // 'activate' below recreates a window in a process that has already shown it.
-      createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')) })
-      markStarted()
+      try {
+        // Only this first window can open on the welcome screen: the macOS
+        // 'activate' below recreates a window in a process that has already shown it.
+        createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')) })
+      } finally {
+        markStarted()
+      }
       app.on('activate', () => {
         if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
       })
