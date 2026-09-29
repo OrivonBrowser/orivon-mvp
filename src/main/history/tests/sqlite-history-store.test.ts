@@ -108,6 +108,64 @@ describe('the SQLite history store', () => {
     expect(history.count()).toBe(300)
     expect(history.list({ limit: 1000 }).reduce((total, entry) => total + entry.visitCount, 0)).toBe(1200)
   })
+
+  it('caches one prepared statement per WHERE shape of list(), instead of preparing SQL on every call', () => {
+    const history = store()
+    history.record(A, 'Alpha', 1000)
+    history.record(B, 'Beta', 2000)
+    history.flush()
+
+    const prepareSpy = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    for (let n = 0; n < 5; n += 1) {
+      history.count()
+      history.list()
+      history.list({ after: { lastVisit: 2000, id: 1 } })
+      history.list({ search: 'al' }) // under three characters: the LIKE path
+      history.list({ search: 'al', after: { lastVisit: 2000, id: 1 } })
+      history.list({ search: 'alpha' }) // three characters or more: the FTS path
+      history.list({ search: 'alpha', after: { lastVisit: 2000, id: 1 } })
+    }
+    expect(prepareSpy).not.toHaveBeenCalled()
+    prepareSpy.mockRestore()
+  })
+})
+
+describe('search: substrings, case, literal % and _, agreement between the FTS and LIKE paths', () => {
+  it('a search of three characters or more finds what the old unindexed LIKE search would', () => {
+    const history = store()
+    const pages: Array<[string, string]> = [
+      [A, 'Weekly Review'],
+      [B, 'Deploy Notes'],
+      ['https://c.example/', 'Coffee and Cream'],
+      ['https://d.example/100%_done', 'Progress Update'],
+      ['https://e.example/plain', 'Plain Page']
+    ]
+    pages.forEach(([url, title], index) => history.record(url, title, index))
+    history.flush()
+
+    const db = (history as unknown as { db: DatabaseSync }).db
+    const likePattern = (text: string): string => `%${text.replace(/[\\%_]/g, (character) => `\\${character}`)}%`
+    for (const term of ['dep', 'WEEKLY', 'coffee', '100%_', 'notes', 'xyz-nomatch']) {
+      const viaSearch = history.list({ search: term }).map((entry) => entry.id).sort()
+      const viaLike = (db.prepare("SELECT id FROM pages WHERE title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\'")
+        .all(likePattern(term), likePattern(term)) as Array<{ id: number }>).map((row) => row.id).sort()
+      expect(viaSearch, term).toEqual(viaLike)
+    }
+  })
+
+  it('a page removed, or whose visits are all forgotten by a range, drops out of search', () => {
+    const history = store()
+    history.record(A, 'Searchable Alpha', 1000)
+    history.record(B, 'Searchable Beta', 2000)
+    expect(history.list({ search: 'searchable' }).map((entry) => entry.url).sort()).toEqual([A, B].sort())
+
+    const alphaId = history.list().find((entry) => entry.url === A)?.id ?? -1
+    history.remove(alphaId)
+    expect(history.list({ search: 'searchable' }).map((entry) => entry.url)).toEqual([B])
+
+    history.removeRange(0, 10_000)
+    expect(history.list({ search: 'searchable' })).toEqual([])
+  })
 })
 
 describe('the history file', () => {
@@ -123,6 +181,30 @@ describe('the history file', () => {
     const second = new SqliteHistoryStore(file)
     expect(second.list()).toEqual([expect.objectContaining({ url: A, title: 'A' })])
     second.close()
+  })
+
+  it('upgrades a database written before the search index existed, and can search it once opened', () => {
+    const file = join(dir, 'history.db')
+    const old = new DatabaseSync(file)
+    old.exec(`
+      CREATE TABLE pages (id INTEGER PRIMARY KEY, url TEXT NOT NULL UNIQUE, title TEXT NOT NULL DEFAULT '', last_visit INTEGER NOT NULL, visit_count INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE visits (id INTEGER PRIMARY KEY, page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE, at INTEGER NOT NULL);
+      CREATE INDEX visits_at ON visits (at);
+      CREATE INDEX visits_page ON visits (page_id);
+      CREATE INDEX pages_last_visit ON pages (last_visit DESC);
+      PRAGMA user_version = 1;
+    `)
+    old.prepare('INSERT INTO pages (url, title, last_visit, visit_count) VALUES (?, ?, ?, 1)').run(A, 'Preexisting Alpha', 1000)
+    old.prepare('INSERT INTO visits (page_id, at) VALUES (1, 1000)').run()
+    old.close()
+
+    const history = new SqliteHistoryStore(file)
+    expect(history.list({ search: 'existing' }).map((entry) => entry.url)).toEqual([A])
+
+    const db = (history as unknown as { db: DatabaseSync }).db
+    expect((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBeGreaterThanOrEqual(2)
+    expect((db.prepare("SELECT rowid FROM pages_fts WHERE pages_fts MATCH '\"existing\"'").all() as unknown[]).length).toBe(1)
+    history.close()
   })
 
   it('is left as it was when it is not a database this can use', async () => {
