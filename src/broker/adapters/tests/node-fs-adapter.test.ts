@@ -268,6 +268,7 @@ describe('the fs capability works end to end for an origin that has never writte
       listen: async () => { throw new Error('not used by this test') },
       resolve: async () => [],
       resolveLookup: async () => [],
+      proxyConfigured: async () => false,
       now: () => Date.now(),
       fs: nodeFs(userData),
       keychain: { getSeed: async () => { throw new Error('not used by this test') } },

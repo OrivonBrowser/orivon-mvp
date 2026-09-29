@@ -201,12 +201,28 @@ export interface ListenedServer {
  */
 export type Listen = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<ListenedServer>
 
+/**
+ * T20's fail-closed check (security-model.md, docs/open-questions.md A263):
+ * true when a proxy applies to `url` and the calling net capability must
+ * refuse rather than reach the network directly with Node's own
+ * `net`/`dgram`/`dns`, none of which honour Chromium's proxy settings. Main
+ * wires this to `session.defaultSession.resolveProxy(url)`, true for any
+ * answer but the literal `'DIRECT'` -- Chromium's own word for "nothing
+ * applies here" (../main/verifier/proxy-check.ts's `unproxiedGateways` reads
+ * the same answer the other way, for a different caller). MUST NOT reject:
+ * an implementation that cannot tell answers `true`, the same fail-closed
+ * direction every check in ./capabilities/net.ts already takes, so a caller
+ * here needs no separate error path for it.
+ */
+export type ProxyProbe = (url: string) => Promise<boolean>
+
 export interface CreateBrokerOptions {
   readonly dial: Dial
   readonly dialSecure: DialSecure
   readonly bind: Bind
   readonly listen: Listen
   readonly resolve: Resolver
+  readonly proxyConfigured: ProxyProbe
   /** `orivon.net.lookup`'s real DNS call (d-0030) -- ../adapters/node-adapters.ts's `resolveLookup`. */
   readonly resolveLookup: (hostname: string) => Promise<readonly LookupAddress[]>
   /** Clock, read once per grant -- `Grant.grantedAt`. Injected so a test can freeze it. */

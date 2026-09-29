@@ -15,6 +15,7 @@ import { checkLookup } from '../policy/lookup.js'
 import { createConnectSecure } from './net-connect-secure.js'
 import { assertSocketRoom } from './socket-room.js'
 import { isPublicUnicast } from '../policy/address.js'
+import { GENERIC_PROXY_PROBE_URL, proxyProbeUrl } from '../policy/proxy-guard.js'
 import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, ListenedServer, SendOutcome } from '../broker-contracts.js'
 import type { CapabilityKind, Datagram, LookupAddress } from '../../contracts/index.js'
 
@@ -100,6 +101,13 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, soc
       let decision: Awaited<ReturnType<typeof checkConnect>>
       let dialed: DialedSocket
       try {
+        // Checked BEFORE `checkConnect`, which resolves the host through
+        // real Node DNS -- a query no proxy sees. Waiting until after
+        // `checkConnect` would let that lookup go around a configured
+        // proxy even on the path that then denies the connect itself (T20).
+        if (await deps.proxyConfigured(proxyProbeUrl(opts.host, opts.port))) {
+          throw fail('denied', 'a system proxy is configured; tcp.connect refuses to bypass it')
+        }
         decision = await checkConnect(current.patterns, opts.host, opts.port, deps.resolve)
         if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
         // Checked here too, not only after `dial` resolves below: without
@@ -178,6 +186,11 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, soc
 
     let decision: Awaited<ReturnType<typeof checkConnect>>
     try {
+      // Same T20 ordering as `connect`'s: before `checkConnect` resolves
+      // anything, not after.
+      if (await deps.proxyConfigured(proxyProbeUrl(datagram.address, datagram.port))) {
+        return { sent: false, code: 'denied' }
+      }
       decision = await checkConnect(grant.patterns, datagram.address, datagram.port, deps.resolve, ledger.parsedPatternsFor(grant))
     } catch (error) {
       const mapped = mapIoError(error, 'net')
@@ -220,6 +233,13 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, soc
       try {
         const decision = checkBind(current.patterns, opts.port)
         if (!decision.allowed) throw fail('denied', 'the bind was not authorised')
+        // A bind names no destination to probe (../policy/proxy-guard.ts's
+        // own doc on GENERIC_PROXY_PROBE_URL) -- T20 still applies: a raw
+        // listening socket is reachable however the person's traffic is
+        // routed, proxy or not.
+        if (await deps.proxyConfigured(GENERIC_PROXY_PROBE_URL)) {
+          throw fail('denied', 'a system proxy is configured; udp.bind refuses to bypass it')
+        }
         if (signal.aborted) throw fail('revoked', 'the grant authorising this bind was withdrawn')
         bound = await deps.bind(decision.ranges, signal)
       } catch (error) {
@@ -284,6 +304,10 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, soc
       try {
         const decision = checkBind(current.patterns, opts.port)
         if (!decision.allowed) throw fail('denied', 'the listen was not authorised')
+        // Same reasoning as `udpBind`'s own T20 check just above.
+        if (await deps.proxyConfigured(GENERIC_PROXY_PROBE_URL)) {
+          throw fail('denied', 'a system proxy is configured; tcp.listen refuses to bypass it')
+        }
         if (signal.aborted) throw fail('revoked', 'the grant authorising this listen was withdrawn')
         listened = await deps.listen(decision.ranges, signal)
       } catch (error) {
@@ -416,6 +440,12 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, soc
       // `run` actually starting `deps.resolveLookup` would still let the
       // real DNS call go ahead for a capability the app no longer holds.
       if (signal.aborted) throw fail('revoked', 'the grant authorising this lookup was withdrawn')
+      // T20 covers resolution too ("Same for DNS resolution",
+      // security-model.md): checked before the real DNS call below, which
+      // no proxy sees.
+      if (await deps.proxyConfigured(proxyProbeUrl(authorisedHostname))) {
+        throw fail('denied', 'a system proxy is configured; net.lookup refuses to bypass it')
+      }
       let resolved: readonly LookupAddress[]
       try {
         resolved = await deps.resolveLookup(authorisedHostname)

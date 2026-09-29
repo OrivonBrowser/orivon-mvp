@@ -15,7 +15,7 @@
 // why. Only `brokerIpcSubsystem`, which nothing in ipc.test.ts calls,
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
-import { dialog, ipcMain, MessageChannelMain } from 'electron'
+import { dialog, ipcMain, MessageChannelMain, session as electronSession } from 'electron'
 import type { MessagePortMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
@@ -26,6 +26,7 @@ import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapt
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
+import { cachingProxyProbe } from './proxy-probe.js'
 import { createWebContextHost } from '../../main/sessions/web-context-host.js'
 import { createElectronKeychain } from '../../main/keyring/electron-keychain.js'
 import { SESSION_ONLY_STORAGE } from '../../main/keyring/seed-store.js'
@@ -381,6 +382,11 @@ export const brokerIpcSubsystem: Subsystem = {
       listen: listenTcp,
       resolve: resolveHost,
       resolveLookup,
+      // T20's fail-closed check (security-model.md, docs/open-questions.md
+      // A263), asked of the SAME session every ordinary page loads through
+      // -- not a per-app or per-context one, since every net capability
+      // shares one system/OS proxy question, not an app-scoped one.
+      proxyConfigured: cachingProxyProbe(async (url) => await electronSession.defaultSession.resolveProxy(url)),
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
