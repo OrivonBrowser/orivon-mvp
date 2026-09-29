@@ -21,9 +21,10 @@ cross-origin isolation, and it is never shown. The children are Web Workers it s
 started it. A page reaches its children through ports the main process connects to the host.
 
 The host is an offscreen, never-attached `WebContentsView`, not a hidden window of its own: it
-does not count toward Electron's window total, and Orivon already keeps the process alive with no
-counted window left (its `window-all-closed` handler), which is what a host with no window of its
-own needs.
+does not count toward Electron's window total, so it never keeps the process alive. Closing the
+last visible window ends the process as it always has (`src/main/index.ts`'s `window-all-closed`
+handler quits, except on macOS outside a private session), and every host and child with it;
+where the process stays, a host closes with its app's last page.
 
 This amends [ADR-0040](./ADR-0040-native-shaped-node-features-run-as-webassembly.md)'s "in the
 app's tab": a child still runs as WebAssembly or JavaScript in a Web Worker, at the normal broker
@@ -55,11 +56,11 @@ Measured in Electron 44:
   GPU, ports, or Workers -- it is Electron's own window count. Destroying the tab's `BrowserWindow`
   with no other counted window left triggers Electron's default `window-all-closed` quit, and a
   never-attached `WebContentsView` is not a counted window at all, so a host built with nothing
-  else present dropped the count to zero. Orivon's shell already installs its own
-  `window-all-closed` handler (`src/main/index.ts`) that keeps the process alive with no visible
-  window open, exactly as a hidden `BrowserWindow` or a hidden `BaseWindow` holding the host would
-  -- so the offscreen `WebContentsView` needs no window of its own to survive a tab closing under
-  it, and carries none of the cost of a second real window.
+  else present dropped the count to zero. Orivon registers its own `window-all-closed` handler
+  (`src/main/index.ts`), so closing a tab while another window is open never quits, and the last
+  window closing quits exactly as it would with no host: the host adds nothing to the window count,
+  which is the property wanted, since a hidden window of its own would keep the process running
+  after the person closed every window.
 
 ## Alternatives considered
 
@@ -71,10 +72,8 @@ Measured in Electron 44:
 - **A child ends with its page.** The simplest; the owner chose the app's last page instead.
 - **A native process host.** Excluded by ADR-0040.
 - **A hidden window of the host's own** (a `BrowserWindow` or a `BaseWindow` holding the host's
-  view), so the host survives independently of any other window-count handler. Measured to work,
-  but unneeded here: Orivon's shell already keeps the process alive with no counted window open,
-  so a second real window would only add one more native window for no behaviour the existing
-  handler does not already give the offscreen view.
+  view). Measured to work, and rejected: it counts as a window, so the process would keep running
+  after the person closed every visible window, until the shell learned to discount it.
 
 ## Reasoning
 
