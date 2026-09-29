@@ -26,18 +26,33 @@ let sections: readonly Section[] = []
 let current: Section = { id: '', title: '', rows: [] }
 let highlight: string | null = null
 
-function renderSectionBody (section: Section): HTMLElement {
-  // A row that opens a group gets its heading first.
+/** A section's rows, one `.card` per group when its rows carry one (a muted
+ * heading above each card, reading the way the sidebar's own group labels
+ * do), or one card for the whole section when none of its rows do. */
+function renderRows (rows: readonly Row[]): HTMLElement[] {
+  if (!rows.some((row) => row.group !== undefined)) return [h('div', { className: 'card' }, ...rows.map((row) => renderRow(row, state)))]
+  const out: HTMLElement[] = []
   let group: string | undefined
-  const rows = section.rows.filter(isShown).flatMap((row) => {
-    const heading = row.group !== undefined && row.group !== group ? h('h3', { className: 'group', textContent: row.group }) : null
-    group = row.group
-    return heading === null ? [renderRow(row, state)] : [heading, renderRow(row, state)]
-  })
+  let inGroup: HTMLElement[] = []
+  const flush = (): void => { if (inGroup.length > 0) out.push(h('div', { className: 'card' }, ...inGroup)) }
+  for (const row of rows) {
+    if (row.group !== group) {
+      flush()
+      inGroup = []
+      group = row.group
+      if (group !== undefined) out.push(h('h3', { className: 'group-label', textContent: group }))
+    }
+    inGroup.push(renderRow(row, state))
+  }
+  flush()
+  return out
+}
+
+function renderSectionBody (section: Section): HTMLElement {
   return h('section', { className: 'section' },
     h('h2', { textContent: section.title }),
     section.intro === undefined ? null : h('p', { className: 'intro', textContent: section.intro }),
-    h('div', { className: 'card' }, ...rows))
+    ...renderRows(section.rows.filter(isShown)))
 }
 
 function renderSearchBody (query: string): HTMLElement {
