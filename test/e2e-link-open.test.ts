@@ -39,6 +39,13 @@ const PAGE_A = `<!doctype html><meta charset="utf-8"><title>link-open fixture</t
 <form id="form-blank-shift" action="${ORIGIN_B}/" target="_blank" method="get">
   <button id="submit-blank-shift" type="submit">shift-click submit, form target=_blank</button>
 </form>
+<button id="fire-synthetic">fire synthetic (untrusted) shift-clicks on #shift, no real user gesture chain</button>
+<script>
+  document.getElementById('fire-synthetic').addEventListener('click', () => {
+    const a = document.getElementById('shift')
+    for (let i = 0; i < 8; i++) a.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true, cancelable: true }))
+  })
+</script>
 </body>`
 const OTHER_A = '<!doctype html><meta charset="utf-8"><title>link-open fixture other</title><body>other</body>'
 const PAGE_B = '<!doctype html><meta charset="utf-8"><title>link-open fixture B</title><body>B</body>'
@@ -209,6 +216,35 @@ it('a shift-click in a private window opens a second window in the same (private
     const second = chromePages(app).find((page) => page !== chrome)
     if (second === undefined) throw new Error('the new window\'s chrome view did not appear')
     expect((await waitForTab(second, { address: `${ORIGIN_B}/` })).ok).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, 60_000)
+
+it('a page cannot open unlimited windows with synthetic, untrusted shift-clicks: only the first opens a window, the rest fall back to ordinary tabs', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await clickAddressBarRetrying(chrome, `${ORIGIN_A}/`)
+    expect((await waitForTab(chrome, { address: `${ORIGIN_A}/` })).ok).toBe(true)
+    const view = findViewShowing(app, chrome, `${ORIGIN_A}/`)
+    if (view === undefined) throw new Error('no view showing the fixture page')
+    const before = await tabIds(chrome)
+
+    // 8 synthetic (isTrusted: false) shift-clicks, fired in a tight loop with no real gesture
+    // between them -- measured against Electron 44: this still reaches windowOpenHandler with a
+    // real 'new-window' disposition each time, so nothing but the rate limiter stops this from
+    // opening 8 windows.
+    await view.click('#fire-synthetic')
+
+    // Only the first is spaced far enough from nothing before it to pass the limiter; give the
+    // rest time to land as ordinary tabs instead, then settle and read once (they never appear as
+    // more windows, however long this waits).
+    await waitFor(async () => (await tabIds(chrome)).length > before.length)
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    expect(chromePages(app)).toHaveLength(2)
+    expect((await tabIds(chrome)).length).toBe(before.length + 7)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

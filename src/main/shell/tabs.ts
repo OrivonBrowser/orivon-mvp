@@ -86,7 +86,7 @@ export class TabManager {
       emitState: () => { this.emitState() },
       captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },
       forgetTab: (id) => { this.forgetTab(id, false) },
-      openTab: (url, active) => { this.createTab(url, active) },
+      openTab: (url, active) => this.liveWebContents(this.createTab(url, active)),
       adoptPopup: (view, partition, active) => { this.adoptPopup(view, partition, active) },
       openWindow: (url) => shell?.openWindow?.(url),
       atCapacity: () => this.atCapacity(),
