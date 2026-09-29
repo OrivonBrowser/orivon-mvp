@@ -20,7 +20,9 @@ export interface NodeFsError extends Error {
 }
 
 /** Linux values, as Node reports them on the platform the broker runs on. */
-const ERRNO: Readonly<Record<string, number>> = { ENOENT: -2, EBADF: -9, EACCES: -13, EEXIST: -17, EISDIR: -21, EINVAL: -22 }
+const ERRNO: Readonly<Record<string, number>> = {
+  ENOENT: -2, EBADF: -9, EACCES: -13, EEXIST: -17, ENOTDIR: -20, EISDIR: -21, EINVAL: -22, ENOTEMPTY: -39
+}
 
 /** A Node-shaped fs error: `EISDIR: illegal operation on a directory, read`, with `code`, `errno`, `syscall` and, when there is one, `path`. */
 export function fsError (code: string, description: string, syscall: string, path?: string): NodeFsError {

@@ -23,7 +23,6 @@
 // 'unimplemented'.
 
 import { type NodeStats } from './stats.js'
-import { syncUnsupported } from './unsupported.js'
 import {
   open, openHandle, openSync, close, closeSync, read, readSync, write, writeSync, fstat, fstatSync,
   ftruncate, fsync, type NodeCallback
@@ -33,14 +32,16 @@ import { promises } from './promises.js'
 import { FS_CONSTANTS } from './constants.js'
 import { getOrivon } from '../orivon-global.js'
 import {
-  doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRename, doRm, doStat, doUnlink, doWriteFile,
-  type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
+  doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRealpath, doRename, doRm, doRmdir, doStat,
+  doUnlink, doWriteFile,
+  type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmdirOptions, type RmOptions, type WriteFileOptions
 } from './core.js'
 import {
   doAccessSync, doAppendFileSync, doCopyFileSync, doLstatSync, doMkdirSync, doMkdtempSync, doReaddirSync,
-  doRenameSync, doRmSync, doRmdirSync, doStatSync, doUnlinkSync, doWriteFileSync, existsSyncCore
+  doRealpathSync, doRenameSync, doRmSync, doRmdirSync, doStatSync, doUnlinkSync, doWriteFileSync, existsSyncCore
 } from './core-sync.js'
 import type { NodeDirent } from './stats.js'
+import { Buffer } from 'buffer'
 import { decode, encodingOf } from '../encoding.js'
 import { toConfinedPath, type PathLike } from './paths.js'
 import { isRootPath, rootIsDirectoryError } from './root.js'
@@ -143,7 +144,7 @@ export function rmSync (path: PathLike, opts?: RmOptions): void {
   doRmSync(path, opts)
 }
 
-export function rmdirSync (path: PathLike, opts?: { recursive?: boolean }): void {
+export function rmdirSync (path: PathLike, opts?: RmdirOptions): void {
   doRmdirSync(path, opts)
 }
 
@@ -167,8 +168,22 @@ export function mkdtempSync (prefix: string): string {
   return doMkdtempSync(prefix)
 }
 
-/** No async realpath exists in this shim for realpathSync to share a core with (fs/core-sync.ts's own header) -- a permanent refusal, not a gap. */
-export const realpathSync = syncUnsupported('fs.realpathSync')
+export interface RealpathOptions { encoding?: string | null }
+
+/** realpathSync/realpath share this: `encoding: 'buffer'` returns the path as a Buffer, same as readdir's own encoding option. */
+function realpathResult (path: string, options: RealpathOptions | string | null | undefined): string | Buffer {
+  return encodingOf(options) === 'buffer' ? Buffer.from(path) : path
+}
+
+/** ADR-0016's Worker amendment: works only in a Worker of a cross-origin isolated app (core-sync.ts's doRealpathSync); elsewhere it throws the same named refusal every other *Sync export does. `.native` bypasses Node's own realpath cache -- this shim keeps none, so it is the exact same call. */
+export function realpathSync (path: PathLike, options?: RealpathOptions | string | null): string | Buffer {
+  return realpathResult(doRealpathSync(path), options)
+}
+export namespace realpathSync {
+  export function native (path: PathLike, options?: RealpathOptions | string | null): string | Buffer {
+    return realpathResult(doRealpathSync(path), options)
+  }
+}
 
 export function writeFile (path: PathLike, data: unknown, callback: NodeCallback<void>): void
 export function writeFile (path: PathLike, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
@@ -227,6 +242,34 @@ export function unlink (path: PathLike, callback: NodeCallback<void>): void {
   doUnlink(path).then(() => callback(null), (error) => callback(error as Error))
 }
 
+export function rmdir (path: PathLike, callback: NodeCallback<void>): void
+export function rmdir (path: PathLike, options: RmdirOptions, callback: NodeCallback<void>): void
+export function rmdir (path: PathLike, ...args: readonly unknown[]): void {
+  const { options, callback } = splitTail<RmdirOptions>(args)
+  doRmdir(path, options).then(() => callback(null), (error) => callback(error as Error))
+}
+
+function realpathCallback (path: PathLike, args: readonly unknown[]): void {
+  const { options, callback } = splitTail<RealpathOptions | string | null>(args)
+  doRealpath(path).then(
+    (result) => callback(null, realpathResult(result, options)),
+    (error) => callback(error as Error)
+  )
+}
+
+export function realpath (path: PathLike, callback: NodeCallback<string | Buffer>): void
+export function realpath (path: PathLike, options: RealpathOptions | string | null, callback: NodeCallback<string | Buffer>): void
+export function realpath (path: PathLike, ...args: readonly unknown[]): void {
+  realpathCallback(path, args)
+}
+export namespace realpath {
+  export function native (path: PathLike, callback: NodeCallback<string | Buffer>): void
+  export function native (path: PathLike, options: RealpathOptions | string | null, callback: NodeCallback<string | Buffer>): void
+  export function native (path: PathLike, ...args: readonly unknown[]): void {
+    realpathCallback(path, args)
+  }
+}
+
 export function access (path: PathLike, callback: NodeCallback<void>): void
 export function access (path: PathLike, mode: number, callback: NodeCallback<void>): void
 export function access (path: PathLike, ...args: readonly unknown[]): void {
@@ -249,9 +292,7 @@ export function otherFsMember (prop: string) {
   return refuseShim(
     `fs.${prop}`, 'unimplemented',
     `fs.${prop} is real Node fs surface this shim has not implemented and has not decided ` +
-    'whether it will -- distinct from realpathSync, which is a decided, permanent refusal ' +
-    '(ADR-0016: no async realpath exists here for it to share a core with). ' +
-    'See docs/planning/compatibility-matrix.md Table 3.'
+    'whether it will. See docs/planning/compatibility-matrix.md Table 3.'
   )
 }
 
@@ -260,7 +301,7 @@ export * from './generated/fs.js'
 
 export default refusingProxy({
   readFile, readFileSync, writeFile, writeFileSync, appendFile, unlink, access,
-  mkdir, readdir, stat, rm, rename, open, close, read, write, fstat, ftruncate, fsync, promises,
+  mkdir, readdir, stat, rm, rmdir, rename, realpath, open, close, read, write, fstat, ftruncate, fsync, promises,
   createReadStream, createWriteStream,
   statSync, lstatSync, mkdirSync, readdirSync, rmSync, rmdirSync, renameSync, existsSync, accessSync,
   appendFileSync, unlinkSync, copyFileSync, mkdtempSync, realpathSync, openSync, closeSync, readSync, writeSync, fstatSync,

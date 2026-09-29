@@ -23,8 +23,9 @@ import { openHandle } from './handle.js'
 import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './root.js'
-import { confine, guarded, type PathLike } from './paths.js'
+import { confine, fsError, guarded, type PathLike } from './paths.js'
 import { decode, encode, encodingOf } from '../encoding.js'
+import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { Buffer } from 'buffer'
 import { join } from 'path'
 
@@ -32,6 +33,7 @@ export interface ReadFileOptions { encoding?: string | null }
 export interface WriteFileOptions { encoding?: string | null, flag?: string }
 export interface MkdirOptions { recursive?: boolean }
 export interface RmOptions { recursive?: boolean, force?: boolean }
+export interface RmdirOptions { recursive?: boolean }
 export interface ReaddirOptions { encoding?: string | null, withFileTypes?: boolean }
 
 export async function doReadFile (path: PathLike, encoding: string | null | undefined): Promise<Uint8Array | string> {
@@ -113,6 +115,50 @@ export async function doRm (path: PathLike, opts: RmOptions | undefined): Promis
     if (opts?.force === true && (error as { code?: string }).code === 'ENOENT') return
     throw error
   }
+}
+
+/**
+ * Real Node's legacy rmdir: `ENOENT` if the path is missing, `ENOTDIR` if it
+ * names a file, `ENOTEMPTY` if the directory has entries -- each checked
+ * BEFORE ever asking the broker to remove anything, over a `stat` (missing
+ * or not a directory) and then a `readdir` (empty or not) -- orivon.fs's own
+ * `rm` cannot tell these apart itself: it fails the same way (its real-Node
+ * adapter's own `ERR_FS_EISDIR`, mapped to 'internal') whether the directory
+ * `recursive: false` refuses to touch is empty or not. Once confirmed empty,
+ * this rides `rm` with `recursive: true` -- orivon.fs has one remove
+ * primitive, which always needs it for a directory, empty or not.
+ * `{ recursive: true }` skips every check and removes the whole tree, same
+ * as `rm`'s own option.
+ */
+export async function doRmdir (path: PathLike, opts: RmdirOptions | undefined): Promise<void> {
+  const confined = await confine(path, 'rmdir')
+  if (isRootPath(confined)) rootNotRemovableError('rmdir')
+  if (opts?.recursive === true) {
+    await guarded(async () => { await getOrivon().fs.rm(confined, { recursive: true }) })
+    return
+  }
+  const pathText = typeof path === 'string' ? path : confined
+  const stat = await guarded(async () => await getOrivon().fs.stat(confined))
+  if (!stat.isDirectory) throw fsError('ENOTDIR', 'not a directory', 'rmdir', pathText)
+  const entries = await guarded(async () => await getOrivon().fs.readdir(confined))
+  if (entries.length > 0) throw fsError('ENOTEMPTY', 'directory not empty', 'rmdir', pathText)
+  await guarded(async () => { await getOrivon().fs.rm(confined, { recursive: true }) })
+}
+
+/**
+ * The real path of anything this shim can stat: orivon.fs never reports a
+ * symlink as its own kind (`doLstatSync`'s own comment -- one that would
+ * escape confinement is denied before any access, and one that would not is
+ * resolved transparently), so the "real" path of an existing entry is
+ * exactly its normalised absolute path under the virtual root -- no broker
+ * round trip beyond confirming it exists (`ENOENT` otherwise). The root
+ * itself always exists, so it is answered locally, like every other root
+ * call (`root.ts`).
+ */
+export async function doRealpath (path: PathLike): Promise<string> {
+  const confined = await confine(path, 'lstat')
+  if (!isRootPath(confined)) await guarded(async () => { await getOrivon().fs.stat(confined) })
+  return isRootPath(confined) ? VIRTUAL_ROOT : join(VIRTUAL_ROOT, confined)
 }
 
 export async function doRename (from: PathLike, to: PathLike): Promise<void> {

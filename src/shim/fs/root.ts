@@ -38,7 +38,7 @@ export function rootReaddirError (): never {
   throw fsError('EACCES', "permission denied (orivon.fs cannot list the app's root directory itself; list a folder inside it)", 'scandir')
 }
 
-/** rm/unlink/rename of the root: it is where the app's files live, and nothing may remove or move it. */
+/** rm/rmdir/unlink/rename of the root: it is where the app's files live, and nothing may remove or move it. */
 export function rootNotRemovableError (syscall: string): never {
   throw fsError('EACCES', "permission denied (the app's root directory cannot be removed or moved)", syscall)
 }

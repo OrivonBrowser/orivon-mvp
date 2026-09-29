@@ -7,8 +7,8 @@
 // ADR-0016's amendment: every path-based fs *Sync call works in a Worker (a
 // forked child or a worker_threads thread) of a cross-origin isolated app,
 // over this twin. Elsewhere -- the page, or a Worker with no
-// SharedArrayBuffer -- `syncFs()` throws the same named refusal
-// fs/unsupported.ts's syncUnsupported does.
+// SharedArrayBuffer -- `syncFs()` throws fs/unsupported.ts's own
+// OrivonFsUnsupportedError.
 
 import { SYNCHRONOUS } from '../worker/sync-channel.js'
 import { getOrivon } from '../orivon-global.js'

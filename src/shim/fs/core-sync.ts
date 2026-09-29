@@ -2,8 +2,8 @@
 // every path-based fs *Sync call works in a Worker (a forked child or a
 // worker_threads thread) of a cross-origin isolated app, over the Worker's
 // synchronous twin (sync-orivon.ts). Elsewhere it throws the same named
-// refusal fs/unsupported.ts's syncUnsupported does (sync-orivon.ts's
-// syncFs()).
+// refusal (fs/unsupported.ts's OrivonFsUnsupportedError, thrown by
+// sync-orivon.ts's syncFs()).
 //
 // SHARES CONFINEMENT, ROOT SPECIAL-CASING, STATS CONVERSION AND ENCODING
 // WITH core.ts'S ASYNC do*() FUNCTIONS (fs/paths.ts, fs/root.ts, fs/stats.ts,
@@ -16,12 +16,13 @@ import { NodeDirent, toNodeStats, type NodeStats } from './stats.js'
 import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './root.js'
-import { TMPDIR_CONFINED, isInTmpdir, toConfinedPath, type PathLike } from './paths.js'
+import { TMPDIR_CONFINED, fsError, isInTmpdir, toConfinedPath, type PathLike } from './paths.js'
 import { openHandleSync } from './handle.js'
 import { guardedSync, syncFs, tryStatSync, type SyncOrivonFs } from './sync-orivon.js'
 import { toNodeError } from '../node-errors.js'
 import { encode, encodingOf } from '../encoding.js'
-import type { MkdirOptions, ReaddirOptions, RmOptions, WriteFileOptions } from './core.js'
+import { VIRTUAL_ROOT } from '../virtual-root.js'
+import type { MkdirOptions, ReaddirOptions, RmdirOptions, RmOptions, WriteFileOptions } from './core.js'
 import { Buffer } from 'buffer'
 import { join } from 'path'
 
@@ -115,16 +116,36 @@ export function doRmSync (path: PathLike, opts: RmOptions | undefined): void {
 }
 
 /**
- * Real Node's rmdir never takes `force` -- same reasoning as core.ts's
- * doRm/doUnlink split: orivon.fs has one remove primitive, not a
- * directory-only one. Unlike real Node's own legacy rmdir, which removes an
- * EMPTY directory with no option at all, this rides the same "rm" primitive
- * `rm()`/`rmSync()` do, which always needs `recursive: true` for a
- * directory, empty or not -- there is no narrower broker call this could
- * ask for instead.
+ * doRmdir's synchronous twin (core.ts's own doc comment has the detail):
+ * `ENOENT` missing, `ENOTDIR` a file, `ENOTEMPTY` a non-empty directory --
+ * each checked over the twin's own `stat`/`readdir` before ever asking it to
+ * remove anything, since its `rm` cannot tell an empty directory from a
+ * non-empty one itself. Once confirmed empty, this rides `rm` with
+ * `recursive: true`, the same primitive `rmSync` uses -- orivon.fs has one
+ * remove primitive, which always needs it for a directory, empty or not.
+ * `{ recursive: true }` skips every check and removes the whole tree.
  */
-export function doRmdirSync (path: PathLike, opts: { recursive?: boolean } | undefined): void {
-  doRmSync(path, opts)
+export function doRmdirSync (path: PathLike, opts: RmdirOptions | undefined): void {
+  const confined = toConfinedPath(path, 'rmdir')
+  if (isRootPath(confined)) rootNotRemovableError('rmdir')
+  const fs = syncFs('fs.rmdirSync')
+  if (opts?.recursive === true) {
+    guardedSync(() => { fs.rm(confined, { recursive: true }) })
+    return
+  }
+  const pathText = typeof path === 'string' ? path : confined
+  const stat = guardedSync(() => fs.stat(confined))
+  if (!stat.isDirectory) throw fsError('ENOTDIR', 'not a directory', 'rmdir', pathText)
+  const entries = guardedSync(() => fs.readdir(confined))
+  if (entries.length > 0) throw fsError('ENOTEMPTY', 'directory not empty', 'rmdir', pathText)
+  guardedSync(() => { fs.rm(confined, { recursive: true }) })
+}
+
+/** doRealpath's synchronous twin (core.ts's own doc comment has the detail): confirms the confined path exists (over the twin's `stat`), then returns its normalised absolute path under the virtual root -- no other broker call, since orivon.fs never reports a symlink as its own kind. */
+export function doRealpathSync (path: PathLike): string {
+  const confined = toConfinedPath(path, 'lstat')
+  if (!isRootPath(confined)) guardedSync(() => { syncFs('fs.realpathSync').stat(confined) })
+  return isRootPath(confined) ? VIRTUAL_ROOT : join(VIRTUAL_ROOT, confined)
 }
 
 export function doRenameSync (from: PathLike, to: PathLike): void {
