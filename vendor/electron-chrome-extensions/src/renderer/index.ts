@@ -458,6 +458,10 @@ export const injectExtensionAPIs = () => {
       },
 
       notifications: {
+        // Orivon patch: matches api/notifications.ts's own new `permission:
+        // 'notifications'` handler option, the same belt-and-suspenders
+        // shape `cookies` (above) already uses.
+        shouldInject: () => Array.isArray(manifest.permissions) && manifest.permissions.includes('notifications'),
         factory: (base) => {
           return {
             ...base,

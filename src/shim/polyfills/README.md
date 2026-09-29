@@ -3,7 +3,9 @@
 **What lives here.** The modules a dependency graph needs just to *evaluate*, independent of any
 capability: wrappers over the `buffer`, `crypto`, `os`, `path`, `util` and `zlib` packages, and
 hand-written `assert`, `querystring`, `string_decoder`, `timers`, `url` and `stream/promises`,
-and `module` (`createRequire` for a native addon's `.node` path, over [`../addon/`](../addon/)).
+`module` (`createRequire` for a native addon's `.node` path, over [`../addon/`](../addon/)),
+`worker_threads` (what is true on Node's main thread; starting a thread refuses by name) and `vm`
+(code run in the page's own context).
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../errors.ts`](../errors.ts),
 [`../unimplemented.ts`](../unimplemented.ts) and [`../virtual-root.ts`](../virtual-root.ts)

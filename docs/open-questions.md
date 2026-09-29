@@ -1426,18 +1426,41 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
+### A287: A CommonJS `require()` of a shim module gets no named refusal **[AI-REC]**
+
+- **Question:** Refusal by name lives on each module's default export. A CommonJS dependency
+  bundled by esbuild 0.25 gets the ESM namespace from `require('os')`, where an unbuilt member
+  (`os.userInfo`) is `undefined`, called as a bare `TypeError`. Vite's and webpack's: unverified.
+- **Why it matters:** most Node dependencies are CommonJS, so a port sees `undefined is not a
+  function` with no name.
+- **Options:** export a refusing stand-in by name for each Node member a module lacks, generated
+  from Node's own export list (rec.); a CommonJS wrapper per module; accept it, as documented.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing: it degrades an error message, never a working call
+
 ### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
 
-- **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs.
-  Sandboxed it runs, though a fresh extension's first worker races it and misses every time
-  (20/20 fixture, 4/4 real) -- the reload already in place recovers every miss. `--no-sandbox`
-  was a Playwright default, not Orivon's/the kernel's; a restricted-namespace AppImage/deb would.
+- **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs. Sandboxed it
+  runs, though a fresh extension's first worker races it and misses every time (20/20 fixture, 4/4 real)
+  -- the reload in place recovers every miss. `--no-sandbox` was a Playwright default, not Orivon's/the
+  kernel's; an AppImage on a namespace-restricted machine would; a `.deb` installs the setuid helper.
 - **Why it matters:** there, every worker keeps Electron's native, partial `chrome.tabs`/`windows`
   permanently, with no reload able to fix it.
 - **Options:** confirm real packaged-launch flags on such a machine (rec., unresearched); warn and
   run with partial APIs; refuse to load extensions when unsandboxed.
 - **Who decides:** research first
 - **Blocks:** extensions build plan package 4's MV3 service-worker API surface
+
+### A291: The packaged app carries no licence texts for its bundled code **[OWNER]**
+
+- **Question:** The packaged app (`out/**` plus `package.json`) bundles vendored and npm code
+  with no licence texts anywhere in it. Does the package ship any?
+- **Why it matters:** `vendor/`'s GPL-3.0, MIT and BSD-3-Clause code, and every npm dependency's
+  own licence, reach a person's machine with nothing beside them once packaged.
+- **Options:** a generated third-party notices file shipped in the package (rec.); the licence
+  texts shipped beside each bundle instead.
+- **Who decides:** owner
+- **Blocks:** the first public release
 
 ### A292: A cache-served app's network document runs with its grants until the tab swaps session **[AI-REC]**
 

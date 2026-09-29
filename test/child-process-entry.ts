@@ -9,6 +9,7 @@ export interface ChildProcessResults {
   readonly missing: { code?: string }
   readonly forked: { reply?: unknown, fileText?: string, exitCode?: number | null }
   readonly killed: { events: string[] }
+  readonly component: { events: string[], stdout: string, stderr: string, fileText?: string }
   readonly error?: string
 }
 
@@ -63,7 +64,20 @@ async function run (): Promise<ChildProcessResults> {
   await new Promise((resolve) => killedChild.once('spawn', resolve))
   killedChild.kill()
 
+  progress.push('component')
+  const componentChild = spawn('/bin/tour', [])
+  componentChild.on('error', (error: Error) => progress.push(`component error ${error.message}`))
+  let componentOut = ''
+  let componentErr = ''
+  componentChild.stdout?.on('data', (chunk: { toString: () => string }) => { componentOut += chunk.toString() })
+  componentChild.stderr?.on('data', (chunk: { toString: () => string }) => { componentErr += chunk.toString() })
+  const componentEvents = track(componentChild)
+  componentChild.stdin?.end('from a component\n')
+  const componentFinished = await componentEvents
+  const written = await orivon.fs.readFile('from-component.txt').catch(() => undefined)
+
   return {
+    component: { events: componentFinished, stdout: componentOut, stderr: componentErr, ...(written === undefined ? {} : { fileText: new TextDecoder().decode(written) }) },
     echo: { events: await echoEvents, stdout },
     native: await failure('/bin/native'),
     missing: await failure('git'),

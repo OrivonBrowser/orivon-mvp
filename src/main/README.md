@@ -41,7 +41,7 @@ rather than editing here.
 | [`dev/`](dev/) | Dev only: inert, gated, or compiled out | no | `local-ddoc.ts` only, lazily |
 | [`verifier/`](verifier/) | Start the `.eth` verifier, trust its certificate, choose its checkpoint | host process, checkpoint, IPNS sequences | `verifier-subsystem.ts` only |
 | [`embed/`](embed/) | The pages an app shows inside itself, in a `<webview>` (`ADR-0039`) | which app owns which guest | `embed-host.ts` and `embed-subsystem.ts` only |
-| [`extensions/`](extensions/) | Install, register and load Chrome extensions | the installed-extension registry | all but `crx.ts`, `crx3-format.ts`, `registry.ts` and `unpack-runner.ts`'s pure half |
+| [`extensions/`](extensions/) | Install, register and load Chrome extensions | the installed-extension registry | all but `crx.ts`, `crx3-format.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-host-access.ts`, `extension-sender-id-check.ts`, `extension-tab-details.ts`, `extension-url-policy.ts`, `extensions-domain.ts`, `extensions-view-runner.ts`, `extensions-view.ts`, `registry-runner.ts`, `registry.ts`, `store-download-seam.ts`, `store-runner.ts`, `store-test-hook.ts` and `unpack-runner.ts` |
 
 ### The organising rule
 

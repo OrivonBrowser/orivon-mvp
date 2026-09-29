@@ -4,6 +4,7 @@
 // they would cross a thread.
 
 import { hasJspi, jspiWebAssembly } from '../../../wasi/tests/support/jspi.js'
+import { instantiateFrom } from '../../../wasi-p2/tests/support/component-fixture.js'
 import type { ParentChannel } from '../../../worker/parent.js'
 import type { FromWorker, ToWorker } from '../../../worker/protocol.js'
 import { type ForkScope, runFork } from '../../../worker/runtime-fork.js'
@@ -33,7 +34,7 @@ export class InProcessWorker {
   postMessage (message: ToWorker): void {
     queueMicrotask(() => {
       if (this.terminated) return
-      if (message.type === 'spawn') void runSpawn(message, this.#parent(), jspiWebAssembly)
+      if (message.type === 'spawn') void runSpawn(message, this.#parent(), jspiWebAssembly, async (glue) => instantiateFrom(await (await fetch(glue)).text(), jspiWebAssembly))
       else if (message.type === 'fork') void runFork(message, this.#parent(), this.#scope, async (url) => { await forkModules.get(url)?.(this.#scope) })
       else for (const handler of this.#handlers) handler(message)
     })

@@ -17,6 +17,13 @@ README.
 
 **Owner stream.** `shim`.
 
+**A napi-rs build loads as napi-rs's own loaders load it** (`load.ts`'s `napiRsConventions`):
+Node-API is offered from `env` as well as its own namespaces, an imported `env.memory` is supplied at
+the size the binary declares (`imported-memory.ts`), and each `__napi_register__*` export runs
+before the module initializes. A napi-rs 3 build linked against emnapi 2's archive loads on the
+stable emnapi runtime this loader uses: plain calls, strings, async work and file reads pass
+against a real one ([`tests/napi-rs.test.ts`](tests/napi-rs.test.ts), opt-in).
+
 **Where a build is looked for** (`resolve.ts`): beside the `.node` path on the app's origin, as
 `<file>.node.wasm`, `<file>.wasm` (emnapi) or `<file>.wasm32-wasi.wasm` (napi-rs). None found is
 `ERR_DLOPEN_FAILED` with `reason: 'excluded'`, naming the three paths.
@@ -28,8 +35,12 @@ they refuse with `NOSYS` and one console line: an addon that needs files is load
 child.
 
 **What an addon cannot do yet:** run a threaded build (`wasm32-wasip1-threads` refuses by name,
-`not-built`), or open sockets. A command build, one exporting `_start`, refuses too: emnapi starts
-one through Node's own WASI internals, so an addon is built as a reactor, as napi-rs builds it.
+`not-built`), or open sockets. A napi-rs package's published WebAssembly build is threaded, and
+runs without this loader: its package's own browser loader, which the parent package's `browser`
+field selects, runs it in an app whose manifest sets `crossOriginIsolated: true`
+([`e2e-napi-rs-package.test.ts`](../../../test/e2e-napi-rs-package.test.ts), opt-in). A command
+build, one exporting `_start`, refuses too: emnapi starts one through Node's own WASI internals,
+so an addon is built as a reactor, as napi-rs builds it.
 Its stdout and stderr go to `process.stdout` and `process.stderr`, as Node's do: the page console,
 or a forked child's pipes.
 

@@ -1,27 +1,8 @@
-// Ambient types for the five vendored electron-chrome-extensions entry
-// points extension-host.ts needs the RUNTIME VALUE of: the
-// ElectronChromeExtensions class (src/browser/index.ts), the partition and
-// router sender-check/event-filter setters (src/browser/partition.ts,
-// src/browser/router.ts), and the cookies/tabs host-access setters
-// (src/browser/api/cookies.ts, src/browser/api/tabs.ts).
-//
-// Importing those files' real paths pulls their whole tree (electron-vite
-// serves this out/main/index.js on that same bundle) into THIS project's
-// stricter tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes,
-// noImplicitOverride) -- measured, ~66 diagnostics across 16 files that
-// satisfy vendor/tsconfig.json's own, deliberately looser settings
-// (ADR-0043: "its TypeScript checks under vendor/tsconfig.json"). Patching
-// every one would mean reformatting most of the vendored tree, the opposite
-// of what ADR-0043 asks for.
-//
-// electron.vite.config.ts's `main.resolve.alias` maps the five virtual
-// specifiers below to the real vendor files for BUNDLING (Rollup follows
-// the alias to the real source and compiles it in, same as any other
-// import); nothing here changes at runtime. For TYPE CHECKING, tsc cannot
-// resolve a virtual specifier to any real file, so it falls back to this
-// ambient declaration instead of opening the real one -- the boundary this
-// file exists to draw. Kept intentionally narrow: only the members
-// extension-host.ts actually calls.
+// Ambient types for the five virtual electron-chrome-extensions specifiers
+// extension-host.ts imports the RUNTIME VALUE of -- src/main/extensions/
+// README.md's Design notes say why this boundary exists and how
+// electron.vite.config.ts's alias resolves each one for bundling. Kept
+// intentionally narrow: only the members extension-host.ts actually calls.
 declare module 'orivon:crx-extensions' {
   namespace ElectronChromeExtensionsNS {
     interface CreateTabDetails {
@@ -47,7 +28,7 @@ declare module 'orivon:crx-extensions' {
       navigateTab?(tab: Electron.WebContents, url: string): void | Promise<void>
     }
     interface Options extends Impl {
-      license: 'GPL-3.0' | 'Patron-License-2025-10-08'
+      license: 'GPL-3.0' | 'Patron-License-2020-11-19'
       session?: Electron.Session
       preloadPath?: string
     }
@@ -60,6 +41,14 @@ declare module 'orivon:crx-extensions' {
     addTab (tab: Electron.WebContents, window: Electron.BaseWindow): void
     removeTab (tab: Electron.WebContents): void
     selectTab (tab: Electron.WebContents): void
+    /** Tells the library no tracked tab is the visible one in `window` right
+     * now -- ExtensionStore.clearActiveTab's own doc. */
+    clearActiveTab (window: Electron.BaseWindow): void
+    /** Fires once a browserAction popup's own BrowserWindow exists, before
+     * its page has loaded (browser-action.ts's own activateClick, right
+     * after `new PopupView(...)`) -- the only member of this class
+     * extension-host.ts listens for, so it is kept to that one event name. */
+    on (event: 'browser-action-popup-created', listener: (popup: { browserWindow?: { webContents: Electron.WebContents } }) => void): void
   }
 }
 
@@ -94,4 +83,8 @@ declare module 'orivon:crx-extensions-cookies' {
 
 declare module 'orivon:crx-extensions-tabs' {
   export function setTabUrlAccessCheck (check: (manifest: unknown, url: string | undefined) => boolean): void
+  /** Gates chrome.tabs.insertCSS: host access only, never satisfied by the
+   * `tabs` permission alone (that one only ever governs url/title/
+   * favIconUrl visibility). */
+  export function setTabHostAccessCheck (check: (manifest: unknown, url: string | undefined) => boolean): void
 }

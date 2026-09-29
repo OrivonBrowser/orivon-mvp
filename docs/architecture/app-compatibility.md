@@ -126,10 +126,11 @@ GUI toolkit, so WebAssembly does not turn a Qt or JVM app into a tier-2 app.
 **A standalone WASI program, inside the app's tab.** WebAssembly that imports WASI instead of
 calling JavaScript runs against a host in the Node shim (`src/shim/wasi/`), reached through
 Node's `wasi` module: each file call it makes is an `orivon.fs` call under the app's grants, so it
-gains nothing the app's JavaScript lacks (ADR-0040). Files work; sockets do not yet
-(`compatibility-matrix.md` Table 4 row 12). The same shape is what native modules and child
-processes become for a ported app: an addon's WebAssembly build, a WASI program for `spawn`, a Web
-Worker for `fork`. Native machine code never runs for an app.
+gains nothing the app's JavaScript lacks (ADR-0040). A preview1 program reaches files; a WASI 0.2
+component, which `spawn` runs from the jco output a port ships beside it (`src/shim/wasi-p2/`),
+also opens sockets through `orivon.net`. The same shape is what native modules and child processes
+become for a ported app: an addon's WebAssembly build, a WASI program or component for `spawn`, a
+Web Worker for `fork`. Native machine code never runs for an app.
 
 **Not `orivon-runtime`.** The Wasmtime host `ADR-0002` defers is a separate thing, still not
 built. Its real jobs are narrower: containment for untrusted third-party code, and portability to

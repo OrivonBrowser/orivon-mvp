@@ -9,13 +9,27 @@ import { OrivonShimError } from '../../errors.js'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { hasJspi } from '../../wasi/tests/support/jspi.js'
 import { echoProgram, failingProgram } from '../../wasi/tests/support/programs.js'
+import { tourFixture } from '../../wasi-p2/tests/support/component-fixture.js'
 import childProcess, { type ChildProcess, exec, execFile, execFileSync, fork, spawn } from '../index.js'
 import { failNext, forkModules, workers } from './support/in-process-worker.js'
 
 vi.mock('../../worker/launch.js', async () => ({ createChildWorker: (await import('./support/in-process-worker.js')).createInProcessWorker }))
 
 const ORIGIN = 'https://app.test'
-const PROGRAMS: Record<string, Uint8Array<ArrayBuffer>> = {
+const COMPONENT_HEADER = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00])
+const tour = tourFixture()
+/** The fixture component's jco output under `<dir>.p2/`, as a port ships it. */
+function componentOutput (dir: string, glue: string = tour.glue): Record<string, Uint8Array<ArrayBuffer> | string> {
+  return { [`${dir}.p2/${dir.slice(dir.lastIndexOf('/') + 1)}.js`]: glue, ...Object.fromEntries([...tour.cores].map(([name, bytes]) => [`${dir}.p2/${name}`, bytes as Uint8Array<ArrayBuffer>])) }
+}
+const PROGRAMS: Record<string, Uint8Array<ArrayBuffer> | string> = {
+  '/bin/tour.wasm': COMPONENT_HEADER,
+  ...componentOutput('/bin/tour'),
+  ...componentOutput('/bin/only'),
+  '/bin/raw.wasm': COMPONENT_HEADER,
+  '/bin/unmarked.wasm': COMPONENT_HEADER,
+  ...componentOutput('/bin/unmarked', tour.glue.replace(/([\w$]+)\.manuallyAsync\s*=\s*!0/g, 'void 0')),
+  '/bin/fallback.p2/fallback.js': '<!doctype html><title>index</title>',
   '/bin/echo.wasm': echoProgram(),
   '/bin/fail.wasm': failingProgram('went wrong\n', 3),
   '/bin/native': new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0])
@@ -109,6 +123,42 @@ describe.skipIf(!hasJspi)('spawn', () => {
     expect(() => spawn('/bin/echo', [], { shell: true })).toThrow(OrivonShimError)
     expect(() => spawn('/bin/echo', [], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })).toThrow(OrivonShimError)
     expect(() => spawn('/bin/echo', [], { uid: 0 })).toThrow(OrivonShimError)
+  })
+})
+
+describe.skipIf(!hasJspi)('spawn a WASI 0.2 component', () => {
+  it('runs its jco output: stdin in, stdout and stderr out, a file through orivon.fs, and its exit', async () => {
+    const child = spawn('/bin/tour')
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.on('data', (chunk: Uint8Array) => { stdout += new TextDecoder().decode(chunk) })
+    child.stderr?.on('data', (chunk: Uint8Array) => { stderr += new TextDecoder().decode(chunk) })
+    const seen = events(child)
+    child.stdin?.end('from spawn\n')
+    expect(await seen).toEqual(['spawn', 'exit 1 null', 'close 1 null'])
+    expect(stdout).toBe('from spawn\n')
+    expect(stderr).toBe('done\n')
+    expect(await disk.readRealFile('from-component.txt')).toBe('written by a component\n')
+  })
+
+  it('finds the output alone, with no .wasm beside it', async () => {
+    const child = spawn('/bin/only')
+    child.stdin?.end()
+    expect(await events(child)).toContain('exit 1 null')
+  })
+
+  it('keeps a missing program ENOENT where the server answers every path with a fallback page', async () => {
+    expect(await events(spawn('/bin/fallback'))).toEqual(['error ENOENT', 'close -2 null'])
+  })
+
+  it('refuses a component shipped without its jco output, naming the command to make it', async () => {
+    const failure = new Promise<{ code?: string, message: string }>((resolve) => spawn('/bin/raw').on('error', resolve))
+    expect(await failure).toMatchObject({ code: 'ENOEXEC', message: expect.stringMatching(/jco transpile \/bin\/raw\.wasm --name raw -o raw\.p2/) })
+  })
+
+  it('refuses output that lowers the host\'s asynchronous imports synchronously, naming them', async () => {
+    const failure = new Promise<{ code?: string, message: string }>((resolve) => spawn('/bin/unmarked').on('error', resolve))
+    expect(await failure).toMatchObject({ code: 'ENOEXEC', message: expect.stringContaining('wasi:io/streams#blockingWriteAndFlush') })
   })
 })
 

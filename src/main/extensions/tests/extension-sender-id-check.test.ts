@@ -13,8 +13,16 @@ function workerEvent (scope: string): MessageEvent {
 }
 
 describe('senderMatchesClaimedExtensionId', () => {
-  it('allows a message that names no extension id', () => {
-    expect(senderMatchesClaimedExtensionId(frameEvent(`chrome-extension://${REAL_ID}/popup.html`), undefined)).toBe(true)
+  it('refuses a message that names no extension id -- crx-msg-remote (a separate channel, gRemoteMessageSenderCheck) is where a legitimate no-id call goes', () => {
+    expect(senderMatchesClaimedExtensionId(frameEvent(`chrome-extension://${REAL_ID}/popup.html`), undefined)).toBe(false)
+  })
+
+  it('refuses a message naming a non-string id', () => {
+    expect(senderMatchesClaimedExtensionId(frameEvent(`chrome-extension://${REAL_ID}/popup.html`), 123 as unknown as string)).toBe(false)
+  })
+
+  it('refuses a message naming an empty-string id', () => {
+    expect(senderMatchesClaimedExtensionId(frameEvent(`chrome-extension://${REAL_ID}/popup.html`), '')).toBe(false)
   })
 
   it('allows a frame naming its own id', () => {

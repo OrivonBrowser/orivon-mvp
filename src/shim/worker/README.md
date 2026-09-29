@@ -1,8 +1,8 @@
 # `src/shim/worker/`: children in Web Workers
 
 **What lives here.** What a child needs to run in a Web Worker: the Worker's runtime
-(`runtime.ts`, with `runtime-spawn.ts` for a WASI program and `runtime-fork.ts` for an app
-module), the page-side server and Worker-side client that carry the Worker's `orivon.*` calls to
+(`runtime.ts`, with `runtime-spawn.ts` for a WASI program or a WASI 0.2 component and
+`runtime-fork.ts` for an app module), the page-side server and Worker-side client that carry the Worker's `orivon.*` calls to
 the page (`orivon-server.ts`, `orivon-client.ts`), the shared-memory channel for its synchronous
 calls (`sync-channel.ts`), and `launch.ts`, which starts a Worker.
 [`../child-process/`](../child-process/) is the one user today. A Worker reaches exactly what its
@@ -11,6 +11,7 @@ page could, since it is the app's own code
 Durable: it uses Web Workers, `MessagePort` and JSPI, no Electron API.
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../wasi/`](../wasi/),
+[`../wasi-p2/`](../wasi-p2/),
 `../globals.ts`, `../virtual-root.ts`, and the `buffer` and `stream` polyfills.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent

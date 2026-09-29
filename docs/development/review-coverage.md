@@ -144,7 +144,6 @@ see in the PR itself.
 |---|---|---|
 | `/code-review`, high effort, run by a forked reviewer | The WASI host's effect generators and drivers, `src/shim/worker/sync-channel.ts` with the server and client changes, and the addon loader's synchronous fs | 9 findings, all fixed in the same branch with a test where one applies: a refused synchronous reply left what it opened open on the page; a reply that failed to encode left the Worker waiting forever; `fd_renumber` became a suspending import; one revoked call disabled an addon for good; the reply writer pinned the last reply; an invalid reply channel threw on the page; stdin read end of input silently under the synchronous driver; sub-millisecond `poll_oneoff` waits began yielding; and the limit retry and the driver loop existed twice |
 
-
 ### The whole-repository review: `main`, the WASI stack, the shell, and their fixes in #36 and #38 (2026-09-28)
 
 | Mechanism | Scope | Outcome |
@@ -157,6 +156,21 @@ see in the PR itself.
 | `/code-review`, high effort, run by the verify lanes | #36's diff; #38's whole branch | #36: the first fs fix refused in-root symlinks, so it was reverted and A283 records the fix it needs. #38: a DevTools teardown crash, a split at the tab limit, and a private window that lost the sandbox switch in CI; all fixed |
 | Gate, smoke and e2e, headless | #36 and #38 | Typecheck, unit, the 12 guards, smoke and e2e pass; the two FreeTube e2e files fail on `main` as well (the network) |
 
+### `stream/wasi-p2`: a WASI 0.2 host for spawned components (2026-09-28)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review`, high effort, run by a forked reviewer | `src/shim/wasi-p2/`, component resolution in `child_process`, the Worker's component path | 12 findings, all fixed in the same branch with a test where one applies: the glue check failed open, so a fallback page made a missing program ENOEXEC; a late connect, listen or bind after drop leaked its handle; a listener leaked queued connections and could hang; an empty write while busy trapped; a shared address sent the wrong resolved name; error codes crossed interfaces; lookup failures had the wrong code; a revoked grant did not stop the component; a mapped address was accepted; clocks, randomness and the path checks existed twice; two docs lines were false; and several finish, send and shutdown edges departed from the spec |
+| Real programs built outside the repository, run against the hosts (opt-in tests) | A Rust `std` program and a tokio program for `wasm32-wasip2`; a napi-rs 3 addon | Four gaps no fixture showed, each fixed or recorded: UDP's stream resource classes were missing, so no such program instantiated; a napi-rs build's imported memory and registration exports were unsupported, so none loaded; `finish-listen` and UDP `finish-bind` answered `would-block`, which fails every tokio listener and UDP bind; tokio's own name resolution traps for want of a thread, which the WASI 0.2 README now states with the workaround |
+
+### `stream/napi-rs-packages`: published napi-rs packages, `worker_threads` and `vm` (2026-09-29)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Self-review, with a bundling probe | The two new module targets, as an ESM default import and as a CommonJS `require()` bundled by esbuild | Found that `require()` gets a shim module's namespace, where an unbuilt member is `undefined` rather than refused by name, in every shim module: A287, and the shim README corrected |
+| Negative run of the opt-in e2e | `test/e2e-napi-rs-package.test.ts` with `crossOriginIsolated: false` | Fails, so the check depends on the isolation Orivon serves |
+| Review before merge, inline | The branch against `main` | No defect in the branch's own code. CI's one failure was a flake in `setImmediate`'s tests, which waited a fixed 10 ms for a MessageChannel task; they now wait on a sentinel immediate |
+
 ### `stream/extensions`: Chrome extensions (2026-09-29)
 
 | Mechanism | Scope | Outcome |
@@ -164,6 +178,8 @@ see in the PR itself.
 | `/code-review`, high effort | The branch against `main`, `vendor/` limited to Orivon's patches | Ten findings, all fixed: a URL-policy check that never refused, a `.crx` able to take another extension's id, library channels trusting the named extension id, a refused store install reported as success, same-version reinstall, a corrupt registry being overwritten, and comments telling history |
 | `security-review` skill, each finding verified separately | The same diff | Three HIGH, all fixed: a manifest `version` that walked the install directory out of the extensions folder, `chrome.cookies` with no permission or host check, tab URLs and titles reaching extensions without `tabs` or host access |
 | Gate, smoke and e2e, headless | The branch | Typecheck, unit, the 12 guards and smoke pass; e2e passes except the three files whose fixture ports the unrelated local server holds, which fail identically on `main` |
+| Five review agents in parallel, each finding verified before a fix | This branch in three slices (install path, runtime boundary, docs and licences) | Install path, three major: a PEM-armoured manifest `key` loaded one extension under another's id, a folder install followed symlinks out of its tree, registry writes raced. Runtime, five major: `chrome.windows.*` leaked every tab's URL, an id-less `crx-msg` reached the toolbar-only handlers, a listener error exited the browser, `insertCSS` needed no host access, `tabs.create` handed out a granted app's tab. Eight minor, the docs' measured claims and the vendored licence notices. All fixed, each with a test |
+| Opt-in real-extension e2e, after the fixes | uBOL, Dark Reader, Bitwarden, MetaMask | Caught one of the fixes gating the worker preload on `location`, which a worker's preload realm lacks: every extension worker lost `chrome.*` and Dark Reader stopped styling pages, with CI green. Fixed; the toolbar e2e now fails if an extension preload cannot load. All pass |
 
 ### `stream/ext-sessions`: granted apps in the default session, and the `window.orivon` filter (2026-09-29)
 

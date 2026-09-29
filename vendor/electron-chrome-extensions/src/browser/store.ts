@@ -5,6 +5,21 @@ import type { ChromeExtensionImpl } from './impl'
 import type { ExtensionEvent } from './router'
 
 export class ExtensionStore extends EventEmitter {
+  /**
+   * Orivon patch: the session extensions run in, when the constructor is
+   * given one (index.ts passes its own `session` option) -- used only by
+   * createTab below to refuse a webContents from a DIFFERENT session, the
+   * same check ElectronChromeExtensions.addTab's own checkWebContentsArgument
+   * already applies to a host-initiated addTab call. `createTab` is the one
+   * path that never went through that check: an extension's own
+   * chrome.tabs.create({url}) of a granted app's URL is opened by the host's
+   * own createTab impl in that app's OWN session (its own partition), and
+   * without this, it was still added to this store, handing the extension a
+   * tab id it could update/reload/insertCSS into and receive webNavigation
+   * events for, in a session no permission of its own ever covered.
+   */
+  private readonly session?: Electron.Session | undefined
+
   /** Tabs observed by the extensions system. */
   tabs = new Set<Electron.WebContents>()
 
@@ -29,8 +44,9 @@ export class ExtensionStore extends EventEmitter {
 
   urlOverrides: Record<string, string> = {}
 
-  constructor(public impl: ChromeExtensionImpl) {
+  constructor(public impl: ChromeExtensionImpl, session?: Electron.Session) {
     super()
+    this.session = session
   }
 
   getWindowById(windowId: number) {
@@ -148,6 +164,11 @@ export class ExtensionStore extends EventEmitter {
       throw new Error('createTab must return a WebContents')
     } else if (typeof window !== 'object') {
       throw new Error('createTab must return a BrowserWindow')
+    } else if (this.session !== undefined && tab.session !== this.session) {
+      // Orivon patch: this doc's own header. The tab stays open for the
+      // person -- only the extension's own request is refused -- so this
+      // throws rather than closing anything.
+      throw new Error('createTab must return a WebContents in the extensions session')
     }
 
     this.addTab(tab, window)
@@ -169,6 +190,23 @@ export class ExtensionStore extends EventEmitter {
   getActiveTabOfCurrentWindow() {
     const win = this.getCurrentWindow()
     return win ? this.getActiveTabFromWindow(win) : undefined
+  }
+
+  /**
+   * Orivon patch: tells the library no tracked tab is the one visible in
+   * `window` right now. The shell can activate a tab this library never
+   * learned about at all (an internal `orivon:` page, or an app opened in
+   * its own partition, both outside `addTab`'s reach) -- without this, the
+   * library's own idea of the active tab stays pointed at whatever tracked
+   * tab was active before, so a toolbar click or `tabs.query({active:
+   * true})` acts on a tab the person is no longer looking at. Chrome's own
+   * rule is either/or: a window's active tab is one specific tab or none,
+   * never a stale one.
+   */
+  clearActiveTab(window: Electron.BaseWindow) {
+    if (!this.windowToActiveTab.has(window)) return
+    this.windowToActiveTab.delete(window)
+    this.emit('active-tab-changed', undefined, window)
   }
 
   setActiveTab(tab: Electron.WebContents) {

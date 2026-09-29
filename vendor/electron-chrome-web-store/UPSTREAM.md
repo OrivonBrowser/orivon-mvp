@@ -8,6 +8,7 @@
   MIT text with that author. The monorepo root's `LICENSE` is GPL-3.0; under either licence the
   code combines with Orivon's AGPL-3.0-only.
 - Vendored from: `packages/electron-chrome-web-store/src/` (no build output)
+- Modified: by the Orivon project, as the patches below list; last modified 2026-09-29
 
 ## Patches
 
