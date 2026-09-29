@@ -47,9 +47,13 @@ function hostMatches (patternHost: string, urlHost: string): boolean {
 
 /** `glob`'s `*` wildcards, translated to a regex that matches the whole
  * string -- every other regex-special character is escaped literally
- * first, so a path segment is never itself read as a pattern. */
+ * first, so a path segment is never itself read as a pattern. `?` is one of
+ * those: a match-pattern path matches the URL's path plus its query string
+ * literally, with `*` the only wildcard (MDN's match-pattern reference), so
+ * a `?` in a pattern must stay a literal character rather than become
+ * regex's own "zero-or-one" quantifier on whatever precedes it. */
 function globToRegExp (glob: string): RegExp {
-  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
   return new RegExp(`^${escaped}$`)
 }
 

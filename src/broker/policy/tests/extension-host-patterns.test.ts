@@ -48,6 +48,13 @@ describe('matchesHostPattern', () => {
     expect(matchesHostPattern('not-a-pattern', 'https://a.example/x')).toBe(false)
     expect(matchesHostPattern('https://a.example/*', 'not-a-url')).toBe(false)
   })
+
+  it('a literal ? in the path matches the query-string separator literally, never as a regex quantifier', () => {
+    expect(matchesHostPattern('https://a.example/api?*', 'https://a.example/api?foo=bar')).toBe(true)
+    expect(matchesHostPattern('https://a.example/api?*', 'https://a.example/api')).toBe(false)
+    expect(matchesHostPattern('https://a.example/api?*', 'https://a.example/apfoo')).toBe(false)
+    expect(matchesHostPattern('https://a.example/api?*', 'https://a.example/apiXfoo')).toBe(false)
+  })
 })
 
 describe('matchesAnyHostPattern', () => {
