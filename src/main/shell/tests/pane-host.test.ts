@@ -93,6 +93,28 @@ describe('PaneHost', () => {
     expect(host.isShown('a')).toBe(false)
   })
 
+  it('touches neither addChildView nor removeChildView for panes a resize re-shows unchanged', () => {
+    // window.ts's layoutAll calls tabs.layout() -> syncViews() -> this show() on every window
+    // resize, with the very same panes and backdrop as before: none of them may be re-added, or a
+    // resize would raise every pane above the welcome screen, the fullscreen notice and any open
+    // popover that shares this same contentView.
+    const { host, children, view } = setup()
+    const backdrop = { id: 'backdrop', view: view('X') as never, bounds: B(0) }
+    const panes = [{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }]
+    host.show(panes, backdrop)
+    const contentView = (host as unknown as { contentView: { addChildView: ReturnType<typeof vi.fn>, removeChildView: ReturnType<typeof vi.fn> } }).contentView
+    contentView.addChildView.mockClear()
+    contentView.removeChildView.mockClear()
+
+    host.show(panes, backdrop)
+
+    expect(contentView.addChildView).not.toHaveBeenCalled()
+    expect(contentView.removeChildView).not.toHaveBeenCalled()
+    expect(children).toEqual(['X', 'A', 'B'])
+    expect(view('A').setBounds).toHaveBeenLastCalledWith(B(0))
+    expect(view('B').setBounds).toHaveBeenLastCalledWith(B(100))
+  })
+
   it('shows a different view in a pane\'s place', () => {
     const { host, children, view } = setup()
     host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])

@@ -183,8 +183,7 @@ it('takes a tab out into a window of its own when it is dragged out of the windo
 
 // The floating preview shown once a tab tears out promises a window wherever it is let go over open
 // space -- releasing over this window's OWN page, away from every split edge, must match that promise
-// rather than leaving the tab where it was (the previous behaviour: an `inWindow` guard in
-// window-actions.ts's dropTab refused this case outright).
+// by opening a window there too, not leave the tab where it was.
 it('opens a tab dragged out over its own page, away from a split edge, in a window of its own', async () => {
   const { app, chrome } = await launched()
   try {

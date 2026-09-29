@@ -11,9 +11,9 @@
 
 /** How far the pointer moves before a press becomes a drag, so a click is still a click. */
 export const DRAG_THRESHOLD_PX = 5
-/** How far below or above the strip the pointer goes before the tab is taken out of it. Owner-reported: 44px
- * read as "hard to get the tab out of the strip with the mouse" -- shrunk so a small, deliberate downward
- * movement tears a tab loose, rather than needing a long drag past most of a toolbar's height. */
+/** How far below or above the strip the pointer goes before the tab is taken out of it: small enough that a
+ * short, deliberate downward movement tears a tab loose, rather than needing a long drag past most of a
+ * toolbar's height. */
 export const TEAR_DISTANCE_PX = 18
 
 /** The place among the other tabs, whose centres are `centres`, that a tab dragged to `x` takes. */
@@ -46,6 +46,10 @@ export interface TabDragHost {
   dropTab: (id: string, screenX: number, screenY: number, clientX: number, clientY: number) => void
   /** The drag is over. `tornOut`: the tab is on its way to another window, so the strip is to go back to what main last said. */
   finished: (tornOut: boolean) => void
+  /** The drag has genuinely ended -- dropped in the strip, torn out, or cancelled -- distinct from
+   * `hover(id)`'s own "back inside the strip" signal, which also fires on every in-strip move of a
+   * drag that is still under way. Releases the capture `dragStarted` began. */
+  dragEnded: () => void
 }
 
 let dragging = false
@@ -106,6 +110,7 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     clear()
     if (wasActive) {
       host.hover(id)
+      host.dragEnded()
       if (redraw) host.finished(tornOut)
     } else {
       // After the click that follows a press: redrawn now, it would have no tab to land on.

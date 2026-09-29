@@ -18,12 +18,13 @@ export class PaneHost {
 
   /** Shows exactly these panes, sized, with `backdrop` behind them when there is one.
    *
-   * Never removes and re-adds a pane that is staying on screen: Electron 44's
-   * `addChildView` reorders an already-attached view to the top rather than
-   * detaching it first, so a pane a split's backdrop appears alongside for
-   * the first time keeps painting through this call instead of losing its
-   * compositor attachment for a frame it had nothing to do with. Only a pane
-   * genuinely new to the screen goes through an actual attach. */
+   * Never touches a pane that is already on screen under the same view: this call also runs on
+   * every `layoutAll` (a window resize), which shares `contentView` with the welcome screen, the
+   * fullscreen/pointer-lock notice and the toolbar popovers, so re-adding an unchanged pane here
+   * would raise it above whichever of those is currently showing. Electron 44's `addChildView`
+   * only reorders an already-attached view to the top rather than detaching it first (never
+   * losing a frame), but that reorder itself is the bug this guards against -- so a pane keeps
+   * its place unless it is genuinely new to the screen or its view changed. */
   show (panes: readonly PaneView[], backdrop: PaneView | null = null): void {
     const wanted = new Map(panes.map((pane) => [pane.id, pane.view]))
     for (const [id, view] of this.shown) {
@@ -34,18 +35,35 @@ export class PaneHost {
     const nextBackdrop = backdrop?.view ?? null
     if (this.backdrop !== nextBackdrop) {
       if (this.backdrop !== null) this.contentView.removeChildView(this.backdrop)
-      // At index 0, the bottom: the panes above it (added below, in order)
-      // are left alone here, whether or not they were already on screen.
+      // At index 0, the bottom: `contentView` is the window's own content view, and the chrome
+      // (toolbar) view is added to it once, first, before any pane ever is (window.ts) -- so
+      // index 0 only ever displaces panes and popovers, never the chrome, and stays below all of
+      // them regardless of how many times a backdrop comes and goes.
       if (nextBackdrop !== null) this.contentView.addChildView(nextBackdrop, 0)
       this.backdrop = nextBackdrop
     }
     if (backdrop !== null) backdrop.view.setBounds(backdrop.bounds)
+    // A lone pane (the ordinary, undivided case) is appended with no index, exactly as before --
+    // where it lands relative to whatever else is on `contentView` has never mattered, since
+    // nothing else occupies its bounds. Only once there is a backdrop, or more than one pane, does
+    // the order among them matter (a split's two panes side by side): a genuinely new pane there
+    // goes right after the backdrop (if any) and every pane before it in `panes` -- an index
+    // counted purely among this host's own views, never the popovers/notice sharing `contentView`,
+    // which only ever append themselves with no index of their own (an insert at a low index never
+    // changes any of their relative order to one another, only shifts their numeric position).
+    // Keeps a split's two panes in the order `panes` gives them even when only one of the two is
+    // new -- Electron would otherwise put it above its partner, which an unconditional re-add of
+    // every pane used to fix as a side effect of raising both.
+    const ordered = panes.length > 1 || nextBackdrop !== null
+    let index = nextBackdrop !== null ? 1 : 0
     for (const pane of panes) {
-      // Re-adding what is already there only raises it (no detach); a pane
-      // new to `this.shown` gets its first, real attach here.
-      this.contentView.addChildView(pane.view)
-      this.shown.set(pane.id, pane.view)
+      if (this.shown.get(pane.id) !== pane.view) {
+        if (ordered) this.contentView.addChildView(pane.view, index)
+        else this.contentView.addChildView(pane.view)
+        this.shown.set(pane.id, pane.view)
+      }
       pane.view.setBounds(pane.bounds)
+      index += 1
     }
   }
 

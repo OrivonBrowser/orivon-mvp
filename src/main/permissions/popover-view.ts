@@ -82,8 +82,7 @@ export interface PopoverSpec {
    * fixed cap for a popup whose list can run long (permissions, site-info),
    * or `Number.POSITIVE_INFINITY` for one that should simply show all of its
    * content -- the menu -- so only the window's own height ever makes it
-   * scroll. Defaults to `MAX_HEIGHT`, the cap every popup had before this
-   * field existed. */
+   * scroll. Defaults to `MAX_HEIGHT`, the fixed cap a popup that does not set this field gets. */
   readonly maxHeight?: number
 }
 

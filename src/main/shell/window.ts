@@ -75,7 +75,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // new-tab button (drag-mode.ts's own doc: a real caption click there is
   // eaten by Chromium's window-event filter under X11, so Linux drives it
   // from JS instead; everywhere else the native drag region still works).
-  const dragMode = dragModeFor(process.platform, process.env)
+  const dragMode = dragModeFor(process.platform, process.env, app.commandLine.getSwitchValue('ozone-platform'))
 
   const chrome = new WebContentsView({
     webPreferences: {

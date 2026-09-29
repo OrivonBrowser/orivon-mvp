@@ -19,14 +19,15 @@ function fakeTail (): { el: HTMLElement, fire: (type: string, event?: Record<str
 }
 
 function fakeHost (): StripDragHost & { calls: Record<string, unknown[][]> } {
-  const calls: Record<string, unknown[][]> = { newTab: [], toggleMaximize: [], moveStart: [], moveTo: [], moveEnd: [] }
+  const calls: Record<string, unknown[][]> = { newTab: [], toggleMaximize: [], moveStart: [], moveTo: [], moveEnd: [], moveCancel: [] }
   return {
     calls,
     newTab: (...args) => { calls['newTab']?.push(args) },
     toggleMaximize: (...args) => { calls['toggleMaximize']?.push(args) },
     moveStart: (...args) => { calls['moveStart']?.push(args) },
     moveTo: (...args) => { calls['moveTo']?.push(args) },
-    moveEnd: (...args) => { calls['moveEnd']?.push(args) }
+    moveEnd: (...args) => { calls['moveEnd']?.push(args) },
+    moveCancel: (...args) => { calls['moveCancel']?.push(args) }
   }
 }
 
@@ -81,6 +82,32 @@ describe('makeStripDraggable', () => {
     tail.fire('pointerdown', { screenX: 100, screenY: 100 })
     tail.fire('pointerup', { screenX: 100, screenY: 100 })
     expect(host.calls['moveStart']).toHaveLength(0)
+    expect(host.calls['moveEnd']).toHaveLength(0)
+  })
+
+  it('a pointercancel during a move ends it without any edge-snap action, even at 0,0', () => {
+    const tail = fakeTail()
+    const host = fakeHost()
+    makeStripDraggable(tail.el, host)
+
+    tail.fire('pointerdown', { screenX: 100, screenY: 100 })
+    tail.fire('pointermove', { screenX: 120, screenY: 100 })
+    expect(host.calls['moveStart']).toHaveLength(1)
+
+    // A real pointercancel's own coordinates, nowhere the pointer actually was.
+    tail.fire('pointercancel', { screenX: 0, screenY: 0 })
+    expect(host.calls['moveCancel']).toHaveLength(1)
+    expect(host.calls['moveEnd']).toHaveLength(0)
+  })
+
+  it('a pointercancel before any move crossed the threshold calls nothing', () => {
+    const tail = fakeTail()
+    const host = fakeHost()
+    makeStripDraggable(tail.el, host)
+
+    tail.fire('pointerdown', { screenX: 100, screenY: 100 })
+    tail.fire('pointercancel', { screenX: 0, screenY: 0 })
+    expect(host.calls['moveCancel']).toHaveLength(0)
     expect(host.calls['moveEnd']).toHaveLength(0)
   })
 })

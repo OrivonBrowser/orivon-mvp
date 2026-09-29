@@ -106,22 +106,32 @@ export class TearDragController {
     this.begin(source, tabId)
   }
 
-  /** The drag is over, or the tab is back inside its own strip: nothing left to show or track. */
+  /** The drag has genuinely ended (window-actions.ts's own `endTabDrag`, on a drop -- inside the
+   * strip or out -- or a cancel): nothing left to show or track. Never called for an in-strip move
+   * of a drag still under way; that only hides the window (`tick()`'s own `inTop` check) and keeps
+   * everything else, including the warm capture, alive in case the tab tears out after all. */
   clear (): void {
+    this.destroyWindow()
+    this.source = null
+    this.tabId = null
+    this.warming = null
+    this.clearMark()
+  }
+
+  dispose (): void { this.clear() }
+
+  /** Tears down the floating-preview window and its poll, without touching `warming`, `source` or
+   * `tabId` -- the part `clear()` shares with `begin()`, which needs the same teardown for
+   * whatever window a previous drag left live, but must keep the new drag's own warm capture. */
+  private destroyWindow (): void {
     if (this.timer !== null) clearInterval(this.timer)
     this.timer = null
     if (this.win !== null && !this.win.isDestroyed()) this.win.destroy()
     this.win = null
     this.view = null
     this.mode = null
-    this.source = null
-    this.tabId = null
     this.thumbnail = null
-    this.warming = null
-    this.clearMark()
   }
-
-  dispose (): void { this.clear() }
 
   private clearMark (): void {
     const marked = this.markedWindow
@@ -133,6 +143,10 @@ export class TearDragController {
   }
 
   private begin (source: ShellWindow, tabId: string): void {
+    // A previous drag's window and poll, if update() is ever asked to begin a new one (a different
+    // source or tab) before that one was torn down: never leak it, and never race two intervals.
+    this.destroyWindow()
+    this.clearMark()
     this.source = source
     this.tabId = tabId
     const tab = source.tabs.getState().tabs.find((candidate) => candidate.id === tabId)
@@ -147,11 +161,14 @@ export class TearDragController {
       if (this.mode !== 'chip') this.render()
     })
 
+    // Created hidden, with no position yet: `hide()`/`showInactive()` (tick()'s own `inTop` check
+    // below), never negative screen coordinates, is how this parks between the strip and open space
+    // -- a monitor placed left of or above the primary makes negative coordinates a real, visible
+    // place, which off-screen parking was never meant to be. The first tick(), called once
+    // synchronously right after this, gives it its first real position before it is ever shown.
     this.win = new BaseWindow({
       width: this.size.width,
       height: this.size.height,
-      x: -this.size.width,
-      y: -this.size.height,
       frame: false,
       transparent: true,
       hasShadow: true,
@@ -177,10 +194,10 @@ export class TearDragController {
     this.view.setBounds({ x: 0, y: 0, width: this.size.width, height: this.size.height })
     // Never the drop target itself, and never able to take a click or a keystroke meant for whatever is under it.
     this.win.setIgnoreMouseEvents(true)
-    this.win.showInactive()
     this.mode = 'thumbnail'
     this.render()
     this.timer = setInterval(() => { this.tick() }, POLL_MS)
+    this.tick() // positions (and shows, unless already back over the source window) before the first paint
   }
 
   private tick (): void {
@@ -190,13 +207,15 @@ export class TearDragController {
     const point = screen.getCursorScreenPoint()
 
     // A split preview is showing instead (never both at once), or the pointer is back over this window's
-    // own strip and toolbar, where letting go does nothing (window-actions.ts's own dropTab): parked
-    // off-screen, not destroyed, so it reappears at once, with no new capture, if the pointer moves on.
+    // own strip and toolbar, where letting go does nothing (window-actions.ts's own dropTab): hidden, not
+    // destroyed, so it reappears at once, with no new capture, if the pointer moves on -- never parked at
+    // negative coordinates, which a monitor left of or above the primary makes a real, visible place.
     if (this.inZone || inTop(source.window.getBounds(), point, this.topHeight)) {
-      win.setPosition(-this.size.width, -this.size.height)
+      if (win.isVisible()) win.hide()
       this.clearMark()
       return
     }
+    if (!win.isVisible()) win.showInactive()
 
     const target = crossWindowTargetFor(source, point, this.windows(), this.topHeight)
     if (target === null) {
@@ -228,16 +247,22 @@ export class TearDragController {
 
   private render (): void {
     if (this.view === null) return
-    if (this.mode === 'chip') {
+    if (this.mode === 'chip' || this.thumbnail === null) {
+      // No thumbnail yet: either it has not resolved, or the capture came back empty outright --
+      // typically a backgrounded tab's now-detached view, nothing left to draw. Either way the title
+      // chip reads as a dragged tab; an empty window the pointer seems to have lost does not.
       void this.view.webContents.loadURL(`data:text/html,${encodeURIComponent(chipHtml(this.title, nativeTheme.shouldUseDarkColors))}`)
-    } else if (this.thumbnail !== null) {
+    } else {
       void this.view.webContents.loadURL(`data:text/html,${encodeURIComponent(thumbnailHtml(this.thumbnail, this.size.width, this.size.height))}`)
     }
   }
 }
 
 function imageToDataUrl (image: NativeImage | null, size: { width: number, height: number }): string | null {
-  if (image === null) return null
+  // Empty, not just absent, is also "nothing to draw": a detached view (a background tab, caught
+  // before beginTabDrag's own activateTab call takes effect, or a tab that never painted) captures
+  // to a zero-sized image rather than throwing -- render()'s own chip fallback is for both.
+  if (image === null || image.isEmpty()) return null
   try {
     return image.resize(size).toDataURL()
   } catch {

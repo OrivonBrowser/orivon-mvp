@@ -168,7 +168,8 @@ function renderTabs (state: ShellState): void {
       hover: (id, x, y) => { shell.dragTab(id, x, y) },
       dropTab: (id, x, y, clientX, clientY) => { shell.dropTab(id, x, y, clientX, clientY) },
       // Let go in the strip, the order on screen is already the order main is about to confirm.
-      finished: (tornOut) => { if (tornOut || tabsRenderDeferred) renderTabs(currentState) }
+      finished: (tornOut) => { if (tornOut || tabsRenderDeferred) renderTabs(currentState) },
+      dragEnded: () => { shell.endTabDrag() }
     })
     // Middle-click closes a tab, matching every other browser. Guarded on
     // mousedown too: Windows arms Blink's middle-click autoscroll on
@@ -328,7 +329,8 @@ if (shell.dragMode === 'manual') {
     toggleMaximize: () => { shell.toggleMaximize() },
     moveStart: (x, y) => { shell.windowMoveStart(x, y) },
     moveTo: (x, y) => { shell.windowMoveTo(x, y) },
-    moveEnd: (x, y) => { shell.windowMoveEnd(x, y) }
+    moveEnd: (x, y) => { shell.windowMoveEnd(x, y) },
+    moveCancel: () => { shell.windowMoveCancel() }
   })
 }
 
@@ -351,9 +353,13 @@ function showDropMark (index: number): void {
   const tabs = [...tabrow.querySelectorAll<HTMLElement>('.tab')]
   const before = tabs[index]
   const rowLeft = tabrow.getBoundingClientRect().left
-  const x = before !== undefined
+  // #tabrow scrolls horizontally once there are more tabs than fit: a tab's own viewport rect
+  // already accounts for that scroll, so adding it back here (rowLeft is a viewport rect too, with
+  // no scroll of its own to add) would double-count it -- the mark needs `scrollLeft` added on top
+  // of the viewport-relative distance, to land in the row's own scrolled coordinate space instead.
+  const x = (before !== undefined
     ? before.getBoundingClientRect().left - rowLeft
-    : (tabs.at(-1)?.getBoundingClientRect().right ?? rowLeft) - rowLeft
+    : (tabs.at(-1)?.getBoundingClientRect().right ?? rowLeft) - rowLeft) + tabrow.scrollLeft
   dropMark.style.left = `${String(x)}px`
   dropMark.hidden = false
 }
