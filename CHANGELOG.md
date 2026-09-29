@@ -13,6 +13,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Tearing a tab off shows where its window will open.** A preview of the page follows the pointer; letting go
+  over the page or outside every window opens the window there, in front and at once. Over another window's
+  strip a line marks where the tab will land. On Linux X11 a middle click on the strip's empty end opens a tab.
+- **Settings and History have a new look**, shared with Profiles and Private: Settings' sections are grouped
+  in a sidebar with icons and its search; History marks each site and heads each day with a rule.
 - **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
   `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
   popups and options pages work on every website; blocking rules and apps holding permissions come next.
@@ -106,6 +111,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Settings, History, Profiles and a private window's first page load under `npm run dev`**; they were blank.
+- **The main menu shows every entry with no scroll bar**, and a new split shows both panes painted at once.
 - **A native addon built with napi-rs loads**: its WebAssembly build gets Node-API and memory the way
   napi-rs's own loaders provide them, which a real napi-rs 3 addon needs.
 - **An app that listens for TCP connections receives them**: the broker now hands each accepted
