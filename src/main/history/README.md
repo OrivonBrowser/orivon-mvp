@@ -49,7 +49,15 @@ index; a dense one, at or above `searchDensityLimit` matches -- a common substri
 to the plain `LIKE` scan instead, which walks the last-visit index and can stop after one page rather than
 gathering every match first. A search under three characters, too short for a trigram to resolve, always takes
 that `LIKE` path. Every statement `list`, `count` and the rest run more than once is prepared once, in the
-constructor, and reused.
+constructor, and reused. The index is built by `PRAGMA user_version`'s v1-to-v2 migration, which `rebuild`s it
+from every row already in `pages` -- measured at 1.9s for a full 100,000-page history.
+
+**FTS5's own `secure-delete` is on**, set once in that same migration and persisting across every later reopen:
+without it, forgetting a page's ordinary FTS5 delete only tombstones its posting, leaving the trigrams it once
+held in already-allocated index pages that `secure_delete`/VACUUM on `pages` itself cannot reach. With it,
+`remove`, `removeRange`, `trim` and `clear` all erase the posting at delete time, at a real cost:
+`removeRange` of 10,000 of 100,000 rows measured at roughly 3.2-3.5s with it on, against about 0.26s without --
+paid on an explicit "forget" action, never on the read or write path a person waits on.
 
 **A file that cannot be used is left alone.** If the database is damaged or from a newer version, history is off
 for that run and Settings says why; the file is neither deleted nor replaced, so nothing a person could recover is

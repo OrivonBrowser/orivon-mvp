@@ -366,3 +366,54 @@ describe('what clearing leaves in the file', () => {
     }
   })
 })
+
+describe('what forgetting a page leaves in the FTS5 index', () => {
+  // FTS5's ordinary delete, on an external-content table, only writes a tombstone into the segment
+  // b-tree; the original posting -- which trigrams a now-forgotten rowid had -- stays in already-allocated
+  // pages until a later merge discards it, so `secure_delete`/VACUUM on the surrounding pages/visits
+  // tables (proven above) does nothing for it. `pages_fts(pages_fts, rank) VALUES('secure-delete', 1)`,
+  // set once in the v2 migration, makes FTS5 erase the posting itself at delete time instead. It has no
+  // literal substring to grep for (a trigram tokenizer never stores more than three original characters
+  // contiguously), so what this checks instead is pages_fts_data's own footprint: with the tombstone left
+  // behind, forgotten rows accumulate bytes there indefinitely; with secure-delete, forgetting a row costs
+  // it nothing, so the shadow table stays near its empty, structural size however many rows were forgotten.
+  const NEAR_EMPTY_FOOTPRINT = 2000
+
+  function ftsDataFootprint (path: string): number {
+    const db = new DatabaseSync(path)
+    try {
+      return (db.prepare('SELECT SUM(LENGTH(block)) AS n FROM pages_fts_data').get() as { n: number | null }).n ?? 0
+    } finally {
+      db.close()
+    }
+  }
+
+  async function forgetsCleanly (name: string, forget: (history: SqliteHistoryStore) => void): Promise<void> {
+    const dir = await mkdtemp(join(tmpdir(), `orivon-history-fts-privacy-${name}-`))
+    try {
+      const path = join(dir, 'history.db')
+      const history = new SqliteHistoryStore(path)
+      for (let n = 0; n < 400; n += 1) history.record(`https://churn${String(n)}.example/marker${String(n)}`, `Churn Title ${String(n)}`, n)
+      history.flush()
+      forget(history)
+      history.close()
+      expect(ftsDataFootprint(path), name).toBeLessThan(NEAR_EMPTY_FOOTPRINT)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+
+  it('remove(), one page at a time, does not accumulate stale postings', async () => {
+    await forgetsCleanly('remove', (history) => {
+      for (const entry of history.list({ limit: 500 })) history.remove(entry.id)
+    })
+  })
+
+  it('removeRange(), over everything, does not accumulate stale postings', async () => {
+    await forgetsCleanly('removeRange', (history) => { history.removeRange(0, 10_000) })
+  })
+
+  it('clear() does not accumulate stale postings', async () => {
+    await forgetsCleanly('clear', (history) => { history.clear() })
+  })
+})

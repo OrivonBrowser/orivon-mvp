@@ -174,12 +174,16 @@ export class SqliteHistoryStore implements HistoryStore {
   /** Adds the trigram FTS5 index over `pages(title, url)` and the triggers that keep it in step with every
    * insert, update and delete on `pages` -- including the bulk UPDATE/DELETE `removeRange` runs, which fire
    * the same row-level triggers as a single-row change. `content=` makes it an external-content table: the
-   * text is never duplicated, only indexed, and `rebuild` builds that index from every row already there. */
+   * text is never duplicated, only indexed, and `rebuild` builds that index from every row already there.
+   * `secure-delete` is set once here and stays set across every later reopen: without it, FTS5's own delete
+   * only tombstones a posting, leaving it in already-allocated pages that `secure_delete`/VACUUM on `pages`
+   * itself cannot reach (see the test file's "what forgetting a page leaves" describe). */
   private migrateToSearchIndex (): void {
     this.db.exec('BEGIN')
     try {
       this.db.exec(`
         CREATE VIRTUAL TABLE pages_fts USING fts5(title, url, content='pages', content_rowid='id', tokenize='trigram');
+        INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 1);
         CREATE TRIGGER pages_fts_ai AFTER INSERT ON pages BEGIN
           INSERT INTO pages_fts(rowid, title, url) VALUES (new.id, new.title, new.url);
         END;
