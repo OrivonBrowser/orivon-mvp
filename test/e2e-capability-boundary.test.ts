@@ -89,7 +89,7 @@ import {
 } from './smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput,
-  killChild, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
+  killChild, moveIntoAttributedSession, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, ECHO_PORT, STATIC_PORT } from './apps/fixture/config.mjs'
 import { parseManifest } from '../src/loader/manifest/manifest.js'
@@ -449,7 +449,7 @@ it('Phase 2: a real grant, issued through the dev-only path rather than test cod
 
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
-        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        const beforeGrant = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
         const grantOutcome = await app.evaluate(async (_electron, request: DevGrantRequest) => {
           const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
@@ -468,6 +468,13 @@ it('Phase 2: a real grant, issued through the dev-only path rather than test cod
           grantOutcome.grant.capability === 'tcp.connect' && JSON.stringify(grantOutcome.grant.patterns) === JSON.stringify(patterns),
           JSON.stringify(grantOutcome.grant)
         )
+
+        // The dev-only grant hook above lands on the broker directly, so
+        // nothing has reloaded this page into the session its now-granted
+        // origin belongs in -- a real app.requestGrant call would have
+        // (transport/ipc.ts). Move it there the same way, so the calls
+        // below run from a document actually attributed to FIXTURE_ORIGIN.
+        const view = await moveIntoAttributedSession(app, beforeGrant, FIXTURE_URL)
 
         // (a) THE GRANTED PATH, driven from the real page over the real IPC
         // pipe: write, then read back exactly as many bytes as were sent

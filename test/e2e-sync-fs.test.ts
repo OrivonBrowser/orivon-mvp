@@ -48,7 +48,7 @@ import { launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput, killChild,
-  navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
+  moveIntoAttributedSession, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -169,7 +169,7 @@ it('Phase 2: a real fs grant, issued through the dev-only path, lets a real page
     try {
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
-        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        const beforeGrant = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
         // THE GRANT, through the production dev-only route (queue item 0.3),
         // exercised inside THIS launched app's own main process via
@@ -191,6 +191,12 @@ it('Phase 2: a real fs grant, issued through the dev-only path, lets a real page
         )
         if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         check('the grant returned names the fs capability', grantOutcome.grant.capability === 'fs', JSON.stringify(grantOutcome.grant))
+
+        // The dev-only hook lands on the broker directly, with no IPC round
+        // trip to reload this page into its now-granted session the way a
+        // real app.requestGrant call would (transport/ipc.ts) -- move it
+        // there the same way before making any granted call from it.
+        const view = await moveIntoAttributedSession(app, beforeGrant, FIXTURE_URL)
 
         // (a) WRITE THEN READ SYNCHRONOUSLY. writeFile is the already-proven
         // async path (e2e-capability-boundary.test.ts's own Phase 2
