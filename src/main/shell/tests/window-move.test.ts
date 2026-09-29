@@ -35,7 +35,7 @@ describe('edgeZoneFor', () => {
   it('maximizes only right at the top edge', () => {
     expect(edgeZoneFor({ x: 900, y: 1 }, workArea)).toBe('maximize')
     // A top-aligned window (already flush with the edge, the common case just after a tile) can
-    // still be dragged sideways: a release a few pixels down is no longer "the top edge".
+    // still be dragged sideways: a release a few pixels down is not "the top edge".
     expect(edgeZoneFor({ x: 900, y: 5 }, workArea)).toBeNull()
   })
 

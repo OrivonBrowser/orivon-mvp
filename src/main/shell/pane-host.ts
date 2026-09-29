@@ -52,8 +52,7 @@ export class PaneHost {
     // which only ever append themselves with no index of their own (an insert at a low index never
     // changes any of their relative order to one another, only shifts their numeric position).
     // Keeps a split's two panes in the order `panes` gives them even when only one of the two is
-    // new -- Electron would otherwise put it above its partner, which an unconditional re-add of
-    // every pane used to fix as a side effect of raising both.
+    // new: appended, it would land above its partner.
     const ordered = panes.length > 1 || nextBackdrop !== null
     let index = nextBackdrop !== null ? 1 : 0
     for (const pane of panes) {

@@ -1,7 +1,7 @@
-// The owner's dev-mode reports: opening Settings, History or a private
-// window's first page was blank -- dev mode only. Starts a real Vite dev
+// The shell's own pages under `npm run dev`: Settings, History, Profiles and a
+// private window's first page load from the dev server. Starts a real Vite dev
 // server for the renderer (electron.vite.config.ts's own `renderer` section,
-// on a free port, never 5173, which the owner's own `npm run dev` may hold),
+// on a free port, never 5173, which a developer's own `npm run dev` may hold),
 // launches Electron against it with `ELECTRON_RENDERER_URL` exactly as
 // `electron-vite dev` does, and asserts every shell page renders real
 // content rather than an empty `#app`. e2e-internal-pages.test.ts covers the
@@ -23,7 +23,7 @@ let devServer: ViteDevServer
 let devUrl: string
 
 /** A free port, chosen by the OS then released, so this suite never
- * collides with the owner's own `npm run dev` on 5173 or another suite's
+ * collides with a developer's own `npm run dev` on 5173 or another suite's
  * fixture ports. Not `server.port: 0` on the Vite server itself: Vite's own
  * HMR-client injection falls back to its literal default port (5173) rather
  * than the one actually bound when the declared port is the falsy `0`, which
@@ -109,7 +109,7 @@ async function openInternal (chrome: Page, page: string, path?: string): Promise
 }
 
 /** Real content, not an empty `#app` left by a failed script or stylesheet
- * load (the owner's own report): a handful of rendered characters, well
+ * load: a handful of rendered characters, well
  * short of a real page's but well past "nothing ran". */
 const MIN_RENDERED_CHARS = 100
 
