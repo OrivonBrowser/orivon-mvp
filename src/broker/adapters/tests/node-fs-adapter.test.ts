@@ -353,6 +353,34 @@ describe('nodeFs.rootFor -- the one-time move off the old apps/<hash>/files layo
     expect(Array.from(await fsReadFile(join(second, 'b.bin')))).toEqual([2]) // survived the second call
   })
 
+  it('does not re-run the migration check on a later call, even when a fresh old-layout directory reappears', async () => {
+    // `vi.spyOn` cannot wrap `node:fs`'s own `existsSync`/`renameSync`
+    // (Vitest refuses to redefine a Node built-in's ESM export), so "at
+    // most once" is proven the same way NEVER-LOSES-DATA below is: by a
+    // directory the SECOND call must leave alone if, and only if,
+    // `migrateFilesRoot` did not run again for this origin.
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const fs = nodeFs(userData)
+    fs.rootFor(ORIGIN) // nothing to migrate yet; marks ORIGIN as done
+
+    // A directory reappears at the OLD layout's path after the first call --
+    // unrealistic in production, but exactly what a re-run of
+    // migrateFilesRoot on this second rootFor() would notice and act on.
+    const oldRoot = join(userData, 'apps', originHash(ORIGIN), 'files')
+    mkdirSync(oldRoot, { recursive: true })
+    writeFileSync(join(oldRoot, 'reappeared.bin'), new Uint8Array([7]))
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    fs.rootFor(ORIGIN)
+
+    // A second run would have found both roots existing and logged the
+    // conflict (see the NEVER-LOSES-DATA case below); skipping the check
+    // entirely for an already-done origin means neither happens.
+    expect(logged).not.toHaveBeenCalled()
+    expect(existsSync(join(oldRoot, 'reappeared.bin'))).toBe(true) // left exactly where it reappeared
+    logged.mockRestore()
+  })
+
   it('NEVER LOSES DATA: when both the old and new roots already exist, leaves both alone and logs rather than picking a side', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
     const oldRoot = join(userData, 'apps', originHash(ORIGIN), 'files')
@@ -370,7 +398,11 @@ describe('nodeFs.rootFor -- the one-time move off the old apps/<hash>/files layo
     expect(existsSync(oldRoot)).toBe(true) // left in place, never deleted
     expect(existsSync(join(oldRoot, 'old.bin'))).toBe(true)
     expect(existsSync(join(newRoot, 'new.bin'))).toBe(true)
-    expect(logged).toHaveBeenCalled()
+    expect(logged).toHaveBeenCalledTimes(1)
+
+    fs.rootFor(ORIGIN) // same still-conflicted origin, again
+    expect(logged).toHaveBeenCalledTimes(1) // not once per call -- once per origin, ever
+
     logged.mockRestore()
   })
 })

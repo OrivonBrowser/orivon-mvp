@@ -187,9 +187,12 @@ function openFile (path: string, flags: string): Promise<OpenedFile> {
  * root T13b actually asks for. `../grants/origin-hash.js`'s `appDataRoot`
  * is the new, sibling location.
  *
- * Runs once per origin, the first time `rootFor` is asked for it this
- * process (called from inside `rootFor`, below, which every `fs` call
- * reaches before touching a path). NEVER LOSES DATA: the old directory
+ * Runs at most once per origin, the first time `rootFor` is asked for it
+ * this process -- `nodeFs`'s own `migratedOrigins` set below is what makes
+ * that true, since `rootFor` is reached from `confineForOrigin` on every
+ * `fs` call including the synchronous `readFileSync` path, and re-running
+ * this on each one would mean a stat and, on conflict, a repeated log line
+ * for the lifetime of the process. NEVER LOSES DATA: the old directory
  * moves only when the new one does not exist yet; if a previous run
  * already created (or partly created) the new one, the old directory is
  * left exactly where it is and this logs rather than picks a side -- a
@@ -224,6 +227,10 @@ function migrateFilesRoot (userDataPath: string, origin: string): void {
  * against a real temp directory without needing Electron either.
  */
 export function nodeFs (userDataPath: string): BrokerFs {
+  // Which origins `migrateFilesRoot` has already run for, this process --
+  // see that function's own doc for why running it again on every call
+  // would be wrong, not just wasteful.
+  const migratedOrigins = new Set<string>()
   return {
     // CREATES the root, it does not merely name it. confinePath's very first
     // act is realpath(root), and its own doc calls a root that will not
@@ -239,7 +246,10 @@ export function nodeFs (userDataPath: string): BrokerFs {
     // hands confinePath a synchronous realpath (A28) -- whoever makes
     // realpath async should take this with it.
     rootFor: (origin) => {
-      migrateFilesRoot(userDataPath, origin)
+      if (!migratedOrigins.has(origin)) {
+        migrateFilesRoot(userDataPath, origin)
+        migratedOrigins.add(origin)
+      }
       const root = join(appDataRoot(userDataPath, origin), 'files')
       mkdirSync(root, { recursive: true })
       return root
