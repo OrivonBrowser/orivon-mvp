@@ -29,7 +29,7 @@ import { checkConnectSecure } from '../../broker/policy/connect-secure.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { createPinCoverageTracker } from '../serve/pin-coverage.js'
 import type { PinCoverageSnapshot } from '../serve/pin-coverage.js'
-import { createAppRequestHandler, fetchThirdParty, verifiedManifestFor } from '../serve/serve.js'
+import { createAppRequestHandler, fetchThirdParty, resolveVerifiedBundle } from '../serve/serve.js'
 import { saveCheckRecord } from '../fetch/update-check.js'
 import type { AppRequestHandler, AuthoriseReach } from '../serve/serve.js'
 import { cspHeaderValue } from '../serve/csp.js'
@@ -292,15 +292,21 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
  * can ever trigger already sees its real, persisted grants, and that the
  * broker already counts the origin as registered (README.md, "A restored
  * app is a registered app from startup") when its first tab is built.
- * `verifiedManifestFor` performs its own independent whole-tree
- * re-verification (see its own doc for why that is an accepted, bounded
- * cost rather than a second source of truth) and answers `undefined` for
- * anything short of a fully verified pin -- skipped here, deliberately:
- * `createAppRequestHandler` below will re-derive the identical failure and
- * deny every request for this origin, so there is nothing to hydrate FROM.
+ * F3 ("hash twice"): `resolveVerifiedBundle` runs the whole-tree
+ * re-verification ONCE, here, and its result is handed straight into
+ * `createAppRequestHandler`'s `preResolved` parameter below -- that
+ * function used to re-run the identical hash immediately after this one,
+ * for every origin, on every startup and every fresh install
+ * (`serve/serve.ts`'s own former doc on `verifiedManifestFor` called this a
+ * "deliberate, bounded doubling"; it no longer needs to be one). A pin that
+ * fails re-verification resolves `{ ok: false }` here exactly as it would
+ * have inside `createAppRequestHandler`, so passing it through changes
+ * nothing about what gets served -- only how many times the tree is hashed
+ * to decide.
  */
 export async function registerServingFor (storage: LoaderStorage, origin: string, broker?: Broker): Promise<void> {
-  const pinnedManifest = await verifiedManifestFor(storage, origin)
+  const resolved = await resolveVerifiedBundle(storage, origin)
+  const pinnedManifest = resolved.ok ? resolved.manifest : undefined
   // A damaged cache must not wait out the update-check interval, or answer a
   // 304 for a manifest it no longer holds intact: the next visit checks in full.
   if (pinnedManifest === undefined) await saveCheckRecord(storage, origin, undefined)
@@ -311,7 +317,7 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     return
   }
   if (broker !== undefined && pinnedManifest !== undefined) await broker.app.hydrateFromPinnedManifest(origin, pinnedManifest)
-  const pin = pinnedManifest === undefined ? null : parsePinRecord(await storage.readPin(origin))
+  const pin = resolved.ok ? resolved.pin : null
 
   const tracker = createPinCoverageTracker()
   coverageTrackers.set(origin, tracker)
@@ -327,7 +333,8 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     tracker.record,
     reachSlots?.reserve,
     reachSlots?.release,
-    pin === null ? undefined : retainedAssets(origin, pin)
+    pin === null ? undefined : retainedAssets(origin, pin),
+    resolved
   )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
