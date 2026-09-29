@@ -222,9 +222,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     // Recurses into this same function for the new window, so it is made from
     // the same `services` -- a private window's `services.profiles.isPrivate`
     // stays true for whatever it opens (a shift-click, popups.ts).
-    openWindow: (url) => {
+    openWindow: (url, loadOptions) => {
       let contents
-      createShellWindow(ctx, services, { first: (newTabs) => { contents = newTabs.liveWebContents(newTabs.createTab(url)) } })
+      createShellWindow(ctx, services, { first: (newTabs) => { contents = newTabs.liveWebContents(newTabs.createTab(url, undefined, loadOptions)) } })
       if (contents === undefined) throw new Error('openWindow: the new window made no tab')
       return contents
     }

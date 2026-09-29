@@ -35,9 +35,11 @@
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
 //   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-serve-from-cache.test.ts
-import { afterAll, expect, it } from 'vitest'
+import { afterAll, beforeAll, expect, it } from 'vitest'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createServer, type Server } from 'node:http'
+import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { HERMETIC_RESOLVER, evaluateRetrying, findChrome, findViewShowing, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
@@ -55,6 +57,19 @@ import { partitionFor } from '../src/broker/grants/origin-hash.js'
 // property from two different angles: nothing can ever reach this origin
 // except the registered cache handler.
 const ORIGIN = 'https://serve-from-cache-e2e.orivon.test'
+
+// An ORDINARY page, on a real loopback server, that links to the pinned
+// app's origin -- for the shift-click regression below: routePopup's isApp
+// check returns 'new-tab' for a cross-origin app target from a page that is
+// not itself the app (before disposition is ever weighed), so a shift-click
+// there needs its own carve-out to still open a window, not a tab.
+const ORDINARY_HOST = '127.0.0.1'
+const ORDINARY_PORT = 8945
+const ORDINARY_ORIGIN = `http://${ORDINARY_HOST}:${ORDINARY_PORT}`
+const ORDINARY_PAGE = `<!doctype html><meta charset="utf-8"><title>ordinary page</title><body>
+<a id="to-app" href="${ORIGIN}/">the pinned app</a>
+</body>`
+let ordinaryServer: Server
 
 const APP_JS_BODY = 'window.__fixtureAppRan = true;\n'.padEnd(600, '/* padding for a real Range assertion */ ')
 // A same-origin link and a data: link, for the middle-click regression below:
@@ -118,9 +133,23 @@ async function launchWithFixtureServed (): Promise<{ app: Awaited<ReturnType<typ
   return { app, userDataDir }
 }
 
+beforeAll(async () => {
+  ordinaryServer = createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' })
+    res.end(ORDINARY_PAGE)
+  })
+  await new Promise<void>((resolve) => { ordinaryServer.listen(ORDINARY_PORT, ORDINARY_HOST, resolve) })
+})
+
 afterAll(async () => {
+  await new Promise<void>((resolve) => { ordinaryServer.close(() => { resolve() }) })
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
+
+/** Every chrome (shell) view in `app`, one per window -- e2e-multi-window.test.ts's own pattern. */
+function chromePages (app: ElectronApplication): Page[] {
+  return app.windows().filter((w) => w.url().endsWith('/renderer/index.html'))
+}
 
 const WAIT_BUDGET_MS =
   8_000 + // initial two-window wait
@@ -338,6 +367,54 @@ it(
           return webContents.getAllWebContents().some((c) => c.getURL().startsWith('data:'))
         })
         check('a middle click on a data: link never renders it, whatever Chromium or sanitizeDirectUrl does with the attempt', !dataRendered)
+      } finally {
+        if (app !== undefined) await closeElectronApp(app)
+      }
+    })
+  },
+  TEST_TIMEOUT_MS
+)
+
+it(
+  'a shift-click on the pinned app\'s origin, from an ordinary page that is not itself the app, ' +
+  'still opens a new window rather than a tab',
+  async () => {
+    await runPhase('serve-from-cache-shift-click', async (check) => {
+      let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+      try {
+        ({ app } = await launchWithFixtureServed())
+
+        const windowsReady = await waitFor(() => (app as NonNullable<typeof app>).windows().length === 2)
+        check('the shell reaches its launch-time window count', windowsReady)
+
+        const chrome = findChrome(app)
+        await waitForAddressBarStable(chrome)
+        await clickAddressBarRetrying(chrome, `${ORDINARY_ORIGIN}/`)
+        const navigated = await waitForTab(chrome, { address: `${ORDINARY_ORIGIN}/`, title: 'ordinary page' })
+        check('the ordinary (unpinned) page loads over a real loopback server', navigated.ok, navigated.ok ? undefined : JSON.stringify(navigated.info))
+        if (!navigated.ok) throw new Error('ordinary fixture tab failed to navigate')
+
+        const view = findViewShowing(app, chrome, `${ORDINARY_ORIGIN}/`)
+        check('the ordinary tab is identifiable by its own URL', view !== undefined)
+        if (view === undefined) throw new Error('no view found showing the ordinary page')
+        const ordinaryTabsBefore = await tabIds(chrome)
+
+        // routePopup's isApp check returns 'new-tab' for this cross-origin app
+        // target before disposition is ever weighed -- the carve-out this
+        // guards sends a shift-click there to a window anyway.
+        await view.click('#to-app', { modifiers: ['Shift'] })
+
+        check('a new window opens', await waitFor(() => chromePages(app as NonNullable<typeof app>).length === 2))
+        const second = chromePages(app).find((page) => page !== chrome)
+        check('the new window\'s chrome view appeared', second !== undefined)
+        if (second === undefined) throw new Error('the new window\'s chrome view did not appear')
+        const secondNavigated = await waitForTab(second, { address: `${ORIGIN}/`, title: 'serve-from-cache fixture' })
+        check(
+          'the new window\'s own tab loads the pinned app, through the registered handler, not a tab in the first window',
+          secondNavigated.ok,
+          secondNavigated.ok ? undefined : JSON.stringify(secondNavigated.info)
+        )
+        check('the ordinary window\'s own tabs are unchanged', JSON.stringify(await tabIds(chrome)) === JSON.stringify(ordinaryTabsBefore))
       } finally {
         if (app !== undefined) await closeElectronApp(app)
       }

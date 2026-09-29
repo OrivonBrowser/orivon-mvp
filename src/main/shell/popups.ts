@@ -4,7 +4,7 @@
 // other open is an ordinary new tab. README.md's Design notes say why a
 // popup keeps its opener's session.
 import { WebContentsView } from 'electron'
-import type { HandlerDetails, WebContents, WebPreferences, WindowOpenHandlerResponse } from 'electron'
+import type { HandlerDetails, LoadURLOptions, WebContents, WebPreferences, WindowOpenHandlerResponse } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
@@ -64,15 +64,17 @@ export function routePopup (
 export interface PopupHost {
   atCapacity: () => boolean
   /** `active` false opens the tab behind the current one: a middle click or a plain ctrl+click.
-   * Returns the tab's webContents -- see `windowOpenHandler`'s no-guest branch, which adopts it
-   * rather than building its own unpartitioned, unsanitized view. */
-  openTab: (url: string, active: boolean) => WebContents | undefined
+   * `loadOptions` -- see `loadOptionsFor`'s own doc. Returns the tab's webContents -- see
+   * `windowOpenHandler`'s no-guest branch, which adopts it rather than building its own
+   * unpartitioned, unsanitized view. */
+  openTab: (url: string, active: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
   /** `url` is what the popup was opened at, for anything the tab decides from it.
    * `active` -- see `openTab`'s own doc. */
   adoptPopup: (view: WebContentsView, partition: string | undefined, url: string, active: boolean) => void
-  /** `url` in a brand new window, as Chrome opens a shift-click -- undefined
-   * when the shell cannot make one, so the caller opens a tab here instead. */
-  openWindow: (url: string) => WebContents | undefined
+  /** `url` in a brand new window, as Chrome opens a shift-click -- undefined when the shell
+   * cannot make one, so the caller opens a tab here instead. `loadOptions` -- see
+   * `loadOptionsFor`'s own doc. */
+  openWindow: (url: string, loadOptions?: LoadURLOptions) => WebContents | undefined
   /** The session a tab opened at `url` would get. */
   partitionFor: (url: string) => string | undefined
   /** The webPreferences a tab opened at `url` would get, without a
@@ -90,6 +92,26 @@ export interface PopupHost {
  * does. */
 function guestOf (options: object): WebContents | undefined {
   return (options as { webContents?: WebContents }).webContents
+}
+
+/** What a no-guest open's own `loadURL` needs to reproduce what Electron's DEFAULT (guest-adopting)
+ * path would have sent on its own -- measured against Electron 44: `details.postBody`/`referrer`
+ * are populated for a modifier-click submit of a `method=post` form exactly as for an ordinary
+ * click, but createTab's own `loadURL(target)` call otherwise carries neither, silently turning a
+ * POST into a GET with no referrer. `undefined` when there is nothing to carry (an ordinary link,
+ * no referrer to report), so a caller can omit the argument entirely rather than pass `{}`. */
+function loadOptionsFor (details: HandlerDetails): LoadURLOptions | undefined {
+  const { referrer, postBody } = details
+  // referrer?. : real Electron always sends one, but a hand-built HandlerDetails (a test, or a
+  // caller that only typed the fields it uses) may not -- never worth a throw either way.
+  if (postBody === undefined && (referrer?.url ?? '') === '') return undefined
+  const options: LoadURLOptions = {}
+  if (referrer?.url !== undefined && referrer.url !== '') options.httpReferrer = referrer
+  if (postBody !== undefined) {
+    options.postData = postBody.data
+    options.extraHeaders = `content-type: ${postBody.contentType}${postBody.boundary !== undefined ? `; boundary=${postBody.boundary}` : ''}\n`
+  }
+  return options
 }
 
 const MAX_NEW_WINDOWS_PER_MINUTE = 5
@@ -128,8 +150,17 @@ export function windowOpenHandler (
     const from = opener()
     // Every browser opens a middle click or a plain ctrl+click behind the current tab.
     const active = details.disposition !== 'background-tab'
+    const loadOptions = loadOptionsFor(details)
     if (routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'new-tab') {
-      host.openTab(details.url, active)
+      // routePopup's 'new-tab' returns before disposition is ever weighed (a builtin address, a
+      // cross-origin app target, an opener-severing feature) -- but a shift-click still reaches
+      // here with the same 'new-window' disposition it gets everywhere else (measured against
+      // Electron 44: a plain click or window.open() with no sizing features never produces it,
+      // only a real sized popup or a genuine shift-click do), so it still deserves a window, not a
+      // tab, through the same rate-limited path.
+      if (details.disposition !== 'new-window' || !limiter.allow() || host.openWindow(details.url, loadOptions) === undefined) {
+        host.openTab(details.url, active, loadOptions)
+      }
       return { action: 'deny' }
     }
     return {
@@ -152,10 +183,10 @@ export function windowOpenHandler (
         // (disposition 'new-window') already goes through the same safe pipeline via openWindow.
         if (guest === undefined) {
           if (details.disposition === 'new-window' && limiter.allow()) {
-            const opened = host.openWindow(details.url)
+            const opened = host.openWindow(details.url, loadOptions)
             if (opened !== undefined) return opened
           }
-          const opened = host.openTab(details.url, active)
+          const opened = host.openTab(details.url, active, loadOptions)
           if (opened !== undefined) return opened
           // Never reached in practice (atCapacity() was already false at this handler's own
           // entry, synchronously before Electron ever calls this callback) -- kept because

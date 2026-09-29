@@ -39,6 +39,10 @@ const PAGE_A = `<!doctype html><meta charset="utf-8"><title>link-open fixture</t
 <form id="form-blank-shift" action="${ORIGIN_B}/" target="_blank" method="get">
   <button id="submit-blank-shift" type="submit">shift-click submit, form target=_blank</button>
 </form>
+<form id="form-post" action="${ORIGIN_B}/post-target" target="_blank" method="post">
+  <input type="hidden" name="field" value="hello-post">
+  <button id="submit-post" type="submit">modifier-click submit, POST form target=_blank</button>
+</form>
 <button id="fire-synthetic">fire synthetic (untrusted) shift-clicks on #shift, no real user gesture chain</button>
 <script>
   document.getElementById('fire-synthetic').addEventListener('click', () => {
@@ -50,14 +54,28 @@ const PAGE_A = `<!doctype html><meta charset="utf-8"><title>link-open fixture</t
 const OTHER_A = '<!doctype html><meta charset="utf-8"><title>link-open fixture other</title><body>other</body>'
 const PAGE_B = '<!doctype html><meta charset="utf-8"><title>link-open fixture B</title><body>B</body>'
 
+interface ReceivedRequest { method: string, url: string, body: string, contentType: string | undefined, referer: string | undefined }
+let receivedByB: ReceivedRequest[] = []
+
 beforeAll(async () => {
   serverA = createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' })
     res.end(req.url === '/other' ? OTHER_A : PAGE_A)
   })
   serverB = createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html' })
-    res.end(PAGE_B)
+    const chunks: Buffer[] = []
+    req.on('data', (c: Buffer) => chunks.push(c))
+    req.on('end', () => {
+      receivedByB.push({
+        method: req.method ?? '',
+        url: req.url ?? '',
+        body: Buffer.concat(chunks).toString('utf8'),
+        contentType: req.headers['content-type'],
+        referer: req.headers['referer']
+      })
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(PAGE_B)
+    })
   })
   await new Promise<void>((resolve) => { serverA.listen(PORT_A, HOST, resolve) })
   await new Promise<void>((resolve) => { serverB.listen(PORT_B, HOST, resolve) })
@@ -250,3 +268,33 @@ it('a page cannot open unlimited windows with synthetic, untrusted shift-clicks:
     await closeElectron(app)
   }
 }, 60_000)
+
+const POST_MODIFIERS: Array<{ label: string, modifiers: Array<'Control' | 'Shift'> }> = [
+  { label: 'ctrl-click (opens a background tab)', modifiers: ['Control'] },
+  { label: 'shift-click (opens a new window)', modifiers: ['Shift'] }
+]
+
+for (const { label, modifiers } of POST_MODIFIERS) {
+  it(`a ${label} submit of a POST form carries its POST body and referrer to the tab it opens`, async () => {
+    const { app, chrome } = await launched()
+    try {
+      receivedByB = []
+      await clickAddressBarRetrying(chrome, `${ORIGIN_A}/`)
+      expect((await waitForTab(chrome, { address: `${ORIGIN_A}/` })).ok).toBe(true)
+      const view = findViewShowing(app, chrome, `${ORIGIN_A}/`)
+      if (view === undefined) throw new Error('no view showing the fixture page')
+
+      await view.click('#submit-post', { modifiers })
+      await waitFor(() => receivedByB.some((r) => r.url === '/post-target'))
+
+      const request = receivedByB.find((r) => r.url === '/post-target')
+      expect(request?.method).toBe('POST')
+      expect(request?.body).toBe('field=hello-post')
+      expect(request?.contentType).toBe('application/x-www-form-urlencoded')
+      expect(request?.referer).toBe(`${ORIGIN_A}/`)
+      expect(mainOutput(app)).not.toContain('uncaught exception')
+    } finally {
+      await closeElectron(app)
+    }
+  }, 60_000)
+}

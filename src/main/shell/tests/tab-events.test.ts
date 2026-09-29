@@ -208,7 +208,7 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'background-tab' })
     const returned = response.createWindow?.({ webPreferences: {} } as never)
 
-    expect(openTab).toHaveBeenCalledWith('https://other.example/', false)
+    expect(openTab).toHaveBeenCalledWith('https://other.example/', false, undefined)
     expect(returned).toBe(opened)
     expect(adoptedViews).toHaveLength(0)
     expect(host.adoptPopup).not.toHaveBeenCalled()
@@ -231,7 +231,7 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: `${APP}/other`, disposition: 'background-tab' })
     const returned = response.createWindow?.({ webPreferences: {} } as never)
 
-    expect(openTab).toHaveBeenCalledWith(`${APP}/other`, false)
+    expect(openTab).toHaveBeenCalledWith(`${APP}/other`, false, undefined)
     expect(returned).toBe(opened)
     expect(adoptedViews).toHaveLength(0)
     expect(host.adoptPopup).not.toHaveBeenCalled()
@@ -247,7 +247,7 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' })
     const returned = response.createWindow?.({ webPreferences: {} } as never)
 
-    expect(openWindow).toHaveBeenCalledWith('https://other.example/')
+    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined)
     expect(returned).toBe(openedContents)
     expect(adoptedViews).toHaveLength(0)
     expect(host.adoptPopup).not.toHaveBeenCalled()
@@ -274,7 +274,7 @@ describe('wireView -- window.open', () => {
       vi.setSystemTime(500)
       openOnce()
       expect(openWindow).toHaveBeenCalledTimes(1)
-      expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true)
+      expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
 
       // Spaced a full second apart, up to the cap: each opens a real window.
       for (let seconds = 2; seconds <= 5; seconds++) {
@@ -305,7 +305,63 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
 
     expect(response.action).toBe('deny')
-    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true)
+    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
+  })
+
+  it('carries a modifier-click form submit\'s referrer and POST body to the tab it opens', () => {
+    // Measured against Electron 44: details.postBody/referrer are populated for a modifier-click
+    // submit of a method=post form exactly as for an ordinary click, but createTab's own
+    // loadURL(target) call otherwise carries neither, silently turning the POST into a GET with
+    // no referrer.
+    const wc = fakeContents()
+    const opened = fakeContents('https://other.example/target')
+    const openTab = vi.fn((): never => opened as never)
+    const host = fakeHost({ openTab })
+    wireView('tab-1', record(wc, undefined, host))
+    const referrer = { url: 'https://other.example/', policy: 'strict-origin-when-cross-origin' as const }
+    const postBody = { contentType: 'application/x-www-form-urlencoded', data: [{ type: 'rawData' as const, bytes: Buffer.from('field=value') }] }
+
+    const response = openHandler(wc)({ url: 'https://other.example/target', disposition: 'background-tab', referrer, postBody })
+    response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(openTab).toHaveBeenCalledWith('https://other.example/target', false, {
+      httpReferrer: referrer,
+      postData: postBody.data,
+      extraHeaders: 'content-type: application/x-www-form-urlencoded\n'
+    })
+  })
+
+  it('sends a shift-click that routePopup would otherwise send straight to a tab, to a new window instead', () => {
+    // routePopup returns 'new-tab' here (noopener) before disposition is ever weighed, but a
+    // shift-click still reaches here with the same 'new-window' disposition it gets everywhere
+    // else -- it deserves a window, not a tab, same as any other shift-click.
+    const wc = fakeContents()
+    const openedWindow = fakeContents('https://other.example/')
+    const openWindow = vi.fn((): never => openedWindow as never)
+    const host = fakeHost({ openWindow })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener', disposition: 'new-window' })
+
+    expect(response.action).toBe('deny')
+    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined)
+    expect(host.openTab).not.toHaveBeenCalled()
+  })
+
+  it('keeps a plain window.open() to a noopener target an ordinary tab -- its disposition is never new-window', () => {
+    // Measured against Electron 44: a plain window.open(url) (no sizing features) always gets
+    // 'foreground-tab', whatever features string it passes -- only a real sized popup or a
+    // genuine shift-click ever produces 'new-window'.
+    const wc = fakeContents()
+    const openWindow = vi.fn()
+    const host = fakeHost({ openWindow })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener', disposition: 'foreground-tab' })
+
+    expect(response.action).toBe('deny')
+    expect(openWindow).not.toHaveBeenCalled()
+    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
   })
 
   it('refuses outright at the tab ceiling', () => {
@@ -491,7 +547,7 @@ describe('wireView -- a tab that changes host', () => {
 
     openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
 
-    expect(after.openTab).toHaveBeenCalledWith('https://other.example/', true)
+    expect(after.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
     expect(before.openTab).not.toHaveBeenCalled()
   })
 
