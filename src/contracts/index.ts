@@ -14,7 +14,8 @@
 // surface is disposable; this interface is not.
 //
 // Reading order for someone new: errors -> handles -> manifest ->
-// capability-api. That is the whole product surface in four files.
+// capability-api. Those four are the product surface; ./limits.ts and
+// ./ipc.ts hold its two runtime values, and this file re-exports all six.
 
 export type { OrivonErrorCode, OrivonError } from './errors.js'
 

@@ -35,7 +35,7 @@ it('loads a typed ipfs:// address, follows an ipfs:// link, and opens an ipns://
         appPath: '.',
         args: [HERMETIC_RESOLVER],
         env: {
-          ORIVON_TEST_ETH_FIXTURES: '{}',
+          ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'site.eth': `ipfs://${site}` }),
           ORIVON_TEST_IPFS_GATEWAYS: `${gateway.url},${linkedGateway.url}`,
           ORIVON_TEST_DOH: `${gateway.url}/dns-query`
         }
@@ -68,7 +68,16 @@ it('loads a typed ipfs:// address, follows an ipfs:// link, and opens an ipns://
       const named = await waitForTab(chrome, { address: 'ipns://docs.example/', title: 'ipfs fixture' })
       check(`an ipns:// DNSLink name is shown as its address (${JSON.stringify(named.info)})`, named.ok)
 
-      expect(typed.ok && followed.ok && named.ok).toBe(true)
+      await clickAddressBarRetrying(chrome, 'ipns://site.eth')
+      const viaIpns = await waitForTab(chrome, { address: 'ipfs://site.eth/', title: 'ipfs fixture' })
+      check(`ipns://site.eth opens the .eth name's own origin, shown as ipfs://site.eth/ (${JSON.stringify(viaIpns.info)})`, viaIpns.ok)
+      check('the page runs at https://site.eth/, the name\'s own unchanged origin', findViewShowing(app, chrome, 'https://site.eth/') !== undefined)
+
+      await clickAddressBarRetrying(chrome, 'ipfs://site.eth/')
+      const viaIpfs = await waitForTab(chrome, { address: 'ipfs://site.eth/', title: 'ipfs fixture' })
+      check(`ipfs://site.eth/ does the same (${JSON.stringify(viaIpfs.info)})`, viaIpfs.ok)
+
+      expect(typed.ok && followed.ok && named.ok && viaIpns.ok && viaIpfs.ok).toBe(true)
       expect(page).toEqual({ origin: `https://${site}.ipfs.orivon`, secure: true, ran: 'ran' })
     } finally {
       if (app !== undefined) await closeElectronApp(app)
