@@ -8,11 +8,18 @@ interface AsymmetricKeyProof {
   signature: Buffer
 }
 
+// Orivon patch: `verified_contents`/`signed_header_data` are `Buffer |
+// undefined`, not `Buffer?` -- readCrxFileHeader below always builds this
+// object with both keys present, and the root tsconfig's
+// exactOptionalPropertyTypes tells those two shapes apart (UPSTREAM.md
+// patch 6). src/main/extensions/README.md's Design notes are still why
+// nothing under src/ imports this file directly; it is now reached only
+// transitively, through installer.ts.
 interface CrxFileHeader {
   sha256_with_rsa: AsymmetricKeyProof[]
   sha256_with_ecdsa: AsymmetricKeyProof[]
-  verified_contents?: Buffer
-  signed_header_data?: Buffer
+  verified_contents: Buffer | undefined
+  signed_header_data: Buffer | undefined
 }
 
 export function readCrxFileHeader(pbf: Pbf, end?: any): CrxFileHeader {
@@ -47,7 +54,7 @@ function readAsymmetricKeyProofField(tag: any, obj: any, pbf: Pbf) {
   else if (tag === 2) obj.signature = pbf.readBytes()
 }
 
-export function readSignedData(pbf: Pbf, end?: any): { crx_id?: Buffer } {
+export function readSignedData(pbf: Pbf, end?: any): { crx_id: Buffer | undefined } {
   return pbf.readFields(readSignedDataField, { crx_id: undefined }, end)
 }
 function readSignedDataField(tag: any, obj: any, pbf: Pbf) {

@@ -33,7 +33,10 @@ function buildDeps (overrides: Partial<ExtensionsDomainDeps> = {}): { deps: Exte
       setEnabled: vi.fn(async () => {}),
       uninstall: vi.fn(async () => {}),
       installFromFolder: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
-      installFromFile: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED }))
+      installFromFile: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
+      installFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
+      checkForUpdates: vi.fn(async () => {}),
+      updateFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED }))
     },
     readFacts: async () => FACTS,
     developerModeEnabled: () => false,
@@ -143,7 +146,10 @@ describe('extensionsDomain', () => {
         setEnabled: vi.fn(async () => {}),
         uninstall: vi.fn(async () => {}),
         installFromFolder: vi.fn(async (): Promise<InstallOutcome> => ({ installed: false, reason: 'declined by the person' })),
-        installFromFile: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED }))
+        installFromFile: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
+        installFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
+        checkForUpdates: vi.fn(async () => {}),
+        updateFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED }))
       }
     })
     const { handle } = extensionsDomain(deps)
@@ -185,6 +191,30 @@ describe('extensionsDomain', () => {
     const reply = await handle({ type: 'installFromFile' }, caller)
     expect(reply).toEqual({ installed: true, entry: UNPACKED })
     expect(deps.extensions.installFromFile).toHaveBeenCalledWith('/picked/file.zip')
+    expect(deps.notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('checkForUpdates checks every store entry and notifies', async () => {
+    const { deps } = buildDeps()
+    const { handle } = extensionsDomain(deps)
+    expect(await handle({ type: 'checkForUpdates' }, caller)).toEqual({ ok: true })
+    expect(deps.extensions.checkForUpdates).toHaveBeenCalledTimes(1)
+    expect(deps.notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('updateNow refuses an unknown id', async () => {
+    const { deps } = buildDeps()
+    const { handle } = extensionsDomain(deps)
+    expect(await handle({ type: 'updateNow', id: 'nope' }, caller)).toBeUndefined()
+    expect(deps.extensions.updateFromStore).not.toHaveBeenCalled()
+  })
+
+  it('updateNow installs the pending update for a known id and notifies on success', async () => {
+    const { deps } = buildDeps()
+    const { handle } = extensionsDomain(deps)
+    const reply = await handle({ type: 'updateNow', id: UNPACKED.id }, caller)
+    expect(reply).toEqual({ installed: true, entry: UNPACKED })
+    expect(deps.extensions.updateFromStore).toHaveBeenCalledWith(UNPACKED.id)
     expect(deps.notify).toHaveBeenCalledTimes(1)
   })
 })

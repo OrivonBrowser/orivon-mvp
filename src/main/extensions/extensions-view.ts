@@ -34,6 +34,14 @@ export interface ExtensionDetails {
   readonly whereItRuns: string
   /** True for an unpacked install: the page offers Reload only then. */
   readonly reloadable: boolean
+  /** True for a Chrome Web Store install: the page offers "Check for
+   * updates" only then -- an unpacked or file install has no updater to
+   * check. */
+  readonly isStoreManaged: boolean
+  /** True when a check held an update back for consent
+   * (registry.ts's `ExtensionUpdater.pendingUpdate`): the page offers
+   * "Update" only then. */
+  readonly updateAvailable: boolean
 }
 
 /** What `extensions-view-runner.ts` read off disk for one entry: the
@@ -126,6 +134,8 @@ export function buildExtensionDetails (entry: InstalledExtension, facts: Extensi
     siteAccess: facts.manifestFacts === undefined ? undefined : describeHostAccess(facts.manifestFacts),
     stripped: describeStrippedPermissions(entry.stripped),
     whereItRuns: WHERE_EXTENSIONS_RUN,
-    reloadable: entry.source.kind === 'unpacked'
+    reloadable: entry.source.kind === 'unpacked',
+    isStoreManaged: entry.updater.kind === 'store',
+    updateAvailable: entry.updater.kind === 'store' && entry.updater.pendingUpdate !== undefined
   }
 }

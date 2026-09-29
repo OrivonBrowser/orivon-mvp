@@ -2,7 +2,8 @@
 
 **What lives here.** The CRX3 verifier, the zip unpacker, the installed-extension registry
 (`<userData>/extensions/registry.json`), the install/uninstall/enable runner, the install prompt,
-the subsystem that loads every enabled entry into `session.defaultSession` at boot, and the
+the subsystem that loads every enabled entry into `session.defaultSession` at boot, the Chrome Web
+Store wiring (`store-runner.ts`, `store-download-seam.ts`, `store-test-hook.ts`), and the
 `orivon://extensions` page's main-side half: `extensions-view.ts` (the row and details view
 model: name/description resolution, icon choice), `extensions-view-runner.ts` (reads a manifest,
 icon and locale catalogue off a loaded entry's own folder), `extensions-picker-runner.ts` (the
@@ -10,16 +11,21 @@ native folder/file pickers Developer mode's buttons open), and `extensions-domai
 `InternalDomain` the page's requests go through -- `../pages/README.md`).
 
 **What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`, `registry.ts`,
-`extensions-view.ts` and `unpack-runner.ts`'s pure `checkZipEntryPath`), `node:crypto`, `node:fs`,
-`node:path`, `adm-zip`, `pbf`, [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
+`extensions-view.ts`, `store-download-seam.ts` and `unpack-runner.ts`'s pure
+`checkZipEntryPath`), `node:crypto`, `node:fs`, `node:path`, `adm-zip`, `pbf`,
+[`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
 (durable: the manifest facts, the stripped-manifest copy, the install prompt's words, and the
 words `extensions-view.ts` reuses for the page's Site access and "where it runs" fields),
 [`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`
-(`extensions-domain.ts`), [`../settings/`](../settings/) (Developer mode is a setting there), and,
-for `crx.ts` and `install-runner.ts`,
-[`vendor/electron-chrome-web-store`](../../../vendor/electron-chrome-web-store)'s `id.ts`
-(`convertHexadecimalToIDAlphabet`, `generateId`).
+(`extensions-domain.ts`), [`../settings/`](../settings/) (Developer mode is a setting there), and
+[`vendor/electron-chrome-web-store`](../../../vendor/electron-chrome-web-store): `id.ts`
+(`convertHexadecimalToIDAlphabet`, `generateId`, from `crx.ts` and `install-runner.ts`), and, from
+`store-runner.ts` and `install-runner.ts`'s own store functions, `index.ts` (`installChromeWebStore`,
+`updateExtensions`), `installer.ts` (`downloadCrxBytes`) and `types.ts` (`WebStoreHost`,
+`VerifyCrx`, `UpdateCheckResult`) -- the vendored library's own `UPSTREAM.md` says what patch 4
+made those safe to route through Orivon's own install path instead of the library's own
+filesystem calls.
 
 **What it must never import.** [`src/renderer/`](../../renderer/): this is main-process code,
 same rule as the rest of `src/main/` (`../README.md`). Nothing under `vendor/` beyond an import
@@ -33,10 +39,11 @@ same rule as the rest of `src/main/` (`../README.md`). Nothing under `vendor/` b
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts` | The decision -- no `electron`, unit-tested under plain vitest |
-| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `extensions-view-runner.ts` | The real I/O |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `extensions-view-runner.ts`, `store-runner.ts` | The real I/O |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
-| `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts` |
+| `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`) |
+| `store-test-hook.ts` | Test builds only -- exposes the store methods on `globalThis` for `test/e2e-extensions-store.test.ts` |
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
 
 ## Design notes
@@ -91,3 +98,17 @@ same way Chrome does, from the manifest actually loaded (`entry.path`), confined
 `../../broker/policy/extension-manifest.ts`), so a person reading the details view after
 installing sees the same fact in the same words, not a second description that could drift from
 the first.
+
+**The Chrome Web Store install and update path is Orivon's own, not the vendored library's.**
+`store-runner.ts` registers the library's store-page preload and its IPC handlers
+(`chrome.webstorePrivate` on chromewebstore.google.com's own top frame only -- vendor's
+`api.ts`/`chrome-web-store.preload.ts`), but every actual write goes through
+`install-runner.ts`'s `installFromStoreCrx`, the same `finishInstall` every other install uses:
+`verifyCrx3` with `requirePublisherProof: true`, the id checked against what was requested, and,
+for an update, `updateRequiresConsent` (`extension-manifest.ts`'s T19 subset rule) held back
+rather than installed silently if it widens what the person already granted -- `registry.ts`'s
+`ExtensionUpdater.pendingUpdate` records what a held-back update would need, for the page's
+"Update" button to re-fetch and prompt on. A fresh store install shows one prompt, from the store
+page's own manifest, through the library's `beforeInstall` hook, before any byte downloads; a
+background update prompts nobody, and holds back rather than widening silently; the "Update"
+button's own installs go through the same ordinary prompt a fresh install would.

@@ -29,8 +29,14 @@ function detailsPanel (state: ExtensionsState, ext: ExtensionRow): HTMLElement {
   const reload = state.developerMode && details.reloadable
     ? h('button', { className: 'btn small', type: 'button', textContent: 'Reload', onclick: () => { void state.reload(ext.id) } })
     : null
+  const checkForUpdates = details.isStoreManaged
+    ? h('button', { className: 'btn small', type: 'button', textContent: 'Check for updates', onclick: () => { void state.checkForUpdates() } })
+    : null
+  const update = details.updateAvailable
+    ? h('button', { className: 'btn small primary', type: 'button', textContent: 'Update', onclick: () => { void state.updateNow(ext.id) } })
+    : null
 
-  return h('div', { className: 'ext-details' }, ...rows, strippedBlock, reload)
+  return h('div', { className: 'ext-details' }, ...rows, strippedBlock, checkForUpdates, update, reload)
 }
 
 function removeButton (state: ExtensionsState, ext: ExtensionRow): HTMLElement {
@@ -101,12 +107,20 @@ function header (state: ExtensionsState): HTMLElement {
     textContent: 'Install from file…',
     onclick: () => { void state.installFromFile() }
   })
+  const storeLink = h('a', {
+    className: 'link-btn',
+    href: 'https://chromewebstore.google.com/category/extensions',
+    target: '_blank',
+    rel: 'noopener',
+    textContent: 'Get more extensions from the Chrome Web Store'
+  })
 
   return h('header', { className: 'head' },
     h('h1', { textContent: 'Extensions' }),
     h('div', { className: 'dev-mode-row' }, h('span', { textContent: 'Developer mode' }), devToggle),
     loadUnpacked,
-    installFile)
+    installFile,
+    storeLink)
 }
 
 export function renderPage (state: ExtensionsState): void {

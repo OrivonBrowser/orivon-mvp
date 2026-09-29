@@ -1,3 +1,5 @@
+// Orivon patch: see types.ts's own doc on this reference (UPSTREAM.md patch 6).
+/// <reference types="chrome" />
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -13,7 +15,7 @@ import { readCrxFileHeader, readSignedData } from './crx3'
 import { convertHexadecimalToIDAlphabet, generateId } from './id'
 import { fetch, getChromeVersion, getDefaultExtensionsPath } from './utils'
 import { findExtensionInstall } from './loader'
-import { ExtensionId, VerifyCrx } from './types'
+import type { ExtensionId, VerifyCrx, WebStoreHost } from './types'
 
 const d = debug('electron-chrome-web-store:installer')
 
@@ -32,7 +34,10 @@ function getExtensionCrxURL(extensionId: ExtensionId) {
   return url.toString()
 }
 
-interface CrxInfo {
+// Orivon patch: exported so downloadCrxBytes below can return it to a
+// caller that needs the parsed header (installer.ts's own host branch,
+// and src/main/extensions/install-runner.ts's store-driven installs).
+export interface CrxInfo {
   extensionId: string
   version: number
   header: Buffer
@@ -134,47 +139,67 @@ async function downloadCrx(url: string, dest: string) {
   await pipeline(downloadStream, fileStream)
 }
 
+// Orivon patch: the download-and-parse-header half of
+// downloadExtensionFromURL, factored out so a caller that only wants the raw
+// bytes (the host branch below, and install-runner.ts's own store installs)
+// does not have to duplicate it.
+export async function downloadCrxBytes(url: string): Promise<{ bytes: Buffer; crx: CrxInfo }> {
+  d('downloading %s', url)
+  const crxPath = path.join(os.tmpdir(), `electron-cws-download_${crypto.randomUUID()}.crx`)
+  try {
+    await downloadCrx(url, crxPath)
+    const bytes = await fs.promises.readFile(crxPath)
+    return { bytes, crx: parseCrx(bytes) }
+  } finally {
+    await fs.promises.rm(crxPath, { force: true })
+  }
+}
+
 export async function downloadExtensionFromURL(
   url: string,
   extensionsDir: string,
   verifyCrx: VerifyCrx,
   expectedExtensionId?: string,
+  host?: WebStoreHost,
+  approvedManifest?: string,
 ): Promise<string> {
-  d('downloading %s', url)
+  const { bytes: crxBuffer, crx } = await downloadCrxBytes(url)
+
+  if (expectedExtensionId && expectedExtensionId !== crx.extensionId) {
+    throw new Error(
+      `CRX mismatches expected extension ID: ${expectedExtensionId} !== ${crx.extensionId}`,
+    )
+  }
+
+  // Orivon patch: verify the CRX3 signature on the raw downloaded bytes
+  // before anything is unzipped to disk. A throw here leaves nothing
+  // written, either below or in host.installCrx (its own doc says it does
+  // its own, stricter verification too -- this call stays regardless, so
+  // every download is checked whether or not a host is installed).
+  await verifyCrx(crxBuffer, crx.extensionId)
+
+  // Orivon patch: a host present means Orivon owns writing and loading the
+  // extension copy -- it does its own unpack, not this file's. The path
+  // this function normally returns is meaningless here; nothing that calls
+  // it with a host reads the result.
+  if (host) {
+    await host.installCrx(crxBuffer, crx.extensionId, approvedManifest, url)
+    return ''
+  }
 
   const installUuid = crypto.randomUUID()
-  const crxPath = path.join(os.tmpdir(), `electron-cws-download_${installUuid}.crx`)
-  try {
-    await downloadCrx(url, crxPath)
+  const unpackedPath = path.join(extensionsDir, crx.extensionId, installUuid)
+  await fs.promises.mkdir(unpackedPath, { recursive: true })
+  const manifest = await unpackCrx(crx, unpackedPath)
 
-    const crxBuffer = await fs.promises.readFile(crxPath)
-    const crx = parseCrx(crxBuffer)
-
-    if (expectedExtensionId && expectedExtensionId !== crx.extensionId) {
-      throw new Error(
-        `CRX mismatches expected extension ID: ${expectedExtensionId} !== ${crx.extensionId}`,
-      )
-    }
-
-    // Orivon patch: verify the CRX3 signature on the raw downloaded bytes
-    // before anything is unzipped to disk. A throw here leaves nothing written.
-    await verifyCrx(crxBuffer, crx.extensionId)
-
-    const unpackedPath = path.join(extensionsDir, crx.extensionId, installUuid)
-    await fs.promises.mkdir(unpackedPath, { recursive: true })
-    const manifest = await unpackCrx(crx, unpackedPath)
-
-    if (!manifest.version) {
-      throw new Error('Installed extension is missing manifest version')
-    }
-
-    const versionedPath = path.join(extensionsDir, crx.extensionId, `${manifest.version}_0`)
-    await fs.promises.rename(unpackedPath, versionedPath)
-
-    return versionedPath
-  } finally {
-    await fs.promises.rm(crxPath, { force: true })
+  if (!manifest.version) {
+    throw new Error('Installed extension is missing manifest version')
   }
+
+  const versionedPath = path.join(extensionsDir, crx.extensionId, `${manifest.version}_0`)
+  await fs.promises.rename(unpackedPath, versionedPath)
+
+  return versionedPath
 }
 
 /**
@@ -206,9 +231,23 @@ interface InstallExtensionOptions extends CommonExtensionOptions {
 
   /** Orivon patch: required, see types.ts's VerifyCrx. */
   verifyCrx: VerifyCrx
+
+  /** Orivon patch: see types.ts's WebStoreHost. `?: T | undefined`, not
+   * plain `?: T`: api.ts passes a whole `WebStoreState` (whose own `host` is
+   * `T | undefined`, always present) as this options object, and the root
+   * tsconfig's exactOptionalPropertyTypes only accepts that into an optional
+   * property whose own type already spells out `| undefined`. */
+  host?: WebStoreHost | undefined
+
+  /** Orivon patch 7: the manifest the store page showed the person, passed
+   * on to the host with the downloaded bytes. */
+  approvedManifest?: string | undefined
 }
 
-interface UninstallExtensionOptions extends CommonExtensionOptions {}
+interface UninstallExtensionOptions extends CommonExtensionOptions {
+  /** Orivon patch: see InstallExtensionOptions.host's own doc just above. */
+  host?: WebStoreHost | undefined
+}
 
 /**
  * Install extension from the web store.
@@ -216,8 +255,26 @@ interface UninstallExtensionOptions extends CommonExtensionOptions {}
 export async function installExtension(
   extensionId: string,
   opts: InstallExtensionOptions,
-): Promise<Electron.Extension> {
+): Promise<Electron.Extension | undefined> {
   d('installing %s', extensionId)
+
+  // Orivon patch: a host owns every install -- it writes and loads its own
+  // copy (session.extensions.getExtension already reflects that once
+  // host.installCrx resolves, since Orivon loads into this SAME session).
+  // The "already loaded"/"already installed" shortcuts below are the
+  // library's own filesystem bookkeeping, which a host makes moot.
+  if (opts.host) {
+    const extensionsPath = opts.extensionsPath || getDefaultExtensionsPath()
+    await downloadExtensionFromURL(
+      getExtensionCrxURL(extensionId),
+      extensionsPath,
+      opts.verifyCrx,
+      extensionId,
+      opts.host,
+      opts.approvedManifest,
+    )
+    return undefined
+  }
 
   const session = opts.session || electronSession.defaultSession
   const sessionExtensions = session.extensions || session
@@ -256,6 +313,11 @@ export async function uninstallExtension(
   opts: UninstallExtensionOptions = {},
 ) {
   d('uninstalling %s', extensionId)
+
+  if (opts.host) {
+    await opts.host.uninstall(extensionId)
+    return
+  }
 
   const session = opts.session || electronSession.defaultSession
   const sessionExtensions = session.extensions || session

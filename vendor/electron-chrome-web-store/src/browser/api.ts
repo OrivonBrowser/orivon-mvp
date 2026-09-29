@@ -1,7 +1,10 @@
+// Orivon patch: see types.ts's own doc on this reference (UPSTREAM.md patch 6).
+/// <reference types="chrome" />
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import debug from 'debug'
-import { app, BrowserWindow, ipcMain, nativeImage, NativeImage, Session } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage } from 'electron'
+import type { NativeImage, Session } from 'electron'
 import { fetch } from './utils'
 
 import {
@@ -11,11 +14,26 @@ import {
   WebGlStatus,
 } from '../common/constants'
 import { installExtension, uninstallExtension } from './installer'
-import { ExtensionId, WebStoreState } from './types'
+import type { ExtensionId, WebStoreState } from './types'
 
 const d = debug('electron-chrome-web-store:api')
 
 const WEBSTORE_URL = 'https://chromewebstore.google.com'
+
+// Orivon patch: `senderFrame.origin.startsWith(WEBSTORE_URL)` also accepts
+// `https://chromewebstore.google.com.evil.com` -- an exact match, and a
+// requirement that the call came from the page's own top frame (never a
+// frame a compromised or malicious page on chromewebstore.google.com's own
+// origin embedded), closes it. Exported so a unit test can drive it with a
+// plain object shaped like Electron.WebFrameMain, with no real Electron
+// process (src/main/extensions/tests/store-origin.test.ts).
+export function isWebStoreFrame(frame: Electron.WebFrameMain | null | undefined): boolean {
+  if (!frame || frame.isDestroyed()) return false
+  // A frame's own `.top` is itself when it IS the top frame (the same
+  // shape as a web page's `window.top === window`); `.parent` is what
+  // Electron documents as null there instead.
+  return frame.origin === WEBSTORE_URL && frame.top === frame
+}
 
 function getExtensionInfo(ext: Electron.Extension) {
   const manifest: chrome.runtime.Manifest = ext.manifest
@@ -144,7 +162,10 @@ async function beginInstall(
         manifest,
         icon,
         frame: senderFrame,
-        browserWindow: browserWindow || undefined,
+        // Orivon patch: an omitted key, not one holding `undefined` --
+        // ExtensionInstallDetails.browserWindow is `T?`, and the root
+        // tsconfig's exactOptionalPropertyTypes tells those two apart.
+        ...(browserWindow ? { browserWindow } : {}),
       })
 
       if (typeof result !== 'object' || typeof (result as any).action !== 'string') {
@@ -155,7 +176,9 @@ async function beginInstall(
     }
 
     state.installing.add(extensionId)
-    await installExtension(extensionId, state)
+    // Orivon patch 7: the manifest the person approved goes with the install,
+    // so the host can refuse a download that asks for more.
+    await installExtension(extensionId, { ...state, approvedManifest: details.manifest })
     return { result: Result.SUCCESS }
   } catch (error) {
     console.error('Extension installation failed:', error)
@@ -187,9 +210,8 @@ export function registerWebStoreApi(webStoreState: WebStoreState) {
       ipcMain.handle(channel, async function handleWebStoreIpc(event, ...args) {
         d('received %s', channel)
 
-        const senderOrigin = event.senderFrame?.origin
-        if (!senderOrigin || !senderOrigin.startsWith(WEBSTORE_URL)) {
-          d('ignoring webstore request from %s', senderOrigin)
+        if (!isWebStoreFrame(event.senderFrame)) {
+          d('ignoring webstore request from %s', event.senderFrame?.origin)
           return
         }
 

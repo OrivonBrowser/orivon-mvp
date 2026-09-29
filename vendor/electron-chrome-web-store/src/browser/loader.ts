@@ -1,10 +1,12 @@
+// Orivon patch: see types.ts's own doc on this reference (UPSTREAM.md patch 6).
+/// <reference types="chrome" />
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import debug from 'debug'
 
 import { generateId } from './id'
 import { compareVersions } from './utils'
-import { ExtensionId } from './types'
+import type { ExtensionId } from './types'
 
 const d = debug('electron-chrome-web-store:loader')
 

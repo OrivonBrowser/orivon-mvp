@@ -91,8 +91,13 @@ export default defineConfig({
       },
       // Dependencies stay external, loaded from node_modules at run time,
       // except these ESM-only packages: this CommonJS output cannot require()
-      // them, so they are bundled into the verifier host instead.
-      externalizeDeps: { exclude: ['multiformats', '@ipld/dag-pb', 'ipfs-unixfs', 'ipfs-unixfs-exporter', 'ipns'] }
+      // them, so they are bundled into whichever entry imports them instead.
+      // `pbf` (extensions/crx.ts, vendor/electron-chrome-web-store's CRX3
+      // reader) is `"type": "module"` -- measured: left external, a real
+      // build's `new Pbf(...)` throws "Pbf is not a constructor" at runtime,
+      // never caught by typecheck or a plain-vitest unit test, only a real
+      // Electron launch.
+      externalizeDeps: { exclude: ['multiformats', '@ipld/dag-pb', 'ipfs-unixfs', 'ipfs-unixfs-exporter', 'ipns', 'pbf'] }
     }
   },
   preload: {

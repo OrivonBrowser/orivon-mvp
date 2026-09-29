@@ -81,6 +81,16 @@ export function extensionsDomain (deps: ExtensionsDomainDeps): InternalDomain {
           const file = await deps.pickFile()
           return file === undefined ? CANCELLED : await install(deps.extensions.installFromFile(file))
         }
+        case 'checkForUpdates': {
+          await deps.extensions.checkForUpdates()
+          deps.notify()
+          return { ok: true }
+        }
+        case 'updateNow': {
+          const entry = findExtension(entries(), request.id)
+          if (entry === undefined) return undefined
+          return await install(deps.extensions.updateFromStore(entry.id))
+        }
         default:
           return undefined
       }

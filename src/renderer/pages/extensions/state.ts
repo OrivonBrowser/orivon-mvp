@@ -22,6 +22,8 @@ export interface ExtensionDetails {
   readonly stripped: readonly string[]
   readonly whereItRuns: string
   readonly reloadable: boolean
+  readonly isStoreManaged: boolean
+  readonly updateAvailable: boolean
 }
 
 interface InstallReply {
@@ -116,6 +118,16 @@ export class ExtensionsState {
 
   async installFromFile (): Promise<void> {
     const outcome = await this.bridge.request('extensions', { type: 'installFromFile' }) as InstallReply
+    await this.afterInstall(outcome)
+  }
+
+  async checkForUpdates (): Promise<void> {
+    await this.bridge.request('extensions', { type: 'checkForUpdates' })
+    await this.refresh()
+  }
+
+  async updateNow (id: string): Promise<void> {
+    const outcome = await this.bridge.request('extensions', { type: 'updateNow', id }) as InstallReply
     await this.afterInstall(outcome)
   }
 
