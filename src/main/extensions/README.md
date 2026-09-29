@@ -15,16 +15,17 @@ catalogue off a loaded entry's own folder), `extensions-picker-runner.ts` (the n
 Developer mode's buttons open) and `extensions-domain.ts` (the `InternalDomain` the page's
 requests go through, `../pages/README.md`); and the host-access decision chrome.cookies and
 chrome.tabs gate on (`extension-host-access.ts`, wired into the vendored library from
-`extension-host.ts`); and, for the same reason a person deciding about a site's permissions
+`extension-host.ts`); the activeTab-style invocation ledger `chrome.tabCapture` gates on
+(`extension-tab-invocation.ts`); and, for the same reason a person deciding about a site's permissions
 should see who else can act on it, `site-reach.ts` (which enabled extensions' host access covers
 a given origin) and `site-reach-runner.ts` (the real manifest reads behind it), reused by
 `../consent/` and `../permissions/`.
 
 **What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`,
 `electron-chrome-extensions-lib.d.ts`, `extension-host-access.ts`, `extension-sender-id-check.ts`,
-`extension-tab-details.ts`, `extension-url-policy.ts`, `extensions-domain.ts`,
-`extensions-view-runner.ts`, `extensions-view.ts`, `registry-runner.ts`, `registry.ts`,
-`site-reach.ts`, `site-reach-runner.ts`, `store-download-seam.ts`, `store-runner.ts`,
+`extension-tab-details.ts`, `extension-tab-invocation.ts`, `extension-url-policy.ts`,
+`extensions-domain.ts`, `extensions-view-runner.ts`, `extensions-view.ts`, `registry-runner.ts`,
+`registry.ts`, `site-reach.ts`, `site-reach-runner.ts`, `store-download-seam.ts`, `store-runner.ts`,
 `store-test-hook.ts` and `unpack-runner.ts`), `node:crypto`, `node:fs`, `node:path`, `adm-zip`,
 `pbf`,
 [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
@@ -33,26 +34,34 @@ words `extensions-view.ts` reuses for the page),
 [`../../broker/policy/extension-host-patterns.ts`](../../broker/policy/extension-host-patterns.ts)
 (durable: the Chrome match-pattern matcher `extension-host-access.ts` uses for chrome.cookies'
 and chrome.tabs' own host-access checks, and `site-reach.ts` uses for a person's own popups),
+[`../../broker/policy/origin.ts`](../../broker/policy/origin.ts)'s `originFromUrl` (durable;
+`extension-host.ts`'s own activeTab-style invocation ledger and its `chrome.tabCapture`
+app-refusal check both key on it),
 [`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`,
+[`../sessions/tab-capture-grants.ts`](../sessions/tab-capture-grants.ts)'s `mintTabCaptureGrant`
+(durable; `permission-gate.ts`'s own `'media'` carve-out reads the same ledger),
 [`../settings/`](../settings/) (Developer mode is a setting there),
-[`../shell/window.ts`](../shell/window.ts)'s `createShellWindow` and
-[`../shell/shell-services.ts`](../shell/shell-services.ts)'s `ShellServices` type,
+[`../shell/window.ts`](../shell/window.ts)'s `createShellWindow`,
+[`../shell/shell-services.ts`](../shell/shell-services.ts)'s `ShellServices` type and
+[`../shell/devtools-app-origin.ts`](../shell/devtools-app-origin.ts)'s `appOrigin` (the same
+granted-app-origin question the DevTools prompt answers, reused for the `chrome.tabCapture`
+refusal above),
 [`../registry.ts`](../registry.ts)'s `Subsystem`/`SubsystemContext` types and
 `publishExtensions`, [`../../protocols/builtin.ts`](../../protocols/builtin.ts)'s
 `BUILTIN_ADDRESSES`, and two vendored libraries.
 [`vendor/electron-chrome-web-store`](../../../vendor/electron-chrome-web-store): `id.ts`, and, for
 the store, `index.ts`, `installer.ts` and `types.ts`, whose `UPSTREAM.md` says how patch 4 routes
 every install through Orivon's own path. `vendor/electron-chrome-extensions`: reached by
-`extension-host.ts` only through the five virtual specifiers `electron-chrome-extensions-lib.d.ts`
+`extension-host.ts` only through the seven virtual specifiers `electron-chrome-extensions-lib.d.ts`
 declares (that file's header says why), never its real path.
 
 **What it must never import.** [`src/renderer/`](../../renderer/): this is main-process code,
 same rule as the rest of `src/main/` (`../README.md`). Nothing under `vendor/` beyond an import
 (`crx3.ts` is the one exception this directory does NOT import -- see Design notes for why;
 `electron-chrome-extensions/src/browser/{index,partition,router}.ts` and
-`electron-chrome-extensions/src/browser/api/{cookies,tabs}.ts` are the same exception, reached
-only through the virtual specifiers above).
+`electron-chrome-extensions/src/browser/api/{browser-action,cookies,tab-capture,tabs}.ts` are the
+same exception, reached only through the virtual specifiers above).
 
 **Tied to Electron**, except the files named above with no electron import.
 
@@ -118,7 +127,7 @@ count: Chrome keeps two separate host sets (explicit_hosts vs. scriptable_hosts,
 `extensions/docs/permissions.md` in Chromium's own source), and only explicit_hosts gates API
 access. `hostPatterns`, the union of both, stays reserved for the install prompt's wording, which
 Chrome's own prompt warns about either kind of host reach.
-`extension-host.ts`'s `createExtensionHost` installs three hooks the vendored library calls back
+`extension-host.ts`'s `createExtensionHost` installs several hooks the vendored library calls back
 into, the same shape as the sender-id check (`extension-sender-id-check.ts`): `setEventListenerFilter`
 (router.ts, UPSTREAM.md patch 15) gates or strips a broadcast event per listener --
 `cookies.onChanged` needs both the `cookies` permission and host access to the cookie's own URL;
@@ -136,6 +145,25 @@ app's own session stays open for the person but never joins the library's store,
 extension gets an error, not its id; `chrome.notifications` needs the `notifications`
 permission; a popup URL must be the extension's own page; and `window.open` from a popup or a
 background page goes through the same URL policy and `openTrusted` path as `chrome.tabs.create`.
+**`chrome.offscreen` and `chrome.tabCapture` (UPSTREAM.md patches 32-33) follow the same
+hook shape, for the one thing neither Electron nor the vendored library had at all.**
+`chrome.offscreen.createDocument` hosts a never-shown, sandboxed `BrowserWindow` per extension
+(`api/offscreen.ts`), closed by `Session`'s own `'extension-unloaded'` event so disable, uninstall
+and a crash all tear it down the same way; `chrome.runtime.getContexts` (`api/runtime.ts`) reads
+it, the currently open popup (`browser-action.ts`'s new `getOpenPopup`) and the running service
+worker to answer for real, instead of leaving an extension's own existence check to fall back to
+`clients.matchAll()`, which does not see a document this library creates.
+`chrome.tabCapture.getMediaStreamId` (`api/tab-capture.ts`) refuses a tab three ways before
+calling Electron's own `webContents.getMediaSourceId`: a tab outside this session, a granted
+app's own tab (`setTabCaptureAppRefusalCheck`, wired to the same `broker.app.hasGrantsSync`
+question `shell-services.ts`'s DevTools prompt asks), and a tab the extension was never invoked
+on (`setTabCaptureInvocationCheck`, `extension-tab-invocation.ts`'s ledger, filled by
+`browser-action.ts`'s `activateClick` on every toolbar click and cleared on that tab's own
+close or cross-origin navigation). A successful call also mutes the tab locally
+(Electron duplicates a captured tab's audio instead of diverting it the way Chrome does, measured
+directly) and mints a short-lived record `permission-gate.ts`'s own `'media'` carve-out
+(`../sessions/tab-capture-grants.ts`) reads.
+
 Every `crx-msg`, `crx-add-listener` and `crx-remove-listener` message must name its sender's own
 extension id (`extension-sender-id-check.ts`): the handlers that need no extension context are
 reached only over `crx-msg-remote`, which admits a chrome view alone.
@@ -155,8 +183,9 @@ settings -- measured, ~66 diagnostics across 16 files that satisfy `vendor/tscon
 deliberately looser ones (ADR-0043: "its TypeScript checks under `vendor/tsconfig.json`").
 Patching all of it would mean reformatting most of the vendored tree, the opposite of what
 ADR-0043 asks for. `electron-chrome-extensions-lib.d.ts` declares ambient types for
-`orivon:crx-extensions`/`-partition`/`-router`/`-cookies`/`-tabs`, five specifiers no real file
-matches; tsc falls back to those declarations, and `electron.vite.config.ts`'s
+`orivon:crx-extensions`/`-partition`/`-router`/`-cookies`/`-tabs`/`-browser-action`/
+`-tab-capture`, seven specifiers no real file matches; tsc falls back to those declarations, and
+`electron.vite.config.ts`'s
 `main.resolve.alias` maps each to the
 real vendored file for Rollup to bundle. `src/preload/shell.ts`'s own import of
 `vendor/.../src/browser-action.ts` (a shallow, single-file leaf: only `electron`) instead got
