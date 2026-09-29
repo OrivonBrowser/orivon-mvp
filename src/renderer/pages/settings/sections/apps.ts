@@ -6,6 +6,13 @@ export const apps: Section = {
   intro: 'Apps ask for what they need, and a permission lasts until you take it back. Taking one back applies at once.',
   rows: [
     {
+      id: 'apps-extensions',
+      label: 'Extensions',
+      help: 'Manage your Chrome extensions: turn one off, remove it, or load one of your own.',
+      keywords: ['extensions', 'chrome', 'addons', 'plugins', 'crx', 'unpacked'],
+      control: { type: 'action', label: 'Open extensions', run: async (state) => { await state.openPage('extensions') } }
+    },
+    {
       id: 'apps-list',
       label: 'Permissions and files',
       keywords: ['permissions', 'grants', 'revoke', 'apps', 'files', 'network', 'storage', 'access', 'folder', 'allow'],

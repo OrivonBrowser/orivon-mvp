@@ -1,3 +1,5 @@
+// Orivon patch: see types.ts's own doc on this reference (UPSTREAM.md patch 6).
+/// <reference types="chrome" />
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import debug from 'debug'
@@ -5,7 +7,7 @@ import { app, powerMonitor, session as electronSession } from 'electron'
 
 import { compareVersions, fetch, getChromeVersion } from './utils'
 import { downloadExtensionFromURL } from './installer'
-import { UpdateCheckResult, VerifyCrx, WebStoreState } from './types'
+import type { UpdateCheckResult, VerifyCrx, WebStoreHost, WebStoreState } from './types'
 
 const d = debug('electron-chrome-web-store:updater')
 
@@ -185,20 +187,24 @@ async function fetchAvailableUpdates(extensions: Electron.Extension[]): Promise<
       // Collect info
       .map((app) => {
         const extensionId = app.appid
-        const extension = extensionMap[extensionId]
+        // Orivon patch: the root tsconfig's noUncheckedIndexedAccess makes
+        // a plain index access `T | undefined`; every `!` below asserts
+        // what was already this function's assumption -- an appid Omaha
+        // echoes back names an extension this function itself requested.
+        const extension = extensionMap[extensionId]!
         const manifest = app.updatecheck.manifest!
-        const pkg = manifest!.packages.package[0]
+        const pkg = manifest.packages.package[0]!
         return {
           extension,
           id: extensionId,
           version: manifest.version,
           name: pkg.name,
-          url: app.updatecheck.urls!.url[0].codebase,
+          url: app.updatecheck.urls!.url[0]!.codebase,
         }
       })
       // Remove extensions without newer version
       .filter((update) => {
-        const extension = extensionMap[update.id]
+        const extension = extensionMap[update.id]!
         return compareVersions(extension.version, update.version) < 0
       })
   } catch (error) {
@@ -213,11 +219,31 @@ async function updateExtension(
   session: Electron.Session,
   update: ExtensionUpdate,
   verifyCrx: VerifyCrx,
+  host?: WebStoreHost,
 ) {
-  const sessionExtensions = session.extensions || session
   const extensionId = update.id
   const oldExtension = update.extension
   d('updating %s %s -> %s', extensionId, oldExtension.version, update.version)
+
+  // Orivon patch: a host owns every update -- it downloads, verifies (its
+  // own doc on installCrx says how it decides whether this one needs
+  // consent), writes and loads the new copy, and cleans up the old one
+  // itself (its own directory layout, not this library's versioned-folder
+  // convention below). oldExtension.manifest is the approved manifest: the
+  // one this session actually has loaded and running today.
+  if (host) {
+    await downloadExtensionFromURL(
+      update.url,
+      '',
+      verifyCrx,
+      extensionId,
+      host,
+      JSON.stringify(oldExtension.manifest),
+    )
+    return
+  }
+
+  const sessionExtensions = session.extensions || session
 
   // Updates must be installed in adjacent directories. Ensure the old install
   // was contained in a versioned directory structure.
@@ -296,11 +322,12 @@ async function installUpdates(
   session: Electron.Session,
   updates: ExtensionUpdate[],
   verifyCrx: VerifyCrx,
+  host?: WebStoreHost,
 ) {
   d('updating %d extension(s)', updates.length)
   for (const update of updates) {
     try {
-      await updateExtension(session, update, verifyCrx)
+      await updateExtension(session, update, verifyCrx, host)
     } catch (error) {
       console.error(`checkForUpdates: Error updating extension ${update.id}`)
       console.error(error)
@@ -315,10 +342,11 @@ export async function updateExtensions(
   session: Electron.Session = electronSession.defaultSession,
   verifyCrx: VerifyCrx,
   onUpdateCheck?: (result: UpdateCheckResult) => void,
+  host?: WebStoreHost,
 ): Promise<void> {
   const updates = await checkForUpdates(session, onUpdateCheck)
   if (updates.length > 0) {
-    await installUpdates(session, updates, verifyCrx)
+    await installUpdates(session, updates, verifyCrx, host)
   }
 }
 
@@ -326,6 +354,7 @@ async function maybeCheckForUpdates(
   session: Electron.Session,
   verifyCrx: VerifyCrx,
   onUpdateCheck?: (result: UpdateCheckResult) => void,
+  host?: WebStoreHost,
 ) {
   const idleState = powerMonitor.getSystemIdleState(SYSTEM_IDLE_DURATION)
   if (idleState !== 'active') {
@@ -339,11 +368,11 @@ async function maybeCheckForUpdates(
   }
   lastUpdateCheck = Date.now()
 
-  void updateExtensions(session, verifyCrx, onUpdateCheck)
+  void updateExtensions(session, verifyCrx, onUpdateCheck, host)
 }
 
 export async function initUpdater(state: WebStoreState) {
-  const check = () => maybeCheckForUpdates(state.session, state.verifyCrx, state.onUpdateCheck)
+  const check = () => maybeCheckForUpdates(state.session, state.verifyCrx, state.onUpdateCheck, state.host)
 
   switch (process.platform) {
     case 'darwin':

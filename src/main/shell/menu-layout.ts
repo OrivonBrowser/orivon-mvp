@@ -23,6 +23,7 @@ export const MENU_LAYOUT: readonly (CommandId | '-')[] = [
   '-',
   'profiles.open',
   'settings.open',
+  'extensions.open',
   '-',
   'app.quit'
 ]

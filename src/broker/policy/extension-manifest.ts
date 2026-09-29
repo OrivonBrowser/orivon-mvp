@@ -193,6 +193,24 @@ export function loadableManifest (raw: Record<string, unknown>): LoadableManifes
   }
 }
 
+/**
+ * `stripped` in plain words, for the extensions page's details view -- one
+ * line per capability `loadableManifest` removed, never the raw permission
+ * name. Order matches the order `isStrippedPermission` would find them in an
+ * unstripped manifest: network rules before native messaging.
+ */
+export function describeStrippedPermissions (stripped: StrippedRecord): readonly string[] {
+  const names = [...stripped.permissions, ...stripped.optionalPermissions]
+  const lines: string[] = []
+  if (names.some((name) => name.startsWith('webRequest') || name.startsWith('declarativeNetRequest')) || stripped.declarativeNetRequest !== undefined) {
+    lines.push('Network blocking rules: Orivon does not run these yet')
+  }
+  if (names.includes('nativeMessaging')) {
+    lines.push('Talking to programs on your computer: not available in Orivon')
+  }
+  return lines
+}
+
 // --- the install prompt's words ---
 
 export type ExtensionInstallSource = 'unpacked' | 'file' | 'store'
@@ -226,6 +244,29 @@ function friendlyHost (pattern: string): string {
 }
 
 const MAX_LISTED_HOSTS = 5
+
+/**
+ * The clause that closes both the install prompt's Web3 line and the
+ * extensions page's "where it runs" line -- kept as one constant so the two
+ * can never drift apart in wording (`describeExtensionInstall`'s own doc,
+ * `src/main/extensions/extensions-view.ts`'s `whereItRuns`).
+ */
+export const NOT_GRANTED_APPS_CLAUSE = 'apps you have given permissions to'
+
+/**
+ * The host-access line(s) Chrome's own install prompt would show for
+ * `facts`, with no trailing API-permission lines -- split out of
+ * `describeExtensionInstall` so the extensions page's "Site access" field
+ * can show the identical words without re-deriving them.
+ */
+export function describeHostAccess (facts: ExtensionManifestFacts): string | undefined {
+  if (facts.hostPatterns.length === 0) return undefined
+  if (facts.hostPatterns.some(isAllSitesPattern)) return 'Read and change all your data on all websites'
+  const hosts = facts.hostPatterns.map(friendlyHost)
+  const shown = hosts.slice(0, MAX_LISTED_HOSTS)
+  const rest = hosts.length - shown.length
+  return `Read and change your data on these sites: ${shown.join(', ')}${rest > 0 ? `, and ${rest} more` : ''}`
+}
 
 /** Chrome's own permission-warning text, cited at
  * https://developer.chrome.com/docs/extensions/reference/permissions-list.
@@ -266,16 +307,10 @@ export function describeExtensionInstall (facts: ExtensionManifestFacts, source:
   const hasHostAccess = facts.hostPatterns.length > 0
   const allSites = facts.hostPatterns.some(isAllSitesPattern)
 
-  if (allSites) {
-    lines.push('Read and change all your data on all websites')
-  } else if (hasHostAccess) {
-    const hosts = facts.hostPatterns.map(friendlyHost)
-    const shown = hosts.slice(0, MAX_LISTED_HOSTS)
-    const rest = hosts.length - shown.length
-    lines.push(`Read and change your data on these sites: ${shown.join(', ')}${rest > 0 ? `, and ${rest} more` : ''}`)
-  }
+  const hostAccess = describeHostAccess(facts)
+  if (hostAccess !== undefined) lines.push(hostAccess)
   if (hasHostAccess) {
-    lines.push('It also runs on Web3 sites, but not on apps you have given permissions to.')
+    lines.push(`It also runs on Web3 sites, but not on ${NOT_GRANTED_APPS_CLAUSE}.`)
   }
 
   for (const { names, line } of API_PERMISSION_LINES) {

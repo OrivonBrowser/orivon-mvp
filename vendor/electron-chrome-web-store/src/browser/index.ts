@@ -10,7 +10,7 @@ export { installExtension, uninstallExtension, downloadExtension } from './insta
 import { initUpdater } from './updater'
 export { updateExtensions } from './updater'
 import { getDefaultExtensionsPath } from './utils'
-import { BeforeInstall, ExtensionId, UpdateCheckResult, VerifyCrx, WebStoreState } from './types'
+import type { BeforeInstall, ExtensionId, UpdateCheckResult, VerifyCrx, WebStoreHost, WebStoreState } from './types'
 
 function resolvePreloadPath(modulePath?: string) {
   // Attempt to resolve preload path from module exports
@@ -117,6 +117,13 @@ interface ElectronChromeWebStoreOptions {
    * or not an update was found.
    */
   onUpdateCheck?: (result: UpdateCheckResult) => void
+
+  /**
+   * Orivon patch: when present, the installer, `beginInstall`, the updater
+   * and uninstall route through this instead of their own filesystem and
+   * `loadExtension` calls. See WebStoreHost's own doc (types.ts).
+   */
+  host?: WebStoreHost
 }
 
 /**
@@ -145,6 +152,7 @@ export async function installChromeWebStore(opts: ElectronChromeWebStoreOptions)
     beforeInstall,
     verifyCrx: opts.verifyCrx,
     onUpdateCheck: opts.onUpdateCheck,
+    host: opts.host,
   }
 
   // Add preload script to session

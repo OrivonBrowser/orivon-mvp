@@ -41,3 +41,22 @@ export function writeRegistry (userDataPath: string, entries: readonly Installed
   mkdirSync(extensionsDir(userDataPath), { recursive: true })
   writeFileAtomic(registryPath(userDataPath), serializeRegistry(entries))
 }
+
+/**
+ * Merges `patch` into `id`'s own `updater` field, for a store-managed entry
+ * only -- a no-op if `id` names nothing, or names an entry whose updater is
+ * not `{ kind: 'store' }` (install-runner.ts's `installFromStoreCrx` and
+ * store-runner.ts's `onUpdateCheck` wiring are the two callers, recording an
+ * update check's result and, when one is held for consent, `pendingUpdate`).
+ */
+export function patchStoreUpdater (
+  userDataPath: string,
+  id: string,
+  patch: { readonly lastCheckedAt?: number, readonly lastResult?: string, readonly pendingUpdate?: { readonly url: string, readonly version: string } }
+): void {
+  const registry = readRegistry(userDataPath)
+  const entry = registry.find((candidate) => candidate.id === id)
+  if (entry === undefined || entry.updater.kind !== 'store') return
+  const updater: InstalledExtension['updater'] = { ...entry.updater, ...patch, kind: 'store' }
+  writeRegistry(userDataPath, registry.map((candidate) => candidate.id === id ? { ...candidate, updater } : candidate))
+}
