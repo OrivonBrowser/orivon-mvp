@@ -361,8 +361,20 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
       ? undefined
       : bridge.services.windows.all().find((w) => w.window === popup.parent)
     const activeTabWc = shellWindow?.tabs.activeWebContents()
-    const closePopup = (): void => { if (!popup.isDestroyed()) popup.destroy() }
-    activeTabWc?.once('did-start-navigation', closePopup)
+    // Only a real navigation of the tab's OWN top document: an ad iframe
+    // reloading, or the page's own history.pushState/replaceState (a
+    // same-document navigation, changing nothing the popup was anchored
+    // to), must not close it -- Chrome doesn't, and any web page holding
+    // an ad iframe or calling pushState could otherwise close a person's
+    // still-open password-manager popup out from under them. `.on`, not
+    // `.once`: a one-shot listener would already be consumed by the first
+    // (filtered-out) subframe/same-document event, silently going deaf to
+    // the real navigation that should have closed the popup.
+    const closePopup = (details: { isMainFrame: boolean, isSameDocument: boolean }): void => {
+      if (!details.isMainFrame || details.isSameDocument) return
+      if (!popup.isDestroyed()) popup.destroy()
+    }
+    activeTabWc?.on('did-start-navigation', closePopup)
     popup.browserWindow?.webContents.once('destroyed', () => {
       if (currentPopup === popup) currentPopup = undefined
       activeTabWc?.removeListener('did-start-navigation', closePopup)
