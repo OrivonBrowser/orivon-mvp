@@ -25,6 +25,7 @@ import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader, LoadResult } from '../loader/index.js'
 import type { GrantedWithoutInstall } from './install/grant-without-install.js'
 import type { CapabilityRequest } from '../contracts/index.js'
+import type { ExtensionsApi } from './extensions/extensions-subsystem.js'
 
 export interface SubsystemContext {
   readonly app: App
@@ -88,6 +89,17 @@ export interface SubsystemContext {
    * `brokerIpcSubsystem` and `loaderSubsystem`.
    */
   readonly installApp: ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>) | undefined
+  /**
+   * `./extensions/extensions-subsystem.js`'s install/uninstall/enable/list
+   * surface, closed over this process's one `session.defaultSession` and
+   * `userData` path -- same one-instance guarantee as `broker`/`loader`/
+   * `requestGrant`/`installApp`: a second one could load extensions into a
+   * different session than the one every extension actually runs in later
+   * packages read. Undefined until `extensionsSubsystem`'s `afterReady`
+   * runs; a subsystem reading this must be listed after it in
+   * `subsystems.ts`.
+   */
+  readonly extensions: ExtensionsApi | undefined
 }
 
 /**
@@ -118,6 +130,7 @@ const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would 
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
 const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
 const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>>('installApp', 'a second one could close over a different Broker or Loader instance than the one every other subsystem reads')
+const extensionsSlot = createPublishedSlot<ExtensionsApi>('extensions', 'a second one could load into a different session than the one every extension actually runs in')
 
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
@@ -142,6 +155,10 @@ class SubsystemContextImpl implements SubsystemContext {
 
   get installApp (): ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>) | undefined {
     return installAppSlot.get(this)
+  }
+
+  get extensions (): ExtensionsApi | undefined {
+    return extensionsSlot.get(this)
   }
 }
 
@@ -179,6 +196,11 @@ export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origi
 /** The one sanctioned way to set `ctx.installApp` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishInstallApp (ctx: SubsystemContext, installApp: (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>): void {
   installAppSlot.publish(ctx, installApp)
+}
+
+/** The one sanctioned way to set `ctx.extensions` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishExtensions (ctx: SubsystemContext, extensions: ExtensionsApi): void {
+  extensionsSlot.publish(ctx, extensions)
 }
 
 export interface Subsystem {

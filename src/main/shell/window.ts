@@ -36,6 +36,7 @@ import { createWindowFrame, showWhenReady } from './window-frame.js'
 import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
 import { searchUrlFor } from '../browsing/search-engines.js'
+import { SHELL_PARTITION } from './shell-session.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -79,6 +80,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const chrome = new WebContentsView({
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/shell.js'),
+      partition: SHELL_PARTITION,
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
@@ -197,7 +199,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query),
     internalPages: services.internalPages,
     devtools: services.devtools,
-    backdrop: splitFrame
+    backdrop: splitFrame,
+    tabLifecycle: services.tabLifecycle
   })
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one

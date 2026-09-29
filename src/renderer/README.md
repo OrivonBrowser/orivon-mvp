@@ -12,7 +12,7 @@ entirely.
 | [`intro/`](intro/) | The welcome screen, a full-window view over the shell (`src/main/shell/intro-view.ts`) |
 | [`menu/`](menu/) | The main menu popup: the commands under the menu button, each with its keys |
 | [`split-frame/`](split-frame/) | The view behind the two panes of a split: the divider, the ring round the pane in use, and where a dragged tab would go |
-| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `profiles`, `private`), on the tokens and controls in `pages/shared/` |
+| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `profiles`, `private`, `extensions`), on the tokens and controls in `pages/shared/` |
 
 **What it depends on.** The chrome view on `src/preload/shell.ts`'s commands, typed by that file's
 `OrivonShell` so a dropped command fails the typecheck, and `newtab/` on

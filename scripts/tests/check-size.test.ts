@@ -126,6 +126,14 @@ describe('checkFileSizes', () => {
     })
   })
 
+  describe('vendor/ is excluded (third-party source kept verbatim)', () => {
+    it('does not flag an oversized file under vendor/', () => {
+      const root = fixture()
+      writeLines(root, 'vendor/electron-chrome-extensions/src/renderer/index.ts', SOURCE_LIMIT + 200)
+      expect(checkFileSizes(root)).toEqual(CLEAN)
+    })
+  })
+
   describe('directories that must never be walked', () => {
     it('skips node_modules', () => {
       const root = fixture()

@@ -1,0 +1,45 @@
+@import '../shared/tokens.css';
+@import '../shared/controls.css';
+
+.page { max-width: 860px; margin: 0 auto; padding: 28px 24px 64px; }
+
+.head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.head h1 { font-size: 22px; font-weight: 600; margin-right: auto; }
+.dev-mode-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--wink-dim); }
+
+.banner {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: var(--wradius);
+  background: color-mix(in srgb, var(--wwarn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wwarn) 35%, var(--wborder));
+}
+
+.ext-list { display: grid; gap: 12px; }
+.ext-card { padding: 14px 16px; border: 1px solid var(--wborder); border-radius: var(--wradius); background: var(--wpanel); }
+
+.ext-row { display: flex; align-items: flex-start; gap: 14px; }
+.ext-icon { width: 32px; height: 32px; border-radius: 7px; flex: none; object-fit: contain; }
+.ext-icon.placeholder { background: var(--wsurface); }
+.ext-main { min-width: 0; flex: 1 1 auto; }
+.ext-name-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ext-name { overflow-wrap: anywhere; }
+.ext-version { color: var(--wink-dim); font-size: 12.5px; }
+.ext-desc { margin: 2px 0 4px; color: var(--wink-dim); font-size: 13px; }
+
+.link-btn { padding: 2px 6px; border: none; border-radius: 6px; background: none; color: var(--waccent); cursor: pointer; font-size: 13px; }
+.link-btn:hover { text-decoration: underline; }
+
+.btn.small { padding: 3px 10px; font-size: 12.5px; flex: none; }
+.btn.danger.small.armed { background: var(--wdanger); border-color: var(--wdanger); color: #fff; }
+
+.ext-details { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--wborder); display: grid; gap: 8px; }
+.detail-row { display: flex; gap: 12px; justify-content: space-between; }
+.detail-label { flex: none; color: var(--wink-dim); font-size: 13px; }
+.detail-value { text-align: right; overflow-wrap: anywhere; font-size: 13px; }
+.detail-block { display: grid; gap: 6px; }
+.stripped-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--wink); }
+.stripped-list li { margin: 2px 0; }
+
+.muted { color: var(--wink-dim); font-size: 13px; }
+.empty { color: var(--wink-dim); padding: 32px 4px; }

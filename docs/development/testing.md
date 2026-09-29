@@ -209,6 +209,13 @@ CSP, the forked module's `fs` write read back through the broker, a native progr
 module as a native addon's WebAssembly build: through `createRequire` and `process.dlopen` on the
 page, through `preloadAddon` for one over the page's 8 MB synchronous-compile limit, and on the fly
 in a forked child.
+[`e2e-napi-rs-package.test.ts`](../../test/e2e-napi-rs-package.test.ts) runs a napi-rs package's
+published WebAssembly build, which is threaded, through the package's own browser loader in a
+cross-origin isolated app. It skips unless `ORIVON_NAPI_RS_PACKAGE_DIR` names a directory the
+package was installed in, since the package is not one of this repository's. Real programs and
+addons built outside the repository run against the WASI and addon hosts in opt-in unit tests the
+same way: `ORIVON_WASIP2_STD_PROGRAM`, `ORIVON_WASIP2_TOKIO_PROGRAM` and `ORIVON_NAPI_RS_ADDON`,
+each test's header naming what to build.
 
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
@@ -226,6 +233,28 @@ The driver does fail to attach to one window, spike gate 3's, for a cause still 
 ([`open-questions.md`](../open-questions.md) C6). The app itself works there, confirmed by a
 direct launch without Playwright, and the failure is specific to that gate's video and
 service-worker setup, not to `BaseWindow` in general.
+
+### Checking against real Chrome extensions
+
+[`test/e2e-extensions-real.test.ts`](../../test/e2e-extensions-real.test.ts) installs whichever
+of uBlock Origin Lite, Dark Reader, Bitwarden and MetaMask it finds unpacked in
+`ORIVON_REAL_EXTENSIONS_DIR` (one subdirectory per extension, named `ubol`/`darkreader`/
+`bitwarden`/`metamask`) through the real install path, then records per extension: whether its
+service worker is still running 10s after load and its first console errors, whether its
+toolbar action popup renders a non-empty body, and one SW-independent behaviour each (MetaMask's
+`window.ethereum`, Bitwarden's content-script response, Dark Reader's injected style, uBOL's
+popup). It is skipped entirely with no directory set, so `npm run test:e2e` never runs it. Run it
+directly:
+
+```
+ORIVON_REAL_EXTENSIONS_DIR=/path/to/extracted node scripts/build-e2e.mjs && \
+  node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-real.test.ts
+```
+
+Re-download each extension's latest release from its own GitHub releases page when the directory
+is missing or stale; never commit the extracted folders. Run sandboxed (`launchElectron`'s
+`sandbox: true`) -- under `--no-sandbox`, [`open-questions.md`](../open-questions.md) A289's cause
+makes every service-worker-dependent check fail, which is not a sign this file is broken.
 
 ---
 

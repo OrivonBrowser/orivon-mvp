@@ -6,6 +6,7 @@ import type { SiteSummary } from '../main/permissions/site-info-controller.js'
 import type { Web3Score } from '../main/browsing/site-trust.js'
 import type { PanelAnchor } from '../main/permissions/permissions-panel.js'
 import type { SiteInfoPage } from '../main/permissions/site-info-panel.js'
+import { injectBrowserAction } from '../../vendor/electron-chrome-extensions/src/browser-action.js'
 
 // Loaded ONLY by the chrome view (src/main/shell/window.ts) -- the tab strip
 // and toolbar UI. Privileged: this is the one preload that may issue tab
@@ -195,6 +196,12 @@ const api: OrivonShell = {
 
 if (expectedUrl !== undefined && location.href === expectedUrl) {
   contextBridge.exposeInMainWorld('orivonShell', api)
+  // Defines `<browser-action>`/`<browser-action-list>` (ADR-0043) -- only
+  // once the gate above has passed, same as orivonShell itself. The
+  // element's own `partition` attribute (index.html) says which session's
+  // extensions it shows; extension-host.ts's partition.ts resolver is what
+  // makes that string reach session.defaultSession.
+  injectBrowserAction()
 } else {
   // Neither string is a secret in the chrome's own process, and a chrome
   // that silently lost its bridge would otherwise show nothing at all.

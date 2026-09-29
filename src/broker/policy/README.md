@@ -19,6 +19,10 @@ decision from the effect, and put the effect one level up.
 
 ## Design notes
 
+**[`extension-manifest.ts`](extension-manifest.ts)'s `loadableManifest` strips `webRequest*`,
+`declarativeNetRequest*` and `nativeMessaging` from the manifest copy Orivon actually loads.**
+Why, and what loads the resulting copy: [`src/main/extensions/README.md`](../../main/extensions/README.md)'s Design notes.
+
 **[`bind.ts`](bind.ts) is not a mode flag on `connect.ts`.** `checkConnect` resolves a hostname,
 because patterns must be matched against resolved addresses (T12); a bind names a local port, so
 there is no name to resolve, no rebinding window and no reason to be async. The grammars are

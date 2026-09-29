@@ -34,10 +34,18 @@ export function internalSession (): Session | undefined {
  * be called only once, so any other scheme the shell needs privileged joins
  * this list rather than making a second call. `standard` and `secure` give
  * pages an origin, `fetch` and a secure context; nothing here bypasses a
- * page's CSP. */
+ * page's CSP.
+ *
+ * `crx` is the extensions library's own scheme (ADR-0043), for the
+ * `<browser-action-list>` toolbar element's icon requests
+ * (`vendor/electron-chrome-extensions/src/browser/api/browser-action.ts`'s
+ * `handleCRXRequest`) -- `bypassCSP` is the same privilege upstream's own,
+ * now-removed module-level call used, so an icon loads under the chrome
+ * view's `img-src` list regardless of what else that CSP allows. */
 export function registerInternalScheme (): void {
   protocol.registerSchemesAsPrivileged([
-    { scheme: INTERNAL_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
+    { scheme: INTERNAL_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    { scheme: 'crx', privileges: { bypassCSP: true } }
   ])
 }
 

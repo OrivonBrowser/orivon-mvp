@@ -1,0 +1,4 @@
+{ "manifest_version": 3, "name": "probe-keys", "version": "1.0",
+  "permissions": ["storage", "orivon"],
+  "orivon": { "permissions": ["page"] },
+  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["cs.js"], "run_at": "document_start" }] }

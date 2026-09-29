@@ -1,0 +1,159 @@
+{
+  "electron": "44.0.0",
+  "chrome": "152.0.7977.54",
+  "pages": {
+    "http://127.0.0.1:36113/": {
+      "dataset": {
+        "isoOrivon": "undefined",
+        "isoOrivonWp": "undefined",
+        "isoChromeRuntime": "string",
+        "mainOrivonAtStart": "object",
+        "mainWhoami": "{\"href\":\"http://127.0.0.1:36113/\",\"calls\":1}",
+        "mainDesc": "{\"writable\":false,\"configurable\":false,\"enumerable\":true}",
+        "mainFrozen": "true",
+        "mv2Iso": "undefined",
+        "keysIso": "undefined",
+        "mainOrivonLater": "object",
+        "warOrivon": "object",
+        "scriptingMain": "object",
+        "bgReply": "{\"swOrivon\":\"undefined\",\"swOrivonSW\":\"object\",\"scripting\":\"object\",\"tabs\":\"object\",\"tabId\":2,\"apis\":\"dom,extension,i18n,management,runtime,scripting,storage,tabs\",\"scriptingMain\":\"[\\\"object\\\"]\"}"
+      },
+      "page": {
+        "typeofOrivon": "object",
+        "desc": {
+          "writable": false,
+          "configurable": false,
+          "enumerable": true
+        },
+        "frozen": true
+      }
+    },
+    "http://127.0.0.1:36113/?mutate": {
+      "dataset": {
+        "isoOrivon": "undefined",
+        "isoOrivonWp": "undefined",
+        "isoChromeRuntime": "string",
+        "mainOrivonAtStart": "object",
+        "mainWhoami": "{\"href\":\"http://127.0.0.1:36113/?mutate\",\"calls\":1}",
+        "mainDesc": "{\"writable\":false,\"configurable\":false,\"enumerable\":true}",
+        "mainFrozen": "true",
+        "mainWrapMethod": "false",
+        "mainReplace": "false",
+        "mainDefine": "threw:Cannot redefine property: orivon",
+        "mv2Iso": "undefined",
+        "keysIso": "undefined",
+        "mainOrivonLater": "object",
+        "warOrivon": "object",
+        "scriptingMain": "object",
+        "bgReply": "{\"swOrivon\":\"undefined\",\"swOrivonSW\":\"object\",\"scripting\":\"object\",\"tabs\":\"object\",\"tabId\":2,\"apis\":\"dom,extension,i18n,management,runtime,scripting,storage,tabs\",\"scriptingMain\":\"[\\\"object\\\"]\"}"
+      },
+      "page": {
+        "typeofOrivon": "object",
+        "desc": {
+          "writable": false,
+          "configurable": false,
+          "enumerable": true
+        },
+        "frozen": true
+      }
+    },
+    "http://127.0.0.1:36113/csp": {
+      "dataset": {
+        "isoOrivon": "undefined",
+        "isoOrivonWp": "undefined",
+        "isoChromeRuntime": "string",
+        "mainOrivonAtStart": "object",
+        "mainWhoami": "{\"href\":\"http://127.0.0.1:36113/csp\",\"calls\":1}",
+        "mainDesc": "{\"writable\":false,\"configurable\":false,\"enumerable\":true}",
+        "mainFrozen": "true",
+        "mv2Iso": "undefined",
+        "keysIso": "undefined",
+        "mainOrivonLater": "object",
+        "warOrivon": "object",
+        "scriptingMain": "object",
+        "bgReply": "{\"swOrivon\":\"undefined\",\"swOrivonSW\":\"object\",\"scripting\":\"object\",\"tabs\":\"object\",\"tabId\":2,\"apis\":\"dom,extension,i18n,management,runtime,scripting,storage,tabs\",\"scriptingMain\":\"[\\\"object\\\"]\"}"
+      },
+      "page": {
+        "typeofOrivon": "object",
+        "desc": {
+          "writable": false,
+          "configurable": false,
+          "enumerable": true
+        },
+        "frozen": true
+      }
+    },
+    "http://probe.eth:36113/": {
+      "dataset": {
+        "isoOrivon": "undefined",
+        "isoOrivonWp": "undefined",
+        "isoChromeRuntime": "string",
+        "mainOrivonAtStart": "object",
+        "mainWhoami": "{\"href\":\"http://probe.eth:36113/\",\"calls\":1}",
+        "mainDesc": "{\"writable\":false,\"configurable\":false,\"enumerable\":true}",
+        "mainFrozen": "true",
+        "mv2Iso": "undefined",
+        "keysIso": "undefined",
+        "mainOrivonLater": "object",
+        "warOrivon": "object",
+        "scriptingMain": "object",
+        "bgReply": "{\"swOrivon\":\"undefined\",\"swOrivonSW\":\"object\",\"scripting\":\"object\",\"tabs\":\"object\",\"tabId\":2,\"apis\":\"dom,extension,i18n,management,runtime,scripting,storage,tabs\",\"scriptingMain\":\"[\\\"object\\\"]\"}"
+      },
+      "page": {
+        "typeofOrivon": "object",
+        "desc": {
+          "writable": false,
+          "configurable": false,
+          "enumerable": true
+        },
+        "frozen": true
+      }
+    },
+    "probe3://site/": {
+      "dataset": {},
+      "page": {
+        "typeofOrivon": "object",
+        "desc": {
+          "writable": false,
+          "configurable": false,
+          "enumerable": true
+        },
+        "frozen": true
+      }
+    }
+  },
+  "swPreloadRegistered": true,
+  "mv3Id": "lmbhboijamogjggdhijomiobaeminoeo",
+  "mv2Loaded": {
+    "id": "miahggeemfbndacafkhcebhmkfkngecd"
+  },
+  "unknownKeys": {
+    "loaded": true,
+    "manifestOrivon": {
+      "permissions": [
+        "page"
+      ]
+    },
+    "permissions": [
+      "storage",
+      "orivon"
+    ]
+  },
+  "inMemorySession": "threw: Extensions cannot be loaded in a temporary session",
+  "extensionPage": {
+    "orivon": "object",
+    "orivonWp": "object",
+    "chromeRuntime": "string"
+  },
+  "otherSession": {},
+  "consoleWarnings": [
+    "error: Executing inline script violates the following Content Security Policy directive 'script-src 'self' 'wasm-unsafe-eval' 'inline-speculation-rules' http://localhost:* http://127.0.0.1:* chrome-extension://56ba8d27-64f2-4196-a384-ffd4ee3e9b4b/'. Either the 'unsafe-inline' keyword, a hash ('sha25",
+    "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult",
+    "error: Executing inline script violates the following Content Security Policy directive 'script-src 'self' 'wasm-unsafe-eval' 'inline-speculation-rules' http://localhost:* http://127.0.0.1:* chrome-extension://56ba8d27-64f2-4196-a384-ffd4ee3e9b4b/'. Either the 'unsafe-inline' keyword, a hash ('sha25",
+    "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult",
+    "error: Executing inline script violates the following Content Security Policy directive 'script-src 'self' 'wasm-unsafe-eval' 'inline-speculation-rules' http://localhost:* http://127.0.0.1:* chrome-extension://56ba8d27-64f2-4196-a384-ffd4ee3e9b4b/'. Either the 'unsafe-inline' keyword, a hash ('sha25",
+    "error: Executing inline script violates the following Content Security Policy directive 'script-src 'self' 'wasm-unsafe-eval' 'inline-speculation-rules' http://localhost:* http://127.0.0.1:* chrome-extension://56ba8d27-64f2-4196-a384-ffd4ee3e9b4b/'. Either the 'unsafe-inline' keyword, a hash ('sha25",
+    "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult",
+    "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult"
+  ]
+}

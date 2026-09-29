@@ -57,6 +57,7 @@ export const COMMANDS = [
   { id: 'window.close', label: 'Close window', category: 'window', default: 'Mod+Shift+W' },
   { id: 'window.fullscreen', label: 'Full screen', category: 'window', default: 'F11', macDefault: 'Ctrl+Meta+F' },
   { id: 'settings.open', label: 'Open Settings', category: 'window', default: 'Mod+,' },
+  { id: 'extensions.open', label: 'Extensions', category: 'window' },
   { id: 'app.quit', label: 'Quit Orivon', category: 'window', default: 'Ctrl+Shift+Q' }
 ] as const satisfies readonly CommandDef[]
 

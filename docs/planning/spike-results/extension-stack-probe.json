@@ -1,0 +1,3826 @@
+{
+ "electron": "44.0.0",
+ "chrome": "152.0.7977.54",
+ "calls": [
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case2-start.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case2-start.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case2-start.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "case1-external.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "case1-external.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "case1-external.M",
+   "page": null,
+   "frames": [
+    null,
+    "http://127.0.0.1:36389/page.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case1-inline.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case1-inline.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case1-inline.M",
+   "page": null,
+   "frames": [
+    null,
+    "http://127.0.0.1:36389/"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case3-war.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case3-war.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case3-war.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case2-idle.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case2-idle.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case2-idle.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-eval.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-eval.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case5-eval.M",
+   "page": null,
+   "frames": [
+    null,
+    "eval:eval at <anonymous> (chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js:26:5)",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-newfunction.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-newfunction.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case5-newfunction.M",
+   "page": null,
+   "frames": [
+    null,
+    "eval:eval at <anonymous> (chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js:31:5)",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-inline-el.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-inline-el.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case5-inline-el.M",
+   "page": null,
+   "frames": [
+    null,
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-onclick.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-onclick.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case5-onclick.M",
+   "page": null,
+   "frames": [
+    null,
+    "http://127.0.0.1:36389/",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-bound-listener.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-bound-listener.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case6-bound-listener.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-pagehelper-1.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-pagehelper-1.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case6-pagehelper-1.M",
+   "page": null,
+   "frames": [
+    null,
+    "http://127.0.0.1:36389/page.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case7-tamper.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case7-tamper.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case7-tamper.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case7-deep-limit.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case7-deep-limit.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case7-deep-limit.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-bound-microtask.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-bound-microtask.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case6-bound-microtask.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-queuemicrotask.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-queuemicrotask.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case6-queuemicrotask.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-mutationobserver.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-mutationobserver.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case6-mutationobserver.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-settimeout-string.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-settimeout-string.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case5-settimeout-string.M",
+   "page": null,
+   "frames": [
+    null,
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-location-js.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-location-js.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case5-location-js.M",
+   "page": null,
+   "frames": [
+    null,
+    null,
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-bound-timer.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-bound-timer.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case6-bound-timer.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-pagehelper-2.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-pagehelper-2.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case6-pagehelper-2.M",
+   "page": null,
+   "frames": [
+    null,
+    "http://127.0.0.1:36389/page.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-blob.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-blob.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case5-blob.M",
+   "page": null,
+   "frames": [
+    null,
+    "blob:http://127.0.0.1:36389/d14d4ecf-b8a6-4143-81d9-f25affb45981"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-data.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case5-data.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case5-data.M",
+   "page": null,
+   "frames": [
+    null,
+    "data:text/javascript,window.probeA%20%26%26%20window.probeA.call('%2F%7Ccase5-data.A')%3B%20window.probeB%20%26%26%20window.probeB.call('%2F%7Ccase5-data.B')%3B%20window.probeM%20%26%26%20window.probeM.call('%2F%7Ccase5-data.M')"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case4-exec-func.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case4-exec-func.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case4-exec-func.M",
+   "page": null,
+   "frames": [
+    null,
+    null,
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case4-exec-files.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case4-exec-files.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case4-exec-files.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-exec-files.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-exec-files.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-raf.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case6-raf.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case6-raf.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case4-registered.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case4-registered.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case4-registered.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case2-start.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case2-start.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case2-start.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case3-war.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case3-war.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case3-war.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case2-idle.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case2-idle.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case2-idle.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-bound-listener.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-bound-listener.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case6-bound-listener.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-pagehelper-1.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-pagehelper-1.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case6-pagehelper-1.M",
+   "page": null,
+   "frames": [
+    null,
+    "http://127.0.0.1:36389/page.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case7-tamper.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case7-tamper.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case7-tamper.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case7-deep-limit.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case7-deep-limit.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case7-deep-limit.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-bound-microtask.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-bound-microtask.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case6-bound-microtask.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-queuemicrotask.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-queuemicrotask.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case6-queuemicrotask.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-mutationobserver.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-mutationobserver.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case6-mutationobserver.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case4-registered.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case4-registered.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case4-registered.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-bound-timer.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-bound-timer.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case6-bound-timer.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-pagehelper-2.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-pagehelper-2.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case6-pagehelper-2.M",
+   "page": null,
+   "frames": [
+    null,
+    "http://127.0.0.1:36389/page.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-raf.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/csp|case6-raf.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/csp|case6-raf.M",
+   "page": null,
+   "frames": [
+    null
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case9-tamper-a.M",
+   "page": null,
+   "frames": [],
+   "tampered": true
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-a.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-a.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case9-tamper-b.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-b.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-b.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case9-tamper-c.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-c.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-c.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case9-tamper-d.M",
+   "page": null,
+   "frames": [
+    null,
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+    "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js"
+   ],
+   "tampered": false
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-d.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-d.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "mainWorld",
+   "tag": "/|case9-tamper-e.M",
+   "page": null,
+   "frames": [],
+   "tampered": true
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-e.A",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  },
+  {
+   "variant": "isolatedWorld",
+   "tag": "/|case9-tamper-e.B",
+   "page": null,
+   "frames": [
+    "<scratch>/stack-probe/preload-wp.js",
+    "<scratch>/stack-probe/preload-wp.js"
+   ],
+   "tampered": null
+  }
+ ],
+ "consoleWarnings": [
+  {
+   "url": "http://127.0.0.1:36389/",
+   "level": "warning",
+   "message": "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult\nhttps://electronjs.org/docs/tutorial/security.\nThis warning will not show up\nonce the app is packaged."
+  },
+  {
+   "url": "http://127.0.0.1:36389/",
+   "level": "info",
+   "message": "[probe] sw-battery reply /: {\"ok\":true,\"r\":[\"[object Object]\",\"[object Object]\",\"undefined\"]}"
+  },
+  {
+   "url": "http://127.0.0.1:36389/",
+   "level": "info",
+   "message": "[probe] sw-battery reply /: {\"ok\":true,\"r\":[\"[object Object]\",\"[object Object]\",\"undefined\"]}"
+  },
+  {
+   "url": "http://127.0.0.1:36389/",
+   "level": "warning",
+   "message": "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult\nhttps://electronjs.org/docs/tutorial/security.\nThis warning will not show up\nonce the app is packaged."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Executing inline script violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-f8M6jpBOKRpKBxtqvKT9z2xpau/ga/2uVF+oHHtaPhA='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Evaluating a string as JavaScript violates the following Content Security Policy directive because 'unsafe-eval' is not an allowed source of script: \"script-src 'self'\".\n The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Executing inline script violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-hT/O4+fJI/rjjbOWoji6KlPO/HjJ4hLvCaAb5PItYzg='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Loading the script 'blob:http://127.0.0.1:36389/d8571022-0ba5-4d46-8e23-8e2e713dfbfe' violates the following Content Security Policy directive: \"script-src 'self'\". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Loading the script 'data:text/javascript,window.probeA%20%26%26%20window.probeA.call('%2Fcsp%7Ccase5-data.A')%3B%20window.probeB%20%26%26%20window.probeB.call('%2Fcsp%7Ccase5-data.B')%3B%20window.probeM%20%26%26%20window.probeM.call('%2Fcsp%7Ccase5-data.M')' violates the following Content Security Policy directive: \"script-src 'self'\". Note that 'script-src-elem' was not explicitly set, so 'script"
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Executing inline event handler violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocke"
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Running the JavaScript URL violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "info",
+   "message": "[probe] sw-battery reply /csp: {\"ok\":true,\"r\":[\"[object Object]\",\"[object Object]\",\"undefined\"]}"
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Executing inline script violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-f8M6jpBOKRpKBxtqvKT9z2xpau/ga/2uVF+oHHtaPhA='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Evaluating a string as JavaScript violates the following Content Security Policy directive because 'unsafe-eval' is not an allowed source of script: \"script-src 'self'\".\n The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Executing inline script violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-hT/O4+fJI/rjjbOWoji6KlPO/HjJ4hLvCaAb5PItYzg='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Loading the script 'blob:http://127.0.0.1:36389/01820426-3ac3-4626-8d9e-b03103ce3244' violates the following Content Security Policy directive: \"script-src 'self'\". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Loading the script 'data:text/javascript,window.probeA%20%26%26%20window.probeA.call('%2Fcsp%7Ccase5-data.A')%3B%20window.probeB%20%26%26%20window.probeB.call('%2Fcsp%7Ccase5-data.B')%3B%20window.probeM%20%26%26%20window.probeM.call('%2Fcsp%7Ccase5-data.M')' violates the following Content Security Policy directive: \"script-src 'self'\". Note that 'script-src-elem' was not explicitly set, so 'script"
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Executing inline event handler violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocke"
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "error",
+   "message": "Running the JavaScript URL violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked."
+  },
+  {
+   "url": "http://127.0.0.1:36389/csp",
+   "level": "info",
+   "message": "[probe] sw-battery reply /csp: {\"ok\":true,\"r\":[\"[object Object]\",\"[object Object]\",\"undefined\"]}"
+  },
+  {
+   "url": "http://127.0.0.1:36389/?t=a",
+   "level": "warning",
+   "message": "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult\nhttps://electronjs.org/docs/tutorial/security.\nThis warning will not show up\nonce the app is packaged."
+  },
+  {
+   "url": "http://127.0.0.1:36389/?t=b",
+   "level": "warning",
+   "message": "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult\nhttps://electronjs.org/docs/tutorial/security.\nThis warning will not show up\nonce the app is packaged."
+  },
+  {
+   "url": "http://127.0.0.1:36389/?t=c",
+   "level": "warning",
+   "message": "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult\nhttps://electronjs.org/docs/tutorial/security.\nThis warning will not show up\nonce the app is packaged."
+  },
+  {
+   "url": "http://127.0.0.1:36389/?t=d",
+   "level": "warning",
+   "message": "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult\nhttps://electronjs.org/docs/tutorial/security.\nThis warning will not show up\nonce the app is packaged."
+  },
+  {
+   "url": "http://127.0.0.1:36389/?t=e",
+   "level": "warning",
+   "message": "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult\nhttps://electronjs.org/docs/tutorial/security.\nThis warning will not show up\nonce the app is packaged."
+  }
+ ],
+ "perf": {
+  "isolatedWorld": {
+   "n": 1000,
+   "elapsedMs": 15.699999995529652,
+   "perCallUs": 15.699999995529652
+  },
+  "mainWorld": {
+   "n": 1000,
+   "elapsedMs": 5,
+   "perCallUs": 5
+  }
+ },
+ "extId": "oomjokbohhjiifkgalliianafgpgmeci",
+ "mainWorld": [
+  {
+   "tag": "/|case2-start.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286546
+  },
+  {
+   "tag": "case1-external.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286550
+  },
+  {
+   "tag": "/|case1-inline.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286551
+  },
+  {
+   "tag": "/|case3-war.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286551
+  },
+  {
+   "tag": "/|case2-idle.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286552
+  },
+  {
+   "tag": "/|case5-eval.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "isEval": true,
+     "evalOrigin": "eval at <anonymous> (chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js:26:5)",
+     "functionName": "eval"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286552
+  },
+  {
+   "tag": "/|case5-newfunction.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "isEval": true,
+     "evalOrigin": "eval at <anonymous> (chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js:31:5)",
+     "functionName": "eval"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286552
+  },
+  {
+   "tag": "/|case5-inline-el.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286553
+  },
+  {
+   "tag": "/|case5-onclick.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/",
+     "isEval": false,
+     "functionName": "onclick"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286554
+  },
+  {
+   "tag": "/|case6-bound-listener.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286554
+  },
+  {
+   "tag": "/|case6-pagehelper-1.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": "window.pageHelper"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286554
+  },
+  {
+   "tag": "/|case7-tamper.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286554
+  },
+  {
+   "tag": "/|case7-deep-limit.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case6-bound-microtask.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case6-queuemicrotask.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case6-mutationobserver.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case5-settimeout-string.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case5-location-js.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case6-bound-timer.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case6-pagehelper-2.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": "window.pageHelper"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case5-blob.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "blob:http://127.0.0.1:36389/d14d4ecf-b8a6-4143-81d9-f25affb45981",
+     "scriptNameOrSourceURL": "blob:http://127.0.0.1:36389/d14d4ecf-b8a6-4143-81d9-f25affb45981",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case5-data.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "data:text/javascript,window.probeA%20%26%26%20window.probeA.call('%2F%7Ccase5-data.A')%3B%20window.probeB%20%26%26%20window.probeB.call('%2F%7Ccase5-data.B')%3B%20window.probeM%20%26%26%20window.probeM.call('%2F%7Ccase5-data.M')",
+     "scriptNameOrSourceURL": "data:text/javascript,window.probeA%20%26%26%20window.probeA.call('%2F%7Ccase5-data.A')%3B%20window.probeB%20%26%26%20window.probeB.call('%2F%7Ccase5-data.B')%3B%20window.probeM%20%26%26%20window.probeM.call('%2F%7Ccase5-data.M')",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286555
+  },
+  {
+   "tag": "/|case4-exec-func.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286565
+  },
+  {
+   "tag": "/|case4-exec-files.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-exec-files.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-exec-files.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-exec-files.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-exec-files.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286565
+  },
+  {
+   "tag": "/|case6-raf.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619286565
+  },
+  {
+   "tag": "/|case2-start.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289128
+  },
+  {
+   "tag": "case1-external.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289129
+  },
+  {
+   "tag": "/|case1-inline.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289129
+  },
+  {
+   "tag": "/|case3-war.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289131
+  },
+  {
+   "tag": "/|case2-idle.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289131
+  },
+  {
+   "tag": "/|case5-eval.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "isEval": true,
+     "evalOrigin": "eval at <anonymous> (chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js:26:5)",
+     "functionName": "eval"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289131
+  },
+  {
+   "tag": "/|case5-newfunction.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "isEval": true,
+     "evalOrigin": "eval at <anonymous> (chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js:31:5)",
+     "functionName": "eval"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289131
+  },
+  {
+   "tag": "/|case5-inline-el.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289132
+  },
+  {
+   "tag": "/|case5-onclick.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/",
+     "isEval": false,
+     "functionName": "onclick"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289132
+  },
+  {
+   "tag": "/|case6-bound-listener.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289132
+  },
+  {
+   "tag": "/|case6-pagehelper-1.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": "window.pageHelper"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case7-tamper.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case7-deep-limit.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case6-bound-microtask.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case6-queuemicrotask.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case6-mutationobserver.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case4-registered.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case5-settimeout-string.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case5-location-js.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "",
+     "scriptNameOrSourceURL": "",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case6-bound-timer.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case6-pagehelper-2.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": "window.pageHelper"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289133
+  },
+  {
+   "tag": "/|case6-raf.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289134
+  },
+  {
+   "tag": "/|case5-blob.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "blob:http://127.0.0.1:36389/acb602cb-8626-409c-b8e0-efd214817a2b",
+     "scriptNameOrSourceURL": "blob:http://127.0.0.1:36389/acb602cb-8626-409c-b8e0-efd214817a2b",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289134
+  },
+  {
+   "tag": "/|case5-data.M",
+   "href": "http://127.0.0.1:36389/",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "data:text/javascript,window.probeA%20%26%26%20window.probeA.call('%2F%7Ccase5-data.A')%3B%20window.probeB%20%26%26%20window.probeB.call('%2F%7Ccase5-data.B')%3B%20window.probeM%20%26%26%20window.probeM.call('%2F%7Ccase5-data.M')",
+     "scriptNameOrSourceURL": "data:text/javascript,window.probeA%20%26%26%20window.probeA.call('%2F%7Ccase5-data.A')%3B%20window.probeB%20%26%26%20window.probeB.call('%2F%7Ccase5-data.B')%3B%20window.probeM%20%26%26%20window.probeM.call('%2F%7Ccase5-data.M')",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619289134
+  },
+  {
+   "tag": "/csp|case2-start.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290652
+  },
+  {
+   "tag": "case1-external.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290652
+  },
+  {
+   "tag": "/csp|case3-war.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290657
+  },
+  {
+   "tag": "/csp|case2-idle.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290657
+  },
+  {
+   "tag": "/csp|case6-bound-listener.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290661
+  },
+  {
+   "tag": "/csp|case6-pagehelper-1.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": "window.pageHelper"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290661
+  },
+  {
+   "tag": "/csp|case7-tamper.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290661
+  },
+  {
+   "tag": "/csp|case7-deep-limit.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290661
+  },
+  {
+   "tag": "/csp|case6-bound-microtask.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290661
+  },
+  {
+   "tag": "/csp|case6-queuemicrotask.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290661
+  },
+  {
+   "tag": "/csp|case6-mutationobserver.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290661
+  },
+  {
+   "tag": "/csp|case4-registered.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290662
+  },
+  {
+   "tag": "/csp|case6-bound-timer.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290662
+  },
+  {
+   "tag": "/csp|case6-pagehelper-2.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": "window.pageHelper"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290662
+  },
+  {
+   "tag": "/csp|case6-raf.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619290667
+  },
+  {
+   "tag": "/csp|case2-start.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294709
+  },
+  {
+   "tag": "/csp|case3-war.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/war.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294718
+  },
+  {
+   "tag": "case1-external.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294719
+  },
+  {
+   "tag": "/csp|case2-idle.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294720
+  },
+  {
+   "tag": "/csp|case6-bound-listener.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294723
+  },
+  {
+   "tag": "/csp|case6-pagehelper-1.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": "window.pageHelper"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294724
+  },
+  {
+   "tag": "/csp|case7-tamper.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294724
+  },
+  {
+   "tag": "/csp|case7-deep-limit.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 4,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": "callAll"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-idle.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294724
+  },
+  {
+   "tag": "/csp|case6-bound-microtask.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294724
+  },
+  {
+   "tag": "/csp|case6-queuemicrotask.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294724
+  },
+  {
+   "tag": "/csp|case6-mutationobserver.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294725
+  },
+  {
+   "tag": "/csp|case4-registered.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294725
+  },
+  {
+   "tag": "/csp|case6-bound-timer.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294726
+  },
+  {
+   "tag": "/csp|case6-pagehelper-2.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": "window.pageHelper"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294726
+  },
+  {
+   "tag": "/csp|case6-raf.M",
+   "href": "http://127.0.0.1:36389/csp",
+   "frameCount": 1,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619294733
+  },
+  {
+   "tag": "/|case9-tamper-a.M",
+   "href": "http://127.0.0.1:36389/?t=a",
+   "frameCount": 0,
+   "frames": null,
+   "tampered": true,
+   "tamperReason": "prepareStackTrace not redefinable",
+   "variant": "mainWorld",
+   "ts": 1790619297243
+  },
+  {
+   "tag": "case1-external.M",
+   "href": "http://127.0.0.1:36389/?t=a",
+   "frameCount": 0,
+   "frames": null,
+   "tampered": true,
+   "tamperReason": "prepareStackTrace not redefinable",
+   "variant": "mainWorld",
+   "ts": 1790619297243
+  },
+  {
+   "tag": "/|case1-inline.M",
+   "href": "http://127.0.0.1:36389/?t=a",
+   "frameCount": 0,
+   "frames": null,
+   "tampered": true,
+   "tamperReason": "prepareStackTrace not redefinable",
+   "variant": "mainWorld",
+   "ts": 1790619297243
+  },
+  {
+   "tag": "/|case4-registered.M",
+   "href": "http://127.0.0.1:36389/?t=a",
+   "frameCount": 0,
+   "frames": null,
+   "tampered": true,
+   "tamperReason": "prepareStackTrace not redefinable",
+   "variant": "mainWorld",
+   "ts": 1790619297244
+  },
+  {
+   "tag": "/|case9-tamper-b.M",
+   "href": "http://127.0.0.1:36389/?t=b",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619298459
+  },
+  {
+   "tag": "case1-external.M",
+   "href": "http://127.0.0.1:36389/?t=b",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619298460
+  },
+  {
+   "tag": "/|case1-inline.M",
+   "href": "http://127.0.0.1:36389/?t=b",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/?t=b",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/?t=b",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619298460
+  },
+  {
+   "tag": "/|case4-registered.M",
+   "href": "http://127.0.0.1:36389/?t=b",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619298461
+  },
+  {
+   "tag": "/|case9-tamper-c.M",
+   "href": "http://127.0.0.1:36389/?t=c",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619299684
+  },
+  {
+   "tag": "case1-external.M",
+   "href": "http://127.0.0.1:36389/?t=c",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619299686
+  },
+  {
+   "tag": "/|case1-inline.M",
+   "href": "http://127.0.0.1:36389/?t=c",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/?t=c",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/?t=c",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619299686
+  },
+  {
+   "tag": "/|case4-registered.M",
+   "href": "http://127.0.0.1:36389/?t=c",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619299686
+  },
+  {
+   "tag": "/|case9-tamper-d.M",
+   "href": "http://127.0.0.1:36389/?t=d",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/main-start-tamper.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619300902
+  },
+  {
+   "tag": "case1-external.M",
+   "href": "http://127.0.0.1:36389/?t=d",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/page.js",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/page.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619300903
+  },
+  {
+   "tag": "/|case1-inline.M",
+   "href": "http://127.0.0.1:36389/?t=d",
+   "frameCount": 2,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "http://127.0.0.1:36389/?t=d",
+     "scriptNameOrSourceURL": "http://127.0.0.1:36389/?t=d",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619300903
+  },
+  {
+   "tag": "/|case4-registered.M",
+   "href": "http://127.0.0.1:36389/?t=d",
+   "frameCount": 3,
+   "frames": [
+    {
+     "isEval": false,
+     "functionName": "call"
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    },
+    {
+     "fileName": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "scriptNameOrSourceURL": "chrome-extension://oomjokbohhjiifkgalliianafgpgmeci/sw-registered.js",
+     "isEval": false,
+     "functionName": null
+    }
+   ],
+   "tampered": false,
+   "tamperReason": null,
+   "variant": "mainWorld",
+   "ts": 1790619300904
+  },
+  {
+   "tag": "/|case9-tamper-e.M",
+   "href": "http://127.0.0.1:36389/?t=e",
+   "frameCount": 0,
+   "frames": null,
+   "tampered": true,
+   "tamperReason": "stackTraceLimit frozen at 0; no stack produced",
+   "variant": "mainWorld",
+   "ts": 1790619302121
+  },
+  {
+   "tag": "case1-external.M",
+   "href": "http://127.0.0.1:36389/?t=e",
+   "frameCount": 0,
+   "frames": null,
+   "tampered": true,
+   "tamperReason": "stackTraceLimit frozen at 0; no stack produced",
+   "variant": "mainWorld",
+   "ts": 1790619302122
+  },
+  {
+   "tag": "/|case1-inline.M",
+   "href": "http://127.0.0.1:36389/?t=e",
+   "frameCount": 0,
+   "frames": null,
+   "tampered": true,
+   "tamperReason": "stackTraceLimit frozen at 0; no stack produced",
+   "variant": "mainWorld",
+   "ts": 1790619302122
+  },
+  {
+   "tag": "/|case4-registered.M",
+   "href": "http://127.0.0.1:36389/?t=e",
+   "frameCount": 0,
+   "frames": null,
+   "tampered": true,
+   "tamperReason": "stackTraceLimit frozen at 0; no stack produced",
+   "variant": "mainWorld",
+   "ts": 1790619302122
+  }
+ ],
+ "note": "calls deduplicated to one entry per (variant, tag, page), frames reduced to file names; full output reproducible with the probe in extension-stack-probe/"
+}
