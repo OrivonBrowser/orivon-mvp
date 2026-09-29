@@ -1,4 +1,4 @@
-# `src/main/extensions/dnr/`: a pure `declarativeNetRequest` rule engine
+# `src/main/extensions/dnr/`: an Electron-free `declarativeNetRequest` rule engine and its I/O
 
 **What lives here.** `createDnrEngine()` (`dnr-engine.ts`): validates rules, holds an
 extension's static/dynamic/session rulesets, and evaluates one request to a `DnrDecision`
@@ -7,40 +7,69 @@ Chrome's documented `declarativeNetRequest` precedence. `types.ts` is the rule/r
 shape. `resource-types.ts` maps Electron's `webRequest` resource-type spelling to Chrome's.
 `frame-ancestry.ts` reconstructs a request's frame ancestry (for `allowAllRequests` inheritance)
 from `frameId`/`parentFrameId` observed across calls, since this package has no live frame tree
-to read one from. The actual matching algorithm is
+to read one from. `host-permissions.ts` builds the `redirect`/`modifyHeaders` host-permission
+gate (`DnrActionAccess`, see this file's Design notes) from an extension's permission names and
+host match patterns. `dnr-runner.ts` is the thin, Node-only I/O layer `../extensions-dnr-subsystem.ts`
+(Electron-tied, one level up) calls to read a static ruleset's rules from an extension's loaded
+folder and to persist dynamic rules and enabled-ruleset choices. The actual matching algorithm is
 [`vendor/firefox-dnr`](../../../../vendor/firefox-dnr) (MPL-2.0, ported from Firefox's
 `ExtensionDNR.sys.mjs`; `UPSTREAM.md` has the revision and the full patch list) --
 `dnr-engine.ts` is a thin, typed orchestration layer over it, not a second implementation.
 
-**What it depends on.** `vendor/firefox-dnr/` only; otherwise pure TypeScript (`URL`, `Map`,
-`Set` -- no `node:*`, no third-party package).
+**What it depends on.** `vendor/firefox-dnr/` (the engine); `node:fs`, `node:path` and
+`../../../broker/grants/node-ledger-storage.js`'s `writeFileAtomic` (`dnr-runner.ts` only, for
+its own disk I/O). Otherwise pure TypeScript (`URL`, `Map`, `Set` -- no third-party package).
+`node:*` is a runtime dependency, not an Electron one: nothing here calls into `electron` itself,
+so the whole directory stays durable (see below).
 
-**What it must never import.** `electron` (this engine has no `session`, no `webRequest`
-listener, and does not know it is running inside Electron at all). Nothing in Orivon wires
-`evaluate()` into a real session's `webRequest`, or into extensions' `chrome.declarativeNetRequest`
-API surface, yet.
-[`src/renderer/`](../../../renderer/): main-process code, same rule as the rest of `src/main/`
-(`../../README.md`).
+**What it must never import.** `electron`, from any file in this directory including
+`dnr-runner.ts` (it does disk I/O with plain `node:fs`, never a `session`, and does not know it
+is running inside Electron at all), or [`src/renderer/`](../../../renderer/). The wiring that
+reads this into a real session -- `evaluate()` into `webRequest`, and extensions'
+`chrome.declarativeNetRequest` API surface -- lives one level up, in
+`../extensions-dnr-subsystem.ts`, tied to Electron (same rule as the rest of `src/main/`,
+`../../README.md`).
 
-**Durable.** Everything in this directory is pure logic with no Electron dependency, so unlike
-most of `src/main/extensions/`, none of it is tied to Electron.
+**Durable.** Everything in this directory runs with no Electron dependency, so unlike most of
+`src/main/extensions/`, none of it is tied to Electron -- `dnr-runner.ts`'s disk I/O included,
+since it depends only on `node:fs`/`node:path` and this repository's own atomic-write helper,
+none of them Electron-specific.
 
 **Owner stream.** `extensions` (this build's `stream/ext-dnr`).
 
 ## Design notes
 
-**`evaluate()` does not check host permissions, and neither does the vendored engine
-underneath it.** Chrome's `declarativeNetRequest` normally requires an extension to hold either
-the broad `declarativeNetRequest` permission (rules may block/redirect/upgrade but not modify
-headers or match on `urlFilter` for hosts the extension cannot access) or
-`declarativeNetRequestWithHostAccess` (full behavior, gated per-host). Upstream Firefox enforces
-this per request (`RequestDetails#canExtensionModify`, `RuleManager#hasBlockPermission`). This
-engine does not: `evaluate()` always matches as if the calling extension holds full permission,
-because *which* permission an extension has, and whether it should even reach this engine for a
-given origin, is Orivon's broker/manifest-policy concern (`src/broker/policy/extension-manifest.ts`),
-layered above this package, not a fact the rule matcher itself should hold. A caller wiring this
-into a real session is expected to have already refused anything that should not reach
-`evaluate()` at all. `vendor/firefox-dnr/UPSTREAM.md` patch 8 has the exact removed methods.
+**`dnr-runner.ts`'s on-disk layout is this repository's own choice, not a Chrome-documented
+file.** `<userData>/extensions/<slot>/dnr-dynamic.json` holds the extension's dynamic rules;
+`dnr-enabled-rulesets.json`, alongside it, holds
+the static-ruleset ids the extension last chose via `updateEnabledRulesets` (absent until the
+first call, per-ruleset `enabled` from the manifest until then). Both live at the *slot* level
+(`<userData>/extensions/<slot>/`), not the versioned load directory
+(`<userData>/extensions/<slot>/<version>/`) `install-runner.ts` deletes on uninstall -- the same
+level `<slot>/key.pub` already persists at across an uninstall, for the same reason
+(`../README.md`'s slot design: an id installed again into the same slot should stay recognizable).
+Consequently neither file is deleted on uninstall today, consistent with that existing precedent;
+a reinstall into the same slot inherits its previous dynamic rules and enabled-ruleset choice
+rather than starting empty, a provisional call the owner may want revisited once storage cleanup
+on uninstall is itself a feature (it is not one yet anywhere in `src/main/extensions/`).
+
+**`evaluate()` gates `redirect`/`modifyHeaders` on host permission through a predicate the
+caller supplies, not through any notion of "permissions" of its own.** Chrome's
+`declarativeNetRequest` requires an extension to hold either the broad `declarativeNetRequest`
+permission (rules may block/redirect/upgrade but not modify headers or match on `urlFilter` for
+hosts the extension cannot access) or `declarativeNetRequestWithHostAccess` (full behavior, gated
+per-host). `setActionAccess(extensionId, access)` (`dnr-engine.ts`, wrapping
+`vendor/firefox-dnr/UPSTREAM.md` patch 12's `RuleManager#actionAccess`) is how a caller states,
+per extension, which requests it may `redirect`/`modifyHeaders` on (`access.hasHostAccess`) and
+whether every action needs that check (`access.requiresHostAccessForAllActions`, set for a
+`declarativeNetRequestWithHostAccess`-only extension). `host-permissions.ts`'s
+`buildActionAccess` builds this from an extension's DNR-related permission names and host match
+patterns; a caller that never calls `setActionAccess` gets this engine's original behavior --
+every extension matches as if it held full permission everywhere. *Whether an extensionId holds
+`declarativeNetRequest` at all*, and whether it should even reach this engine for a given origin,
+stays Orivon's broker/manifest-policy concern (`src/broker/policy/extension-manifest.ts`), not a
+fact this package holds itself -- a caller wiring this into a real session is expected to have
+already refused anything that should not reach `evaluate()` at all.
 
 **Frame ancestry is reconstructed from observation, not read from a live tree.** Firefox's
 `RequestDetails#ancestorRequestDetails` walks `nsIBrowsingContext.parent` to find whether an

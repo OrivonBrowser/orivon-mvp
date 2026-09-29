@@ -227,6 +227,19 @@ export class ElectronChromeExtensions extends EventEmitter {
     }
   }
 
+  /**
+   * Orivon patch: exposes this session's `ExtensionRouter` so a caller
+   * outside this library's own API classes (`src/browser/api/*.ts`) can
+   * register additional main-side handlers on the SAME router real
+   * extension messages (`crx-msg`) are dispatched through -- e.g. Orivon's
+   * own `declarativeNetRequest` API, whose renderer-side calls
+   * (`src/renderer/index.ts`) already go through `invokeExtension`/`crx-msg`
+   * like every other API here.
+   */
+  getRouter(): ExtensionRouter {
+    return this.ctx.router
+  }
+
   /** Add webContents to be tracked as a tab. */
   addTab(tab: Electron.WebContents, window: Electron.BaseWindow) {
     this.checkWebContentsArgument(tab)

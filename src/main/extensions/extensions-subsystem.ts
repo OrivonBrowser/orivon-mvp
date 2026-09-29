@@ -17,6 +17,9 @@ import { createExtensionHost } from './extension-host.js'
 import { startWebStore } from './store-runner.js'
 import { installStoreTestHook } from './store-test-hook.js'
 import type { InstalledExtension } from './registry.js'
+import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
+import { installDnrPermissionCheck, registerDnrApiHandlers } from './dnr-api.js'
+import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
 
 export interface ExtensionsApi {
   readonly installFromFolder: (dir: string) => Promise<InstallOutcome>
@@ -69,9 +72,19 @@ export const extensionsSubsystem: Subsystem = {
     // every file's code regardless of its original src/ nesting -- the same
     // reason tabs.ts's own join(import.meta.dirname, '../preload/app.js')
     // has one, not the two its src/main/shell/ nesting might suggest.
-    createExtensionHost(join(import.meta.dirname, '../preload/extension-api.js'))
+    const hostExtensions = createExtensionHost(join(import.meta.dirname, '../preload/extension-api.js'))
 
     const userDataPath = ctx.app.getPath('userData')
+
+    // Must attach before loadEnabledExtensions() below fires its first
+    // 'extension-loaded' (extensions-dnr.ts's own header says why), and the
+    // router/webRequest wiring may as well go right alongside it: nothing
+    // reaches either before the first extension loads regardless.
+    attachExtensionsDnr(session.defaultSession, userDataPath)
+    installDnrPermissionCheck(session.defaultSession, userDataPath)
+    const onRuleMatched = registerDnrApiHandlers(hostExtensions.getRouter(), userDataPath)
+    installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched)
+
     await loadEnabledExtensions(userDataPath)
 
     const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt() }

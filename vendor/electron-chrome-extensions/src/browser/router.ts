@@ -80,6 +80,25 @@ export function setMessageSenderIdCheck(check: MessageSenderIdCheck): void {
 }
 
 /**
+ * Orivon patch: an optional override for the manifest-permission check
+ * `onExtensionMessage` runs when a handler is registered with `permission`
+ * set -- unset, that check reads the LOADED extension's own
+ * `manifest.permissions` (Electron's `session.extensions.getExtension`).
+ * Orivon strips every `declarativeNetRequest*`/`webRequest*` permission from
+ * the manifest copy it loads (src/main/extensions/README.md), so a handler
+ * gated on one of those names would always refuse against the loaded
+ * manifest; when set, this runs instead, given the same `(extensionId,
+ * permission)` pair the loaded-manifest check would have used, so a caller
+ * can answer from whatever original permission record it kept itself.
+ */
+type PermissionCheck = (extensionId: string, permission: string) => boolean
+let gPermissionCheck: PermissionCheck | undefined
+
+export function setPermissionCheck(check: PermissionCheck): void {
+  gPermissionCheck = check
+}
+
+/**
  * Handles event routing IPCs and delivers them to the observer with the
  * associated session.
  */
@@ -428,7 +447,10 @@ export class ExtensionRouter {
 
     if (handler.permission) {
       const manifest: chrome.runtime.Manifest = extension?.manifest
-      if (!extension || !manifest.permissions?.includes(handler.permission)) {
+      const permitted = gPermissionCheck
+        ? !!extension && gPermissionCheck(extension.id, handler.permission)
+        : !!extension && !!manifest.permissions?.includes(handler.permission)
+      if (!permitted) {
         throw new Error(
           `${handlerName} requires an extension with ${handler.permission} permissions`,
         )

@@ -6,10 +6,12 @@
 // patch by number; the comments below cite the numbers that apply at each
 // site. Dropped entirely (not patched, removed): NetworkIntegration and its
 // webRequest/ChannelWrapper glue, the on-disk rule store
-// (ExtensionDNRStore.sys.mjs), manifest validation, and all Firefox
-// permission checks (canExtensionModify, hasBlockPermission) -- wiring this
-// engine into a session's webRequest and into extension permissions is a
-// later package (see src/main/extensions/dnr/README.md).
+// (ExtensionDNRStore.sys.mjs), and manifest validation -- wiring this engine
+// into a session's webRequest is a later package (see
+// src/main/extensions/dnr/README.md). Firefox's own permission checks
+// (canExtensionModify, hasBlockPermission) were dropped with them (patch 8)
+// and later reinstated, driven by a caller-supplied predicate instead of a
+// live Extension object (patch 12).
 //
 // Each extension that uses DNR has one RuleManager. All registered
 // RuleManagers are checked whenever a network request occurs. Individual
@@ -1515,10 +1517,14 @@ class RequestDetails {
 
 /**
  * This RequestEvaluator class's logic is documented at the top of this file.
- * Patch 8 (UPSTREAM.md): canModify is always true (host-permission gating is
- * out of scope for this engine, see the top-of-file comment), which removes
- * the need for the original's #isRuleActionAllowed and its hasBlockPermission
- * checks.
+ * Patch 8 (UPSTREAM.md) dropped the original's #isRuleActionAllowed and its
+ * hasBlockPermission checks entirely, along with every other permission
+ * check (host-permission gating is a broker/manifest concern, not part of
+ * rule matching -- see the top-of-file comment). Patch 12 reinstates one
+ * piece of it: #isActionAllowed, gating `redirect`/`modifyHeaders` (and,
+ * for an extension holding only declarativeNetRequestWithHostAccess, every
+ * action) on a per-RuleManager `actionAccess.hasHostAccess` predicate the
+ * caller supplies -- see #isActionAllowed's own doc.
  */
 class RequestEvaluator {
   // private constructor, only used by RequestEvaluator.evaluateRequest.
@@ -1697,6 +1703,9 @@ class RequestEvaluator {
       if (!this.#matchesRuleCondition(rule.condition)) {
         continue
       }
+      if (!this.#isActionAllowed(rule)) {
+        continue
+      }
       if (rule.action.type === 'modifyHeaders') {
         this.matchedModifyHeadersRules.push(new MatchedRule(rule, ruleset))
         continue
@@ -1709,6 +1718,31 @@ class RequestEvaluator {
       }
       this.matchedRule = new MatchedRule(rule, ruleset)
     }
+  }
+
+  /**
+   * Patch 12 (UPSTREAM.md): host-permission gating. Chrome grants `block`,
+   * `allow`, `allowAllRequests` and `upgradeScheme` to any extension holding
+   * plain `declarativeNetRequest`, but restricts `redirect` and
+   * `modifyHeaders` to a request (and, when known, its initiator) the
+   * extension holds host permission for; `declarativeNetRequestWithHostAccess`
+   * instead requires host permission for every action type. A rule this
+   * disqualifies is treated as though it never matched -- skipped here,
+   * inside candidate collection, so a lower-precedence rule (this
+   * extension's own, or another extension's) is still free to win, the same
+   * outcome Chrome's own per-candidate check produces. `RuleManager#actionAccess`
+   * defaults to "always allowed" (`DEFAULT_ACTION_ACCESS`), so an engine
+   * whose caller never calls `setActionAccess` matches exactly as before
+   * this patch.
+   * @param {Rule} rule
+   * @returns {boolean}
+   */
+  #isActionAllowed(rule) {
+    const access = this.ruleManager.actionAccess
+    const type = rule.action.type
+    const needsHostAccess =
+      access.requiresHostAccessForAllActions || type === 'redirect' || type === 'modifyHeaders'
+    return !needsHostAccess || access.hasHostAccess(this.req.requestURI, this.req.initiatorURI)
   }
 
   /** @param {RuleCondition} cond @returns {boolean} Whether the condition matched. */
@@ -1800,6 +1834,15 @@ class RequestEvaluator {
   }
 }
 
+// Patch 12 (UPSTREAM.md): a RuleManager's default action-access predicate --
+// no host-permission restriction at all, i.e. this engine's pre-patch-12
+// behavior ("evaluate() always matches as if the calling extension holds
+// full declarativeNetRequest + host permissions", top-of-file comment).
+const DEFAULT_ACTION_ACCESS = {
+  hasHostAccess: () => true,
+  requiresHostAccessForAllActions: false,
+}
+
 class RuleManager {
   constructor(extensionId) {
     this.extensionId = extensionId
@@ -1809,6 +1852,10 @@ class RuleManager {
 
     this.hasRulesWithAllowAllRequests = false
     this.totalRulesCount = 0
+    // Patch 12 (UPSTREAM.md): { hasHostAccess(requestURI, initiatorURI),
+    // requiresHostAccessForAllActions } -- set via the registry's
+    // setActionAccess, read by RequestEvaluator#isActionAllowed.
+    this.actionAccess = DEFAULT_ACTION_ACCESS
   }
 
   get availableStaticRuleCount() {
@@ -1925,7 +1972,23 @@ function createRuleManagerRegistry() {
     return Array.from(ruleManagers.values()).reverse()
   }
 
-  return { getRuleManager, removeRuleManager, getAllRuleManagersMostRecentFirst }
+  /**
+   * Patch 12 (UPSTREAM.md): sets (creating the RuleManager if needed) the
+   * host-permission predicate RequestEvaluator#isActionAllowed gates
+   * `redirect`/`modifyHeaders` on for this extension.
+   * @param {string} extensionId
+   * @param {{hasHostAccess: (requestURI: URL, initiatorURI: URL|null) => boolean, requiresHostAccessForAllActions: boolean}} actionAccess
+   */
+  function setActionAccess(extensionId, actionAccess) {
+    getRuleManager(extensionId).actionAccess = actionAccess
+  }
+
+  return {
+    getRuleManager,
+    removeRuleManager,
+    getAllRuleManagersMostRecentFirst,
+    setActionAccess,
+  }
 }
 
 // exports used by dnr-engine.ts.

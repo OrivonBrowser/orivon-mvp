@@ -71,12 +71,10 @@
     `src/renderer/index.ts`'s `apiDefinitions`: added factories for all four, following the
     file's own existing pattern (a `webRequest.onHeadersReceived`-only stub was already there).
     Reason: entirely absent otherwise, so an extension whose startup code calls or feature-
-    detects any of them throws before it does anything else. `declarativeNetRequest`'s write
-    methods reject "not supported"; its read methods resolve empty; `onRuleMatchedDebug` is an
-    `ExtensionEvent` that never fires (nothing in this session ever calls its `sendEvent`).
-    `sidePanel` and `userScripts` resolve as no-ops. None of this enforces anything: no dynamic-
-    rule store, no real side panel, no real user script world -- a later package's own real
-    engine, per docs/planning/extensions-build-plan.md's measurement section.
+    detects any of them throws before it does anything else. `sidePanel` and `userScripts`
+    resolve as no-ops: no real side panel, no real user script world.
+    `declarativeNetRequest` is real, wired by patch 15 below to Orivon's own engine
+    (`src/main/extensions/dnr/`, `src/main/extensions/extensions-dnr.ts`).
 11. **Non-enumerable API properties.** `src/renderer/index.ts`'s per-API `Object.defineProperty
     (chrome, apiName, ...)`: `enumerable: false`, was `true`. Kept as a harmless extra guard;
     MEASURED not to fix MetaMask's LavaMoat "scuttling mode" crash by itself (patch 12 is what
@@ -108,6 +106,21 @@
     `permission?: chrome.runtime.ManifestPermissions` gained `| undefined` -- `handle()` already
     assigns it `undefined` when no permission is given. Reason: root tsconfig's
     `exactOptionalPropertyTypes`, which `vendor/tsconfig.json` does not set; no behaviour change.
+
+15. **`getRouter()` on `ElectronChromeExtensions`, and a permission-check override on the
+    router.** `src/browser/index.ts`: added a public `getRouter(): ExtensionRouter` returning the
+    private `ctx.router` this library's own API classes (`src/browser/api/*.ts`) already register
+    their handlers on. `src/browser/router.ts`: added `setPermissionCheck` (same module-level-
+    setter shape as patches 5/9's sender checks), which `onExtensionMessage` calls instead of
+    reading the loaded extension's own `manifest.permissions` when a handler's `permission` check
+    runs, if set. Reason: Orivon's own `declarativeNetRequest` API handlers
+    (`src/main/extensions/dnr-api.ts`) register on this same router, the same way this library's
+    own API classes do, so the renderer's `invokeExtension('declarativeNetRequest.<method>')`
+    calls (patch 10) reach real main-side code through the same `crx-msg` path every other API
+    uses; and Orivon strips every `declarativeNetRequest*` permission from the manifest copy it
+    loads (`src/main/extensions/README.md`), so gating those handlers on the loaded manifest's own
+    permissions would always refuse -- `setPermissionCheck`'s override answers from the ORIGINAL
+    permission record Orivon kept instead (`registry.ts`'s `StrippedRecord`).
 
 `src/browser/index.ts` and `partition.ts` are reached only through the virtual specifiers
 `src/main/extensions/electron-chrome-extensions-lib.d.ts` declares, never their real path -- that

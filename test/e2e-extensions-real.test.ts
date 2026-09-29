@@ -37,7 +37,7 @@
 //     node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-real.test.ts
 import { describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
@@ -68,10 +68,14 @@ const SPECS: readonly ExtSpec[] = [
  * extension whose folder is missing or whose manifest.json
  * readExtensionManifest refuses -- one damaged download must not strand
  * every other extension's measurement. */
-function seedReal (userDataDir: string, extractedDir: string): Map<string, ExtSpec & { id: string }> {
+function seedReal (
+  userDataDir: string,
+  extractedDir: string,
+  specs: readonly ExtSpec[] = SPECS
+): Map<string, ExtSpec & { id: string }> {
   const seeded = new Map<string, ExtSpec & { id: string }>()
   const entries: InstalledExtension[] = []
-  for (const spec of SPECS) {
+  for (const spec of specs) {
     const sourceDir = join(extractedDir, spec.dir)
     if (!existsSync(join(sourceDir, 'manifest.json'))) {
       console.error(`[extensions-real] skipping ${spec.slot}: no manifest.json at ${sourceDir}`)
@@ -105,6 +109,11 @@ function seedReal (userDataDir: string, extractedDir: string): Map<string, ExtSp
     })
     seeded.set(spec.slot, { ...spec, id })
   }
+  // mkdirSync so an EMPTY specs list (the perf measurement's own
+  // no-extension baseline launch) still gets a valid, empty registry.json
+  // instead of ENOENT -- every non-empty call already created this
+  // directory as a side effect of cpSync above.
+  mkdirSync(join(userDataDir, 'extensions'), { recursive: true })
   writeFileSync(join(userDataDir, 'extensions', 'registry.json'), serializeRegistry(entries))
   return seeded
 }
@@ -250,6 +259,33 @@ describeOrSkip('real Chrome extensions', () => {
           // Covered by the generic action-popup check above; uBOL has no
           // separate page-visible behaviour a fixture page can observe.
           check('ubol: popup check above stands in for its page behaviour', true)
+
+          // uBOL's own default-enabled ublock-filters ruleset blocks
+          // this exact path with no domain restriction at all (rule id 526:
+          // {"action":{"type":"block"},"condition":{"urlFilter":"/media/player/videojs/videojs.ads.min.js"}}),
+          // so it matches this fixture's own loopback origin too -- no
+          // dynamic rule needed. A control fetch to an unrelated path on the
+          // same origin proves a rejection below is the rule applying, not
+          // a general network failure against this fixture server.
+          const blockOutcome = await evaluateRetrying(view, async () => {
+            const tryFetch = async (path: string): Promise<string> => {
+              try {
+                await fetch(path)
+                return 'resolved'
+              } catch {
+                return 'blocked'
+              }
+            }
+            return {
+              adPath: await tryFetch('/media/player/videojs/videojs.ads.min.js'),
+              controlPath: await tryFetch('/harmless-control-path.js')
+            }
+          }).catch((error: unknown) => ({ adPath: 'error', controlPath: String(error) }))
+          check(
+            'ubol: its own default ruleset blocks a matching loopback request, leaving an unrelated one untouched',
+            blockOutcome.adPath === 'blocked' && blockOutcome.controlPath === 'resolved',
+            JSON.stringify(blockOutcome)
+          )
         }
       } finally {
         if (app !== undefined) await closeElectronApp(app)
@@ -257,4 +293,76 @@ describeOrSkip('real Chrome extensions', () => {
       }
     })
   }, TEST_TIMEOUT_MS)
+
+  // ---- latency added by Orivon's own webRequest handlers ----
+  //
+  // Method: the SAME fixture page issues 300 same-origin fetch()es to
+  // distinct paths (so no two are served from an HTTP cache), timed in-page
+  // with performance.now(); once in a launch with only uBOL loaded (its
+  // ~18,700-rule default ruleset runs against every one of these requests,
+  // matching none of them -- the worst case for pure per-request overhead,
+  // no redirect/header work), once in a launch with no extension loaded at
+  // all. The reported number is the PER-REQUEST DELTA (uBOL launch minus
+  // no-extension launch) at the median and the 99th percentile: this
+  // isolates what Orivon's own dnr-webrequest.ts handlers (mapping +
+  // engine.evaluate(), called up to three times per request -- onBeforeRequest,
+  // onBeforeSendHeaders, onHeadersReceived) add, from ordinary fetch/IPC/
+  // event-loop overhead common to both launches. It is a real-Electron-page,
+  // wall-clock measurement, not an isolated CPU-only
+  // reading of the engine alone -- dnr/README.md's `tests/perf.test.ts`
+  // already reports that in isolation (median 52us/p99 174us per
+  // `evaluate()` call).
+  it('reports the per-request latency uBOL\'s default ruleset adds to real fetches, vs. no extension loaded', async () => {
+    const extractedDir = EXTRACTED as string
+    const started = await startFixtureServer()
+    const fixtureUrl = `${started.origin}/`
+
+    await runPhase('extensions dnr perf', async (check) => {
+      async function measure (seedUbol: boolean): Promise<number[]> {
+        let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+        try {
+          app = await launchElectron({
+            appPath: '.',
+            args: [HERMETIC_RESOLVER],
+            seedProfile: async (dir) => { seedReal(dir, extractedDir, seedUbol ? [SPECS[0]!] : []) },
+            sandbox: true
+          })
+          if (seedUbol) await new Promise((resolve) => setTimeout(resolve, SW_SETTLE_MS))
+          const view = await navigateToFixture(app, fixtureUrl, 'real-extension-fixture')
+          return await evaluateRetrying(view, async () => {
+            const durations: number[] = []
+            for (let i = 0; i < 300; i++) {
+              const start = performance.now()
+              try { await fetch(`/perf/${i}`) } catch { /* timed regardless of outcome */ }
+              durations.push(performance.now() - start)
+            }
+            return durations
+          }, 60_000)
+        } finally {
+          if (app !== undefined) await closeElectronApp(app)
+        }
+      }
+
+      function percentile (sorted: readonly number[], p: number): number {
+        return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]!
+      }
+
+      const withUbol = [...await measure(true)].sort((a, b) => a - b)
+      const withoutExtension = [...await measure(false)].sort((a, b) => a - b)
+      check('collected 300 timed requests in both launches', withUbol.length === 300 && withoutExtension.length === 300)
+
+      const medianDelta = percentile(withUbol, 0.5) - percentile(withoutExtension, 0.5)
+      const p99Delta = percentile(withUbol, 0.99) - percentile(withoutExtension, 0.99)
+      console.log(
+        `[extensions-dnr-perf] median per-request added latency: ${medianDelta.toFixed(3)}ms; ` +
+        `p99: ${p99Delta.toFixed(3)}ms ` +
+        `(uBOL median/p99: ${percentile(withUbol, 0.5).toFixed(3)}/${percentile(withUbol, 0.99).toFixed(3)}ms, ` +
+        `no-extension median/p99: ${percentile(withoutExtension, 0.5).toFixed(3)}/${percentile(withoutExtension, 0.99).toFixed(3)}ms)`
+      )
+      check('measurement completed (see console for the reported median/p99; this check does not assert a threshold)', true)
+      expect(await assertNoElectronSurvivors()).toEqual([])
+    })
+
+    await new Promise<void>((resolve) => { started.server.close(() => { resolve() }) })
+  }, TEST_TIMEOUT_MS * 2)
 })

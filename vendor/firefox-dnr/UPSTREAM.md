@@ -42,13 +42,21 @@ package, and none of it was ported:
 - `validateManifestEntry`, `ensureInitialized`, `initExtension`: manifest
   parsing and boot-time loading are not this pure engine's job; they belong
   wherever Orivon reads an extension's manifest (`src/main/extensions/`).
-- Host-permission gating (`canExtensionModify`, `hasBlockPermission`,
-  `RequestDetails#canExtensionModify`, `RequestEvaluator#isRuleActionAllowed`):
-  whether an extension is *allowed* to act on a given request is a broker/
-  permission concern layered above `evaluate()`, not part of rule matching.
-  `evaluate()` always matches as if the calling extension holds full
-  `declarativeNetRequest` + host permissions; the caller is expected to have
-  already refused anything it should not have reached this engine at all.
+- *Whether an extension holds `declarativeNetRequest` or
+  `declarativeNetRequestWithHostAccess` at all* stays a broker/manifest
+  concern layered above `evaluate()` -- this package has no notion of
+  "does this extensionId have this permission", only of match patterns it is
+  handed (see patch 12). A caller must still have already refused an
+  extension with neither permission before it ever calls
+  `setStaticRulesets`/`updateDynamicRules`/`updateSessionRules` for it.
+  *Per-request host-permission gating* (`redirect`/`modifyHeaders`
+  specifically, and every action for a `declarativeNetRequestWithHostAccess`-only
+  extension) is implemented, patch 12: `RequestEvaluator#isActionAllowed`
+  checks a caller-supplied `RuleManager#actionAccess.hasHostAccess(requestURI,
+  initiatorURI)` predicate instead of the removed `canExtensionModify`. A
+  caller that never calls `createRuleManagerRegistry()`'s `setActionAccess`
+  gets this package's original behavior: every extension matches as if it
+  held full host permission everywhere.
 
 ## Patches
 
@@ -145,7 +153,9 @@ patch.
    along with the other permission checks (see above); `#isRuleActionAllowed`
    and its `hasBlockPermission` branches are removed entirely rather than
    simplified in place, since with `canModify` fixed to `true` every branch
-   they gated was already dead code.
+   they gated was already dead code. Patch 12 below reinstates a version of
+   this check, driven by a caller-supplied predicate rather than
+   `canModify`/a live `Extension` object.
 
 9. **`gRuleManagers`/`getRuleManager`/`clearRuleManager` become a factory,
    `createRuleManagerRegistry()`, instead of one module-level array.**
@@ -289,6 +299,42 @@ patch.
     sets, though the code path still exists for one that does). See
     `src/main/extensions/dnr/README.md`'s performance paragraph for the
     resulting median/p99 change.
+
+12. **Host-permission gating, reinstated as a caller-supplied predicate.**
+    Patch 8 dropped `RequestDetails#canExtensionModify` and
+    `RequestEvaluator#isRuleActionAllowed` entirely, because Firefox
+    computes them from a live `Extension` object this package has no
+    equivalent of. Chrome's documented behavior still needs *some* per-
+    request check: `block`, `allow`, `allowAllRequests` and `upgradeScheme`
+    apply for any extension holding plain `declarativeNetRequest`, but
+    `redirect` and `modifyHeaders` additionally require the extension to
+    hold host permission for the request URL (and, when known, its
+    initiator); `declarativeNetRequestWithHostAccess` requires host
+    permission for every action type, not just those two. `RuleManager`
+    gains an `actionAccess` field (`{hasHostAccess(requestURI,
+    initiatorURI), requiresHostAccessForAllActions}`), defaulting to
+    "always allowed" (`DEFAULT_ACTION_ACCESS`) so an engine whose caller
+    never calls the registry's new `setActionAccess` matches exactly as it
+    did before this patch -- every existing test in this package's suite
+    depends on that default and none of them call `setActionAccess`.
+    `RequestEvaluator#isActionAllowed` (new) checks it inside
+    `#collectMatchInRuleset`, per candidate rule, before the rule is
+    accepted into `matchedModifyHeadersRules` or considered for
+    `matchedRule` -- not as a filter on `evaluateRequest`'s return value,
+    because by the time that function returns, a losing `block`/`redirect`/
+    `upgradeScheme` candidate from a disqualified extension is already
+    discarded (`evaluateRequest` keeps only the single precedence winner
+    for those action types); gating during collection instead means a rule
+    this disqualifies is treated as though it never matched at all, so
+    precedence naturally falls through to the next candidate, the same
+    outcome Chrome's own per-candidate check produces. This package still
+    does not decide *whether an extensionId holds `declarativeNetRequest`
+    at all* -- only what its `actionAccess` predicate says about a specific
+    request, once the caller has already decided the extension belongs in
+    this engine. `src/main/extensions/dnr/host-permissions.ts` is the
+    match-pattern matcher Orivon's own wiring builds `hasHostAccess`
+    predicates from; it is a plain caller of this patch's public surface,
+    not part of the vendored port.
 
 Nothing else changed: class/function bodies, the top-of-file design comment,
 and every doc comment not touched by a patch above are upstream's own words,

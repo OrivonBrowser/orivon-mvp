@@ -173,3 +173,17 @@ export interface DnrDecision {
   responseHeaders?: DnrModifyOps
   matchedRules: DnrMatchedRuleInfo[]
 }
+
+/**
+ * What `redirect`/`modifyHeaders` (and, for a
+ * `declarativeNetRequestWithHostAccess`-only extension, every action) are
+ * gated on -- see `host-permissions.ts` and
+ * `vendor/firefox-dnr/UPSTREAM.md` patch 12. `hasHostAccess` receives the
+ * request URL always, and the initiator URL when one is known (`null`
+ * otherwise, e.g. a top-level navigation); Chrome checks the initiator only
+ * when there is one to check.
+ */
+export interface DnrActionAccess {
+  hasHostAccess(requestURI: URL, initiatorURI: URL | null): boolean
+  requiresHostAccessForAllActions: boolean
+}

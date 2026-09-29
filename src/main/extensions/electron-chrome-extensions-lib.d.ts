@@ -1,8 +1,8 @@
-// Ambient types for the three vendored electron-chrome-extensions entry
-// points extension-host.ts needs the RUNTIME VALUE of: the
-// ElectronChromeExtensions class (src/browser/index.ts) and the partition
-// and router sender-check setters (src/browser/partition.ts,
-// src/browser/router.ts).
+// Ambient types for the vendored electron-chrome-extensions entry points
+// extension-host.ts and extensions-dnr.ts/dnr-api.ts need the RUNTIME VALUE
+// of: the ElectronChromeExtensions class (src/browser/index.ts) and the
+// partition/router sender-check and permission-check setters
+// (src/browser/partition.ts, src/browser/router.ts).
 //
 // Importing those files' real paths pulls their whole tree (electron-vite
 // serves this out/main/index.js on that same bundle) into THIS project's
@@ -59,6 +59,30 @@ declare module 'orivon:crx-extensions' {
     addTab (tab: Electron.WebContents, window: Electron.BaseWindow): void
     removeTab (tab: Electron.WebContents): void
     selectTab (tab: Electron.WebContents): void
+    /** UPSTREAM.md patch 15: this session's ExtensionRouter, for registering
+     * an additional main-side API handler the same way this library's own
+     * API classes do. */
+    getRouter (): ExtensionRouterHandle
+  }
+
+  /** The subset of `src/browser/router.ts`'s `ExtensionRouter` a caller
+   * outside this library needs: registering a handler and sending an event
+   * to a listening extension. */
+  export interface ExtensionRouterApiEvent {
+    readonly extension: { readonly id: string }
+  }
+  export interface ExtensionRouterHandlerOptions {
+    extensionContext?: boolean
+    allowRemote?: boolean
+    permission?: string
+  }
+  export interface ExtensionRouterHandle {
+    apiHandler (): (
+      name: string,
+      callback: (event: ExtensionRouterApiEvent, ...args: any[]) => any,
+      opts?: ExtensionRouterHandlerOptions
+    ) => void
+    sendEvent (targetExtensionId: string | undefined, eventName: string, ...args: any[]): void
   }
 }
 
@@ -76,4 +100,10 @@ declare module 'orivon:crx-extensions-router' {
   interface ServiceWorkerMessageEvent { type: 'service-worker', serviceWorker: Electron.ServiceWorkerMain }
   type MessageEvent = FrameMessageEvent | ServiceWorkerMessageEvent
   export function setMessageSenderIdCheck (check: (event: MessageEvent, claimedExtensionId: string | undefined) => boolean): void
+
+  /** UPSTREAM.md patch 15: overrides the manifest-permission check
+   * `onExtensionMessage` runs for a handler registered with `permission`
+   * set, answering from `extensionId`'s ORIGINAL permission record instead
+   * of the (stripped) loaded manifest's own `permissions` list. */
+  export function setPermissionCheck (check: (extensionId: string, permission: string) => boolean): void
 }

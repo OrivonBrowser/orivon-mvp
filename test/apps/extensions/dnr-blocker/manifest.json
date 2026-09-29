@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E DNR Blocker",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/e2e-extensions-dnr.test.ts: a static block rule, plus a dynamic redirect rule and a dynamic modifyHeaders rule its service worker adds.",
+  "permissions": ["declarativeNetRequest"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset1",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}

@@ -2,6 +2,7 @@ import { ExtensionDNR } from '../../../../vendor/firefox-dnr/src/extension-dnr.m
 import { ExtensionDNRLimits } from '../../../../vendor/firefox-dnr/src/dnr-limits.mjs'
 import { FrameAncestryTracker } from './frame-ancestry.js'
 import type {
+  DnrActionAccess,
   DnrDecision,
   DnrMatchedRuleInfo,
   DnrRequest,
@@ -250,9 +251,66 @@ export function createDnrEngine() {
       return ruleManager ? ruleManager.getSessionRules().map(serializeRule) : []
     },
 
+    /** The static ruleset ids currently enabled, in manifest order --
+     * `chrome.declarativeNetRequest.getEnabledRulesets`. */
+    getEnabledRulesets(extensionId: string): string[] {
+      const ruleManager = registry.getRuleManager(extensionId, false)
+      return ruleManager ? [...ruleManager.enabledStaticRulesetIds] : []
+    },
+
+    /** `chrome.declarativeNetRequest.getAvailableStaticRuleCount`. */
+    getAvailableStaticRuleCount(extensionId: string): number {
+      const ruleManager = registry.getRuleManager(extensionId, false)
+      return ruleManager ? ruleManager.availableStaticRuleCount : ExtensionDNRLimits.GUARANTEED_MINIMUM_STATIC_RULES
+    },
+
+    /**
+     * `chrome.declarativeNetRequest.testMatchOutcome`: evaluates `request`
+     * against only `extensionId`'s own rules (Chrome never lets an
+     * extension test another's), ignoring host-permission gating the same
+     * way Chrome's own `testMatchOutcome` does (it reports what WOULD
+     * match, not what would actually apply).
+     */
+    testMatch(extensionId: string, request: DnrRequest): DnrMatchedRuleInfo[] {
+      const ruleManager = registry.getRuleManager(extensionId, false)
+      if (!ruleManager) {
+        return []
+      }
+      const requestURI = new URL(request.url)
+      const requestDetails = new RequestDetails({
+        requestURI,
+        initiatorURI: parseUrlOrNull(request.initiator),
+        type: request.resourceType,
+        method: request.method.toLowerCase(),
+        tabId: request.tabId,
+      })
+      const previousAccess = ruleManager.actionAccess
+      // testMatchOutcome reports every rule that WOULD match, unaffected by
+      // host-permission gating (Chrome's own documented behavior) -- lift
+      // this extension's own gate for the one evaluation, restore it after.
+      ruleManager.actionAccess = { hasHostAccess: () => true, requiresHostAccessForAllActions: false }
+      try {
+        const matched = RequestEvaluator.evaluateRequest(requestDetails, [ruleManager]) as VendorMatchedRule[]
+        return toMatchedRuleInfo(matched)
+      } finally {
+        ruleManager.actionAccess = previousAccess
+      }
+    },
+
     removeExtension(extensionId: string): void {
       staticState.delete(extensionId)
       registry.removeRuleManager(extensionId)
+    },
+
+    /**
+     * Sets the host-permission gate `evaluate()` applies to this
+     * extension's `redirect`/`modifyHeaders` rules (vendor/firefox-dnr's
+     * `UPSTREAM.md` patch 12). Unset, an extension's rules match as if it
+     * held full host permission everywhere -- this package's original
+     * behavior (see this directory's README).
+     */
+    setActionAccess(extensionId: string, access: DnrActionAccess): void {
+      registry.setActionAccess(extensionId, access)
     },
 
     evaluate(request: DnrRequest): DnrDecision {
