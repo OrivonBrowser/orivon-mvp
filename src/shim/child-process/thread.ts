@@ -128,7 +128,11 @@ export class Worker extends EventEmitter {
       stdout: options.stdout === true,
       stderr: options.stderr === true
     }
-    void launchChild(child, name, threadStart, () => threadStart, [portChannel.port2, ...transferList])
+    // `viaHost: false` -- ADR-0046's Decision: a thread is part of the
+    // context that starts it (a `SharedArrayBuffer`/`WebAssembly.Memory` in
+    // `workerData` must reach it), so it always launches as a local Worker,
+    // never through the app's child host.
+    void launchChild(child, name, threadStart, () => threadStart, [portChannel.port2, ...transferList], false)
   }
 
   postMessage (value: unknown, transferList?: readonly unknown[]): void {

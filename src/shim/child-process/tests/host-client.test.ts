@@ -1,117 +1,165 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createRemoteWorker, requestHostConnection } from '../host-client.js'
-import type { WindowLike } from '../host-client.js'
+import { createRemoteWorker, hasChildHost, useWindowForTests } from '../host-client.js'
+import type { ChildrenBridge as FakeBridge, WindowLike } from '../host-client.js'
 import type { FromWorker, ToWorker } from '../../worker/protocol.js'
-import type { StartChildMessage } from '../../worker/host-protocol.js'
+import type { HostStart } from '../../worker/host-protocol.js'
 
-const ORIGIN = 'https://app.example'
+const START = { type: 'fork', url: 'https://app.example/app.js', argv: [], env: {}, cwd: '/', serialization: 'json' } as const satisfies HostStart
 
-/** A fake `window`: a real EventTarget for 'message', with a mutable `location` so a test can
- * simulate an origin change, and a spy on postMessage. */
-function fakeWindow (): WindowLike & { readonly target: EventTarget, readonly postMessage: ReturnType<typeof vi.fn> } {
-  const target = new EventTarget()
-  const postMessage = vi.fn()
+/** A fake bridge -- exactly the shape the real preload-side one exposes, so a test drives the
+ * "host" end the same way `../../worker/host.ts`'s `startChild` would answer a real one. */
+function fakeBridge (): {
+  bridge: FakeBridge
+  startCalls: unknown[]
+  sentTo: (childId: string) => unknown[]
+  killed: string[]
+  /** Delivers `message` through the `onMessage` callback `start()` captured for `childId`. */
+  deliver: (childId: string, message: FromWorker) => void
+} {
+  const startCalls: unknown[] = []
+  const killed: string[] = []
+  const sent = new Map<string, unknown[]>()
+  const relays = new Map<string, (message: FromWorker) => void>()
+  let nextId = 0
+
+  const bridge: FakeBridge = {
+    async start (start, onMessage) {
+      startCalls.push(start)
+      const childId = String(nextId++)
+      relays.set(childId, onMessage)
+      return childId
+    },
+    send (childId, message) {
+      const list = sent.get(childId) ?? []
+      list.push(message)
+      sent.set(childId, list)
+    },
+    kill (childId) { killed.push(childId) }
+  }
+
   return {
-    location: { origin: ORIGIN },
-    target,
-    postMessage,
-    addEventListener: (_type: 'message', listener: (event: MessageEvent) => void) => { target.addEventListener('message', listener as EventListener) },
-    removeEventListener: (_type: 'message', listener: (event: MessageEvent) => void) => { target.removeEventListener('message', listener as EventListener) }
-  } as unknown as WindowLike & { readonly target: EventTarget, readonly postMessage: ReturnType<typeof vi.fn> }
+    bridge,
+    startCalls,
+    sentTo: (childId) => sent.get(childId) ?? [],
+    killed,
+    deliver: (childId, message) => { relays.get(childId)?.(message) }
+  }
 }
 
-function deliver (win: { target: EventTarget }, data: unknown, options: { source?: unknown, origin?: string, ports?: readonly unknown[] } = {}): void {
-  const event = new MessageEvent('message', { data, origin: options.origin ?? ORIGIN })
-  Object.defineProperty(event, 'source', { value: options.source ?? win })
-  Object.defineProperty(event, 'ports', { value: options.ports ?? [] })
-  win.target.dispatchEvent(event)
+function windowWith (bridge: FakeBridge | undefined): WindowLike {
+  return { [Symbol.for('orivon:children')]: bridge } as unknown as WindowLike
 }
 
-describe('requestHostConnection', () => {
-  it('resolves with the port once the preload replies on the same window and origin', async () => {
-    const win = fakeWindow()
-    const promise = requestHostConnection(win, 1000)
-
-    expect(win.postMessage).toHaveBeenCalledWith({ type: 'orivon:child-host:connect' }, ORIGIN)
-
-    const port = {} as MessagePort
-    deliver(win, { type: 'orivon:child-host:port' }, { source: win, ports: [port] })
-
-    await expect(promise).resolves.toBe(port)
+describe('hasChildHost', () => {
+  it('is false with no window at all (a Worker\'s own nested children)', () => {
+    useWindowForTests(undefined)
+    expect(hasChildHost()).toBe(false)
+    useWindowForTests()
   })
 
-  it('resolves undefined if nothing answers within the timeout', async () => {
-    const win = fakeWindow()
-    await expect(requestHostConnection(win, 20)).resolves.toBeUndefined()
+  it('is false when nothing installed the bridge', () => {
+    useWindowForTests({} as WindowLike)
+    expect(hasChildHost()).toBe(false)
+    useWindowForTests()
   })
 
-  it('ignores a message from a different source', async () => {
-    const win = fakeWindow()
-    const promise = requestHostConnection(win, 30)
-    deliver(win, { type: 'orivon:child-host:port' }, { source: {}, ports: [{}] })
-    await expect(promise).resolves.toBeUndefined()
-  })
-
-  it('ignores a message of the wrong type', async () => {
-    const win = fakeWindow()
-    const promise = requestHostConnection(win, 30)
-    deliver(win, { type: 'something-else' }, { source: win, ports: [{}] })
-    await expect(promise).resolves.toBeUndefined()
-  })
-
-  it('resolves undefined immediately when there is no window at all (a Worker\'s own nested children)', async () => {
-    await expect(requestHostConnection(undefined, 1000)).resolves.toBeUndefined()
+  it('is true once the bridge is installed under the registered symbol -- a plain structural check, no timeout', () => {
+    const { bridge } = fakeBridge()
+    useWindowForTests(windowWith(bridge))
+    expect(hasChildHost()).toBe(true)
+    useWindowForTests()
   })
 })
 
 describe('createRemoteWorker', () => {
-  it('sends one start-child message carrying a fresh port, the start base and any extra transferables', () => {
-    const { port1: hostPort } = new MessageChannel()
-    const posted: Array<{ message: StartChildMessage, transfer?: readonly Transferable[] }> = []
-    hostPort.postMessage = vi.fn((message, transfer) => { posted.push({ message, transfer }) }) as never
+  const getBridge = (bridge: FakeBridge | undefined): (() => FakeBridge | undefined) => () => bridge
 
-    const start = { type: 'fork', url: `${ORIGIN}/app.js`, argv: [], env: {}, cwd: '/', serialization: 'json' } as const
-    createRemoteWorker(hostPort, start)
-
-    expect(posted).toHaveLength(1)
-    expect(posted[0]?.message.type).toBe('start-child')
-    expect(posted[0]?.message.start).toEqual(start)
+  it('starts one child through the bridge, carrying the given start message', async () => {
+    const { bridge, startCalls } = fakeBridge()
+    createRemoteWorker(START, getBridge(bridge))
+    await vi.waitFor(() => { expect(startCalls).toEqual([START]) })
   })
 
-  it('relays FromWorker messages the host sends back to the adapter\'s onmessage', async () => {
-    const { port1: hostPort, port2: hostFar } = new MessageChannel()
-    const start = { type: 'fork', url: `${ORIGIN}/app.js`, argv: [], env: {}, cwd: '/', serialization: 'json' } as const
-    const adapter = createRemoteWorker(hostPort, start)
+  it('relays messages the host sends back to the adapter\'s onmessage', async () => {
+    const { bridge, startCalls, deliver } = fakeBridge()
+    const adapter = createRemoteWorker(START, getBridge(bridge))
 
     const received: FromWorker[] = []
     adapter.onmessage = (event) => { received.push(event.data) }
 
-    hostFar.onmessage = (event: MessageEvent<StartChildMessage>) => {
-      // The host's own per-child port is the transferred one.
-      event.data.port.postMessage({ type: 'started' } satisfies FromWorker)
-    }
+    await vi.waitFor(() => { expect(startCalls).toHaveLength(1) })
+    deliver('0', { type: 'started' } satisfies FromWorker)
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(received).toEqual([{ type: 'started' }])
+    await vi.waitFor(() => { expect(received).toEqual([{ type: 'started' }]) })
   })
 
-  it('postMessage forwards to the per-child port, and terminate() sends a terminate control message', async () => {
-    const { port1: hostPort, port2: hostFar } = new MessageChannel()
-    const start = { type: 'fork', url: `${ORIGIN}/app.js`, argv: [], env: {}, cwd: '/', serialization: 'json' } as const
-    const adapter = createRemoteWorker(hostPort, start)
+  it('queues postMessage/terminate before the host accepts the child, and replays them once it does', async () => {
+    const { bridge, startCalls, sentTo, killed } = fakeBridge()
+    const adapter = createRemoteWorker(START, getBridge(bridge))
 
-    let childPort: MessagePort | undefined
-    const received: unknown[] = []
-    hostFar.onmessage = (event: MessageEvent<StartChildMessage>) => {
-      childPort = event.data.port
-      childPort.onmessage = (inner) => { received.push(inner.data) }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    adapter.postMessage({ type: 'ipc', message: 1 } satisfies ToWorker)
+    adapter.postMessage({ type: 'ipc', message: 2 } satisfies ToWorker)
+    expect(sentTo('0')).toEqual([]) // not accepted yet
+
+    await vi.waitFor(() => { expect(startCalls).toHaveLength(1) })
+    await vi.waitFor(() => {
+      expect(sentTo('0')).toEqual([{ type: 'ipc', message: 1 }, { type: 'ipc', message: 2 }])
+    })
+    expect(killed).toEqual([])
+  })
+
+  it('sends postMessage immediately once the host has already accepted the child', async () => {
+    const { bridge, startCalls, sentTo } = fakeBridge()
+    const adapter = createRemoteWorker(START, getBridge(bridge))
+    await vi.waitFor(() => { expect(startCalls).toHaveLength(1) })
+
+    adapter.postMessage({ type: 'ipc', message: 1 } satisfies ToWorker)
+    expect(sentTo('0')).toEqual([{ type: 'ipc', message: 1 }])
+  })
+
+  it('terminate() before the host accepts the child kills it as soon as it does, replaying nothing else', async () => {
+    const { bridge, startCalls, sentTo, killed } = fakeBridge()
+    const adapter = createRemoteWorker(START, getBridge(bridge))
 
     adapter.postMessage({ type: 'ipc', message: 1 } satisfies ToWorker)
     adapter.terminate()
-    await new Promise((resolve) => setTimeout(resolve, 20))
 
-    expect(received).toEqual([{ type: 'ipc', message: 1 }, { type: 'terminate' }])
+    await vi.waitFor(() => { expect(startCalls).toHaveLength(1) })
+    await vi.waitFor(() => { expect(killed).toEqual(['0']) })
+    expect(sentTo('0')).toEqual([])
+  })
+
+  it('terminate() after the host accepts the child kills it directly', async () => {
+    const { bridge, startCalls, killed } = fakeBridge()
+    const adapter = createRemoteWorker(START, getBridge(bridge))
+    await vi.waitFor(() => { expect(startCalls).toHaveLength(1) })
+
+    adapter.terminate()
+    expect(killed).toEqual(['0'])
+  })
+
+  it('reports a failed start as a "failed" message rather than a silent hang (F5)', async () => {
+    const bridge: FakeBridge = {
+      start: async () => { throw new Error('no host for this app') },
+      send: vi.fn(),
+      kill: vi.fn()
+    }
+    const adapter = createRemoteWorker(START, getBridge(bridge))
+
+    const received: FromWorker[] = []
+    adapter.onmessage = (event) => { received.push(event.data) }
+
+    await vi.waitFor(() => { expect(received).toHaveLength(1) })
+    expect(received[0]).toMatchObject({ type: 'failed', error: { message: 'no host for this app' } })
+  })
+
+  it('reports a "failed" message rather than hanging when no bridge exists at all', async () => {
+    const adapter = createRemoteWorker(START, getBridge(undefined))
+
+    const received: FromWorker[] = []
+    adapter.onmessage = (event) => { received.push(event.data) }
+
+    await vi.waitFor(() => { expect(received).toHaveLength(1) })
+    expect(received[0]?.type).toBe('failed')
   })
 })
