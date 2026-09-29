@@ -76,6 +76,7 @@ mio and tokio socket is; wasmtime never answers it. The streams read ahead of th
 (`io.ts`), so a non-blocking read answers from what has arrived.
 
 **A datagram to a reserved port needs a grant naming that port.** `udp.send` is checked as
-`tcp.connect` is, so a wildcard never covers a reserved port (A82): a program with its own DNS
-resolver needs `*:53` beside `*:*`. The broker drops a refused datagram without an error (A87),
-so the program sees only a query that never gets an answer (A296).
+`tcp.connect` is, so a wildcard never covers a reserved port (A82), and a manifest declares a
+wildcard host only as `*:*`: a program with its own DNS resolver names it, as `1.1.1.1:53`. The
+broker drops a refused datagram without an error (A87), so the program sees only a query that
+never gets an answer (A296).

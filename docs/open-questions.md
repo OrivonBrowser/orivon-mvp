@@ -1468,15 +1468,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A296: A82's reserved-port carve-out blocks a P2P app's own DNS-over-UDP **[OWNER]**
 
-- **Question:** `udp.send` reuses `checkConnect`, so A82's reserved-port carve-out applies:
-  port 53 needs a pattern naming it exactly. `udp.send: ["*:*"]` (capability-api.md's own P2P
-  example) cannot reach it, so a component's own DNS-over-UDP times out silently (A87).
-- **Why it matters:** correct as built (A82 lists DNS by name), but a trap no app author would
-  see coming, and `authorisedSend` reusing `checkConnect` was never a logged decision.
-- **Options:** leave it, an app names its own resolver's `host:53` (rec., no host change);
-  exempt `udp.send` from A82; drop port 53 from `RESERVED_PORTS`.
+- **Question:** `udp.send` reuses `checkConnect`, so a wildcard never reaches port 53 (A82), and a
+  manifest declares a wildcard host only as `*:*`. A program's own resolver works only when the
+  manifest names it (`1.1.1.1:53`); otherwise each query is dropped silently (A87).
+- **Why it matters:** correct as built, but a trap an app author cannot see, and `authorisedSend`
+  reusing `checkConnect` was never a logged decision.
+- **Options:** name the resolver's `host:53` (rec., no change); accept `*:53` as a declarable
+  pattern; exempt `udp.send` from A82; drop port 53 from `RESERVED_PORTS`.
 - **Who decides:** owner
-- **Blocks:** nothing; a manifest can already grant `*:53` or a literal `host:53` today
+- **Blocks:** nothing; a manifest can name its resolver today
 
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 

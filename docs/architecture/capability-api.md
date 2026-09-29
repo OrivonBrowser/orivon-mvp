@@ -237,8 +237,9 @@ unrestricted network access, and the grant prompt must say so in plain words
 (*"connect to any computer on the internet"*), not hide it behind a pattern string. This is a
 real property of P2P software, and understating it would be the kind of dishonesty the trust
 indicator exists to prevent. A wildcard never reaches a reserved port (A82: DNS, mail, SMB, RDP,
-IRC and the like): a P2P program that resolves names itself names its resolver's port, as in
-`udp.send: ["*:*", "*:53"]`, and a refused datagram is dropped without an error (A87, A296).
+IRC and the like), and a wildcard host is declarable only as `*:*`: a P2P program that resolves
+names itself names its resolver, as in `udp.send: ["*:*", "1.1.1.1:53"]`, and a refused datagram
+is dropped without an error (A87, A296).
 
 ## v0 surface
 
