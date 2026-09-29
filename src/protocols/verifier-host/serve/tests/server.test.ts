@@ -132,10 +132,13 @@ describe('the .eth loopback server', () => {
     expect(reply.headers['content-security-policy']).toBe("treat-as-public-address; frame-ancestors 'self'")
   })
 
-  it('answers a matching validator with 304 before opening anything', async () => {
+  it('answers a matching validator with 304 before opening anything, carrying the same CSP a full reply would', async () => {
     opened.length = 0
-    expect((await get('/app.js', { headers: { 'if-none-match': `"${ROOT}"` } })).status).toBe(304)
+    const reply = await get('/app.js', { headers: { 'if-none-match': `"${ROOT}"` } })
+    expect(reply.status).toBe(304)
     expect(opened).toEqual([])
+    // A copy cached from before this CSP existed must not keep revalidating under its old headers.
+    expect(reply.headers['content-security-policy']).toBe("treat-as-public-address; frame-ancestors 'self'")
   })
 
   it('serves a request pinned to the current root, and refuses one pinned to another', async () => {
@@ -255,7 +258,7 @@ describe('the loopback server, for an address scheme', () => {
     expect(reply.status).toBe(301)
     expect(reply.headers.location).toBe(`https://${ROOT}.ipfs.orivon/docs/a.html?x=1`)
     expect(reply.headers['cache-control']).toBe('no-store')
-    expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address; frame-ancestors 'self'")
+    expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address")
     expect((await get(`/${ROOT}`, { host: 'ipfs.orivon' })).headers.location).toBe(`https://${ROOT}.ipfs.orivon/`)
   })
 
