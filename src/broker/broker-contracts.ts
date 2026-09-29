@@ -479,4 +479,11 @@ export interface Broker {
    * implementation. Resolves to whether anything was actually removed.
    */
   revokeUserSelectedPath(origin: string, pickId: string): Promise<boolean>
+  /**
+   * Fires after `grant`/`revoke`/`revokePersisted`/`revokeUserSelectedPath`
+   * change what `origin` holds -- the one place a live view of grants (the
+   * Settings Apps list) listens, rather than each caller of those four
+   * pushing its own event. Returns the unsubscribe.
+   */
+  onGrantsChanged(listener: (origin: string) => void): () => void
 }

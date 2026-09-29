@@ -125,4 +125,15 @@ document.getElementById('app')?.append(
 
 // Coming back to the tab shows who is open now.
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void load() })
+
+// A rename, a colour, a new or deleted profile -- made from this window's own
+// Settings, or another Profiles tab. Skipped while a name is mid-edit: `load`
+// redraws every row from what main just said, which would otherwise overwrite
+// a keystroke the `change` event has not sent yet.
+bridge.onEvent((topic) => {
+  if (topic !== 'profiles.changed') return
+  if (document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'text') return
+  void load()
+})
+
 void load()
