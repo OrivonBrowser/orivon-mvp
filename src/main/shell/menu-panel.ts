@@ -29,8 +29,8 @@ export function createMenuPanel (
     preloadRelPath: '../preload/menu.js',
     urlArgName: 'orivon-menu-url',
     align: 'right',
-    registerIpc: (webContents, onContentHeight) => {
-      registerMenuIpc(webContents, {
+    registerIpc: (webContents, url, onContentHeight) => {
+      registerMenuIpc(webContents, url, {
         items: () => menuItems(shortcuts),
         run: (id) => {
           popover.close()
