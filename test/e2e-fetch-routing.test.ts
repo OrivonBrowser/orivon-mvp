@@ -28,7 +28,8 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { asPage, closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
@@ -36,6 +37,8 @@ import type { Grant, Manifest } from '../src/contracts/index.js'
 const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
+/** asPage's (e2e-helpers.ts) own same-origin script URL, on this file's fixture origin -- see fixture-as-page.ts's own header for why this is a same-origin write rather than a new server route. */
+const AS_PAGE_SCRIPT_FULL_URL = `${FIXTURE_ORIGIN}/${AS_PAGE_SCRIPT_URL}`
 
 /**
  * Fixed, not ephemeral -- same reasoning as e2e-connect-secure-capability.
@@ -122,7 +125,7 @@ it('a real page\'s fetch() reaches a granted host with an app-set Origin and no 
       // page), a plain custom header, and NO Cookie header -- the probe
       // server's own JSON echo is the proof of what actually crossed the
       // wire, not a claim this file makes about its own code.
-      const granted = await evaluateRetrying(view, async () => {
+      const granted = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
         try {
           const response = await fetch('http://127.0.0.1:8879/probe', {
             headers: { Origin: 'https://impersonated.example', 'X-Marker': 'orivon-e2e' }
@@ -153,7 +156,7 @@ it('a real page\'s fetch() reaches a granted host with an app-set Origin and no 
       // (b) header freedom covers Cookie specifically too, when the APP
       // supplies it -- proving the earlier absence is "no jar", not "Cookie
       // is filtered like an ordinary page's fetch would filter it".
-      const withCookie = await evaluateRetrying(view, async () => {
+      const withCookie = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
         const response = await fetch('http://127.0.0.1:8879/probe', { headers: { Cookie: 'session=app-managed' } })
         const json = await response.json() as { headers: Record<string, string> }
         return json.headers?.cookie
@@ -179,7 +182,7 @@ it('a real page\'s fetch() reaches a granted host with an app-set Origin and no 
       // (d) XMLHttpRequest takes the same routed path: an app-set Origin
       // arrives verbatim, the browser's default headers are present, and
       // responseType 'json' parses the routed body.
-      const viaXhr = await evaluateRetrying(view, async () => await new Promise<Record<string, unknown>>((resolve) => {
+      const viaXhr = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => await new Promise<Record<string, unknown>>((resolve) => {
         const xhr = new XMLHttpRequest()
         xhr.open('GET', 'http://127.0.0.1:8879/probe')
         xhr.responseType = 'json'
@@ -210,6 +213,7 @@ it('a real page\'s fetch() reaches a granted host with an app-set Origin and no 
       console.log(`[e2e-fetch-routing] DecompressionStream('brotli') in this Chromium: ${String(brotli)}`)
     } finally {
       await closeElectronApp(app)
+      clearFixtureAsPageScript()
     }
   })
 }, TEST_TIMEOUT_MS)

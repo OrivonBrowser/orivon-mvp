@@ -6,7 +6,7 @@
 
 import { join } from 'node:path'
 import { app, session, utilityProcess } from 'electron'
-import type { Session, WebFrameMain } from 'electron'
+import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames } from '../dev/eth-resolver.js'
 import type { HostConfig, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
@@ -16,6 +16,7 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { PARTITION_HEADER } from '../../loader/fetch/content-root.js'
 import { verifierCertificateVerdict } from './certificate-check.js'
 import { requestPartition, withPartition } from './partition.js'
+import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { contentAddressOf } from './content-address.js'
 import { chooseCheckpoint, slotTimestamp } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
@@ -64,15 +65,39 @@ function installCertificateCheck (target: Session): void {
   })
 }
 
+/** Only a request whose host a protocol actually routes to the verifier --
+ * `verifiedHostFilter` below builds Electron's own coarse `{ urls }` filter
+ * from the same `routedSuffixes()`, so this is the precise check the owner
+ * runs on whatever that filter already let through. */
+function targetsVerifiedHost (url: string): boolean {
+  if (!url.startsWith('https://')) return false
+  let hostname: string
+  try {
+    hostname = new URL(url).hostname
+  } catch {
+    return false
+  }
+  return BUILTIN_ADDRESSES.routesToVerifier(hostname)
+}
+
+/** Electron's own `{ urls }` filter for `installPartitionStamp` below --
+ * `*.` matches a suffix's own bare host as well as any subdomain (Chromium's
+ * match-pattern syntax), covering exactly what `routesToVerifier` (and so
+ * `targetsVerifiedHost` above) accepts. */
+function verifiedHostFilter (): WebRequestFilter {
+  return { urls: BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `https://*.${suffix}/*`) }
+}
+
 /**
  * Stamps every page's request to the verifier with the partition its top-level page
  * owns, and strips whatever a request set itself: a worker's request has no
  * frame, and could otherwise name any partition. Installed on the default
- * session only: see README.md's Design notes for why no other.
+ * session only (see README.md's Design notes for why no other), LAST among
+ * `onBeforeSendHeaders` handlers there, so nothing that runs before it --
+ * including a future extension rule -- can set or remove this header.
  */
 function installPartitionStamp (target: Session): void {
-  const urls = BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `https://*.${suffix}/*`)
-  target.webRequest.onBeforeSendHeaders({ urls }, (details, callback) => {
+  webRequestOwnerFor(target).onBeforeSendHeaders(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
     let frame: WebFrameMain | null | undefined
     try {
       frame = details.frame
@@ -80,7 +105,7 @@ function installPartitionStamp (target: Session): void {
       frame = undefined
     }
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
-    callback({ requestHeaders: withPartition(details.requestHeaders, PARTITION_HEADER, partition) })
+    return { ...current, requestHeaders: withPartition(current.requestHeaders, PARTITION_HEADER, partition) }
   })
 }
 

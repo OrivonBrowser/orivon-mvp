@@ -4,7 +4,7 @@
 // `extensions-view-runner.ts`'s job, this file only decides what to show.
 import { basename } from 'node:path'
 import {
-  describeHostAccess, describeStrippedPermissions, NOT_GRANTED_APPS_CLAUSE
+  describeHostAccess, describeStrippedPermissions, GRANTED_APPS_CLAUSE, GRANTS_STAY_WITH_APPS
 } from '../../broker/policy/extension-manifest.js'
 import type { ExtensionManifestFacts } from '../../broker/policy/extension-manifest.js'
 import { describeUpdater } from './registry.js'
@@ -13,7 +13,7 @@ import type { ExtensionSource, InstalledExtension } from './registry.js'
 /** What every website and Web3 site an installed extension can reach, and
  * cannot -- the same clause `describeExtensionInstall`'s Web3 line closes
  * with, so the install prompt and this page never disagree. */
-export const WHERE_EXTENSIONS_RUN = `Every website and Web3 site, not ${NOT_GRANTED_APPS_CLAUSE}.`
+export const WHERE_EXTENSIONS_RUN = `Every website and Web3 site, and ${GRANTED_APPS_CLAUSE}. ${GRANTS_STAY_WITH_APPS}`
 
 export interface ExtensionRow {
   readonly id: string

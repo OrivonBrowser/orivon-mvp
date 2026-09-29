@@ -23,8 +23,8 @@ class FakeNativeEventSource extends EventTarget {
 type Source = EventSource
 interface EsTarget extends FetchRouteTarget { EventSource: (new (url: string, init?: EventSourceInit) => Source) & { readonly CLOSED: number } }
 
-function esTarget (dial: () => Promise<FakeSocket>): EsTarget {
-  const target = fakeTarget({ connect: dial, connectSecure: dial }) as EsTarget
+function esTarget (dial: () => Promise<FakeSocket>, extra: Parameters<typeof fakeTarget>[0] = {}): EsTarget {
+  const target = fakeTarget({ connect: dial, connectSecure: dial, ...extra }) as EsTarget
   target.EventSource = FakeNativeEventSource as unknown as EsTarget['EventSource']
   installRouted(target, ES_INSTALLERS)
   return target
@@ -131,5 +131,23 @@ describe('routed EventSource -- the native path', () => {
     const source = new fresh.EventSource('/events')
     expect(FakeNativeEventSource.last!.url).toBe('https://app.example/events')
     expect(source).toBeInstanceOf(fresh.EventSource)
+  })
+
+  // A MAIN-world extension script constructing EventSource must reach only
+  // what the page's own native one would -- never the app's granted dial.
+  // ./fetch.ts's own header has the fuller reasoning.
+  it('opens natively for a caller installOrivon\'s own check would refuse, even to a granted host', () => {
+    const target = esTarget(async () => { throw new Error('must not dial') }, { callerIsPage: () => false })
+    const source = new target.EventSource('https://granted.example/feed')
+    expect(FakeNativeEventSource.last!.url).toBe('https://granted.example/feed')
+    expect(source).toBeInstanceOf(target.EventSource)
+  })
+
+  it('still routes normally for a caller installOrivon\'s own check would accept', async () => {
+    let dialled = false
+    const target = esTarget(async () => { dialled = true; return fakeSocket([bytes(STREAM_HEAD)], true) }, { callerIsPage: () => true })
+    new target.EventSource('https://granted.example/feed') // eslint-disable-line no-new
+    await settle()
+    expect(dialled).toBe(true)
   })
 })

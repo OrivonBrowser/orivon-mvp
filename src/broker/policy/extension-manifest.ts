@@ -284,12 +284,12 @@ function friendlyHost (pattern: string): string {
 const MAX_LISTED_HOSTS = 5
 
 /**
- * The clause that closes both the install prompt's Web3 line and the
- * extensions page's "where it runs" line -- kept as one constant so the two
- * can never drift apart in wording (`describeExtensionInstall`'s own doc,
- * `src/main/extensions/extensions-view.ts`'s `whereItRuns`).
+ * Where an extension runs beyond ordinary websites, and what it may not do
+ * there: shared by the install prompt's Web3 line and the extensions page's
+ * "where it runs" line so the two never drift apart.
  */
-export const NOT_GRANTED_APPS_CLAUSE = 'apps you have given permissions to'
+export const GRANTED_APPS_CLAUSE = 'apps you have given permissions to, except an app running from its pinned copy'
+export const GRANTS_STAY_WITH_APPS = 'Orivon keeps its code from using the permissions you have given those apps.'
 
 /**
  * The host-access line(s) Chrome's own install prompt would show for
@@ -348,7 +348,7 @@ export function describeExtensionInstall (facts: ExtensionManifestFacts, source:
   const hostAccess = describeHostAccess(facts)
   if (hostAccess !== undefined) lines.push(hostAccess)
   if (hasHostAccess) {
-    lines.push(`It also runs on Web3 sites, but not on ${NOT_GRANTED_APPS_CLAUSE}.`)
+    lines.push(`It also runs on Web3 sites and on ${GRANTED_APPS_CLAUSE}. ${GRANTS_STAY_WITH_APPS}`)
   }
 
   for (const { names, line } of API_PERMISSION_LINES) {
