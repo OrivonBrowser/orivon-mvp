@@ -15,13 +15,17 @@ catalogue off a loaded entry's own folder), `extensions-picker-runner.ts` (the n
 Developer mode's buttons open) and `extensions-domain.ts` (the `InternalDomain` the page's
 requests go through, `../pages/README.md`); and the host-access decision chrome.cookies and
 chrome.tabs gate on (`extension-host-access.ts`, wired into the vendored library from
-`extension-host.ts`).
+`extension-host.ts`); and the one list of manifest permission names this app actually serves,
+which `extensions-subsystem.ts` uses before its first `loadExtension()` to filter the
+`ExtensionLoadWarning` lines Electron's own native permission schema logs for one of them
+(`extension-known-permissions.ts`).
 
 **What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`,
-`electron-chrome-extensions-lib.d.ts`, `extension-host-access.ts`, `extension-sender-id-check.ts`,
-`extension-tab-details.ts`, `extension-url-policy.ts`, `extensions-domain.ts`,
-`extensions-view-runner.ts`, `extensions-view.ts`, `registry-runner.ts`, `registry.ts`,
-`store-download-seam.ts`, `store-runner.ts`, `store-test-hook.ts` and `unpack-runner.ts`),
+`electron-chrome-extensions-lib.d.ts`, `extension-host-access.ts`, `extension-known-permissions.ts`,
+`extension-sender-id-check.ts`, `extension-tab-details.ts`, `extension-url-policy.ts`,
+`extensions-domain.ts`, `extensions-view-runner.ts`, `extensions-view.ts`, `registry-runner.ts`,
+`registry.ts`, `store-download-seam.ts`, `store-runner.ts`, `store-test-hook.ts` and
+`unpack-runner.ts`),
 `node:crypto`, `node:fs`, `node:path`, `adm-zip`, `pbf`,
 [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
 (durable: the manifest facts, the stripped-manifest copy, the install prompt's words, and the
