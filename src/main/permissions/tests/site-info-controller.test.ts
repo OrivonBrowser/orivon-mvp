@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createBroker } from '../../../broker/index.js'
 import { APP, baseDeps, manifestWith } from '../../../broker/tests/index.test-helpers.js'
 import type { Broker } from '../../../broker/broker-contracts.js'
@@ -6,11 +9,34 @@ import type { Loader, LoadResult } from '../../../loader/index.js'
 import type { SubsystemContext } from '../../registry.js'
 import { createSiteInfoController } from '../site-info-controller.js'
 import type { SiteTrustSources } from '../site-info-controller.js'
+import type { ExtensionsApi } from '../../extensions/extensions-subsystem.js'
+import type { InstalledExtension } from '../../extensions/registry.js'
 
 const OTHER = 'https://not-a-real-origin.invalid'
 
-function ctxWith (broker: Broker | undefined, loader?: Loader): SubsystemContext {
-  return { broker, loader } as unknown as SubsystemContext
+function ctxWith (broker: Broker | undefined, loader?: Loader, extensions?: ExtensionsApi): SubsystemContext {
+  return { broker, loader, extensions } as unknown as SubsystemContext
+}
+
+/** Only `list` is ever called (N2's disclosure reads no other method of
+ * `ExtensionsApi`) -- every other member is unused here on purpose. */
+function fakeExtensions (entries: readonly InstalledExtension[]): ExtensionsApi {
+  return { list: () => entries } as unknown as ExtensionsApi
+}
+
+function installedAt (path: string, name: string): InstalledExtension {
+  return {
+    id: 'fixture-extension-id-0000000000',
+    name,
+    version: '1.0.0',
+    enabled: true,
+    installedAt: 0,
+    updatedAt: 0,
+    source: { kind: 'unpacked', from: path },
+    updater: { kind: 'none', reason: 'test fixture' },
+    path,
+    stripped: { permissions: [], optionalPermissions: [], declarativeNetRequest: undefined }
+  }
 }
 
 const NO_TRUST: SiteTrustSources = {
@@ -200,6 +226,62 @@ describe('createSiteInfoController -- siteTrustFor', () => {
 
     expect(asked).toEqual([])
     expect(trust?.ddoc).toEqual({ status: 'not-published' })
+  })
+})
+
+describe('createSiteInfoController -- extensionsOnSite (N2\'s disclosure)', () => {
+  let dir: string
+  beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-site-info-ext-')) })
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+
+  async function seededExtension (name: string): Promise<InstalledExtension> {
+    const extDir = join(dir, name.toLowerCase().replace(/\s+/g, '-'))
+    await mkdir(extDir, { recursive: true })
+    await writeFile(join(extDir, 'manifest.json'), JSON.stringify({
+      manifest_version: 3, name, version: '1.0.0', host_permissions: ['<all_urls>']
+    }))
+    return installedAt(extDir, name)
+  }
+
+  it('names a covering extension on an ordinary, never-registered origin', async () => {
+    const extensions = fakeExtensions([await seededExtension('Ad Blocker')])
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), undefined, extensions), NO_TRUST)
+
+    const info = await controller.siteInfoFor(OTHER)
+
+    expect(info.extensionsOnSite).toEqual(['Ad Blocker'])
+  })
+
+  it('names a covering extension on a registered app too, alongside its capability rows', async () => {
+    const broker = createBroker(baseDeps())
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    const extensions = fakeExtensions([await seededExtension('Ad Blocker')])
+    const controller = createSiteInfoController(ctxWith(broker, undefined, extensions), NO_TRUST)
+
+    const info = await controller.siteInfoFor(APP)
+
+    expect(info.extensionsOnSite).toEqual(['Ad Blocker'])
+    expect(info.capabilityRows.length).toBeGreaterThan(0)
+  })
+
+  it('names none for an origin served from its pinned cache', async () => {
+    const extensions = fakeExtensions([await seededExtension('Ad Blocker')])
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), undefined, extensions), {
+      ...NO_TRUST,
+      isOriginServedFromCacheSync: (origin) => origin === OTHER
+    })
+
+    const info = await controller.siteInfoFor(OTHER)
+
+    expect(info.extensionsOnSite).toEqual([])
+  })
+
+  it('names none with no ctx.extensions published yet, rather than throwing', async () => {
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST)
+
+    const info = await controller.siteInfoFor(OTHER)
+
+    expect(info.extensionsOnSite).toEqual([])
   })
 })
 

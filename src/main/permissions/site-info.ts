@@ -62,6 +62,16 @@ export interface SiteInfo {
    * these together") only makes sense for an all-or-nothing app.
    */
   readonly consentGranularity: ConsentGranularity
+  /**
+   * Names of enabled installed extensions whose host access covers this
+   * origin (N2's disclosure, docs/planning/extensions-exploration.md) --
+   * plain pass-through, never computed here: only the caller
+   * (site-info-controller.ts) has `ctx.extensions`, so this file stays
+   * broker/I/O-free (this file's own header) and just carries the value
+   * through to `SiteInfo`. Empty by default, so every pre-existing caller
+   * of `buildSiteInfo` here and in tests keeps building the same shape.
+   */
+  readonly extensionsOnSite: readonly string[]
 }
 
 /**
@@ -81,7 +91,8 @@ export function buildSiteInfo (
   grants: readonly Grant[],
   pickedPaths: readonly PickedPath[],
   registered: boolean,
-  level?: ScoreLevel
+  level?: ScoreLevel,
+  extensionsOnSite: readonly string[] = []
 ): SiteInfo {
   const heldByCapability = new Map(grants.map((grant): [CapabilityKind, Grant] => [grant.capability, grant]))
   const declared = Object.keys(patternSetFromCapabilities(manifest.capabilities)) as readonly CapabilityKind[]
@@ -116,6 +127,7 @@ export function buildSiteInfo (
     asked: capabilityRows.length > 0 || pickedPathRows.length > 0,
     capabilityRows,
     pickedPathRows,
-    consentGranularity: manifest.consentGranularity ?? 'all-or-nothing'
+    consentGranularity: manifest.consentGranularity ?? 'all-or-nothing',
+    extensionsOnSite
   }
 }

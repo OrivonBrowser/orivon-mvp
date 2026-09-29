@@ -18,6 +18,9 @@ other four -- `granted-origin-csp.ts` included -- must not.
 `manifest/manifest.ts`, `electron/serve.ts`'s `liveCspHeaderFor` and
 `isOriginServedFromCacheSync`), [`../consent/`](../consent/) (`install-consent*`,
 `update-outcomes*`), [`../dev/`](../dev/) (`dev-mode.ts`, `score-levels.ts`),
+[`../extensions/site-reach-runner.ts`](../extensions/site-reach-runner.ts)'s
+`extensionNamesForOrigin` (N2's disclosure, `docs/planning/extensions-exploration.md`, wired into
+the install-consent prompts here the same way `../consent/README.md` describes),
 [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts),
 [`../../contracts/`](../../contracts/), the top-level `channels.ts`/`registry.ts`,
 `node:async_hooks`.

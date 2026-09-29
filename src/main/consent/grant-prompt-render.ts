@@ -186,19 +186,41 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
   }
 }
 
+/** N2's disclosure (docs/planning/extensions-exploration.md, "disclose
+ * where it matters"; ADR-0045's residual: an extension with host access to
+ * a page can put code in its main world, indistinguishable from the
+ * page's own). At most three names, then a count -- the same "first few,
+ * then how many more" shape `../../broker/policy/extension-manifest.js`'s
+ * own `describeHostAccess` already uses for a single extension's own host
+ * list, applied here to the extensions themselves. Undefined for an empty
+ * list, never an empty sentence. */
+const MAX_LISTED_EXTENSIONS = 3
+
+function extensionsOnSiteLine (names: readonly string[]): string | undefined {
+  if (names.length === 0) return undefined
+  const shown = names.slice(0, MAX_LISTED_EXTENSIONS)
+  const rest = names.length - shown.length
+  const list = `${shown.join(', ')}${rest > 0 ? `, and ${rest} more` : ''}`
+  return `Extensions that can also act on this site: ${list}. Orivon keeps their code from using what you grant here, but they can change what the site shows and sends.`
+}
+
 /**
  * The full rendering for one grant decision. `manifest` is fetched by the
  * caller (request-grant-prompt.ts) -- this function never does I/O, so it
  * can be tested directly against real `Manifest` values, including ones
  * declaring several capabilities at once; only the one named by
- * `capability` is ever rendered from it.
+ * `capability` is ever rendered from it. `extensionsOnSite` is whatever
+ * `../extensions/site-reach-runner.js` -- through `ctx.extensions` --
+ * found for this origin; empty by default, so every existing caller and
+ * test keeps rendering exactly as before.
  */
 export function describeGrantRequest (
   origin: string,
   manifest: Manifest,
   capability: CapabilityKind,
   patterns: readonly Pattern[],
-  level?: ScoreLevel
+  level?: ScoreLevel,
+  extensionsOnSite: readonly string[] = []
 ): GrantPromptContent {
   const { warning, message, explanation } = summaryAtLevel(describeCapabilityGrant(capability, patterns), level)
   // A115: rendered once here, reused for both `title` and `detail`'s last
@@ -222,6 +244,8 @@ export function describeGrantRequest (
   const claim = `Claims to be "${manifest.name}".`
   const detailLines = [claim]
   if (explanation !== undefined) detailLines.push(explanation)
+  const extensionsLine = extensionsOnSiteLine(extensionsOnSite)
+  if (extensionsLine !== undefined) detailLines.push(extensionsLine)
   detailLines.push(displayOrigin)
   return {
     warning,
@@ -323,7 +347,8 @@ function describeCapabilitySet (
   capabilities: readonly CapabilityKind[],
   message: string,
   held: readonly CapabilityKind[],
-  level?: ScoreLevel
+  level?: ScoreLevel,
+  extensionsOnSite: readonly string[] = []
 ): GrantPromptContent {
   const mergeInbound = capabilities.includes('tcp.listen.network') && capabilities.includes('udp.bind.network')
   let inboundRowEmitted = false
@@ -365,14 +390,15 @@ function describeCapabilitySet (
     return row.explanation === undefined ? `- ${marker}${row.message}` : `- ${marker}${row.message}\n  ${row.explanation}`
   })
 
-  // The origin closes `detail`, after the claim and every capability row,
-  // rather than opening it -- see the matching comment on
-  // `describeGrantRequest`.
+  // The origin closes `detail`, after the claim, every capability row and
+  // the extensions line, rather than opening it -- see the matching
+  // comment on `describeGrantRequest`.
+  const extensionsLine = extensionsOnSiteLine(extensionsOnSite)
   return {
     warning,
     title: displayOrigin,
     message,
-    detail: [claim, ...rowLines, displayOrigin].join('\n')
+    detail: [claim, ...rowLines, ...(extensionsLine === undefined ? [] : [extensionsLine]), displayOrigin].join('\n')
   }
 }
 
@@ -391,16 +417,18 @@ function describeCapabilitySet (
  * SEPARATE door (`app.requestGrant`) -- each such row is marked, so Deny
  * visibly does not cover it. Defaults to none, so every pre-existing caller
  * (including the per-capability overview, ./install-consent-prompt.ts)
- * keeps rendering exactly as before.
+ * keeps rendering exactly as before. `extensionsOnSite` is the same
+ * disclosure `describeGrantRequest` takes, and defaults the same way.
  */
 export function describeInstallConsent (
   origin: string,
   manifest: Manifest,
   capabilities: readonly CapabilityKind[],
   held: readonly CapabilityKind[] = [],
-  level?: ScoreLevel
+  level?: ScoreLevel,
+  extensionsOnSite: readonly string[] = []
 ): GrantPromptContent {
-  return describeCapabilitySet(origin, manifest, patternSetFromCapabilities(manifest.capabilities), capabilities, 'This app wants to:', held, level)
+  return describeCapabilitySet(origin, manifest, patternSetFromCapabilities(manifest.capabilities), capabilities, 'This app wants to:', held, level, extensionsOnSite)
 }
 
 /**
