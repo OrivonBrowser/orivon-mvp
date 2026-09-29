@@ -9,6 +9,7 @@ import type { Orivon } from '../../../contracts/capability-api.js'
 import type { FileStat } from '../../../contracts/handles.js'
 import { createFakeFileHandle } from '../../tests/support/fake-file-handle.js'
 import { PageBuffer } from '../../tests/support/page-buffer.js'
+import { VIRTUAL_ROOT } from '../../virtual-root.js'
 
 type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
@@ -124,6 +125,39 @@ describe('fs.promises', () => {
     installFakeOrivon()
     const { promises } = await import('../promises.js')
     expect(promises.constants).toEqual({ F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1 })
+  })
+
+  it('rmdir removes an empty directory with no recursive option', async () => {
+    const { stats } = installFakeOrivon()
+    stats.set('empty-dir', { size: 0, isFile: false, isDirectory: true, mtimeMs: 0 })
+    const { promises } = await import('../promises.js')
+    await expect(promises.rmdir('empty-dir')).resolves.toBeUndefined()
+  })
+
+  it('rmdir is ENOTEMPTY for a non-empty directory', async () => {
+    const { stats } = installFakeOrivon()
+    stats.set('torrents', { size: 0, isFile: false, isDirectory: true, mtimeMs: 0 })
+    const { promises } = await import('../promises.js')
+    await expect(promises.rmdir('torrents')).rejects.toMatchObject({ code: 'ENOTEMPTY' })
+  })
+
+  it('rmdir({ recursive: true }) removes the tree, skipping every check', async () => {
+    installFakeOrivon()
+    const { promises } = await import('../promises.js')
+    await expect(promises.rmdir('a-tree', { recursive: true })).resolves.toBeUndefined()
+  })
+
+  it('realpath resolves to the normalised absolute path under the virtual root', async () => {
+    const { stats } = installFakeOrivon()
+    stats.set('settings.json', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    const { promises } = await import('../promises.js')
+    await expect(promises.realpath('settings.json')).resolves.toBe(`${VIRTUAL_ROOT}/settings.json`)
+  })
+
+  it('realpath rejects Node-shaped for a missing path', async () => {
+    installFakeOrivon()
+    const { promises } = await import('../promises.js')
+    await expect(promises.realpath('missing')).rejects.toMatchObject({ code: 'notFound' })
   })
 
   it('every other member is named, not silently absent (A135) -- reading one is safe (A169), only calling it refuses', async () => {

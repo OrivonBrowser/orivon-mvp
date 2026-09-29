@@ -30,9 +30,17 @@ refused by name as `ENOEXEC` with `reason: 'excluded'`; anything missing is `ENO
 answer, so "is the tool installed" checks take their ordinary branch. A port whose code spawns a
 computed path ships the WebAssembly build at that path, or its bridge rewrites the path.
 
-**Refused by name:** `spawnSync`, `execSync`, `execFileSync` (the page's thread cannot wait),
-`shell`, `uid`/`gid`, a stream or descriptor as stdio, `'ipc'` in `spawn`, a command `exec` could
-run only through a shell, and a `fork` `execPath` other than the page's own.
+**`spawnSync`/`execSync`/`execFileSync` work only in a Worker of a cross-origin isolated app**
+([`ADR-0016`](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)'s
+amendment), over a request kind of their own on the Worker's synchronous channel
+(`spawn-sync.ts`'s `runSpawnSync`, served where a Worker's `orivon.*` already is, `spawn.ts`'s
+`launch()`) -- the grandchild runs on the SERVING side (the page, or a forked child serving its
+own nested thread) exactly as `spawn`/`execFile`/`exec` would there, and only the Worker that asked
+blocks. Elsewhere -- the page, or a Worker with no `SharedArrayBuffer` -- they still refuse by
+name: that thread cannot wait either way.
+
+**Refused by name:** `shell`, `uid`/`gid`, a stream or descriptor as stdio, `'ipc'` in `spawn`, a
+command `exec` could run only through a shell, and a `fork` `execPath` other than the page's own.
 
 ## Design notes
 

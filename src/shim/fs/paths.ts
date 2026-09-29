@@ -20,7 +20,9 @@ export interface NodeFsError extends Error {
 }
 
 /** Linux values, as Node reports them on the platform the broker runs on. */
-const ERRNO: Readonly<Record<string, number>> = { ENOENT: -2, EBADF: -9, EACCES: -13, EEXIST: -17, EISDIR: -21, EINVAL: -22 }
+const ERRNO: Readonly<Record<string, number>> = {
+  ENOENT: -2, EBADF: -9, EACCES: -13, EEXIST: -17, ENOTDIR: -20, EISDIR: -21, EINVAL: -22, ENOTEMPTY: -39
+}
 
 /** A Node-shaped fs error: `EISDIR: illegal operation on a directory, read`, with `code`, `errno`, `syscall` and, when there is one, `path`. */
 export function fsError (code: string, description: string, syscall: string, path?: string): NodeFsError {
@@ -77,10 +79,11 @@ export function toConfinedPath (path: PathLike, syscall: string): string {
   throw fsError('EACCES', `permission denied (outside this app's files, which live under ${VIRTUAL_ROOT})`, syscall, text)
 }
 
-const TMPDIR_CONFINED = VIRTUAL_TMPDIR.slice(VIRTUAL_ROOT.length + 1)
+/** Exported for fs/core-sync.ts's own tmpdir bootstrap: the same confinement, made once from the synchronous twin instead of once from a Promise. */
+export const TMPDIR_CONFINED = VIRTUAL_TMPDIR.slice(VIRTUAL_ROOT.length + 1)
 let tmpdirReady: Promise<void> | undefined
 
-function isInTmpdir (path: PathLike): boolean {
+export function isInTmpdir (path: PathLike): boolean {
   const resolved = normalized(pathText(path))
   return resolved === VIRTUAL_TMPDIR || resolved.startsWith(`${VIRTUAL_TMPDIR}/`)
 }

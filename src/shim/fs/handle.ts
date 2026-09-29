@@ -22,9 +22,12 @@
 import type { FileHandle } from '../../contracts/handles.js'
 import { getOrivon } from '../orivon-global.js'
 import { toNodeStats, type NodeStats } from './stats.js'
-import { confine, fsError, guarded, type PathLike } from './paths.js'
+import { confine, fsError, guarded, toConfinedPath, type PathLike } from './paths.js'
 import { refuseShim } from '../errors.js'
-import { assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootReadError, rootTruncateError, rootWriteError } from './root.js'
+import {
+  assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootDirectoryHandleSync, rootReadError, rootTruncateError, rootWriteError
+} from './root.js'
+import { guardedSync, syncFs, type SyncFileHandleWire } from './sync-orivon.js'
 
 export type NodeCallback<T> = (error: Error | null, result?: T) => void
 
@@ -56,10 +59,61 @@ async function initialCursor (handle: FileHandle, flags: string): Promise<number
 
 /** fd -> handle, shared by fs.promises.open and the callback open/read/write/close family below (one registry, matching real Node's own fd being usable through either surface -- not two competing tables). */
 const openByFd = new Map<number, NodeFileHandle>()
+/**
+ * fd -> handle for the *Sync family (SyncNodeFileHandle, below) -- a SEPARATE
+ * table from openByFd, not unified with it: real Node shares one fd space
+ * across fs.open and fs.openSync, but the two client-side wrappers this
+ * shim's `open` and `openSync` return are not interchangeable underneath,
+ * even though the broker itself would let them be (worker/orivon-server.ts's
+ * `handles` map is generic -- a handle it hands back from a `sync: true`
+ * request lives in the exact same table as one from an ordinary async
+ * request, addressed the same way). What cannot be unified is client-side:
+ * `openHandle`'s `FileHandle` methods always round-trip over
+ * `worker/orivon-client.ts`'s async `call()` (a real postMessage, however
+ * long it takes), while `openHandleSync`'s `SyncFileHandleWire` methods
+ * always block over its `callSync()` (the shared-memory channel) -- neither
+ * has a way to make its own calls through the other's transport, so an
+ * async-opened handle has no synchronous method to give a `*Sync` caller,
+ * and a Worker with no synchronous twin at all could never have produced a
+ * `SyncFileHandleWire` to begin with. A fd real only in the OTHER table is
+ * therefore a genuine EBADF here, not a gap -- `badFdAsync`/`badFdSync`
+ * (below) name which family actually holds it, rather than reporting a bare
+ * "bad file descriptor" indistinguishable from an fd that was never open at
+ * all. `nextFd` itself is still shared, so a fd number never collides
+ * between the two tables. fs/README.md's own Design notes has the summary.
+ */
+const openByFdSync = new Map<number, SyncNodeFileHandle>()
 let nextFd = 4
 
 function badFd (syscall: string): Error & { code: string } {
   return fsError('EBADF', 'bad file descriptor', syscall)
+}
+
+/**
+ * `openByFd`/`openByFdSync` stay two separate tables (that doc comment says
+ * why), so an fd real in the OTHER family is still a real, ordinary EBADF
+ * here -- Node's own one-fd-space guarantee does not hold across them. Named
+ * rather than a bare "bad file descriptor", so a caller that opened with the
+ * other family's `open`/`openSync` learns why its fd does not work here,
+ * instead of assuming it was never open at all (fs/README.md's own Design
+ * notes has the detail).
+ */
+function crossFamilyFd (syscall: string, otherFamily: 'fs.open' | 'fs.openSync'): Error & { code: string } {
+  return fsError(
+    'EBADF',
+    `bad file descriptor (this fd was opened by ${otherFamily}, which this shim keeps in its own separate descriptor table -- see fs/README.md)`,
+    syscall
+  )
+}
+
+/** The callback/promise family's own "no such fd" error: EBADF, naming fs.openSync when the fd is only real over there. */
+function badFdAsync (fd: number, syscall: string): Error & { code: string } {
+  return openByFdSync.has(fd) ? crossFamilyFd(syscall, 'fs.openSync') : badFd(syscall)
+}
+
+/** The *Sync family's own "no such fd" error: EBADF, naming fs.open when the fd is only real over there. */
+function badFdSync (fd: number, syscall: string): Error & { code: string } {
+  return openByFd.has(fd) ? crossFamilyFd(syscall, 'fs.open') : badFd(syscall)
 }
 
 export class NodeFileHandle {
@@ -188,7 +242,7 @@ function throwUncaught (error: Error | null): void {
 
 export function close (fd: number, callback: NodeCallback<void> = throwUncaught): void {
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd('close')); return }
+  if (handle === undefined) { callback(badFdAsync(fd, 'close')); return }
   handle.close().then(() => callback(null), (error) => callback(error as Error))
 }
 
@@ -197,7 +251,7 @@ export function read (
   callback: (error: Error | null, bytesRead: number, buffer: Uint8Array) => void
 ): void {
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd('read'), 0, buffer); return }
+  if (handle === undefined) { callback(badFdAsync(fd, 'read'), 0, buffer); return }
   handle.read(buffer, offset, length, position).then(
     (result) => callback(null, result.bytesRead, result.buffer),
     (error) => callback(error as Error, 0, buffer)
@@ -218,7 +272,7 @@ export function write (fd: number, buffer: Uint8Array, ...args: readonly unknown
   const length = typeof rest[1] === 'number' ? rest[1] : buffer.length - offset
   const position = rest.length > 2 ? rest[2] as number | null : null
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd('write'), 0, buffer); return }
+  if (handle === undefined) { callback(badFdAsync(fd, 'write'), 0, buffer); return }
   handle.write(buffer, offset, length, position).then(
     (result) => callback(null, result.bytesWritten, result.buffer),
     (error) => callback(error as Error, 0, buffer)
@@ -227,7 +281,7 @@ export function write (fd: number, buffer: Uint8Array, ...args: readonly unknown
 
 export function fstat (fd: number, callback: NodeCallback<NodeStats>): void {
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd('fstat')); return }
+  if (handle === undefined) { callback(badFdAsync(fd, 'fstat')); return }
   handle.stat().then((stat) => callback(null, stat), (error) => callback(error as Error))
 }
 
@@ -237,12 +291,132 @@ export function ftruncate (fd: number, ...args: readonly unknown[]): void {
   const callback = args[args.length - 1] as NodeCallback<void>
   const length = args.length > 1 ? args[0] as number : 0
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd('ftruncate')); return }
+  if (handle === undefined) { callback(badFdAsync(fd, 'ftruncate')); return }
   handle.truncate(length).then(() => callback(null), (error) => callback(error as Error))
 }
 
 export function fsync (fd: number, callback: NodeCallback<void>): void {
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd('fsync')); return }
+  if (handle === undefined) { callback(badFdAsync(fd, 'fsync')); return }
   handle.sync().then(() => callback(null), (error) => callback(error as Error))
+}
+
+// ---- openSync/readSync/writeSync/fstatSync/closeSync (ADR-0016's Worker
+// amendment) -- LocalCursor's synchronous twin, over sync-orivon.ts's twin
+// of orivon.fs.open. Built only where NodeFileHandle's own open() already
+// works, so the two classes stay one idea told twice, once per execution
+// model (this file's header owns that reasoning); a Sync fd is not
+// recognised by the callback family above, or vice versa (openByFdSync's own
+// doc comment says why). ----------------------------------------------
+
+class SyncLocalCursor {
+  private position: number
+  constructor (start: number) { this.position = start }
+
+  /** LocalCursor.run, without the await: `op` already returns its byte count, not a Promise of one. */
+  run (requested: number | null | undefined, op: (position: number) => number): number {
+    const usesCursor = requested === null || requested === undefined || requested === -1
+    const position = usesCursor ? this.position : requested
+    const bytes = op(position)
+    if (usesCursor) this.position += bytes
+    return bytes
+  }
+}
+
+/** initialCursor's synchronous twin: seeds the cursor at the file's current size for an append flag, 0 otherwise. */
+function initialCursorSync (handle: SyncFileHandleWire, flags: string): number {
+  if (!isAppendFlag(flags)) return 0
+  return handle.stat().size
+}
+
+class SyncNodeFileHandle {
+  readonly fd: number
+  private readonly handle: SyncFileHandleWire
+  private readonly cursor: SyncLocalCursor
+  private readonly isRoot: boolean
+
+  private constructor (fd: number, handle: SyncFileHandleWire, cursor: SyncLocalCursor, isRoot = false) {
+    this.fd = fd
+    this.handle = handle
+    this.cursor = cursor
+    this.isRoot = isRoot
+  }
+
+  static open (path: PathLike, flags: string): SyncNodeFileHandle {
+    const confined = toConfinedPath(path, 'open')
+    if (isRootPath(confined)) {
+      assertRootOpenAllowed(flags)
+      const fd = nextFd++
+      const wrapped = new SyncNodeFileHandle(fd, rootDirectoryHandleSync(), new SyncLocalCursor(0), true)
+      openByFdSync.set(fd, wrapped)
+      return wrapped
+    }
+    return guardedSync(() => {
+      const handle = syncFs('fs.openSync').open(confined, flags)
+      const cursor = new SyncLocalCursor(initialCursorSync(handle, flags))
+      const fd = nextFd++
+      const wrapped = new SyncNodeFileHandle(fd, handle, cursor)
+      openByFdSync.set(fd, wrapped)
+      return wrapped
+    })
+  }
+
+  read (buffer: Uint8Array, offset = 0, length: number = buffer.length - offset, position: number | null = null): NodeFsReadResult {
+    if (this.isRoot) rootReadError()
+    const bytesRead = guardedSync(() => this.cursor.run(position, (at) => {
+      const bytes = this.handle.read({ position: at, length })
+      buffer.set(bytes, offset)
+      return bytes.length
+    }))
+    return { bytesRead, buffer }
+  }
+
+  write (buffer: Uint8Array, offset = 0, length: number = buffer.length - offset, position: number | null = null): NodeFsWriteResult {
+    if (this.isRoot) rootWriteError()
+    const data = offset === 0 && length === buffer.length ? buffer : buffer.subarray(offset, offset + length)
+    const bytesWritten = guardedSync(() => this.cursor.run(position, (at) => this.handle.write({ position: at, data })))
+    return { bytesWritten, buffer }
+  }
+
+  stat (): NodeStats { return guardedSync(() => toNodeStats(this.handle.stat())) }
+
+  close (): void {
+    openByFdSync.delete(this.fd)
+    guardedSync(() => { this.handle.close() })
+  }
+}
+
+/** `fs.openSync(path[, flags[, mode]])`. Also fs/core-sync.ts's own writeThroughHandleSync (appendFileSync, a non-'w' writeFileSync flag). */
+export function openHandleSync (path: PathLike, flags: string | null = DEFAULT_FLAGS): SyncNodeFileHandle {
+  return SyncNodeFileHandle.open(path, flags ?? DEFAULT_FLAGS)
+}
+
+export function openSync (path: PathLike, flags: string | null = DEFAULT_FLAGS, _mode?: number): number {
+  return openHandleSync(path, flags).fd
+}
+
+export function closeSync (fd: number): void {
+  const handle = openByFdSync.get(fd)
+  if (handle === undefined) throw badFdSync(fd, 'close')
+  handle.close()
+}
+
+export function readSync (
+  fd: number, buffer: Uint8Array, offset: number, length: number, position: number | null = null
+): number {
+  const handle = openByFdSync.get(fd)
+  if (handle === undefined) throw badFdSync(fd, 'read')
+  return handle.read(buffer, offset, length, position).bytesRead
+}
+
+export function writeSync (fd: number, buffer: Uint8Array, offset = 0, length: number = buffer.length - offset, position: number | null = null): number {
+  const handle = openByFdSync.get(fd)
+  if (handle === undefined) throw badFdSync(fd, 'write')
+  return handle.write(buffer, offset, length, position).bytesWritten
+}
+
+export function fstatSync (fd: number): NodeStats {
+  const handle = openByFdSync.get(fd)
+  if (handle === undefined) throw badFdSync(fd, 'fstat')
+  return handle.stat()
 }

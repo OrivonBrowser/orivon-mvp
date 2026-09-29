@@ -18,8 +18,24 @@ const HANDLE_STREAMS = new Set(['connections'])
 export type CallBody =
   | { readonly path: readonly string[], readonly args: readonly unknown[] }
   | { readonly handle: number, readonly method: string, readonly args: readonly unknown[] }
+  /**
+   * child_process's spawnSync/execSync/execFileSync (SPAWN_SYNC,
+   * sync-channel.ts): not an orivon.* call, so it carries its own opaque
+   * payload rather than a `path` -- worker/ must never import
+   * child-process/ (which already imports worker/, and the reverse would
+   * cycle), so child-process/spawn-sync.ts casts both ends of this.
+   * Always answered through the sync reply channel: the point of the call
+   * is a Worker blocked on its grandchild, never a postMessage.
+   */
+  | { readonly spawnSync: unknown }
 
 export type CallRequest = CallBody & { readonly id: number, readonly sync?: true }
+
+/** Everything call() dispatches through target() -- CallRequest minus the spawnSync variant, which call() answers through runSpawnSync instead. */
+type OrivonCallRequest = Exclude<CallRequest, { readonly spawnSync: unknown }>
+
+/** child_process's spawnSync/execSync/execFileSync, served where a Worker's orivon.* already is (child-process/spawn.ts's launch()). Payload and result are opaque -- see CallBody's own spawnSync doc comment. */
+export type RunSpawnSync = (payload: unknown) => Promise<unknown>
 
 export type Request =
   | CallRequest
@@ -109,7 +125,7 @@ function channelOf (buffer: unknown): ReplyWriter | undefined {
   }
 }
 
-export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
+export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: RunSpawnSync): OrivonServer {
   const handles = new Map<number, LiveHandle>()
   const readers = new Map<number, ReadableStreamDefaultReader<unknown>>()
   let replies: ReplyWriter | undefined
@@ -166,7 +182,7 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
     }
   }
 
-  const target = (request: CallRequest): { fn: unknown, self: unknown } => {
+  const target = (request: OrivonCallRequest): { fn: unknown, self: unknown } => {
     if ('handle' in request) {
       const live = handles.get(request.handle)
       if (live === undefined) throw Object.assign(new Error('handle is closed'), { name: 'OrivonError', code: 'closed' })
@@ -195,9 +211,15 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
     const transfer: Transferable[] = []
     let reply: ServerMessage
     try {
-      const { fn, self } = target(request)
-      if (typeof fn !== 'function') throw new TypeError(`orivon has no method ${'path' in request ? request.path.join('.') : request.method}`)
-      const value: unknown = await (fn as (...args: unknown[]) => unknown).apply(self, [...request.args])
+      let value: unknown
+      if ('spawnSync' in request) {
+        if (runSpawnSync === undefined) throw new Error('orivon has no method child_process.spawnSync')
+        value = await runSpawnSync(request.spawnSync)
+      } else {
+        const { fn, self } = target(request)
+        if (typeof fn !== 'function') throw new TypeError(`orivon has no method ${'path' in request ? request.path.join('.') : request.method}`)
+        value = await (fn as (...args: unknown[]) => unknown).apply(self, [...request.args])
+      }
       if (sync && !crossesSynchronously(value)) {
         release(value)
         throw notSynchronous()
