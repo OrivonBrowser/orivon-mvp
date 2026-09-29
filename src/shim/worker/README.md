@@ -112,7 +112,9 @@ the unwrapped `setTimeout` that `trackScope` returns.
 keeps it alive instead is a ref'd `parentPort` listener. `node-port.ts`'s wrapper calls back only
 on the 0-to-1 or 1-to-0 edge of "ref'd, started, and at least one `'message'`/`'messageerror'`
 listener", never on every listener change, since a caller's own ref count would otherwise be
-double-counted. `unref()`, `close()`, or the last listener going away all release it.
+double-counted. `unref()`, `close()`, or the last listener going away all release it. Unlike
+Node, a message a thread posts on `parentPort` just before it exits can reach the parent after
+`'exit'`: the two travel on separate channels, and nothing orders one against the other yet.
 
 **A `worker_threads.Worker` nested in a forked child keeps that child alive while it is ref'd**
 (the default): `runtime-fork.ts` publishes its own `Liveness` under `FORK_LIVENESS_SYMBOL`, which
