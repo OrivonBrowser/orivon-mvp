@@ -5,7 +5,7 @@ entirely.
 
 | Entry | What it is |
 |---|---|
-| (top level) | The chrome view: tab strip (sharing its row with the native window buttons, and dragging a tab out of it: `tab-drag.ts`), toolbar and bookmarks bar, in its own `WebContentsView` above the active tab |
+| (top level) | The chrome view: tab strip (sharing its row with the native window buttons, and dragging a tab out of it: `tab-drag.ts`), the empty tail past the new-tab button in the manual drag mode (`strip-drag.ts`, Linux/X11 only -- `src/main/shell/drag-mode.ts` decides), toolbar and bookmarks bar, in its own `WebContentsView` above the active tab |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
 | [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
 | [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches, its Web3 Score and site data pages |

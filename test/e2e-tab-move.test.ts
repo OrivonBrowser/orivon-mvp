@@ -180,3 +180,130 @@ it('takes a tab out into a window of its own when it is dragged out of the windo
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+// The floating preview shown once a tab tears out promises a window wherever it is let go over open
+// space -- releasing over this window's OWN page, away from every split edge, must match that promise
+// rather than leaving the tab where it was (the previous behaviour: an `inWindow` guard in
+// window-actions.ts's dropTab refused this case outright).
+it('opens a tab dragged out over its own page, away from a split edge, in a window of its own', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await openTabs(app, chrome, '/dropped')
+    const dragged = chrome.locator('.tab', { hasText: 'Page /dropped' })
+    await dragged.waitFor({ state: 'visible' })
+    const box = await dragged.boundingBox()
+    if (box === null) throw new Error('the tab has no box')
+    const area = await app.evaluate(({ BaseWindow }) => {
+      const bounds = BaseWindow.getAllWindows()[0]?.getContentBounds()
+      return { width: bounds?.width ?? 0, height: bounds?.height ?? 0 }
+    })
+
+    await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await chrome.mouse.down()
+    // The window's own centre: well past the strip, and well inside every split edge's 12% band on
+    // every side, so this can only land as "the page, no edge" -- never a split, never outside the window.
+    await chrome.mouse.move(area.width / 2, area.height / 2, { steps: 10 })
+    await chrome.mouse.up()
+
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== chrome) as Page
+    expect(await waitFor(async () => (await titles(second)).join() === 'Page /dropped')).toBe(true)
+    expect(await titles(chrome)).not.toContain('Page /dropped')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('shows a tab\'s own new window at once, without waiting on ready-to-show', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await openTabs(app, chrome, '/torn')
+    const before = Date.now()
+    const dragged = chrome.locator('.tab', { hasText: 'Page /torn' })
+    const box = await dragged.boundingBox()
+    if (box === null) throw new Error('the tab has no box')
+    await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await chrome.mouse.down()
+    await chrome.mouse.move(box.x + box.width / 2, box.y + 1500, { steps: 6 })
+    await chrome.mouse.up()
+
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== chrome) as Page
+    const shownWithin = Date.now() - before
+    const visible = await app.evaluate(({ BaseWindow }) => {
+      const [, newest] = [...BaseWindow.getAllWindows()].sort((a, b) => a.id - b.id)
+      return newest?.isVisible() ?? false
+    })
+    expect(visible).toBe(true)
+    // Generous bound: this only guards against the OLD 1000ms ready-to-show
+    // fallback wait coming back, not a tight performance assertion.
+    expect(shownWithin).toBeLessThan(3_000)
+    expect(await titles(second)).toEqual(['Page /torn'])
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+// The empty strip's tail, past the new-tab button, in the manual drag mode
+// main decides for this run (drag-mode.ts's dragModeFor: Linux under
+// run-headless.mjs's own virtual X11 display, never native Wayland). These
+// exercise the DOM/IPC wiring with Playwright's synthetic pointer events,
+// which populate a real event's screenX/screenY from the window's actual
+// on-screen position -- unlike `screen.getCursorScreenPoint()` (tear-drag.ts's
+// own cross-window mark and floating preview), which asks the OS directly
+// and does NOT move under CDP-simulated input; that half needs the real-XTest
+// verification run instead (see this repo's PR for its timings).
+it('the empty strip: middle click opens a tab, double click toggles maximize, a left drag moves the window', async () => {
+  const { app, chrome } = await launched()
+  try {
+    // Recomputed before each interaction: opening a tab (or maximizing,
+    // which resizes the window) reflows the strip, and a stale point could
+    // land on a tab instead of the tail past it.
+    const tailPoint = async (): Promise<{ x: number, y: number }> => {
+      const box = await chrome.locator('#tab-strip-tail').boundingBox()
+      if (box === null) throw new Error('the strip tail has no box')
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    }
+    const before = await tabIds(chrome)
+    // A synthetic middle click occasionally does not reach the renderer at
+    // all under load (observed here, not specific to this feature) -- one
+    // retry at a freshly-read point, rather than a longer wait, since a
+    // lost event is never going to arrive no matter how long this waits.
+    for (let attempt = 0; attempt < 2 && (await tabIds(chrome)).length === before.length; attempt++) {
+      const point = await tailPoint()
+      await chrome.mouse.click(point.x, point.y, { button: 'middle' })
+      await waitFor(async () => (await tabIds(chrome)).length === before.length + 1, 2_000)
+    }
+    expect(await tabIds(chrome)).toHaveLength(before.length + 1)
+
+    // Under Xvfb there is no window manager, so maximize()/isMaximized()'s
+    // own OS-level effect is not observable here (the same gap this run's
+    // report names for edge tiling) -- a spy on the method itself is what
+    // proves the double click reaches main and calls the right thing.
+    await app.evaluate(({ BaseWindow }) => {
+      const win = BaseWindow.getAllWindows()[0]
+      const g = globalThis as unknown as { __maximizeCalls: number }
+      g.__maximizeCalls = 0
+      if (win !== undefined) win.maximize = () => { g.__maximizeCalls += 1 }
+    })
+    const toMaximize = await tailPoint()
+    await chrome.mouse.dblclick(toMaximize.x, toMaximize.y)
+    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __maximizeCalls: number }).__maximizeCalls)) === 1)).toBe(true)
+
+    const boundsBefore = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getBounds())
+    const dragFrom = await tailPoint()
+    await chrome.mouse.move(dragFrom.x, dragFrom.y)
+    await chrome.mouse.down()
+    await chrome.mouse.move(dragFrom.x + 60, dragFrom.y + 40, { steps: 6 })
+    await chrome.mouse.up()
+    expect(await waitFor(async () => {
+      const now = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getBounds())
+      return now !== undefined && boundsBefore !== undefined && now.x !== boundsBefore.x
+    })).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)

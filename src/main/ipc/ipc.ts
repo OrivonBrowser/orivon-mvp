@@ -80,12 +80,25 @@ export type ShellCommand =
   | { type: 'openMenu'; anchor: PanelAnchor }
   /** Puts a tab at a place in the strip. */
   | { type: 'moveTab'; id: string; index: number }
+  /** A genuine tab drag has started (tab-drag.ts's `begin()`, the moment the pointer passes the press
+   * threshold): main starts capturing the tab's page early, so a thumbnail is usually already in hand by
+   * the time (if ever) the tab actually tears out of the strip. */
+  | { type: 'tabDragStart'; id: string }
   /** A tab is being dragged, below the strip, at this point of the window (`x` and `y` absent: back in the strip). */
   | { type: 'dragTab'; id: string; x?: number; y?: number }
   /** A tab was let go outside the strip: `x`, `y` where on the screen, `clientX`, `clientY` where in this window. */
   | { type: 'dropTab'; id: string; x: number; y: number; clientX: number; clientY: number }
   /** The right-click menu of a tab, which main shows (it lists the other windows). */
   | { type: 'tabMenu'; id: string }
+  /** A double click on the empty tail of the strip, in the manual drag mode drag-mode.ts's `dragModeFor`
+   * chooses for Linux/X11 (native drag regions elsewhere handle this at the OS level, no command needed). */
+  | { type: 'toggleMaximize' }
+  /** The three points of a manual window move, all in screen coordinates -- the same tail, same mode. Start
+   * captures where within the window the pointer took hold; `windowMoveTo` repeats on every pointer move
+   * while the drag lasts; `windowMoveEnd` is where an Aero-snap-style release tiles the window, if anywhere. */
+  | { type: 'windowMoveStart'; x: number; y: number }
+  | { type: 'windowMoveTo'; x: number; y: number }
+  | { type: 'windowMoveEnd'; x: number; y: number }
 
 /**
  * BOTH object identity AND URL, matching `newtab-ipc.ts`'s own
@@ -110,9 +123,14 @@ export interface ShellActions {
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
   runCommand: (id: CommandId) => void
   openMenu: (anchor: PanelAnchor) => void
+  beginTabDrag: (id: string) => void
   dragTab: (id: string, at: { x: number, y: number } | null) => void
   dropTab: (id: string, screen: { x: number, y: number }, client: { x: number, y: number }) => void
   showTabMenu: (id: string) => void
+  toggleMaximize: () => void
+  windowMoveStart: (point: { x: number, y: number }) => void
+  windowMoveTo: (point: { x: number, y: number }) => void
+  windowMoveEnd: (point: { x: number, y: number }) => void
 }
 
 export function registerShellIpc (
@@ -200,6 +218,9 @@ export function registerShellIpc (
       case 'moveTab':
         if (typeof command.id === 'string' && Number.isFinite(command.index)) tabs.moveTab(command.id, command.index)
         return
+      case 'tabDragStart':
+        if (typeof command.id === 'string') actions.beginTabDrag(command.id)
+        return
       case 'dragTab':
         if (typeof command.id === 'string') actions.dragTab(command.id, Number.isFinite(command.x) && Number.isFinite(command.y) ? { x: command.x as number, y: command.y as number } : null)
         return
@@ -208,6 +229,18 @@ export function registerShellIpc (
         return
       case 'tabMenu':
         if (typeof command.id === 'string') actions.showTabMenu(command.id)
+        return
+      case 'toggleMaximize':
+        actions.toggleMaximize()
+        return
+      case 'windowMoveStart':
+        if (Number.isFinite(command.x) && Number.isFinite(command.y)) actions.windowMoveStart({ x: command.x, y: command.y })
+        return
+      case 'windowMoveTo':
+        if (Number.isFinite(command.x) && Number.isFinite(command.y)) actions.windowMoveTo({ x: command.x, y: command.y })
+        return
+      case 'windowMoveEnd':
+        if (Number.isFinite(command.x) && Number.isFinite(command.y)) actions.windowMoveEnd({ x: command.x, y: command.y })
         return
     }
   })

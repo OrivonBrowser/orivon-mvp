@@ -456,10 +456,10 @@ export class TabManager {
     return this.tabs.get(id)?.partition
   }
 
-  /** A tab's webContents, or undefined if the tab is gone or its
-   * webContents has already been destroyed -- the common guard every
-   * read-only accessor below needs. */
-  private liveWebContents (id: string): Electron.WebContents | undefined {
+  /** A tab's webContents, or undefined if the tab is gone or its webContents has already been destroyed --
+   * the common guard every read-only accessor below needs, and what tear-drag.ts captures a thumbnail from
+   * (via tab-view.ts's `captureTabPage`, which turns this into a snapshot or `null`, never a throw). */
+  liveWebContents (id: string): Electron.WebContents | undefined {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return undefined
     return record.view.webContents

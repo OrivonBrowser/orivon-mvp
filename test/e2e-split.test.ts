@@ -41,7 +41,14 @@ async function launched (): Promise<{ app: ElectronApplication, chrome: Page }> 
 /** The views in the window, with the address each shows and where it is. */
 const layout = async (app: ElectronApplication): Promise<Placed[]> =>
   await app.evaluate(({ BaseWindow }) => {
-    const [win] = BaseWindow.getAllWindows()
+    // Sorted by id, oldest first, never plain array order: a tab drag past
+    // the split-model.ts's own edge share (window-actions.ts's
+    // TAB_DRAG_SPLIT_SHARE) starts tear-drag.ts's floating preview, its own
+    // BaseWindow, which getAllWindows() also lists -- created after, so
+    // always a higher id, but not guaranteed to sort last in the array
+    // itself (orivon-electron skill: match windows by URL/id, never by
+    // array position).
+    const [win] = [...BaseWindow.getAllWindows()].sort((a, b) => a.id - b.id)
     return (win?.contentView.children ?? []).flatMap((child) => {
       const contents = (child as unknown as { webContents?: { getURL: () => string } }).webContents
       return contents === undefined ? [] : [{ url: contents.getURL(), bounds: child.getBounds() }]
