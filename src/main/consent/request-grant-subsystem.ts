@@ -16,6 +16,7 @@
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishRequestGrant } from '../registry.js'
 import { requestGrant } from './request-grant.js'
+import type { PendingGrantRequests } from './request-grant.js'
 import { createGrantPrompt } from './request-grant-prompt.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 
@@ -28,6 +29,11 @@ export const requestGrantSubsystem: Subsystem = {
     const broker = ctx.broker
     // ADR-0037: same developer-only override as app-install-subsystem.ts.
     const consent = createGrantPrompt(broker, scoreLevelOverrideFor)
-    publishRequestGrant(ctx, async (origin, request) => await requestGrant(broker, consent, origin, request))
+    // ONE map for this running app's whole lifetime (F2): every
+    // app.requestGrant call, from any tab, shares it, so a burst of
+    // concurrent calls asking for the same capability gets one dialog, not
+    // one per call -- see PendingGrantRequests's own doc (./request-grant.js).
+    const pending: PendingGrantRequests = new Map()
+    publishRequestGrant(ctx, async (origin, request) => await requestGrant(broker, consent, origin, request, pending))
   }
 }

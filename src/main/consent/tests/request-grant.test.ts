@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { addDeclinedCapability, clearDeclinedCapability, requestGrant } from '../request-grant.js'
+import type { PendingGrantRequests } from '../request-grant.js'
 import { APP, stubBroker } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import type { BrokerCall } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import { createBroker } from '../../../broker/index.js'
@@ -71,7 +72,7 @@ describe('requestGrant (stubbed broker)', () => {
 
   it('prompts, and resolves false without granting, when the user declines', async () => {
     const calls: BrokerCall[] = []
-    const broker = stubBroker(calls, { manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }) })
+    const broker = stubBroker(calls, { manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }), declinedCapabilitiesFor: async () => undefined })
     const consent = vi.fn(async () => false)
 
     const result = await requestGrant(broker, consent, APP, { capability: 'fs' })
@@ -126,7 +127,8 @@ describe('requestGrant (stubbed broker)', () => {
         return manifestReads === 1
           ? manifestWith({ net: { tcp: { connect: ['*:*'] } } })
           : manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
-      }
+      },
+      declinedCapabilitiesFor: async () => undefined
     })
     const consent = vi.fn(async () => true)
 
@@ -154,18 +156,42 @@ describe('requestGrant (stubbed broker)', () => {
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
   })
 
+  // F2: a capability already on the declined-consent record resolves false
+  // with NO prompt at all -- the fix for "a page can re-open the grant
+  // dialog after the person declined at install, as often as it likes"
+  // (the PoC reached the 25th dialog before this existed). The only door
+  // off this list is a real accept, through install-consent.ts's own
+  // all-or-nothing flow (a DIFFERENT decline record write) or the site-info
+  // popover's clearDeclinedCapability -- never another app.requestGrant call
+  // for the same, still-declined capability.
+  it('F2: a previously declined capability never re-prompts, however often app.requestGrant is called', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }),
+      declinedCapabilitiesFor: async () => ['tcp.connect']
+    })
+    const consent = vi.fn(async () => true) // even a person who WOULD say yes is never asked again
+
+    for (let i = 0; i < 5; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      expect(await requestGrant(broker, consent, APP, { capability: 'tcp.connect' })).toBe(false)
+    }
+
+    expect(consent).not.toHaveBeenCalled()
+    expect(calls.some((call) => call.method === 'grant')).toBe(false)
+  })
+
   // A172(3), MEDIUM: install-consent.ts's own all-or-nothing accept clears
   // an origin's WHOLE declined-consent record ("an old no cannot outlive a
-  // yes", that file's header) -- but this is a SECOND door to a grant, and
-  // an accepted requestGrant call used to leave a stale decline in place
-  // for the exact capability it just granted. Only THIS capability is
-  // retired: a yes for tcp.connect must not silently un-decline fs, which
-  // nobody asked about through this door.
+  // yes", that file's header) -- but this is a SECOND door to a grant.
+  // `fs` was declined through the OTHER door and `tcp.connect` never was,
+  // so this reaches consent, grants, and retires only `tcp.connect` here --
+  // never touching `fs`, which nobody asked about through this door.
   it('A172(3): an accepted grant retires this capability\'s own decline, leaving any OTHER declined capability alone', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, {
       manifest: async () => manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } }),
-      declinedCapabilitiesFor: async () => ['tcp.connect', 'fs'],
+      declinedCapabilitiesFor: async () => ['fs'],
       recordDeclinedConsent: async () => {},
       grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
     })
@@ -174,7 +200,10 @@ describe('requestGrant (stubbed broker)', () => {
     const result = await requestGrant(broker, consent, APP, { capability: 'tcp.connect' })
 
     expect(result).toBe(true)
-    expect(calls).toContainEqual({ method: 'recordDeclinedConsent', origin: APP, args: ['fs'] })
+    // clearDeclinedCapability is a no-op here (tcp.connect was never on the
+    // declined record to begin with) -- recordDeclinedConsent is never
+    // called, and `fs` is never read back or rewritten.
+    expect(calls.some((call) => call.method === 'recordDeclinedConsent')).toBe(false)
   })
 
   it('fails closed if the origin\'s manifest is gone entirely by the time consent returns', async () => {
@@ -185,7 +214,8 @@ describe('requestGrant (stubbed broker)', () => {
         manifestReads += 1
         if (manifestReads === 1) return manifestWith({ fs: { quotaBytes: 1024 } })
         throw new Error('no manifest registered for this origin')
-      }
+      },
+      declinedCapabilitiesFor: async () => undefined
     })
     const consent = vi.fn(async () => true)
 
@@ -193,6 +223,71 @@ describe('requestGrant (stubbed broker)', () => {
 
     expect(result).toBe(false)
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
+  })
+})
+
+// F2: "150 concurrent calls -> 150 dialogs" -- a page firing a burst of
+// app.requestGrant calls for the same capability, faster than the person
+// can answer the first dialog, used to open one native dialog per call.
+describe('requestGrant: a shared PendingGrantRequests map de-dupes concurrent calls', () => {
+  it('150 concurrent calls for the same (origin, capability) share ONE consent() call', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['*:*'] } } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    // The dialog stays open until every one of the 150 callers is already
+    // waiting on it -- proves they all shared the SAME pending promise
+    // rather than each opening (and immediately resolving) its own.
+    let resolveDialog: ((accepted: boolean) => void) | undefined
+    const consent = vi.fn(async () => await new Promise<boolean>((resolve) => { resolveDialog = resolve }))
+    const pending: PendingGrantRequests = new Map()
+
+    const results = Promise.all(Array.from({ length: 150 }, async () =>
+      await requestGrant(broker, consent, APP, { capability: 'tcp.connect' }, pending)))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(consent).toHaveBeenCalledTimes(1) // not 150
+    resolveDialog?.(true)
+    expect(await results).toEqual(Array.from({ length: 150 }, () => true))
+    expect(pending.size).toBe(0) // the slot is released once every waiter has its answer
+  })
+
+  it('a call for a DIFFERENT capability on the same origin gets its own dialog, never the other one\'s answer', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['*:*'] } }, fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async (_origin: string, capability: string) => capability === 'tcp.connect')
+    const pending: PendingGrantRequests = new Map()
+
+    const [connectResult, fsResult] = await Promise.all([
+      requestGrant(broker, consent, APP, { capability: 'tcp.connect' }, pending),
+      requestGrant(broker, consent, APP, { capability: 'fs' }, pending)
+    ])
+
+    expect(consent).toHaveBeenCalledTimes(2)
+    expect(connectResult).toBe(true)
+    expect(fsResult).toBe(false)
+  })
+
+  it('a later, non-concurrent call for the same capability gets its own dialog again', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['*:*'] } } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+    const pending: PendingGrantRequests = new Map()
+
+    await requestGrant(broker, consent, APP, { capability: 'tcp.connect' }, pending)
+    await requestGrant(broker, consent, APP, { capability: 'tcp.connect' }, pending)
+
+    expect(consent).toHaveBeenCalledTimes(2)
   })
 })
 
