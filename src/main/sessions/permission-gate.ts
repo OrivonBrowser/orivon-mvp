@@ -17,7 +17,7 @@ import { windowShowing } from '../shell/showing-window.js'
 import { createExternalLinks } from './external-links.js'
 import { NotificationDecisions } from './notification-decisions.js'
 import { createSiteNotifications } from './site-notifications.js'
-import { extensionIdFromChromeExtensionOrigin, isTabCaptureMediaAllowed, markTabCaptureGrantConsumed } from './tab-capture-grants.js'
+import { extensionIdFromChromeExtensionOrigin, isTabCaptureMediaRequestAllowed, markTabCaptureGrantConsumed } from './tab-capture-grants.js'
 
 /**
  * Permissions this browser allows outright; `isAllowed` below adds the one
@@ -76,50 +76,90 @@ function isAllowed (permission: string, details: object | undefined): boolean {
 }
 
 /**
+ * (item I, second half) The SAME "is this tab a granted app" question
+ * `vendor/.../tab-capture.ts`'s own `setTabCaptureAppRefusalCheck` answers
+ * at mint time and on navigation -- repeated here because a mint-time
+ * refusal alone leaves a gap this handler is the last line against: a tab
+ * refused at `getMediaStreamId()` time never reaches here at all, but a tab
+ * that was NOT a granted app at mint, then navigates to one, keeps its
+ * already-live grant (`tab-capture-grants.ts` has no idea a navigation
+ * happened) until either `tab-capture.ts`'s own `did-navigate` re-check
+ * fires or -- if that re-check is ever slower than the extension's own
+ * `getUserMedia('tab')` call -- this handler is asked to actually hand out
+ * the stream. Checking `contents` here is exactly right for this call
+ * shape: this file's own top-level doc says `contents` IS the captured tab
+ * for a tab-capture request, so this is the tab at the moment access is
+ * actually granted, not at some earlier moment. Wired from
+ * `../extensions/extension-host.ts`, alongside the vendored library's own
+ * identical registration -- two call sites, one predicate.
+ */
+type MediaAppRefusalCheck = (contents: WebContents) => boolean
+let gMediaAppRefusalCheck: MediaAppRefusalCheck | undefined
+export function setTabCaptureMediaAppRefusalCheck (check: MediaAppRefusalCheck): void {
+  gMediaAppRefusalCheck = check
+}
+
+/**
  * `media` stays denied by default (a page asking for camera/microphone) --
  * this is the one carve-out, for chrome.tabCapture's own `getUserMedia({
  * audio: { mandatory: { chromeMediaSource: 'tab', ... } } })` call. Measured
  * directly (docs/planning's tabCapture/offscreen probe): the request
  * handler's OWN `contents` argument is the CAPTURED TAB's webContents, not
  * the requester's, for this exact call shape -- only `details.securityOrigin`
- * names the requesting `chrome-extension://` origin, so gating on `contents`
- * would check the wrong page's origin entirely. The check handler's
- * `requestingOrigin` argument, by contrast, IS the requester. Neither
- * argument carries the actual `chromeMediaSourceId`, so this can only ask
- * "did this extension mint a still-live tabCapture grant recently" --
- * `tab-capture-grants.ts`'s own doc says why that is the right question:
- * the id itself is already Electron's own single-purpose, 10-second token.
+ * names the requesting `chrome-extension://` origin.
+ *
+ * (HIGH, item A) `contents` is exactly the fact that makes this carve-out
+ * safe to check tightly: a real device request -- `getUserMedia({ audio:
+ * true, video: true })`, called by the extension on its OWN page to reach
+ * the real microphone/camera -- hands `contents` as the CALLING page
+ * itself, never the captured tab, and carries `mediaTypes` naming what it
+ * asked for (`['audio','video']`), where a tab-capture request's own
+ * `mediaTypes` measures empty (`[]`). `isTabCaptureMediaRequestAllowed`
+ * checks both: `contents.id` must equal the exact tab the extension's own
+ * `getMediaStreamId()` call named, AND `mediaTypes` must be empty. Without
+ * either check, an extension holding one live tabCapture grant (minted
+ * once, for whichever tab it was invoked on) could call
+ * `getUserMedia({audio:true,video:true})` on its own page and silently
+ * receive the real mic and camera.
  *
  * Allowing the REQUEST (never the check) is also the one real signal that a
  * genuine `getUserMedia('tab')` call is in flight for this grant -- marked
  * consumed on the way out, so `tab-capture.ts`'s own safety net stops
- * treating this extension's capture as "maybe never redeemed" the moment
+ * treating this (extension, tab) pair as "maybe never redeemed" the moment
  * Electron actually asks permission for it, however long the real capture
- * goes on to run. MEASURED why the check handler must never mark this:
- * `setPermissionCheckHandler` fires repeatedly and speculatively for a
- * `chrome-extension://` page (camera/microphone availability probing this
- * library's own preload, or Chromium's own media-device enumeration) with
- * no `getUserMedia()` call behind it at all -- marking consumption there
- * released FALSE positives in a fixture that minted a grant and never
- * redeemed it, well before the real 10s window. `setPermissionRequestHandler`
- * fires only for an actual, one-time media-access attempt; that is the
- * one Chromium contract this file leans on.
+ * goes on to run. MEASURED why the check handler must never mark this, and
+ * must never allow `'media'` at all: `setPermissionCheckHandler` fires
+ * repeatedly and speculatively for a `chrome-extension://` page (camera/
+ * microphone availability probing this library's own preload, or
+ * Chromium's own media-device enumeration) with no `getUserMedia()` call
+ * behind it at all, and carries no captured-tab identity to check against
+ * even when it does correspond to a real call -- `wc`/`origin` there are
+ * the REQUESTER's own, and `details.mediaType` (singular) cannot
+ * distinguish "tab capture asking for audio" from "a device asking for
+ * audio" the way the request handler's `mediaTypes` (plural, an exact
+ * list) can. `setPermissionRequestHandler` fires only for an actual,
+ * one-time media-access attempt with the tab identity this file needs;
+ * that is the one Chromium contract this file leans on, so `'media'` is
+ * refused outright in the check handler.
  */
-function allowTabCaptureMediaRequest (origin: string | undefined): boolean {
-  const now = Date.now()
-  const allowed = isTabCaptureMediaAllowed(origin, now)
-  if (allowed) {
-    const extensionId = extensionIdFromChromeExtensionOrigin(origin)
-    if (extensionId !== undefined) markTabCaptureGrantConsumed(extensionId, now)
-  }
-  return allowed
-}
-
-function isTabCaptureMediaRequest (details: object | undefined): boolean {
+function allowTabCaptureMediaRequest (contents: WebContents, details: object | undefined): boolean {
   const origin = details !== undefined && 'securityOrigin' in details && typeof details.securityOrigin === 'string'
     ? details.securityOrigin
     : undefined
-  return allowTabCaptureMediaRequest(origin)
+  const mediaTypes = details !== undefined && 'mediaTypes' in details && Array.isArray(details.mediaTypes)
+    ? details.mediaTypes as string[]
+    : undefined
+  const now = Date.now()
+  const allowed = isTabCaptureMediaRequestAllowed(origin, contents.id, mediaTypes, now)
+  if (!allowed) return false
+  // (item I) Re-run against `contents` -- the captured tab, for this call
+  // shape -- one more time, right before actually granting: see
+  // setTabCaptureMediaAppRefusalCheck's own doc for why a mint-time-only
+  // check is not enough.
+  if (gMediaAppRefusalCheck?.(contents) === true) return false
+  const extensionId = extensionIdFromChromeExtensionOrigin(origin)
+  if (extensionId !== undefined) markTabCaptureGrantConsumed(extensionId, contents.id, now)
+  return true
 }
 
 let decisions: NotificationDecisions | undefined
@@ -161,7 +201,7 @@ function denyByDefault (target: Session): void {
   target.setPermissionRequestHandler((contents, permission, callback, details) => {
     if (permission === 'openExternal') return answerWhenAsked(externalLinks(contents, details), callback)
     if (permission === 'notifications') return answerWhenAsked(siteNotifications.request(contents, details), callback)
-    if (permission === 'media') return callback(isTabCaptureMediaRequest(details))
+    if (permission === 'media') return callback(allowTabCaptureMediaRequest(contents, details))
     const allowed = isAllowed(permission, details)
     if (allowed) noteForNotice(contents, permission)
     callback(allowed)
@@ -170,11 +210,19 @@ function denyByDefault (target: Session): void {
   // here, and notifications answer from what the person already said.
   target.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) => {
     if (permission === 'notifications') return siteNotifications.check(requestingOrigin, details.embeddingOrigin)
-    // Never marks consumption here -- allowTabCaptureMediaRequest's own doc
-    // says why: this handler fires speculatively, with no getUserMedia()
-    // call behind it, and marking on it released a still-unredeemed grant
-    // early (measured).
-    if (permission === 'media') return isTabCaptureMediaAllowed(requestingOrigin, Date.now())
+    // (HIGH, item A) Always false for 'media', never a shape check --
+    // allowTabCaptureMediaRequest's own doc says why: this handler fires
+    // speculatively, with no getUserMedia() call behind it (marking
+    // consumption here released a still-unredeemed grant early, measured),
+    // AND it has no captured-tab identity to check against even when a real
+    // call is behind it -- `wc`/`requestingOrigin` here are the REQUESTER's
+    // own, never the target tab, so the tab-identity half of item A's fix
+    // cannot be applied in this handler at all. Refusing 'media' here
+    // outright costs nothing real: Electron only consults this handler to
+    // decide whether to ask via setPermissionRequestHandler in the first
+    // place for some call shapes, and the request handler above is the one
+    // that actually grants a tab-capture 'media' call.
+    if (permission === 'media') return false
     return isAllowed(permission, details)
   })
   // WebHID/WebUSB/Web Serial have no capability path at all in v0

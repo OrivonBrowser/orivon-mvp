@@ -1,9 +1,8 @@
-// Backs two things `permission-gate.ts` and the vendored `chrome.tabCapture`
+// Backs three things `permission-gate.ts` and the vendored `chrome.tabCapture`
 // handler need: whether a 'media' request naming `chromeMediaSource: 'tab'`
-// should be allowed, and whether a minted capture was ever actually redeemed
-// -- the fact `tab-capture.ts`'s own safety net releases an unconsumed mute
-// on, and never releases a consumed one on a timer (this file's own doc
-// below explains why a timer cannot be trusted for that second case).
+// should be allowed, whether a minted capture was ever actually redeemed,
+// and -- per capture, not per extension -- releasing one tab's mute never
+// touches another the same extension also captures.
 //
 // `webContents.getMediaSourceId()`'s own token already scopes WHO can
 // consume a specific capture and for how long (electron.d.ts: "restricted
@@ -12,28 +11,31 @@
 // that token -- they see a permission NAME, an origin, and (for the request
 // handler) the CAPTURED TAB's own webContents, not the requester's (measured
 // directly: docs/planning's tabCapture/offscreen probe). All this can answer
-// is "did this extension mint a still-valid tabCapture token recently, and
-// has a real getUserMedia('tab') call for it already happened", which is
-// what it does.
+// is "did this extension mint a still-valid tabCapture token for THIS tab
+// recently, and has a real getUserMedia('tab') call for it already
+// happened", which is what it does.
 //
-// One grant per extension id, not per streamId: the policy question is "is
-// this extension currently in a legitimate capture flow", never "is THIS
-// EXACT token the one being redeemed" -- the id's own scoping already makes
-// that second question Electron's, not this file's, to answer.
+// Keyed by (extensionId, targetTabId), never extension alone: an extension
+// capturing two tabs at once must mint, consume and release each
+// independently -- a shared, extension-wide grant let one tab's own
+// redemption mark a DIFFERENT tab's still-unredeemed mint as consumed
+// (measured against a fixture minting two ids in a row).
 interface Grant {
   expiresAt: number
-  /** True once a 'media' request/check for this extension's own
-   * `chrome-extension://` origin was actually allowed -- the moment
-   * Electron invoked the session's permission handler at all, which only
-   * happens because the offscreen document's own `getUserMedia({ audio: {
-   * mandatory: { chromeMediaSource: 'tab', ... } } })` call is in flight.
-   * Once true, this grant's own expiry never again means "unused" --
-   * `tab-capture.ts`'s safety net reads this bit, not the expiry alone, to
-   * decide whether a still-ongoing capture may ever be time-released. */
+  /** True once a 'media' REQUEST (never a check -- see
+   * `permission-gate.ts`'s own doc) for this exact (extension, tab) pair
+   * was actually allowed. Once true, this grant's own expiry never again
+   * means "unused" -- `tab-capture.ts`'s safety net reads this bit, not the
+   * expiry alone, to decide whether a still-ongoing capture may ever be
+   * time-released. */
   consumed: boolean
 }
 
 const grants = new Map<string, Grant>()
+
+function key (extensionId: string, targetTabId: number): string {
+  return `${extensionId}\u0000${String(targetTabId)}`
+}
 
 /** How long `webContents.getMediaSourceId()` keeps its own id valid --
  * electron.d.ts's own doc, duplicated here as a constant because this
@@ -50,45 +52,68 @@ export function extensionIdFromChromeExtensionOrigin (origin: string | undefined
 /** Called once `webContents.getMediaSourceId()` returns -- see
  * `../extensions/README.md`-style wiring in `../extensions/extension-host.ts`
  * for where the vendored `chrome.tabCapture` handler reaches this. Always
- * starts a fresh, unconsumed grant: a new mint means a new
- * `getMediaStreamId()` call, which only happens for a new capture attempt. */
-export function mintTabCaptureGrant (extensionId: string, now: number): void {
-  grants.set(extensionId, { expiresAt: now + TAB_CAPTURE_GRANT_MS, consumed: false })
+ * starts a fresh, unconsumed grant for this exact tab: a new mint means a
+ * new `getMediaStreamId()` call for it, which only happens for a new
+ * capture attempt. */
+export function mintTabCaptureGrant (extensionId: string, targetTabId: number, now: number): void {
+  grants.set(key(extensionId, targetTabId), { expiresAt: now + TAB_CAPTURE_GRANT_MS, consumed: false })
 }
 
-export function hasLiveTabCaptureGrant (extensionId: string, now: number): boolean {
-  const grant = grants.get(extensionId)
+export function hasLiveTabCaptureGrant (extensionId: string, targetTabId: number, now: number): boolean {
+  const grant = grants.get(key(extensionId, targetTabId))
   return grant !== undefined && now < grant.expiresAt
 }
 
 /** `permission-gate.ts` calls this whenever it actually ALLOWS a 'media'
- * request/check for `extensionId` -- the real signal that a getUserMedia
- * call for this grant is genuinely in flight, not merely minted. A no-op
- * once the grant has already expired: nothing to mark, and a later, unrelated
- * mint must start unconsumed again. */
-export function markTabCaptureGrantConsumed (extensionId: string, now: number): void {
-  const grant = grants.get(extensionId)
+ * request for `(extensionId, targetTabId)` -- the real signal that a
+ * getUserMedia call for this grant is genuinely in flight, not merely
+ * minted. A no-op once the grant has already expired: nothing to mark, and
+ * a later, unrelated mint must start unconsumed again. */
+export function markTabCaptureGrantConsumed (extensionId: string, targetTabId: number, now: number): void {
+  const grant = grants.get(key(extensionId, targetTabId))
   if (grant !== undefined && now < grant.expiresAt) grant.consumed = true
 }
 
-/** True once `markTabCaptureGrantConsumed` has run for this extension's
- * CURRENT (or any past) grant -- deliberately not re-checked against
- * expiry: a consumed grant's own capture can legitimately outlive the
- * 10-second minting window by hours, and this bit is what tells
- * `tab-capture.ts` never to time-release it. */
-export function wasTabCaptureGrantConsumed (extensionId: string): boolean {
-  return grants.get(extensionId)?.consumed === true
+/** True once `markTabCaptureGrantConsumed` has run for this exact
+ * (extension, tab) pair -- deliberately not re-checked against expiry: a
+ * consumed grant's own capture can legitimately outlive the 10-second
+ * minting window by hours, and this bit is what tells `tab-capture.ts`
+ * never to time-release it. */
+export function wasTabCaptureGrantConsumed (extensionId: string, targetTabId: number): boolean {
+  return grants.get(key(extensionId, targetTabId))?.consumed === true
 }
 
-/** The policy `permission-gate.ts`'s `denyByDefault` calls for `'media'`:
- * allowed only for a `chrome-extension://` origin that minted a still-live
- * grant, denied for everything else -- including every other reason a page
- * might ask for `'media'` (camera, microphone), which this ledger never
- * grants because nothing here ever mints for a plain web origin. Pure: it
- * does not itself call `markTabCaptureGrantConsumed` -- `permission-gate.ts`
- * does that explicitly once it decides to allow, keeping "is this allowed"
- * and "record that it happened" as two separately testable steps. */
-export function isTabCaptureMediaAllowed (securityOrigin: string | undefined, now: number): boolean {
+/**
+ * The policy `permission-gate.ts`'s `denyByDefault` calls for a `'media'`
+ * REQUEST (never the check -- its own doc says why). Allowed only when
+ * ALL of:
+ *  - `securityOrigin` names a `chrome-extension://` id,
+ *  - that extension minted a still-live grant for EXACTLY `capturedTabId`
+ *    (the request handler's own `contents.id` -- Electron hands the
+ *    CAPTURED TAB there for this call shape, never the requester's),
+ *  - `mediaTypes` is empty.
+ *
+ * The last point is load-bearing (HIGH severity, item A): measured
+ * directly, a real tab-capture `getUserMedia({ audio: { mandatory: {
+ * chromeMediaSource: 'tab', ... } } })` request carries `mediaTypes: []`,
+ * while an ordinary device request -- `getUserMedia({ audio: true })` or
+ * `{ video: true }` -- carries the kinds actually asked for, `['audio']`
+ * or `['audio','video']`. Without this, an extension holding a live
+ * tabCapture grant (minted once, for the tab it was invoked on) could call
+ * `getUserMedia({ audio: true, video: true })` on its OWN page and
+ * silently receive the real microphone and camera: `contents` for THAT
+ * call is the extension's own page, not the captured tab, so the
+ * tab-identity check alone already refuses it, and the shape check refuses
+ * it a second, independent way.
+ */
+export function isTabCaptureMediaRequestAllowed (
+  securityOrigin: string | undefined,
+  capturedTabId: number,
+  mediaTypes: readonly string[] | undefined,
+  now: number,
+): boolean {
   const extensionId = extensionIdFromChromeExtensionOrigin(securityOrigin)
-  return extensionId !== undefined && hasLiveTabCaptureGrant(extensionId, now)
+  if (extensionId === undefined) return false
+  if (mediaTypes === undefined || mediaTypes.length > 0) return false
+  return hasLiveTabCaptureGrant(extensionId, capturedTabId, now)
 }
