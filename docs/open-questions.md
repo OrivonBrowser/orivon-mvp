@@ -1389,17 +1389,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A284: Served `.eth`/`ipfs://` content sends no `frame-ancestors` **[OWNER]**
-
-- **Question:** Served content can be framed by any page (clickjacking a dApp), and static
-  content cannot set its own header.
-- **Why it matters:** a page under an origin the user trusts (a `.eth` name, an IPFS gateway
-  response) can be embedded and manipulated by any other page that frames it.
-- **Options:** `frame-ancestors 'self'` by default (rec.; breaks embedding by other origins);
-  `'none'`; leave it as the web does today and document the gap.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A285: CCIP-Read egress validates a resolved hostname, then fetches the hostname again **[OWNER]**
 
 - **Question:** `urlRefusal` resolves a CCIP gateway hostname and checks every address against
@@ -1410,19 +1399,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** reuse `pinnedLookup` for CCIP's POST/redirect-following path (rec.; a real change,
   since CCIP needs a body and its own redirect loop, unlike `createDirectFetch`'s GET/HEAD-only
   shape); accept the residual, narrowed by the existing `https`-only rule.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A286: A TTL-0 name can still rebind between the embed check and the connection **[OWNER]**
-
-- **Question:** A `"*"`-admitted document whose host is a name is resolved through the guest
-  session's own `resolveHost`, refused unless every address is public unicast. A name that
-  answers differently once Chromium actually connects still reaches it.
-- **Why it matters:** the same class of residual A196 accepts for `connectSecure`'s own wildcard
-  -- sharing the guest session's host cache narrows the window, it does not close it, since no
-  cancellable webRequest event carries the connected address.
-- **Options:** accept the residual, narrowed as it is (rec.); close it fully only if Electron
-  exposes a cancellable event carrying the connected address.
 - **Who decides:** owner
 - **Blocks:** nothing
 
