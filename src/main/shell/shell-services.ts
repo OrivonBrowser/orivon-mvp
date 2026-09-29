@@ -23,6 +23,7 @@ import { ShortcutStore } from '../shortcuts/shortcut-store.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
 import { WindowRegistry } from './window-registry.js'
+import { TabLifecycle } from './tab-lifecycle.js'
 
 export interface ShellServices {
   readonly bookmarks: BookmarkStore
@@ -34,6 +35,10 @@ export interface ShellServices {
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
   readonly shortcutStore: ShortcutStore
+  /** Every window's tab lifecycle, mirrored here (tab-lifecycle.ts) -- one
+   * instance for the whole process, so a subscriber (the extension host)
+   * hears every window, not just the one it happened to attach to first. */
+  readonly tabLifecycle: TabLifecycle
   readonly windows: WindowRegistry
   readonly zoom: ZoomService
   readonly zoomStore: ZoomStore
@@ -69,6 +74,7 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
+    tabLifecycle: new TabLifecycle(),
     windows,
     zoom: new ZoomService(zoomStore, settings),
     zoomStore

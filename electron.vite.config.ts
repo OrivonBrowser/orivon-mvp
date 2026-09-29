@@ -69,6 +69,20 @@ if (process.stdout.moveCursor === undefined) {
 
 export default defineConfig({
   main: {
+    // Maps the virtual specifiers electron-chrome-extensions-lib.d.ts
+    // declares to the real vendored files, for BUNDLING only -- tsc never
+    // sees this file, so it resolves those specifiers through the .d.ts's
+    // ambient declarations instead of opening the real, more loosely typed
+    // vendor source (that file's own header has the full reasoning).
+    resolve: {
+      alias: {
+        'orivon:crx-extensions': resolve(root, 'vendor/electron-chrome-extensions/src/browser/index.ts'),
+        'orivon:crx-extensions-partition': resolve(root, 'vendor/electron-chrome-extensions/src/browser/partition.ts'),
+        'orivon:crx-extensions-router': resolve(root, 'vendor/electron-chrome-extensions/src/browser/router.ts'),
+        'orivon:crx-extensions-cookies': resolve(root, 'vendor/electron-chrome-extensions/src/browser/api/cookies.ts'),
+        'orivon:crx-extensions-tabs': resolve(root, 'vendor/electron-chrome-extensions/src/browser/api/tabs.ts')
+      }
+    },
     // Folds src/main/dev-grant.ts's compiled-in flag to a literal boolean --
     // `false` unless ORIVON_ENABLE_DEV_GRANT=1 was set (scripts/build-e2e.mjs
     // is the only caller that sets it) -- so the production minifier can
@@ -91,8 +105,13 @@ export default defineConfig({
       },
       // Dependencies stay external, loaded from node_modules at run time,
       // except these ESM-only packages: this CommonJS output cannot require()
-      // them, so they are bundled into the verifier host instead.
-      externalizeDeps: { exclude: ['multiformats', '@ipld/dag-pb', 'ipfs-unixfs', 'ipfs-unixfs-exporter', 'ipns'] }
+      // them, so they are bundled into whichever entry imports them instead.
+      // `pbf` (extensions/crx.ts, vendor/electron-chrome-web-store's CRX3
+      // reader) is `"type": "module"` -- measured: left external, a real
+      // build's `new Pbf(...)` throws "Pbf is not a constructor" at runtime,
+      // never caught by typecheck or a plain-vitest unit test, only a real
+      // Electron launch.
+      externalizeDeps: { exclude: ['multiformats', '@ipld/dag-pb', 'ipfs-unixfs', 'ipfs-unixfs-exporter', 'ipns', 'pbf'] }
     }
   },
   preload: {
@@ -125,7 +144,12 @@ export default defineConfig({
           'site-info': resolve(root, 'src/preload/site-info.ts'),
           menu: resolve(root, 'src/preload/menu.ts'),
           'split-frame': resolve(root, 'src/preload/split-frame.ts'),
-          embed: resolve(root, 'src/preload/embed.ts')
+          embed: resolve(root, 'src/preload/embed.ts'),
+          'extension-api': resolve(root, 'src/preload/extension-api.ts'),
+          'web-store': resolve(
+            root,
+            'vendor/electron-chrome-web-store/src/renderer/chrome-web-store.preload.ts'
+          )
         }
       },
       // Preloads share local imports (./channels.js, ./surface/orivon.js).
@@ -160,6 +184,7 @@ export default defineConfig({
           'page-history': resolve(root, 'src/renderer/pages/history/index.html'),
           'page-profiles': resolve(root, 'src/renderer/pages/profiles/index.html'),
           'page-private': resolve(root, 'src/renderer/pages/private/index.html'),
+          'page-extensions': resolve(root, 'src/renderer/pages/extensions/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),
           menu: resolve(root, 'src/renderer/menu/index.html'),
           'split-frame': resolve(root, 'src/renderer/split-frame/index.html')

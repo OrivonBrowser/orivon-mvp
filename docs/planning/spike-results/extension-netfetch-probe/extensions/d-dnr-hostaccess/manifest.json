@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "dnr-hostaccess-probe",
+  "version": "1.0",
+  "permissions": ["declarativeNetRequestWithHostAccess"],
+  "host_permissions": ["<all_urls>"],
+  "declarative_net_request": {
+    "rule_resources": [
+      { "id": "ruleset1", "enabled": true, "path": "rules.json" }
+    ]
+  },
+  "background": { "service_worker": "sw.js" }
+}

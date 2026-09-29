@@ -10,6 +10,7 @@ import type { Bookmark } from '../browsing/bookmarks.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import type { DevToolsGate } from '../devtools/devtools-service.js'
+import type { TabLifecycle } from './tab-lifecycle.js'
 
 export interface TabState {
   id: string
@@ -88,6 +89,10 @@ export interface TabShell {
   devtools?: DevToolsGate
   /** What is drawn behind two panes. Absent in tests, and a window that never splits never makes it. */
   backdrop?: SplitBackdrop
+  /** Where a tab's creation, activation, closing and view replacement are
+   * reported (tab-lifecycle.ts). Absent in tests: nothing outside the tab
+   * collection hears about them. */
+  tabLifecycle?: TabLifecycle
 }
 
 /** The view behind two panes: the divider, and an outline round the pane the person is in. */
@@ -112,6 +117,10 @@ export interface TabViewHost {
   readonly dashboardUrl: string
   /** Undefined without a window around the tabs; a tab then shows no dialog or menu. */
   readonly window: BaseWindow | undefined
+  /** Passed straight through from TabShell -- tab-view.ts's repartitionView()
+   * fires `viewReplaced` on it directly, since that is the one lifecycle
+   * event this seam raises outside tabs.ts itself. */
+  readonly tabLifecycle: TabLifecycle | undefined
   /** Whether the tab's view is on screen: it is the tab in front, or the other pane beside it. */
   isShown: (id: string) => boolean
   /** Takes a view off the screen, and puts another in its place: what a tab moving to another session does. */

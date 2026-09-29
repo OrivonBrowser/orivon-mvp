@@ -1,0 +1,3395 @@
+{
+  "electron": "44.0.0",
+  "chrome": "152.0.7977.54",
+  "extensionVersionsTested": {
+    "uBOL": "2026.926.2202 (uBlockOrigin/uBOL-home, uBOLite_2026.926.2202.chromium.zip)",
+    "Dark Reader": "4.9.133 (darkreader/darkreader, darkreader-chrome-mv3.zip)",
+    "Bitwarden": "2026.9.2 (bitwarden/clients, dist-chrome-2026.9.2.zip)",
+    "MetaMask": "13.50.0.0 (MetaMask/metamask-extension, metamask-chrome-13.50.0.zip)"
+  },
+  "stageA_realExtensions": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54",
+    "extensions": {
+      "ubol": {
+        "manifest": {
+          "action": {
+            "default_icon": {
+              "16": "img/icon_16.png",
+              "32": "img/icon_32.png",
+              "64": "img/icon_64.png"
+            },
+            "default_popup": "popup.html"
+          },
+          "author": "Raymond Hill",
+          "background": {
+            "service_worker": "/js/background.js",
+            "type": "module"
+          },
+          "commands": {
+            "enter-zapper-mode": {
+              "description": "__MSG_zapperTipEnter__"
+            },
+            "enter-picker-mode": {
+              "description": "__MSG_pickerTipEnter__"
+            }
+          },
+          "declarative_net_request": {
+            "rule_resources": [
+              {
+                "id": "ublock-filters",
+                "enabled": true,
+                "path": "/rulesets/main/ublock-filters.json"
+              },
+              {
+                "id": "easylist",
+                "enabled": true,
+                "path": "/rulesets/main/easylist.json"
+              },
+              {
+                "id": "easyprivacy",
+                "enabled": true,
+                "path": "/rulesets/main/easyprivacy.json"
+              },
+              {
+                "id": "pgl",
+                "enabled": true,
+                "path": "/rulesets/main/pgl.json"
+              },
+              {
+                "id": "ublock-badware",
+                "enabled": true,
+                "path": "/rulesets/main/ublock-badware.json"
+              },
+              {
+                "id": "urlhaus-full",
+                "enabled": true,
+                "path": "/rulesets/main/urlhaus-full.json"
+              },
+              {
+                "id": "adguard-mobile",
+                "enabled": false,
+                "path": "/rulesets/main/adguard-mobile.json"
+              },
+              {
+                "id": "block-lan",
+                "enabled": false,
+                "path": "/rulesets/main/block-lan.json"
+              },
+              {
+                "id": "adguard-spyware-url",
+                "enabled": false,
+                "path": "/rulesets/main/adguard-spyware-url.json"
+              },
+              {
+                "id": "annoyances-ai",
+                "enabled": false,
+                "path": "/rulesets/main/annoyances-ai.json"
+              },
+              {
+                "id": "annoyances-cookies",
+                "enabled": false,
+                "path": "/rulesets/main/annoyances-cookies.json"
+              },
+              {
+                "id": "annoyances-overlays",
+                "enabled": false,
+                "path": "/rulesets/main/annoyances-overlays.json"
+              },
+              {
+                "id": "annoyances-social",
+                "enabled": false,
+                "path": "/rulesets/main/annoyances-social.json"
+              },
+              {
+                "id": "annoyances-widgets",
+                "enabled": false,
+                "path": "/rulesets/main/annoyances-widgets.json"
+              },
+              {
+                "id": "annoyances-others",
+                "enabled": false,
+                "path": "/rulesets/main/annoyances-others.json"
+              },
+              {
+                "id": "annoyances-notifications",
+                "enabled": false,
+                "path": "/rulesets/main/annoyances-notifications.json"
+              },
+              {
+                "id": "ublock-experimental",
+                "enabled": false,
+                "path": "/rulesets/main/ublock-experimental.json"
+              },
+              {
+                "id": "ubol-tests",
+                "enabled": false,
+                "path": "/rulesets/main/ubol-tests.json"
+              },
+              {
+                "id": "alb-0",
+                "enabled": false,
+                "path": "/rulesets/main/alb-0.json"
+              },
+              {
+                "id": "ara-0",
+                "enabled": false,
+                "path": "/rulesets/main/ara-0.json"
+              },
+              {
+                "id": "bgr-0",
+                "enabled": false,
+                "path": "/rulesets/main/bgr-0.json"
+              },
+              {
+                "id": "chn-0",
+                "enabled": false,
+                "path": "/rulesets/main/chn-0.json"
+              },
+              {
+                "id": "cze-0",
+                "enabled": false,
+                "path": "/rulesets/main/cze-0.json"
+              },
+              {
+                "id": "deu-0",
+                "enabled": false,
+                "path": "/rulesets/main/deu-0.json"
+              },
+              {
+                "id": "est-0",
+                "enabled": false,
+                "path": "/rulesets/main/est-0.json"
+              },
+              {
+                "id": "fin-0",
+                "enabled": false,
+                "path": "/rulesets/main/fin-0.json"
+              },
+              {
+                "id": "fra-0",
+                "enabled": false,
+                "path": "/rulesets/main/fra-0.json"
+              },
+              {
+                "id": "grc-0",
+                "enabled": false,
+                "path": "/rulesets/main/grc-0.json"
+              },
+              {
+                "id": "hrv-0",
+                "enabled": false,
+                "path": "/rulesets/main/hrv-0.json"
+              },
+              {
+                "id": "hun-0",
+                "enabled": false,
+                "path": "/rulesets/main/hun-0.json"
+              },
+              {
+                "id": "idn-0",
+                "enabled": false,
+                "path": "/rulesets/main/idn-0.json"
+              },
+              {
+                "id": "ind-0",
+                "enabled": false,
+                "path": "/rulesets/main/ind-0.json"
+              },
+              {
+                "id": "irn-0",
+                "enabled": false,
+                "path": "/rulesets/main/irn-0.json"
+              },
+              {
+                "id": "isl-0",
+                "enabled": false,
+                "path": "/rulesets/main/isl-0.json"
+              },
+              {
+                "id": "isr-0",
+                "enabled": false,
+                "path": "/rulesets/main/isr-0.json"
+              },
+              {
+                "id": "ita-0",
+                "enabled": false,
+                "path": "/rulesets/main/ita-0.json"
+              },
+              {
+                "id": "jpn-1",
+                "enabled": false,
+                "path": "/rulesets/main/jpn-1.json"
+              },
+              {
+                "id": "kor-1",
+                "enabled": false,
+                "path": "/rulesets/main/kor-1.json"
+              },
+              {
+                "id": "ltu-0",
+                "enabled": false,
+                "path": "/rulesets/main/ltu-0.json"
+              },
+              {
+                "id": "lva-0",
+                "enabled": false,
+                "path": "/rulesets/main/lva-0.json"
+              },
+              {
+                "id": "mkd-0",
+                "enabled": false,
+                "path": "/rulesets/main/mkd-0.json"
+              },
+              {
+                "id": "nld-0",
+                "enabled": false,
+                "path": "/rulesets/main/nld-0.json"
+              },
+              {
+                "id": "nor-0",
+                "enabled": false,
+                "path": "/rulesets/main/nor-0.json"
+              },
+              {
+                "id": "pol-0",
+                "enabled": false,
+                "path": "/rulesets/main/pol-0.json"
+              },
+              {
+                "id": "pol-3",
+                "enabled": false,
+                "path": "/rulesets/main/pol-3.json"
+              },
+              {
+                "id": "rou-1",
+                "enabled": false,
+                "path": "/rulesets/main/rou-1.json"
+              },
+              {
+                "id": "rus-0",
+                "enabled": false,
+                "path": "/rulesets/main/rus-0.json"
+              },
+              {
+                "id": "rus-1",
+                "enabled": false,
+                "path": "/rulesets/main/rus-1.json"
+              },
+              {
+                "id": "spa-0",
+                "enabled": false,
+                "path": "/rulesets/main/spa-0.json"
+              },
+              {
+                "id": "spa-1",
+                "enabled": false,
+                "path": "/rulesets/main/spa-1.json"
+              },
+              {
+                "id": "svn-0",
+                "enabled": false,
+                "path": "/rulesets/main/svn-0.json"
+              },
+              {
+                "id": "swe-1",
+                "enabled": false,
+                "path": "/rulesets/main/swe-1.json"
+              },
+              {
+                "id": "tha-0",
+                "enabled": false,
+                "path": "/rulesets/main/tha-0.json"
+              },
+              {
+                "id": "tur-0",
+                "enabled": false,
+                "path": "/rulesets/main/tur-0.json"
+              },
+              {
+                "id": "ukr-0",
+                "enabled": false,
+                "path": "/rulesets/main/ukr-0.json"
+              },
+              {
+                "id": "vie-1",
+                "enabled": false,
+                "path": "/rulesets/main/vie-1.json"
+              }
+            ]
+          },
+          "default_locale": "en",
+          "description": "__MSG_extShortDesc__",
+          "host_permissions": [
+            "<all_urls>"
+          ],
+          "incognito": "split",
+          "icons": {
+            "16": "img/icon_16.png",
+            "32": "img/icon_32.png",
+            "64": "img/icon_64.png",
+            "128": "img/icon_128.png"
+          },
+          "manifest_version": 3,
+          "minimum_chrome_version": "122.0",
+          "name": "__MSG_extName__",
+          "options_page": "dashboard.html",
+          "permissions": [
+            "activeTab",
+            "alarms",
+            "declarativeNetRequest",
+            "offscreen",
+            "scripting",
+            "storage",
+            "unlimitedStorage",
+            "userScripts"
+          ],
+          "short_name": "uBO Lite",
+          "storage": {
+            "managed_schema": "managed_storage.json"
+          },
+          "version": "2026.926.2202",
+          "web_accessible_resources": [
+            {
+              "resources": [
+                "/strictblock.html"
+              ],
+              "matches": [
+                "<all_urls>"
+              ],
+              "use_dynamic_url": true
+            },
+            {
+              "resources": [
+                "/zapper-ui.html"
+              ],
+              "matches": [
+                "<all_urls>"
+              ],
+              "use_dynamic_url": true
+            },
+            {
+              "resources": [
+                "/picker-ui.html"
+              ],
+              "matches": [
+                "<all_urls>"
+              ],
+              "use_dynamic_url": true
+            },
+            {
+              "resources": [
+                "/unpicker-ui.html"
+              ],
+              "matches": [
+                "<all_urls>"
+              ],
+              "use_dynamic_url": true
+            },
+            {
+              "resources": [
+                "web_accessible_resources/noop.js",
+                "web_accessible_resources/amazon_apstag.js",
+                "web_accessible_resources/google-ima.js",
+                "web_accessible_resources/fingerprint2.js",
+                "web_accessible_resources/sensors-analytics.js",
+                "web_accessible_resources/adthrive_abd.js",
+                "web_accessible_resources/noop.txt",
+                "web_accessible_resources/1x1.gif",
+                "web_accessible_resources/empty",
+                "web_accessible_resources/noop.css",
+                "web_accessible_resources/32x32.png",
+                "web_accessible_resources/2x2.png",
+                "web_accessible_resources/noop.html",
+                "web_accessible_resources/amazon_ads.js",
+                "web_accessible_resources/googletagservices_gpt.js",
+                "web_accessible_resources/google-analytics_analytics.js",
+                "web_accessible_resources/nofab.js",
+                "web_accessible_resources/hd-main.js",
+                "web_accessible_resources/popads.js",
+                "web_accessible_resources/googlesyndication_adsbygoogle.js",
+                "web_accessible_resources/prebid-ads.js",
+                "web_accessible_resources/doubleclick_instream_ad_status.js",
+                "web_accessible_resources/google-analytics_cx_api.js",
+                "web_accessible_resources/scorecardresearch_beacon.js",
+                "web_accessible_resources/google-analytics_ga.js",
+                "web_accessible_resources/outbrain-widget.js",
+                "web_accessible_resources/fingerprint3.js",
+                "web_accessible_resources/noop-vmap1.xml",
+                "web_accessible_resources/noop-vast3.xml",
+                "web_accessible_resources/noop-0.1s.mp3",
+                "web_accessible_resources/noop-vast2.xml",
+                "web_accessible_resources/noop-1s.mp4",
+                "web_accessible_resources/nobab2.js",
+                "web_accessible_resources/nitropay_ads.js",
+                "web_accessible_resources/chartbeat.js",
+                "web_accessible_resources/noop.json",
+                "web_accessible_resources/noeval-silent.js"
+              ],
+              "matches": [
+                "<all_urls>"
+              ],
+              "use_dynamic_url": true
+            }
+          ]
+        },
+        "load": "ok",
+        "id": "mpipchfpipcoalecacnakphkkcidalkb",
+        "events": {
+          "loaded": true,
+          "ready": true
+        },
+        "allExtensions": [
+          {
+            "id": "mpipchfpipcoalecacnakphkkcidalkb",
+            "name": "uBlock Origin Lite",
+            "version": "2026.926.2202"
+          }
+        ],
+        "swConsole": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught TypeError: Cannot read properties of undefined (reading 'onRemoved')"
+          }
+        ],
+        "sw": {
+          "scope": "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/",
+          "scriptURL": "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/js/background.js",
+          "messages": [
+            {
+              "kind": "patch",
+              "patchResult": {
+                "ran": true,
+                "dnrPatched": true,
+                "sidePanelPatched": true,
+                "hadChrome": true
+              }
+            }
+          ]
+        },
+        "contentScripts": {
+          "top": {
+            "label": "top",
+            "url": "http://127.0.0.1:41561/top",
+            "ethereum": "undefined",
+            "darkreaderStyles": 0,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 3
+          },
+          "same-origin-iframe": {
+            "label": "same-origin-iframe",
+            "url": "http://127.0.0.1:41561/frame",
+            "ethereum": "undefined",
+            "darkreaderStyles": 0,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 5
+          },
+          "cross-origin-iframe": {
+            "label": "cross-origin-iframe",
+            "url": "http://127.0.0.1:39975/frame",
+            "ethereum": "undefined",
+            "darkreaderStyles": 0,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 11
+          }
+        },
+        "pageConsole": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "popup": {
+          "title": "uBlock Origin Lite",
+          "bodyLen": 13,
+          "sendMessage": "timeout",
+          "tabsQuery": {
+            "count": 0,
+            "sample": null
+          },
+          "framePolyfill": {
+            "ran": true,
+            "dnrPatched": true,
+            "sidePanelPatched": true
+          }
+        },
+        "popupConsole": []
+      },
+      "darkreader": {
+        "manifest": {
+          "manifest_version": 3,
+          "name": "Dark Reader",
+          "version": "4.9.133",
+          "author": "Alexander Shutau",
+          "description": "__MSG_extension_description__",
+          "default_locale": "en",
+          "icons": {
+            "16": "icons/dr_16.png",
+            "48": "icons/dr_48.png",
+            "128": "icons/dr_128.png"
+          },
+          "background": {
+            "service_worker": "background/index.js"
+          },
+          "content_scripts": [
+            {
+              "matches": [
+                "<all_urls>"
+              ],
+              "js": [
+                "inject/proxy.js"
+              ],
+              "run_at": "document_start",
+              "all_frames": true,
+              "match_about_blank": true,
+              "world": "MAIN"
+            },
+            {
+              "matches": [
+                "<all_urls>"
+              ],
+              "js": [
+                "inject/fallback.js",
+                "inject/index.js"
+              ],
+              "run_at": "document_start",
+              "all_frames": true,
+              "match_about_blank": true,
+              "world": "ISOLATED"
+            },
+            {
+              "matches": [
+                "<all_urls>"
+              ],
+              "js": [
+                "inject/color-scheme-watcher.js"
+              ],
+              "run_at": "document_idle",
+              "all_frames": false,
+              "match_about_blank": false,
+              "world": "ISOLATED"
+            }
+          ],
+          "permissions": [
+            "alarms",
+            "fontSettings",
+            "scripting",
+            "storage"
+          ],
+          "optional_permissions": [
+            "contextMenus"
+          ],
+          "commands": {
+            "toggle": {
+              "suggested_key": {
+                "default": "Alt+Shift+D"
+              },
+              "description": "__MSG_toggle_extension__"
+            },
+            "addSite": {
+              "suggested_key": {
+                "default": "Alt+Shift+A"
+              },
+              "description": "__MSG_toggle_current_site__"
+            },
+            "switchEngine": {
+              "description": "__MSG_theme_generation_mode__"
+            }
+          },
+          "minimum_chrome_version": "106.0.0.0",
+          "action": {
+            "default_title": "Dark Reader",
+            "default_icon": {
+              "19": "icons/dr_active_19.png",
+              "38": "icons/dr_active_38.png"
+            },
+            "default_popup": "ui/popup/index.html"
+          },
+          "options_ui": {
+            "page": "ui/popup/index.html"
+          },
+          "content_security_policy": {
+            "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self'; img-src * data:; connect-src *; navigate-to 'self' https://darkreader.org/* https://github.com/darkreader/darkreader/blob/main/CONTRIBUTING.md https://github.com/darkreader/darkreader https://twitter.com/darkreaderapp; media-src 'none'; child-src 'none'; worker-src 'none'; object-src 'none'"
+          },
+          "host_permissions": [
+            "*://*/*"
+          ]
+        },
+        "load": "ok",
+        "id": "nlefhpgjlofnbilcafjefadjbhjnfken",
+        "events": {
+          "loaded": true,
+          "ready": true
+        },
+        "allExtensions": [
+          {
+            "id": "nlefhpgjlofnbilcafjefadjbhjnfken",
+            "name": "Dark Reader",
+            "version": "4.9.133"
+          }
+        ],
+        "swConsole": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Unrecognized Content-Security-Policy directive 'navigate-to'."
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "  /''''\\\n (0)==(0)\n/__||||__\\\nWelcome to Dark Reader!"
+          },
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'onRemoved')"
+          }
+        ],
+        "sw": {
+          "scope": "chrome-extension://nlefhpgjlofnbilcafjefadjbhjnfken/",
+          "scriptURL": "chrome-extension://nlefhpgjlofnbilcafjefadjbhjnfken/background/index.js",
+          "messages": [
+            {
+              "kind": "patch",
+              "patchResult": {
+                "ran": true,
+                "dnrPatched": false,
+                "sidePanelPatched": true,
+                "hadChrome": true
+              }
+            },
+            {
+              "kind": "introspect",
+              "result": {
+                "href": "chrome-extension://nlefhpgjlofnbilcafjefadjbhjnfken/background/index.js",
+                "chromeType": "object",
+                "apis": [
+                  "action",
+                  "alarms",
+                  "dom",
+                  "extension",
+                  "i18n",
+                  "management",
+                  "runtime",
+                  "scripting",
+                  "sidePanel",
+                  "storage",
+                  "tabs"
+                ],
+                "present": {
+                  "storage": "object",
+                  "alarms": "object",
+                  "offscreen": "absent",
+                  "sidePanel": "object",
+                  "contextMenus": "absent",
+                  "notifications": "absent",
+                  "commands": "absent",
+                  "permissions": "absent",
+                  "webNavigation": "absent",
+                  "cookies": "absent",
+                  "userScripts": "absent",
+                  "declarativeNetRequest": "absent",
+                  "action": "object",
+                  "tabs": "object",
+                  "windows": "absent",
+                  "webRequest": "absent",
+                  "runtime": "object",
+                  "scripting": "object",
+                  "management": "object",
+                  "i18n": "object",
+                  "extension": "object",
+                  "dom": "object"
+                },
+                "calls": {
+                  "storage.local.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "storage.sync.get": {
+                    "ok": false,
+                    "error": "\"sync\" is not available in this instance of Chrome"
+                  },
+                  "storage.session.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "alarms.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "offscreen.hasDocument": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "sidePanel.getOptions": {
+                    "ok": false,
+                    "error": "c.sidePanel.getOptions is not a function"
+                  },
+                  "contextMenus.removeAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "notifications.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "commands.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "permissions.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "webNavigation.getAllFrames": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "cookies.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "userScripts.getScripts": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "declarativeNetRequest.getDynamicRules": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "action.getBadgeText": {
+                    "ok": true,
+                    "result": "\"\""
+                  },
+                  "windows.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "contentScripts": {
+          "top": {
+            "label": "top",
+            "url": "http://127.0.0.1:41561/top",
+            "ethereum": "undefined",
+            "darkreaderStyles": 1,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 3
+          },
+          "same-origin-iframe": {
+            "label": "same-origin-iframe",
+            "url": "http://127.0.0.1:41561/frame",
+            "ethereum": "undefined",
+            "darkreaderStyles": 1,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 5
+          },
+          "cross-origin-iframe": {
+            "label": "cross-origin-iframe",
+            "url": "http://127.0.0.1:39975/frame",
+            "ethereum": "undefined",
+            "darkreaderStyles": 1,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 11
+          }
+        },
+        "pageConsole": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "popup": {
+          "title": "Dark Reader settings",
+          "bodyLen": 20,
+          "sendMessage": "error:The message port closed before a response was received.",
+          "tabsQuery": {
+            "count": 0,
+            "sample": null
+          },
+          "framePolyfill": {
+            "ran": true,
+            "dnrPatched": false,
+            "sidePanelPatched": true
+          }
+        },
+        "popupConsole": [
+          "error: Unrecognized Content-Security-Policy directive 'navigate-to'."
+        ]
+      },
+      "bitwarden": {
+        "manifest": {
+          "manifest_version": 3,
+          "minimum_chrome_version": "134.0",
+          "name": "__MSG_extName__",
+          "short_name": "Bitwarden",
+          "version": "2026.9.2",
+          "description": "__MSG_extDesc__",
+          "default_locale": "en",
+          "author": "Bitwarden Inc.",
+          "homepage_url": "https://bitwarden.com",
+          "icons": {
+            "16": "images/icon16.png",
+            "32": "images/icon32.png",
+            "48": "images/icon48.png",
+            "96": "images/icon96.png",
+            "128": "images/icon128.png"
+          },
+          "content_scripts": [
+            {
+              "all_frames": false,
+              "js": [
+                "content/content-message-handler.js"
+              ],
+              "matches": [
+                "*://*/*",
+                "file:///*"
+              ],
+              "exclude_matches": [
+                "*://*/*.xml*",
+                "file:///*.xml*"
+              ],
+              "run_at": "document_start"
+            },
+            {
+              "all_frames": true,
+              "css": [
+                "content/autofill.css"
+              ],
+              "js": [
+                "content/trigger-autofill-script-injection.js"
+              ],
+              "matches": [
+                "*://*/*",
+                "file:///*"
+              ],
+              "exclude_matches": [
+                "*://*/*.xml*",
+                "file:///*.xml*"
+              ],
+              "run_at": "document_start"
+            }
+          ],
+          "background": {
+            "service_worker": "background.js"
+          },
+          "action": {
+            "default_icon": {
+              "19": "images/icon19.png",
+              "38": "images/icon38.png"
+            },
+            "default_title": "Bitwarden",
+            "default_popup": "popup/index.html"
+          },
+          "permissions": [
+            "activeTab",
+            "alarms",
+            "clipboardRead",
+            "clipboardWrite",
+            "contextMenus",
+            "idle",
+            "offscreen",
+            "scripting",
+            "sidePanel",
+            "storage",
+            "tabs",
+            "unlimitedStorage",
+            "webNavigation",
+            "webRequest",
+            "webRequestAuthProvider",
+            "notifications"
+          ],
+          "optional_permissions": [
+            "nativeMessaging",
+            "privacy"
+          ],
+          "host_permissions": [
+            "https://*/*",
+            "http://*/*"
+          ],
+          "content_security_policy": {
+            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+            "sandbox": "sandbox allow-scripts; script-src 'self'"
+          },
+          "sandbox": {
+            "pages": [
+              "overlay/menu-button.html",
+              "overlay/menu-list.html"
+            ]
+          },
+          "side_panel": {
+            "default_path": "sidepanel-disabled.html"
+          },
+          "commands": {
+            "_execute_action": {
+              "suggested_key": {
+                "default": "Ctrl+Shift+Y",
+                "linux": "Ctrl+Shift+U"
+              },
+              "description": "__MSG_commandOpenPopup__"
+            },
+            "autofill_login": {
+              "suggested_key": {
+                "default": "Ctrl+Shift+L"
+              },
+              "description": "__MSG_commandAutofillLoginDesc__"
+            },
+            "autofill_card": {
+              "description": "__MSG_commandAutofillCardDesc__"
+            },
+            "autofill_identity": {
+              "description": "__MSG_commandAutofillIdentityDesc__"
+            },
+            "generate_password": {
+              "suggested_key": {
+                "default": "Ctrl+Shift+9"
+              },
+              "description": "__MSG_commandGeneratePasswordDesc__"
+            },
+            "lock_vault": {
+              "description": "__MSG_commandLockVaultDesc__"
+            }
+          },
+          "web_accessible_resources": [
+            {
+              "resources": [
+                "content/fido2-page-script.js",
+                "notification/bar.html",
+                "images/icon38.png",
+                "images/icon38_locked.png",
+                "overlay/menu-button.html",
+                "overlay/menu-list.html",
+                "overlay/menu.html",
+                "popup/fonts/*"
+              ],
+              "matches": [
+                "<all_urls>"
+              ],
+              "use_dynamic_url": true
+            }
+          ],
+          "storage": {
+            "managed_schema": "managed_schema.json"
+          }
+        },
+        "load": "ok",
+        "id": "jhefpiglagnplhlijmdofeobacihbibk",
+        "events": {
+          "loaded": true,
+          "ready": true
+        },
+        "allExtensions": [
+          {
+            "id": "jhefpiglagnplhlijmdofeobacihbibk",
+            "name": "Bitwarden Password Manager",
+            "version": "2026.9.2"
+          }
+        ],
+        "swConsole": [
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "WebAssembly is supported in this environment"
+          },
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught TypeError: Cannot read properties of undefined (reading 'onCommitted')"
+          }
+        ],
+        "sw": {
+          "scope": "chrome-extension://jhefpiglagnplhlijmdofeobacihbibk/",
+          "scriptURL": "chrome-extension://jhefpiglagnplhlijmdofeobacihbibk/background.js",
+          "messages": [
+            {
+              "kind": "patch",
+              "patchResult": {
+                "ran": true,
+                "dnrPatched": false,
+                "sidePanelPatched": true,
+                "hadChrome": true
+              }
+            }
+          ]
+        },
+        "contentScripts": {
+          "top": {
+            "label": "top",
+            "url": "http://127.0.0.1:41561/top",
+            "ethereum": "undefined",
+            "darkreaderStyles": 0,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 3
+          },
+          "same-origin-iframe": {
+            "label": "same-origin-iframe",
+            "url": "http://127.0.0.1:41561/frame",
+            "ethereum": "undefined",
+            "darkreaderStyles": 0,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 5
+          },
+          "cross-origin-iframe": {
+            "label": "cross-origin-iframe",
+            "url": "http://127.0.0.1:39975/frame",
+            "ethereum": "undefined",
+            "darkreaderStyles": 0,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 11
+          }
+        },
+        "pageConsole": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "popup": {
+          "title": "Bitwarden",
+          "bodyLen": 0,
+          "sendMessage": "timeout",
+          "tabsQuery": {
+            "count": 0,
+            "sample": null
+          },
+          "framePolyfill": {
+            "ran": true,
+            "dnrPatched": false,
+            "sidePanelPatched": true
+          }
+        },
+        "popupConsole": [
+          "info: WebAssembly is supported in this environment",
+          "error: TypeError: chrome.tabs.getCurrent is not a function",
+          "info: WASM SDK loaded in 55ms",
+          "info: No state version found, assuming empty state.",
+          "info: No state version found, assuming empty state.",
+          "info: Waiting for migrations to finish, waiting for 4ms",
+          "info: No state version found, assuming empty state.",
+          "info: Waiting for migrations to finish, waiting for 8ms",
+          "info: No state version found, assuming empty state.",
+          "info: Waiting for migrations to finish, waiting for 16ms",
+          "info: No state version found, assuming empty state.",
+          "info: Waiting for migrations to finish, waiting for 32ms",
+          "info: No state version found, assuming empty state.",
+          "info: Waiting for migrations to finish, waiting for 64ms",
+          "info: No state version found, assuming empty state.",
+          "info: Waiting for migrations to finish, waiting for 128ms",
+          "info: No state version found, assuming empty state.",
+          "info: Waiting for migrations to finish, waiting for 256ms",
+          "info: No state version found, assuming empty state.",
+          "info: Waiting for migrations to finish, waiting for 512ms"
+        ]
+      },
+      "metamask": {
+        "manifest": {
+          "action": {
+            "default_icon": {
+              "16": "images/icon-16.png",
+              "19": "images/icon-19.png",
+              "32": "images/icon-32.png",
+              "38": "images/icon-38.png",
+              "64": "images/icon-64.png",
+              "128": "images/icon-128.png",
+              "512": "images/icon-512.png"
+            },
+            "default_title": "MetaMask",
+            "default_popup": "popup-init.html"
+          },
+          "author": "https://metamask.io",
+          "background": {
+            "service_worker": "service-worker.js"
+          },
+          "commands": {
+            "_execute_browser_action": {
+              "suggested_key": {
+                "windows": "Alt+Shift+M",
+                "mac": "Alt+Shift+M",
+                "chromeos": "Alt+Shift+M",
+                "linux": "Alt+Shift+M"
+              }
+            },
+            "_execute_action": {
+              "suggested_key": {
+                "default": "Alt+Shift+M",
+                "windows": "Alt+Shift+M",
+                "mac": "Alt+Shift+M",
+                "chromeos": "Alt+Shift+M",
+                "linux": "Alt+Shift+M"
+              }
+            }
+          },
+          "content_scripts": [
+            {
+              "matches": [
+                "file://*/*",
+                "http://*/*",
+                "https://*/*"
+              ],
+              "js": [
+                "scripts/contentscript.js"
+              ],
+              "run_at": "document_start",
+              "all_frames": true
+            },
+            {
+              "matches": [
+                "file://*/*",
+                "http://*/*",
+                "https://*/*"
+              ],
+              "js": [
+                "scripts/inpage.js"
+              ],
+              "run_at": "document_start",
+              "world": "MAIN",
+              "all_frames": true
+            },
+            {
+              "matches": [
+                "*://connect.trezor.io/*/popup.html*"
+              ],
+              "js": [
+                "vendor/trezor/content-script.js"
+              ]
+            }
+          ],
+          "default_locale": "en",
+          "description": "__MSG_appDescription__",
+          "host_permissions": [
+            "http://localhost:8545/",
+            "file://*/*",
+            "http://*/*",
+            "https://*/*",
+            "ws://*/*",
+            "wss://*/*"
+          ],
+          "icons": {
+            "16": "images/icon-16.png",
+            "19": "images/icon-19.png",
+            "32": "images/icon-32.png",
+            "38": "images/icon-38.png",
+            "48": "images/icon-48.png",
+            "64": "images/icon-64.png",
+            "128": "images/icon-128.png",
+            "512": "images/icon-512.png"
+          },
+          "manifest_version": 3,
+          "name": "__MSG_appName__",
+          "optional_permissions": [
+            "clipboardRead"
+          ],
+          "permissions": [
+            "activeTab",
+            "alarms",
+            "clipboardWrite",
+            "notifications",
+            "scripting",
+            "storage",
+            "unlimitedStorage",
+            "webRequest",
+            "offscreen",
+            "identity",
+            "sidePanel",
+            "cookies"
+          ],
+          "sandbox": {
+            "pages": [
+              "snaps/index.html"
+            ]
+          },
+          "short_name": "__MSG_appName__",
+          "version": "13.50.0.0",
+          "version_name": "13.50.0",
+          "content_security_policy": {
+            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; frame-ancestors 'none'; font-src 'self';",
+            "sandbox": "sandbox allow-scripts; script-src 'self' 'unsafe-inline' 'unsafe-eval'; object-src 'none'; default-src 'none'; connect-src *; font-src 'self';"
+          },
+          "cross_origin_opener_policy": {
+            "value": "same-origin-allow-popups"
+          },
+          "externally_connectable": {
+            "matches": [
+              "http://*/*",
+              "https://*/*"
+            ],
+            "ids": [
+              "*"
+            ]
+          },
+          "minimum_chrome_version": "123",
+          "side_panel": {
+            "default_path": "sidepanel.html"
+          }
+        },
+        "load": "ok",
+        "id": "nifmjpkfobnhjjdhegapeopcenbejnbj",
+        "events": {
+          "loaded": true,
+          "ready": true
+        },
+        "allExtensions": [
+          {
+            "id": "nifmjpkfobnhjjdhegapeopcenbejnbj",
+            "name": "MetaMask",
+            "version": "13.50.0.0"
+          }
+        ],
+        "swConsole": [],
+        "sw": {
+          "scope": "chrome-extension://nifmjpkfobnhjjdhegapeopcenbejnbj/",
+          "scriptURL": "chrome-extension://nifmjpkfobnhjjdhegapeopcenbejnbj/service-worker.js",
+          "messages": [
+            {
+              "kind": "patch",
+              "patchResult": {
+                "ran": true,
+                "dnrPatched": false,
+                "sidePanelPatched": true,
+                "hadChrome": true
+              }
+            },
+            {
+              "kind": "introspect",
+              "result": {
+                "href": "chrome-extension://nifmjpkfobnhjjdhegapeopcenbejnbj/service-worker.js",
+                "chromeType": "object",
+                "apis": [
+                  "action",
+                  "alarms",
+                  "clipboard",
+                  "dom",
+                  "extension",
+                  "i18n",
+                  "management",
+                  "offscreen",
+                  "runtime",
+                  "scripting",
+                  "sidePanel",
+                  "storage",
+                  "tabs",
+                  "webRequest"
+                ],
+                "present": {
+                  "storage": "object",
+                  "alarms": "object",
+                  "offscreen": "object",
+                  "sidePanel": "object",
+                  "contextMenus": "absent",
+                  "notifications": "absent",
+                  "commands": "absent",
+                  "permissions": "absent",
+                  "webNavigation": "absent",
+                  "cookies": "absent",
+                  "userScripts": "absent",
+                  "declarativeNetRequest": "absent",
+                  "action": "object",
+                  "tabs": "object",
+                  "windows": "absent",
+                  "webRequest": "object",
+                  "runtime": "object",
+                  "scripting": "object",
+                  "management": "object",
+                  "i18n": "object",
+                  "extension": "object",
+                  "dom": "object"
+                },
+                "calls": {
+                  "storage.local.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "storage.sync.get": {
+                    "ok": false,
+                    "error": "\"sync\" is not available in this instance of Chrome"
+                  },
+                  "storage.session.get": {
+                    "ok": true,
+                    "result": "{\"timestamp\":\"2026-09-28T17:57:54.418Z\"}"
+                  },
+                  "alarms.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "offscreen.hasDocument": {
+                    "ok": true,
+                    "result": "false"
+                  },
+                  "sidePanel.getOptions": {
+                    "ok": false,
+                    "error": "c.sidePanel.getOptions is not a function"
+                  },
+                  "contextMenus.removeAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "notifications.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "commands.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "permissions.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "webNavigation.getAllFrames": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "cookies.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "userScripts.getScripts": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "declarativeNetRequest.getDynamicRules": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "action.getBadgeText": {
+                    "ok": true,
+                    "result": "\"\""
+                  },
+                  "windows.getAll": {
+                    "ok": false,
+                    "error": "absent"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "contentScripts": {
+          "top": {
+            "label": "top",
+            "url": "http://127.0.0.1:41561/top",
+            "ethereum": "object",
+            "darkreaderStyles": 0,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 3
+          },
+          "same-origin-iframe": {
+            "label": "same-origin-iframe",
+            "url": "http://127.0.0.1:41561/frame",
+            "ethereum": "object",
+            "darkreaderStyles": 0,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 5
+          },
+          "cross-origin-iframe": {
+            "label": "cross-origin-iframe",
+            "url": "http://127.0.0.1:39975/frame",
+            "ethereum": "object",
+            "darkreaderStyles": 0,
+            "darkreaderAttr": false,
+            "bitwardenCss": false,
+            "injectedScripts": 0,
+            "injectedLinks": 0,
+            "bodyTextLen": 11
+          }
+        },
+        "pageConsole": [
+          "warning: MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added. Use emitter.setMaxListeners() to increase limit",
+          "warning: MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 end listeners added. Use emitter.setMaxListeners() to increase limit",
+          "warning: MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added. Use emitter.setMaxListeners() to increase limit",
+          "warning: MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 end listeners added. Use emitter.setMaxListeners() to increase limit",
+          "warning: MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added. Use emitter.setMaxListeners() to increase limit",
+          "warning: MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 end listeners added. Use emitter.setMaxListeners() to increase limit",
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes",
+          "warning: ObjectMultiplex - orphaned data for stream \"app-init-liveness\"",
+          "warning: ObjectMultiplex - orphaned data for stream \"app-init-liveness\"",
+          "warning: ObjectMultiplex - orphaned data for stream \"app-init-liveness\"",
+          "warning: ObjectMultiplex - orphaned data for stream \"app-init-liveness\"",
+          "warning: ObjectMultiplex - orphaned data for stream \"app-init-liveness\"",
+          "warning: ObjectMultiplex - orphaned data for stream \"app-init-liveness\""
+        ],
+        "popup": "threw: Script failed to execute, this normally means an error was thrown. Check the renderer console for the error.",
+        "popupConsole": [
+          "info: Snow detected a new realm creation attempt in MetaMask. Performing scuttling on new realm. [object Window]",
+          "info: Snow detected a new realm creation attempt in MetaMask. Performing scuttling on new realm. [object Window]",
+          "debug: [ExtensionStore]: Reading from local store: 0.4189453125 ms",
+          "error: Uncaught LavaMoat - property \"__orivonFramePolyfill\" of globalThis is inaccessible under scuttling mode. To learn more visit https://github.com/LavaMoat/LavaMoat/pull/360."
+        ]
+      }
+    },
+    "hasNewLoadExtensionApi": true,
+    "hasOldLoadExtensionApi": true,
+    "p2": 39975,
+    "ports": {
+      "p1": 41561,
+      "p2": 39975
+    },
+    "defaultSessionLoad": {
+      "ok": true,
+      "id": "nlefhpgjlofnbilcafjefadjbhjnfken",
+      "before": 0,
+      "after": 1,
+      "visibleInOtherSession": true
+    }
+  },
+  "stageB_declarativeNetRequest": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54",
+    "cases": {
+      "static-plain": {
+        "extLoaded": true,
+        "embedderCalls": 0,
+        "extId": "fbhicflncdoloajjdneochnpjpkebidk",
+        "loaded": {
+          "static": "loaded",
+          "dynamic": "loaded",
+          "session": "loaded",
+          "control": "loaded",
+          "xpopup": "loaded"
+        },
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {},
+        "swConsole": []
+      },
+      "static-withwr": {
+        "extLoaded": true,
+        "embedderCalls": 0,
+        "extId": "fbhicflncdoloajjdneochnpjpkebidk",
+        "loaded": {
+          "static": "loaded",
+          "dynamic": "loaded",
+          "session": "loaded",
+          "control": "loaded",
+          "xpopup": "loaded"
+        },
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {},
+        "swConsole": []
+      },
+      "dynamic-plain": {
+        "extLoaded": true,
+        "embedderCalls": 0,
+        "extId": "cjddfmnhpobkjolaejhmpehfpimikaih",
+        "loaded": {
+          "static": "loaded",
+          "dynamic": "blocked",
+          "session": "blocked",
+          "control": "loaded",
+          "xpopup": "loaded"
+        },
+        "dnrStatus": {
+          "dynamicAdd": "resolved",
+          "sessionAdd": "resolved",
+          "getDynamic": "[{\"action\":{\"type\":\"block\"},\"condition\":{\"resourceTypes\":[\"script\"],\"urlFilter\":\"/probe-block/dynamic.js\"},\"id\":1,\"priority\":1}]",
+          "getSession": "[{\"action\":{\"type\":\"block\"},\"condition\":{\"resourceTypes\":[\"script\"],\"urlFilter\":\"/probe-block/session.js\"},\"id\":1,\"priority\":1}]",
+          "ready": true
+        },
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {
+          "chrome-extension://cjddfmnhpobkjolaejhmpehfpimikaih/": {
+            "scope": "chrome-extension://cjddfmnhpobkjolaejhmpehfpimikaih/",
+            "scriptURL": "chrome-extension://cjddfmnhpobkjolaejhmpehfpimikaih/bg.js",
+            "messages": [
+              {
+                "kind": "patch",
+                "patchResult": {
+                  "ran": true,
+                  "dnrPatched": true,
+                  "sidePanelPatched": true,
+                  "hadChrome": true
+                }
+              },
+              {
+                "kind": "introspect",
+                "result": {
+                  "href": "chrome-extension://cjddfmnhpobkjolaejhmpehfpimikaih/bg.js",
+                  "chromeType": "object",
+                  "apis": [
+                    "declarativeNetRequest",
+                    "dom",
+                    "extension",
+                    "i18n",
+                    "management",
+                    "runtime",
+                    "sidePanel",
+                    "tabs"
+                  ],
+                  "present": {
+                    "storage": "absent",
+                    "alarms": "absent",
+                    "offscreen": "absent",
+                    "sidePanel": "object",
+                    "contextMenus": "absent",
+                    "notifications": "absent",
+                    "commands": "absent",
+                    "permissions": "absent",
+                    "webNavigation": "absent",
+                    "cookies": "absent",
+                    "userScripts": "absent",
+                    "declarativeNetRequest": "object",
+                    "action": "absent",
+                    "tabs": "object",
+                    "windows": "absent",
+                    "webRequest": "absent",
+                    "runtime": "object",
+                    "scripting": "absent",
+                    "management": "object",
+                    "i18n": "object",
+                    "extension": "object",
+                    "dom": "object"
+                  },
+                  "calls": {
+                    "storage.local.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "storage.sync.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "storage.session.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "alarms.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "offscreen.hasDocument": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "sidePanel.getOptions": {
+                      "ok": false,
+                      "error": "c.sidePanel.getOptions is not a function"
+                    },
+                    "contextMenus.removeAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "notifications.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "commands.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "permissions.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "webNavigation.getAllFrames": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "cookies.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "userScripts.getScripts": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "declarativeNetRequest.getDynamicRules": {
+                      "ok": true,
+                      "result": "[]"
+                    },
+                    "action.getBadgeText": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "windows.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "swConsole": []
+      },
+      "dynamic-withwr": {
+        "extLoaded": true,
+        "embedderCalls": 0,
+        "extId": "cjddfmnhpobkjolaejhmpehfpimikaih",
+        "loaded": {
+          "static": "loaded",
+          "dynamic": "loaded",
+          "session": "loaded",
+          "control": "loaded",
+          "xpopup": "loaded"
+        },
+        "dnrStatus": {
+          "dynamicAdd": "resolved",
+          "sessionAdd": "resolved",
+          "getDynamic": "[{\"action\":{\"type\":\"block\"},\"condition\":{\"resourceTypes\":[\"script\"],\"urlFilter\":\"/probe-block/dynamic.js\"},\"id\":1,\"priority\":1}]",
+          "getSession": "[{\"action\":{\"type\":\"block\"},\"condition\":{\"resourceTypes\":[\"script\"],\"urlFilter\":\"/probe-block/session.js\"},\"id\":1,\"priority\":1}]",
+          "ready": true
+        },
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {
+          "chrome-extension://cjddfmnhpobkjolaejhmpehfpimikaih/": {
+            "scope": "chrome-extension://cjddfmnhpobkjolaejhmpehfpimikaih/",
+            "scriptURL": "chrome-extension://cjddfmnhpobkjolaejhmpehfpimikaih/bg.js",
+            "messages": [
+              {
+                "kind": "patch",
+                "patchResult": {
+                  "ran": true,
+                  "dnrPatched": true,
+                  "sidePanelPatched": true,
+                  "hadChrome": true
+                }
+              },
+              {
+                "kind": "introspect",
+                "result": {
+                  "href": "chrome-extension://cjddfmnhpobkjolaejhmpehfpimikaih/bg.js",
+                  "chromeType": "object",
+                  "apis": [
+                    "declarativeNetRequest",
+                    "dom",
+                    "extension",
+                    "i18n",
+                    "management",
+                    "runtime",
+                    "sidePanel",
+                    "tabs"
+                  ],
+                  "present": {
+                    "storage": "absent",
+                    "alarms": "absent",
+                    "offscreen": "absent",
+                    "sidePanel": "object",
+                    "contextMenus": "absent",
+                    "notifications": "absent",
+                    "commands": "absent",
+                    "permissions": "absent",
+                    "webNavigation": "absent",
+                    "cookies": "absent",
+                    "userScripts": "absent",
+                    "declarativeNetRequest": "object",
+                    "action": "absent",
+                    "tabs": "object",
+                    "windows": "absent",
+                    "webRequest": "absent",
+                    "runtime": "object",
+                    "scripting": "absent",
+                    "management": "object",
+                    "i18n": "object",
+                    "extension": "object",
+                    "dom": "object"
+                  },
+                  "calls": {
+                    "storage.local.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "storage.sync.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "storage.session.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "alarms.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "offscreen.hasDocument": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "sidePanel.getOptions": {
+                      "ok": false,
+                      "error": "c.sidePanel.getOptions is not a function"
+                    },
+                    "contextMenus.removeAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "notifications.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "commands.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "permissions.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "webNavigation.getAllFrames": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "cookies.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "userScripts.getScripts": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "declarativeNetRequest.getDynamicRules": {
+                      "ok": true,
+                      "result": "[]"
+                    },
+                    "action.getBadgeText": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "windows.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "swConsole": []
+      },
+      "control-no-ext": {
+        "extLoaded": false,
+        "embedderCalls": 0,
+        "loaded": {
+          "static": "loaded",
+          "dynamic": "loaded",
+          "session": "loaded",
+          "control": "loaded",
+          "xpopup": "loaded"
+        },
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {},
+        "swConsole": []
+      },
+      "ubol-plain": {
+        "extLoaded": true,
+        "embedderCalls": 0,
+        "extId": "mpipchfpipcoalecacnakphkkcidalkb",
+        "loaded": {
+          "static": "loaded",
+          "dynamic": "loaded",
+          "session": "loaded",
+          "control": "loaded",
+          "xpopup": "loaded"
+        },
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {
+          "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/": {
+            "scope": "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/",
+            "scriptURL": "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/js/background.js",
+            "messages": [
+              {
+                "kind": "patch",
+                "patchResult": {
+                  "ran": true,
+                  "dnrPatched": true,
+                  "sidePanelPatched": true,
+                  "hadChrome": true
+                }
+              }
+            ]
+          }
+        },
+        "swConsole": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught TypeError: Cannot read properties of undefined (reading 'onRemoved')"
+          }
+        ]
+      },
+      "ubol-withwr": {
+        "extLoaded": true,
+        "embedderCalls": 0,
+        "extId": "mpipchfpipcoalecacnakphkkcidalkb",
+        "loaded": {
+          "static": "loaded",
+          "dynamic": "loaded",
+          "session": "loaded",
+          "control": "loaded",
+          "xpopup": "loaded"
+        },
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {
+          "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/": {
+            "scope": "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/",
+            "scriptURL": "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/js/background.js",
+            "messages": [
+              {
+                "kind": "patch",
+                "patchResult": {
+                  "ran": true,
+                  "dnrPatched": true,
+                  "sidePanelPatched": true,
+                  "hadChrome": true
+                }
+              }
+            ]
+          }
+        },
+        "swConsole": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught TypeError: Cannot read properties of undefined (reading 'onRemoved')"
+          }
+        ]
+      }
+    }
+  },
+  "stageC_webRequestMV3": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54",
+    "cases": {
+      "control-no-ext": {
+        "extLoaded": false,
+        "loaded": {
+          "wrblock": "loaded",
+          "wrobserve": "loaded",
+          "control": "loaded"
+        },
+        "wrStatus": null,
+        "embedderCalls": 0,
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {},
+        "swConsole": []
+      },
+      "plain": {
+        "extLoaded": true,
+        "extId": "leamcdhfjgndnnidgcgmopalidihggph",
+        "loaded": {
+          "wrblock": "loaded",
+          "wrobserve": "loaded",
+          "control": "loaded"
+        },
+        "wrStatus": {
+          "hasWebRequest": "object",
+          "observeCount": 0,
+          "blockingRegistered": "ok",
+          "observeRegistered": "ok"
+        },
+        "embedderCalls": 0,
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {
+          "chrome-extension://leamcdhfjgndnnidgcgmopalidihggph/": {
+            "scope": "chrome-extension://leamcdhfjgndnnidgcgmopalidihggph/",
+            "scriptURL": "chrome-extension://leamcdhfjgndnnidgcgmopalidihggph/bg.js",
+            "messages": [
+              {
+                "kind": "patch",
+                "patchResult": {
+                  "ran": true,
+                  "dnrPatched": false,
+                  "sidePanelPatched": true,
+                  "hadChrome": true
+                }
+              },
+              {
+                "kind": "introspect",
+                "result": {
+                  "href": "chrome-extension://leamcdhfjgndnnidgcgmopalidihggph/bg.js",
+                  "chromeType": "object",
+                  "apis": [
+                    "dom",
+                    "extension",
+                    "i18n",
+                    "management",
+                    "runtime",
+                    "sidePanel",
+                    "tabs",
+                    "webRequest"
+                  ],
+                  "present": {
+                    "storage": "absent",
+                    "alarms": "absent",
+                    "offscreen": "absent",
+                    "sidePanel": "object",
+                    "contextMenus": "absent",
+                    "notifications": "absent",
+                    "commands": "absent",
+                    "permissions": "absent",
+                    "webNavigation": "absent",
+                    "cookies": "absent",
+                    "userScripts": "absent",
+                    "declarativeNetRequest": "absent",
+                    "action": "absent",
+                    "tabs": "object",
+                    "windows": "absent",
+                    "webRequest": "object",
+                    "runtime": "object",
+                    "scripting": "absent",
+                    "management": "object",
+                    "i18n": "object",
+                    "extension": "object",
+                    "dom": "object"
+                  },
+                  "calls": {
+                    "storage.local.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "storage.sync.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "storage.session.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "alarms.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "offscreen.hasDocument": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "sidePanel.getOptions": {
+                      "ok": false,
+                      "error": "c.sidePanel.getOptions is not a function"
+                    },
+                    "contextMenus.removeAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "notifications.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "commands.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "permissions.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "webNavigation.getAllFrames": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "cookies.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "userScripts.getScripts": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "declarativeNetRequest.getDynamicRules": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "action.getBadgeText": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "windows.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "swConsole": []
+      },
+      "withwr": {
+        "extLoaded": true,
+        "extId": "leamcdhfjgndnnidgcgmopalidihggph",
+        "loaded": {
+          "wrblock": "loaded",
+          "wrobserve": "loaded",
+          "control": "loaded"
+        },
+        "wrStatus": {
+          "hasWebRequest": "object",
+          "observeCount": 0,
+          "blockingRegistered": "ok",
+          "observeRegistered": "ok"
+        },
+        "embedderCalls": 0,
+        "console": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "sw": {
+          "chrome-extension://leamcdhfjgndnnidgcgmopalidihggph/": {
+            "scope": "chrome-extension://leamcdhfjgndnnidgcgmopalidihggph/",
+            "scriptURL": "chrome-extension://leamcdhfjgndnnidgcgmopalidihggph/bg.js",
+            "messages": [
+              {
+                "kind": "patch",
+                "patchResult": {
+                  "ran": true,
+                  "dnrPatched": false,
+                  "sidePanelPatched": true,
+                  "hadChrome": true
+                }
+              },
+              {
+                "kind": "introspect",
+                "result": {
+                  "href": "chrome-extension://leamcdhfjgndnnidgcgmopalidihggph/bg.js",
+                  "chromeType": "object",
+                  "apis": [
+                    "dom",
+                    "extension",
+                    "i18n",
+                    "management",
+                    "runtime",
+                    "sidePanel",
+                    "tabs",
+                    "webRequest"
+                  ],
+                  "present": {
+                    "storage": "absent",
+                    "alarms": "absent",
+                    "offscreen": "absent",
+                    "sidePanel": "object",
+                    "contextMenus": "absent",
+                    "notifications": "absent",
+                    "commands": "absent",
+                    "permissions": "absent",
+                    "webNavigation": "absent",
+                    "cookies": "absent",
+                    "userScripts": "absent",
+                    "declarativeNetRequest": "absent",
+                    "action": "absent",
+                    "tabs": "object",
+                    "windows": "absent",
+                    "webRequest": "object",
+                    "runtime": "object",
+                    "scripting": "absent",
+                    "management": "object",
+                    "i18n": "object",
+                    "extension": "object",
+                    "dom": "object"
+                  },
+                  "calls": {
+                    "storage.local.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "storage.sync.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "storage.session.get": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "alarms.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "offscreen.hasDocument": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "sidePanel.getOptions": {
+                      "ok": false,
+                      "error": "c.sidePanel.getOptions is not a function"
+                    },
+                    "contextMenus.removeAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "notifications.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "commands.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "permissions.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "webNavigation.getAllFrames": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "cookies.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "userScripts.getScripts": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "declarativeNetRequest.getDynamicRules": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "action.getBadgeText": {
+                      "ok": false,
+                      "error": "absent"
+                    },
+                    "windows.getAll": {
+                      "ok": false,
+                      "error": "absent"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "swConsole": []
+      }
+    }
+  },
+  "stageD_swPreloadScopeAndPolyfill": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54",
+    "polyfillExtId": "meddbihjnedgjjiphebmfgoghjpjecic",
+    "pageSwState": "registered",
+    "polyfillExtOwnReport": {
+      "dnrExisted": "undefined",
+      "dnrProbeValue": "no-dnr",
+      "sidePanelType": "object",
+      "sidePanelPolyfilled": true,
+      "ready": true
+    },
+    "swScopes": [
+      "chrome-extension://meddbihjnedgjjiphebmfgoghjpjecic/",
+      "http://127.0.0.1:44633/"
+    ],
+    "swByScope": {
+      "chrome-extension://meddbihjnedgjjiphebmfgoghjpjecic/": {
+        "scope": "chrome-extension://meddbihjnedgjjiphebmfgoghjpjecic/",
+        "scriptURL": "chrome-extension://meddbihjnedgjjiphebmfgoghjpjecic/bg.js",
+        "messages": [
+          {
+            "kind": "patch",
+            "patchResult": {
+              "ran": true,
+              "dnrPatched": false,
+              "sidePanelPatched": true,
+              "hadChrome": true
+            }
+          },
+          {
+            "kind": "introspect",
+            "result": {
+              "href": "chrome-extension://meddbihjnedgjjiphebmfgoghjpjecic/bg.js",
+              "chromeType": "object",
+              "apis": [
+                "action",
+                "dom",
+                "extension",
+                "i18n",
+                "management",
+                "runtime",
+                "sidePanel",
+                "storage",
+                "tabs"
+              ],
+              "present": {
+                "storage": "object",
+                "alarms": "absent",
+                "offscreen": "absent",
+                "sidePanel": "object",
+                "contextMenus": "absent",
+                "notifications": "absent",
+                "commands": "absent",
+                "permissions": "absent",
+                "webNavigation": "absent",
+                "cookies": "absent",
+                "userScripts": "absent",
+                "declarativeNetRequest": "absent",
+                "action": "object",
+                "tabs": "object",
+                "windows": "absent",
+                "webRequest": "absent",
+                "runtime": "object",
+                "scripting": "absent",
+                "management": "object",
+                "i18n": "object",
+                "extension": "object",
+                "dom": "object"
+              },
+              "calls": {
+                "storage.local.get": {
+                  "ok": true,
+                  "result": "{}"
+                },
+                "storage.sync.get": {
+                  "ok": false,
+                  "error": "\"sync\" is not available in this instance of Chrome"
+                },
+                "storage.session.get": {
+                  "ok": true,
+                  "result": "{}"
+                },
+                "alarms.getAll": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "offscreen.hasDocument": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "sidePanel.getOptions": {
+                  "ok": false,
+                  "error": "c.sidePanel.getOptions is not a function"
+                },
+                "contextMenus.removeAll": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "notifications.getAll": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "commands.getAll": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "permissions.getAll": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "webNavigation.getAllFrames": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "cookies.getAll": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "userScripts.getScripts": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "declarativeNetRequest.getDynamicRules": {
+                  "ok": false,
+                  "error": "absent"
+                },
+                "action.getBadgeText": {
+                  "ok": true,
+                  "result": "\"\""
+                },
+                "windows.getAll": {
+                  "ok": false,
+                  "error": "absent"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "http://127.0.0.1:44633/": {
+        "scope": "http://127.0.0.1:44633/",
+        "scriptURL": "http://127.0.0.1:44633/sw.js",
+        "messages": [
+          {
+            "kind": "patch",
+            "patchResult": {
+              "ran": true,
+              "dnrPatched": false,
+              "sidePanelPatched": false,
+              "hadChrome": false
+            }
+          },
+          {
+            "kind": "introspect",
+            "result": {
+              "href": "http://127.0.0.1:44633/sw.js",
+              "chromeType": "object",
+              "apis": [],
+              "present": {
+                "storage": "no-chrome",
+                "alarms": "no-chrome",
+                "offscreen": "no-chrome",
+                "sidePanel": "no-chrome",
+                "contextMenus": "no-chrome",
+                "notifications": "no-chrome",
+                "commands": "no-chrome",
+                "permissions": "no-chrome",
+                "webNavigation": "no-chrome",
+                "cookies": "no-chrome",
+                "userScripts": "no-chrome",
+                "declarativeNetRequest": "no-chrome",
+                "action": "no-chrome",
+                "tabs": "no-chrome",
+                "windows": "no-chrome",
+                "webRequest": "no-chrome",
+                "runtime": "no-chrome",
+                "scripting": "no-chrome",
+                "management": "no-chrome",
+                "i18n": "no-chrome",
+                "extension": "no-chrome",
+                "dom": "no-chrome"
+              },
+              "calls": {}
+            }
+          }
+        ]
+      }
+    },
+    "swConsole": []
+  },
+  "stageE_metamaskPopupWithoutFramePreload": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54",
+    "extId": "nifmjpkfobnhjjdhegapeopcenbejnbj",
+    "popup": {
+      "title": "MetaMask",
+      "bodyLen": 0
+    },
+    "popupConsole": [
+      "info: Snow detected a new realm creation attempt in MetaMask. Performing scuttling on new realm. [object Window]",
+      "info: Snow detected a new realm creation attempt in MetaMask. Performing scuttling on new realm. [object Window]",
+      "debug: [ExtensionStore]: Reading from local store: 0.4560546875 ms"
+    ]
+  },
+  "stageF_withElectronChromeExtensions": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54",
+    "library": "electron-chrome-extensions",
+    "extensions": {
+      "ubol": {
+        "constructed": true,
+        "id": "mpipchfpipcoalecacnakphkkcidalkb",
+        "load": "ok",
+        "runningAt2s": false,
+        "runningAt10s": false,
+        "statusHistory": [
+          {
+            "t": 1790619120090,
+            "versionId": 0,
+            "status": "starting"
+          },
+          {
+            "t": 1790619120200,
+            "versionId": 0,
+            "status": "stopping"
+          },
+          {
+            "t": 1790619120200,
+            "versionId": 0,
+            "status": "stopping"
+          }
+        ],
+        "sw": {
+          "scope": "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/",
+          "scriptURL": "chrome-extension://mpipchfpipcoalecacnakphkkcidalkb/js/background.js",
+          "messages": [
+            {
+              "kind": "patch",
+              "patchResult": {
+                "ran": true,
+                "dnrPatched": true,
+                "sidePanelPatched": true,
+                "hadChrome": true
+              }
+            }
+          ]
+        },
+        "swConsoleFirst3Errors": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught TypeError: Cannot read properties of undefined (reading 'onRemoved')"
+          }
+        ],
+        "swConsoleAll": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught TypeError: Cannot read properties of undefined (reading 'onRemoved')"
+          }
+        ],
+        "xpopupLoaded": {
+          "xpopup": "loaded"
+        },
+        "tabConsole": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "popup": {
+          "title": "uBlock Origin Lite",
+          "bodyLen": 13,
+          "sendMessage": "timeout",
+          "tabsQuery": {
+            "count": 0,
+            "sample": null
+          },
+          "tabsGetCurrent": "undefined-tab"
+        },
+        "popupConsole": [
+          "info: tabs.query [object Object]",
+          "info: tabs.query (result) ",
+          "info: tabs.getCurrent ",
+          "info: tabs.getCurrent (result) undefined"
+        ],
+        "popupLavaMoatCrash": false,
+        "libraryWarnings": []
+      },
+      "darkreader": {
+        "constructed": true,
+        "id": "nlefhpgjlofnbilcafjefadjbhjnfken",
+        "load": "ok",
+        "runningAt2s": true,
+        "runningAt10s": true,
+        "statusHistory": [
+          {
+            "t": 1790619134536,
+            "versionId": 0,
+            "status": "starting"
+          },
+          {
+            "t": 1790619134607,
+            "versionId": 0,
+            "status": "running"
+          }
+        ],
+        "sw": {
+          "scope": "chrome-extension://nlefhpgjlofnbilcafjefadjbhjnfken/",
+          "scriptURL": "chrome-extension://nlefhpgjlofnbilcafjefadjbhjnfken/background/index.js",
+          "messages": [
+            {
+              "kind": "patch",
+              "patchResult": {
+                "ran": true,
+                "dnrPatched": false,
+                "sidePanelPatched": true,
+                "hadChrome": true
+              }
+            },
+            {
+              "kind": "introspect",
+              "result": {
+                "href": "chrome-extension://nlefhpgjlofnbilcafjefadjbhjnfken/background/index.js",
+                "chromeType": "object",
+                "apis": [
+                  "action",
+                  "alarms",
+                  "commands",
+                  "contextMenus",
+                  "cookies",
+                  "dom",
+                  "downloads",
+                  "extension",
+                  "i18n",
+                  "management",
+                  "notifications",
+                  "permissions",
+                  "privacy",
+                  "runtime",
+                  "scripting",
+                  "sidePanel",
+                  "storage",
+                  "tabs",
+                  "topSites",
+                  "webNavigation",
+                  "webRequest",
+                  "windows"
+                ],
+                "present": {
+                  "storage": "object",
+                  "alarms": "object",
+                  "offscreen": "absent",
+                  "sidePanel": "object",
+                  "contextMenus": "absent",
+                  "notifications": "absent",
+                  "commands": "absent",
+                  "permissions": "absent",
+                  "webNavigation": "absent",
+                  "cookies": "absent",
+                  "userScripts": "absent",
+                  "declarativeNetRequest": "absent",
+                  "action": "object",
+                  "tabs": "object",
+                  "windows": "absent",
+                  "webRequest": "absent",
+                  "runtime": "object",
+                  "scripting": "object",
+                  "management": "object",
+                  "i18n": "object",
+                  "extension": "object",
+                  "dom": "object"
+                },
+                "calls": {
+                  "storage.local.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "storage.sync.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "storage.session.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "alarms.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "offscreen.hasDocument": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "sidePanel.getOptions": {
+                    "ok": false,
+                    "error": "c.sidePanel.getOptions is not a function"
+                  },
+                  "contextMenus.removeAll": {
+                    "ok": false,
+                    "error": "Cannot read properties of undefined (reading 'slice')"
+                  },
+                  "notifications.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "commands.getAll": {
+                    "ok": true,
+                    "result": "[{\"name\":\"addSite\",\"description\":\"Toggle current site\",\"shortcut\":\"\"},{\"name\":\"switchEngine\",\"description\":\"Theme generation mode\",\"shortcut\":\"\"},{\"name\":\"toggle\",\"description\":\"Toggle extension\",\"sho"
+                  },
+                  "permissions.getAll": {
+                    "ok": true,
+                    "result": "{\"permissions\":[\"alarms\",\"fontSettings\",\"scripting\",\"storage\"],\"origins\":[\"*://*/*\"]}"
+                  },
+                  "webNavigation.getAllFrames": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "cookies.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "userScripts.getScripts": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "declarativeNetRequest.getDynamicRules": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "action.getBadgeText": {
+                    "ok": false,
+                    "error": "Cannot read properties of undefined (reading 'slice')"
+                  },
+                  "windows.getAll": {
+                    "ok": true,
+                    "result": "[{\"id\":3,\"focused\":false,\"top\":212,\"left\":240,\"width\":800,\"height\":600,\"tabs\":[],\"incognito\":false,\"type\":\"normal\",\"state\":\"normal\",\"alwaysOnTop\":false,\"sessionId\":\"default\"}]"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "swConsoleFirst3Errors": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Unrecognized Content-Security-Policy directive 'navigate-to'."
+          }
+        ],
+        "swConsoleAll": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Unrecognized Content-Security-Policy directive 'navigate-to'."
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "  /''''\\\n (0)==(0)\n/__||||__\\\nWelcome to Dark Reader!"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "tabs.query [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "tabs.query (result) [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "contextMenus.removeAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "contextMenus.removeAll (result) undefined"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "notifications.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "notifications.getAll (result) "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "commands.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "commands.getAll (result) [object Object],[object Object],[object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "permissions.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "permissions.getAll (result) [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "webNavigation.getAllFrames [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "webNavigation.getAllFrames (result) "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "cookies.getAll [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "cookies.getAll (result) "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "browserAction.getBadgeText [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "browserAction.getBadgeText (result) undefined"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "windows.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "windows.getAll (result) [object Object]"
+          }
+        ],
+        "xpopupLoaded": {
+          "xpopup": "loaded"
+        },
+        "tabConsole": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "popup": {
+          "title": "Dark Reader settings",
+          "bodyLen": 1236,
+          "sendMessage": "undefined-response",
+          "tabsQuery": {
+            "count": 0,
+            "sample": null
+          },
+          "tabsGetCurrent": "undefined-tab"
+        },
+        "popupConsole": [
+          "error: Unrecognized Content-Security-Policy directive 'navigate-to'.",
+          "info: tabs.query [object Object]",
+          "error: Unchecked runtime.lastError: The message port closed before a response was received.",
+          "info: tabs.query (result) ",
+          "info: tabs.getCurrent ",
+          "info: tabs.getCurrent (result) undefined"
+        ],
+        "popupLavaMoatCrash": false,
+        "libraryWarnings": [
+          "emitWarning: Warnings loading extension at <scratch>/ext-measure/extracted/darkreader:\n  Permission 'fontSettings' is unknown.\n  Permission 'contextMenus' is unknown.\n",
+          "error: (node:1071275) ExtensionLoadWarning: Warnings loading extension at <scratch>/ext-measure/extracted/darkreader:\n  Permission 'fontSettings' is unknown.\n  Permission 'contextMenus' is unknown.\n\n(Use `electron --trace-warn"
+        ]
+      },
+      "bitwarden": {
+        "constructed": true,
+        "id": "jhefpiglagnplhlijmdofeobacihbibk",
+        "load": "ok",
+        "runningAt2s": true,
+        "runningAt10s": true,
+        "statusHistory": [
+          {
+            "t": 1790619146969,
+            "versionId": 0,
+            "status": "starting"
+          },
+          {
+            "t": 1790619147408,
+            "versionId": 0,
+            "status": "running"
+          }
+        ],
+        "sw": {
+          "scope": "chrome-extension://jhefpiglagnplhlijmdofeobacihbibk/",
+          "scriptURL": "chrome-extension://jhefpiglagnplhlijmdofeobacihbibk/background.js",
+          "messages": [
+            {
+              "kind": "patch",
+              "patchResult": {
+                "ran": true,
+                "dnrPatched": false,
+                "sidePanelPatched": true,
+                "hadChrome": true
+              }
+            },
+            {
+              "kind": "introspect",
+              "result": {
+                "href": "chrome-extension://jhefpiglagnplhlijmdofeobacihbibk/background.js",
+                "chromeType": "object",
+                "apis": [
+                  "action",
+                  "alarms",
+                  "clipboard",
+                  "commands",
+                  "contextMenus",
+                  "cookies",
+                  "dom",
+                  "downloads",
+                  "extension",
+                  "i18n",
+                  "idle",
+                  "management",
+                  "notifications",
+                  "offscreen",
+                  "permissions",
+                  "privacy",
+                  "runtime",
+                  "scripting",
+                  "sidePanel",
+                  "storage",
+                  "tabs",
+                  "topSites",
+                  "webNavigation",
+                  "webRequest",
+                  "windows"
+                ],
+                "present": {
+                  "storage": "object",
+                  "alarms": "object",
+                  "offscreen": "object",
+                  "sidePanel": "object",
+                  "contextMenus": "absent",
+                  "notifications": "absent",
+                  "commands": "absent",
+                  "permissions": "absent",
+                  "webNavigation": "absent",
+                  "cookies": "absent",
+                  "userScripts": "absent",
+                  "declarativeNetRequest": "absent",
+                  "action": "object",
+                  "tabs": "object",
+                  "windows": "absent",
+                  "webRequest": "object",
+                  "runtime": "object",
+                  "scripting": "object",
+                  "management": "object",
+                  "i18n": "object",
+                  "extension": "object",
+                  "dom": "object"
+                },
+                "calls": {
+                  "storage.local.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "storage.sync.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "storage.session.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "alarms.getAll": {
+                    "ok": true,
+                    "result": "[{\"name\":\"phishingDomainUpdate\",\"periodInMinutes\":1440,\"persistAcrossSessions\":true,\"scheduledTime\":1790705547407.238}]"
+                  },
+                  "offscreen.hasDocument": {
+                    "ok": true,
+                    "result": "false"
+                  },
+                  "sidePanel.getOptions": {
+                    "ok": false,
+                    "error": "c.sidePanel.getOptions is not a function"
+                  },
+                  "contextMenus.removeAll": {
+                    "ok": false,
+                    "error": "Cannot read properties of undefined (reading 'slice')"
+                  },
+                  "notifications.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "commands.getAll": {
+                    "ok": true,
+                    "result": "[{\"name\":\"_execute_action\",\"description\":\"Open vault popup\",\"shortcut\":\"\"},{\"name\":\"autofill_card\",\"description\":\"Autofill the last used card for the current website\",\"shortcut\":\"\"},{\"name\":\"autofill_"
+                  },
+                  "permissions.getAll": {
+                    "ok": true,
+                    "result": "{\"permissions\":[\"activeTab\",\"alarms\",\"clipboardRead\",\"clipboardWrite\",\"contextMenus\",\"idle\",\"offscreen\",\"scripting\",\"sidePanel\",\"storage\",\"tabs\",\"unlimitedStorage\",\"webNavigation\",\"webRequest\",\"webReq"
+                  },
+                  "webNavigation.getAllFrames": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "cookies.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "userScripts.getScripts": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "declarativeNetRequest.getDynamicRules": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "action.getBadgeText": {
+                    "ok": false,
+                    "error": "Cannot read properties of undefined (reading 'slice')"
+                  },
+                  "windows.getAll": {
+                    "ok": true,
+                    "result": "[{\"id\":5,\"focused\":false,\"top\":212,\"left\":240,\"width\":800,\"height\":600,\"tabs\":[],\"incognito\":false,\"type\":\"normal\",\"state\":\"normal\",\"alwaysOnTop\":false,\"sessionId\":\"default\"}]"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "swConsoleFirst3Errors": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist."
+          },
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "TypeError: chrome.sidePanel.setOptions is not a function"
+          },
+          {
+            "versionId": 0,
+            "level": 2,
+            "message": "Autofill monitoring disabled; the active account is logged out."
+          }
+        ],
+        "swConsoleAll": [
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "WebAssembly is supported in this environment"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "permissions.contains [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "Managed configuration: no managed settings are set."
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "permissions.contains (result) false"
+          },
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist."
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "Retrieving application id"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "contextMenus.removeAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "WASM SDK loaded in 126ms"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "contextMenus.removeAll (result) undefined"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "notifications.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "notifications.getAll (result) "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "commands.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "No state version found, assuming empty state."
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "commands.getAll (result) [object Object],[object Object],[object Object],[object Object],[object Object],[object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "permissions.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "tabs.query [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "TypeError: chrome.sidePanel.setOptions is not a function"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "permissions.getAll (result) [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "webNavigation.getAllFrames [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "tabs.query (result) [object Object]"
+          }
+        ],
+        "xpopupLoaded": {
+          "xpopup": "loaded"
+        },
+        "tabConsole": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "popup": {
+          "title": "Bitwarden",
+          "bodyLen": 191,
+          "sendMessage": "undefined-response",
+          "tabsQuery": {
+            "count": 0,
+            "sample": null
+          },
+          "tabsGetCurrent": "undefined-tab"
+        },
+        "popupConsole": [
+          "info: WebAssembly is supported in this environment",
+          "info: tabs.getCurrent ",
+          "info: tabs.getCurrent (result) undefined",
+          "info: WASM SDK loaded in 114ms",
+          "info: State version: 85",
+          "info: tabs.getCurrent ",
+          "info: tabs.getCurrent ",
+          "info: tabs.getCurrent (result) undefined",
+          "info: tabs.getCurrent (result) undefined",
+          "info:  INFO bitwarden_managed_settings::managed_settings_client: Managed settings profile cleared\n",
+          "info: tabs.query [object Object]",
+          "error: Unchecked runtime.lastError: The message port closed before a response was received.",
+          "info: tabs.query (result) ",
+          "info: tabs.getCurrent ",
+          "info: tabs.getCurrent (result) undefined"
+        ],
+        "popupLavaMoatCrash": false,
+        "libraryWarnings": [
+          "emitWarning: Warnings loading extension at <scratch>/ext-measure/extracted/bitwarden:\n  Permission 'contextMenus' is unknown.\n  Permission 'sidePanel' is unknown.\n  Permission 'webNavigation' is unknown.\n  Permission 'notifications'"
+        ]
+      },
+      "metamask": {
+        "constructed": true,
+        "id": "nifmjpkfobnhjjdhegapeopcenbejnbj",
+        "load": "ok",
+        "runningAt2s": true,
+        "runningAt10s": true,
+        "statusHistory": [
+          {
+            "t": 1790619160833,
+            "versionId": 0,
+            "status": "starting"
+          },
+          {
+            "t": 1790619161253,
+            "versionId": 0,
+            "status": "running"
+          }
+        ],
+        "sw": {
+          "scope": "chrome-extension://nifmjpkfobnhjjdhegapeopcenbejnbj/",
+          "scriptURL": "chrome-extension://nifmjpkfobnhjjdhegapeopcenbejnbj/service-worker.js",
+          "messages": [
+            {
+              "kind": "patch",
+              "patchResult": {
+                "ran": true,
+                "dnrPatched": false,
+                "sidePanelPatched": true,
+                "hadChrome": true
+              }
+            },
+            {
+              "kind": "introspect",
+              "result": {
+                "href": "chrome-extension://nifmjpkfobnhjjdhegapeopcenbejnbj/service-worker.js",
+                "chromeType": "object",
+                "apis": [
+                  "action",
+                  "alarms",
+                  "clipboard",
+                  "commands",
+                  "contextMenus",
+                  "cookies",
+                  "dom",
+                  "downloads",
+                  "extension",
+                  "i18n",
+                  "management",
+                  "notifications",
+                  "offscreen",
+                  "permissions",
+                  "privacy",
+                  "runtime",
+                  "scripting",
+                  "sidePanel",
+                  "storage",
+                  "tabs",
+                  "topSites",
+                  "webNavigation",
+                  "webRequest",
+                  "windows"
+                ],
+                "present": {
+                  "storage": "object",
+                  "alarms": "object",
+                  "offscreen": "object",
+                  "sidePanel": "object",
+                  "contextMenus": "absent",
+                  "notifications": "absent",
+                  "commands": "absent",
+                  "permissions": "absent",
+                  "webNavigation": "absent",
+                  "cookies": "absent",
+                  "userScripts": "absent",
+                  "declarativeNetRequest": "absent",
+                  "action": "object",
+                  "tabs": "object",
+                  "windows": "absent",
+                  "webRequest": "object",
+                  "runtime": "object",
+                  "scripting": "object",
+                  "management": "object",
+                  "i18n": "object",
+                  "extension": "object",
+                  "dom": "object"
+                },
+                "calls": {
+                  "storage.local.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "storage.sync.get": {
+                    "ok": true,
+                    "result": "{}"
+                  },
+                  "storage.session.get": {
+                    "ok": true,
+                    "result": "{\"timestamp\":\"2026-09-28T18:12:41.248Z\"}"
+                  },
+                  "alarms.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "offscreen.hasDocument": {
+                    "ok": true,
+                    "result": "false"
+                  },
+                  "sidePanel.getOptions": {
+                    "ok": false,
+                    "error": "c.sidePanel.getOptions is not a function"
+                  },
+                  "contextMenus.removeAll": {
+                    "ok": false,
+                    "error": "Cannot read properties of undefined (reading 'slice')"
+                  },
+                  "notifications.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "commands.getAll": {
+                    "ok": true,
+                    "result": "[{\"name\":\"_execute_action\",\"shortcut\":\"\"},{\"name\":\"_execute_browser_action\",\"shortcut\":\"\"}]"
+                  },
+                  "permissions.getAll": {
+                    "ok": true,
+                    "result": "{\"permissions\":[\"activeTab\",\"alarms\",\"clipboardWrite\",\"notifications\",\"scripting\",\"storage\",\"unlimitedStorage\",\"webRequest\",\"offscreen\",\"identity\",\"sidePanel\",\"cookies\"],\"origins\":[\"http://localhost:8"
+                  },
+                  "webNavigation.getAllFrames": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "cookies.getAll": {
+                    "ok": true,
+                    "result": "[]"
+                  },
+                  "userScripts.getScripts": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "declarativeNetRequest.getDynamicRules": {
+                    "ok": false,
+                    "error": "absent"
+                  },
+                  "action.getBadgeText": {
+                    "ok": false,
+                    "error": "Cannot read properties of undefined (reading 'slice')"
+                  },
+                  "windows.getAll": {
+                    "ok": true,
+                    "result": "[{\"id\":7,\"focused\":false,\"top\":212,\"left\":240,\"width\":800,\"height\":600,\"tabs\":[],\"incognito\":false,\"type\":\"normal\",\"state\":\"normal\",\"alwaysOnTop\":false,\"sessionId\":\"default\"}]"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "swConsoleFirst3Errors": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught (in promise) Cannot read properties of undefined (reading 'onRemoved')"
+          },
+          {
+            "versionId": 0,
+            "level": 2,
+            "message": "Timer '[ExtensionStore]: Reading from local store' already exists"
+          },
+          {
+            "versionId": 0,
+            "level": 2,
+            "message": "Timer '[ExtensionStore]: Reading from local store' does not exist"
+          }
+        ],
+        "swConsoleAll": [
+          {
+            "versionId": 0,
+            "level": 3,
+            "message": "Uncaught (in promise) Cannot read properties of undefined (reading 'onRemoved')"
+          },
+          {
+            "versionId": 0,
+            "level": 2,
+            "message": "Timer '[ExtensionStore]: Reading from local store' already exists"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "contextMenus.removeAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "contextMenus.removeAll (result) undefined"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "notifications.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "notifications.getAll (result) "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "commands.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 0,
+            "message": "[ExtensionStore]: Reading from local store: 7.490966796875 ms"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "commands.getAll (result) [object Object],[object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "permissions.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "permissions.getAll (result) [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "webNavigation.getAllFrames [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 2,
+            "message": "Timer '[ExtensionStore]: Reading from local store' does not exist"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "webNavigation.getAllFrames (result) "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "cookies.getAll [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "cookies.getAll (result) "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "browserAction.getBadgeText [object Object]"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "browserAction.getBadgeText (result) undefined"
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "windows.getAll "
+          },
+          {
+            "versionId": 0,
+            "level": 1,
+            "message": "windows.getAll (result) [object Object]"
+          }
+        ],
+        "xpopupLoaded": {
+          "xpopup": "loaded"
+        },
+        "tabConsole": [
+          "warning: %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes"
+        ],
+        "popup": {
+          "title": "MetaMask",
+          "bodyLen": 0,
+          "sendMessage": "threw:LavaMoat - property \"chrome\" of globalThis is inaccessible under scuttling mode. To learn more visit https://github.com/LavaMoat/LavaMoat/pull/360.",
+          "tabsQuery": "threw:LavaMoat - property \"chrome\" of globalThis is inaccessible under scuttling mode. To learn more visit https://github.com/LavaMoat/LavaMoat/pull/360.",
+          "tabsGetCurrent": "threw:LavaMoat - property \"chrome\" of globalThis is inaccessible under scuttling mode. To learn more visit https://github.com/LavaMoat/LavaMoat/pull/360."
+        },
+        "popupConsole": [
+          "info: Snow detected a new realm creation attempt in MetaMask. Performing scuttling on new realm. [object Window]",
+          "info: Snow detected a new realm creation attempt in MetaMask. Performing scuttling on new realm. [object Window]"
+        ],
+        "popupLavaMoatCrash": false,
+        "libraryWarnings": [
+          "emitWarning: Warnings loading extension at <scratch>/ext-measure/extracted/metamask:\n  Permission 'notifications' is unknown.\n  Permission 'identity' is unknown.\n  Permission 'sidePanel' is unknown.\n  Permission 'cookies' is unknown"
+        ]
+      }
+    },
+    "libraryVersionInstalled": "4.9.0",
+    "note": "npm-installed 4.9.0, not a from-source build of upstream HEAD 354b0b8 (yarn install was denied by the sandbox); dist/cjs/index.js was grepped and confirmed to already register tabs.getCurrent"
+  }
+}

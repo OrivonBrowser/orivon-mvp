@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node", "chrome", "debug"],
+
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+
+    "noEmit": true
+  },
+  "include": [
+    "electron-chrome-extensions/src/**/*.ts",
+    "electron-chrome-web-store/src/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

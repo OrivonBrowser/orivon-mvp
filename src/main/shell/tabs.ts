@@ -6,11 +6,10 @@
 // itself.
 //
 // T18 (security-model.md): every tab WebContents gets setWindowOpenHandler
-// wired so a popup becomes a tab, never an OS window. A redirect, clicked link, form
-// submission or script navigation that changes a tab's origin is caught by
-// wireView()'s own did-navigate handler, which repartitions the same way a
-// typed cross-origin navigation already does (see repartitionView()'s own
-// doc comment for the residual this catches late, not early).
+// wired so a popup becomes a tab, never an OS window. A redirect, clicked
+// link, form or script navigation that changes a tab's origin is caught by
+// wireView()'s did-navigate handler, which repartitions the same way a typed
+// cross-origin navigation does (repartitionView()'s own doc: the residual).
 import type { WebContentsView, View } from 'electron'
 import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
@@ -23,22 +22,11 @@ import { BLANK_URL, TabFactory } from './tab-factory.js'
 import { clearOfPairs, moveInOrder } from './tab-order.js'
 import { PaneHost } from './pane-host.js'
 import { SplitController } from './split-controller.js'
-import { appTabFlagChanged, closeParkedViews, partitionChanged, repartitionView } from './tab-view.js'
+import { appTabFlagChanged, closeParkedViews, EXIT_FULLSCREEN_WORLD_ID, MAX_TABS, partitionChanged, repartitionView } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabState, TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-
-/** Defensive, found 2026-08-28 while investigating a reported crash: an
- * unbounded window.open() flood (an ad/popunder pattern, not
- * hypothetical) would otherwise mint unlimited WebContentsViews -- each
- * its own renderer process -- until the machine OOMs. Refusing beyond
- * this ceiling is far cheaper than crashing the whole browser; no
- * legitimate manual use opens anywhere near 100 tabs. */
-const MAX_TABS = 100
-
-/** Any id but 0 (the page's own world) and 999 (the preload's). */
-const EXIT_FULLSCREEN_WORLD_ID = 1001
 
 export class TabManager {
   /** One record per tab, so favicon state and the view share one lifetime:
@@ -76,13 +64,11 @@ export class TabManager {
      * (createTab() with no `url`) loads this, with the dashboard's own
      * preload. A rejected navigation never reaches it -- see BLANK_URL. */
     private readonly dashboardUrl: string,
-    /** `ctx.broker` may be `undefined` (a run without the broker
-     * subsystem), and `ctx.loader` is deliberately unused so far -- do not
-     * remove either. README.md's design notes say what each is for. */
+    /** `ctx.broker` may be `undefined`; `ctx.loader` is deliberately unused
+     * so far -- do not remove either. README.md's design notes say why. */
     private readonly ctx: SubsystemContext,
-    /** Absent only in tests: tabs then show no dialog or menu, and nothing
-     * hears about fullscreen. */
-    shell?: TabShell
+    /** Absent only in tests: no dialog, no menu, no fullscreen, no lifecycle seam. */
+    private readonly shell?: TabShell
   ) {
     this.viewHost = {
       preloadPath: join(import.meta.dirname, '../preload/app.js'),
@@ -92,6 +78,7 @@ export class TabManager {
       get broker () { return ctx.broker },
       dashboardUrl,
       window: shell?.window,
+      tabLifecycle: shell?.tabLifecycle,
       isShown: (id) => this.panes.isShown(id),
       detachView: (view) => { this.panes.hide(this.idOfView(view)) },
       attachView: (id, view) => { this.panes.replace(id, view, this.paneBounds(id)) },
@@ -139,18 +126,17 @@ export class TabManager {
    * the `destroyed` events that follow find no fallback tab to activate, no
    * bounds to ask for, no state to push and no `onEmpty` to fire.
    *
-   * The views must be closed here. Only the active tab's view is a child of
-   * the window; a background tab's view and every parked view are detached,
-   * so destroying the window leaves their renderers running. */
+   * Routed through forgetTab(), not inlined: `this.disposed` is already true
+   * by the time each call runs, so every one exits right after the lifecycle
+   * seam's tabClosed and the actual close -- but tabClosed fires HERE, on a
+   * still-live webContents, never from the 'destroyed' event this close()
+   * triggers asynchronously later, by which point reading it (extension-
+   * host.ts's own `.session` check) throws. */
   dispose (): void {
     if (this.disposed) return
     this.disposed = true
     this.listeners.clear()
-    for (const record of [...this.tabs.values()]) {
-      closeParkedViews(record)
-      record.host.devtools?.closeFor(record.view.webContents)
-      if (!record.view.webContents.isDestroyed()) record.view.webContents.close()
-    }
+    for (const id of [...this.tabs.keys()]) this.forgetTab(id, true)
   }
 
   getState (): TabsSnapshot {
@@ -174,12 +160,22 @@ export class TabManager {
     return id
   }
 
+  /** createTab() for a trusted caller (the extension host) whose own policy
+   * already checked `target`, skipping the sanitizeDirectUrl gate that refuses chrome-extension: outright. */
+  openTrusted (target?: string): [string, Electron.WebContents] | undefined {
+    if (this.atCapacity()) return undefined
+    const built = target === undefined ? this.factory.content() : this.factory.trusted(target)
+    this.add(built.id, built.record)
+    void built.record.view.webContents.loadURL(built.target)
+    this.activateTab(built.id)
+    return [built.id, built.record.view.webContents]
+  }
+
   /** Shows one of the shell's own pages: the tab that already has it, or a new
    * one. A page has one tab per window, so a second request finds the first
    * (and takes it to `path` if it is elsewhere). Only the shell calls this: a
-   * website's `window.open` reaches `createTab`, which refuses an `orivon:` URL.
-   * Its view lives in the internal session with the internal preload, and it
-   * stays on its page (./pages/internal-tab.ts). */
+   * website's `window.open` reaches `createTab`, which refuses an `orivon:`
+   * URL. Its view stays on its page (./pages/internal-tab.ts). */
   openInternal (page: InternalPageId, path = '/'): void {
     const url = internalUrl(page, path)
     for (const [id, record] of this.tabs) {
@@ -256,6 +252,8 @@ export class TabManager {
     this.tabs.set(id, record)
     const wanted = Math.min(Math.max(0, index ?? this.order.length), this.order.length)
     this.order.splice(clearOfPairs(this.order, wanted, this.splits.groups.pairs(), -1), 0, id)
+    // takeTab()'s forgetTab() already said this tab closed; this says it is back.
+    this.shell?.tabLifecycle?.tabCreated(record.view.webContents, this.viewHost.window)
     this.activateTab(id)
   }
 
@@ -268,6 +266,8 @@ export class TabManager {
   private forgetTab (id: string, closeView: boolean, handedOn = false): void {
     const record = this.tabs.get(id)
     if (record === undefined) return
+    // Every reason a tab leaves (closed, crashed, handed on) is "gone" alike.
+    this.shell?.tabLifecycle?.tabClosed(record.view.webContents)
 
     const partner = this.splits.groups.partnerOf(id)
     if (!this.disposed) this.panes.hide(id)
@@ -313,6 +313,7 @@ export class TabManager {
     if (this.disposed || record === undefined || record.view.webContents.isDestroyed()) return
 
     this.activeId = id
+    this.shell?.tabLifecycle?.tabActivated(record.view.webContents)
     this.syncViews()
     this.emitState()
   }

@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        { "header": "X-Dnr-Probe", "operation": "set", "value": "1" }
+      ]
+    },
+    "condition": {
+      "urlFilter": "||netfetch-probe-never-matches.invalid",
+      "resourceTypes": ["main_frame", "xmlhttprequest", "other"]
+    }
+  }
+]

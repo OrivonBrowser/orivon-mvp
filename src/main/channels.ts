@@ -104,3 +104,16 @@ export const SPLIT_STATE_CHANNEL = 'orivon-split:state'
 
 /** Main -> an internal page: `{ topic, payload }`, for changes made elsewhere while the page is open. */
 export const INTERNAL_EVENT_CHANNEL = 'orivon-internal:event'
+
+/** Main -> an extension service worker, once it first reaches 'running':
+ * asks whether the library's own chrome.tabs/chrome.windows/chrome.action
+ * actually arrived (extension-sw-preload-recovery.ts's own header). The
+ * worker's own preload (src/preload/extension-sw-verify.ts) answers on
+ * EXTENSION_SW_HEALTH_REPLY_CHANNEL below -- both names live here, rather
+ * than in main/extensions/, so the preload script can name them without
+ * importing anything under src/main/ but this file (src/preload/README.md's
+ * own rule). */
+export const EXTENSION_SW_HEALTH_CHECK_CHANNEL = 'orivon-extension-sw-health-check'
+
+/** Extension service worker -> main: the boolean answer to the check above. */
+export const EXTENSION_SW_HEALTH_REPLY_CHANNEL = 'orivon-extension-sw-health-reply'

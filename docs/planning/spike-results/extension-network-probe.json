@@ -1,0 +1,153 @@
+{
+  "electron": "44.0.0",
+  "chrome": "152.0.7977.54",
+  "note": "embedderCalls counts the embedder listener or protocol handler invocations. Case prefixes: plain = the server sends the CSP, no embedder hook; wr = embedder session.webRequest.onHeadersReceived adds the CSP; wrf = embedder onBeforeSendHeaders filtered to https://*.eth/* only; ph = https served by protocol.handle with the CSP in the response; phl = handler registered after the extension loaded. Extensions: ext-dnr (MV3 declarativeNetRequest: strip CSP, block blocked.js), ext-wr2 (MV2 blocking webRequest: same two actions), ext-cs (content script only).",
+  "cases": {
+    "plain-control": {
+      "ext": null,
+      "mode": "none",
+      "url": "http://127.0.0.1:44489/?csp",
+      "extLoaded": false,
+      "embedderCalls": 0,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "no"
+    },
+    "plain-dnr": {
+      "ext": "ext-dnr",
+      "mode": "none",
+      "url": "http://127.0.0.1:44489/?csp",
+      "extLoaded": true,
+      "embedderCalls": 0,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "no"
+    },
+    "plain-mv2": {
+      "ext": "ext-wr2",
+      "mode": "none",
+      "url": "http://127.0.0.1:44489/?csp",
+      "extLoaded": true,
+      "embedderCalls": 0,
+      "fetch": "ok",
+      "blockedRan": "no",
+      "csRan": "no"
+    },
+    "wr-control": {
+      "ext": null,
+      "mode": "webRequest",
+      "url": "http://127.0.0.1:44489/",
+      "extLoaded": false,
+      "embedderCalls": 1,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "no"
+    },
+    "wr-dnr": {
+      "ext": "ext-dnr",
+      "mode": "webRequest",
+      "url": "http://127.0.0.1:44489/",
+      "extLoaded": true,
+      "embedderCalls": 1,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "no"
+    },
+    "wr-mv2": {
+      "ext": "ext-wr2",
+      "mode": "webRequest",
+      "url": "http://127.0.0.1:44489/",
+      "extLoaded": true,
+      "embedderCalls": 2,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "no"
+    },
+    "wr-cs": {
+      "ext": "ext-cs",
+      "mode": "webRequest",
+      "url": "http://127.0.0.1:44489/",
+      "extLoaded": true,
+      "embedderCalls": 1,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "yes"
+    },
+    "ph-control": {
+      "ext": null,
+      "mode": "protocol",
+      "url": "https://app.test/",
+      "extLoaded": false,
+      "embedderCalls": 2,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "no"
+    },
+    "ph-cs": {
+      "ext": "ext-cs",
+      "mode": "protocol",
+      "url": "https://app.test/",
+      "extLoaded": true,
+      "embedderCalls": 2,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "yes"
+    },
+    "ph-dnr": {
+      "ext": "ext-dnr",
+      "mode": "protocol",
+      "url": "https://app.test/",
+      "extLoaded": true,
+      "embedderCalls": 0,
+      "loadError": "ERR_NAME_NOT_RESOLVED (-105) loading 'https://app.test/'"
+    },
+    "ph-mv2": {
+      "ext": "ext-wr2",
+      "mode": "protocol",
+      "url": "https://app.test/",
+      "extLoaded": true,
+      "embedderCalls": 0,
+      "loadError": "ERR_NAME_NOT_RESOLVED (-105) loading 'https://app.test/'"
+    },
+    "phl-control": {
+      "ext": null,
+      "mode": "protocol",
+      "url": "https://app.test/",
+      "extLoaded": false,
+      "embedderCalls": 2,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "no"
+    },
+    "phl-cs": {
+      "ext": null,
+      "mode": "protocol",
+      "url": "https://app.test/",
+      "extLoaded": false,
+      "embedderCalls": 2,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "yes"
+    },
+    "wrf-control": {
+      "ext": null,
+      "mode": "webRequest-filtered",
+      "url": "http://127.0.0.1:38993/?csp",
+      "extLoaded": false,
+      "embedderCalls": 0,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "no"
+    },
+    "wrf-mv2": {
+      "ext": "ext-wr2",
+      "mode": "webRequest-filtered",
+      "url": "http://127.0.0.1:38993/?csp",
+      "extLoaded": true,
+      "embedderCalls": 0,
+      "fetch": "blocked",
+      "blockedRan": "yes",
+      "csRan": "no"
+    }
+  }
+}

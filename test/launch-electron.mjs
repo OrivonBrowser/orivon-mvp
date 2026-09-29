@@ -141,6 +141,16 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
  *   icons, say). The directory is still created and removed by this file --
  *   a caller never supplies its own, so the never-touch-the-real-profile
  *   guarantee below is not something a caller can opt out of.
+ * @param {boolean} [options.sandbox] Launch with Chromium's own sandbox on
+ *   (Playwright's `chromiumSandbox: true`), instead of the `--no-sandbox`
+ *   every other launch here gets by default (Playwright's own Linux
+ *   default, added on every launch that does not ask for
+ *   `chromiumSandbox`). Extension service-worker preloads only run under
+ *   the sandbox (docs/open-questions.md A289) -- a test measuring that
+ *   passes `sandbox: true`. On a machine with no usable sandbox (no setuid
+ *   helper and unprivileged user namespaces disabled), the launch throws
+ *   a clear error instead of returning a window-less app or hanging -- see
+ *   waitForShellWindow's SHELL_WINDOW_WAIT_MS bound below.
  * @returns {Promise<import('playwright').ElectronApplication>} Launched
  *   against a fresh, unique --user-data-dir -- never this machine's real
  *   `orivon` profile. See the userDataDir comment below.
@@ -150,7 +160,8 @@ export async function launchElectron ({
   args = [],
   defaultTimeoutMs = DEFAULT_ACTION_TIMEOUT_MS,
   env: envOverrides = {},
-  seedProfile
+  seedProfile,
+  sandbox = false
 } = {}) {
   const env = { ...process.env, ...envOverrides }
   const stripped = []
@@ -199,7 +210,13 @@ export async function launchElectron ({
     if (seedProfile !== undefined) await seedProfile(userDataDir)
     app = await electron.launch({
       args: [appPath, `--user-data-dir=${userDataDir}`, ...args],
-      env
+      env,
+      // Playwright's own Linux default: unshift --no-sandbox onto the
+      // args unless this is set (confirmed against the installed
+      // playwright-core's electron launcher). `sandbox: true` callers want
+      // the opposite -- Chromium's real namespace sandbox, which is what a
+      // 'service-worker' session preload needs to run at all (A289).
+      chromiumSandbox: sandbox
     })
   } catch (error) {
     // electron.launch() itself threw -- a missing out/ build, a bad
@@ -208,6 +225,14 @@ export async function launchElectron ({
     // directory created above (C-12: found via one leftover
     // /tmp/orivon-test-* whose timestamp matched a launch that had failed).
     await rmUserDataDir(userDataDir, 'launchElectron')
+    if (sandbox) {
+      throw new Error(
+        'Sandboxed launch (chromiumSandbox: true) failed before a CDP connection was established -- ' +
+        'likely no usable Chromium sandbox on this machine (no setuid chrome-sandbox helper, and ' +
+        'unprivileged user namespaces disabled).',
+        { cause: error }
+      )
+    }
     throw error
   }
 
@@ -258,6 +283,25 @@ export async function launchElectron ({
   // src/main/index.ts opens the shell window only after every afterReady
   // subsystem has run, so hooks such as __orivonDevGrant exist once it does.
   await waitForShellWindow(app)
+
+  // waitForShellWindow never throws (its own header) -- a plain sandboxed
+  // launch that fails to open a window would otherwise come back here
+  // silently, indistinguishable from a slow-but-healthy one, and a caller's
+  // very next window-dependent call would hang instead. Bounded by the same
+  // SHELL_WINDOW_WAIT_MS the wait above already spent, so this adds no new
+  // wait of its own.
+  if (sandbox) {
+    const hasWindow = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length > 0).catch(() => false)
+    if (!hasWindow) {
+      const output = mainOutput(app)
+      await closeElectron(app)
+      throw new Error(
+        `Sandboxed launch (chromiumSandbox: true) produced no window within ${String(SHELL_WINDOW_WAIT_MS)}ms -- ` +
+        'likely no usable Chromium sandbox on this machine (no setuid chrome-sandbox helper, and ' +
+        `unprivileged user namespaces disabled). Main process output:\n${output}`
+      )
+    }
+  }
 
   return app
 }
