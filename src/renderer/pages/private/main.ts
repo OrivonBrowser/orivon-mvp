@@ -3,6 +3,7 @@
 // private window, and is what the "Private" chip leads to.
 import { internalBridge } from '../shared/bridge.js'
 import { h } from '../shared/dom.js'
+import { privateIcon } from '../shared/icons.js'
 
 const bridge = internalBridge()
 
@@ -10,7 +11,7 @@ const list = (items: readonly string[]): HTMLElement => h('ul', { className: 'po
 
 document.getElementById('app')?.append(
   h('main', { className: 'page' },
-    h('h1', { textContent: 'You are in a private window' }),
+    h('div', { className: 'top-title' }, privateIcon(), h('h1', { textContent: 'You are in a private window' })),
     h('p', { className: 'lead', textContent: 'It starts empty, and everything it holds is deleted when you close its last window.' }),
     h('section', { className: 'card' },
       h('h2', { textContent: 'What it keeps until you close it, and then forgets' }),

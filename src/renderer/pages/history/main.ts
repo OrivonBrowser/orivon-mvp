@@ -5,7 +5,9 @@ import type { HistoryEntry } from '../../../main/history/history-store.js'
 import type { HistoryStatus } from '../../../main/history/history-service.js'
 import { internalBridge } from '../shared/bridge.js'
 import { h, replaceChildren } from '../shared/dom.js'
+import { clockIcon, trashIcon } from '../shared/icons.js'
 import { groupByDay, timeLabel } from './days.js'
+import { siteMark } from './site-mark.js'
 
 const bridge = internalBridge()
 const PAGE_SIZE = 100
@@ -24,6 +26,7 @@ let loading = false
 
 const search = h('input', { className: 'text search', type: 'search', placeholder: 'Search history', autocomplete: 'off', spellcheck: false })
 search.setAttribute('aria-label', 'Search history')
+const countLine = h('p', { className: 'count', textContent: 'Loading…' })
 const banner = h('div', { className: 'banner', hidden: true, role: 'status' })
 const list = h('div', { className: 'list' })
 const moreButton = h('button', { className: 'btn', type: 'button', textContent: 'Show more', hidden: true })
@@ -71,34 +74,40 @@ function renderEntry (entry: HistoryEntry): HTMLElement {
     className: 'remove',
     type: 'button',
     title: 'Remove this page from history',
-    textContent: '×',
     onclick: () => {
       void request({ type: 'remove', id: entry.id }).then(() => {
         entries = entries.filter((candidate) => candidate.id !== entry.id)
         render()
       })
     }
-  })
+  }, trashIcon())
   remove.setAttribute('aria-label', `Remove ${entry.title === '' ? entry.url : entry.title} from history`)
   return h('div', { className: 'entry' },
-    h('span', { className: 'time', textContent: timeLabel(entry.lastVisit) }),
+    siteMark(entry.url),
     h('a', { className: 'target', href: entry.url, target: '_blank', rel: 'noopener' },
       h('span', { className: 'title', textContent: entry.title === '' ? entry.url : entry.title }),
       h('span', { className: 'url', textContent: entry.url })),
+    h('span', { className: 'time', textContent: timeLabel(entry.lastVisit) }),
     remove)
+}
+
+function renderEmpty (): HTMLElement {
+  return h('div', { className: 'empty' }, clockIcon(),
+    h('p', { textContent: query === '' ? 'No pages yet. Pages you visit will show up here.' : `Nothing in your history matches "${query}".` }))
 }
 
 function render (): void {
   renderBanner()
   if (entries.length === 0) {
-    replaceChildren(list, h('p', { className: 'empty', textContent: query === '' ? 'No pages yet. Pages you visit will show up here.' : `Nothing in your history matches "${query}".` }))
+    replaceChildren(list, renderEmpty())
   } else {
     replaceChildren(list, ...groupByDay(entries, Date.now()).map((group) => h('section', { className: 'day' },
       h('h2', { textContent: group.label }),
-      h('div', { className: 'card' }, ...group.entries.map(renderEntry)))))
+      h('div', { className: 'entries' }, ...group.entries.map(renderEntry)))))
   }
   moreButton.hidden = !more
   clearAll.disabled = entries.length === 0 && query === ''
+  countLine.textContent = status === null ? 'Loading…' : `${status.count.toLocaleString()} ${status.count === 1 ? 'page' : 'pages'} kept`
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined
@@ -138,10 +147,13 @@ document.addEventListener('visibilitychange', () => {
 document.getElementById('app')?.append(
   h('main', { className: 'page' },
     h('header', { className: 'head' },
-      h('h1', { textContent: 'History' }),
+      h('h1', null, clockIcon(), 'History'),
+      countLine),
+    h('div', { className: 'toolbar' },
       search,
-      h('button', { className: 'btn', type: 'button', textContent: 'Clear browsing data…', onclick: openSettings }),
-      clearAll),
+      h('div', { className: 'toolbar-right' },
+        h('button', { className: 'btn', type: 'button', textContent: 'Clear browsing data…', onclick: openSettings }),
+        clearAll)),
     banner,
     list,
     h('div', { className: 'more' }, moreButton)))
