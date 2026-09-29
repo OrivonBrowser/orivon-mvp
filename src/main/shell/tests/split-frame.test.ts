@@ -15,6 +15,7 @@ const made: Array<{ webContents: Fake, options: { webPreferences: Record<string,
 const handlers = new Map<string, (event: unknown, command: unknown) => void>()
 
 vi.mock('electron', () => ({
+  app: { isPackaged: false },
   WebContentsView: vi.fn().mockImplementation(function (this: (typeof made)[number], options: (typeof made)[number]['options']) {
     const contents = new EventEmitter() as Fake
     contents.mainFrame = {}

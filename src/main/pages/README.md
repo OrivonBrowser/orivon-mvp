@@ -13,8 +13,11 @@ domains live beside what they serve (`../settings/`, `../history/`, `../launch/`
 
 **What it depends on.** `electron`; [`../settings/`](../settings/) (the settings domain);
 [`../browsing/omnibox.ts`](../browsing/omnibox.ts) (`sanitizeDirectUrl`, for what a page may open in an
-ordinary tab); [`../shell/shell-services.ts`](../shell/shell-services.ts) (type only) and the top-level
-`channels.ts` and `registry.ts`.
+ordinary tab); [`../shell/shell-services.ts`](../shell/shell-services.ts) (type only);
+[`../shell/renderer-entry.ts`](../shell/renderer-entry.ts)'s `validatedDevServerUrl` (the same
+packaged-build gate every renderer-loading view in `../shell/` applies to `ELECTRON_RENDERER_URL`,
+reused here for the dev server `serve.ts` proxies to); and the top-level `channels.ts` and
+`registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule), and
 [`../shell/tabs.ts`](../shell/tabs.ts): `TabManager` calls this directory, never the reverse.

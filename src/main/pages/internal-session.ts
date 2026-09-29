@@ -5,10 +5,11 @@
 // internal page whatever URL it names.
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { protocol, session } from 'electron'
+import { app, protocol, session } from 'electron'
 import type { Session } from 'electron'
 import { INTERNAL_PARTITION, INTERNAL_SCHEME } from './internal-pages.js'
 import { createInternalHandler } from './serve.js'
+import { validatedDevServerUrl } from '../shell/renderer-entry.js'
 
 let installed: Session | undefined
 
@@ -34,7 +35,7 @@ export function installInternalSession (dirname: string): Session {
   const internal = session.fromPartition(INTERNAL_PARTITION)
   internal.protocol.handle(INTERNAL_SCHEME, createInternalHandler({
     rendererRoot: join(dirname, '../renderer'),
-    devServerUrl: process.env['ELECTRON_RENDERER_URL'],
+    devServerUrl: validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']),
     readFile: async (path) => await readFile(path)
   }))
   // A page in this session has no reason to reach the network, and the CSP

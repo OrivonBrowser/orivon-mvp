@@ -13,9 +13,9 @@
 // `transparent: true` window, which the shell's is not, by design. A
 // separate view sized to the popup needs none of that.
 
-import { WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
+import { app, WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
 import { join } from 'node:path'
-import { rendererEntryUrl } from '../shell/renderer-entry.js'
+import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
 
 const WIDTH = 380
@@ -125,7 +125,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   }
 
   function open (anchor: PopoverAnchor, extraArgs: readonly string[]): void {
-    const url = rendererEntryUrl(spec.dirname, process.env['ELECTRON_RENDERER_URL'], spec.entryPath, spec.fallbackHtml)
+    const url = rendererEntryUrl(spec.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), spec.entryPath, spec.fallbackHtml)
 
     const popup = new WebContentsView({
       webPreferences: {
