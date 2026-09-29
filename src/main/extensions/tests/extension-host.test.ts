@@ -60,7 +60,8 @@ vi.mock('orivon:crx-extensions-browser-action', () => ({
 vi.mock('orivon:crx-extensions-tab-capture', () => ({
   setTabCaptureInvocationCheck: vi.fn(),
   setTabCaptureAppRefusalCheck: vi.fn(),
-  setTabCaptureGrantRecorder: vi.fn()
+  setTabCaptureGrantRecorder: vi.fn(),
+  setTabCaptureConsumedCheck: vi.fn()
 }))
 
 const { createExtensionHost, attachExtensionShell } = await import('../extension-host.js')

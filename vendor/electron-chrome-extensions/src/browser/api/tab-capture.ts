@@ -59,6 +59,18 @@ export function setTabCaptureGrantRecorder (recorder: GrantRecorder): void {
   gGrantRecorder = recorder
 }
 
+/** True once `permission-gate.ts` has actually allowed a `'media'` request
+ * for this extension -- `tab-capture-grants.ts`'s own
+ * `wasTabCaptureGrantConsumed`, wired from `extension-host.ts`. This is
+ * `observeOffscreenTeardown`'s real "did a getUserMedia('tab') call for
+ * this grant ever actually happen" signal -- see its own doc for why a
+ * media-playback event cannot answer that question. */
+type ConsumedCheck = (extensionId: string) => boolean
+let gConsumedCheck: ConsumedCheck | undefined
+export function setTabCaptureConsumedCheck (check: ConsumedCheck): void {
+  gConsumedCheck = check
+}
+
 interface CapturedTabRecord {
   previousMuted: boolean
   capturedBy: Set<string>
@@ -121,7 +133,25 @@ export class TabCaptureAPI {
     const streamId = targetTab.getMediaSourceId(consumer)
     gGrantRecorder?.(extensionId)
     this.beginCapture(extensionId, targetTab)
+    this.scheduleUnconsumedRelease(extensionId)
     return streamId
+  }
+
+  /** The one safety net this file still keeps a timer for: a minted id
+   * whose getUserMedia('tab') call never actually happened (a bug in the
+   * extension's own offscreen page, or a denied prompt) would otherwise
+   * leave the tab muted forever, with no tab-close or offscreen-close event
+   * ever coming to release it. `gConsumedCheck` (`tab-capture-grants.ts`'s
+   * `wasTabCaptureGrantConsumed`, set from `permission-gate.ts`'s own
+   * allow path) is the real signal a capture actually started -- checked
+   * once, at exactly the id's own validity window
+   * (`tab-capture-grants.ts`'s `TAB_CAPTURE_GRANT_MS`), never on any other
+   * schedule. A CONSUMED capture is never released on a timer again,
+   * however long it goes on to run. */
+  private scheduleUnconsumedRelease (extensionId: string): void {
+    setTimeout(() => {
+      if (gConsumedCheck?.(extensionId) !== true) this.releaseExtensionCaptures(extensionId)
+    }, TAB_CAPTURE_SAFETY_NET_MS)
   }
 
   private async getCapturedTabs (event: ExtensionEvent): Promise<chrome.tabCapture.CaptureInfo[]> {
@@ -170,29 +200,27 @@ export class TabCaptureAPI {
    * extension holds has ended, the "the media stream ... closed by the
    * extension" half of Chrome's own tabCapture doc; a closed tab is the
    * other half, handled per-tab in `beginCapture`'s own `'destroyed'`
-   * listener. A 10-second safety net (`TAB_CAPTURE_SAFETY_NET_MS`, the same
-   * window the id itself is valid for) covers the one gap those two cannot
-   * see: a minted id whose getUserMedia call never actually ran (a bug in
-   * the extension's own offscreen page, or a denied prompt) would otherwise
-   * leave the tab muted until the tab or the extension's whole document
-   * closes -- cleared the instant real playback is confirmed
-   * (`media-started-playing`), so it never interrupts a real, ongoing
-   * capture. This is extension-wide, not per capture: two tabs captured by
-   * the same extension share one confirmation, which is a real
-   * simplification if it ever captures two tabs at once, one of which
-   * never actually starts playing -- open question, not yet hit by any
-   * extension measured against this. */
+   * listener.
+   *
+   * MEASURED, and deliberately not used as a signal here:
+   * `WebContents`'s own `'media-started-playing'` DOES fire for an
+   * `AudioContext` graph routed to `ctx.destination` in this Electron
+   * version (confirmed directly against this fixture's own offscreen
+   * page) -- the opposite of what was assumed when this safety net was
+   * first written. It is still the wrong signal to build on: nothing
+   * documents that behaviour, a future Chromium could change it either
+   * way, and it says nothing about the ONE case this file actually needs
+   * a signal for -- a minted id that never got consumed at all, which
+   * never fires ANY media event, playing or not. `scheduleUnconsumedRelease`
+   * (called once per `getMediaStreamId`, not here) is the real replacement:
+   * it asks `tab-capture-grants.ts` whether a genuine `getUserMedia('tab')`
+   * call ever actually redeemed the id, the one fact a media-playback
+   * event was only ever a proxy for. */
   private observeOffscreenTeardown (extensionId: string): void {
     if (this.observedOffscreen.has(extensionId)) return
     const offscreenContents = this.offscreen.getDocumentWebContents(extensionId)
     if (!offscreenContents) return
     this.observedOffscreen.add(extensionId)
-
-    let sawPlayback = false
-    offscreenContents.once('media-started-playing', () => { sawPlayback = true })
-    setTimeout(() => {
-      if (!sawPlayback) this.releaseExtensionCaptures(extensionId)
-    }, TAB_CAPTURE_SAFETY_NET_MS)
 
     offscreenContents.once('destroyed', () => {
       this.observedOffscreen.delete(extensionId)

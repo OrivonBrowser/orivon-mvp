@@ -282,7 +282,15 @@
     `clients.matchAll()` only when it is absent -- measured directly, that
     fallback does not see a document `OffscreenAPI` creates, so the
     extension's own guard against a second `createDocument()` call never
-    fires and the library's own guard throws instead.
+    fires and the library's own guard throws instead. This shadows
+    whatever partial native `chrome.offscreen` binding Electron 44 itself
+    may carry: measured directly (a fixture's service worker and its
+    frame contexts both read back `chrome.offscreen.createDocument`'s own
+    source), `createDocument` is this library's `invokeExtension`-based
+    wrapper in EVERY extension context, the service worker included, never
+    a native one, and a `createDocument()` call creates exactly one new
+    `chrome-extension://` `webContents` -- no second, native document
+    alongside it.
 33. **`chrome.tabCapture.getMediaStreamId`, plus the activeTab-style
     invocation grant it requires.** New `src/browser/api/tab-capture.ts`
     (`TabCaptureAPI`): resolves `targetTabId` (or the active tab) through
@@ -298,10 +306,22 @@
     duplicates a captured tab's audio instead of diverting it the way
     Chrome does -- measured directly: muting the source does not also
     silence what the consumer receives) and restores it once every
-    capturer has released the tab (a closed tab, the offscreen document
-    closing, or a 10-second safety net if `media-started-playing` never
-    confirms real playback). `getCapturedTabs` and `onStatusChanged` are
-    also implemented, scoped to the calling extension. `src/browser/api/
+    capturer has released the tab: a closed tab, the offscreen document
+    closing, or -- the one still on a timer -- a 10-second safety net for
+    a minted id that was never actually redeemed, checked against
+    `tab-capture-grants.ts`'s own `wasTabCaptureGrantConsumed`
+    (`setTabCaptureConsumedCheck`), true only once
+    `permission-gate.ts` has actually allowed a `'media'` REQUEST (never a
+    CHECK, which fires speculatively with no `getUserMedia()` behind it --
+    measured, marking on it released an unredeemed grant early) for this
+    extension. Originally built on `WebContents`'s own
+    `'media-started-playing'` event; replaced after measuring directly
+    that it fires for an `AudioContext` routed to `ctx.destination` too
+    (the opposite of what was assumed), which said nothing about the one
+    case the safety net actually exists for -- an id that was never
+    consumed at all fires no media event either. `getCapturedTabs` and
+    `onStatusChanged` are also implemented, scoped to the calling
+    extension. `src/browser/api/
     browser-action.ts`'s `activateClick` calls a new optional
     `setTabCaptureInvocationRecorder` hook with the clicked tab, the same
     shape as `setEventListenerFilter`; `extension-host.ts`'s own wiring

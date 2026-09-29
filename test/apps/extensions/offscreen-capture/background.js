@@ -17,6 +17,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           })
         }
         sendResponse({ ok: true })
+      } else if (msg.cmd === 'sw-offscreen-info') {
+        sendResponse({
+          ok: true,
+          hasOffscreen: 'offscreen' in chrome,
+          createDocSrc: chrome.offscreen ? chrome.offscreen.createDocument.toString().slice(0, 200) : null
+        })
       } else if (msg.cmd === 'get-contexts') {
         sendResponse({ ok: true, contexts: await chrome.runtime.getContexts({}) })
       } else if (msg.cmd === 'capture') {

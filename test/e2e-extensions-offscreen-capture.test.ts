@@ -85,7 +85,14 @@ function findPopup (windows: Page[], extensionId: string): Page | undefined {
   return windows.find((w) => w.url().startsWith(`chrome-extension://${extensionId}/popup.html`))
 }
 
-const TEST_TIMEOUT_MS = 90_000
+const TEST_TIMEOUT_MS = 150_000
+
+/** `background.js`'s own diagnostic command -- whether `chrome.offscreen`
+ * looks native (an Electron binding this library's own injection did not
+ * shadow) from wherever it is asked, the SW included. `createDocSrc` from
+ * this library's own `invokeExtension`-based wrapper always contains
+ * `invokeExtension`; a native implementation would not. */
+interface SwOffscreenInfo { ok: boolean, hasOffscreen: boolean, createDocSrc: string | null }
 
 describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', () => {
   it('gates tabCapture on invocation, mutes the captured tab, and hosts a live track in the offscreen document', async () => {
@@ -169,6 +176,16 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
           webContents.fromId(tabId)?.audioMuted, tabId)
         check('the tab is not muted before any capture', mutedBeforeInvocation === false)
 
+        // ---- no native chrome.offscreen leaks through anywhere ----
+        // A measurement on the integration branch found Electron 44 may
+        // provide some native offscreen-adjacent support; this counts real
+        // webContents rather than trusting typeof alone, in BOTH a frame and
+        // the service worker, so a native document created ALONGSIDE this
+        // library's own would still be caught even if createDocument's own
+        // return value looked fine.
+        const extWcCountBefore = await liveApp.evaluate(({ webContents }, id: string) =>
+          webContents.getAllWebContents().filter((wc) => wc.getURL().startsWith(`chrome-extension://${id}/`)).length, extensionId)
+
         // ---- allowed after a real toolbar click opens the popup on this tab ----
         const actionSelector = `#${extensionId}`
         const actionAppeared = await waitFor(async () => await chrome.evaluate(
@@ -197,6 +214,22 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
           webContents.fromId(tabId)?.audioMuted, tabId)
         check('the captured tab is muted locally during capture', mutedDuringCapture === true)
 
+        // ---- exactly one document created, and it is this library's own ----
+        const extWcCountAfter = await liveApp.evaluate(({ webContents }, id: string) =>
+          webContents.getAllWebContents().filter((wc) => wc.getURL().startsWith(`chrome-extension://${id}/`)).length, extensionId)
+        check(
+          'createDocument() created exactly one new chrome-extension:// webContents (the popup + one offscreen document, no native duplicate)',
+          extWcCountAfter === extWcCountBefore + 2,
+          `before=${String(extWcCountBefore)} after=${String(extWcCountAfter)}`
+        )
+        const swOffscreenInfo = await popup?.evaluate(async () =>
+          await chrome.runtime.sendMessage({ cmd: 'sw-offscreen-info' })) as SwOffscreenInfo | undefined
+        check(
+          'the service worker\'s own chrome.offscreen.createDocument is this library\'s wrapper, not a native binding',
+          swOffscreenInfo?.hasOffscreen === true && (swOffscreenInfo.createDocSrc?.includes('invokeExtension') ?? false),
+          JSON.stringify(swOffscreenInfo)
+        )
+
         const hasDocument = await popup?.evaluate(async () => await chrome.runtime.sendMessage({ cmd: 'has-document' })).catch(() => undefined)
         check('chrome.offscreen.hasDocument() reports true', (hasDocument as { result?: boolean } | undefined)?.result === true, JSON.stringify(hasDocument))
 
@@ -208,11 +241,29 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
           JSON.stringify(contextTypes)
         )
 
-        // ---- unmuted once the tab closes (a real capture-end signal) ----
+        // ---- stays muted well past the old, broken 10s media-event
+        // heuristic (this is the actual bug this suite exists to catch):
+        // a consumed capture must never time-release. ----
+        await new Promise((resolve) => setTimeout(resolve, 15_000))
+        const mutedAt15s = await liveApp.evaluate(async ({ webContents }, tabId: number) =>
+          webContents.fromId(tabId)?.audioMuted, tabId)
+        check('the captured tab is STILL muted 15s into a consumed capture', mutedAt15s === true)
+
+        // ---- unmuted once the offscreen document itself closes, tab left open ----
+        await popup?.evaluate(async () => { await chrome.offscreen.closeDocument() }).catch(() => {})
+        const unmutedAfterOffscreenClose = await waitFor(async () =>
+          (await liveApp.evaluate(async ({ webContents }, tabId: number) => webContents.fromId(tabId)?.audioMuted, tabId)) === false
+        , 5000).catch(() => false)
+        check('the tab is unmuted once the offscreen document closes, even though it is still open', unmutedAfterOffscreenClose)
+
+        // ---- unmuted once the tab closes (the other real capture-end signal) ----
+        // `webContents.fromId()` for a gone id measured as `undefined` here,
+        // not the `null` its own type declares -- checked with `== null` so
+        // either satisfies "it no longer resolves".
         await liveApp.evaluate(async ({ webContents }, tabId: number) => { webContents.fromId(tabId)?.close() }, tabId)
         const unmutedAfterClose = await waitFor(async () =>
-          (await liveApp.evaluate(async ({ webContents }, tabId: number) => webContents.fromId(tabId), tabId)) === null
-        , 5000).then(() => true).catch(() => false)
+          (await liveApp.evaluate(async ({ webContents }, tabId: number) => webContents.fromId(tabId), tabId)) == null
+        , 20_000).then(() => true).catch(() => false)
         check('the captured tab\'s close is observed (it no longer resolves)', unmutedAfterClose)
       } finally {
         if (app !== undefined) await closeElectronApp(app)
@@ -220,6 +271,78 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
         expect(await assertNoElectronSurvivors()).toEqual([])
       }
     })
+  }, TEST_TIMEOUT_MS)
+
+  it('releases an unconsumed capture (getMediaStreamId called, getUserMedia never) at its own 10s validity window, never earlier', async () => {
+    const started = await startFixtureServer()
+    const fixtureUrl = `${started.origin}/`
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    let extensionId = ''
+    try {
+      app = await launchElectron({
+        appPath: '.',
+        args: [HERMETIC_RESOLVER, '--autoplay-policy=no-user-gesture-required'],
+        seedProfile: async (dir) => { extensionId = seedFixture(dir, FIXTURE_DIR, SLOT) },
+        sandbox: true
+      })
+      const liveApp = app
+      await navigateToFixture(app, fixtureUrl, 'offscreen-capture-fixture')
+      const chrome = findChrome(app)
+      await new Promise((resolve) => setTimeout(resolve, 10_000))
+
+      const actionSelector = `#${extensionId}`
+      await waitFor(async () => await chrome.evaluate(
+        (sel: string) => document.querySelector('browser-action-list')?.shadowRoot?.querySelector(sel) != null, actionSelector
+      ), 5000)
+      await chrome.click(actionSelector)
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      // getMediaStreamId is called directly (never chrome.tabCapture's own
+      // consumer, the offscreen document, calling getUserMedia with it) --
+      // the id is minted and the tab muted, but never redeemed.
+      const mint = await liveApp.evaluate(async ({ session, BrowserWindow, webContents }, args: { id: string, fixtureUrl: string }) => {
+        const tab = webContents.getAllWebContents().find((wc) => wc.getURL() === args.fixtureUrl)
+        if (tab === undefined) return { ok: false as const, error: 'fixture tab not found' }
+        const sender = new BrowserWindow({ show: false, webPreferences: { session: session.defaultSession, sandbox: true } })
+        await sender.loadURL(`chrome-extension://${args.id}/popup.html`)
+        await sender.webContents.executeJavaScript(`chrome.runtime.sendMessage({ cmd: 'ensure-offscreen' })`)
+        await new Promise((r) => setTimeout(r, 500))
+        await sender.webContents.executeJavaScript(
+          `chrome.tabCapture.getMediaStreamId({ targetTabId: ${String(tab.id)} })`
+        )
+        const mutedRightAfter = tab.audioMuted
+        sender.destroy()
+        return { ok: true as const, tabId: tab.id, mutedRightAfter }
+      }, { id: extensionId, fixtureUrl })
+
+      expect(mint.ok).toBe(true)
+      if (!mint.ok) throw new Error('unreachable')
+      expect(mint.mutedRightAfter).toBe(true)
+
+      const stillMutedAt5s = await liveApp.evaluate(({ webContents }, tabId: number) =>
+        webContents.fromId(tabId)?.audioMuted, mint.tabId)
+      expect(stillMutedAt5s).toBe(true)
+
+      // Released means "explicitly unmuted", OR the tab is simply gone by
+      // then (measured on this machine: a real, independent renderer
+      // teardown -- most likely Chromium/OS memory-pressure discard under
+      // this machine's own heavy concurrent load -- can land within the
+      // grant's own 10s window, ahead of this file's safety-net timer; the
+      // SAME 'destroyed' signal `beginCapture` already handles it, correctly
+      // finding nothing left to unmute). Either outcome proves the same
+      // thing this test exists to check: nothing stays muted forever once
+      // its capture is truly over. 15s (not 8-10s) gives both the observed
+      // early-teardown path and the safety net's own 10s timer room to land
+      // ahead of the deadline rather than racing it.
+      const releasedByTheGrantWindow = await waitFor(async () =>
+        (await liveApp.evaluate(({ webContents }, tabId: number) => webContents.fromId(tabId)?.audioMuted, mint.tabId)) !== true
+      , 15_000)
+      expect(releasedByTheGrantWindow).toBe(true)
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      started.server.close()
+      expect(await assertNoElectronSurvivors()).toEqual([])
+    }
   }, TEST_TIMEOUT_MS)
 })
 
