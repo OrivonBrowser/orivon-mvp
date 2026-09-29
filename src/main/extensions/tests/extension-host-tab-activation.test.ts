@@ -50,6 +50,12 @@ vi.mock('orivon:crx-extensions-router', () => ({
 }))
 vi.mock('orivon:crx-extensions-cookies', () => ({ setCookieHostAccessCheck: vi.fn() }))
 vi.mock('orivon:crx-extensions-tabs', () => ({ setTabUrlAccessCheck: vi.fn(), setTabHostAccessCheck: vi.fn() }))
+vi.mock('orivon:crx-extensions-browser-action', () => ({ setTabCaptureInvocationRecorder: vi.fn() }))
+vi.mock('orivon:crx-extensions-tab-capture', () => ({
+  setTabCaptureInvocationCheck: vi.fn(),
+  setTabCaptureAppRefusalCheck: vi.fn(),
+  setTabCaptureGrantRecorder: vi.fn()
+}))
 
 const { createExtensionHost, attachExtensionShell } = await import('../extension-host.js')
 const { session: mockedSession } = await import('electron')

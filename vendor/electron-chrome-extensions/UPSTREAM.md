@@ -252,6 +252,68 @@
     Reason patches 27-28 above needed this: they touch `getPopupUrl`/`clearActiveTab`, both in
     files this suite's own tests (`browser-action-popup-url.test.ts`) now import by real path.
 
+32. **`chrome.offscreen` and a real `chrome.runtime.getContexts`.** New
+    `src/browser/api/offscreen.ts` (`OffscreenAPI`): `createDocument`/
+    `closeDocument`/`hasDocument`, one never-shown, sandboxed `BrowserWindow`
+    per extension, validated the way Chrome does (`url` resolved and refused
+    unless it is the calling extension's own page; `reasons` non-empty and
+    each a name from Chrome's own enum; `justification` a non-empty string;
+    a second `createDocument()` while one is open throws Chrome's own
+    "Only a single offscreen document may be created."), closed by
+    `Session`'s own `'extension-unloaded'` event so disable, uninstall and a
+    crash all tear it down through one native listener, no separate wiring
+    from `extension-host.ts` needed. `src/browser/api/runtime.ts`'s
+    `RuntimeAPI` gained two constructor parameters (`OffscreenAPI`,
+    `BrowserActionAPI`) and a `runtime.getContexts` handler covering
+    BACKGROUND (`session.serviceWorkers`), OFFSCREEN_DOCUMENT (the map
+    above), POPUP (`browser-action.ts`'s own `getOpenPopup`, below) and TAB
+    (`ExtensionStore.tabs` filtered to the calling extension's own pages),
+    matching Chrome's `ContextFilter` fields (`contextTypes`, `contextIds`,
+    `tabIds`, `windowIds`, `documentUrls`, `documentOrigins`, `incognito`).
+    `src/browser/api/browser-action.ts` gained a public `getOpenPopup()`
+    (its own `popupTabId` field, set alongside `this.popup`) for the POPUP
+    entry -- PopupView itself carries no tab of its own. `src/browser/
+    index.ts` constructs `OffscreenAPI` and `BrowserActionAPI` before the
+    rest of `this.api`, both now needed by other API classes. Reason:
+    absent from Electron and from this library entirely; MV3 tabCapture
+    extensions (Volume Master among them) need `chrome.offscreen` to host
+    the `getUserMedia()` call a capture stream id feeds into, and their own
+    existence check for one prefers `getContexts`, falling back to
+    `clients.matchAll()` only when it is absent -- measured directly, that
+    fallback does not see a document `OffscreenAPI` creates, so the
+    extension's own guard against a second `createDocument()` call never
+    fires and the library's own guard throws instead.
+33. **`chrome.tabCapture.getMediaStreamId`, plus the activeTab-style
+    invocation grant it requires.** New `src/browser/api/tab-capture.ts`
+    (`TabCaptureAPI`): resolves `targetTabId` (or the active tab) through
+    `ExtensionStore.getTabById`/`getActiveTabOfCurrentWindow` only, refuses
+    a tab outside the extension's own session or (`setTabCaptureAppRefusalCheck`,
+    `src/main/extensions/extension-host.ts`) belonging to a granted app,
+    refuses one the extension was never invoked on with Chrome's own error
+    text ("Extension has not been invoked for the current page...",
+    `setTabCaptureInvocationCheck`), resolves the capture's consumer as
+    `consumerTabId` when given or else the extension's own open offscreen
+    document (patch 32), then calls `webContents.getMediaSourceId()`. A
+    successful call mutes the target tab's local playback (Electron
+    duplicates a captured tab's audio instead of diverting it the way
+    Chrome does -- measured directly: muting the source does not also
+    silence what the consumer receives) and restores it once every
+    capturer has released the tab (a closed tab, the offscreen document
+    closing, or a 10-second safety net if `media-started-playing` never
+    confirms real playback). `getCapturedTabs` and `onStatusChanged` are
+    also implemented, scoped to the calling extension. `src/browser/api/
+    browser-action.ts`'s `activateClick` calls a new optional
+    `setTabCaptureInvocationRecorder` hook with the clicked tab, the same
+    shape as `setEventListenerFilter`; `extension-host.ts`'s own wiring
+    clears that grant when the tab closes or navigates to a different
+    origin (`extension-tab-invocation.ts`'s ledger). `src/browser/index.ts`
+    constructs `TabCaptureAPI` with the same `OffscreenAPI` instance patch
+    32 already builds. Reason: absent from Electron entirely; only
+    `webContents.getMediaSourceId(requestWebContents)` exists as the
+    underlying primitive. `capture()` is not implemented: an MV3 extension
+    using an offscreen document (patch 32) always calls `getMediaStreamId`
+    and does its own `getUserMedia`, never `capture()`.
+
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and
 `src/main/extensions/README.md`'s Design notes, say why. Its own diagnostics under the root

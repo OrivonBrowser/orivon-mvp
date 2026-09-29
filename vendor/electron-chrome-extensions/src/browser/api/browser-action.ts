@@ -27,7 +27,7 @@ const d = debug('electron-chrome-extensions:browserAction')
 // has not been invoked for the current page"), and nothing in this library
 // tracked that at all before this. Set once, before the first activation
 // (extension-host.ts).
-type TabCaptureInvocationRecorder = (extensionId: string, tabId: number) => void
+type TabCaptureInvocationRecorder = (extensionId: string, tab: Electron.WebContents) => void
 let gTabCaptureInvocationRecorder: TabCaptureInvocationRecorder | undefined
 
 export function setTabCaptureInvocationRecorder(recorder: TabCaptureInvocationRecorder): void {
@@ -458,7 +458,7 @@ export class BrowserActionAPI {
 
     // Orivon patch (UPSTREAM.md, patch 33): a click IS an invocation,
     // whether or not it opens a popup -- both branches below count.
-    gTabCaptureInvocationRecorder?.(extensionId, tab.id)
+    gTabCaptureInvocationRecorder?.(extensionId, tab)
 
     const popupUrl = this.getPopupUrl(extensionId, tab.id)
 
