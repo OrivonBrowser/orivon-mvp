@@ -47,8 +47,17 @@ declare module 'orivon:crx-extensions' {
     /** Fires once a browserAction popup's own BrowserWindow exists, before
      * its page has loaded (browser-action.ts's own activateClick, right
      * after `new PopupView(...)`) -- the only member of this class
-     * extension-host.ts listens for, so it is kept to that one event name. */
-    on (event: 'browser-action-popup-created', listener: (popup: { browserWindow?: { webContents: Electron.WebContents } }) => void): void
+     * extension-host.ts listens for, so it is kept to that one event name.
+     * `parent`/`destroy`/`isDestroyed` added alongside `browserWindow` --
+     * PopupView's own public shape -- so extension-host.ts can close the
+     * popup when the PARENT window regains focus, not only when the
+     * popup's own `blur` fires. */
+    on (event: 'browser-action-popup-created', listener: (popup: {
+      browserWindow?: { webContents: Electron.WebContents }
+      parent?: Electron.BaseWindow
+      isDestroyed (): boolean
+      destroy (): void
+    }) => void): void
   }
 }
 
