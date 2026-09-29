@@ -253,7 +253,7 @@ it('shows a tab\'s own new window at once, without waiting on ready-to-show', as
 // on-screen position -- unlike `screen.getCursorScreenPoint()` (tear-drag.ts's
 // own cross-window mark and floating preview), which asks the OS directly
 // and does NOT move under CDP-simulated input; that half needs the real-XTest
-// verification run instead (see this repo's PR for its timings).
+// verification under real X input instead.
 it('the empty strip: middle click opens a tab, double click toggles maximize, a left drag moves the window', async () => {
   const { app, chrome } = await launched()
   try {
@@ -265,6 +265,8 @@ it('the empty strip: middle click opens a tab, double click toggles maximize, a 
       if (box === null) throw new Error('the strip tail has no box')
       return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
     }
+    // Counted once the first tab is drawn, or the count is of an empty strip.
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
     const before = await tabIds(chrome)
     // A synthetic middle click occasionally does not reach the renderer at
     // all under load (observed here, not specific to this feature) -- one
