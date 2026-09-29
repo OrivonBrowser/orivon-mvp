@@ -175,17 +175,19 @@ crash all tear it down the same way; `chrome.runtime.getContexts` (`api/runtime.
 currently open popup (`browser-action.ts`'s new `getOpenPopup`) and the running service worker to
 answer for real, instead of leaving an extension's own existence check to fall back to
 `clients.matchAll()`, which does not see a document this library creates.
-`chrome.tabCapture.getMediaStreamId` (`api/tab-capture.ts`) refuses a tab five ways before
+`chrome.tabCapture.getMediaStreamId` (`api/tab-capture.ts`) refuses a tab six ways before
 calling Electron's own `webContents.getMediaSourceId`: a tab outside this session, a non-`http(s)`
 tab (another extension's own page included -- `appOrigin` returns null for one, so the app-refusal
 check alone never caught it), a granted app's own tab (`setTabCaptureAppRefusalCheck`, wired to
 the same `broker.app.hasGrantsSync` question `shell-services.ts`'s DevTools prompt asks, re-checked
 on the tab's own navigation and again inside `permission-gate.ts`'s own `'media'` request handler),
-and a tab the extension was never invoked on (`setTabCaptureInvocationCheck`,
+a tab the extension was never invoked on (`setTabCaptureInvocationCheck`,
 `extension-tab-invocation.ts`'s ledger, filled ONLY by a real toolbar click reaching
 `browser-action.ts`'s `activateClick` over `crx-msg-remote` -- never a local `crx-msg` call, and
 never `chrome.action.openPopup()`, which reaches the same code with no click at all -- and cleared
-on that tab's own close, cross-origin navigation, or the extension's own unload). A successful call
+on that tab's own close, cross-origin navigation, or the extension's own unload), and a tab this
+SAME extension is already capturing (Chrome's own "Cannot capture a tab with an active stream.").
+A successful call
 also mutes the tab locally (Electron duplicates a captured tab's audio instead of diverting it the
 way Chrome does, measured directly), tracks consumption and release per (extension id, target tab
 id) rather than per extension, watches whichever `WebContents` actually consumes the stream (the

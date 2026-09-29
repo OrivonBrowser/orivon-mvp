@@ -68,28 +68,28 @@ describe('isTabCaptureMediaRequestAllowed -- the permission-gate policy function
   it('denies a non-extension origin outright, even with a live grant for that id/tab', () => {
     const id = freshExtensionId()
     mintTabCaptureGrant(id, 1, 4000)
-    expect(isTabCaptureMediaRequestAllowed('https://example.com/', 1, [], 4000)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed('https://example.com/', 1, [], true, 4000)).toBe(false)
   })
 
   it('denies a chrome-extension:// origin with no live grant', () => {
     const id = freshExtensionId()
-    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, [], 5000)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, [], true, 5000)).toBe(false)
   })
 
   it('allows a chrome-extension:// origin with a live grant for the SAME captured tab, tab-capture shape', () => {
     const id = freshExtensionId()
     mintTabCaptureGrant(id, 1, 6000)
-    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/html/offscreen.html`, 1, [], 6000)).toBe(true)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/html/offscreen.html`, 1, [], true, 6000)).toBe(true)
   })
 
   it('denies once the grant expires', () => {
     const id = freshExtensionId()
     mintTabCaptureGrant(id, 1, 7000)
-    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, [], 7000 + 10_000)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, [], true, 7000 + 10_000)).toBe(false)
   })
 
   it('denies an undefined origin', () => {
-    expect(isTabCaptureMediaRequestAllowed(undefined, 1, [], 8000)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(undefined, 1, [], true, 8000)).toBe(false)
   })
 
   it('denies a live grant if the captured webContents is NOT the minted target tab -- a device request opens on the extension\'s OWN page, never the target tab', () => {
@@ -99,7 +99,7 @@ describe('isTabCaptureMediaRequestAllowed -- the permission-gate policy function
     // caller passes is the extension's OWN page (tab id 99), not the
     // captured tab (1) -- measured: a real getUserMedia({audio,video})
     // device request's `contents` is the requester itself.
-    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 99, [], 8500)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 99, [], true, 8500)).toBe(false)
   })
 
   it('denies a device-shaped request (non-empty mediaTypes) even against the right tab', () => {
@@ -107,8 +107,34 @@ describe('isTabCaptureMediaRequestAllowed -- the permission-gate policy function
     mintTabCaptureGrant(id, 1, 9000)
     // Measured: a real device getUserMedia({audio:true,video:true}) request
     // carries mediaTypes: ['audio','video']; tab capture carries [].
-    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, ['audio', 'video'], 9000)).toBe(false)
-    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, ['audio'], 9000)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, ['audio', 'video'], true, 9000)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, ['audio'], true, 9000)).toBe(false)
+  })
+
+  it('denies a request from a SUBFRAME, even with matching origin, tab id and empty mediaTypes', () => {
+    // MEASURED: getUserMedia({mandatory:{chromeMediaSource:'desktop'}}) --
+    // no less than the real tab-capture shape -- also reports
+    // mediaTypes: [] (docs/planning's tabCapture/offscreen probe). A
+    // web-accessible chrome-extension:// iframe the extension injects into
+    // the SAME tab it minted a grant for would report `contents` as that
+    // tab too (a WebContents is the whole page; an iframe is a
+    // WebFrameMain within it, not a separate WebContents) -- matching the
+    // grant on both signals this ledger already checks. `isMainFrame`
+    // (PermissionRequest's own documented field: "whether the frame making
+    // the request is the main frame") is the one signal left standing: the
+    // legitimate flow's own request is always its own main frame (measured:
+    // true for every real tab-capture and offscreen-document request), an
+    // iframe's own request is not.
+    const id = freshExtensionId()
+    mintTabCaptureGrant(id, 1, 9500)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, [], false, 9500)).toBe(false)
+  })
+
+  it('still allows the legitimate main-frame request once a subframe request for the same tab was refused', () => {
+    const id = freshExtensionId()
+    mintTabCaptureGrant(id, 1, 9600)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, [], false, 9600)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, [], true, 9600)).toBe(true)
   })
 })
 

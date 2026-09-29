@@ -7,6 +7,7 @@
 // Run with:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-offscreen-lifecycle.test.ts
 import { describe, expect, it } from 'vitest'
+import { createServer, type Server } from 'node:http'
 import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,6 +62,32 @@ async function ensureOffscreenDocument (app: Awaited<ReturnType<typeof launchEle
 }
 
 const TEST_TIMEOUT_MS = 60_000
+
+/** `/a` answers with a real HTTP 302 to `/b` -- MEASURED (electron.d.ts):
+ * `'will-navigate'` is documented as firing "on the main frame" only (it
+ * never fires for a subframe's own navigation at all, so a plain
+ * `iframe.src = ...` assignment is not the shape that actually exercises
+ * this item), while `'will-redirect'` fires "when a server side redirect
+ * occurs during navigation" -- in ANY frame, main or sub -- with no
+ * main-frame restriction documented at all. A real 302 is what makes the
+ * subframe's OWN `'will-redirect'` fire, which is the one event this test
+ * needs a real navigation was not blocked. */
+async function startRedirectServer (): Promise<{ server: Server, origin: string, pageA: string, pageB: string }> {
+  const server = createServer((req, res) => {
+    if (req.url === '/a') {
+      res.writeHead(302, { location: '/b' })
+      res.end()
+      return
+    }
+    res.writeHead(200, { 'content-type': 'text/html' })
+    res.end('<!doctype html><title>page-b</title><body></body>')
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('redirect server did not report a port')
+  const origin = `http://127.0.0.1:${String(address.port)}`
+  return { server, origin, pageA: `${origin}/a`, pageB: `${origin}/b` }
+}
 
 describe('offscreen document lifecycle and navigation policy', () => {
   // Measured directly (docs/planning's tabCapture/offscreen
@@ -183,6 +210,68 @@ describe('offscreen document lifecycle and navigation policy', () => {
       expect((result as { after?: string }).after).toBe((result as { before?: string }).before)
     } finally {
       if (app !== undefined) await closeElectronApp(app)
+      expect(await assertNoElectronSurvivors()).toEqual([])
+    }
+  }, TEST_TIMEOUT_MS)
+
+  // `will-redirect` fires for a server-side redirect in ANY frame, main or
+  // sub (electron.d.ts has no main-frame restriction on it, unlike
+  // `will-navigate`, which is documented to fire "on the main frame" only
+  // and so never even sees a plain subframe navigation at all) -- the lock
+  // above must apply to the offscreen DOCUMENT's own main-frame redirects,
+  // never to a cross-origin <iframe> that document deliberately embeds
+  // being redirected by its own server.
+  it('a real HTTP redirect inside a cross-origin iframe is not blocked by the offscreen document\'s own navigation lock', async () => {
+    const { server, pageA, pageB } = await startRedirectServer()
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    let extensionId = ''
+    try {
+      app = await launchElectron({
+        appPath: '.',
+        args: [HERMETIC_RESOLVER],
+        seedProfile: async (dir) => { extensionId = seedFixture(dir) },
+        sandbox: true
+      })
+      const liveApp = app
+      await new Promise((resolve) => setTimeout(resolve, 3000))
+      await ensureOffscreenDocument(liveApp, extensionId)
+
+      const result = await liveApp.evaluate(async ({ webContents }, args: { id: string, pageA: string, pageB: string }) => {
+        const offscreen = webContents.getAllWebContents().find((wc) => wc.getURL() === `chrome-extension://${args.id}/offscreen.html`)
+        if (offscreen === undefined) return { ok: false as const, error: 'offscreen webContents not found' }
+
+        const subframeRedirects: string[] = []
+        offscreen.on('will-redirect', (details) => {
+          if (!details.isMainFrame) subframeRedirects.push(details.url)
+        })
+        const subframeLoads: string[] = []
+        offscreen.on('did-frame-navigate', (_event, url, _httpCode, _statusText, isMainFrame) => {
+          if (!isMainFrame) subframeLoads.push(url)
+        })
+
+        const loaded = await offscreen.executeJavaScript(`
+          new Promise((resolve) => {
+            const f = document.createElement('iframe')
+            f.src = ${JSON.stringify(args.pageA)}
+            f.onload = () => resolve(true)
+            f.onerror = () => resolve(false)
+            document.body.appendChild(f)
+          })
+        `)
+
+        return { ok: true as const, loaded, subframeRedirects, subframeLoads }
+      }, { id: extensionId, pageA, pageB })
+
+      expect(result.ok).toBe(true)
+      const { loaded, subframeRedirects, subframeLoads } = result as { loaded?: boolean, subframeRedirects?: string[], subframeLoads?: string[] }
+      // `will-redirect`'s own `details.url` is the redirect TARGET
+      // (electron.d.ts), so this fires once, naming pageB.
+      expect(subframeRedirects).toEqual([pageB])
+      expect(loaded).toBe(true)
+      expect(subframeLoads).toEqual([pageB])
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      server.close()
       expect(await assertNoElectronSurvivors()).toEqual([])
     }
   }, TEST_TIMEOUT_MS)

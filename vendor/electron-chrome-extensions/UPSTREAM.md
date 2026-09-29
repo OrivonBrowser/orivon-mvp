@@ -303,12 +303,20 @@
     shell window closing, and blocked its macOS `activate` handler from ever
     reopening one, since both read that same count.
 
-    **Denies `window.open`, locks navigation to the extension's own origin.**
+    **Denies `window.open`, locks the document's own main-frame navigation
+    to the extension's own origin.**
     `setWindowOpenHandler` denies every `window.open` from the
     document outright (the library's own default new-window handling
     otherwise opened a raw, frameless, always-on-top `BrowserWindow`); a
-    shared `will-navigate`/`will-redirect` handler refuses any URL outside
-    `chrome-extension://<the extension's own id>/`. An offscreen document has
+    shared `will-navigate`/`will-redirect` handler refuses any MAIN-FRAME
+    navigation to a URL outside `chrome-extension://<the extension's own
+    id>/`. `details.isMainFrame` gates both: `will-navigate` is documented
+    to fire "on the main frame" only (never for a subframe's own plain
+    navigation at all), but `will-redirect` fires "when a server side
+    redirect occurs during navigation" in ANY frame -- ungated, the lock
+    refused a real HTTP redirect inside a cross-origin `<iframe>` the
+    offscreen document legitimately embeds, not only the document's own
+    main-frame navigation the lock exists for. An offscreen document has
     no tab, no toolbar and no one watching it, so neither capability serves
     any real use and either one, left open, would let a compromised or
     malicious extension turn its own hidden document into an equally hidden
@@ -460,6 +468,53 @@
       destroyed -- releasing a capture without the tab dying (the ordinary
       case) left one more armed listener on it, stacking with every
       capture/release cycle of the same tab.
+    - **A probable crash: reading `tab.id` from inside the captured tab's
+      own `'destroyed'` handler.** `Electron.WebContents` throws "Object
+      has been destroyed" reading almost any property once destroyed,
+      `.id` included; the tab's own `'destroyed'` handler fires exactly
+      when that is already true, so `endCapture`'s own `captureKey(...,
+      tab.id)` crashed the process the moment a captured tab closed
+      (uncaught inside the event emission, then `index.ts`'s own
+      `exitOnUncaught`). `CapturedTabRecord` now carries a `tabId` captured
+      once, while the tab is still alive; every release path reads that
+      field, never `tab.id` again. The identical pattern in
+      `../../../src/main/extensions/extension-tab-capture-invocation.ts`'s
+      own `recordTabCaptureInvocation` (browser-action.ts's own invocation
+      recorder) is fixed the same way.
+    - **A second `getMediaStreamId` for a tab already being captured must
+      be refused, matching Chrome's own "Cannot capture a tab with an
+      active stream."** Re-minting an already-consumed (extension, tab)
+      pair reset `tab-capture-grants.ts`'s own `consumed` bit back to
+      `false`, so the fresh mint's own 10-second safety net could end the
+      still-running FIRST capture (unmuting the tab, firing `'stopped'`)
+      out from under it. `getMediaStreamId` now refuses outright whenever
+      the calling extension already holds an active capture of the target
+      tab, before ever minting a second grant.
+    - **The `'media'` carve-out's own `mediaTypes: []`/`contents.id`
+      checks do not, on their own, tell a real tab capture apart from
+      `chromeMediaSource: 'desktop'`.** MEASURED:
+      `getUserMedia({mandatory: {chromeMediaSource: 'desktop'}})` ALSO
+      reports `mediaTypes: []`, and succeeds once permitted (measured,
+      with `--use-fake-device-for-media-stream`) -- this carve-out is
+      exploitable, not merely theoretical. A web-accessible
+      `chrome-extension://` page the extension injects as an `<iframe>`
+      into the SAME tab it minted a grant for shares that tab's own
+      `WebContents` (a page and its iframes are one `WebContents`), so
+      `contents.id` there equals the granted tab too, matching every
+      existing check. `PermissionRequest.isMainFrame` (electron.d.ts) is
+      the field that survives: every legitimate tab-capture/offscreen-
+      document request measured here reports `true`; an iframe's own
+      request, by the same documented contract, does not.
+      `isTabCaptureMediaRequestAllowed` now requires it.
+      `../sessions/tab-capture-grants.ts`'s own doc has the full
+      measurement, including that a live iframe reproduction of this exact
+      shape could not be obtained in this environment (the call hung
+      before ever reaching the permission handler, for reasons not fully
+      diagnosed) -- the fix rests on Electron's own documented
+      `isMainFrame` contract and a direct unit test against the policy
+      function, not an end-to-end reproduction of the attack itself. (The
+      offscreen document's OWN `will-navigate`/`will-redirect` lock gained
+      the identical `isMainFrame` gate -- patch 32's own entry above.)
 34. **`popup.ts`: a popup closes on more than its own `blur`.** `PopupView`'s constructor now also
     closes it when the parent window moves, resizes or minimises (`'move'`/`'resize'`/`'minimize'`,
     all removed again in `destroy()`), and when Escape is pressed inside it

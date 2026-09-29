@@ -85,6 +85,20 @@ function findPopup (windows: Page[], extensionId: string): Page | undefined {
   return windows.find((w) => w.url().startsWith(`chrome-extension://${extensionId}/popup.html`))
 }
 
+/** `process.kill(pid, 0)` sends no signal, only checks the pid still
+ * exists -- throws ESRCH once it does not. The one portable way from this
+ * test's own Node process to ask "is the launched app's main process still
+ * running" without going through Playwright's own connection (which the
+ * app closing on its own, via a crash, tears down anyway). */
+function isPidAlive (pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 const TEST_TIMEOUT_MS = 150_000
 
 /** `background.js`'s own diagnostic command -- whether `chrome.offscreen`
@@ -257,14 +271,59 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
         check('the tab is unmuted once the offscreen document closes, even though it is still open', unmutedAfterOffscreenClose)
 
         // ---- unmuted once the tab closes (the other real capture-end signal) ----
+        // The captured tab is this window's only tab: closing it closes
+        // the window too (A16's own resolved "closing the last tab" rule),
+        // and window-all-closed then quits the whole app on this platform
+        // -- correct, unrelated behavior that would otherwise make "the app
+        // is still running" below meaningless. An unrelated keep-alive
+        // BrowserWindow, created directly (no tab, no chrome UI of its own)
+        // and destroyed once this section is done, is what isolates the
+        // crash this section actually checks for from that real, decided
+        // last-tab-closes-the-window/app behavior.
+        const capturePid = liveApp.process().pid
+        await liveApp.evaluate(({ BrowserWindow }) => {
+          const win = new BrowserWindow({ show: false })
+          ;(win as unknown as { __e2eKeepAlive: boolean }).__e2eKeepAlive = true
+        })
+
         // `webContents.fromId()` for a gone id measured as `undefined` here,
         // not the `null` its own type declares -- checked with `== null` so
-        // either satisfies "it no longer resolves".
+        // either satisfies "it no longer resolves". A trailing
+        // `.then(() => true)` once sat after this `waitFor` call; since
+        // `waitFor` itself never rejects (smoke-helpers.mjs: resolves
+        // `false` on a timeout, never throws), that mapped BOTH outcomes to
+        // `true`, so a genuine timeout (the tab never actually closing)
+        // still reported as a pass. The raw boolean is checked directly.
         await liveApp.evaluate(async ({ webContents }, tabId: number) => { webContents.fromId(tabId)?.close() }, tabId)
-        const unmutedAfterClose = await waitFor(async () =>
+        const tabGone = await waitFor(async () =>
           (await liveApp.evaluate(async ({ webContents }, tabId: number) => webContents.fromId(tabId), tabId)) == null
-        , 20_000).then(() => true).catch(() => false)
-        check('the captured tab\'s close is observed (it no longer resolves)', unmutedAfterClose)
+        , 20_000)
+        check('the captured tab\'s close is observed (it no longer resolves)', tabGone)
+
+        // ---- the app survives closing a captured tab (probable crash) ----
+        // Reading any property of a destroyed WebContents (including
+        // `.id`) throws "Object has been destroyed"; inside the
+        // 'destroyed' event's own emission that becomes an uncaught
+        // exception, and index.ts's own `exitOnUncaught` then exits the
+        // whole process. A short wait gives that crash, if the fix
+        // regressed, time to actually bring the process down before this
+        // checks for it.
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        const stillAlive = capturePid !== undefined && isPidAlive(capturePid)
+        check('the app is still running after the captured tab closes', stillAlive)
+        check(
+          'no uncaught exception was reported while closing the captured tab',
+          !mainOutput(liveApp).includes('uncaught exception'),
+          mainOutput(liveApp),
+        )
+
+        if (stillAlive) {
+          await liveApp.evaluate(({ BrowserWindow }) => {
+            BrowserWindow.getAllWindows()
+              .find((win) => (win as unknown as { __e2eKeepAlive?: boolean }).__e2eKeepAlive === true)
+              ?.destroy()
+          }).catch(() => {})
+        }
       } finally {
         if (app !== undefined) await closeElectronApp(app)
         started.server.close()

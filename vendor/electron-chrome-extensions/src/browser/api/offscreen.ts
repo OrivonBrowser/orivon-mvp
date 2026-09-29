@@ -112,11 +112,19 @@ export class OffscreenAPI {
     // web.
     view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     const ownOriginPrefix = `chrome-extension://${extensionId}/`
-    const refuseForeignNavigation = (navigationEvent: Electron.Event, targetUrl: string): void => {
-      if (!targetUrl.startsWith(ownOriginPrefix)) navigationEvent.preventDefault()
+    // `isMainFrame` -- both events' own details, not a second, separate
+    // check -- is why a cross-origin `<iframe>` the offscreen document's OWN
+    // page legitimately embeds can still navigate and redirect itself:
+    // `will-redirect` (and `will-navigate`) fire for a SUBFRAME's own
+    // navigation too, and locking the offscreen DOCUMENT to its extension's
+    // origin was never meant to reach into an iframe it deliberately
+    // embeds. Only a main-frame navigation -- the document itself leaving
+    // its own extension's origin -- is refused.
+    const refuseForeignMainFrameNavigation = (details: Electron.Event<{ url: string, isMainFrame: boolean }>): void => {
+      if (details.isMainFrame && !details.url.startsWith(ownOriginPrefix)) details.preventDefault()
     }
-    view.webContents.on('will-navigate', refuseForeignNavigation)
-    view.webContents.on('will-redirect', refuseForeignNavigation)
+    view.webContents.on('will-navigate', refuseForeignMainFrameNavigation)
+    view.webContents.on('will-redirect', refuseForeignMainFrameNavigation)
 
     // A renderer crash leaves `webContents.isDestroyed()` false --
     // electron.d.ts's own `isCrashed()` getter exists because the

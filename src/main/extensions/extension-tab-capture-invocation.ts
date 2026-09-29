@@ -20,7 +20,14 @@ const wiredInvocations = new WeakMap<WebContents, Set<string>>()
  * origin the CLICK happened on, since both are the same thing here (the
  * click always happens on the tab as it exists right now). */
 export function recordTabCaptureInvocation (extensionId: string, tab: WebContents): void {
-  recordInvocation(extensionId, tab.id)
+  // Captured once, here, while `tab` is definitely alive (a real toolbar
+  // click just happened on it) -- `clear` reads THIS value, never `tab.id`
+  // again. A real `WebContents` throws "Object has been destroyed" reading
+  // almost any property once destroyed, `.id` included; `clear` runs from
+  // inside the tab's own `'destroyed'` listener below, which fires exactly
+  // when that is already true.
+  const tabId = tab.id
+  recordInvocation(extensionId, tabId)
 
   const wired = wiredInvocations.get(tab) ?? new Set<string>()
   wiredInvocations.set(tab, wired)
@@ -28,7 +35,7 @@ export function recordTabCaptureInvocation (extensionId: string, tab: WebContent
   wired.add(extensionId)
 
   const grantedOrigin = originFromUrl(tab.getURL())
-  const clear = (): void => { clearInvocation(extensionId, tab.id) }
+  const clear = (): void => { clearInvocation(extensionId, tabId) }
   const onNavigate = (): void => {
     if (tab.isDestroyed() || originFromUrl(tab.getURL()) === grantedOrigin) return
     clear()

@@ -22,16 +22,32 @@ const {
 /** A minimal stand-in for `Electron.WebContents`: real EventEmitter
  * semantics (so a test can `.emit('destroyed')`/`.emit('did-navigate')` the
  * same way Electron itself would fire them), the handful of methods/fields
- * `tab-capture.ts` actually reads. */
+ * `tab-capture.ts` actually reads -- INCLUDING the real gotcha that catches
+ * production code out: reading almost any property or calling almost any
+ * method on a destroyed `WebContents` throws "Object has been destroyed"
+ * (electron.d.ts's own documented behavior); `isDestroyed()` itself is the
+ * one exception. `.id` is a getter, not a plain field, specifically so a
+ * test can catch code that reads `tab.id` from INSIDE a `'destroyed'`
+ * listener, where the real object already throws. `destroy()` sets the
+ * flag before emitting, the same order Electron's own destruction does. */
 class FakeWebContents extends EventEmitter {
-  destroyed = false
+  private destroyedFlag = false
   audioMuted = false
-  constructor (public id: number, private url: string, public session: unknown) { super() }
-  getURL (): string { return this.url }
+  constructor (private readonly _id: number, private url: string, public session: unknown) { super() }
+  private assertLive (): void {
+    if (this.destroyedFlag) throw new Error('Object has been destroyed')
+  }
+  get id (): number { this.assertLive(); return this._id }
+  getURL (): string { this.assertLive(); return this.url }
   setURL (url: string): void { this.url = url }
-  isDestroyed (): boolean { return this.destroyed }
-  setAudioMuted (v: boolean): void { this.audioMuted = v }
-  getMediaSourceId (_consumer: unknown): string { return `stream-${String(this.id)}` }
+  isDestroyed (): boolean { return this.destroyedFlag }
+  setAudioMuted (v: boolean): void { this.assertLive(); this.audioMuted = v }
+  getMediaSourceId (_consumer: unknown): string { this.assertLive(); return `stream-${String(this._id)}` }
+  /** Simulates a real tab close: flips `isDestroyed()` true, THEN fires
+   * 'destroyed' -- any listener that reads `.id`/`.getURL()`/etc. on `this`
+   * (rather than a value captured before this call) throws exactly the way
+   * production code did before the fix this test exists to catch. */
+  destroy (): void { this.destroyedFlag = true; this.emit('destroyed') }
 }
 
 const EXT_A = 'ext-a'
@@ -135,6 +151,52 @@ describe('TabCaptureAPI: consumption/release tracked per (extension, target tab)
     expect(ctx.router.sendEvent).toHaveBeenCalledWith(EXT_A, 'tabCapture.onStatusChanged', { tabId: 1, status: 'stopped', fullscreen: false })
     expect(ctx.router.sendEvent).not.toHaveBeenCalledWith(EXT_A, 'tabCapture.onStatusChanged', { tabId: 2, status: 'stopped', fullscreen: false })
   })
+
+  it('refuses a second getMediaStreamId for a tab the SAME extension is already capturing, matching Chrome\'s own refusal', async () => {
+    const { session } = fakeSession()
+    const tab = new FakeWebContents(1, HTTP_URL, session)
+    const consumer = new FakeWebContents(2, 'chrome-extension://ext-a/offscreen.html', session)
+    const tabs = new Map([[1, tab]])
+    const ctx = fakeCtx(session, tabs)
+    const api = new TabCaptureAPI(ctx, fakeOffscreen(consumer))
+
+    await (api as any).getMediaStreamId({ extension: { id: EXT_A } }, { targetTabId: 1 })
+
+    await expect(
+      (api as any).getMediaStreamId({ extension: { id: EXT_A } }, { targetTabId: 1 }),
+    ).rejects.toThrow(/Cannot capture a tab with an active stream/)
+  })
+
+  it('a refused re-mint schedules no second safety-net timer: the FIRST mint\'s own 10s check runs exactly once', async () => {
+    // The bug this test exists to catch: before the refusal above existed,
+    // a second getMediaStreamId call for an (extension, tab) pair with an
+    // active stream reset tab-capture-grants.ts's own `consumed` bit back
+    // to false and scheduled a SECOND, independent 10s safety-net timer --
+    // which could then end the FIRST, still-running capture out from under
+    // it (unmuting the tab, firing 'stopped') even though the extension's
+    // own real getUserMedia('tab') call had already redeemed the first
+    // grant. Refusing the re-mint outright means `getMediaStreamId` never
+    // reaches `scheduleUnconsumedRelease` a second time at all -- checked
+    // here directly, by counting how many times the consumed-check for
+    // this exact (extension, tab) pair is consulted once the FIRST mint's
+    // own 10-second window elapses: exactly once, never twice.
+    const { session } = fakeSession()
+    const tab = new FakeWebContents(1, HTTP_URL, session)
+    const consumer = new FakeWebContents(2, 'chrome-extension://ext-a/offscreen.html', session)
+    const tabs = new Map([[1, tab]])
+    const ctx = fakeCtx(session, tabs)
+    const api = new TabCaptureAPI(ctx, fakeOffscreen(consumer))
+    const consumedCheck = vi.fn(() => true)
+    setTabCaptureConsumedCheck(consumedCheck)
+
+    await (api as any).getMediaStreamId({ extension: { id: EXT_A } }, { targetTabId: 1 })
+    await (api as any).getMediaStreamId({ extension: { id: EXT_A } }, { targetTabId: 1 }).catch(() => {})
+
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(consumedCheck).toHaveBeenCalledTimes(1)
+    expect(consumedCheck).toHaveBeenCalledWith(EXT_A, 1)
+  })
 })
 
 describe('TabCaptureAPI: re-checked on the captured tab\'s own navigation', () => {
@@ -228,6 +290,67 @@ describe('TabCaptureAPI: the tab\'s own listeners are removed on an ordinary rel
   })
 })
 
+describe('TabCaptureAPI: closing the captured tab (probable crash)', () => {
+  // A real WebContents throws "Object has been destroyed" for almost any
+  // property read once destroyed -- the FakeWebContents class above
+  // reproduces exactly that. Closing a captured tab fires 'destroyed' while
+  // it is already in that state; if the handler chain reads `tab.id` (or
+  // any other property) from the SAME object instead of a value captured
+  // earlier, that read throws INSIDE the event emission, which Node
+  // reports as an uncaught exception -- in the real app,
+  // index.ts's exitOnUncaught handler then quits the whole process.
+  it('closing the captured tab never throws', async () => {
+    const { session } = fakeSession()
+    const tab = new FakeWebContents(1, HTTP_URL, session)
+    const consumer = new FakeWebContents(2, 'chrome-extension://ext-a/offscreen.html', session)
+    const tabs = new Map([[1, tab]])
+    const ctx = fakeCtx(session, tabs)
+    const api = new TabCaptureAPI(ctx, fakeOffscreen(consumer))
+
+    await (api as any).getMediaStreamId({ extension: { id: EXT_A } }, { targetTabId: 1 })
+
+    expect(() => { tab.destroy() }).not.toThrow()
+  })
+
+  it('closing the captured tab still releases the capture and tells the extension it stopped', async () => {
+    const { session } = fakeSession()
+    const tab = new FakeWebContents(1, HTTP_URL, session)
+    const consumer = new FakeWebContents(2, 'chrome-extension://ext-a/offscreen.html', session)
+    const tabs = new Map([[1, tab]])
+    const ctx = fakeCtx(session, tabs)
+    const api = new TabCaptureAPI(ctx, fakeOffscreen(consumer))
+
+    await (api as any).getMediaStreamId({ extension: { id: EXT_A } }, { targetTabId: 1 })
+    tab.destroy()
+
+    expect(ctx.router.sendEvent).toHaveBeenCalledWith(EXT_A, 'tabCapture.onStatusChanged', { tabId: 1, status: 'stopped', fullscreen: false })
+  })
+
+  it('closing a tab captured by two extensions releases both, never throwing, through the ONE shared TabCaptureAPI instance real production uses', async () => {
+    // ElectronChromeExtensions constructs exactly one TabCaptureAPI per
+    // session (browser/index.ts), shared by every extension in it -- unlike
+    // this file's other tests, which each construct their own instance for
+    // isolation, this one matches that real shape deliberately: both
+    // extensions' captures live in the SAME `capturedTabs`/`capturedBy`
+    // record for this tab, which is exactly the scenario `releaseCapture`'s
+    // own "only unmute once every capturer has released it" logic exists
+    // for.
+    const { session } = fakeSession()
+    const tab = new FakeWebContents(1, HTTP_URL, session)
+    const consumer = new FakeWebContents(2, 'chrome-extension://ext-a/offscreen.html', session)
+    const tabs = new Map([[1, tab]])
+    const ctx = fakeCtx(session, tabs)
+    const api = new TabCaptureAPI(ctx, fakeOffscreen(consumer))
+
+    await (api as any).getMediaStreamId({ extension: { id: EXT_A } }, { targetTabId: 1 })
+    await (api as any).getMediaStreamId({ extension: { id: EXT_B } }, { targetTabId: 1 })
+
+    expect(() => { tab.destroy() }).not.toThrow()
+    expect(ctx.router.sendEvent).toHaveBeenCalledWith(EXT_A, 'tabCapture.onStatusChanged', { tabId: 1, status: 'stopped', fullscreen: false })
+    expect(ctx.router.sendEvent).toHaveBeenCalledWith(EXT_B, 'tabCapture.onStatusChanged', { tabId: 1, status: 'stopped', fullscreen: false })
+  })
+})
+
 describe('TabCaptureAPI: the actual consumer\'s teardown ends every capture that used it', () => {
   it('a consumer\'s own "destroyed" event ends every capture using it, and only those', async () => {
     const { session } = fakeSession()
@@ -249,7 +372,7 @@ describe('TabCaptureAPI: the actual consumer\'s teardown ends every capture that
     expect(tabA.audioMuted).toBe(true)
     expect(tabB.audioMuted).toBe(true)
 
-    consumerA.emit('destroyed')
+    consumerA.destroy()
 
     expect(tabA.audioMuted).toBe(false)
     expect(tabB.audioMuted).toBe(true)
