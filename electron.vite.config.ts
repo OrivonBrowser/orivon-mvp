@@ -70,6 +70,25 @@ export function shimNodeSpecifiers (): Plugin {
 export const BUFFER_PACKAGE_PLACEHOLDER = '__ORIVON_BUFFER_PACKAGE__'
 const PAGE_BUFFER_SOURCE = normalizePath(resolve(root, 'src/preload/page-buffer.ts'))
 
+/**
+ * Wraps a built preload's whole body in its own function scope. Electron's sandboxed preload
+ * loader runs a preload as the body of a function already binding `Buffer`, `process` and others
+ * as its own parameters -- measured: `vm.compileFunction(code, ['Buffer', ...])` throws the exact
+ * `SyntaxError: Identifier 'Buffer' has already been declared` a real launch does, for a bundled
+ * top-level `const`/`let`/`class` of the same name (`src/preload/README.md`'s Design notes has
+ * which preload and why). A nested function scope may shadow an outer parameter freely, so one
+ * more layer of function scope around the whole chunk defuses this for any such name, not just
+ * `Buffer`.
+ */
+export function wrapSandboxedPreloadBody (): Plugin {
+  return {
+    name: 'orivon:wrap-sandboxed-preload-body',
+    renderChunk (code) {
+      return { code: `(function () {\n${code}\n})();\n`, map: null }
+    }
+  }
+}
+
 /** One expression evaluating to the `buffer` package's exports: the copy the shim's own `buffer` module imports, bundled whole. */
 async function bufferPackageExpression (): Promise<string> {
   const entry = createRequire(resolve(root, 'src/shim/polyfills/buffer.ts')).resolve('buffer/')
@@ -185,7 +204,7 @@ export default defineConfig({
     // decides a bare Node specifier is a builtin with nothing to bundle --
     // its own header has the full reasoning. Order after pageBufferPackage
     // is not load-bearing (different id, `enforce: 'post'` besides).
-    plugins: [pageBufferPackage(), shimNodeSpecifiers()],
+    plugins: [pageBufferPackage(), shimNodeSpecifiers(), wrapSandboxedPreloadBody()],
     build: {
       // CommonJS, which a sandboxed preload requires: it has no ESM context
       // and loads electron via require (see src/main/index.ts).

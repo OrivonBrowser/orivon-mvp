@@ -102,3 +102,21 @@ delete it. Two other routes were measured and rejected:
 
 **The routed path's shared slot, its numbers and its divergences from a browser** (which
 ADR-0017 requires be written down) are in [`routed/README.md`](routed/README.md)'s Design notes.
+
+**[`child-host.ts`](child-host.ts) is the one preload whose build needs
+`wrapSandboxedPreloadBody`** (`electron.vite.config.ts`, applied to every preload's output). It
+alone pulls in `../shim/child-process/child.ts`, whose `stream` import brings in a bundled
+`readable-stream`, whose own `require('buffer')`/`require('util')` resolve through
+`shimNodeSpecifiers` to the shim's polyfills -- landing a real, unwrapped top-level `Buffer`
+declaration in the bundle, which collides with Electron's own sandboxed preload environment
+(measured: it binds `Buffer` as one of the function parameters the preload's own body runs
+inside). `wrapSandboxedPreloadBody`'s own doc comment has the fix.
+
+**[`child-host.ts`](child-host.ts) patches `process.nextTick` before importing `host.js`.**
+Electron's sandboxed preload gives a real, but partial, `process` (measured: `versions`,
+`platform`, `env`; no `nextTick`), unlike a page or a Worker, where this repository's own shim
+installs a complete one. The same `readable-stream` the entry above explains calls the bare
+global `process.nextTick` from deep inside `Readable`/`Writable` internals, reached only once a
+spawnSync's own stdout/stderr piping or close path runs -- unpatched, that throws `TypeError:
+process.nextTick is not a function`, wire-carried back to spawnSync's own caller as an
+unexplained spawn failure.

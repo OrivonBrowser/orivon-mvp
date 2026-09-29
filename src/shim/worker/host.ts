@@ -23,6 +23,7 @@ import { preferLocalWorkers } from '../child-process/host-client.js'
 import { loadProgram } from '../child-process/program.js'
 import { spawn } from '../child-process/spawn.js'
 import { runSpawnSync, type SpawnSyncRequest } from '../child-process/spawn-sync.js'
+import { setOrivon } from '../orivon-global.js'
 import { createChildWorker } from './launch.js'
 import { serveOrivon } from './orivon-server.js'
 import { toWireError } from './protocol.js'
@@ -187,6 +188,10 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
 
 export function createChildHost (orivon: Orivon): ChildHost {
   preferLocalWorkers()
+  // child-process/spawn.ts's launchChild still reaches for getOrivon() to serve a LOCAL child's
+  // own Worker (a spawnSync's own nested spawn, not just this host's own first-level children) --
+  // orivon-global.ts's own header has the full reasoning.
+  setOrivon(orivon)
   function addPage (port: MessagePort): void {
     port.start()
     port.onmessage = (event: MessageEvent<StartChildMessage>) => {

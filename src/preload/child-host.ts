@@ -27,6 +27,13 @@ function isChildHostDocument (): boolean {
   return location.pathname === WELL_KNOWN_PATH
 }
 
+// Electron's own sandboxed `process` has no `nextTick` (README.md's Design notes: what needs it
+// here, and why patching it here rather than in the shim). Set before `host.js` starts a child.
+if (typeof (process as unknown as { nextTick?: unknown }).nextTick !== 'function') {
+  (process as unknown as { nextTick: (callback: (...args: unknown[]) => void, ...args: unknown[]) => void }).nextTick =
+    (callback, ...args) => { queueMicrotask(() => { callback(...args) }) }
+}
+
 if (isChildHostDocument()) {
   const target: { orivon?: unknown } = {}
   installOrivon(buildOrivonBridge(), {
