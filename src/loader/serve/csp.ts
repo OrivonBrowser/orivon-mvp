@@ -12,11 +12,17 @@ import type { Pattern } from '../../contracts/index.js'
 const LOCAL_SCHEMES = ['data:', 'blob:'] as const
 
 /**
- * The bundle's own code is pinned and hash-verified, `'unsafe-inline'`
- * already grants the script power `'unsafe-eval'` adds, and the broker, not
- * this header, is the security boundary.
+ * No `'unsafe-inline'`: a Chrome extension with host
+ * access can still write to the page's DOM, and an inline `<script>` it
+ * writes there would otherwise run as the app's own code -- closing that
+ * route is this directive's whole job, alongside
+ * `../../preload/surface/main-world-socket.ts`'s own caller-attribution
+ * check on `window.orivon` (that file's own README.md has the fuller
+ * picture). `'unsafe-eval'` stays: the bundle's own code is pinned and
+ * hash-verified, and an app's own `eval`/`new Function` is not the route
+ * being closed here.
  */
-const SCRIPT_SOURCES = ["'self'", "'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'"] as const
+const SCRIPT_SOURCES = ["'self'", "'unsafe-eval'", "'wasm-unsafe-eval'"] as const
 
 /**
  * What a manifest's `crossOriginIsolated: true` asks for: the two headers
@@ -53,6 +59,8 @@ export function cspHeaderValue (connectPatterns: readonly Pattern[], securePatte
     "default-src 'self'",
     directive('script-src', SCRIPT_SOURCES),
     "style-src 'self' 'unsafe-inline'",
+    // See README.md's Design notes for why this is 'none' rather than left to default-src.
+    "object-src 'none'",
     directive('connect-src', [...withLocal, ...connectTokens, ...reach]),
     directive('img-src', [...withLocal, ...reach]),
     directive('font-src', [...withLocal, ...reach]),

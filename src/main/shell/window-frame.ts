@@ -50,15 +50,24 @@ export interface WindowFrame {
   readonly initialBounds: { x: number, y: number, width: number, height: number }
 }
 
+/** The window's own background colour for the current OS/app theme -- exported
+ * so window.ts can paint the chrome view (its own WebContentsView, a separate
+ * surface from the BaseWindow's own background) the SAME colour before it has
+ * a pixel of its own to show, one home for the fact rather than a second copy
+ * of these constants there. */
+export function windowBackgroundColor (isPrivate: boolean): string {
+  return isPrivate
+    ? (nativeTheme.shouldUseDarkColors ? BACKGROUND_PRIVATE_DARK : BACKGROUND_PRIVATE_LIGHT)
+    : (nativeTheme.shouldUseDarkColors ? BACKGROUND_DARK : BACKGROUND_LIGHT)
+}
+
 /** `dirname`: the calling module's own `import.meta.dirname`, from which a run
  * from source finds the repo's build/icon.png (out/main -> ../../build). */
 export function createWindowFrame (dirname: string, place: Placement = {}, isPrivate = false): WindowFrame {
   const overlay = (): { color: string, symbolColor: string } => isPrivate
     ? (nativeTheme.shouldUseDarkColors ? OVERLAY_PRIVATE_DARK : OVERLAY_PRIVATE_LIGHT)
     : (nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT)
-  const background = (): string => isPrivate
-    ? (nativeTheme.shouldUseDarkColors ? BACKGROUND_PRIVATE_DARK : BACKGROUND_PRIVATE_LIGHT)
-    : (nativeTheme.shouldUseDarkColors ? BACKGROUND_DARK : BACKGROUND_LIGHT)
+  const background = (): string => windowBackgroundColor(isPrivate)
   // Hands the app icon to the window. GNOME's dock does not read it -- the
   // icon shown for a running window comes from matching the window's WM_CLASS
   // ("orivon") against a .desktop entry's Icon=/StartupWMClass, and this

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import type { MainWorldWebContextBridge } from '../main-world-socket.js'
-import { LIMITS, fakeBridge, fakeSocketBridgeResult, fakeWebContextBridgeResult } from './main-world-socket.test-helpers.js'
+import { LIMITS, asPage, fakeBridge, fakeSocketBridgeResult, fakeWebContextBridgeResult } from './main-world-socket.test-helpers.js'
 
 // web.openContext's own installOrivon wiring (ADR-0019), split into its own
 // sibling file rather than grown onto ./main-world-socket.test.ts (540/800
@@ -24,7 +24,7 @@ interface OrivonWebSurface {
 function install (bridge: ReturnType<typeof fakeBridge>): OrivonWebSurface {
   const target: Record<string, unknown> = {}
   installOrivon(bridge, LIMITS, target)
-  return (target.orivon as { web: OrivonWebSurface['web'] }) as unknown as OrivonWebSurface
+  return (asPage(target.orivon) as { web: OrivonWebSurface['web'] }) as unknown as OrivonWebSurface
 }
 
 describe('installOrivon -- web.openContext', () => {

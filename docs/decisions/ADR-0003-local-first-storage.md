@@ -1,7 +1,9 @@
 # ADR-0003: Local-first storage with per-app isolation
 
 - **Status:** accepted; **amended 2026-09-24 (`ADR-0033`)** to let an app hold one
-  keyring-backed secret of its own, derived from and never equal to the identity seed
+  keyring-backed secret of its own, derived from and never equal to the identity seed;
+  **amended 2026-09-29 (`ADR-0044`)**: an app's web storage has a partition of its own only
+  while it is served from its pinned cache
 - **Date:** 2026-08-18
 - **Type:** architecture
 - **Decided by:** AI recommendation, accepted by owner

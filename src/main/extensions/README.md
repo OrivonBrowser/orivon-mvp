@@ -15,24 +15,27 @@ catalogue off a loaded entry's own folder), `extensions-picker-runner.ts` (the n
 Developer mode's buttons open) and `extensions-domain.ts` (the `InternalDomain` the page's
 requests go through, `../pages/README.md`); and the host-access decision chrome.cookies and
 chrome.tabs gate on (`extension-host-access.ts`, wired into the vendored library from
-`extension-host.ts`); and the one list of manifest permission names this app actually serves,
-which `extensions-subsystem.ts` uses before its first `loadExtension()` to filter the
+`extension-host.ts`); the one list of manifest permission names this app actually serves, which
+`extensions-subsystem.ts` uses before its first `loadExtension()` to filter the
 `ExtensionLoadWarning` lines Electron's own native permission schema logs for one of them
-(`extension-known-permissions.ts`).
+(`extension-known-permissions.ts`); and, for the same reason a person deciding about a site's
+permissions should see who else can act on it, `site-reach.ts` (which enabled extensions' host
+access covers a given origin) and `site-reach-runner.ts` (the real manifest reads behind it),
+reused by `../consent/` and `../permissions/`.
 
 **What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`,
 `electron-chrome-extensions-lib.d.ts`, `extension-host-access.ts`, `extension-known-permissions.ts`,
 `extension-sender-id-check.ts`, `extension-tab-details.ts`, `extension-url-policy.ts`,
 `extensions-domain.ts`, `extensions-view-runner.ts`, `extensions-view.ts`, `registry-runner.ts`,
-`registry.ts`, `store-download-seam.ts`, `store-runner.ts`, `store-test-hook.ts` and
-`unpack-runner.ts`),
+`registry.ts`, `site-reach.ts`, `site-reach-runner.ts`, `store-download-seam.ts`, `store-runner.ts`,
+`store-test-hook.ts` and `unpack-runner.ts`),
 `node:crypto`, `node:fs`, `node:path`, `adm-zip`, `pbf`,
 [`../../broker/policy/extension-manifest.ts`](../../broker/policy/extension-manifest.ts)
 (durable: the manifest facts, the stripped-manifest copy, the install prompt's words, and the
 words `extensions-view.ts` reuses for the page),
 [`../../broker/policy/extension-host-patterns.ts`](../../broker/policy/extension-host-patterns.ts)
 (durable: the Chrome match-pattern matcher `extension-host-access.ts` uses for chrome.cookies'
-and chrome.tabs' own host-access checks),
+and chrome.tabs' own host-access checks, and `site-reach.ts` uses for a person's own popups),
 [`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`,
 [`../settings/`](../settings/) (Developer mode is a setting there),
@@ -70,6 +73,18 @@ only through the virtual specifiers above).
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
 
 ## Design notes
+
+**[`site-reach.ts`](site-reach.ts) returns none for an origin served from its pinned cache,
+without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
+including a granted app -- but `GRANTED_APPS_CLAUSE`
+(`../../broker/policy/extension-manifest.ts`) already carries the one exception: "except an app
+running from its pinned copy". Naming extensions on such an origin's site-info popup or grant
+prompt would say something false, so this file matches that exception exactly rather than
+letting its own answer drift from what the install prompt and the extensions page already say.
+The check is an injected predicate (`isOriginServedFromCacheSync`, real implementation in
+`../../loader/electron/serve.ts`), so this file stays pure and testable against a fake, the same
+shape [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts)'s
+`SiteTrustSources` already uses it in.
 
 **Why `loadableManifest` (`../../broker/policy/extension-manifest.ts`) strips `webRequest*`,
 `declarativeNetRequest*` and `nativeMessaging`, and why `extensions-subsystem.ts` is listed in
@@ -203,7 +218,7 @@ and an icon is a path inside the same folder -- `extensions-view-runner.ts` reso
 same way Chrome does, from the manifest actually loaded (`entry.path`), confined to that folder
 (`readInside`, the same shape `src/main/pages/serve.ts` uses for a page's own assets).
 
-**"Where it runs" and the install prompt's Web3 line share one clause** (`NOT_GRANTED_APPS_CLAUSE`,
+**"Where it runs" and the install prompt's Web3 line share their wording** (`GRANTED_APPS_CLAUSE` and `GRANTS_STAY_WITH_APPS`,
 `../../broker/policy/extension-manifest.ts`), so a person reading the details view after
 installing sees the same fact in the same words, not a second description that could drift from
 the first.

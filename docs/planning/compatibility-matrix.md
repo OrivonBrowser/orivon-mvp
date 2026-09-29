@@ -247,7 +247,7 @@ Chromium sandbox.
 |---|---|---|
 | Install: unpacked folder, `.crx`, `.zip` | ✅ | `orivon://extensions`; a `.crx` needs its developer signature |
 | Install and update from the Chrome Web Store | ✅ | The store's own button; developer and store signatures checked (`ADR-0043`) |
-| Content scripts, isolated and `"world": "MAIN"`, in frames and subframes | ✅ | Every website and ungranted Web3 page |
+| Content scripts, isolated and `"world": "MAIN"`, in frames and subframes | ✅ | Every website and Web3 page, and apps holding grants unless served from their pinned copy |
 | Service worker with `tabs`, `windows`, `action`, `contextMenus`, `cookies`, `notifications`, `webNavigation`, `commands`, `permissions` | ✅ | From electron-chrome-extensions; the worker's first start is reloaded once to receive them |
 | Toolbar button, badge and popup | ✅ | |
 | Options page in a tab | ✅ | |
@@ -255,6 +255,6 @@ Chromium sandbox.
 | `webRequest` | ❌ | Present, never fires |
 | `sidePanel`, `userScripts` | ❌ | Present as no-ops |
 | Native messaging | 🚫 | Off: it starts desktop programs outside the broker |
-| Apps a person has granted permissions to | ❌ | They run in their own partitions, where no extension loads |
+| Apps a person has granted permissions to | ✅ | One instance, in the default session (`ADR-0044`); extension code is refused at `window.orivon` (`ADR-0045`). An app served from its pinned copy keeps its own partition and runs none |
 | Private windows | ❌ | A private session starts with no extensions |
 | Running without the Chromium sandbox | ❌ | Electron runs no service-worker preload then, so workers lack most `chrome.*` APIs (A289) |

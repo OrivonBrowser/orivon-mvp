@@ -125,6 +125,7 @@ export function wsTarget (opts: {
   dial?: (o: { host: string, port: number }, secure: boolean) => Promise<FetchRouteSocket>
   nativeWebSocket?: unknown
   location?: { origin: string, href: string }
+  callerIsPage?: (exclude: (...args: never[]) => unknown) => boolean
 } = {}): WebSocketRouteTarget & { WebSocket: typeof WebSocket } {
   const peers = opts.peers ?? []
   const dial = opts.dial ?? (async () => {
@@ -136,7 +137,8 @@ export function wsTarget (opts: {
     connect: async (o) => await dial(o, false),
     connectSecure: async (o) => await dial(o, true),
     location: opts.location ?? { origin: 'https://app.example', href: 'https://app.example/index.html' },
-    userAgent: 'TestAgent/1.0'
+    userAgent: 'TestAgent/1.0',
+    ...(opts.callerIsPage !== undefined ? { callerIsPage: opts.callerIsPage } : {})
   }) as WebSocketRouteTarget & { WebSocket: typeof WebSocket }
   target.WebSocket = (opts.nativeWebSocket ?? FakeNativeWebSocket) as typeof WebSocket
   installRouted(target, WS_INSTALLERS)

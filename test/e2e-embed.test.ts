@@ -21,7 +21,8 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { asPage, closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { AS_PAGE_SCRIPT_URL, clearFixtureAsPageScript, setFixtureAsPageScript } from './fixture-as-page.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { embedPartitionFor } from '../src/main/embed/embed-guard.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -30,6 +31,8 @@ import type { Grant, Manifest } from '../src/contracts/index.js'
 const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
+/** asPage's (e2e-helpers.ts) same-origin script URL: the window.orivon call below runs as a script the fixture page loaded, never through page.evaluate() (ADR-0045). */
+const AS_PAGE_URL = `${FIXTURE_URL}${AS_PAGE_SCRIPT_URL}`
 const SITE_PORT = 8899
 const OTHER_PORT = 8900
 const SITE_ORIGIN = `http://${HOST}:${SITE_PORT}`
@@ -148,7 +151,7 @@ it(
           { siteUrl: `${SITE_ORIGIN}/`, otherUrl: `${OTHER_ORIGIN}/`, script: PAGE_SCRIPT } satisfies E2eArgs)
 
         // ---- (1) the element is live in the app tab, the script is set, and a granted site loads with the script first.
-        const loaded = await evaluateRetrying(view, async () => {
+        const loaded = await asPage(view, setFixtureAsPageScript, AS_PAGE_URL, async () => {
           const args = (window as unknown as { __orivonE2eArgs: E2eArgs }).__orivonE2eArgs
           const orivon = (window as unknown as { orivon: { web: { setEmbedScript: (source: string) => Promise<void> } } }).orivon
           await orivon.web.setEmbedScript(args.script)
@@ -176,7 +179,7 @@ it(
           const outcome = await finished
           await new Promise((resolve) => { setTimeout(resolve, 200) })
           return { live, outcome, title: el.getTitle(), messages: messages.slice(), guestId: el.getWebContentsId() }
-        }, STEP_TIMEOUT_MS)
+        })
         check('<webview> is a live element in the app tab', loaded.live, JSON.stringify(loaded))
         check('the granted site loads', loaded.outcome === 'finished', JSON.stringify(loaded))
         check(
@@ -305,6 +308,7 @@ it(
         }, STEP_TIMEOUT_MS)
         check('in an ordinary tab <webview> is an unknown element with no loadURL, and no script was injected there', !inert.live && inert.title === 'probe:undefined:-', JSON.stringify(inert))
       } finally {
+        clearFixtureAsPageScript()
         await closeElectronApp(app)
       }
     })

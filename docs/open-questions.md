@@ -1414,17 +1414,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing: it degrades an error message, never a working call
 
-### A288: One extension instance everywhere undoes per-app sessions **[OWNER]**
-
-- **Question:** The owner chose one extension instance for granted apps too (2026-09-28). Does a
-  grant then stop implying a session partition, with only a pinned cache keeping one?
-- **Why it matters:** ADR-0018, ADR-0003 and T18/T22 isolate each granted origin in
-  `persist:app-*`; Electron loads an extension per session, so one instance means one session.
-- **Options:** granted network-served origins join the default session, cache-served ones keep
-  their partition until pins are served on the network path (rec.); an extension copy per app.
-- **Who decides:** owner
-- **Blocks:** extensions build plan package 6
-
 ### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
 
 - **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs. Sandboxed it
@@ -1561,3 +1550,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   `webPreferences` from an allowlist rather than overriding named keys (rec.); leave it as it is.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A296: A cache-served app's network document runs with its grants until the tab swaps session **[AI-REC]**
+
+- **Question:** A navigation into a cache-served origin commits the network-delivered document in
+  the default session, with `window.orivon` and the app's grants, before did-navigate moves the
+  tab into the app's partition -- the host, not the pin, supplied that code.
+- **Why it matters:** pinning is meant to keep a changed host from running with the app's grants (T18).
+- **Options:** the broker refuses a cache-served origin's calls outside its own partition, via a
+  predicate main injects (rec.); repartition on will-navigate/will-redirect before the commit.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing in this build; the granted-origin CSP and window.orivon filter apply meanwhile.

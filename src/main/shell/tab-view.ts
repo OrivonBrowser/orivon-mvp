@@ -13,8 +13,12 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import { showContextMenu } from './context-menu.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
+import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
+import { recordViewBackground } from './view-background-test-hook.js'
+import { repartitionView } from './tab-parking.js'
+
+export { popupTargetIsApp } from './popup-opener.js'
 
 /** tabs.ts's own tab-count ceiling: an unbounded window.open() flood (an
  * ad/popunder pattern, not hypothetical) would otherwise mint unlimited
@@ -37,29 +41,25 @@ const APP_TAB_FLAG = '--orivon-app-tab'
 /** Which Electron session `target` must run in: its own isolated partition,
  * or undefined for the shell's shared default session.
  *
- * Isolation follows CONSENT, not installation (ADR-0018) -- so do not add
- * `isRegisteredSync` back as a third arm here; an installed app with nothing
- * granted to it is deliberately not isolated.
+ * ONLY a cache-served origin gets its own partition. ADR-0007 intercepts a
+ * cached bundle with `protocol.handle`, scoped to one session, so an origin
+ * served from cache whose tab sat on the default session could not load at
+ * all; nothing there answers its scheme. This reads the registry
+ * `registerAppOrigin` itself writes -- deciding it from a different one is
+ * what made a served app unreachable (A109).
  *
- * The cache arm is not a second rule, it is what makes the first reachable:
- * ADR-0007 intercepts a cached bundle inside the app's own partition, so an
- * origin served from cache whose tab sat on the default session could not
- * load at all. It must read the registry `registerAppOrigin` itself writes --
- * deciding this from a different one is what made a served app unreachable.
+ * A held grant, on its own, is not isolated: a Chrome extension runs as one
+ * instance across every page, granted or not, so a granted app shares the
+ * session an extension reaches (ADR-0044). Do not add
+ * `broker.app.hasGrantsSync` back as an arm here.
  *
- * `broker` undefined (not yet published) reads as "nothing is granted"; the
- * cache arm still answers, because serving is restored before that point.
- *
- * `originFromUrl` derives an origin only for `http:`/`https:` (its own
- * allowlist), so a `chrome-extension:` target -- where every extension runs
- * -- always falls through both arms to undefined: EXPLICITLY, not merely
- * because no app happens to have granted or cached one. tabs.ts's
+ * `originFromUrl` derives an origin only for `http:`/`https:`, so a
+ * `chrome-extension:` target always answers undefined: tabs.ts's
  * openTrusted() relies on this to put an extension-opened tab on
  * session.defaultSession, the one session extensions load into. */
-export function partitionForTarget (target: string, broker: Broker | undefined): string | undefined {
+export function partitionForTarget (target: string): string | undefined {
   const origin = originFromUrl(target)
   if (origin === null) return undefined
-  if (broker?.app.hasGrantsSync(origin) === true) return partitionFor(origin)
   return isOriginServedFromCacheSync(origin) ? partitionFor(origin) : undefined
 }
 
@@ -86,11 +86,10 @@ export interface PartitionSwap {
  * current session for a blank page would throw away history for nothing. */
 export function partitionChanged (
   target: string,
-  currentPartition: string | undefined,
-  broker: Broker | undefined
+  currentPartition: string | undefined
 ): PartitionSwap | undefined {
   if (originFromUrl(target) === null) return undefined
-  const next = partitionForTarget(target, broker)
+  const next = partitionForTarget(target)
   return next === currentPartition ? undefined : { to: next }
 }
 
@@ -117,9 +116,9 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
 }
 
 /** Whether `target` needs the app-tab flag `view` does not already carry, or vice
- * versa -- isolation follows CONSENT (`hasGrantsSync`, `partitionForTarget`) but this
- * flag follows REGISTRATION (`isRegisteredSync`), so a navigation between a
- * registered-but-ungranted app and an ordinary site can cross this without the
+ * versa -- a partition follows CACHE-SERVING (`partitionForTarget`) but this flag
+ * follows REGISTRATION (`isRegisteredSync`), so a navigation between a registered
+ * app that is not cache-served and an ordinary site can cross this without the
  * partition ever changing. Undefined for a target with no derivable origin, same as
  * `partitionChanged` -- a rejected navigation must not read as a flag change either. */
 export function appTabFlagChanged (target: string, view: WebContentsView, broker: Broker | undefined): boolean {
@@ -149,22 +148,55 @@ export function tabWebPreferences (preload: string, partition: string | undefine
 }
 
 /** Builds one tab's WebContentsView, shared by tabs.ts's createTab() and
- * repartitionView(). */
-export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[]): WebContentsView {
+ * repartitionView().
+ *
+ * `opts.backgroundColor`: the white flash a fresh tab shows before it loads
+ * fixed -- createTab() (tabs.ts) attaches this view to screen BEFORE
+ * `loadURL`, on purpose (a detached view's first paint has nowhere live to
+ * land), which means Electron's default opaque-white WebContentsView
+ * background is what actually paints first, for however long the page takes
+ * to load and apply its own CSS background. Only the shell's OWN pages
+ * (the new-tab dashboard, orivon:// internal pages) get one here -- an
+ * ordinary website's tab is deliberately left at the default, matching every
+ * browser's own new-tab-vs-site distinction (a site may itself be
+ * transparent/dark/light and this shell has no opinion on that).
+ *
+ * `opts.target`, when known, is what the view is about to load -- see
+ * appTabOrigins below for why watchAppTab needs it. A trailing options
+ * object, not two more positional strings: both are optional and hard to
+ * tell apart at a call site by position alone. */
+export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[], opts: { backgroundColor?: string, target?: string } = {}): WebContentsView {
   const view = new WebContentsView({ webPreferences: tabWebPreferences(preload, partition, additionalArguments) })
-  watchAppTab(view, additionalArguments)
+  if (opts.backgroundColor !== undefined) {
+    view.setBackgroundColor(opts.backgroundColor)
+    recordViewBackground(view.webContents.id, opts.backgroundColor)
+  }
+  watchAppTab(view, additionalArguments, opts.target)
   return view
 }
 
 /** The views built with APP_TAB_FLAG. Electron cannot read a view's
  * webPreferences back, and a parked view may only be reused while its flag
- * still matches what its origin needs (takeParkedView). */
-const appTabViews = new WeakSet<WebContentsView>()
+ * still matches what its origin needs (tab-parking.ts's takeParkedView, the
+ * one outside reader -- exported for that, not for general use). */
+export const appTabViews = new WeakSet<WebContentsView>()
+
+/** The origin each app-tab view currently serves, kept current by wireView's
+ * did-navigate handler for as long as the view stays put -- see the comment
+ * there. tab-parking.ts's retireView reads this for its park key (ADR-0044)
+ * rather than the view's live `getURL()`: by the time a redirect or script
+ * navigation's did-navigate fires and retirement follows, the view has
+ * already committed the URL it is LEAVING FOR, not the one it is leaving;
+ * only this map still has the departing origin. Exported for that one
+ * outside reader, not for general use. */
+export const appTabOrigins = new WeakMap<WebContentsView, string>()
 
 /** A registered app's tab gets its failures reported; see reportAppFailures. */
-function watchAppTab (view: WebContentsView, additionalArguments: string[] | undefined): void {
+function watchAppTab (view: WebContentsView, additionalArguments: string[] | undefined, target?: string): void {
   if (additionalArguments?.includes(APP_TAB_FLAG) !== true) return
   appTabViews.add(view)
+  const origin = target !== undefined ? originFromUrl(target) : null
+  if (origin !== null) appTabOrigins.set(view, origin)
   reportAppFailures(view)
 }
 
@@ -201,14 +233,6 @@ function reportAppFailures (view: WebContentsView): void {
   webContents.on('render-process-gone', (_event, details) => {
     console.error(`[orivon][app ${where()}] the renderer died: ${details.reason} (exit ${String(details.exitCode)})`)
   })
-}
-
-/** A popup whose opener still exists stays in its opener's session on the
- * open web: moving it to the default session would sever `window.opener`,
- * which is what the page opened it for. A move INTO an isolated app still
- * happens, since that is the only session serving the app's pinned bundle. */
-function keepsOpenerSession (wc: WebContents, swap: PartitionSwap): boolean {
-  return swap.to === undefined && wc.opener !== null && wc.opener !== undefined
 }
 
 /** Every event a tab's WebContentsView needs wired -- shared by createTab(),
@@ -256,18 +280,43 @@ export function wireView (id: string, record: TabRecord): void {
       record.isDashboardTab = false
     }
     if (!record.isDashboardTab) {
-      const swap = partitionChanged(navigatedUrl, record.partition, record.host.broker)
-      if (swap !== undefined && !keepsOpenerSession(wc, swap)) {
+      const swap = partitionChanged(navigatedUrl, record.partition)
+      const cutOpener = openerCutNeeded(wc, navigatedUrl, record.host.broker)
+      if (swap !== undefined && (cutOpener || !keepsOpenerSession(wc, swap))) {
         repartitionView(id, record, navigatedUrl, swap.to)
         return
       }
+      // The partition can stay `undefined` on both sides while the opener still must be cut (README.md's Design notes, `openerCutNeeded`).
+      if (swap === undefined && cutOpener) {
+        repartitionView(id, record, navigatedUrl, partitionForTarget(navigatedUrl))
+        return
+      }
       // No partition swap does not mean no rebuild is needed: the app-tab
-      // flag follows a different predicate (isRegisteredSync) than the
-      // partition does (hasGrantsSync), and can flip while the partition
-      // -- and so `swap` -- stays undefined.
+      // flag follows isRegisteredSync, not cache-serving, and can flip
+      // while the partition -- and so `swap` -- stays undefined.
       if (swap === undefined && appTabFlagChanged(navigatedUrl, view, record.host.broker)) {
         repartitionView(id, record, navigatedUrl, record.partition)
         return
+      }
+      // The view is staying: if it is an app tab, record which origin it
+      // now serves, for retireView()'s park key WHEN this view later does
+      // retire (ADR-0044: a registered, network-served app has no partition
+      // of its own, so its origin is the only thing that identifies it --
+      // and by the time a redirect or script navigation's did-navigate
+      // fires, the view has already committed the NEW url, so that origin
+      // can only be read here, before a later navigation overwrites it).
+      // Also what lets two granted apps navigated straight into one
+      // another (ADR-0044, no swap between them) each retire under their
+      // own, current origin rather than the first one this view ever had --
+      // and, for the same reason, why developer tools close HERE too
+      // (README.md's Design notes), not only in retireView().
+      if (appTabViews.has(view)) {
+        const origin = originFromUrl(navigatedUrl)
+        const previousOrigin = appTabOrigins.get(view) ?? null
+        if (origin !== null && origin !== previousOrigin && popupTargetIsApp(navigatedUrl, record.host.broker)) {
+          record.host.devtools?.closeFor(wc)
+        }
+        if (origin !== null) appTabOrigins.set(view, origin)
       }
     }
     record.host.emitState()
@@ -339,120 +388,13 @@ export function wireView (id: string, record: TabRecord): void {
     atCapacity: () => record.host.atCapacity(),
     openTab: (url) => { record.host.openTab(url) },
     adoptPopup: (view, partition, url) => {
-      watchAppTab(view, appTabArgsFor(url, record.host.broker))
+      watchAppTab(view, appTabArgsFor(url, record.host.broker), url)
       record.host.adoptPopup(view, partition)
     },
-    partitionFor: (url) => partitionForTarget(url, record.host.broker),
-    webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker))
+    partitionFor: (url) => partitionForTarget(url),
+    webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
+    isApp: (url) => popupTargetIsApp(url, record.host.broker)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
-}
-
-/** Swaps the view `record` shows for one in `nextPartition` -- the ONLY way
- * to change a tab's Electron session partition after creation (Electron fixes
- * `webPreferences.partition` at construction; there is no live "reassign
- * session" API). Called from two places, both guarded by `partitionChanged`
- * so neither fires for a same-origin navigation, a rejected/about:blank
- * fallback or the dashboard: navigate() (a typed target, pre-fetch) and
- * wireView()'s did-navigate handler (a redirect, clicked link, form
- * submission or script navigation -- the target is only known once Chromium
- * has already committed it).
- *
- * A view leaving an app's partition is parked rather than closed, and a tab
- * coming back to that app gets it again, with the app's own history and
- * sessionStorage. Every other swap starts from an empty `navigationHistory`,
- * since Electron gives no way to carry it across: entering an app, or
- * leaving one for the open web, still costs the back button (A109; ADR-0018
- * for what swaps at all). */
-export function repartitionView (
-  id: string,
-  record: TabRecord,
-  target: string,
-  nextPartition: string | undefined
-): void {
-  const { host } = record
-  // A navigation that commits as the window closes must not make a view nobody will close.
-  if (host.isClosing()) return
-  const oldView = record.view
-  const oldPartition = record.partition
-  const wasShown = host.isShown(id)
-
-  if (wasShown) host.detachView(oldView)
-
-  const appTabArgs = appTabArgsFor(target, host.broker)
-  const parked = takeParkedView(record, nextPartition, appTabArgs)
-  const newView = parked ?? makeTabView(host.preloadPath, nextPartition, appTabArgs)
-  record.view = newView
-  record.partition = nextPartition
-  record.isDashboardTab = false
-  record.internalPage = null
-  if (parked === undefined) wireView(id, record)
-  else keepOnlyOwnEntriesOnReturn(record, parked, target)
-
-  // Same tab, fresh WebContents -- the lifecycle seam's one event tab-
-  // view.ts raises directly (tab-lifecycle.ts's own doc says why).
-  host.tabLifecycle?.viewReplaced(oldView.webContents, newView.webContents, host.window)
-
-  // Only once the record shows the new view: the old one's handlers then
-  // ignore it, so closing it here cannot reach forgetTab().
-  retireView(record, oldView, oldPartition)
-
-  if (wasShown) host.attachView(id, newView)
-
-  void newView.webContents.loadURL(target)
-}
-
-function closeView (view: WebContentsView): void {
-  if (!view.webContents.isDestroyed()) view.webContents.close()
-}
-
-/** An app's view is parked on about:blank for the tab's return; any other
- * view is closed, an internal page's included: it is one per window and is
- * opened again from the shell, not returned to. */
-function retireView (record: TabRecord, view: WebContentsView, partition: string | undefined): void {
-  record.host.devtools?.closeFor(view.webContents)
-  if (partition === undefined || partition === INTERNAL_PARTITION || view.webContents.isDestroyed()) {
-    closeView(view)
-    return
-  }
-  record.parkedViews.set(partition, view)
-  void view.webContents.loadURL('about:blank')
-}
-
-/** The view this tab parked in `partition`, if it can serve the target. Its
- * app-tab flag was fixed when it was built, so one that no longer matches
- * its origin's registration is closed, and the tab gets the fresh view it
- * would have had anyway. */
-function takeParkedView (record: TabRecord, partition: string | undefined, appTabArgs: string[] | undefined): WebContentsView | undefined {
-  if (partition === undefined) return undefined
-  const view = record.parkedViews.get(partition)
-  if (view === undefined) return undefined
-  record.parkedViews.delete(partition)
-  if (!view.webContents.isDestroyed() && appTabViews.has(view) === (appTabArgs !== undefined)) return view
-  closeView(view)
-  return undefined
-}
-
-/** Once a parked view commits the tab's return, drops every history entry
- * that is not its app's own page: the page the app left for, which committed
- * here before the tab moved, and the blank page it waited on. Going back to
- * either would load it inside the app's session. */
-function keepOnlyOwnEntriesOnReturn (record: TabRecord, view: WebContentsView, target: string): void {
-  const origin = originFromUrl(target)
-  view.webContents.once('did-navigate', () => {
-    const history = view.webContents.navigationHistory
-    const active = history.getActiveIndex()
-    // From the end, so each removal leaves the indices still to visit alone.
-    for (let index = history.length() - 1; index >= 0; index--) {
-      if (index !== active && originFromUrl(history.getEntryAtIndex(index).url) !== origin) history.removeEntryAtIndex(index)
-    }
-    record.host.emitState()
-  })
-}
-
-/** Closes the views a tab parked for the apps it left: the tab is going. */
-export function closeParkedViews (record: TabRecord): void {
-  for (const view of record.parkedViews.values()) closeView(view)
-  record.parkedViews.clear()
 }
 
 /** A snapshot of a page, for the floating preview a tear-off drag shows (tear-drag.ts). `null` for a gone or
