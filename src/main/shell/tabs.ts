@@ -169,8 +169,10 @@ export class TabManager {
 
     const { id, record, target } = this.factory.content(url)
     this.add(id, record)
-    void record.view.webContents.loadURL(target)
+    // Attached before it navigates: a detached view's first paint has
+    // nowhere live to land (pane-host.ts's own fix is the other half).
     this.activateTab(id)
+    void record.view.webContents.loadURL(target)
     return id
   }
 
