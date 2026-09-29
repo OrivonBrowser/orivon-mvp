@@ -409,10 +409,26 @@ describeVolumeMaster('the owner\'s real Volume Master copy (opt-in, ORIVON_VOLUM
         await sender.webContents.executeJavaScript(
           `chrome.runtime.sendMessage({ action: 'popup-gain-change', target: 'service-worker', tabId: ${String(tabWc.id)}, volumeValue: 150 })`
         )
-        await new Promise((r) => setTimeout(r, 2500))
-        const audioData = await sender.webContents.executeJavaScript(
-          `chrome.runtime.sendMessage({ action: 'popup-audio-data-get', target: 'offscreen-document', tabId: ${String(tabWc.id)} })`
-        )
+
+        // The offscreen document's own getMediaStreamId->getUserMedia->
+        // Web Audio graph chain is real, async work (a genuine device/
+        // media negotiation, not a fixed IPC round trip) -- a single fixed
+        // wait here raced it under load (measured: a 2.5s wait alone was
+        // sometimes too short even though the real graph finished barely
+        // afterward, with everything else -- getMediaStreamId, the mute --
+        // already having succeeded). Polled instead, up to 10s, the same
+        // margin `tab-capture-grants.ts`'s own token validity gives a real
+        // capture to be redeemed.
+        const deadline = Date.now() + 10_000
+        let audioData: { gain?: { gain: number } } | null | undefined
+        do {
+          audioData = await sender.webContents.executeJavaScript(
+            `chrome.runtime.sendMessage({ action: 'popup-audio-data-get', target: 'offscreen-document', tabId: ${String(tabWc.id)} })`
+          )
+          if (audioData !== null && audioData !== undefined) break
+          await new Promise((r) => setTimeout(r, 250))
+        } while (Date.now() < deadline)
+
         const muted = tabWc.audioMuted
         return { ok: true, hasDoc, audioData, muted }
       }, { id: extensionId, fixtureUrl })
