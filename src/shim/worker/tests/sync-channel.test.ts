@@ -205,4 +205,40 @@ describe('serveOrivon\'s synchronous fallback reply, when the writer refuses wha
       id: 2, ok: false, error: expect.objectContaining({ message: 'handle is closed' })
     }))
   })
+
+  it('releases a handle a SUCCESSFUL reply carried when encoding that reply itself fails, leaving no entry in the handle table', async () => {
+    let closeCalls = 0
+    let resolveClosed: () => void = () => {}
+    const closed = new Promise<void>((resolve) => { resolveClosed = resolve })
+    // A BigInt property: crossesSynchronously accepts it (isPlainData is true for anything
+    // that is not an object), but JSON.stringify -- encodeReply's own encoding -- throws on
+    // one. This makes encodeReply(reply) itself fail, on a reply ReplyWriter never even sees,
+    // rather than ReplyWriter.send refusing bytes that were built successfully (the other test
+    // above).
+    const handle = { id: 'h1', size: 10n, close: async (): Promise<void> => { closeCalls++; resolveClosed() }, closed }
+    const { port1, port2 } = new MessageChannel()
+    const server = serveOrivon(port1 as unknown as globalThis.MessagePort, { test: { handle: () => handle } })
+    const p2 = port2 as unknown as globalThis.MessagePort
+    const received: unknown[] = []
+    p2.onmessage = (event: MessageEvent) => { received.push(event.data) }
+
+    try {
+      p2.postMessage({ syncBuffer: createChannelBuffer() })
+      p2.postMessage({ id: 1, path: ['test', 'handle'], args: [], sync: true })
+      await settle()
+
+      expect(closeCalls).toBe(1)
+
+      p2.postMessage({ id: 2, handle: 1, method: 'whatever', args: [] })
+      await settle()
+    } finally {
+      port1.close()
+      port2.close()
+      await server.dispose()
+    }
+
+    expect(received).toContainEqual(expect.objectContaining({
+      id: 2, ok: false, error: expect.objectContaining({ message: 'handle is closed' })
+    }))
+  })
 })

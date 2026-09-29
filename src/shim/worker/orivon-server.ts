@@ -191,11 +191,20 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
     return { fn, self }
   }
 
-  /** A synchronous reply that fails to encode becomes an error reply, never silence: the Worker is waiting on it. */
-  const encodeSync = (reply: ServerMessage): Uint8Array => {
+  /**
+   * A synchronous reply that fails to encode becomes an error reply, never
+   * silence: the Worker is waiting on it. `onEncodeFailure`, when given,
+   * runs before that substitution -- the only place a SUCCESSFUL reply's own
+   * encode failure (a BigInt property, say: crossesSynchronously accepts it,
+   * encodeReply's JSON.stringify does not) is ever visible, since this
+   * function recovers from it internally and the bytes it returns instead
+   * normally reach `replies.send` and succeed.
+   */
+  const encodeSync = (reply: ServerMessage, onEncodeFailure?: () => void): Uint8Array => {
     try {
       return encodeReply(reply)
     } catch (error) {
+      onEncodeFailure?.()
       return encodeReply({ id: 'id' in reply ? reply.id : 0, ok: false, error: wireErrorOf(error) })
     }
   }
@@ -222,16 +231,23 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
       reply = { id: request.id, ok: false, error: wireErrorOf(error) }
     }
     if (sync) {
+      // Released at most once, and only for a SUCCESSFUL reply: whichever of encodeSync's own
+      // catch (an encode failure of this reply, invisible to everything below it) or the send
+      // catch just below (a write ReplyWriter refused) finds this reply cannot reach the Worker
+      // as built releases what it carried, the same way notSynchronous's own refusal already
+      // does for a value that never got this far -- the Worker never receives the handle
+      // numbers this reply's encode() already registered, so nothing else will ever close them.
+      let released = false
+      const releaseCarriedOnce = (): void => {
+        if (reply.ok && !released) { released = true; release(carried) }
+      }
       try {
-        replies?.send(encodeSync(reply))
+        replies?.send(encodeSync(reply, releaseCarriedOnce))
       } catch {
         // The writer refused this reply (too large for the length header, most often): a fixed,
         // short fallback replaces it -- never one built from the refusal's own error, which may
-        // be exactly as large as what was refused. If the refused reply was a SUCCESSFUL one,
-        // release what it carried the same way notSynchronous's own refusal does: the Worker
-        // never receives the handle numbers this reply's encode() already registered, so
-        // nothing else will ever close them.
-        if (reply.ok) release(carried)
+        // be exactly as large as what was refused.
+        releaseCarriedOnce()
         try {
           replies?.send(encodeSync({ id: request.id, ok: false, error: FALLBACK_REPLY_ERROR }))
         } catch (error) {
