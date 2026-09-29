@@ -326,14 +326,29 @@ export class SqliteHistoryStore implements HistoryStore {
     }
   }
 
-  /** Forgets the pages least recently visited when there are more than are kept. */
+  /** Forgets the pages least recently visited when there are more than are kept. Always the per-row path,
+   * with FTS5 secure-delete switched off for just this delete and back on before the transaction commits
+   * (which a ROLLBACK also restores, since the config change is part of the same transaction): trim() runs
+   * automatically on the navigation path whenever the history is full, not because a person asked to forget
+   * anything, so it is not worth the bulk path's index-drop-and-rebuild cost every few thousand new pages,
+   * nor secure-delete's per-row cost. A trimmed page's index entries are removed the next time FTS5 merges
+   * its segments on its own, not at delete time -- every forgetting a person actually asks for (remove,
+   * removeRange, clear, and the retention prune, itself a removeRange) still erases them at once. */
   private trim (): void {
     this.newPagesSinceCheck = 0
     const total = (this.statements.count.get() as { n: number }).n
     if (total <= this.limits.maxPages) return
-    const remaining = Math.floor(this.limits.maxPages * 0.9)
-    const toDelete = total - remaining
-    this.deleteRows(toDelete, remaining, () => { this.statements.trimDelete.run(toDelete) })
+    const toDelete = total - Math.floor(this.limits.maxPages * 0.9)
+    this.db.exec('BEGIN')
+    try {
+      this.db.exec("INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 0)")
+      this.statements.trimDelete.run(toDelete)
+      this.db.exec("INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 1)")
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.rollback()
+      throw error
+    }
   }
 
   list (query: HistoryQuery = {}): HistoryEntry[] {

@@ -64,13 +64,20 @@ without it, forgetting a page's ordinary FTS5 delete only tombstones its posting
 held in already-allocated index pages that `secure_delete`/VACUUM on `pages` itself cannot reach. With it, the
 per-row path costs roughly 0.33ms per row deleted, fine for `remove` but not for forgetting many at once.
 
-**`remove`, `removeRange`, `trim` and `clear` share one bulk-delete path** for that case: when the rows to
-delete are large enough against what remains (`BULK_DELETE_ROW_RATIO`; `clear` always qualifies), one
-transaction drops the FTS5 index and its triggers, deletes at plain SQLite speed, then rebuilds the index
-(`FTS_INDEX_DDL`, the same DDL the v1-to-v2 migration uses) from what is left, at roughly 0.019ms per remaining
-row -- `secure_delete` zeroes the dropped table's freed pages exactly as it does a per-row `DELETE`'s. Measured
-on 100,000 rows: `clear` in ~0.3s (35-47s per-row); `removeRange` of 10,000 in ~0.6-1.6s (3.5-6s per-row); a
-90-day-retention `prune` of 50,000 in ~0.6-1.2s (~20s per-row).
+**`remove`, `removeRange` and `clear` share one bulk-delete path** for that case: when the rows to delete are
+large enough against what remains (`BULK_DELETE_ROW_RATIO`; `clear` always qualifies), one transaction drops
+the FTS5 index and its triggers, deletes at plain SQLite speed, then rebuilds the index (`FTS_INDEX_DDL`, the
+same DDL the v1-to-v2 migration uses) from what is left, at roughly 0.019ms per remaining row -- `secure_delete`
+zeroes the dropped table's freed pages exactly as it does a per-row `DELETE`'s. Measured on 100,000 rows:
+`clear` in ~0.3s (35-47s per-row); `removeRange` of 10,000 in ~0.6-1.6s (3.5-6s per-row); a 90-day-retention
+`prune` (itself a `removeRange`) of 50,000 in ~0.6-1.2s (~20s per-row).
+
+**`trim` forgets differently: per-row, with secure-delete switched off for just that delete.** It runs
+automatically, on the navigation path, whenever the history is full -- not because a person asked to forget
+anything -- so it is not worth either the bulk path's index-drop-and-rebuild cost or the per-row path's
+secure-delete cost on every few thousand new pages; a trimmed page's index entries are removed only once FTS5
+next merges its segments on its own, where everything `remove`, `removeRange`, `clear` and `prune` forget is
+erased from the index at once.
 
 **A file that cannot be used is left alone.** If the database is damaged or from a newer version, history is off
 for that run and Settings says why; the file is neither deleted nor replaced, so nothing a person could recover is

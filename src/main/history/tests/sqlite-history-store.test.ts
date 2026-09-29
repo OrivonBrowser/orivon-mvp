@@ -386,6 +386,63 @@ describe('a store with too many pages', () => {
     expect(urls[0]).toBe('https://a.example/129')
     expect(urls).not.toContain('https://a.example/0')
   })
+
+  // trim() runs automatically, on the navigation path, whenever the history is full -- unlike remove(),
+  // removeRange() and clear(), which only ever run because a person asked to forget something. Dropping
+  // and rebuilding the whole FTS5 index (the bulk path the other three use) on every ~10,000-page write
+  // once a history is full is exactly the cost that path exists to avoid elsewhere; trim() instead runs
+  // its delete per-row with FTS5's secure-delete switched off for that one delete, at the per-row path's
+  // pre-secure-delete cost, and switches it back on before anything else can run.
+  it('trims through the per-row path, secure-delete off for the delete, never by dropping the FTS5 index', () => {
+    const history = new SqliteHistoryStore(':memory:', { maxPages: 100, checkEvery: 10 })
+    const db = (history as unknown as { db: DatabaseSync }).db
+    const execSpy = vi.spyOn(db, 'exec')
+
+    for (let n = 0; n < 130; n += 1) history.record(`https://a.example/${String(n)}`, '', 1000 + n)
+    history.flush()
+
+    const execCalls = execSpy.mock.calls.map((call) => String(call[0]))
+    expect(execCalls.some((sql) => sql.includes('DROP TABLE pages_fts'))).toBe(false)
+    expect(execCalls.some((sql) => sql.includes("'secure-delete', 0"))).toBe(true)
+    expect(execCalls.some((sql) => sql.includes("'secure-delete', 1"))).toBe(true)
+    execSpy.mockRestore()
+  })
+
+  it('search results after a trim agree with a raw LIKE query, the same as any other path', () => {
+    const history = new SqliteHistoryStore(':memory:', { maxPages: 100, checkEvery: 10 })
+    for (let n = 0; n < 130; n += 1) history.record(`https://a.example/${String(n)}`, `Common Title ${String(n)}`, 1000 + n)
+    history.flush()
+
+    const db = (history as unknown as { db: DatabaseSync }).db
+    const pattern = '%common%'
+    const expected = (db.prepare("SELECT id FROM pages WHERE title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\'")
+      .all(pattern, pattern) as Array<{ id: number }>).map((row) => row.id).sort()
+    expect(history.list({ search: 'common', limit: 500 }).map((entry) => entry.id).sort()).toEqual(expected)
+  })
+
+  it('leaves FTS5 secure-delete on afterwards: a page forgotten right after a trim leaves no footprint of its own', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'orivon-history-trim-secure-delete-'))
+    try {
+      const path = join(dir, 'history.db')
+      const history = new SqliteHistoryStore(path, { maxPages: 100, checkEvery: 10 })
+      for (let n = 0; n < 130; n += 1) history.record(`https://a.example/${String(n)}`, '', 1000 + n) // trims
+      history.flush()
+      const beforeExtra = ftsDataFootprint(path)
+
+      history.record('https://after-trim.example/', 'Recorded right after a trim', 5000)
+      history.flush()
+      const id = history.list({ search: 'after-trim' })[0]?.id ?? -1
+      history.remove(id) // if secure-delete were still off, this would leave a stale posting behind
+      history.close()
+
+      // The trimmed survivors (the majority of the pages that remain) already cost real index bytes; what
+      // this checks is that recording and then forgetting one more page on top costs nothing extra -- not
+      // that the total is near zero, which it is not.
+      expect(ftsDataFootprint(path) - beforeExtra).toBeLessThan(2000)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('what clearing leaves in the file', () => {
