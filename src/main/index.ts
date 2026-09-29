@@ -1,5 +1,6 @@
 import { app, BaseWindow, dialog, nativeTheme, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
+import { openUrlsOnSecondLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
@@ -165,13 +166,9 @@ function boot (runtime: Runtime): void {
       setTimeout(() => { sweepPrivateDirs(); runtime.profiles.sweepDeleted() }, SWEEP_DELAY_MS).unref()
     }
     opener = (urls) => {
-      if (shell.windows.focused() === undefined) createShellWindow(ctx, shell)
-      const target = shell.windows.focused()
-      if (target === undefined) return
-      if (target.window.isMinimized()) target.window.restore()
-      target.window.show()
-      target.window.focus()
-      for (const url of urls) target.tabs.createTab(url)
+      openUrlsOnSecondLaunch(shell.windows.focused(), urls, (urls) => {
+        createShellWindow(ctx, shell, { first: (tabs) => { for (const url of urls) tabs.createTab(url) } })
+      })
     }
     markStarted()
     if (runtime.isPrivate) {
