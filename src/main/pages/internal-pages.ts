@@ -6,7 +6,7 @@ export const INTERNAL_SCHEME = 'orivon'
 /** The session internal pages run in: named without `persist:`, so it lives in memory. */
 export const INTERNAL_PARTITION = 'orivon-internal'
 
-export const INTERNAL_PAGES = ['settings', 'history', 'profiles', 'private'] as const
+export const INTERNAL_PAGES = ['settings', 'history', 'profiles', 'private', 'extensions'] as const
 export type InternalPageId = (typeof INTERNAL_PAGES)[number]
 
 export function isInternalPageId (value: unknown): value is InternalPageId {

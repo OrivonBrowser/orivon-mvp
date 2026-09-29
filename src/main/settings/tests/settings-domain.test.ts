@@ -20,8 +20,8 @@ async function domain (): Promise<{ store: SettingsStore, ask: (command: unknown
 }
 
 describe('settingsDomain', () => {
-  it('is for the Settings page and no other', async () => {
-    expect(settingsDomain(new SettingsStore(join(dir, 'x.json'))).pages).toEqual(['settings'])
+  it('is for the Settings and Extensions pages, and no other', async () => {
+    expect(settingsDomain(new SettingsStore(join(dir, 'x.json'))).pages).toEqual(['settings', 'extensions'])
   })
 
   it('tells the page what every setting is, and what each is set to', async () => {

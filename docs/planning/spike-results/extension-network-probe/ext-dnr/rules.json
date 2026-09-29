@@ -1,0 +1,4 @@
+[
+  { "id": 1, "priority": 1, "action": { "type": "modifyHeaders", "responseHeaders": [{ "header": "content-security-policy", "operation": "remove" }] }, "condition": { "resourceTypes": ["main_frame"] } },
+  { "id": 2, "priority": 1, "action": { "type": "block" }, "condition": { "urlFilter": "blocked.js", "resourceTypes": ["script"] } }
+]

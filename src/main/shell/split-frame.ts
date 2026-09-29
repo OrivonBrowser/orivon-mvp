@@ -13,6 +13,7 @@ import { lockNavigation } from './lock-navigation.js'
 import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import type { FrameState } from './split-controller.js'
 import type { SplitBackdrop } from './tab-types.js'
+import { SHELL_PARTITION } from './shell-session.js'
 
 export interface SplitFrameActions {
   /** The divider was dragged to this place along the area (x for side by side, y for stacked). */
@@ -54,6 +55,7 @@ export class SplitFrame implements SplitBackdrop {
     const view = new WebContentsView({
       webPreferences: {
         preload: join(this.dirname, '../preload/split-frame.js'),
+        partition: SHELL_PARTITION,
         additionalArguments: [`--orivon-split-frame-url=${url}`],
         contextIsolation: true,
         sandbox: true,

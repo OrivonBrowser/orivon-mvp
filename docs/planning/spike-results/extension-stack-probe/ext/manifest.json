@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "stack-probe-ext",
+  "version": "1.0",
+  "permissions": ["scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "bg.js" },
+  "content_scripts": [
+    { "matches": ["<all_urls>"], "js": ["iso.js"], "run_at": "document_start" },
+    { "matches": ["<all_urls>"], "js": ["main-start.js"], "run_at": "document_start", "world": "MAIN" },
+    { "matches": ["<all_urls>"], "js": ["main-start-tamper.js"], "run_at": "document_start", "world": "MAIN" },
+    { "matches": ["<all_urls>"], "js": ["main-idle.js"], "run_at": "document_idle", "world": "MAIN" }
+  ],
+  "web_accessible_resources": [{ "resources": ["war.js"], "matches": ["<all_urls>"] }]
+}

@@ -191,11 +191,12 @@ describe('installGlobals', () => {
   })
 
   describe('setImmediate / clearImmediate', () => {
-    // A macrotask, unlike nextTick's microtask -- a real (short) wait is
-    // needed, matching this repo's existing async-ordering test style
-    // (src/main/tests/registry.test.ts) rather than introducing fake timers.
-    const flushMacrotask = async (): Promise<void> => {
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    // A macrotask, unlike nextTick's microtask. The shim's immediates share
+    // one MessageChannel, whose messages arrive in order, so a sentinel
+    // immediate scheduled last runs after every earlier one; a fixed timer
+    // wait raced the channel's first delivery on a loaded machine.
+    const flushMacrotask = async (target: GlobalsTarget): Promise<void> => {
+      await new Promise<void>((resolve) => { target.setImmediate?.(resolve) })
     }
 
     it('defers the callback past the current synchronous run', async () => {
@@ -203,7 +204,7 @@ describe('installGlobals', () => {
       const order: string[] = []
       target.setImmediate?.(() => order.push('immediate'))
       order.push('sync')
-      await flushMacrotask()
+      await flushMacrotask(target)
       expect(order).toEqual(['sync', 'immediate'])
     })
 
@@ -211,7 +212,7 @@ describe('installGlobals', () => {
       const { target } = install()
       const seen: unknown[] = []
       target.setImmediate?.((a: unknown, b: unknown) => { seen.push(a, b) }, 'x', 42)
-      await flushMacrotask()
+      await flushMacrotask(target)
       expect(seen).toEqual(['x', 42])
     })
 
@@ -225,7 +226,7 @@ describe('installGlobals', () => {
       expect(() => target.setImmediate?.(() => { throw boom })).not.toThrow()
       expect(reportError).not.toHaveBeenCalled() // not yet -- setImmediate is deferred
 
-      await flushMacrotask()
+      await flushMacrotask(target)
 
       expect(reportError).toHaveBeenCalledExactlyOnceWith(boom, 'setImmediate')
     })
@@ -236,7 +237,7 @@ describe('installGlobals', () => {
 
       target.setImmediate?.(() => { throw new Error('first callback blows up') })
       target.setImmediate?.(after)
-      await flushMacrotask()
+      await flushMacrotask(target)
 
       expect(after).toHaveBeenCalledOnce()
       expect(reportError).toHaveBeenCalledOnce()
@@ -250,7 +251,7 @@ describe('installGlobals', () => {
       expect(handle).toBeDefined()
       if (handle !== undefined) target.clearImmediate?.(handle)
 
-      await flushMacrotask()
+      await flushMacrotask(target)
       expect(callback).not.toHaveBeenCalled()
     })
 

@@ -110,6 +110,14 @@ jobs:
       - name: Install a virtual display
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
+      # The extension e2e files launch with the Chromium sandbox, since Electron
+      # runs no service-worker preload without it. The runner restricts user
+      # namespaces, so Chromium needs its setuid helper, as a .deb install sets up.
+      - name: Enable Chromium's setuid sandbox helper
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+
       # Builds first (the app launches from out/), then runs the e2e config.
       - name: Capability-enforcement end-to-end test
         run: xvfb-run -a npm run test:e2e

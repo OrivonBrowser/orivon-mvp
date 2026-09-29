@@ -61,7 +61,7 @@ const BLOCK_BUDGETED = [
 const IMPORT_STATEMENT = /^import\b/
 
 /**
- * Two directories this guard never reads.
+ * Directories this guard never reads.
  *
  * `src/contracts/` is Rule 1's own carve-out: doc comments on exported
  * declarations there ARE the product's API documentation, and thinning them
@@ -70,8 +70,13 @@ const IMPORT_STATEMENT = /^import\b/
  * `spike/` is week-0 scaffolding, absent from parallel-work.md's ownership map
  * and documented as throwaway -- the same exclusion, for the same reason, that
  * scripts/check-size.mjs makes.
+ *
+ * `vendor/` is third-party source kept in its upstream shape, patched as its
+ * UPSTREAM.md lists; Rule 1 is Orivon's own authoring style, and upstream's
+ * comments are not held to it, the same reasoning scripts/check-size.mjs
+ * uses for the same directory.
  */
-const EXEMPT_DIRECTORY = /^(src\/contracts|spike)\//
+const EXEMPT_DIRECTORY = /^(src\/contracts|spike|vendor)\//
 
 /**
  * "Test file" exactly as code-guidelines.md Rule 2 defines it: the apps under

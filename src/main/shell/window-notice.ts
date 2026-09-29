@@ -5,6 +5,7 @@
 // shell says how; Chrome, Firefox and Safari show the same notices. One per
 // window, like Chrome's one bubble: a newer message replaces the old.
 import { WebContentsView, type BaseWindow, type View } from 'electron'
+import { SHELL_PARTITION } from './shell-session.js'
 
 const NOTICE_WIDTH = 320
 const NOTICE_HEIGHT = 44
@@ -66,7 +67,7 @@ export function createWindowNotice (contentView: View, windowWidth: () => number
     const existing = views.get(text)
     if (existing !== undefined) return existing
     const entry = {
-      view: new WebContentsView({ webPreferences: { javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false } }),
+      view: new WebContentsView({ webPreferences: { partition: SHELL_PARTITION, javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false } }),
       loaded: false
     }
     views.set(text, entry)

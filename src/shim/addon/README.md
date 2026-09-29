@@ -35,8 +35,12 @@ they refuse with `NOSYS` and one console line: an addon that needs files is load
 child.
 
 **What an addon cannot do yet:** run a threaded build (`wasm32-wasip1-threads` refuses by name,
-`not-built`), or open sockets. A command build, one exporting `_start`, refuses too: emnapi starts
-one through Node's own WASI internals, so an addon is built as a reactor, as napi-rs builds it.
+`not-built`), or open sockets. A napi-rs package's published WebAssembly build is threaded, and
+runs without this loader: its package's own browser loader, which the parent package's `browser`
+field selects, runs it in an app whose manifest sets `crossOriginIsolated: true`
+([`e2e-napi-rs-package.test.ts`](../../../test/e2e-napi-rs-package.test.ts), opt-in). A command
+build, one exporting `_start`, refuses too: emnapi starts one through Node's own WASI internals,
+so an addon is built as a reactor, as napi-rs builds it.
 Its stdout and stderr go to `process.stdout` and `process.stderr`, as Node's do: the page console,
 or a forked child's pipes.
 

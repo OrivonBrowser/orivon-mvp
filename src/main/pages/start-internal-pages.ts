@@ -3,6 +3,9 @@
 import { app, session } from 'electron'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import type { ShellServices } from '../shell/shell-services.js'
+import { extensionsDomain } from '../extensions/extensions-domain.js'
+import { readExtensionFacts } from '../extensions/extensions-view-runner.js'
+import { pickExtensionFile, pickExtensionFolder } from '../extensions/extensions-picker-runner.js'
 import { settingsDomain } from '../settings/settings-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
 import { pagesDomain } from './pages-domain.js'
@@ -43,12 +46,24 @@ function aboutDomain (): InternalDomain {
 /** Once per process. */
 export function startInternalPages (services: ShellServices, ctx: SubsystemContext): void {
   const permissions = createPermissionsController(ctx)
+  if (ctx.extensions === undefined) {
+    throw new Error('startInternalPages requires ctx.extensions -- check extensionsSubsystem\'s position in subsystems.ts')
+  }
+  const extensions = ctx.extensions
   registerInternalIpc(services.internalPages, internalSession, {
     settings: settingsDomain(services.settings),
     shortcuts: shortcutsDomain(services.shortcuts),
     history: historyDomain(services.history),
     profiles: profilesDomain(services.profiles),
     pages: pagesDomain(services.windows),
+    extensions: extensionsDomain({
+      extensions,
+      readFacts: readExtensionFacts,
+      developerModeEnabled: () => services.settings.get('extensions.developerMode'),
+      pickFolder: pickExtensionFolder,
+      pickFile: pickExtensionFile,
+      notify: () => { services.internalPages.publish('extensions.changed', undefined, ['extensions']) }
+    }),
     privacy: privacyDomain(services.history, services.zoomStore, {
       history: services.history,
       zoom: services.zoomStore,
@@ -69,6 +84,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     about: aboutDomain()
   })
   onVerifierChange(() => { services.internalPages.publish('web3.changed', verifierView(), ['settings']) })
-  services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings']) })
+  // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain.
+  services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
 }

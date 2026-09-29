@@ -1,6 +1,8 @@
-import { app, BaseWindow, dialog, nativeTheme } from 'electron'
+import { app, BaseWindow, dialog, nativeTheme, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
 import { createShellServices } from './shell/shell-services.js'
+import { SHELL_PARTITION } from './shell/shell-session.js'
+import { attachExtensionShell } from './extensions/extension-host.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
@@ -137,6 +139,10 @@ function boot (runtime: Runtime): void {
     }
 
     const shell = createShellServices(app.getPath('userData'), ctx, runtime)
+    // Wires every window's tab lifecycle into the extensions library
+    // (extensionsSubsystem.afterReady already constructed it, above) and
+    // hands its icon requests the chrome view's own session.
+    attachExtensionShell(ctx, shell, session.fromPartition(SHELL_PARTITION))
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
     await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])

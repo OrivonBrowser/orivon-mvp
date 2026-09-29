@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Content Marker",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/e2e-extensions-load.test.ts: marks every page it runs on.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}

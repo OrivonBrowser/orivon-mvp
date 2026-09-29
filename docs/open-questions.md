@@ -1426,6 +1426,53 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
+### A287: A CommonJS `require()` of a shim module gets no named refusal **[AI-REC]**
+
+- **Question:** Refusal by name lives on each module's default export. A CommonJS dependency
+  bundled by esbuild 0.25 gets the ESM namespace from `require('os')`, where an unbuilt member
+  (`os.userInfo`) is `undefined`, called as a bare `TypeError`. Vite's and webpack's: unverified.
+- **Why it matters:** most Node dependencies are CommonJS, so a port sees `undefined is not a
+  function` with no name.
+- **Options:** export a refusing stand-in by name for each Node member a module lacks, generated
+  from Node's own export list (rec.); a CommonJS wrapper per module; accept it, as documented.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing: it degrades an error message, never a working call
+
+### A288: One extension instance everywhere undoes per-app sessions **[OWNER]**
+
+- **Question:** The owner chose one extension instance for granted apps too (2026-09-28). Does a
+  grant then stop implying a session partition, with only a pinned cache keeping one?
+- **Why it matters:** ADR-0018, ADR-0003 and T18/T22 isolate each granted origin in
+  `persist:app-*`; Electron loads an extension per session, so one instance means one session.
+- **Options:** granted network-served origins join the default session, cache-served ones keep
+  their partition until pins are served on the network path (rec.); an extension copy per app.
+- **Who decides:** owner
+- **Blocks:** extensions build plan package 6
+
+### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
+
+- **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs. Sandboxed it
+  runs, though a fresh extension's first worker races it and misses every time (20/20 fixture, 4/4 real)
+  -- the reload in place recovers every miss. `--no-sandbox` was a Playwright default, not Orivon's/the
+  kernel's; an AppImage on a namespace-restricted machine would; a `.deb` installs the setuid helper.
+- **Why it matters:** there, every worker keeps Electron's native, partial `chrome.tabs`/`windows`
+  permanently, with no reload able to fix it.
+- **Options:** confirm real packaged-launch flags on such a machine (rec., unresearched); warn and
+  run with partial APIs; refuse to load extensions when unsandboxed.
+- **Who decides:** research first
+- **Blocks:** extensions build plan package 4's MV3 service-worker API surface
+
+### A291: The packaged app carries no licence texts for its bundled code **[OWNER]**
+
+- **Question:** The packaged app (`out/**` plus `package.json`) bundles vendored and npm code
+  with no licence texts anywhere in it. Does the package ship any?
+- **Why it matters:** `vendor/`'s GPL-3.0, MIT and BSD-3-Clause code, and every npm dependency's
+  own licence, reach a person's machine with nothing beside them once packaged.
+- **Options:** a generated third-party notices file shipped in the package (rec.); the licence
+  texts shipped beside each bundle instead.
+- **Who decides:** owner
+- **Blocks:** the first public release
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared
@@ -1498,7 +1545,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A287: Developer mode is switched on by an environment variable **[OWNER]**
+### A292: Developer mode is switched on by an environment variable **[OWNER]**
 
 - **Question:** Should developer mode be reachable only from the browser's own UI, or stay an
   environment switch (`ORIVON_DEV_ORIGINS=1`) read at launch?
@@ -1510,7 +1557,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A288: The verifier host has Node and no sandbox **[AI-REC]**
+### A293: The verifier host has Node and no sandbox **[AI-REC]**
 
 - **Question:** Should the untrusted parsers T34 names run in a sandboxed process with no Node?
 - **Why it matters:** T34 keeps a parser bug out of main, but the host is a Node utility process:
@@ -1521,7 +1568,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A289: One `orivon.fs` call has no byte cap **[AI-REC]**
+### A294: One `orivon.fs` call has no byte cap **[AI-REC]**
 
 - **Question:** Should a single `orivon.fs` read, write or whole-file read be capped in bytes?
 - **Why it matters:** a granted app can make main hold a whole file (up to Node's 2 GiB `readFile`

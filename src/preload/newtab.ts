@@ -2,10 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { Bookmark } from '../main/browsing/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../main/channels.js'
 import type { NewTabCommand } from '../main/ipc/newtab-ipc.js'
-import { exposeOrivon } from './surface/orivon.js'
-import { exposeFetchRoute } from './expose-fetch-route.js'
-import { exposeShimGlobals } from './expose-shim-globals.js'
-import { installManifestHintWatcher } from './manifest-hint.js'
+import { exposeOrdinaryTabSurface } from './ordinary-tab.js'
 
 // Loaded ONLY for a genuinely fresh tab (src/main/tabs.ts's createTab(),
 // `url === undefined`) -- the dashboard's own page (src/renderer/newtab/).
@@ -20,7 +17,7 @@ import { installManifestHintWatcher } from './manifest-hint.js'
 // compile-time constant this file could just hardcode -- BEFORE
 // exposing anything privileged. If this script runs again for whatever
 // page the user navigated to instead, it exposes nothing beyond
-// ./surface/orivon.ts's exposeOrivon() -- the SAME orivon.* surface
+// ./ordinary-tab.ts's exposeOrdinaryTabSurface() -- the SAME surface
 // preload/app.ts gives every ordinary tab, not a second, easily-
 // forgotten copy of it.
 //
@@ -49,12 +46,9 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     navigate: (input: string): void => { send({ type: 'navigate', input }) }
   })
 } else {
-  // ADR-0017/S4-2/A151: the SAME fetch routing, shim globals and discovery
-  // trigger preload/app.ts's ordinary tabs get -- this branch means the
-  // dashboard tab was navigated away, and is now an ordinary tab too (see
-  // this file's own header above).
-  exposeOrivon()
-  exposeFetchRoute()
-  exposeShimGlobals()
-  installManifestHintWatcher()
+  // ./ordinary-tab.ts's own doc: the SAME surface preload/app.ts gives
+  // every ordinary tab, including its chrome-extension: gate -- this
+  // branch means the dashboard tab was navigated away, and is now an
+  // ordinary tab too (see this file's own header above).
+  exposeOrdinaryTabSurface()
 }

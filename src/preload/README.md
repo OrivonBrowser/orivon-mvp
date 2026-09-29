@@ -1,7 +1,10 @@
 # `src/preload/`: the privilege boundary
 
-**What lives here.** Nine preload scripts at nine privilege levels (`app.ts`, `shell.ts`, `newtab.ts`,
-`permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts`, `internal.ts` and `embed.ts`), the app-tab wiring they share(`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`, `page-buffer.ts`), and
+**What lives here.** Ten preload scripts at ten privilege levels (`app.ts`, `shell.ts`, `newtab.ts`,
+`permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts`, `internal.ts`, `embed.ts` and
+`extension-api.ts`), the
+app-tab wiring they share (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`,
+`page-buffer.ts`, `ordinary-tab.ts`), and
 `orivon-error.ts`, the plain-object error shape [`surface/`](surface/) and [`ports/`](ports/)
 share. The narrowest and most security-critical surface in the repository. Tied to Electron,
 entirely.
@@ -16,7 +19,9 @@ entirely.
 [`src/contracts/`](../contracts/) for types, and, from `expose-shim-globals.ts` only,
 [`src/shim/globals.ts`](../shim/globals.ts): the one shim file with no `electron` import and no
 free identifier, so it can run in a preload and go to `contextBridge.executeInMainWorld`
-unchanged (A151).
+unchanged (A151). `extension-api.ts` also imports
+[`../../vendor/electron-chrome-extensions/src/preload.js`](../../vendor/electron-chrome-extensions/src/preload.js)
+unmodified, so [`vendor/`](../../vendor/) is a dependency of this directory too.
 
 **What it must never import.** [`src/broker/`](../broker/): a preload runs in the renderer
 process, where broker logic would fail or, worse, appear to work. Nothing under `src/main/`,
@@ -29,7 +34,7 @@ across this boundary.
 
 | File | Loaded by | Exposes |
 |---|---|---|
-| `app.ts` | every ordinary tab | `window.orivon`, from `surface/orivon.ts`'s `exposeOrivon()` |
+| `app.ts` | every ordinary tab | `./ordinary-tab.ts`'s `exposeOrdinaryTabSurface()`: `window.orivon` and what depends on it -- nothing at all on a `chrome-extension:` page |
 | `shell.ts` | only the chrome view, and only at the URL `--orivon-shell-url` names | Tab commands, typed by its `OrivonShell` |
 | `permissions.ts` | only the all-sites popup (`src/main/permissions/permissions-panel.ts`), and only at its expected URL | `orivonPermissions`: list and revoke grants, list and reset notification answers; `src/main/ipc/permissions-ipc.ts` re-verifies the sender on every call |
 | `menu.ts` | only the main menu popup (`src/main/shell/menu-panel.ts`) | `orivonMenu`: the entries with their keys, run one, report the list's height; `src/main/ipc/menu-ipc.ts` runs only an entry the menu lists |
@@ -37,8 +42,10 @@ across this boundary.
 | `internal.ts` | only a tab the shell opened as one of its own pages (`src/main/pages/`: Settings, History, ...) | `orivonInternal`: one `request(domain, command)` and one `onEvent`, after checking the document's scheme and host against the page the shell named; `src/main/pages/internal-ipc.ts` decides on every call what the page may reach |
 | `site-info.ts` | only the per-site popup (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info, switches, picked paths and browser data |
 | `embed.ts` | only a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest; ADR-0039) | Nothing on `window`: runs the script set with `orivon.web.setEmbedScript` before the page's own code, handing it `orivonEmbed` |
-| `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrivon()` as `app.ts` |
-| `expose-fetch-route.ts`, `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, and `process`, `global`, `setImmediate`, `clearImmediate` and `Buffer` |
+| `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrdinaryTabSurface()` as `app.ts` |
+| `expose-fetch-route.ts`, `expose-shim-globals.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, and `process`, `global`, `setImmediate`, `clearImmediate` and `Buffer` |
+| `extension-api.ts` | registered as both a `'frame'` and a `'service-worker'` preload on the default session (`src/main/extensions/extension-host.ts`'s `createExtensionHost`, wired from `extensions-subsystem.ts`); injects `chrome.*` only on a `chrome-extension:` page or a `chrome-extension:`-scoped service worker (its URL read from the worker's main world: a worker's preload realm has no `location`), nothing elsewhere | `chrome.*` (`vendor/electron-chrome-extensions`'s `injectExtensionAPIs`), plus a health check that reloads a worker whose first `chrome.*` injection missed (`extension-sw-preload-recovery.ts`, A289) |
+| `vendor/electron-chrome-web-store/src/renderer/chrome-web-store.preload.ts` (not under this directory) | registered as a `'frame'` preload on the default session (`src/main/extensions/store-runner.ts`'s `startWebStore`); runs only on the top frame at exactly `https://chromewebstore.google.com` | `chrome.webstorePrivate`, and the `chrome.runtime`/`chrome.management` extras the store page's own script expects |
 
 `shell.ts`, `permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts` and `newtab.ts` each check
 `location.href` against the URL main passed them (`--orivon-shell-url` and its siblings) before exposing
