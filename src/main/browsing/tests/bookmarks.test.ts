@@ -15,30 +15,28 @@ import {
   type Bookmark
 } from '../bookmarks.js'
 
-// BookmarkStore writes through writeFileAtomicAsync (atomic-write.ts), which
-// itself calls node:fs/promises's writeFile on the temp file -- mocking the
-// module is the only way to hold one specific write open from outside and
-// prove flushPendingWrite() genuinely waits for it. `fsGate` is declared
-// through vi.hoisted because vi.mock's factory runs before the rest of this
-// file and would otherwise not see it. Every other fs/promises export, and
-// writeFile itself once nothing is gating it, passes straight through.
+// BookmarkStore writes through writeFileAtomicAsync (atomic-write.ts); mocking that module -- not
+// node:fs/promises, which it no longer calls at the top level, only through its own open() file handle --
+// is how a test holds one specific write open from outside and proves flushPendingWrite() genuinely waits
+// for it. `fsGate` is declared through vi.hoisted because vi.mock's factory runs before the rest of this
+// file and would otherwise not see it. Every other export, and writeFileAtomicAsync itself once nothing is
+// gating it, passes straight through to the real implementation.
 //
-// `failNextWith`: lets a test make the next writeFile call land a partial,
-// garbled write and then reject, simulating a process that dies mid-write --
-// the failure atomic-write.ts's temp-file-then-rename shape exists to
-// survive, since the garbage lands in the temp file, never the real path.
+// `failNextWith`: lets a test make the next write reject instead of landing, simulating a failure inside
+// writeFileAtomicAsync -- that it never touches the real path except by a completed rename is atomic-write.ts's
+// own contract, proved directly in its own tests, not re-proved here.
 const fsGate = vi.hoisted(() => ({
   release: null as Promise<void> | null,
-  writeFileCallCount: 0,
+  writeCallCount: 0,
   failNextWith: null as Error | null
 }))
 
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>()
+vi.mock('../../../broker/adapters/atomic-write.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../broker/adapters/atomic-write.js')>()
   return {
     ...actual,
-    writeFile: async (file: string, data: string, encoding: BufferEncoding): Promise<void> => {
-      fsGate.writeFileCallCount++
+    writeFileAtomicAsync: async (path: string, text: string): Promise<void> => {
+      fsGate.writeCallCount++
       const gate = fsGate.release
       if (gate !== null) {
         fsGate.release = null
@@ -47,10 +45,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       const failure = fsGate.failNextWith
       if (failure !== null) {
         fsGate.failNextWith = null
-        await actual.writeFile(file, 'CORRUPTED-PARTIAL-WRITE', encoding)
         throw failure
       }
-      await actual.writeFile(file, data, encoding)
+      await actual.writeFileAtomicAsync(path, text)
     }
   }
 })
@@ -212,7 +209,7 @@ describe('BookmarkStore', () => {
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true })
     fsGate.release = null
-    fsGate.writeFileCallCount = 0
+    fsGate.writeCallCount = 0
     fsGate.failNextWith = null
   })
 
@@ -365,7 +362,7 @@ describe('BookmarkStore', () => {
     // Wait for the debounced write to actually start -- it is now blocked
     // on the gate above, i.e. genuinely in flight, not merely scheduled.
     await vi.waitFor(() => {
-      expect(fsGate.writeFileCallCount).toBe(1)
+      expect(fsGate.writeCallCount).toBe(1)
     }, 1000)
 
     const flushed = store.flushPendingWrite()
@@ -397,7 +394,7 @@ describe('BookmarkStore', () => {
     // Wait for the debounced write to actually start -- it is now blocked
     // on the gate above, genuinely in flight rather than merely scheduled.
     await vi.waitFor(() => {
-      expect(fsGate.writeFileCallCount).toBe(1)
+      expect(fsGate.writeCallCount).toBe(1)
     }, 1000)
 
     const flushed = store.flushPendingWrite()
@@ -413,7 +410,7 @@ describe('BookmarkStore', () => {
     // first is in flight -- it waits and folds the change into the next
     // write instead.
     await new Promise((resolve) => setTimeout(resolve, WRITE_DEBOUNCE_MS + 200))
-    expect(fsGate.writeFileCallCount).toBe(1)
+    expect(fsGate.writeCallCount).toBe(1)
     expect(settled).toBe(false)
 
     releaseFirstWrite()

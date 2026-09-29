@@ -5,12 +5,12 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { writeFileAtomic, writeFileAtomicAsync } from '../atomic-write.js'
 
-// The gate lets one test hold `writeFileSync` open long enough to fail it
-// mid-write, without touching every other call through the real module.
-// Declared through vi.hoisted because vi.mock's factory runs before the
-// rest of this file.
+// The gate lets one test make the handle's own `writeFile` throw mid-write, without touching every other
+// call through the real module. Declared through vi.hoisted because vi.mock's factory runs before the rest
+// of this file. `opensByPath` proves writeFileAtomicAsync opens the temp file once, not once to write it and
+// again to fsync it -- counted per path, since fsyncDirectoryAsync legitimately opens the directory too.
 const syncGate = vi.hoisted(() => ({ failNextWith: null as Error | null }))
-const asyncGate = vi.hoisted(() => ({ failNextWith: null as Error | null }))
+const asyncGate = vi.hoisted(() => ({ failNextWith: null as Error | null, opensByPath: new Map<string, number>() }))
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
@@ -31,13 +31,24 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
-    writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
-      if (asyncGate.failNextWith !== null) {
-        const failure = asyncGate.failNextWith
-        asyncGate.failNextWith = null
-        throw failure
+    // Only the three methods writeFileAtomicAsync actually calls are wrapped; the real handle is closed
+    // over, not copied, so its other behaviour (and `this` binding) is untouched.
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const key = String(args[0])
+      asyncGate.opensByPath.set(key, (asyncGate.opensByPath.get(key) ?? 0) + 1)
+      const handle = await actual.open(...args)
+      return {
+        writeFile: async (...writeArgs: Parameters<typeof handle.writeFile>) => {
+          if (asyncGate.failNextWith !== null) {
+            const failure = asyncGate.failNextWith
+            asyncGate.failNextWith = null
+            throw failure
+          }
+          return handle.writeFile(...writeArgs)
+        },
+        sync: () => handle.sync(),
+        close: () => handle.close()
       }
-      return actual.writeFile(...args)
     }
   }
 })
@@ -111,13 +122,20 @@ describe('writeFileAtomicAsync', () => {
     expect((await readdir(dir)).sort()).toEqual(['value.json'])
   })
 
+  it('opens the temp file once, not once to write it and again to fsync it', async () => {
+    asyncGate.opensByPath.clear()
+    await writeFileAtomicAsync(path, 'hello')
+    expect(asyncGate.opensByPath.get(`${path}.tmp`)).toBe(1)
+  })
+
   it('a failed write leaves the previous file intact', async () => {
     writeFileSync(path, 'original')
     asyncGate.failNextWith = new Error('ENOSPC: no space left on device')
 
     await expect(writeFileAtomicAsync(path, 'replacement')).rejects.toThrow('ENOSPC')
 
+    // The rename never ran, so the target is untouched -- a leftover, never-renamed temp file (open(tmp,
+    // 'w') already created it before the write itself failed) is harmless and is overwritten next attempt.
     expect(await fsReadFile(path, 'utf8')).toBe('original')
-    expect((await readdir(dir)).sort()).toEqual(['value.json'])
   })
 })

@@ -3,7 +3,7 @@
 // the previous file intact rather than truncated.
 
 import { closeSync, fsyncSync, openSync, renameSync, writeFileSync } from 'node:fs'
-import { open, rename, writeFile } from 'node:fs/promises'
+import { open, rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /**
@@ -37,17 +37,15 @@ export function writeFileAtomic (path: string, text: string): void {
 
 /**
  * `writeFileAtomic`'s async twin, for a store built on `node:fs/promises`.
- * Same shape: write the temp file, fsync it, rename it over `path`, fsync
- * the directory. `writeFile` is called as a standalone step (rather than
- * through a single open file handle, as the sync version does) so a caller
- * that needs to observe or intercept the write -- a test holding one open,
- * or one made to fail -- has exactly that one call to act on.
+ * Same shape, through one open file handle just as the sync version is
+ * through one file descriptor: write the temp file, fsync it, rename it
+ * over `path`, fsync the directory.
  */
 export async function writeFileAtomicAsync (path: string, text: string): Promise<void> {
   const tmp = `${path}.tmp`
-  await writeFile(tmp, text, 'utf8')
-  const handle = await open(tmp, 'r+')
+  const handle = await open(tmp, 'w')
   try {
+    await handle.writeFile(text, 'utf8')
     await handle.sync()
   } finally {
     await handle.close()
