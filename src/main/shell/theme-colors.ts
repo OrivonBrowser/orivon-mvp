@@ -52,12 +52,12 @@ let realListenerInstalled = false
 /**
  * Registers `listener` to run on every live OS/app theme change, and returns
  * its unregister. Every window (its own background, window.ts) and every
- * `warm` popover (its own background, popover-view.ts) needs to hear this,
- * and each used to add its own `nativeTheme.on('updated', ...)` -- `nativeTheme`
- * is one process-wide `EventEmitter`, so by the 11th such listener (past
- * Node's default max of 10, a handful of ordinary windows and popovers)
- * `MaxListenersExceededWarning [NativeTheme]` starts printing, burying a real
- * leak warning under a false one built into normal use.
+ * `warm` popover (its own background, popover-view.ts) needs to hear this --
+ * a direct `nativeTheme.on('updated', ...)` per caller would not do, since
+ * `nativeTheme` is one process-wide `EventEmitter`: by the 11th such listener
+ * (past Node's default max of 10, a handful of ordinary windows and
+ * popovers) `MaxListenersExceededWarning [NativeTheme]` starts printing,
+ * burying a real leak warning under a false one built into normal use.
  *
  * Backed by exactly ONE real listener for the whole process, installed the
  * first time anything registers here and never removed: window/popover
