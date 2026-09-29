@@ -2,8 +2,10 @@
 // the middle, and a search box that finds any row. Every address is a place in
 // it (`orivon://settings/search`), so the address bar always says where the
 // person is and a link goes straight to a section.
+import { gearIcon } from '../shared/icons.js'
 import { h, replaceChildren } from '../shared/dom.js'
 import type { Row, Section } from './model.js'
+import { groupLabelFor, NAV_ICON } from './nav.js'
 import { pathFor, placeFor } from './router.js'
 import { renderRow } from './rows.js'
 import { searchRows } from './search.js'
@@ -48,18 +50,29 @@ function renderSearchBody (query: string): HTMLElement {
       type: 'button',
       onclick: () => { go(section, row.id) }
     },
-    h('span', { className: 'hit-section', textContent: section.title }),
-    h('span', { className: 'hit-label', textContent: row.label }),
-    row.help === undefined ? null : h('span', { className: 'hit-help', textContent: row.help })))))
+    h('div', { className: 'hit-body' },
+      h('span', { className: 'hit-label', textContent: row.label }),
+      row.help === undefined ? null : h('span', { className: 'hit-help', textContent: row.help })),
+    h('span', { className: 'hit-section', textContent: section.title })))))
 }
 
+/** The sidebar list: a muted group heading before the first section of each
+ * group, then the section itself, icon and label together in its `.nav-item`. */
 function renderNav (): void {
-  replaceChildren(nav, ...sections.map((section) => h('li', null, h('a', {
-    className: section.id === current.id && search.value.trim() === '' ? 'nav-item current' : 'nav-item',
-    href: pathFor(section),
-    textContent: section.title,
-    onclick: (event: MouseEvent) => { event.preventDefault(); go(section) }
-  }))))
+  const items: HTMLElement[] = []
+  let previous: Section | undefined
+  for (const section of sections) {
+    const groupLabel = groupLabelFor(section, previous)
+    if (groupLabel !== null) items.push(h('li', { className: 'nav-group', textContent: groupLabel }))
+    const drawIcon = NAV_ICON[section.id]
+    items.push(h('li', null, h('a', {
+      className: section.id === current.id && search.value.trim() === '' ? 'nav-item current' : 'nav-item',
+      href: pathFor(section),
+      onclick: (event: MouseEvent) => { event.preventDefault(); go(section) }
+    }, drawIcon === undefined ? null : drawIcon(), h('span', { className: 'nav-label', textContent: section.title }))))
+    previous = section
+  }
+  replaceChildren(nav, ...items)
 }
 
 function render (): void {
@@ -120,8 +133,10 @@ async function start (): Promise<void> {
 
   document.getElementById('app')?.append(
     h('div', { className: 'layout' },
-      h('header', { className: 'top' }, h('h1', { textContent: 'Settings' }), search),
-      h('nav', { className: 'nav' }, nav),
+      h('nav', { className: 'sidebar' },
+        h('div', { className: 'sidebar-head' }, gearIcon(), h('h1', { textContent: 'Settings' })),
+        search,
+        h('div', { className: 'nav-scroll' }, nav)),
       content))
   render()
 }
