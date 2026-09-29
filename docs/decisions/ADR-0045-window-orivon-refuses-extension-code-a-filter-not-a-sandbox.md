@@ -64,6 +64,11 @@ away, in the manner of ADR-0021.
 - An extension can still change what a granted app's page does: the values in a form, the
   address a page is about to ask the person to sign for. Every Chromium browser has the same
   exposure to an extension with access to a site; the install prompt names the sites.
+- Code the page itself runs stays the page's, whoever scheduled it: a page function that
+  evaluates a string (an eval gadget), handed an extension's string through a timer, calls
+  `window.orivon` as the page. So does any use of an object the page already holds, such as an
+  open socket or file handle, by code that gets hold of it; the filter guards the calls on
+  `window.orivon`, not the handles they return.
 - An extension that makes `Error.prepareStackTrace` or `Error.stackTraceLimit` unconfigurable
   makes every `window.orivon` call on that page refuse: a denial of service an extension with
   access to the page could cause in other ways.
