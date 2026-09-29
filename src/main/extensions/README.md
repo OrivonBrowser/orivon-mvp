@@ -154,22 +154,37 @@ permission; a popup URL must be the extension's own page; and `window.open` from
 background page goes through the same URL policy and `openTrusted` path as `chrome.tabs.create`.
 **`chrome.offscreen` and `chrome.tabCapture` (UPSTREAM.md patches 32-33) follow the same
 hook shape, for the one thing neither Electron nor the vendored library had at all.**
-`chrome.offscreen.createDocument` hosts a never-shown, sandboxed `BrowserWindow` per extension
-(`api/offscreen.ts`), closed by `Session`'s own `'extension-unloaded'` event so disable, uninstall
-and a crash all tear it down the same way; `chrome.runtime.getContexts` (`api/runtime.ts`) reads
-it, the currently open popup (`browser-action.ts`'s new `getOpenPopup`) and the running service
-worker to answer for real, instead of leaving an extension's own existence check to fall back to
+`chrome.offscreen.createDocument` hosts a never-shown, sandboxed `WebContentsView` per extension
+(`api/offscreen.ts`) -- never a `BrowserWindow`: measured that a never-attached `WebContentsView`
+still gets the library's own preload and messaging, and unlike a `BrowserWindow` it never counts
+toward `BrowserWindow.getAllWindows()`, so an open offscreen document can no longer keep this
+process alive past the last shell window closing. `window.open` from it is denied outright and
+its own navigation is locked to the extension's own origin; a renderer crash
+(`'render-process-gone'`) drops its own bookkeeping immediately, without also calling `close()`
+on the crashed `WebContents` (measured: that call hangs, reproducing as a Chromium watchdog
+FATAL). It closes by `Session`'s own `'extension-unloaded'` event too, so disable, uninstall and a
+crash all tear it down the same way; `chrome.runtime.getContexts` (`api/runtime.ts`) reads it, the
+currently open popup (`browser-action.ts`'s new `getOpenPopup`) and the running service worker to
+answer for real, instead of leaving an extension's own existence check to fall back to
 `clients.matchAll()`, which does not see a document this library creates.
-`chrome.tabCapture.getMediaStreamId` (`api/tab-capture.ts`) refuses a tab three ways before
-calling Electron's own `webContents.getMediaSourceId`: a tab outside this session, a granted
-app's own tab (`setTabCaptureAppRefusalCheck`, wired to the same `broker.app.hasGrantsSync`
-question `shell-services.ts`'s DevTools prompt asks), and a tab the extension was never invoked
-on (`setTabCaptureInvocationCheck`, `extension-tab-invocation.ts`'s ledger, filled by
-`browser-action.ts`'s `activateClick` on every toolbar click and cleared on that tab's own
-close or cross-origin navigation). A successful call also mutes the tab locally
-(Electron duplicates a captured tab's audio instead of diverting it the way Chrome does, measured
-directly) and mints a short-lived record `permission-gate.ts`'s own `'media'` carve-out
-(`../sessions/tab-capture-grants.ts`) reads.
+`chrome.tabCapture.getMediaStreamId` (`api/tab-capture.ts`) refuses a tab five ways before
+calling Electron's own `webContents.getMediaSourceId`: a tab outside this session, a non-`http(s)`
+tab (another extension's own page included -- `appOrigin` returns null for one, so the app-refusal
+check alone never caught it), a granted app's own tab (`setTabCaptureAppRefusalCheck`, wired to
+the same `broker.app.hasGrantsSync` question `shell-services.ts`'s DevTools prompt asks, re-checked
+on the tab's own navigation and again inside `permission-gate.ts`'s own `'media'` request handler),
+and a tab the extension was never invoked on (`setTabCaptureInvocationCheck`,
+`extension-tab-invocation.ts`'s ledger, filled ONLY by a real toolbar click reaching
+`browser-action.ts`'s `activateClick` over `crx-msg-remote` -- never a local `crx-msg` call, and
+never `chrome.action.openPopup()`, which reaches the same code with no click at all -- and cleared
+on that tab's own close, cross-origin navigation, or the extension's own unload). A successful call
+also mutes the tab locally (Electron duplicates a captured tab's audio instead of diverting it the
+way Chrome does, measured directly), tracks consumption and release per (extension id, target tab
+id) rather than per extension, watches whichever `WebContents` actually consumes the stream (the
+offscreen document or an explicit `consumerTabId`) for its own destruction or crash, and mints a
+short-lived record `permission-gate.ts`'s own `'media'` carve-out (`../sessions/tab-capture-grants.ts`)
+reads -- keyed the same way, so one tab's redemption never marks a different tab the same
+extension is also capturing.
 
 Every `crx-msg`, `crx-add-listener` and `crx-remove-listener` message must name its sender's own
 extension id (`extension-sender-id-check.ts`): the handlers that need no extension context are
