@@ -5,24 +5,36 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { writeFileAtomic, writeFileAtomicAsync } from '../atomic-write.js'
 
-// The gate lets one test make the handle's own `writeFile` throw mid-write, without touching every other
-// call through the real module. Declared through vi.hoisted because vi.mock's factory runs before the rest
-// of this file. `opensByPath` proves writeFileAtomicAsync opens the temp file once, not once to write it and
-// again to fsync it -- counted per path, since fsyncDirectoryAsync legitimately opens the directory too.
-const syncGate = vi.hoisted(() => ({ failNextWith: null as Error | null }))
-const asyncGate = vi.hoisted(() => ({ failNextWith: null as Error | null, opensByPath: new Map<string, number>() }))
+// The gates let a test make one specific step throw, without touching every other call through the real
+// module. Declared through vi.hoisted because vi.mock's factory runs before the rest of this file.
+// `opensByPath` proves writeFileAtomicAsync opens the temp file once, not once to write it and again to
+// fsync it -- counted per path, since fsyncDirectoryAsync legitimately opens the directory too.
+const syncGate = vi.hoisted(() => ({ failWriteWith: null as Error | null, failRenameWith: null as Error | null }))
+const asyncGate = vi.hoisted(() => ({
+  failWriteWith: null as Error | null,
+  failRenameWith: null as Error | null,
+  opensByPath: new Map<string, number>()
+}))
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
     writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
-      if (syncGate.failNextWith !== null) {
-        const failure = syncGate.failNextWith
-        syncGate.failNextWith = null
+      if (syncGate.failWriteWith !== null) {
+        const failure = syncGate.failWriteWith
+        syncGate.failWriteWith = null
         throw failure
       }
       return actual.writeFileSync(...args)
+    },
+    renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+      if (syncGate.failRenameWith !== null) {
+        const failure = syncGate.failRenameWith
+        syncGate.failRenameWith = null
+        throw failure
+      }
+      return actual.renameSync(...args)
     }
   }
 })
@@ -39,9 +51,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       const handle = await actual.open(...args)
       return {
         writeFile: async (...writeArgs: Parameters<typeof handle.writeFile>) => {
-          if (asyncGate.failNextWith !== null) {
-            const failure = asyncGate.failNextWith
-            asyncGate.failNextWith = null
+          if (asyncGate.failWriteWith !== null) {
+            const failure = asyncGate.failWriteWith
+            asyncGate.failWriteWith = null
             throw failure
           }
           return handle.writeFile(...writeArgs)
@@ -49,6 +61,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         sync: () => handle.sync(),
         close: () => handle.close()
       }
+    },
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      if (asyncGate.failRenameWith !== null) {
+        const failure = asyncGate.failRenameWith
+        asyncGate.failRenameWith = null
+        throw failure
+      }
+      return actual.rename(...args)
     }
   }
 })
@@ -60,7 +80,8 @@ describe('writeFileAtomic', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'orivon-atomic-write-'))
     path = join(dir, 'value.json')
-    syncGate.failNextWith = null
+    syncGate.failWriteWith = null
+    syncGate.failRenameWith = null
   })
 
   it('round-trips the text written', () => {
@@ -79,16 +100,24 @@ describe('writeFileAtomic', () => {
     expect(readdirSync(dir).sort()).toEqual(['value.json'])
   })
 
-  it('a failed write leaves the previous file intact', () => {
+  it('a failed write leaves the previous file intact, and no .tmp file behind', () => {
     writeFileSync(path, 'original')
-    syncGate.failNextWith = new Error('ENOSPC: no space left on device')
+    syncGate.failWriteWith = new Error('ENOSPC: no space left on device')
 
     expect(() => writeFileAtomic(path, 'replacement')).toThrow('ENOSPC')
 
-    // The rename this depends on never ran, so the target is untouched --
-    // a leftover, never-renamed temp file is harmless and is overwritten by
-    // the next attempt.
+    // The rename this depends on never ran, so the target is untouched; the
+    // temp file the failed write left is unlinked before the error is rethrown.
     expect(readFileSync(path, 'utf8')).toBe('original')
+    expect(readdirSync(dir)).toEqual(['value.json'])
+  })
+
+  it('a failing rename leaves no .tmp file behind', () => {
+    syncGate.failRenameWith = new Error('EACCES: permission denied')
+
+    expect(() => writeFileAtomic(path, 'hello')).toThrow('EACCES')
+
+    expect(readdirSync(dir)).toEqual([])
   })
 })
 
@@ -99,11 +128,13 @@ describe('writeFileAtomicAsync', () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'orivon-atomic-write-async-'))
     path = join(dir, 'value.json')
-    asyncGate.failNextWith = null
+    asyncGate.failWriteWith = null
+    asyncGate.failRenameWith = null
   })
 
   afterEach(() => {
-    asyncGate.failNextWith = null
+    asyncGate.failWriteWith = null
+    asyncGate.failRenameWith = null
   })
 
   it('round-trips the text written', async () => {
@@ -128,14 +159,23 @@ describe('writeFileAtomicAsync', () => {
     expect(asyncGate.opensByPath.get(`${path}.tmp`)).toBe(1)
   })
 
-  it('a failed write leaves the previous file intact', async () => {
+  it('a failed write leaves the previous file intact, and no .tmp file behind', async () => {
     writeFileSync(path, 'original')
-    asyncGate.failNextWith = new Error('ENOSPC: no space left on device')
+    asyncGate.failWriteWith = new Error('ENOSPC: no space left on device')
 
     await expect(writeFileAtomicAsync(path, 'replacement')).rejects.toThrow('ENOSPC')
 
-    // The rename never ran, so the target is untouched -- a leftover, never-renamed temp file (open(tmp,
-    // 'w') already created it before the write itself failed) is harmless and is overwritten next attempt.
+    // The rename never ran, so the target is untouched; the temp file open(tmp, 'w') created before the
+    // write itself failed is unlinked before the error is rethrown.
     expect(await fsReadFile(path, 'utf8')).toBe('original')
+    expect((await readdir(dir)).sort()).toEqual(['value.json'])
+  })
+
+  it('a failing rename leaves no .tmp file behind', async () => {
+    asyncGate.failRenameWith = new Error('EACCES: permission denied')
+
+    await expect(writeFileAtomicAsync(path, 'hello')).rejects.toThrow('EACCES')
+
+    expect(await readdir(dir)).toEqual([])
   })
 })

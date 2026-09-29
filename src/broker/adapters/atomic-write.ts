@@ -2,8 +2,8 @@
 // JSON file uses this instead of a bare write, so a crash mid-write leaves
 // the previous file intact rather than truncated.
 
-import { closeSync, fsyncSync, openSync, renameSync, writeFileSync } from 'node:fs'
-import { open, rename } from 'node:fs/promises'
+import { closeSync, fsyncSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { open, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /**
@@ -24,14 +24,24 @@ import { dirname } from 'node:path'
  */
 export function writeFileAtomic (path: string, text: string): void {
   const tmp = `${path}.tmp`
-  const fd = openSync(tmp, 'w')
   try {
-    writeFileSync(fd, text)
-    fsyncSync(fd)
-  } finally {
-    closeSync(fd)
+    const fd = openSync(tmp, 'w')
+    try {
+      writeFileSync(fd, text)
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
+    renameSync(tmp, path)
+  } catch (error) {
+    try {
+      unlinkSync(tmp)
+    } catch {
+      // Best effort: nothing to remove if the open itself failed, or a
+      // concurrent attempt's cleanup already won.
+    }
+    throw error
   }
-  renameSync(tmp, path)
   fsyncDirectory(dirname(path))
 }
 
@@ -43,14 +53,24 @@ export function writeFileAtomic (path: string, text: string): void {
  */
 export async function writeFileAtomicAsync (path: string, text: string): Promise<void> {
   const tmp = `${path}.tmp`
-  const handle = await open(tmp, 'w')
   try {
-    await handle.writeFile(text, 'utf8')
-    await handle.sync()
-  } finally {
-    await handle.close()
+    const handle = await open(tmp, 'w')
+    try {
+      await handle.writeFile(text, 'utf8')
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    await rename(tmp, path)
+  } catch (error) {
+    try {
+      await unlink(tmp)
+    } catch {
+      // Best effort: nothing to remove if the open itself failed, or a
+      // concurrent attempt's cleanup already won.
+    }
+    throw error
   }
-  await rename(tmp, path)
   await fsyncDirectoryAsync(dirname(path))
 }
 
