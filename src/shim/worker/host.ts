@@ -3,7 +3,7 @@
 // the page's own dedicated port for that child (./host-protocol.ts) and the
 // Worker's ordinary ./protocol.ts traffic. No `electron` import: everything
 // here is `MessagePort`, `MessageChannel` and a Web Worker, the same
-// contract ../child-process/spawn.ts's own `launch()` already keeps for a
+// contract ../child-process/spawn.ts's own `launchChild()` already keeps for a
 // same-process child.
 
 import { loadProgram } from '../child-process/program.js'

@@ -7,7 +7,7 @@ import { codedError } from '../node-errors.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { createWarnOnce } from '../warn-once.js'
 import { ChildProcess } from './child.js'
-import { type SpawnOptions, applyLifetime, environmentOf, launch, normalizeStdio } from './spawn.js'
+import { type SpawnOptions, applyLifetime, environmentOf, launchChild, normalizeStdio } from './spawn.js'
 
 const warnOnce = createWarnOnce('orivon child_process.fork')
 
@@ -52,8 +52,7 @@ export function fork (modulePath: string | URL, argsOrOptions?: readonly string[
   const child = new ChildProcess({ spawnfile: 'node', spawnargs: ['node', ...(options.execArgv ?? []), path, ...args], stdio: modes, ipc: true, serialization })
   applyLifetime(child, options)
   const env = environmentOf(options.env)
-  launch(child, `child_process fork ${path}`, (orivon) => ({
-    type: 'fork', url, argv: ['node', path, ...args], env, cwd: options.cwd ?? VIRTUAL_ROOT, serialization, orivon
-  }))
+  const forkStart = { type: 'fork' as const, url, argv: ['node', path, ...args], env, cwd: options.cwd ?? VIRTUAL_ROOT, serialization }
+  void launchChild(child, `child_process fork ${path}`, forkStart, () => forkStart)
   return child
 }
