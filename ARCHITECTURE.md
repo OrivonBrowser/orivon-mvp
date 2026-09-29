@@ -77,7 +77,7 @@ have to be rewritten? It is a measure of where care is worth spending.
 | [`src/protocols/ipfs/`](src/protocols/ipfs/) | IPFS: `ipfs://` and `ipns://` addresses, and loading content from trustless gateways, every block hashed against its CID | **No** |
 | [`src/protocols/verifier-host/`](src/protocols/verifier-host/) | The utility process that runs every protocol's providers, including the light client, and serves their pages on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` (one narrow, gated exception: `dns-fallback.ts`'s direct connection to a gateway a resolver appears to be lying about) |
 | [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
-| [`vendor/`](vendor/) | Third-party source kept in its upstream shape, each with an `UPSTREAM.md` listing Orivon's patches: electron-browser-shell's Chrome-extension libraries (`ADR-0043`) | **Entirely**: they drive Electron's extension support |
+| [`vendor/`](vendor/) | Third-party source kept in its upstream shape, each with an `UPSTREAM.md` listing Orivon's patches: electron-browser-shell's Chrome-extension libraries (`ADR-0043`) and Firefox's `declarativeNetRequest` matcher (`ADR-0046`) | The extension libraries **entirely**; the matcher **no**, it is plain JavaScript |
 | [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
 
 Every directory carries a `README.md` saying what it depends on and what it must never import.

@@ -242,7 +242,7 @@ explaining *why a tier exists*, it belongs there.
 
 What a Chrome extension gets in this build. Measured with uBlock Origin Lite, Dark Reader,
 Bitwarden and MetaMask through `test/e2e-extensions-real.test.ts` (opt-in), run with the
-Chromium sandbox.
+Chromium sandbox. uBlock Origin Lite blocks through its own default rulesets.
 
 | Part | Works | Note |
 |---|---|---|
@@ -252,7 +252,7 @@ Chromium sandbox.
 | Service worker with `tabs`, `windows`, `action`, `contextMenus`, `cookies`, `notifications`, `webNavigation`, `commands`, `permissions` | ✅ | From electron-chrome-extensions; the worker's first start is reloaded once to receive them |
 | Toolbar button, badge and popup | ✅ | |
 | Options page in a tab | ✅ | |
-| `declarativeNetRequest` | ❌ | Present so extensions start; its rules are not applied yet |
+| `declarativeNetRequest` | ✅ | Static, dynamic and session rules, applied by Orivon (`ADR-0046`); `responseHeaders` conditions are refused; websites' worker requests are not matched |
 | `webRequest` | ❌ | Present, never fires |
 | `sidePanel`, `userScripts` | ❌ | Present as no-ops |
 | Native messaging | 🚫 | Off: it starts desktop programs outside the broker |

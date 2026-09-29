@@ -13,6 +13,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Content blockers.** MV3 blockers such as uBlock Origin Lite block ads and trackers: Orivon applies their
+  `declarativeNetRequest` rules itself, with Firefox's matcher, and shows each one's per-tab count on its badge.
 - **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
   `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
   popups and options pages work on every website and on apps holding permissions, whose `window.orivon` refuses extension code.
