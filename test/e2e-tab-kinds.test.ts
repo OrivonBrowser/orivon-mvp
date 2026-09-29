@@ -196,7 +196,9 @@ it('resets the dashboard tab\'s background once it navigates to a plain site wit
     const stillAlive = async (wcId: number | undefined): Promise<boolean> =>
       wcId !== undefined && await app.evaluate(({ webContents }, i: number) => webContents.getAllWebContents().some((wc) => wc.id === i), wcId)
 
-    const id = await dashboardId()
+    // The dashboard tab loads after the chrome view appears: wait for both it and its recorded colour.
+    let id: number | undefined
+    expect(await waitFor(async () => { id = await dashboardId(); return (await recordedBackground(id)) !== undefined })).toBe(true)
     expect(await recordedBackground(id)).toBe('#0d0e14')
 
     await clickAddressBarRetrying(chrome, `${origin}/site`)
@@ -205,7 +207,7 @@ it('resets the dashboard tab\'s background once it navigates to a plain site wit
     // The same webContents, not a rebuilt one: the site has no grants yet,
     // so partitionChanged() sees no swap and this tab's own view is reused.
     expect(await stillAlive(id)).toBe(true)
-    expect(await recordedBackground(id)).toBe('#FFFFFF')
+    expect(await waitFor(async () => (await recordedBackground(id)) === '#FFFFFF')).toBe(true)
   } finally {
     await closeElectron(app)
   }
