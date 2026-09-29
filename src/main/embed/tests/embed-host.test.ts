@@ -134,8 +134,9 @@ describe('installEmbedHost -- a guest is paired with the app origin its OWN sess
 
     const guestOne = fakeGuest(1, sessionA)
     const guestTwo = fakeGuest(2, sessionA)
-    // did-attach-webview fires for the SECOND webview first: with no queue
-    // to keep in step, there is no ordering assumption to violate.
+    // did-attach-webview fires for the SECOND webview first: each guest is
+    // paired by its own session, not by arrival order, so this still
+    // resolves correctly.
     embedder.emit('did-attach-webview', {}, guestTwo)
     embedder.emit('did-attach-webview', {}, guestOne)
 
@@ -162,8 +163,10 @@ describe('installEmbedHost -- a guest is paired with the app origin its OWN sess
 
     const guestA = fakeGuest(9, sessionA)
     const guestB = fakeGuest(10, sessionB)
-    // Both attaches complete -- the one for origin A did not never complete
-    // (unlike the old per-embedder queue, which would have dropped it).
+    // Both attaches complete, each still attributed to the origin that
+    // configured its own session, even though the embedder admitted a
+    // second origin's <webview> before the first one's did-attach-webview
+    // fired.
     embedder.emit('did-attach-webview', {}, guestB)
     embedder.emit('did-attach-webview', {}, guestA)
 
