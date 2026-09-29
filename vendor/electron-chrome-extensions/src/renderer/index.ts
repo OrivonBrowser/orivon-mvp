@@ -525,9 +525,12 @@ export const injectExtensionAPIs = () => {
           const local = base && base.local
           return {
             ...base,
-            // TODO: provide a backend for browsers to opt-in to
-            managed: local,
-            sync: local,
+            // TODO: provide a backend for browsers to opt-in to. Spread
+            // conditionally, not `managed: local, sync: local` -- under
+            // `exactOptionalPropertyTypes`, an optional property may be
+            // omitted but never explicitly set to `undefined`, and `local`
+            // is `undefined` whenever `base.local` itself is.
+            ...(local === undefined ? {} : { managed: local, sync: local }),
           }
         },
       },
@@ -611,11 +614,76 @@ export const injectExtensionAPIs = () => {
         },
       },
 
+      // Orivon patch (UPSTREAM.md patch 10): chrome.declarativeNetRequest,
+      // chrome.sidePanel, chrome.userScripts and the rest of
+      // chrome.webRequest were entirely absent (only
+      // webRequest.onHeadersReceived existed). None of these enforce
+      // anything yet: declarativeNetRequest's write methods reject "not
+      // supported", its read methods resolve empty, and sidePanel/
+      // userScripts resolve as no-ops. Present so an extension's own
+      // startup code that calls or feature-detects them does not throw.
+      declarativeNetRequest: {
+        factory: (base) => {
+          const notSupported = (name: string) => async () => {
+            throw new Error(`declarativeNetRequest.${name} is not supported in Orivon yet`)
+          }
+          return {
+            ...base,
+            updateDynamicRules: notSupported('updateDynamicRules'),
+            updateSessionRules: notSupported('updateSessionRules'),
+            updateEnabledRulesets: notSupported('updateEnabledRulesets'),
+            setExtensionActionOptions: notSupported('setExtensionActionOptions'),
+            getDynamicRules: async () => [],
+            getSessionRules: async () => [],
+            getEnabledRulesets: async () => [],
+            getAvailableStaticRuleCount: async () => 0,
+            getMatchedRules: notSupported('getMatchedRules'),
+            testMatchOutcome: notSupported('testMatchOutcome'),
+            isRegexSupported: async () => ({ isSupported: false, reason: 'unsupported' }),
+            onRuleMatchedDebug: new ExtensionEvent('declarativeNetRequest.onRuleMatchedDebug'),
+          }
+        },
+      },
+
+      sidePanel: {
+        factory: (base) => {
+          return {
+            ...base,
+            setOptions: async () => {},
+            getOptions: async () => ({}),
+            setPanelBehavior: async () => {},
+            getPanelBehavior: async () => ({ openPanelOnActionClick: false }),
+            open: async () => {},
+          }
+        },
+      },
+
+      userScripts: {
+        factory: (base) => {
+          return {
+            ...base,
+            register: async () => {},
+            getScripts: async () => [],
+            unregister: async () => {},
+            update: async () => {},
+            configureWorld: async () => {},
+          }
+        },
+      },
+
       webRequest: {
         factory: (base) => {
           return {
             ...base,
+            onBeforeRequest: new ExtensionEvent('webRequest.onBeforeRequest'),
+            onBeforeSendHeaders: new ExtensionEvent('webRequest.onBeforeSendHeaders'),
+            onSendHeaders: new ExtensionEvent('webRequest.onSendHeaders'),
             onHeadersReceived: new ExtensionEvent('webRequest.onHeadersReceived'),
+            onAuthRequired: new ExtensionEvent('webRequest.onAuthRequired'),
+            onResponseStarted: new ExtensionEvent('webRequest.onResponseStarted'),
+            onBeforeRedirect: new ExtensionEvent('webRequest.onBeforeRedirect'),
+            onCompleted: new ExtensionEvent('webRequest.onCompleted'),
+            onErrorOccurred: new ExtensionEvent('webRequest.onErrorOccurred'),
           }
         },
       },
@@ -651,15 +719,42 @@ export const injectExtensionAPIs = () => {
       // Allow APIs to opt-out of being available in this context.
       if (api.shouldInject && !api.shouldInject()) return
 
+      // Orivon patch (UPSTREAM.md patch 11): enumerable false, was true.
+      // Kept as a harmless extra guard (one less enumerable surface for any
+      // code that walks chrome.*'s own keys); the property below is what
+      // actually stops MetaMask's LavaMoat "scuttling mode" from throwing
+      // reading chrome.*.
       Object.defineProperty(chrome, apiName, {
         value: api.factory(baseApi),
-        enumerable: true,
+        enumerable: false,
         configurable: true,
       })
     })
 
     // Remove access to internals
     delete (globalThis as any).electron
+
+    // Orivon patch (UPSTREAM.md patch 12): lock the top-level `chrome`
+    // global itself to non-configurable/non-writable. MetaMask's own
+    // LavaMoat "scuttling mode" walks every CONFIGURABLE own property name
+    // of globalThis (and its prototype chain) and replaces it with a
+    // throwing accessor; a non-configurable, non-writable property is the
+    // one case its own code skips outright. MEASURED: with this change,
+    // a real MetaMask 13.50.0 popup and service worker no longer throw
+    // "property 'chrome' of globalThis is inaccessible under scuttling
+    // mode" (0 occurrences across a full real-extensions run that
+    // previously threw it in both contexts every time); the popup renders
+    // its real content. Provisional: real Chrome's own native `chrome`
+    // binding is believed to be non-configurable for the same reason
+    // (LavaMoat's own scuttle() skips exactly that case), which is why a
+    // real Chrome extension's own LavaMoat setup never needed to protect
+    // it -- unconfirmed against real Chrome's own internals, only inferred
+    // from what makes Electron's (ordinary, configurable-by-default) global
+    // behave the same way.
+    const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome')
+    if (chromeDescriptor?.configurable === true) {
+      Object.defineProperty(globalThis, 'chrome', { value: chrome, writable: false, configurable: false })
+    }
 
     Object.freeze(chrome)
 

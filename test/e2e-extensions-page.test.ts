@@ -33,7 +33,8 @@ async function launched (): Promise<{ app: ElectronApplication, chrome: Page, se
   const app = await launchElectron({
     appPath: '.',
     args: [HERMETIC_RESOLVER],
-    seedProfile: async (dir) => { seeded = seedExtensions(dir) }
+    seedProfile: async (dir) => { seeded = seedExtensions(dir) },
+    sandbox: true
   })
   expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
   return { app, chrome: findChrome(app), seeded }

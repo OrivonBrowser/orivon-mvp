@@ -64,6 +64,21 @@ export function setRemoteMessageSenderCheck(check: RemoteMessageSenderCheck): vo
 }
 
 /**
+ * Orivon patch: an optional predicate checked, on every `crx-msg`, against
+ * the `extensionId` the message names -- unset, a page or worker of one
+ * loaded extension can name any other loaded extension's id and reach its
+ * handlers under that identity (permission checks in onExtensionMessage
+ * read `extensionId`, not who actually sent the message). Set once, before
+ * the first message arrives (extension-host.ts).
+ */
+type MessageSenderIdCheck = (event: IpcAnyEvent, claimedExtensionId: string | undefined) => boolean
+let gMessageSenderIdCheck: MessageSenderIdCheck | undefined
+
+export function setMessageSenderIdCheck(check: MessageSenderIdCheck): void {
+  gMessageSenderIdCheck = check
+}
+
+/**
  * Handles event routing IPCs and delivers them to the observer with the
  * associated session.
  */
@@ -116,6 +131,12 @@ class RoutingDelegate {
     ...args: any[]
   ) => {
     d(`received '${handlerName}'`, args)
+
+    // Orivon patch: refuses a message whose named extensionId does not
+    // match the sender's own, when a check is set.
+    if (gMessageSenderIdCheck && !gMessageSenderIdCheck(event as IpcAnyEvent, extensionId)) {
+      throw new Error(`${handlerName} refused: sender is not extension ${extensionId}`)
+    }
 
     const observer = this.sessionMap.get(getSessionFromEvent(event))
 

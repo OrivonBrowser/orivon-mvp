@@ -63,6 +63,72 @@
   browsing session (the partition stamp; the T22 CSP once granted apps move in), which silence
   Chromium's dNR; static rulesets never load; and uBOL's rule count exceeds the dynamic and
   session caps it would have to be squeezed into.
+- **2026-09-29, package 4 wiring, real extensions (`test/e2e-extensions-real.test.ts`, uBOL Lite
+  2026.926, Dark Reader 4.9.133, Bitwarden 2026.9.2, MetaMask 13.50.0), before/after:**
+
+  | Extension | Before | After |
+  |---|---|---|
+  | uBOL | SW dies (`Cannot read 'onRemoved'`); popup untested | SW runs 10s but still throws the same error (chrome.windows incomplete); popup renders (bodyLen 4) |
+  | Dark Reader | SW dies same way | SW runs 10s, same error still logged; popup renders (bodyLen 20); style injection into a page still does not happen (waits on its SW) |
+  | Bitwarden | SW dies (`Cannot read 'onCommitted'`) | SW runs 10s, same error still logged; popup fails to LOAD at all (`ERR_FAILED (-2)`, a separate, unexplained finding); its document_start content script (SW-independent) responds correctly |
+  | MetaMask | SW dies; popup throws LavaMoat scuttling | SW runs 10s but still throws `Cannot read 'onRemoved'` AND the identical LavaMoat scuttling error; popup still empty (bodyLen 0), same LavaMoat error; its MAIN-world `window.ethereum` injection (SW-independent) works |
+
+  Root cause found for the "does not take effect" service-worker gap: not a narrow timing race.
+  **Every `'service-worker'`-type `session.registerPreloadScript` is silently never invoked, for
+  any worker, when Electron launches with `--no-sandbox`** -- which every automated launch in
+  this repo needs (its own vendored `chrome-sandbox` helper is not setuid-root). Reproduced 100%
+  in a dependency-free single-file Electron app with only that one flag added; never reproduced
+  without it; a second, empty preload registered right after the library's own also never ran;
+  unloading and reloading the same extension never recovered it. `docs/open-questions.md` A289
+  is open on whether Orivon's packaged, normally-launched app is affected too.
+  `extension-sw-preload-recovery.ts` + `extension-sw-verify.ts` detect a worker that missed its
+  preload (a main-initiated health check, not a worker-announced one -- the first version tried
+  was itself measured to lose the race under `--no-sandbox`) and reload it once, which recovers a
+  genuinely transient miss but not a `--no-sandbox` one. `chrome.declarativeNetRequest`,
+  `chrome.sidePanel`, `chrome.userScripts` and the rest of `chrome.webRequest` are now present
+  (stubs -- UPSTREAM.md patch 10), so an extension's startup code no longer throws calling or
+  feature-detecting them; none of them enforce anything yet. The `enumerable: false` MetaMask
+  attempt (UPSTREAM.md patch 11) was measured NOT to fix the LavaMoat crash by itself. The
+  `chrome.runtime.openOptionsPage()`/`chrome.tabs.create()`-to-`chrome-extension:` crash
+  (`test/e2e-extensions-toolbar.test.ts`'s own header) is now a confirmed SIGSEGV (exitCode 139
+  on `render-process-gone`), still unfixed; the popup's own preload was ruled out as the cause.
+  `crx-msg`'s sender-id spoof (UPSTREAM.md patch 9) is fixed and unit-tested.
+
+- **2026-09-29, same day, re-measured sandboxed** (`launchElectron`'s new `sandbox` option, which
+  passes Playwright's `chromiumSandbox: true` -- the `--no-sandbox` above turned out to be a
+  Playwright-launcher default, not an Orivon or kernel requirement; this machine allows
+  unprivileged user namespaces). Before/after, same four extensions:
+
+  | Extension | Before (`--no-sandbox`) | After (sandboxed) |
+  |---|---|---|
+  | uBOL | SW dies; popup untested | SW runs, popup renders (bodyLen 10827); own check passes |
+  | Dark Reader | SW dies | SW runs, popup renders (bodyLen 18304), style injection works |
+  | Bitwarden | SW dies; popup `ERR_FAILED` | SW runs, popup renders (bodyLen 596), content script responds |
+  | MetaMask | SW dies; popup LavaMoat crash | SW runs, popup renders (bodyLen 2931), `window.ethereum` works |
+
+  All four pass every check sandboxed. The service-worker preload DOES run sandboxed, but the
+  FIRST worker of a freshly loaded extension still races its registration and misses every time
+  (measured: 20/20 cold starts of a fixture extension, and 4/4 of these real ones);
+  `extension-sw-preload-recovery.ts`'s existing one-time reload recovered every single miss (0
+  failures after reload, same runs), so it stays -- the race is real and sandbox-independent, not
+  a `--no-sandbox` artifact. MetaMask's LavaMoat "scuttling mode" crash is fixed (UPSTREAM.md
+  patch 12): it throws only for a CONFIGURABLE own property of `globalThis`, and Electron's
+  `chrome` global is one by default, unlike (believed) real Chrome's own native binding; locking
+  it to non-configurable/non-writable after injection stops the throw, measured 0 occurrences
+  across a run that previously threw it in both the popup and the worker every time. The
+  `chrome.runtime.openOptionsPage()`/`chrome.tabs.create()`-to-`chrome-extension:` SIGSEGV is gone
+  sandboxed (`test/e2e-extensions-toolbar.test.ts` now asserts it directly): Chromium's real
+  namespace sandbox, not the popup's own preload or extension-host.ts's URL policy, was the actual
+  precondition the crash needed. An occasional popup-open failure remained under the four-
+  extension launch specifically (a stray `ERR_FAILED (-2)` on one popup's navigation, or a popup
+  window that had not yet registered by the wait deadline) -- not reproduced at all across three
+  isolated single-extension retries, so a timing artifact of four popups/workers settling at once
+  contending for the same process, not a library bug. `e2e-extensions-real.test.ts`'s popup check
+  now retries its click+wait up to 3 times before failing, which measured 3/3 clean full runs
+  afterward (0/3 before). The popup-body check itself was also measured unsafe for a
+  LavaMoat-scuttled page regardless of this: `page.evaluate()` throws on `setInterval` (not in
+  LavaMoat's own scuttle exceptions list), unrelated to whether the popup's real content rendered
+  -- the check now reads `popup.content()` instead, which needs no script execution in the page.
 
 ## The session model D2 implies
 

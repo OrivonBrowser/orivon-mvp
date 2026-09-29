@@ -18,12 +18,14 @@ import type { BaseWindow, Session, WebContents } from 'electron'
 // file for bundling; tsc uses that .d.ts's ambient declaration instead.
 import { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setSessionPartitionResolver } from 'orivon:crx-extensions-partition'
-import { setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
+import { setRemoteMessageSenderCheck, setMessageSenderIdCheck } from 'orivon:crx-extensions-router'
 import { createShellWindow } from '../shell/window.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import type { SubsystemContext } from '../registry.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
+import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
+import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 
 /** The `<browser-action-list partition="...">` token that resolves to
  * `session.defaultSession`, where every extension runs -- the default
@@ -48,10 +50,23 @@ function windowFor (windowId: number | undefined): BaseWindow | undefined {
   return bridge.services.windows.focused()?.window
 }
 
-/** Constructs the library, once, before any extension loads. */
+/** Constructs the library, once, before any extension loads. `preloadPath`
+ * is `extensions-subsystem.ts`'s bundle of `vendor/.../src/preload.ts` PLUS
+ * Orivon's own service-worker-preload health check
+ * (src/preload/extension-api.ts, extension-sw-preload-recovery.ts's own
+ * header says why the check rides inside this one preload rather than a
+ * second registration). docs/open-questions.md A289 has the open question
+ * this exists for: under `--no-sandbox`, NOTHING registered as a
+ * 'service-worker'-type session preload ever runs for a worker, reproduced
+ * 100%. Sandboxed, it does run, but a freshly loaded extension's first
+ * worker still races its registration and misses every time (measured:
+ * 20/20 cold starts of a fixture extension, 4/4 of four real ones) --
+ * watchForMissedServiceWorkerPreload's one-time reload recovers every miss
+ * (0 failures after reload, same measurements), for either cause. */
 export function createExtensionHost (preloadPath: string): ElectronChromeExtensions {
   setSessionPartitionResolver((partition) =>
     partition === EXTENSIONS_DEFAULT_PARTITION ? session.defaultSession : session.fromPartition(partition))
+  setMessageSenderIdCheck(senderMatchesClaimedExtensionId)
 
   hostExtensions = new ElectronChromeExtensions({
     license: 'GPL-3.0',
@@ -114,6 +129,8 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
       if (target !== undefined) await wc.loadURL(target)
     }
   })
+
+  watchForMissedServiceWorkerPreload(session.defaultSession)
 
   return hostExtensions
 }

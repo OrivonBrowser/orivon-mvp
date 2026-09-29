@@ -46,7 +46,8 @@ it('loads every enabled registry entry at boot: a content script runs, network p
       app = await launchElectron({
         appPath: '.',
         args: [HERMETIC_RESOLVER],
-        seedProfile: async (dir) => { seedExtensions(dir) }
+        seedProfile: async (dir) => { seedExtensions(dir) },
+        sandbox: true
       })
 
       // ---- (b) both fixtures loaded into the default session ----

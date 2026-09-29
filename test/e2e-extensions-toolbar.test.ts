@@ -4,26 +4,19 @@
 // through extension-host.ts's URL policy -- allowed, refused and an
 // options-page path all included.
 //
-// Driven from the POPUP's own script, not the service worker: measured on
-// this tree, electron-chrome-extensions' 'frame'-type preload registration
-// (session.registerPreloadScript) correctly overrides chrome.tabs/
-// chrome.runtime for an extension PAGE (this fixture's popup.html), but its
-// 'service-worker'-type registration does not take effect for background.js
-// -- chrome.tabs stays Electron's own native (partial) implementation
-// there, missing chrome.tabs.create entirely. This file still seeds a real
-// MV3 service worker (background.js) so a later investigation has a ready
-// fixture, but does not depend on it for its own assertions.
+// Launched sandboxed (`launchElectron`'s `sandbox: true`, docs/open-
+// questions.md A289), so the 'service-worker'-type preload runs and
+// chrome.tabs is electron-chrome-extensions' own implementation, not
+// Electron's native partial one. Driven from the POPUP's own script
+// regardless: this file still seeds a real MV3 service worker
+// (background.js) as a ready fixture, but its own assertions never depend
+// on it.
 //
-// Neither chrome.runtime.openOptionsPage() nor chrome.tabs.create() with a
-// chrome-extension: target is exercised here: both reliably crash the
-// popup's own renderer target on this tree (Playwright reports "Target
-// crashed" on the next evaluate) -- reproducible, and not specific to
-// openOptionsPage, since a direct chrome.tabs.create({url: chrome-
-// extension://<id>/options.html}) crashes the same way. http(s) targets
-// (below) never crash. Unrelated to extension-host.ts's own createTab/URL-
-// policy code: the crash happens before or inside the same store.createTab()
-// call the working http(s) path already proves reaches this file's own
-// code cleanly. Not fixed here; a real finding for a later package.
+// chrome.runtime.openOptionsPage() and chrome.tabs.create() with a
+// chrome-extension: target both used to crash the popup's own renderer
+// with SIGSEGV under `--no-sandbox`; sandboxed, neither does (measured
+// below) -- Chromium's real namespace sandbox, not this file's own
+// URL-policy code, was the actual precondition the crash needed.
 //
 // Fixture: test/apps/extensions/action-popup/ (MV3, one browser action with
 // a popup that calls chrome.tabs.query/chrome.tabs.create directly and
@@ -134,7 +127,8 @@ it('shows a real extension\'s browser action, its popup runs, and its chrome.tab
       app = await launchElectron({
         appPath: '.',
         args: [HERMETIC_RESOLVER],
-        seedProfile: async (dir) => { extensionId = seedActionPopup(dir) }
+        seedProfile: async (dir) => { extensionId = seedActionPopup(dir) },
+        sandbox: true
       })
 
       const loaded = await waitFor(async () => (await (app as NonNullable<typeof app>).evaluate(
@@ -216,13 +210,17 @@ it('shows a real extension\'s browser action, its popup runs, and its chrome.tab
         check('chrome.tabs.create of orivon://settings opens no new window', app.windows().length === windowCountBefore)
       }
 
-      // The options page's own "opens as an Orivon tab with no window.orivon"
-      // is already covered by e2e-extensions-load.test.ts, via a typed
-      // navigation (view.goto(optionsUrl)). NOT re-covered here through
-      // chrome.tabs.create() or chrome.runtime.openOptionsPage(): both
-      // reliably crash the popup's own renderer target on this tree when
-      // the target is a chrome-extension: URL -- this file's own header has
-      // the finding.
+      // ---- chrome.runtime.openOptionsPage() opens the options page as a
+      // real Orivon tab, and the popup's own renderer survives the call ----
+      popup = findPopup(app.windows(), extensionId)
+      if (popup !== undefined) {
+        const optionsUrl = `chrome-extension://${extensionId}/options.html`
+        await popup.click('#options')
+        const opened = await waitFor(() => findTabShowing((app as NonNullable<typeof app>).windows(), chrome, optionsUrl) !== undefined)
+        check('chrome.runtime.openOptionsPage() opens the options page as a real Orivon tab', opened)
+        const popupTitleAfter = await evaluateRetrying(popup, () => document.title).catch(() => undefined)
+        check('the popup\'s own renderer survives openOptionsPage()', popupTitleAfter === 'Action Popup', String(popupTitleAfter))
+      }
     } finally {
       if (app !== undefined) await closeElectronApp(app)
     }

@@ -5,7 +5,10 @@
 the subsystem that loads every enabled entry into `session.defaultSession` at boot; the extension
 host (`extension-host.ts`) that wires the electron-chrome-extensions library into the shell
 (ADR-0043) through the URL policy (`extension-url-policy.ts`) it applies to every URL an
-extension asks to open; the Chrome Web Store wiring (`store-runner.ts`, `store-download-seam.ts`,
+extension asks to open; the sender-id check on `crx-msg` (`extension-sender-id-check.ts`) and the
+service-worker-preload health check and one-time recovery (`extension-sw-preload-recovery.ts`,
+paired with `../../preload/extension-sw-verify.ts` and `../../preload/extension-api.ts`); the
+Chrome Web Store wiring (`store-runner.ts`, `store-download-seam.ts`,
 `store-test-hook.ts`); and the `orivon://extensions` page's main-side half: `extensions-view.ts`
 (the row and details view model), `extensions-view-runner.ts` (reads a manifest, icon and locale
 catalogue off a loaded entry's own folder), `extensions-picker-runner.ts` (the native pickers

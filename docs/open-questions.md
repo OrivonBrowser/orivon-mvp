@@ -1437,6 +1437,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** extensions build plan package 6
 
+### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
+
+- **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs.
+  Sandboxed it runs, though a fresh extension's first worker races it and misses every time
+  (20/20 fixture, 4/4 real) -- the reload already in place recovers every miss. `--no-sandbox`
+  was a Playwright default, not Orivon's/the kernel's; a restricted-namespace AppImage/deb would.
+- **Why it matters:** there, every worker keeps Electron's native, partial `chrome.tabs`/`windows`
+  permanently, with no reload able to fix it.
+- **Options:** confirm real packaged-launch flags on such a machine (rec., unresearched); warn and
+  run with partial APIs; refuse to load extensions when unsandboxed.
+- **Who decides:** research first
+- **Blocks:** extensions build plan package 4's MV3 service-worker API surface
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared

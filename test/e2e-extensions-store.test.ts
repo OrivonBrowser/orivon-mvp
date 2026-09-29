@@ -128,7 +128,8 @@ it('installs a publisher-signed fixture from the store, and refuses one with no 
         env: {
           ORIVON_TEST_STORE_BASE_URL: origin,
           ORIVON_TEST_STORE_PUBLISHER_KEY_HASH: publisherKeyHash
-        }
+        },
+        sandbox: true
       })
 
       // installFromStore(id) (no approvedManifest) goes through the

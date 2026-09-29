@@ -5,10 +5,9 @@
 // registration) and shows each reply as JSON, so the test can read the
 // result back out of the popup's own DOM.
 //
-// #options is not driven by the e2e test (test file's own header: both
-// chrome.runtime.openOptionsPage() and a direct chrome.tabs.create() to a
-// chrome-extension: target crash the popup's own renderer here) -- kept as
-// the realistic MV3 pattern for a later investigation to drive.
+// #options calls chrome.runtime.openOptionsPage(), driven by the e2e test
+// (its own header: this used to crash the popup's own renderer under
+// `--no-sandbox`; sandboxed, it opens the options page as an ordinary tab).
 document.title = 'Action Popup'
 
 const result = document.getElementById('result')

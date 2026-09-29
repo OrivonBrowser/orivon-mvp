@@ -71,4 +71,9 @@ declare module 'orivon:crx-extensions-router' {
   interface OtherSenderEvent { type: 'service-worker' }
   type RemoteMessageSenderEvent = FrameSenderEvent | OtherSenderEvent
   export function setRemoteMessageSenderCheck (check: (event: RemoteMessageSenderEvent) => boolean): void
+
+  interface FrameMessageEvent { type: 'frame', sender: Electron.WebContents }
+  interface ServiceWorkerMessageEvent { type: 'service-worker', serviceWorker: Electron.ServiceWorkerMain }
+  type MessageEvent = FrameMessageEvent | ServiceWorkerMessageEvent
+  export function setMessageSenderIdCheck (check: (event: MessageEvent, claimedExtensionId: string | undefined) => boolean): void
 }
