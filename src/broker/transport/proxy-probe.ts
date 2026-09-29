@@ -28,6 +28,17 @@ const PROXY_PROBE_TIMEOUT_MS = 2_000
  */
 const CACHE_TTL_MS = 5_000
 
+/**
+ * How many distinct URLs one cache remembers at once. `udp.send` calls this
+ * per datagram (../capabilities/net.ts), so a DHT app's peer set, not
+ * anything this file controls, decides how many distinct URLs are ever
+ * asked for -- without a cap the map grows for as long as the app keeps
+ * discovering new peers. Least-recently-used, not oldest-inserted: a peer
+ * still being talked to stays cached across an eviction the same way it
+ * would if it were the only one.
+ */
+const MAX_CACHE_ENTRIES = 1024
+
 async function resolveWithTimeout (resolveProxy: (url: string) => Promise<string>, url: string): Promise<string> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -51,11 +62,27 @@ async function resolveWithTimeout (resolveProxy: (url: string) => Promise<string
  * every real caller omits it.
  */
 export function cachingProxyProbe (resolveProxy: (url: string) => Promise<string>, now: () => number = Date.now): ProxyProbe {
-  const cache = new Map<string, { readonly proxied: boolean, readonly expiresAt: number }>()
+  type Entry = { readonly proxied: boolean, readonly expiresAt: number }
+  // Insertion order IS recency order: `remember` below always deletes a key
+  // before re-setting it, so the least recently used entry is always
+  // whichever one Map iterates first -- `cache.keys().next()`.
+  const cache = new Map<string, Entry>()
+
+  function remember (url: string, entry: Entry): void {
+    cache.delete(url)
+    cache.set(url, entry)
+    if (cache.size > MAX_CACHE_ENTRIES) {
+      const oldest = cache.keys().next().value
+      if (oldest !== undefined) cache.delete(oldest)
+    }
+  }
 
   return async (url) => {
     const cached = cache.get(url)
-    if (cached !== undefined && cached.expiresAt > now()) return cached.proxied
+    if (cached !== undefined && cached.expiresAt > now()) {
+      remember(url, cached) // a hit is also a touch: moves url to most-recently-used
+      return cached.proxied
+    }
 
     let proxied: boolean
     try {
@@ -64,7 +91,7 @@ export function cachingProxyProbe (resolveProxy: (url: string) => Promise<string
       proxied = true
     }
 
-    cache.set(url, { proxied, expiresAt: now() + CACHE_TTL_MS })
+    remember(url, { proxied, expiresAt: now() + CACHE_TTL_MS })
     return proxied
   }
 }

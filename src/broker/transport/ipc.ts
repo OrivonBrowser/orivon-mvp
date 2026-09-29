@@ -34,7 +34,7 @@ import { createPortRegistry } from './relay/port-registry.js'
 import type { RateLimiter } from './token-bucket.js'
 import { admitControlCall, createControlLimiter } from './control-limiter.js'
 import type { ControlLimiter } from './control-limiter.js'
-import { additionalProtectedRoots, notifyPickRefused } from './picker-guard-wiring.js'
+import { additionalProtectedRoots, notifyPickRefused, privateSessionGuard } from './picker-guard-wiring.js'
 import { createPickPath } from './picker-dialog.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
 import { handleSyncFsReadRequest } from './sync-fs.js'
@@ -410,7 +410,8 @@ export const brokerIpcSubsystem: Subsystem = {
         return ctx.broker
       }),
       // The picker guard's real inputs -- `./picker-guard-wiring.ts`'s own header.
-      additionalProtectedRoots: additionalProtectedRoots(ctx.app),
+      additionalProtectedRoots: () => additionalProtectedRoots(ctx.app),
+      privateSessionGuard,
       notifyPickRefused
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }

@@ -32,24 +32,26 @@ import type { BrokerFsMethods, OpenedFile } from '../fs-contracts.js'
 import type { CreateBrokerOptions } from '../broker-contracts.js'
 
 /**
- * Builds `pickerBlockReason`'s `guard` from whatever THIS process can learn
- * about itself, and returns the one predicate both this capability and
- * `PickedPathLedger`'s own hydration re-check answer to (Rule 3: a single
- * guard, never two that could drift apart) -- `../index.ts` calls this once
- * and hands the result to both.
+ * Builds the one predicate both this capability and `PickedPathLedger`'s own
+ * hydration re-check answer to (Rule 3: a single guard, never two that could
+ * drift apart) -- `../index.ts` calls this once and hands the result to
+ * both. `home` and `systemDirectories` are fixed for the process's lifetime,
+ * but `dataRoots` and `privateSessions` are recomputed on EVERY call the
+ * returned function receives, not once here: a profile or private session
+ * created after the broker started must be refused exactly like one that
+ * already existed when this was built, and the only way to guarantee that is
+ * to never cache the answer (the picker decision's "every profile and
+ * private-session directory, not only the current userData").
  *
  * `deps.fs.dataRoot()` covers THIS session's own data root; real wiring
- * (`../transport/ipc.ts`) supplies every OTHER profile and live private-
- * session directory through `deps.additionalProtectedRoots` -- the picker
- * decision's "every profile and private-session directory, not only the
- * current userData". `homedir()` and the fixed system list are plain
- * `node:os`/`node:path` facts, not Electron, so this capability stays
- * "Tied to Electron? No" (README.md) exactly as it was before this guard
- * existed.
+ * (`../transport/ipc.ts`) supplies the default profile's own directory
+ * through `deps.additionalProtectedRoots` and the private-session naming
+ * rule through `deps.privateSessionGuard`. `homedir()` and the fixed system
+ * list are plain `node:os`/`node:path` facts, not Electron, so this
+ * capability stays "Tied to Electron? No" (README.md) exactly as it was
+ * before this guard existed.
  */
 export function createPickGuardCheck (deps: CreateBrokerOptions): (path: string) => string | null {
-  const dataRoots = [deps.fs.dataRoot?.(), ...(deps.additionalProtectedRoots ?? [])]
-    .filter((root): root is string => root !== undefined)
   let home: string | undefined
   try {
     home = homedir()
@@ -59,11 +61,20 @@ export function createPickGuardCheck (deps: CreateBrokerOptions): (path: string)
     home = undefined
   }
   const systemDirectories = [
-    '/etc', '/usr', '/System', 'C:\\Windows', 'C:\\Program Files',
+    '/etc', '/usr', '/System', '/proc', '/sys', '/dev', '/boot', '/run',
+    '/bin', '/sbin', '/lib', '/lib32', '/lib64', '/var', '/private', '/Library',
+    'C:\\Windows', 'C:\\Program Files', 'C:\\ProgramData', 'C:\\Program Files (x86)',
     ...(home === undefined ? [] : [join(home, '.ssh'), join(home, '.gnupg')])
   ]
-  const guard: PickerGuardRoots = { dataRoots, home, systemDirectories }
-  return (path) => pickerBlockReason(path, guard, deps.fs.realpathSync)
+  return (path) => {
+    const dataRoots = [deps.fs.dataRoot?.(), ...(deps.additionalProtectedRoots?.() ?? [])]
+      .filter((root): root is string => root !== undefined)
+    const privateSessions = deps.privateSessionGuard?.()
+    const guard: PickerGuardRoots = privateSessions === undefined
+      ? { dataRoots, home, systemDirectories }
+      : { dataRoots, home, systemDirectories, privateSessions }
+    return pickerBlockReason(path, guard, deps.fs.realpathSync)
+  }
 }
 
 export interface UserSelectedCapabilityOptions {

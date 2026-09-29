@@ -1,19 +1,17 @@
-// Real inputs for `fs.userSelected`'s picker guard: every OTHER
-// profile directory and every private-session directory this machine
-// currently has, beyond THIS session's own `app.getPath('userData')`
-// (which `../adapters/node-fs-adapter.ts`'s `nodeFs` already exposes as
-// `BrokerFs.dataRoot()` -- `../capabilities/user-selected.ts`'s own guard
-// treats every root from both sources identically: a pick that overlaps
-// ANY of them, in either direction, is refused). Split out of `./ipc.ts`
-// (code-guidelines.md Rule 2) once wiring this pushed that file past its
-// line budget.
+// Real inputs for `fs.userSelected`'s picker guard, beyond THIS session's own
+// `app.getPath('userData')` (`../adapters/node-fs-adapter.ts`'s `nodeFs`
+// exposes that as `BrokerFs.dataRoot()`). Both exports here answer BY RULE,
+// never by a snapshot of what currently exists, because a profile or private
+// session created after the broker starts must be protected exactly like one
+// already running -- `../capabilities/user-selected.ts`'s `createPickGuardCheck`
+// calls both fresh on every pick, not once at broker creation. Split out of
+// `./ipc.ts` (code-guidelines.md Rule 2) once wiring this pushed that file
+// past its line budget.
 
-import { readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BrowserWindow, dialog } from 'electron'
 import type { App } from 'electron'
-import { ProfileStore } from '../../main/launch/profile-store.js'
 import { isPrivateDirName } from '../../main/launch/private-session.js'
 
 /**
@@ -30,33 +28,25 @@ function defaultProfileHome (app: Pick<App, 'getPath' | 'getName'>): string {
 }
 
 /**
- * Every profile directory (the default one and each under `profiles/`) and
- * every private-session directory this machine currently has, whether or
- * not it belongs to a still-running process -- a stale one, not yet swept,
- * still names a directory that once held real browsing data, so it stays
- * on the list until the sweep itself removes it.
+ * The default profile's own directory -- every OTHER profile lives inside it
+ * (`profiles/<id>`), so `../policy/picker-blocklist.ts`'s own ancestor-or-
+ * equal rule already refuses a pick under any of them, including one made
+ * after this call, without this needing to name it separately.
  */
 export function additionalProtectedRoots (app: Pick<App, 'getPath' | 'getName'>): readonly string[] {
-  const home = defaultProfileHome(app)
-  const roots = new Set<string>([home])
-  try {
-    const store = new ProfileStore(home)
-    for (const profile of store.list()) {
-      const dir = store.dirOf(profile.id)
-      if (dir !== null) roots.add(dir)
-    }
-  } catch {
-    // No `profiles/` directory yet -- only the default profile exists.
-  }
-  try {
-    const tmp = tmpdir()
-    for (const name of readdirSync(tmp)) {
-      if (isPrivateDirName(name)) roots.add(join(tmp, name))
-    }
-  } catch {
-    // Nothing under the temp directory worth adding.
-  }
-  return [...roots]
+  return [defaultProfileHome(app)]
+}
+
+/**
+ * `../policy/picker-blocklist.ts`'s `PickerGuardRoots.privateSessions`:
+ * every private session sits directly under `os.tmpdir()`, named the way
+ * `../../main/launch/private-session.ts`'s own `mkdtempSync` call names it.
+ * Matched by that shape, not by which such directories happen to exist when
+ * this is called, so a session started later is covered exactly like one
+ * already running.
+ */
+export function privateSessionGuard (): { readonly tempDir: string, readonly isPrivateDirName: (name: string) => boolean } {
+  return { tempDir: tmpdir(), isPrivateDirName }
 }
 
 /**

@@ -231,8 +231,9 @@ export interface CreateBrokerOptions {
    */
   readonly ledgerStorage?: LedgerStorage
   readonly webContextHost?: WebContextHost
-  /** Every other profile and live private-session directory the picker must refuse, beyond `fs.dataRoot()` (./transport/picker-guard-wiring.ts). */
-  readonly additionalProtectedRoots?: readonly string[]
+  /** The picker guard's real inputs beyond `fs.dataRoot()`: every other profile directory, and where private sessions live and how to recognise one by name. Both called fresh per pick, not once at broker creation, so one created after startup is covered like an existing one (./transport/picker-guard-wiring.ts). */
+  readonly additionalProtectedRoots?: () => readonly string[]
+  readonly privateSessionGuard?: () => { readonly tempDir: string, readonly isPrivateDirName: (name: string) => boolean }
   /** Tells the person why their pick was refused, injected like `webContextHost` so the picker guard never imports `electron` itself. Omitted, the refusal stays silent to the person; the app-facing outcome (a plain cancellation, never a distinguishable error) is identical either way. */
   readonly notifyPickRefused?: (info: { readonly origin: string, readonly appName: string | undefined, readonly reason: string }) => void
 }
