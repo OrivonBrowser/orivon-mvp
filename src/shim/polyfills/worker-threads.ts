@@ -68,6 +68,9 @@ export function moveMessagePortToContext (): never {
     'moving a port to another vm context needs a vm context of its own, which this shim does not build (vm.createContext)')
 }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/worker-threads.js'
+
 export default nodeModule('worker_threads', {
   isMainThread, threadId, parentPort, workerData, resourceLimits, SHARE_ENV,
   getEnvironmentData, setEnvironmentData, markAsUntransferable, isMarkedAsUntransferable,

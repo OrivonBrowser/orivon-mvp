@@ -47,4 +47,7 @@ export function createContext (): never { throw noContext('createContext') }
 export function runInContext (): never { throw noContext('runInContext') }
 export function runInNewContext (): never { throw noContext('runInNewContext') }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/vm.js'
+
 export default nodeModule('vm', { runInThisContext, compileFunction, isContext, Script, createContext, runInContext, runInNewContext })

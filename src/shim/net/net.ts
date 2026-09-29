@@ -23,13 +23,17 @@ export { connect, createServer }
 export const createConnection = connect
 
 /** A135: every OTHER net member -- `getDefaultAutoSelectFamily`, ... -- is real Node net surface this shim has not implemented and has not decided whether it will (compatibility-matrix.md Table 3). `connect`/`createServer`/`Socket`/`Server` above are the decided, built surface; this is everything else. */
-function otherNetMember (prop: string) {
+export function otherNetMember (prop: string) {
   return refuseShim(
     `net.${prop}`, 'unimplemented',
     `net.${prop} is real Node net surface this shim has not implemented and has not decided ` +
     'whether it will. See docs/planning/compatibility-matrix.md Table 3.'
   )
 }
+
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs
+// (esbuild's CJS interop hands require() the namespace, not this default).
+export * from './generated/net.js'
 
 // A135: anything else read off this default export (a bundled CJS
 // `require('net')`'s own shape) names the gap instead of reading `undefined`.

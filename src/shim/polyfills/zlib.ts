@@ -11,4 +11,7 @@ export const {
   gunzipSync, inflateRaw, inflateRawSync, Deflate, Inflate, Gzip, Gunzip, DeflateRaw, InflateRaw, Unzip
 } = browserifyZlib
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/zlib.js'
+
 export default nodeModule('zlib', { ...browserifyZlib })

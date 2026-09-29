@@ -2,6 +2,7 @@
 // net/dgram-socket.ts -- the transport bittorrent-dht actually binds to.
 
 import { getOrivon } from '../orivon-global.js'
+import { nodeModule } from '../polyfills/module-proxy.js'
 import { Socket } from './dgram-socket.js'
 
 export { Socket } from './dgram-socket.js'
@@ -14,4 +15,7 @@ export function createSocket (typeOrOptions: unknown, messageListener?: (msg: Bu
   return socket
 }
 
-export default { createSocket }
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/dgram.js'
+
+export default nodeModule('dgram', { createSocket, Socket })

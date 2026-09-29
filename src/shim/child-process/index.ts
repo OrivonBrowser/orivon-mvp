@@ -24,4 +24,7 @@ export const execFileSync = syncForm('execFileSync', 'execFile')
 
 export { ChildProcess, exec, execFile, fork, spawn }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/child-process.js'
+
 export default nodeModule('child_process', { ChildProcess, spawn, fork, exec, execFile, spawnSync, execSync, execFileSync })
