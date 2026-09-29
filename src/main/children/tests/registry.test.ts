@@ -131,4 +131,63 @@ describe('createChildHostRegistry.connect', () => {
 
     expect(pool.closeAll).toHaveBeenCalledOnce()
   })
+
+  it('F6: a second concurrent connect from the SAME frame while one is already in flight never reaches the pool a second time', async () => {
+    let resolveBuild: (() => void) | undefined
+    const pool = {
+      getOrCreate: vi.fn(async () => {
+        await new Promise<void>((resolve) => { resolveBuild = resolve })
+        return host as unknown as ChildHost
+      }),
+      close: vi.fn(async () => {}),
+      closeAll: vi.fn(async () => {})
+    } as unknown as ChildHostPool
+    const registry = createChildHostRegistry(() => fakeBroker(new Set([APP_ORIGIN])), pool, fakeTracker())
+    const frame = fakeFrame(APP_ORIGIN)
+
+    const first = registry.connect(event(frame))
+    const second = registry.connect(event(frame)) // same frame object, still in flight
+    resolveBuild?.()
+    await Promise.all([first, second])
+
+    expect(pool.getOrCreate).toHaveBeenCalledOnce()
+    expect(frame.postMessage).toHaveBeenCalledOnce()
+  })
+
+  it('F6: a LATER connect from the same frame, once the first has settled, is not permanently refused (F5\'s own reconnect-after-crash needs this)', async () => {
+    const pool = fakePool(host)
+    const registry = createChildHostRegistry(() => fakeBroker(new Set([APP_ORIGIN])), pool, fakeTracker())
+    const frame = fakeFrame(APP_ORIGIN)
+
+    await registry.connect(event(frame))
+    await registry.connect(event(frame))
+
+    expect(pool.getOrCreate).toHaveBeenCalledTimes(2)
+    expect(frame.postMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('F2/F5: an origin no longer registered has its host closed rather than left running unreachable', async () => {
+    const pool = fakePool(host)
+    const registry = createChildHostRegistry(() => fakeBroker(new Set()), pool, fakeTracker())
+
+    await registry.connect(event(fakeFrame(APP_ORIGIN)))
+
+    expect(pool.close).toHaveBeenCalledWith(APP_ORIGIN)
+  })
+
+  it('F5: a connect that fails is logged upstream, never left to become an uncaught rejection -- and does not permanently block the frame', async () => {
+    const pool = {
+      getOrCreate: vi.fn(async () => { throw new Error('host build failed') }),
+      close: vi.fn(async () => {}),
+      closeAll: vi.fn(async () => {})
+    } as unknown as ChildHostPool
+    const registry = createChildHostRegistry(() => fakeBroker(new Set([APP_ORIGIN])), pool, fakeTracker())
+    const frame = fakeFrame(APP_ORIGIN)
+
+    await expect(registry.connect(event(frame))).rejects.toThrow('host build failed')
+    // The failure did not strand the frame: a retry is not refused as a
+    // duplicate in-flight connect.
+    await expect(registry.connect(event(frame))).rejects.toThrow('host build failed')
+    expect(pool.getOrCreate).toHaveBeenCalledTimes(2)
+  })
 })

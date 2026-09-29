@@ -137,7 +137,12 @@ describe('createChildHost', () => {
     page.postMessage(message, [message.port])
 
     await waitFor(() => createdWorkers.length === 1, 'the Worker to be created')
-    expect(loadProgram).toHaveBeenCalledWith('/prog', ['/prog', 'a'])
+    // `start.args` carries argv0 (`child.spawnargs`, matching the worker's
+    // own argv below) -- `loadProgram` wants the plain args, never argv0
+    // (shim finding 14: the host used to pass the whole thing through,
+    // handing a spawned program one extra leading argument the local path
+    // never did).
+    expect(loadProgram).toHaveBeenCalledWith('/prog', ['a'])
     const worker = createdWorkers[0] as FakeWorker
     expect(worker.posted[0]?.message).toMatchObject({
       type: 'spawn', program, args: ['/prog', 'a'], env: { FOO: 'bar' }, preopens: { '/': '/' }

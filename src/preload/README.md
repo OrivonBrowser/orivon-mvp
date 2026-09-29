@@ -46,7 +46,7 @@ across this boundary.
 | `embed.ts` | only a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest; ADR-0039) | Nothing on `window`: runs the script set with `orivon.web.setEmbedScript` before the page's own code, handing it `orivonEmbed` |
 | `child-host.ts` | only the hidden child host (`src/main/children/child-host.ts`; ADR-0046), and only at its own `/.well-known/orivon/child-host` document | Nothing on `window`: builds `orivon` in this isolated world alone and runs `src/shim/worker/host.ts`'s relay over the ports main connects |
 | `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrdinaryTabSurface()` as `app.ts` |
-| `expose-fetch-route.ts`, `expose-shim-globals.ts`, `expose-child-host-connect.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, `process`/`global`/`setImmediate`/`clearImmediate`/`Buffer`, and (ADR-0046) a `window.postMessage` handshake letting the page reach its app's child host with no new global |
+| `expose-fetch-route.ts`, `expose-shim-globals.ts`, `expose-child-host-connect.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, `process`/`global`/`setImmediate`/`clearImmediate`/`Buffer`, and (ADR-0046) a registered-symbol bridge (`start`/`send`/`kill` closures, never the raw port -- T17) letting the page reach its app's child host with no new global |
 | `extension-api.ts` | registered as both a `'frame'` and a `'service-worker'` preload on the default session (`src/main/extensions/extension-host.ts`'s `createExtensionHost`, wired from `extensions-subsystem.ts`); injects `chrome.*` only on a `chrome-extension:` page or a `chrome-extension:`-scoped service worker (its URL read from the worker's main world: a worker's preload realm has no `location`), nothing elsewhere | `chrome.*` (`vendor/electron-chrome-extensions`'s `injectExtensionAPIs`), plus a health check that reloads a worker whose first `chrome.*` injection missed (`extension-sw-preload-recovery.ts`, A289) |
 | `vendor/electron-chrome-web-store/src/renderer/chrome-web-store.preload.ts` (not under this directory) | registered as a `'frame'` preload on the default session (`src/main/extensions/store-runner.ts`'s `startWebStore`); runs only on the top frame at exactly `https://chromewebstore.google.com` | `chrome.webstorePrivate`, and the `chrome.runtime`/`chrome.management` extras the store page's own script expects |
 
@@ -112,11 +112,13 @@ declaration in the bundle, which collides with Electron's own sandboxed preload 
 (measured: it binds `Buffer` as one of the function parameters the preload's own body runs
 inside). `wrapSandboxedPreloadBody`'s own doc comment has the fix.
 
-**[`child-host.ts`](child-host.ts) patches `process.nextTick` before importing `host.js`.**
+**[`child-host.ts`](child-host.ts) patches `process.nextTick` before ever calling into `host.js`.**
 Electron's sandboxed preload gives a real, but partial, `process` (measured: `versions`,
 `platform`, `env`; no `nextTick`), unlike a page or a Worker, where this repository's own shim
-installs a complete one. The same `readable-stream` the entry above explains calls the bare
-global `process.nextTick` from deep inside `Readable`/`Writable` internals, reached only once a
-spawnSync's own stdout/stderr piping or close path runs -- unpatched, that throws `TypeError:
-process.nextTick is not a function`, wire-carried back to spawnSync's own caller as an
-unexplained spawn failure.
+installs a complete one. ES imports are hoisted, so `host.js`'s own module graph has already
+evaluated by the time this file's patch line runs -- harmless here, since nothing in that graph
+calls `process.nextTick` at module-evaluation time, only later, deep inside `readable-stream`'s
+`Readable`/`Writable` internals, reached once a spawnSync's own stdout/stderr piping or close
+path actually runs. The patch only has to land before THAT, which every line below the import
+already satisfies. Unpatched, that call throws `TypeError: process.nextTick is not a function`,
+wire-carried back to spawnSync's own caller as an unexplained spawn failure.

@@ -10,16 +10,18 @@ import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk
 import type { NodeMessagePort } from '../../worker/node-port.js'
 import { FORK_LIVENESS_SYMBOL, WORKER_THREADS_SYMBOL, type WorkerThreadsGlobals } from '../../worker/symbols.js'
 import { fork } from '../fork.js'
-import { hostConnection } from '../host-client.js'
+import { hasChildHost } from '../host-client.js'
 import { Worker } from '../thread.js'
 import { failNext, forkModules, threadModules, workers } from './support/in-process-worker.js'
 
 vi.mock('../../worker/launch.js', async () => ({ createChildWorker: (await import('./support/in-process-worker.js')).createInProcessWorker }))
 // Wraps the real function (never fakes it) so a call to it is still observable: the point is
-// that a thread's own launchChild() call never reaches it at all, cache or no cache.
+// that a thread's own launchChild() call never reaches it at all -- `viaHost: false` short-
+// circuits before `hasChildHost()` would ever run (F1's structural check replaced the old,
+// cached `hostConnection()` this test used to spy on).
 vi.mock('../host-client.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../host-client.js')>()
-  return { ...actual, hostConnection: vi.fn(actual.hostConnection) }
+  return { ...actual, hasChildHost: vi.fn(actual.hasChildHost) }
 })
 
 const ORIGIN = 'https://thread-unit.test'
@@ -117,11 +119,11 @@ describe('Worker', () => {
     expect(workers.at(-1)?.terminated).toBe(true)
   })
 
-  it('never asks for a host connection to start: launchChild\'s shared, cached hostConnection() is never called for a thread', async () => {
+  it('never asks whether a child host exists to start: launchChild\'s viaHost:false short-circuits before hasChildHost() for a thread', async () => {
     threadModules.set(`${ORIGIN}/local-only.js`, (scope) => { threadGlobals(scope).parentPort.on('message', () => {}) })
     const worker = new Worker('/local-only.js')
     await new Promise((resolve) => worker.once('online', resolve))
-    expect(hostConnection).not.toHaveBeenCalled()
+    expect(hasChildHost).not.toHaveBeenCalled()
     await worker.terminate()
   })
 

@@ -1,103 +1,133 @@
-// The page's own half of ADR-0046: the connection handshake
-// (`../preload/expose-child-host-connect.ts` is the isolated-world other
-// half) and the remote-Worker adapter `spawn.ts`'s `launchChild()` uses once
-// connected. No `electron` import: everything here is `window.postMessage`
-// and a real, cross-process `MessagePort` Electron already handed the page.
+// The page's own half of ADR-0046: F1's redesign moved the actual
+// connection to the app's child host into the isolated-world preload
+// (`../preload/expose-child-host-connect.ts`'s own header says why -- T17,
+// docs/architecture/security-model.md). What THIS page's own code gets is
+// `window[Symbol.for('orivon:children')]`, a `contextBridge`-proxied bridge
+// of plain closures (`start`/`send`/`kill`) -- never a `MessagePort`. This
+// file adapts that bridge to `WorkerLike` (../worker/protocol.ts), the exact
+// interface `spawn.ts`'s `launchChild()` already uses for a same-process
+// Worker, so `ChildProcess` itself never knows which kind of child it has.
 
 import type { FromWorker, ToWorker, WorkerLike } from '../worker/protocol.js'
-import type { HostStart, StartChildMessage } from '../worker/host-protocol.js'
-
-const CONNECT_MESSAGE_TYPE = 'orivon:child-host:connect'
-const PORT_MESSAGE_TYPE = 'orivon:child-host:port'
-const DEFAULT_TIMEOUT_MS = 2000
+import type { HostStart } from '../worker/host-protocol.js'
 
 /** What this file needs from `window` -- structural, so a test never touches the one real
  * global environment (`spawn.ts`'s own reason for `launchChild()`'s injectable Worker factory). */
 export interface WindowLike {
-  readonly location: { readonly origin: string }
-  postMessage (message: unknown, targetOrigin: string, transfer?: Transferable[]): void
-  addEventListener (type: 'message', listener: (event: MessageEvent) => void): void
-  removeEventListener (type: 'message', listener: (event: MessageEvent) => void): void
+  [key: symbol]: unknown
 }
+
+/** The bridge shape the preload installs -- kept local (not imported from
+ * `../../preload/`, a direction `src/shim/README.md` forbids) and cast to at
+ * the one place this file reads `window`. Exported only so a test can build
+ * one to inject via `createRemoteWorker`'s own `getBridge` parameter. */
+export interface ChildrenBridge {
+  start: (start: HostStart, onMessage: (message: FromWorker) => void) => Promise<string>
+  send: (childId: string, message: ToWorker | { readonly type: 'terminate' }) => void
+  kill: (childId: string) => void
+}
+
+/** `Symbol.for('orivon:children')` -- see `../../preload/expose-child-host-connect.ts`'s own
+ * header for why a registered symbol, and why this string must match its literal exactly. */
+const CHILDREN_BRIDGE_KEY = 'orivon:children'
 
 function realWindow (): WindowLike | undefined {
   return typeof window === 'undefined' ? undefined : window as unknown as WindowLike
 }
 
+function childrenBridge (win: WindowLike | undefined): ChildrenBridge | undefined {
+  if (win === undefined) return undefined
+  return win[Symbol.for(CHILDREN_BRIDGE_KEY)] as ChildrenBridge | undefined
+}
+
+const USE_REAL_WINDOW = Symbol('use the real window')
+let overrideWin: WindowLike | undefined | typeof USE_REAL_WINDOW = USE_REAL_WINDOW
+
 /**
- * One connection attempt: asks `win` for its app's child host and resolves
- * with the page's own end of the port, or undefined where nothing ever
- * answers within `timeoutMs` -- a page outside Orivon, a Worker's own nested
- * children (no `window` there at all, so `win` is undefined before this
- * ever runs), or a unit test. Exported (rather than only `hostConnection`
- * below) so a test can pass a fake `win` and a short timeout without
- * fighting the real singleton's cache.
+ * For a test only: makes `hasChildHost`/`createRemoteWorker` read a fake
+ * `window` instead of the real global one -- called with `undefined` to
+ * simulate no bridge at all (a page outside Orivon, or a Worker's own
+ * nested children). Called with NO argument, restores the real window.
  */
-export function requestHostConnection (win: WindowLike | undefined = realWindow(), timeoutMs = DEFAULT_TIMEOUT_MS): Promise<MessagePort | undefined> {
-  if (win === undefined) return Promise.resolve(undefined)
-  return new Promise((resolve) => {
-    let settled = false
-    const onMessage = (event: MessageEvent): void => {
-      if (event.source !== win || event.origin !== win.location.origin) return
-      const data = event.data as { type?: unknown } | null
-      if (typeof data !== 'object' || data === null || data.type !== PORT_MESSAGE_TYPE) return
-      finish(event.ports[0])
-    }
-    const finish = (port: MessagePort | undefined): void => {
-      if (settled) return
-      settled = true
-      win.removeEventListener('message', onMessage)
-      clearTimeout(timer)
-      resolve(port)
-    }
-    win.addEventListener('message', onMessage)
-    win.postMessage({ type: CONNECT_MESSAGE_TYPE }, win.location.origin)
-    const timer = setTimeout(() => { finish(undefined) }, timeoutMs)
-  })
+export function useWindowForTests (...override: [] | [WindowLike | undefined]): void {
+  overrideWin = override.length === 0 ? USE_REAL_WINDOW : override[0]
 }
 
-let cached: Promise<MessagePort | undefined> | undefined
-
-/** For the host itself (`../worker/host.ts`): its own children, a `spawnSync` it serves included,
- * are local Workers, so it never waits out a handshake nothing there answers. */
-export function preferLocalWorkers (): void {
-  cached = Promise.resolve(undefined)
-}
-
-/** The page's own connection to its app's child host, requested once and cached for the page's
- * whole lifetime (a fresh document -- a reload included -- gets a fresh module instance, so
- * there is nothing to invalidate this on). */
-export function hostConnection (): Promise<MessagePort | undefined> {
-  cached ??= requestHostConnection()
-  return cached
+function currentWindow (): WindowLike | undefined {
+  return overrideWin === USE_REAL_WINDOW ? realWindow() : overrideWin
 }
 
 /**
- * A child routed through the host, behind the exact interface `ChildProcess` already uses for a
- * same-process Worker (`../worker/protocol.ts`'s `WorkerLike`): `postMessage`, `onmessage`,
- * `terminate`. `hostPort` gets one new `MessagePort`, transferred inside a `start-child` message
- * along with `start` and whatever else the real start message will need (`extra`: a thread's own
- * `parentPort`, and any `transferList` the app asked for) -- ADR-0046's "per page port: start
- * requests carry a per-child MessagePort".
+ * Whether this page's app has a child host to route through -- a plain
+ * structural check (W7): the preload installs the bridge, or it does not,
+ * the moment this document's scripts start running, so there is nothing to
+ * race or time out on the page's own side any more. `false` for a Worker's
+ * own nested children (no `window` there at all), a page outside Orivon, or
+ * any tab that is not a registered app.
  */
-export function createRemoteWorker (hostPort: MessagePort, start: HostStart, extra: readonly Transferable[] = []): WorkerLike {
-  const { port1: local, port2: remote } = new MessageChannel()
-  local.start()
+export function hasChildHost (): boolean {
+  return childrenBridge(currentWindow()) !== undefined
+}
 
+/**
+ * A child routed through the app's host, behind the exact interface
+ * `ChildProcess` already uses for a same-process Worker
+ * (`../worker/protocol.ts`'s `WorkerLike`): `postMessage`, `onmessage`,
+ * `terminate`. Every `postMessage`/`terminate` call made before the host
+ * actually accepts the child (`bridge.start` is asynchronous: it crosses
+ * `contextBridge` and may itself await the app's very first connection) is
+ * queued and replayed in order once it does -- mirroring
+ * `../worker/host.ts`'s own buffering for the same race on the host's side.
+ * `getBridge` is injectable only for a test.
+ */
+export function createRemoteWorker (
+  start: HostStart,
+  getBridge: () => ChildrenBridge | undefined = () => childrenBridge(currentWindow())
+): WorkerLike {
+  const bridge = getBridge()
   const adapter: WorkerLike = {
     onmessage: null,
     onerror: null,
-    postMessage: (message: ToWorker) => { local.postMessage(message) },
-    // No wire member for this in ToWorker: a real Worker's own terminate() is
-    // a platform call, never a message, everywhere else this protocol is
+    postMessage: (message: ToWorker) => { enqueueOrSend(message) },
+    // No wire member for this in ToWorker: a real Worker's own terminate()
+    // is a platform call, never a message, everywhere else this protocol is
     // used -- host-protocol.ts's ToHostChild is what gives it one for this
     // one extra hop.
-    terminate: () => { local.postMessage({ type: 'terminate' }) }
+    terminate: () => {
+      if (childId !== undefined) { bridge?.kill(childId); return }
+      killedBeforeStarted = true
+    }
   }
-  local.onmessage = (event: MessageEvent<FromWorker>) => { adapter.onmessage?.(event) }
 
-  const message: StartChildMessage = { type: 'start-child', port: remote, start, extra }
-  hostPort.postMessage(message, [remote, ...extra])
+  let childId: string | undefined
+  let queued: ToWorker[] = []
+  let killedBeforeStarted = false
+
+  function enqueueOrSend (message: ToWorker): void {
+    if (childId !== undefined) { bridge?.send(childId, message); return }
+    queued.push(message)
+  }
+
+  if (bridge === undefined) {
+    // No host on this page at all -- `launchChild` never calls this branch
+    // in practice (it only builds a remote worker once `hasChildHost()` is
+    // true), but failing the same way a start the host itself refused would
+    // is cheaper than a silent hang.
+    queueMicrotask(() => { adapter.onmessage?.({ data: { type: 'failed', error: { name: 'Error', message: 'orivon: no child host on this page', code: 'ENOEXEC' } } } as MessageEvent<FromWorker>) })
+    return adapter
+  }
+
+  bridge.start(start, (message) => { adapter.onmessage?.({ data: message } as MessageEvent<FromWorker>) })
+    .then((id) => {
+      childId = id
+      if (killedBeforeStarted) { bridge.kill(id); return }
+      for (const message of queued) bridge.send(id, message)
+      queued = []
+    })
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      adapter.onmessage?.({ data: { type: 'failed', error: { name: 'Error', message, code: 'ENOEXEC' } } } as MessageEvent<FromWorker>)
+    })
 
   return adapter
 }

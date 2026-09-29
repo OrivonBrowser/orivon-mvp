@@ -71,6 +71,18 @@ describe('the rule', () => {
     const result = checkPageGlobals(repo({ 'src/preload/a.ts': install('{ value: f }', global) }))
     expect(result.ok).toBe(false)
   })
+
+  it('leaves a Symbol.for(...) key alone, even locked -- it was never a platform global to shadow', () => {
+    const source = install(LOCKED, 'target', "Symbol.for('orivon:children')")
+    expect(checkPageGlobals(repo({ 'src/preload/a.ts': source }))).toEqual(CLEAN)
+  })
+
+  it('still fails a plain variable holding a symbol -- only the literal Symbol.for(...) form is read', () => {
+    const source = install(LOCKED, 'target', 'CHILDREN_SYMBOL')
+    const result = checkPageGlobals(repo({ 'src/preload/a.ts': source }))
+    expect(result.ok).toBe(false)
+    expect(result.unparsed).toEqual([{ file: 'src/preload/a.ts', line: 2 }])
+  })
 })
 
 describe('the escape hatch', () => {

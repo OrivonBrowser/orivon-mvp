@@ -13,7 +13,7 @@ import type { ToWorker } from '../worker/protocol.js'
 import type { HostStart } from '../worker/host-protocol.js'
 import { ChildProcess, type StdioMode } from './child.js'
 import { loadProgram, spawnError } from './program.js'
-import { createRemoteWorker, hostConnection } from './host-client.js'
+import { createRemoteWorker, hasChildHost } from './host-client.js'
 import { runSpawnSync, type SpawnSyncRequest } from './spawn-sync.js'
 
 export type StdioOption = StdioMode | 'ipc' | 'overlapped' | null | undefined
@@ -89,21 +89,25 @@ export function applyLifetime (child: ChildProcess, options: SpawnOptions): void
 }
 
 /**
- * Starts the child: through an app's own child host if one connects
- * (ADR-0046), or a same-process Worker otherwise -- `ChildProcess` itself
- * never knows which (`child.attach()` takes a `WorkerLike` either way).
+ * Starts the child: through an app's own child host if one exists for this
+ * page (ADR-0046), or a same-process Worker otherwise -- `ChildProcess`
+ * itself never knows which (`child.attach()` takes a `WorkerLike` either
+ * way). `hasChildHost()` (F1/W7) is a plain structural check -- the
+ * preload's bridge either exists on this document already or it never
+ * will -- so there is nothing left to await or time out on before choosing
+ * a path.
  *
  * `hostStart` is what a host-routed child sends across the extra hop --
  * never a precompiled program, which does not survive it (ADR-0046's
- * Context) -- and is built EAGERLY, before either path is chosen, since it
- * costs nothing to build and a host may answer before `localStart` would
- * even finish. `localStart` builds the real start message for a
- * same-process Worker, and may do async work a host-routed child skips
- * entirely (a spawn's own program compile, moved to the host instead).
+ * Context). `localStart` builds the real start message for a same-process
+ * Worker, and may do async work a host-routed child skips entirely (a
+ * spawn's own program compile, moved to the host instead).
  * `extraTransfer` carries a thread's own `parentPort` and any
- * `transferList` the app asked for; spawn and fork pass none.
- * `getHostConnection` is injectable only for a test; production code always
- * takes the real, cached connection.
+ * `transferList` the app asked for on the LOCAL path only; spawn and fork
+ * pass none, and a host-routed child never carries one (only a thread ever
+ * needed it, and a thread never routes through the host -- ADR-0046's
+ * Decision). `viaHost` lets a caller that must never route through the
+ * host (a thread) say so; every other caller takes the default.
  */
 export async function launchChild (
   child: ChildProcess,
@@ -111,19 +115,11 @@ export async function launchChild (
   hostStart: HostStart,
   localStart: () => Promise<Omit<ToWorker, 'orivon'>> | Omit<ToWorker, 'orivon'>,
   extraTransfer: readonly Transferable[] = [],
-  getHostConnection: () => Promise<MessagePort | undefined> = hostConnection
+  viaHost = true
 ): Promise<void> {
   if (child.stopped) return
-  const host = await getHostConnection()
-  if (child.stopped) return
-  if (host !== undefined) {
-    try {
-      child.attach(createRemoteWorker(host, hostStart, extraTransfer), { dispose: async () => {} })
-    } catch (error) {
-      // A non-cloneable value in hostStart (never workerData's own thread routing: threads never
-      // reach here) throws from the post inside createRemoteWorker synchronously, same call.
-      child.fail(error as Error)
-    }
+  if (viaHost && hasChildHost()) {
+    child.attach(createRemoteWorker(hostStart), { dispose: async () => {} })
     return
   }
 

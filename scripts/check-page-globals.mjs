@@ -103,6 +103,21 @@ function argumentsAt (text, open) {
 const ARGUMENTS = /^\s*([A-Za-z_$][\w$]*)\s*,\s*(['"`])([^'"`]*)\2\s*,\s*([\s\S]*)$/
 
 /**
+ * `Object.defineProperty(target, Symbol.for('...'), descriptor)` -- a second
+ * property-key shape ADR-0021 never reaches: the rule exists so an app can
+ * ponyfill a PLATFORM global by its ordinary string name, exactly as it
+ * could in a browser (ARGUMENTS above is that shape). A registered symbol is
+ * not a name anything in the wild shadows, requires the caller to already
+ * hold (or `Symbol.for`) the exact same string to ever reach the property at
+ * all, and was never a platform global to begin with -- so locking it costs
+ * an app nothing the rule is there to protect. Matched separately from
+ * ARGUMENTS, which requires a quoted literal in that position and would
+ * otherwise read this call as unparsed (the guard's own fail-closed rule for
+ * anything it cannot read).
+ */
+const SYMBOL_ARGUMENTS = /^\s*([A-Za-z_$][\w$]*)\s*,\s*Symbol\.for\(\s*(['"`])([^'"`]*)\2\s*\)\s*,\s*([\s\S]*)$/
+
+/**
  * Whether this call locks a global, given its target, property name and
  * descriptor text. Two independent triggers, because a lock can be written
  * either way round: an explicit `false` anywhere in these directories, or a
@@ -187,6 +202,7 @@ export function checkPageGlobals (root) {
       const open = at + CALL.length - 1
       const line = blanked.slice(0, at).split('\n').length
       const args = argumentsAt(blanked, open)
+      if (args !== undefined && SYMBOL_ARGUMENTS.test(args)) continue // see SYMBOL_ARGUMENTS's own doc
       const parsed = args === undefined ? null : ARGUMENTS.exec(args)
       if (parsed === null) {
         unparsed.push({ file, line })

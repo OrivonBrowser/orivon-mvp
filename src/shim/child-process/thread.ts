@@ -153,16 +153,14 @@ export class Worker extends EventEmitter {
       stdout: options.stdout === true,
       stderr: options.stderr === true
     }
-    // Never through the app's child host (ADR-0046's amendment): a Node
-    // thread lives and dies with the process that started it, so it stays a
-    // local Worker here, keeping a SharedArrayBuffer or a shared
-    // WebAssembly.Memory/Module in workerData reachable, which crossing into
-    // the host's own renderer process would break. `getHostConnection` always
-    // resolving undefined is what makes that true, not just documentation:
-    // `launchChild()`'s host branch, the only reader of its `hostStart`
-    // argument, never runs for a thread, so the cast below never has to be
-    // a real `HostStart`.
-    void launchChild(child, name, threadStart as unknown as HostStart, () => threadStart, [portChannel.port2, ...transferList], async () => undefined)
+    // `viaHost: false` -- ADR-0046's Decision: a thread is part of the
+    // context that starts it (a `SharedArrayBuffer`/`WebAssembly.Memory` in
+    // `workerData` must reach it), so it always launches as a local Worker,
+    // never through the app's child host. `launchChild()`'s host branch,
+    // the only reader of its `hostStart` argument, never runs when `viaHost`
+    // is false, so the cast below never has to be a real `HostStart` --
+    // `HostStart` no longer has a thread member at all.
+    void launchChild(child, name, threadStart as unknown as HostStart, () => threadStart, [portChannel.port2, ...transferList], false)
   }
 
   postMessage (value: unknown, transferList?: readonly unknown[]): void {
