@@ -16,10 +16,12 @@ import { errnoOf, isOrivonErrorLike } from '../../errors.js'
 
 /**
  * Maps a raw error off `socket.readable`/`socket.writable` to a closed-enum
- * code. Deliberately narrow: a real Node stream wrapping a TCP socket
- * (node-adapters.ts's dialOne, via Duplex.toWeb) surfaces the underlying
- * socket's own errors here, and ECONNRESET/EPIPE are the only ones with a
- * sharper code than 'internal' worth naming. Exported so a real-socket test
+ * code. Deliberately narrow: a real Node stream wrapping a TCP (or TLS)
+ * socket (../../adapters/socket-streams.ts's own hand-written adapter, used
+ * by node-adapters.ts's dialOne/wrapAccepted and tls-adapter.ts's
+ * dialOneSecure alike) surfaces the underlying socket's own errors here, and
+ * ECONNRESET/EPIPE are the only ones with a sharper code than 'internal'
+ * worth naming. Exported so a real-socket test
  * (port-sink-real-socket.test.ts) can prove the write direction's actual
  * mapping rather than a mocked one, without a second copy of this logic
  * (code-guidelines.md Rule 3 -- the reason is shared, not just the shape).
@@ -196,8 +198,10 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
   //
   // THE BRANCH IS LOAD-BEARING, and it is here because the version without it
   // was measured and found to lose data. `stop()` calls `pump.stop()`, which
-  // cancels the reader -- and cancelling the readable half of a Duplex.toWeb
-  // DESTROYS the whole socket, discarding anything still in its write queue.
+  // cancels the reader -- and cancelling ../../adapters/socket-streams.ts's
+  // readable half (matching Duplex.toWeb's own old cancel() behaviour, which
+  // it was written to preserve) DESTROYS the whole socket, discarding
+  // anything still in its write queue.
   // On a flushing reason ('closed'/'sessionEnded', where destroy calls
   // `socket.end()`) that truncates the app's own final bytes: 8 MiB queued,
   // 8 MiB lost, against a real socket. Those reasons are left to settle

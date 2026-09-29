@@ -119,10 +119,11 @@ export function createDatagramRelay (options: DatagramRelayOptions): DatagramRel
 
   // UNCONDITIONAL, unlike ./socket.ts's, and that asymmetry is the point
   // rather than an oversight: the TCP relay must not act at unlink on a
-  // FLUSHING reason, because cancelling a Duplex.toWeb's read half destroys
-  // the socket and drops its write queue (8 MiB measured lost). A UDP socket
-  // has no write queue -- a datagram is handed to the OS or refused, never
-  // buffered for later -- so there is nothing a teardown here can truncate.
+  // FLUSHING reason, because cancelling ../../adapters/socket-streams.ts's
+  // read half destroys the socket and drops its write queue (8 MiB measured
+  // lost). A UDP socket has no write queue -- a datagram is handed to the OS
+  // or refused, never buffered for later -- so there is nothing a teardown
+  // here can truncate.
   socket.onUnlink((_reason, code) => { stop(code) })
 
   socket.closed.then(

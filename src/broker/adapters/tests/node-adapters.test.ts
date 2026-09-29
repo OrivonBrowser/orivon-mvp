@@ -250,7 +250,7 @@ describe('listenTcp against a real TCP client', () => {
     expect(error.code).toBe('ECONNRESET')
   })
 
-  it('a peer that resets a still-queued connection is dropped from the queue and never crashes the process (F4)', async () => {
+  it('a peer that resets a still-queued connection is dropped from the queue and never crashes the process', async () => {
     const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
     const first = await connectClient(listened.localPort)
     const second = await connectClient(listened.localPort)
