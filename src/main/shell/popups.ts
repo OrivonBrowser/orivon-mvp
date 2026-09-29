@@ -51,9 +51,11 @@ export function routePopup (
 
 export interface PopupHost {
   atCapacity: () => boolean
-  openTab: (url: string) => void
-  /** `url` is what the popup was opened at, for anything the tab decides from it. */
-  adoptPopup: (view: WebContentsView, partition: string | undefined, url: string) => void
+  /** `active` false opens the tab behind the current one: a middle click or a plain ctrl+click. */
+  openTab: (url: string, active: boolean) => void
+  /** `url` is what the popup was opened at, for anything the tab decides from it.
+   * `active` -- see `openTab`'s own doc. */
+  adoptPopup: (view: WebContentsView, partition: string | undefined, url: string, active: boolean) => void
   /** The session a tab opened at `url` would get. */
   partitionFor: (url: string) => string | undefined
   /** The webPreferences a tab opened at `url` would get, without a
@@ -61,10 +63,14 @@ export interface PopupHost {
   webPreferencesFor: (url: string) => WebPreferences
 }
 
-/** The popup's webContents, which Chromium has already created. Passed in
- * the options Electron hands `createWindow`, though its type omits it. */
-function guestOf (options: object): WebContents {
-  return (options as { webContents: WebContents }).webContents
+/** The webContents Chromium already built for the open, if any -- present in the `options`
+ * `createWindow` receives, though its type omits the field entirely. Measured against Electron
+ * 44: a modifier-key open (middle click, ctrl+click, shift+click, ctrl+shift+click, on any link
+ * regardless of `target`) never carries one, whatever its disposition; only a renderer-driven
+ * open a script holds a `Window` handle to -- window.open(), or a plain click on target=_blank --
+ * does. */
+function guestOf (options: object): WebContents | undefined {
+  return (options as { webContents?: WebContents }).webContents
 }
 
 export function windowOpenHandler (
@@ -74,8 +80,10 @@ export function windowOpenHandler (
   return (details) => {
     if (host.atCapacity()) return { action: 'deny' }
     const from = opener()
+    // Every browser opens a middle click or a plain ctrl+click behind the current tab.
+    const active = details.disposition !== 'background-tab'
     if (routePopup(details, from, host.partitionFor(details.url)) === 'new-tab') {
-      host.openTab(details.url)
+      host.openTab(details.url, active)
       return { action: 'deny' }
     }
     return {
@@ -87,8 +95,20 @@ export function windowOpenHandler (
         // webPreferences again, not only webContents: adopting without them
         // drops the preload, measured against Electron 44, and the popup
         // then has no orivon surface at all.
-        const view = new WebContentsView({ webContents: guestOf(options), ...(options.webPreferences !== undefined ? { webPreferences: options.webPreferences } : {}) })
-        host.adoptPopup(view, from.partition, details.url)
+        const webPreferences = options.webPreferences !== undefined ? { webPreferences: options.webPreferences } : {}
+        const guest = guestOf(options)
+        // No guest (guestOf's own doc): build the view ourselves, the way TabFactory.content()
+        // would for an ordinary tab, and load it -- Electron never navigates a view constructed
+        // here on its own. Given `webContents: undefined` directly instead, WebContentsView's
+        // constructor throws synchronously, and this process has no top-level catch for that
+        // (index.ts's `exitOnUncaught` turns any uncaught exception into a full exit, by design).
+        const view = guest === undefined ? new WebContentsView(webPreferences) : new WebContentsView({ webContents: guest, ...webPreferences })
+        if (guest === undefined) {
+          void view.webContents.loadURL(details.url).catch((error) => {
+            console.error('[orivon] a modifier-click tab failed to load its first URL:', error)
+          })
+        }
+        host.adoptPopup(view, from.partition, details.url, active)
         return view.webContents
       }
     }

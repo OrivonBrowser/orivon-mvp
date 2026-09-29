@@ -136,9 +136,12 @@ export interface TabViewHost {
   emitState: () => void
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
   forgetTab: (id: string) => void
-  openTab: (url: string) => void
-  /** Makes Chromium's own popup webContents, already in `partition`, a tab. */
-  adoptPopup: (view: WebContentsView, partition: string | undefined) => void
+  /** `active` false leaves the tab strip's current tab in front: a middle
+   * click or a plain ctrl+click, from popups.ts's `windowOpenHandler`. */
+  openTab: (url: string, active?: boolean) => void
+  /** Makes Chromium's own popup webContents, already in `partition`, a tab.
+   * `active` -- see `openTab`'s own doc. */
+  adoptPopup: (view: WebContentsView, partition: string | undefined, active?: boolean) => void
   atCapacity: () => boolean
   htmlFullscreenChanged: (id: string, entered: boolean) => void
   /** The window is closing: nothing more is made or shown for it. */

@@ -337,10 +337,10 @@ export function wireView (id: string, record: TabRecord): void {
   // a tab (./popups.ts); everything else opens as a new tab.
   wc.setWindowOpenHandler(windowOpenHandler({
     atCapacity: () => record.host.atCapacity(),
-    openTab: (url) => { record.host.openTab(url) },
-    adoptPopup: (view, partition, url) => {
+    openTab: (url, active) => { record.host.openTab(url, active) },
+    adoptPopup: (view, partition, url, active) => {
       watchAppTab(view, appTabArgsFor(url, record.host.broker))
-      record.host.adoptPopup(view, partition)
+      record.host.adoptPopup(view, partition, active)
     },
     partitionFor: (url) => partitionForTarget(url, record.host.broker),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker))
