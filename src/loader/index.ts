@@ -26,7 +26,7 @@ import { parsePinRecord } from '../broker/policy/pin.js'
 import type { ContentAddress, PinRecord } from '../broker/policy/pin.js'
 import { decideUpdate } from '../broker/policy/update.js'
 import type { PatternSet } from '../broker/policy/update.js'
-import { withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
+import { widensInvisibleLimits, withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
 import { fetchBundle } from './fetch/bundle.js'
 import type { Fetch, StagedAsset } from './fetch/bundle.js'
 import { installAndNotify } from './cache/install.js'
@@ -217,18 +217,21 @@ export interface Loader {
 }
 
 /**
- * What the pinned manifest declared -- decideUpdate's
- * `previouslyDeclaredPatterns`, so a capability the person already declined
- * (or revoked) is not asked about again on every visit. Read back only if
- * its bytes still hash to the pin's own manifest leaf; undefined otherwise.
+ * The pinned manifest itself -- decideUpdate's `previouslyDeclaredPatterns`
+ * comes from its `capabilities` (`patternSetFromCapabilities`), and so does
+ * the `widensInvisibleLimits` check below, which needs the raw
+ * `id.curves`/`fs.quotaBytes`/`net.concurrentSockets` fields that
+ * conversion cannot represent as a `Pattern`. Read back only if its bytes
+ * still hash to the pin's own manifest leaf; undefined otherwise (never
+ * installed, or the leaf no longer matches).
  */
-async function pinnedDeclaredPatterns (storage: LoaderStorage, origin: string, pin: PinRecord | null): Promise<PatternSet | undefined> {
+async function pinnedManifest (storage: LoaderStorage, origin: string, pin: PinRecord | null): Promise<Manifest | undefined> {
   const leaf = pin?.assets.find((asset) => asset.path === MANIFEST_PATH)?.leaf
   if (leaf === undefined) return undefined
   const bytes = await storage.readAsset(origin, MANIFEST_PATH)
   if (bytes === undefined || await leafOf(MANIFEST_PATH, bytes.length, [bytes]) !== leaf) return undefined
   const parsed = parseManifest(new TextDecoder().decode(bytes))
-  return parsed.ok ? patternSetFromCapabilities(parsed.manifest.capabilities) : undefined
+  return parsed.ok ? parsed.manifest : undefined
 }
 
 /**
@@ -251,20 +254,40 @@ async function decideAndRoute (
   context: LoadContext
 ): Promise<LoadResult> {
   const rawPin = await options.storage.readPin(canonicalOrigin)
-  if (rawPin === undefined) {
-    // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
-    // is no continuity to protect and nothing to prompt for.
+  // F8: a MISSING pin is not, by itself, proof this origin is new. The
+  // ledger (context.versionFloor/grantedPatterns, from a PRIOR registerApp)
+  // survives independently of apps/<hash>/pin.json on disk -- the two can
+  // fall out of step (the pin directory removed while grants/<hash>/ is
+  // not, a partial restore, disk corruption) -- so an origin the ledger
+  // already knows gets no shortcut past the floor and widening checks below,
+  // exactly like a pin that exists but fails to parse.
+  // versionFloor alone, not grantedPatterns too: `raiseFloor` (grant-
+  // ledger.ts) only ever moves it off '0.0.0' from inside a real
+  // `registerApp` call, which every ordinary path to a grant runs first --
+  // so it is a clean signal for "this origin was registered before,
+  // whatever pin.json says now" with no counter-example in this codebase.
+  // `grantedPatterns` alone is not: `grant-without-install.ts`'s loopback
+  // path can populate it for an origin that was never pinned AT ALL, by
+  // design (that file's own header), which is not this finding.
+  const hasPriorAuthority = context.versionFloor !== '0.0.0'
+  if (rawPin === undefined && !hasPriorAuthority) {
+    // TOFU (ADR-0005): nothing was ever pinned for this origin, and the
+    // ledger shows no grant or version floor for it either, so there is no
+    // continuity to protect and nothing to prompt for.
     return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, declaration, content, undefined)
   }
 
-  // A pin record exists but fails to parse (corrupt bytes, a schema this
-  // broker no longer recognises) is NOT the same as never having existed --
-  // treating it as fresh TOFU would let local corruption (or tampering)
-  // silently re-install without a prompt. An empty `pinnedHash` routes
-  // through decideUpdate's own "blank counts as changed" rule
-  // (update.ts's isSameBundle), which can never resolve weaker than
-  // `reconsent` -- it still goes through the version-floor and
-  // pattern-widening checks first, exactly like a real hash change would.
+  // A pin record that is MISSING, or exists but fails to parse (corrupt
+  // bytes, a schema this broker no longer recognises), is NOT the same as
+  // never having existed once the ledger shows prior authority -- treating
+  // it as fresh TOFU would let a missing or corrupt pin (or tampering)
+  // silently re-install without a prompt, bypassing the version floor
+  // entirely. An empty `pinnedHash` routes through decideUpdate's own
+  // "blank counts as changed" rule (update.ts's isSameBundle), which can
+  // never resolve weaker than `reconsent` -- it still goes through the
+  // version-floor and pattern-widening checks first, exactly like a real
+  // hash change would. `parsePinRecord` already treats `undefined` the same
+  // as any other unparseable value (its own `typeof raw !== 'object'` guard).
   const existingPin = parsePinRecord(rawPin)
   const pinnedHash = existingPin?.bundleHash ?? ''
 
@@ -274,6 +297,7 @@ async function decideAndRoute (
   // CHECK itself is narrowed, so a capability the person switched off does
   // not read as newly requested on every later visit while it stays off.
   const declaredPatterns = patternSetFromCapabilities(manifest.capabilities)
+  const previousManifest = await pinnedManifest(options.storage, canonicalOrigin, existingPin)
   const decision = decideUpdate({
     pinnedHash,
     newHash: tree.root,
@@ -285,10 +309,25 @@ async function decideAndRoute (
     // promises: only NOW is the actual offered version known, so only
     // now can "was THIS version acknowledged" be answered.
     rollbackAcknowledged: context.acknowledgedRollbackVersion === manifest.version,
-    previouslyDeclaredPatterns: await pinnedDeclaredPatterns(options.storage, canonicalOrigin, existingPin)
+    previouslyDeclaredPatterns: previousManifest === undefined ? undefined : patternSetFromCapabilities(previousManifest.capabilities)
   })
 
-  switch (decision) {
+  // decideUpdate()'s own widening check (update.ts's widensAuthority, built
+  // on covers()'s host:port/port-range/exact-origin grammar) cannot see
+  // id.curves/fs.quotaBytes/net.concurrentSockets widen -- patternSetFrom
+  // Capabilities maps each to presence-only or drops it (manifest-
+  // patterns.ts's own doc on widensInvisibleLimits). Folded in here, never
+  // inside decideUpdate: a decision this function already computed as
+  // 'silent', 'reconsent' or 'rollback-notice' is never WEAKER than what
+  // widening one of these three actually calls for, matching the "ordered
+  // by severity" rule decideUpdate's own doc states -- 'capability-prompt'
+  // and 'rollback-choice' already outrank every case this can raise.
+  const decisionSeenLive = (decision === 'silent' || decision === 'reconsent' || decision === 'rollback-notice') &&
+    widensInvisibleLimits(previousManifest?.capabilities, manifest.capabilities)
+    ? 'capability-prompt'
+    : decision
+
+  switch (decisionSeenLive) {
     case 'rollback-choice':
       return { outcome: 'needs-rollback-choice', canonicalOrigin, manifest, tree, entries, declaration, content, versionFloor: context.versionFloor }
     case 'capability-prompt':
@@ -315,7 +354,7 @@ async function decideAndRoute (
       // UpdateDecision case added without a branch here gets caught, not a
       // runtime path reachable through the closed union above (same
       // pattern as src/telemetry/accounting.ts's applyEvent).
-      const exhaustive: never = decision
+      const exhaustive: never = decisionSeenLive
       throw new Error(`loader: unhandled update decision ${JSON.stringify(exhaustive)}`)
     }
   }

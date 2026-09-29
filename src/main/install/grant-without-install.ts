@@ -20,7 +20,8 @@ import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from '../consen
 import type { Broker } from '../../broker/broker-contracts.js'
 import { patternSetFromGrants, widensAuthority } from '../../broker/policy/update.js'
 import type { PatternSet } from '../../broker/policy/update.js'
-import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
+import { patternSetFromCapabilities, widensInvisibleLimits } from '../../broker/policy/manifest-patterns.js'
+import type { InvisibleLimitFields } from '../../broker/policy/manifest-patterns.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLoopbackHost } from '../../broker/policy/origin.js'
 
@@ -142,6 +143,46 @@ export async function grantWithoutInstall (deps: GrantWithoutInstallDeps, origin
     const held = patternSetFromGrants(await deps.broker.app.grants(origin))
     if (widensHeldGrants(held, patternSetFromCapabilities(result.manifest.capabilities))) {
       return { outcome: 'rejected', reason: 'the manifest now asks for more than this session granted; restart Orivon to be asked again' }
+    }
+    // widensHeldGrants above is built on widensAuthority/covers(), which
+    // cannot see id.curves/fs.quotaBytes/net.concurrentSockets widen
+    // (manifest-patterns.ts's own doc on widensInvisibleLimits) -- so a
+    // held `id`/`fs`/net capability's INVISIBLE limit could otherwise widen
+    // on this same "restart to be asked again" path with no dialog at all.
+    // Restricted to a kind actually HELD, same reason widensHeldGrants
+    // itself is: a kind not yet granted is asked about fresh regardless, so
+    // its own baseline (no curves / unlimited quota / the default socket
+    // count) must never be substituted in and compared -- that would read
+    // as "widened" for a kind this origin was never asked about at all.
+    const NET_KINDS: readonly CapabilityKind[] = ['tcp.connect', 'tcp.listen.local', 'tcp.listen.network', 'udp.bind.local', 'udp.bind.network', 'udp.send', 'https.connect']
+    const heldId = Object.hasOwn(held, 'id')
+    const heldFs = Object.hasOwn(held, 'fs')
+    const heldNet = NET_KINDS.some((kind) => Object.hasOwn(held, kind))
+    if (heldId || heldFs || heldNet) {
+      // Best-effort: an origin `isRegisteredSync` just confirmed registered
+      // always has a manifest in practice, but this reads it a second time
+      // regardless, so a failure here degrades to "nothing gated" rather
+      // than throwing out of a consent flow.
+      let previousManifest
+      try {
+        previousManifest = await deps.broker.app.manifest(origin)
+      } catch {
+        previousManifest = undefined
+      }
+      const previousCapabilities = previousManifest?.capabilities ?? {}
+      // A field left OUT of `gated` entirely (never set to an explicit
+      // `undefined`, which `exactOptionalPropertyTypes` refuses here) reads
+      // in widensInvisibleLimits as "absent, use the next manifest's own
+      // value" only because both sides then hold that SAME value below --
+      // see the `result.manifest.capabilities` fallback on each field.
+      const gated: InvisibleLimitFields = {
+        id: heldId ? previousCapabilities.id : result.manifest.capabilities.id,
+        fs: heldFs ? previousCapabilities.fs : result.manifest.capabilities.fs,
+        net: heldNet ? previousCapabilities.net : result.manifest.capabilities.net
+      }
+      if (widensInvisibleLimits(gated, result.manifest.capabilities)) {
+        return { outcome: 'rejected', reason: 'the manifest now asks for more than this session granted; restart Orivon to be asked again' }
+      }
     }
   }
   await deps.broker.registerApp(origin, result.manifest)
