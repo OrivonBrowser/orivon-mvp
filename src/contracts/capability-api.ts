@@ -310,6 +310,15 @@ export interface OrivonFs {
    * shape below does. Cancelling the file picker resolves an empty array;
    * declining either dialog is never a rejected promise, because declining
    * a picker is not a failure.
+   *
+   * A USER ACTIVATION IS REQUIRED, as the web's own pickers require one: a
+   * click or key press in the calling page a moment before. Called without
+   * one, this rejects 'denied' and shows no dialog, so a page cannot raise an
+   * OS dialog on its own. SOME FOLDERS ARE REFUSED: the browser's own data
+   * directory, any folder inside it or containing it, a filesystem root, and
+   * the home folder itself. The picker says why, and the call resolves as a
+   * cancellation (null, or an empty array), since the person chose nothing
+   * the app may have.
    */
   userSelected(opts: { directory: true }): Promise<DirectoryHandle | null>
   userSelected(opts?: { directory?: false, multiple?: boolean }): Promise<readonly FileHandle[]>
