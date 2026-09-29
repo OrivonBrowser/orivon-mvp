@@ -70,12 +70,15 @@ export interface PopoverSpec {
   /**
    * Registers whatever `PERMISSIONS_COMMAND_CHANNEL`-shaped IPC this popup
    * owns for its (freshly created) `webContents`, wired to resize via
-   * `onContentHeight`. Returns the teardown `close()` runs -- typically
-   * `ipcMain.removeHandler`. Called once per `open()`, matching the
-   * channel's own once-per-open lifecycle (`ipcMain.handle` throws if
-   * registered twice).
+   * `onContentHeight`. `url` is the exact address this popup was loaded at
+   * (`lockNavigation` already refuses any other), so the registered handler
+   * can check it the same way `../ipc/ipc.ts`'s own `isFromChrome` checks
+   * the chrome view's URL alongside its identity. Returns the teardown
+   * `close()` runs -- typically `ipcMain.removeHandler`. Called once per
+   * `open()`, matching the channel's own once-per-open lifecycle
+   * (`ipcMain.handle` throws if registered twice).
    */
-  readonly registerIpc: (webContents: WebContents, onContentHeight: (height: number) => void) => () => void
+  readonly registerIpc: (webContents: WebContents, url: string, onContentHeight: (height: number) => void) => () => void
 }
 
 export interface PopoverView {
@@ -153,7 +156,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     popup.setBorderRadius(CORNER_RADIUS)
     popup.setBounds(popoverBounds(win, anchor, spec.align, INITIAL_HEIGHT))
 
-    removeIpc = spec.registerIpc(popup.webContents, (contentHeight) => {
+    removeIpc = spec.registerIpc(popup.webContents, url, (contentHeight) => {
       // Guarded on `view === popup`: a height reported by a popup that has
       // already been dismissed must not resize the one that replaced it.
       if (view !== popup || popup.webContents.isDestroyed()) return

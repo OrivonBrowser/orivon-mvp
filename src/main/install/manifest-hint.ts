@@ -20,7 +20,7 @@
 
 import { ipcMain } from 'electron'
 import { MANIFEST_HINT_CHANNEL } from '../channels.js'
-import { originFromSenderFrame } from '../../broker/policy/origin.js'
+import { isAttributedSession, originFromSenderFrame } from '../../broker/policy/origin.js'
 import type { SenderFrameLike } from '../../broker/policy/origin.js'
 import type { LoadResult } from '../../loader/index.js'
 import type { GrantedWithoutInstall } from './grant-without-install.js'
@@ -34,9 +34,10 @@ export interface ManifestHintEvent {
   /**
    * The tab that reported the hint, when the caller has one. Optional and
    * structural so a test drives this listener with a plain object, exactly
-   * as `senderFrame` already is.
+   * as `senderFrame` already is. `mainFrame`/`session` are
+   * `isAttributedSession`'s own two comparisons (../../broker/policy/origin.js).
    */
-  readonly sender?: { reload: () => void, isDestroyed: () => boolean }
+  readonly sender?: { reload: () => void, isDestroyed: () => boolean, mainFrame: SenderFrameLike | null, session: unknown }
 }
 
 /** The one method this module needs from electron's real `IpcMain` for this channel -- structural, matching ../broker/transport/ipc.ts's own IpcMainLike/IpcMainOnLike, so a test double never needs the real type. */
@@ -76,12 +77,17 @@ export function createManifestHintListener (
     capacity: HINT_RATE_LIMIT_CAPACITY,
     refillPerSecond: HINT_RATE_LIMIT_REFILL_PER_SECOND,
     now: () => Date.now()
-  })
+  }),
+  sessionForOrigin?: (origin: string) => unknown
 ): (event: ManifestHintEvent, hintedUrl: unknown) => void {
   return (event, hintedUrl) => {
     if (typeof hintedUrl !== 'string') return
     const origin = originFromSenderFrame(event.senderFrame)
     if (origin === null) return
+    // Same check, same reason, as ../../broker/transport/ipc.ts's own
+    // CONTROL_CHANNEL handler -- see isAttributedSession's doc
+    // (../../broker/policy/origin.js).
+    if (sessionForOrigin !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, sessionForOrigin)) return
     if (!limiter.tryConsume(origin)) return
 
     // installFromHint documents itself as never rejecting outside its own
@@ -127,8 +133,8 @@ export function createManifestHintListener (
 }
 
 /** Thin wiring: one `ipcMain.on` registration over createManifestHintListener. */
-export function registerManifestHintIpc (ipc: IpcMainOnLike, installApp: InstallApp): void {
-  ipc.on(MANIFEST_HINT_CHANNEL, createManifestHintListener(installApp))
+export function registerManifestHintIpc (ipc: IpcMainOnLike, installApp: InstallApp, sessionForOrigin?: (origin: string) => unknown): void {
+  ipc.on(MANIFEST_HINT_CHANNEL, createManifestHintListener(installApp, undefined, sessionForOrigin))
 }
 
 /**
@@ -151,6 +157,6 @@ export const manifestHintSubsystem: Subsystem = {
       console.warn('[orivon] ctx.installApp is undefined; the manifest-hint discovery trigger is disabled this run')
       return
     }
-    registerManifestHintIpc(ipcMain, ctx.installApp)
+    registerManifestHintIpc(ipcMain, ctx.installApp, ctx.sessionForOrigin)
   }
 }

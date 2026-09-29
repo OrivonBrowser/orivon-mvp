@@ -5,7 +5,7 @@ import type { RateLimiter } from '../token-bucket.js'
 import { createControlLimiter } from '../control-limiter.js'
 import type { ControlLimiter } from '../control-limiter.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../../../contracts/ipc.js'
-import { APP, type BrokerCall, envelope, frameFor, stubBroker } from './ipc.test-helpers.js'
+import { APP, type BrokerCall, envelope, frameFor, NO_FRAME, stubBroker } from './ipc.test-helpers.js'
 
 // Proves open-questions.md A38's fix: a per-origin RateLimiter, checked in
 // handleControlRequest BEFORE dispatch() runs, independent of and in
@@ -107,7 +107,7 @@ describe('the rate limiter (open-questions.md A38)', () => {
     const limiter = fixedLimiter(true)
 
     const response = await handleControlRequest(
-      stubBroker(calls), { senderFrame: null }, envelope('app.grants', undefined), undefined, limiter
+      stubBroker(calls), NO_FRAME, envelope('app.grants', undefined), undefined, limiter
     )
 
     expect(response).toMatchObject({ ok: false, code: 'denied' })

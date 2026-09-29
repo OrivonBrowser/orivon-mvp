@@ -495,4 +495,18 @@ export interface Broker {
    * implementation. Resolves to whether anything was actually removed.
    */
   revokeUserSelectedPath(origin: string, pickId: string): Promise<boolean>
+  /**
+   * Session teardown, not revocation (handle-contracts.md's "Session
+   * teardown is not revocation"): every one of `origin`'s live handles
+   * closes gracefully -- FIN, buffered writes flushed, `closed` rejecting
+   * with `sessionEnded` rather than `revoked` -- because the app was
+   * closed, navigated away from, or crashed, not because a grant was
+   * withdrawn. Unlike `revoke`, this also takes `fs.userSelected` handles,
+   * the other half of the FileHandle exception: a picker choice outlives a
+   * grant revocation but not the session that made it.
+   *
+   * Idempotent, and safe to call for an origin holding no live handles at
+   * all -- the common case, since most origins never acquire one.
+   */
+  dropOrigin(origin: string): Promise<void>
 }

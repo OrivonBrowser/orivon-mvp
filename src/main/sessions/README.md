@@ -7,7 +7,10 @@ reads, geolocation, ...) on every session a tab can reach, except the names in t
 each tab remembers between questions. `web-context-host.ts` is `ADR-0019`'s Electron half of the
 isolated `WebContext`: the real `WebContextHost`
 [`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) calls through
-`CreateBrokerOptions.webContextHost`.
+`CreateBrokerOptions.webContextHost`. `session-attribution.ts` publishes `ctx.sessionForOrigin`
+(`../registry.ts`): the Electron session an origin's documents belong in, reusing
+[`../shell/tab-view.ts`](../shell/tab-view.ts)'s own `partitionForTarget` rule so every
+renderer-reachable broker channel can refuse a call whose WebContents sits in the wrong one.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
@@ -15,20 +18,21 @@ isolated `WebContext`: the real `WebContextHost`
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the two
 questions, `external-link-prompt.ts` and `notification-prompt.ts`; `showing-window.ts`;
-`exclusive-access-notice.ts`; `lock-navigation.ts`), the top-level `registry.ts`. Only `permission-gate.ts` and
-`web-context-host.ts` import `electron`: the decision files are unit-tested under plain vitest.
+`exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), the
+top-level `registry.ts`. `permission-gate.ts`, `web-context-host.ts` and `session-attribution.ts`
+import `electron`; the decision files are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in
 [`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) instead: that file stays
 Electron-free by its own rule, which is why this directory exists. The partition, the view
 construction and the network confinement have to live somewhere Electron-shaped, and this is it.
 
-**Durable or tied to Electron.** `permission-gate.ts` and `web-context-host.ts` are tied to
-Electron's `Session`; the decision files and the notification store are plain Node and would
-survive an engine change.
+**Durable or tied to Electron.** `permission-gate.ts`, `web-context-host.ts` and
+`session-attribution.ts` are tied to Electron's `Session`; the decision files and the
+notification store are plain Node and would survive an engine change.
 
-**Owner stream.** `shell` (`permission-gate.ts`); `ADR-0019` (`web-context-host.ts`).
-Maintenance only.
+**Owner stream.** `shell` (`permission-gate.ts`, `session-attribution.ts`); `ADR-0019`
+(`web-context-host.ts`). Maintenance only.
 
 ## Design notes
 

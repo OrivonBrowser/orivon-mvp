@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { handleSyncFsReadRequest, isSyncFsReadRequest } from '../sync-fs.js'
 import type { SyncFsPolicy } from '../sync-fs.js'
 import { fail } from '../../errors.js'
-import { APP, frameFor, NO_FRAME } from './ipc.test-helpers.js'
+import { APP, APP_SESSION, DEFAULT_SESSION, frameFor, NO_FRAME } from './ipc.test-helpers.js'
 
 // Mirrors ipc.test.ts's own shape: the pure handler, exercised with a fake
 // SyncFsPolicy standing in for ./sync-fs-policy.ts's real one, so this suite
@@ -91,6 +91,35 @@ describe('handleSyncFsReadRequest -- rate limiting shares CONTROL_CHANNEL\'s lim
     const { policy: p2, calls: c2 } = fakePolicy()
     handleSyncFsReadRequest(p2, frameFor(APP), { path: '/a.txt' })
     expect(c2.length).toBeGreaterThan(0)
+  })
+})
+
+describe('handleSyncFsReadRequest -- session-bound attribution', () => {
+  it('denies a sender in the default session when the origin belongs in an isolated one, and never reaches the policy', () => {
+    const { policy, calls } = fakePolicy()
+
+    const response = handleSyncFsReadRequest(policy, frameFor(APP, DEFAULT_SESSION), { path: '/a.txt' }, undefined, () => APP_SESSION)
+
+    expect(response).toEqual({ id: '', ok: false, code: 'denied', message: expect.any(String) })
+    expect(calls).toEqual([])
+  })
+
+  it('allows a sender that already sits in the session its origin belongs in', () => {
+    const { policy, calls } = fakePolicy()
+
+    const response = handleSyncFsReadRequest(policy, frameFor(APP, APP_SESSION), { path: '/a.txt' }, undefined, () => APP_SESSION)
+
+    expect(response.ok).toBe(true)
+    expect(calls.length).toBeGreaterThan(0)
+  })
+
+  it('never checks the session when no sessionForOrigin is injected', () => {
+    const { policy, calls } = fakePolicy()
+
+    const response = handleSyncFsReadRequest(policy, frameFor(APP, DEFAULT_SESSION), { path: '/a.txt' })
+
+    expect(response.ok).toBe(true)
+    expect(calls.length).toBeGreaterThan(0)
   })
 })
 

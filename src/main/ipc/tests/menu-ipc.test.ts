@@ -4,8 +4,9 @@ import { MENU_COMMAND_CHANNEL } from '../../channels.js'
 import type { MenuItemView } from '../../shell/menu-layout.js'
 import { registerMenuIpc } from '../menu-ipc.js'
 
-const MENU_FRAME = {}
-const OTHER_FRAME = {}
+const MENU_URL = 'app://orivon/menu/index.html'
+const MENU_FRAME = { url: MENU_URL }
+const OTHER_FRAME = { url: MENU_URL }
 const LISTED: MenuItemView[] = [
   { kind: 'command', id: 'settings.open', label: 'Open Settings', keys: ['Ctrl', ','] },
   { kind: 'separator' }
@@ -16,7 +17,7 @@ function setup (): { call: (command: unknown, frame?: unknown) => unknown, run: 
   const menu = { mainFrame: MENU_FRAME, ipc: { handle: (_channel: string, fn: typeof handler) => { handler = fn } } } as unknown as WebContents
   const run = vi.fn()
   const height = vi.fn()
-  registerMenuIpc(menu, { items: () => LISTED, run }, height)
+  registerMenuIpc(menu, MENU_URL, { items: () => LISTED, run }, height)
   return { call: (command, frame = MENU_FRAME) => handler?.({ senderFrame: frame }, command), run, height }
 }
 
@@ -49,5 +50,22 @@ describe('the main menu channel', () => {
     expect(call({ type: 'items' }, OTHER_FRAME)).toBeUndefined()
     call({ type: 'run', id: 'settings.open' }, OTHER_FRAME)
     expect(run).not.toHaveBeenCalled()
+  })
+
+  // A269: identity alone lets a `senderFrame` reference kept past a
+  // navigation Electron re-points elsewhere still pass -- the SAME frame
+  // object, but committed at a URL that is no longer the menu's own.
+  it('answers nothing once the menu\'s own frame reference has committed a URL that is no longer its own', () => {
+    const { call, run } = setup()
+    const originalUrl = MENU_FRAME.url
+    MENU_FRAME.url = 'https://attacker.example/'
+
+    try {
+      expect(call({ type: 'items' })).toBeUndefined()
+      call({ type: 'run', id: 'settings.open' })
+      expect(run).not.toHaveBeenCalled()
+    } finally {
+      MENU_FRAME.url = originalUrl
+    }
   })
 })

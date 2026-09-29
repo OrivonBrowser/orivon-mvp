@@ -88,6 +88,25 @@ export interface SubsystemContext {
    * `brokerIpcSubsystem` and `loaderSubsystem`.
    */
   readonly installApp: ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>) | undefined
+  /**
+   * Which Electron session an origin's documents actually belong in --
+   * `undefined` (the default session) unless the origin holds a live grant
+   * or is being served from the loader's bundle cache, the same rule
+   * `../shell/tab-view.js`'s `partitionForTarget` applies to a navigating
+   * tab. Every renderer-reachable broker channel (`../broker/transport/
+   * ipc.ts`'s CONTROL_CHANNEL and SYNC_CONTROL_CHANNEL, `./install/
+   * manifest-hint.ts`'s MANIFEST_HINT) reads this to refuse a call whose
+   * WebContents sits in the wrong session for the origin it claims.
+   *
+   * Published here, not built inside `../broker/transport/ipc.ts` itself,
+   * because answering it needs the loader's cache state
+   * (`isOriginServedFromCacheSync`) and `src/broker/` must never import
+   * `src/loader/` (`../broker/README.md`). `./sessions/session-attribution.ts`
+   * is the one place that combines them; it must be listed before
+   * `brokerIpcSubsystem` in `subsystems.ts` so this is already published by
+   * the time the broker channels wire themselves up.
+   */
+  readonly sessionForOrigin: ((origin: string) => unknown) | undefined
 }
 
 /**
@@ -118,6 +137,7 @@ const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would 
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
 const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
 const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>>('installApp', 'a second one could close over a different Broker or Loader instance than the one every other subsystem reads')
+const sessionForOriginSlot = createPublishedSlot<(origin: string) => unknown>('sessionForOrigin', 'a second one could disagree with the first about which session an origin belongs in, and every broker channel must apply the same answer')
 
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
@@ -142,6 +162,10 @@ class SubsystemContextImpl implements SubsystemContext {
 
   get installApp (): ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>) | undefined {
     return installAppSlot.get(this)
+  }
+
+  get sessionForOrigin (): ((origin: string) => unknown) | undefined {
+    return sessionForOriginSlot.get(this)
   }
 }
 
@@ -179,6 +203,11 @@ export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origi
 /** The one sanctioned way to set `ctx.installApp` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishInstallApp (ctx: SubsystemContext, installApp: (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | GrantedWithoutInstall>): void {
   installAppSlot.publish(ctx, installApp)
+}
+
+/** The one sanctioned way to set `ctx.sessionForOrigin` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishSessionForOrigin (ctx: SubsystemContext, sessionForOrigin: (origin: string) => unknown): void {
+  sessionForOriginSlot.publish(ctx, sessionForOrigin)
 }
 
 export interface Subsystem {

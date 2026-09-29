@@ -54,8 +54,8 @@ export function createSiteInfoPanel (
     preloadRelPath: '../preload/site-info.js',
     urlArgName: 'orivon-site-info-url',
     align: 'left',
-    registerIpc: (webContents, onContentHeight) => {
-      registerSiteInfoIpc(webContents, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openAllSites, onContentHeight)
+    registerIpc: (webContents, url, onContentHeight) => {
+      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openAllSites, onContentHeight)
       return () => {}
     }
   })
