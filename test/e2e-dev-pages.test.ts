@@ -7,45 +7,54 @@
 // content rather than an empty `#app`. e2e-internal-pages.test.ts covers the
 // same pages' behaviour in a built launch; route.ts's and serve.ts's own
 // unit tests cover the routing refusals a dev launch exercises live.
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import type { AddressInfo } from 'node:net'
+import { createServer as createNetServer, type AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { createServer, type ViteDevServer } from 'vite'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from './launch-electron.mjs'
 import { HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
-import { aliasPattern, buildAliasEntries } from '../src/shim/module-map.js'
+import { rendererAlias, rendererHmr, rendererHost, rendererRoot } from '../electron.vite.config.js'
 import { INTERNAL_PAGES } from '../src/main/pages/internal-pages.js'
 import type { InternalPageId } from '../src/main/pages/internal-pages.js'
 
-const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const TEST_TIMEOUT_MS = 60_000
 
 let devServer: ViteDevServer
 let devUrl: string
 
+/** A free port, chosen by the OS then released, so this suite never
+ * collides with the owner's own `npm run dev` on 5173 or another suite's
+ * fixture ports. Not `server.port: 0` on the Vite server itself: Vite's own
+ * HMR-client injection falls back to its literal default port (5173) rather
+ * than the one actually bound when the declared port is the falsy `0`, which
+ * would tell the client the wrong place to connect regardless of `hmr.host`. */
+async function freePort (): Promise<number> {
+  return await new Promise((resolvePort, reject) => {
+    const probe = createNetServer()
+    probe.on('error', reject)
+    probe.listen(0, rendererHost, () => {
+      const port = (probe.address() as AddressInfo).port
+      probe.close(() => { resolvePort(port) })
+    })
+  })
+}
+
 beforeAll(async () => {
-  // Mirrors electron.vite.config.ts's `renderer` section closely enough for
-  // these pages: same root, same module-shim aliases (a page reaches a
-  // shimmed built-in the same way the real dev server lets it). `port: 0`:
-  // whatever the OS hands out, so this never collides with the owner's own
-  // `npm run dev` on 5173 or another suite's fixture ports.
+  // The very settings electron.vite.config.ts's own `renderer` section gives
+  // electron-vite, so the two can never drift apart: same root, same
+  // module-shim aliases, same host, same HMR host (rendererHost's own doc
+  // says why the host is pinned at all, and why to this value) -- pinned to
+  // the same concrete port too, so the HMR client is told the place this
+  // server actually listens on rather than Vite's own default.
+  const port = await freePort()
   devServer = await createServer({
-    root: resolve(repoRoot, 'src/renderer'),
-    server: { port: 0, host: '127.0.0.1' },
+    root: rendererRoot,
+    server: { port, strictPort: true, host: rendererHost, hmr: { ...rendererHmr, port } },
     logLevel: 'silent',
-    resolve: {
-      alias: buildAliasEntries().map(({ specifier, kind, implementation }) => ({
-        find: aliasPattern(specifier),
-        replacement: kind === 'package' ? implementation : resolve(repoRoot, 'src/shim', implementation)
-      }))
-    }
+    resolve: { alias: rendererAlias }
   })
   await devServer.listen()
-  const address = devServer.httpServer?.address() as AddressInfo | null
-  if (address === null || address === undefined) throw new Error('the dev server for this suite has no address')
-  devUrl = `http://127.0.0.1:${String(address.port)}`
+  devUrl = `http://${rendererHost}:${String(port)}`
 })
 
 afterAll(async () => {
@@ -64,13 +73,35 @@ function findDevChrome (app: ElectronApplication): Page {
   return chrome
 }
 
-async function launched (extraArgs: readonly string[] = []): Promise<{ app: ElectronApplication, chrome: Page }> {
+/** Watches every window this app ever opens, from the instant Playwright
+ * knows about it (`app.on('window', ...)`) rather than from whenever a test
+ * later gets a `Page` for it -- a console message from the dev server's HMR
+ * client fires during that page's very first load, before any URL-matching
+ * `waitFor` here would otherwise have a handle to listen through. */
+/** Only an `orivon://` page's own violations: the dashboard (`/newtab/`)
+ * carries a deliberate `connect-src 'none'` of its own (no network of its
+ * own, by design) that also refuses the dev server's HMR client Vite
+ * injects into every page regardless -- a pre-existing, intentional limit
+ * on an ordinary tab, unrelated to what this suite is asserting about the
+ * shell's own pages. */
+function watchForCspViolations (app: ElectronApplication): string[] {
+  const violations: string[] = []
+  app.on('window', (page) => {
+    page.on('console', (msg) => {
+      if (page.url().startsWith('orivon://') && /Content Security Policy/i.test(msg.text())) violations.push(`${page.url()}: ${msg.text()}`)
+    })
+  })
+  return violations
+}
+
+async function launched (extraArgs: readonly string[] = []): Promise<{ app: ElectronApplication, chrome: Page, cspViolations: string[] }> {
   const app = await launchElectron({
     args: [HERMETIC_RESOLVER, ...extraArgs],
     env: { ELECTRON_RENDERER_URL: devUrl, ORIVON_DEV_ORIGINS: '1' }
   })
+  const cspViolations = watchForCspViolations(app)
   expect(await waitFor(() => { try { findDevChrome(app); return true } catch { return false } })).toBe(true)
-  return { app, chrome: findDevChrome(app) }
+  return { app, chrome: findDevChrome(app), cspViolations }
 }
 
 async function openInternal (chrome: Page, page: string, path?: string): Promise<void> {
@@ -89,8 +120,8 @@ async function rendersRealContent (page: Page): Promise<boolean> {
   })
 }
 
-it('opens each of settings, history and profiles with real content, in dev mode', async () => {
-  const { app, chrome } = await launched()
+it('opens each of settings, history and profiles with real content, in dev mode, with no CSP violation from the dev server\'s HMR socket', async () => {
+  const { app, chrome, cspViolations } = await launched()
   try {
     const pages = INTERNAL_PAGES.filter((id): id is Exclude<InternalPageId, 'private'> => id !== 'private')
     for (const page of pages) {
@@ -99,6 +130,10 @@ it('opens each of settings, history and profiles with real content, in dev mode'
       const opened = app.windows().find((w) => w.url().startsWith(`orivon://${page}`)) as Page
       expect(await rendersRealContent(opened), `${page} rendered no real content`).toBe(true)
     }
+    // The HMR client's own connect attempt is async right after load; give
+    // it a moment to either succeed or log the violation this asserts against.
+    await new Promise((r) => setTimeout(r, 500))
+    expect(cspViolations).toEqual([])
   } finally {
     await closeElectron(app)
   }
@@ -121,10 +156,13 @@ it('a private window\'s first page renders real content, in dev mode', async () 
     args: [HERMETIC_RESOLVER, '--orivon-private'],
     env: { ELECTRON_RENDERER_URL: devUrl, ORIVON_DEV_ORIGINS: '1' }
   })
+  const cspViolations = watchForCspViolations(app)
   try {
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://private')))).toBe(true)
     const priv = app.windows().find((w) => w.url().startsWith('orivon://private')) as Page
     expect(await rendersRealContent(priv)).toBe(true)
+    await new Promise((r) => setTimeout(r, 500))
+    expect(cspViolations).toEqual([])
   } finally {
     await closeElectron(app)
   }

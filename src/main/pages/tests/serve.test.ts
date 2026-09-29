@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createInternalHandler, internalCsp, withRootBase } from '../serve.js'
+import { createInternalHandler, internalCsp, isDevServerRequest, withRootBase } from '../serve.js'
 
 const ROOT = '/app/out/renderer'
 const files = new Map<string, string>([
@@ -105,5 +105,19 @@ describe('withRootBase', () => {
     expect(withRootBase('<html><head lang="en"><meta></head></html>')).toBe('<html><head lang="en"><base href="/"><meta></head></html>')
     expect(withRootBase('<p>x</p>')).toBe('<base href="/"><p>x</p>')
     expect(withRootBase('<head></head>', '/pages/settings/')).toBe('<head><base href="/pages/settings/"></head>')
+  })
+})
+
+describe('isDevServerRequest', () => {
+  it('is the dev server\'s own host, the HMR socket included, whatever the scheme', () => {
+    expect(isDevServerRequest('ws://localhost:5173/?token=x', 'http://localhost:5173')).toBe(true)
+    expect(isDevServerRequest('http://localhost:5173/@vite/client', 'http://localhost:5173')).toBe(true)
+  })
+
+  it('is never a different host or port, or anything at all without a dev server', () => {
+    expect(isDevServerRequest('ws://localhost:5173/', 'http://localhost:5174')).toBe(false)
+    expect(isDevServerRequest('ws://evil.example/', 'http://localhost:5173')).toBe(false)
+    expect(isDevServerRequest('ws://localhost:5173/', undefined)).toBe(false)
+    expect(isDevServerRequest('not a url', 'http://localhost:5173')).toBe(false)
   })
 })

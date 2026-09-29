@@ -52,6 +52,21 @@ export function internalCsp (devServerUrl: string | undefined): string {
   ].join('; ')
 }
 
+/** Whether `url` names the dev server's own address -- the one thing a page
+ * in this session may reach on the network besides `orivon://` itself, in
+ * development: the HMR client's own WebSocket, which internal-session.ts's
+ * network lock (a second lock on the same door `internalCsp` already
+ * guards) otherwise refuses along with everything else. `false` whenever
+ * there is no dev server at all (a built launch), the safe default. */
+export function isDevServerRequest (url: string, devServerUrl: string | undefined): boolean {
+  if (devServerUrl === undefined) return false
+  try {
+    return new URL(url).host === new URL(devServerUrl).host
+  } catch {
+    return false
+  }
+}
+
 function extensionOf (path: string): string {
   const dot = path.lastIndexOf('.')
   return dot === -1 ? '' : path.slice(dot).toLowerCase()
