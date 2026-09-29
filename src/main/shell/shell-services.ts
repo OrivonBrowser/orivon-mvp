@@ -5,9 +5,7 @@ import { join } from 'node:path'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
-import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { partitionForTarget } from './tab-view.js'
 import { HistoryService } from '../history/history-service.js'
 import { NullHistoryStore } from '../history/history-store.js'
 import { openHistory } from '../history/open-history.js'
@@ -22,6 +20,7 @@ import { ShortcutStore } from '../shortcuts/shortcut-store.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
 import { WindowRegistry } from './window-registry.js'
+import type { SubsystemContext } from '../registry.js'
 
 export interface ShellServices {
   readonly bookmarks: BookmarkStore
@@ -38,7 +37,7 @@ export interface ShellServices {
   readonly zoomStore: ZoomStore
 }
 
-export function createShellServices (userDataPath: string, runtime: Runtime, platform: NodeJS.Platform = process.platform): ShellServices {
+export function createShellServices (userDataPath: string, runtime: Runtime, ctx: SubsystemContext, platform: NodeJS.Platform = process.platform): ShellServices {
   const shortcutStore = new ShortcutStore(join(userDataPath, 'shortcuts.json'), platform)
   const settings = new SettingsStore(join(userDataPath, 'settings.json'))
   const zoomStore = new ZoomStore(join(userDataPath, 'zoom.json'))
@@ -50,12 +49,18 @@ export function createShellServices (userDataPath: string, runtime: Runtime, pla
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
     commands: new CommandBus(),
     devtools: new DevToolsService(settings, {
+      // A security prompt: it must key on the app HOLDING GRANTS (ADR-0044),
+      // never on whether its tab happens to sit in its own partition -- a
+      // granted origin served from the network now runs in the shared
+      // default session, same as every other site, and the old
+      // partition-based check would never ask for one again.
       appOf: (contents) => {
         const url = contents.getURL()
-        // The session the page runs in, and only after that its address: a popup an app opened is at about:blank, with the app's opener.
-        const found = windows.findTab(contents)
-        const partition = found?.window.tabs.partitionOf(found.tabId) ?? partitionForTarget(url)
-        return partition === undefined || partition === INTERNAL_PARTITION ? null : { key: partition, label: originFromUrl(url) ?? 'this app' }
+        // A popup an app opened is at about:blank until it navigates
+        // somewhere, so its own address gives no origin; its opener's does.
+        const origin = originFromUrl(url) ?? (contents.opener != null ? originFromUrl(contents.opener.url) : null)
+        if (origin === null || ctx.broker?.app.hasGrantsSync(origin) !== true) return null
+        return { key: origin, label: origin }
       },
       isShellPage: (contents) => internalPages.pageOf(contents) !== undefined,
       developerMode: devModeEnabled,

@@ -136,7 +136,7 @@ function boot (runtime: Runtime): void {
       return
     }
 
-    const shell = createShellServices(app.getPath('userData'), runtime)
+    const shell = createShellServices(app.getPath('userData'), runtime, ctx)
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
     await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])

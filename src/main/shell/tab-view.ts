@@ -126,10 +126,11 @@ export function tabWebPreferences (preload: string, partition: string | undefine
 }
 
 /** Builds one tab's WebContentsView, shared by tabs.ts's createTab() and
- * repartitionView(). */
-export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[]): WebContentsView {
+ * repartitionView(). `target`, when known, is what the view is about to
+ * load -- see appTabOrigins below for why watchAppTab needs it. */
+export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[], target?: string): WebContentsView {
   const view = new WebContentsView({ webPreferences: tabWebPreferences(preload, partition, additionalArguments) })
-  watchAppTab(view, additionalArguments)
+  watchAppTab(view, additionalArguments, target)
   return view
 }
 
@@ -138,10 +139,21 @@ export function makeTabView (preload: string, partition: string | undefined, add
  * still matches what its origin needs (takeParkedView). */
 const appTabViews = new WeakSet<WebContentsView>()
 
+/** The origin each app-tab view currently serves, kept current by wireView's
+ * did-navigate handler for as long as the view stays put -- see the comment
+ * there. retireView's park key (ADR-0044) reads this rather than the view's
+ * live `getURL()`: by the time a redirect or script navigation's
+ * did-navigate fires and retirement follows, the view has already committed
+ * the URL it is LEAVING FOR, not the one it is leaving; only this map still
+ * has the departing origin. */
+const appTabOrigins = new WeakMap<WebContentsView, string>()
+
 /** A registered app's tab gets its failures reported; see reportAppFailures. */
-function watchAppTab (view: WebContentsView, additionalArguments: string[] | undefined): void {
+function watchAppTab (view: WebContentsView, additionalArguments: string[] | undefined, target?: string): void {
   if (additionalArguments?.includes(APP_TAB_FLAG) !== true) return
   appTabViews.add(view)
+  const origin = target !== undefined ? originFromUrl(target) : null
+  if (origin !== null) appTabOrigins.set(view, origin)
   reportAppFailures(view)
 }
 
@@ -246,6 +258,20 @@ export function wireView (id: string, record: TabRecord): void {
         repartitionView(id, record, navigatedUrl, record.partition)
         return
       }
+      // The view is staying: if it is an app tab, record which origin it
+      // now serves, for retireView()'s park key WHEN this view later does
+      // retire (ADR-0044: a registered, network-served app has no partition
+      // of its own, so its origin is the only thing that identifies it --
+      // and by the time a redirect or script navigation's did-navigate
+      // fires, the view has already committed the NEW url, so that origin
+      // can only be read here, before a later navigation overwrites it).
+      // Also what lets two granted apps navigated straight into one
+      // another (ADR-0044, no swap between them) each retire under their
+      // own, current origin rather than the first one this view ever had.
+      if (appTabViews.has(view)) {
+        const origin = originFromUrl(navigatedUrl)
+        if (origin !== null) appTabOrigins.set(view, origin)
+      }
     }
     record.host.emitState()
   })
@@ -316,7 +342,7 @@ export function wireView (id: string, record: TabRecord): void {
     atCapacity: () => record.host.atCapacity(),
     openTab: (url) => { record.host.openTab(url) },
     adoptPopup: (view, partition, url) => {
-      watchAppTab(view, appTabArgsFor(url, record.host.broker))
+      watchAppTab(view, appTabArgsFor(url, record.host.broker), url)
       record.host.adoptPopup(view, partition)
     },
     partitionFor: (url) => partitionForTarget(url),
@@ -356,8 +382,8 @@ export function repartitionView (
   if (wasShown) host.detachView(oldView)
 
   const appTabArgs = appTabArgsFor(target, host.broker)
-  const parked = takeParkedView(record, nextPartition, appTabArgs)
-  const newView = parked ?? makeTabView(host.preloadPath, nextPartition, appTabArgs)
+  const parked = takeParkedView(record, nextPartition, appTabArgs, target)
+  const newView = parked ?? makeTabView(host.preloadPath, nextPartition, appTabArgs, target)
   record.view = newView
   record.partition = nextPartition
   record.isDashboardTab = false
@@ -378,28 +404,44 @@ function closeView (view: WebContentsView): void {
   if (!view.webContents.isDestroyed()) view.webContents.close()
 }
 
+/** The identity a view parks under, so a tab returning to it can find it
+ * again. A cache-served app keeps its own partition string, unique per app
+ * already. A registered app with NO partition of its own (ADR-0044: held
+ * grants, delivered from the network) still needs a key that is unique to
+ * IT and not to every other app sharing the default session -- its own
+ * origin -- or the first such app to retire in this tab would hand its
+ * parked view to whichever different app returns first. Neither an
+ * unregistered page nor a partition-less view with no derivable origin has
+ * anything worth keeping past a navigation away. */
+function parkKeyFor (partition: string | undefined, isAppTab: boolean, origin: string | null): string | undefined {
+  if (partition !== undefined) return partition
+  return isAppTab && origin !== null ? `app:${origin}` : undefined
+}
+
 /** An app's view is parked on about:blank for the tab's return; any other
  * view is closed, an internal page's included: it is one per window and is
  * opened again from the shell, not returned to. */
 function retireView (record: TabRecord, view: WebContentsView, partition: string | undefined): void {
   record.host.devtools?.closeFor(view.webContents)
-  if (partition === undefined || partition === INTERNAL_PARTITION || view.webContents.isDestroyed()) {
+  const key = parkKeyFor(partition, appTabViews.has(view), appTabOrigins.get(view) ?? null)
+  if (key === undefined || partition === INTERNAL_PARTITION || view.webContents.isDestroyed()) {
     closeView(view)
     return
   }
-  record.parkedViews.set(partition, view)
+  record.parkedViews.set(key, view)
   void view.webContents.loadURL('about:blank')
 }
 
-/** The view this tab parked in `partition`, if it can serve the target. Its
- * app-tab flag was fixed when it was built, so one that no longer matches
- * its origin's registration is closed, and the tab gets the fresh view it
- * would have had anyway. */
-function takeParkedView (record: TabRecord, partition: string | undefined, appTabArgs: string[] | undefined): WebContentsView | undefined {
-  if (partition === undefined) return undefined
-  const view = record.parkedViews.get(partition)
+/** The view this tab parked for `target`, if it can serve it. Its app-tab
+ * flag was fixed when it was built, so one that no longer matches its
+ * origin's registration is closed, and the tab gets the fresh view it would
+ * have had anyway. */
+function takeParkedView (record: TabRecord, partition: string | undefined, appTabArgs: string[] | undefined, target: string): WebContentsView | undefined {
+  const key = parkKeyFor(partition, appTabArgs !== undefined, originFromUrl(target))
+  if (key === undefined) return undefined
+  const view = record.parkedViews.get(key)
   if (view === undefined) return undefined
-  record.parkedViews.delete(partition)
+  record.parkedViews.delete(key)
   if (!view.webContents.isDestroyed() && appTabViews.has(view) === (appTabArgs !== undefined)) return view
   closeView(view)
   return undefined

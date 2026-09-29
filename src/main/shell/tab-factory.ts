@@ -95,7 +95,8 @@ export class TabFactory {
       // cannot be un-set if the user later navigates away. A non-dashboard
       // tab instead gets appTabArgsFor's ADR-0017 flag, if this origin is
       // already a registered app.
-      isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : appTabArgsFor(target, this.broker())
+      isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : appTabArgsFor(target, this.broker()),
+      target
     )
     const id = makeTabId()
     const record = this.recordFor(view, partition, { isDashboardTab: isDashboard })

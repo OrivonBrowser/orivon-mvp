@@ -1,9 +1,13 @@
 // An OIDC login's round trip, in a real shell: the app keeps its state in
 // sessionStorage, sends the tab to a sign-in provider, and reads the state
-// back when the provider returns the tab. The app holds a grant, so the tab
-// changes session on the way out and again on the way back. sessionStorage
-// lives in a view, which no unit test's fake has, so only a real launch shows
-// whether the tab came back to the view holding it.
+// back when the provider returns the tab. The app holds a grant but is
+// delivered from the network, so it runs in the shared default session
+// throughout (ADR-0044), same as the provider -- but the tab's VIEW still
+// swaps away and back, since ADR-0017's fetch()-routing flag is fixed at
+// WebContentsView construction and differs between a registered app and an
+// unregistered provider. sessionStorage lives in a view, which no unit
+// test's fake has, so only a real launch shows whether the tab comes back to
+// a view that still holds it (tab-view.ts's parkKeyFor).
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
@@ -12,8 +16,6 @@ import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase,
   waitForAddressBarStable
 } from './e2e-helpers.js'
-import { originFromUrl } from '../src/broker/policy/origin.js'
-import { partitionFor } from '../src/broker/grants/origin-hash.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
@@ -103,8 +105,10 @@ it('an app finds its sessionStorage where it left it when a sign-in provider sen
       const ready = await waitFor(() => (app as NonNullable<typeof app>).windows().length === 2)
       check('the shell reaches its launch-time window count', ready)
 
-      // Only the app is granted: a grant is what isolates it (ADR-0018), and
-      // the provider must stay on the default session for the tab to move.
+      // Only the app is granted; the provider never is. Under ADR-0044 that
+      // no longer isolates the app into its own partition -- both run in
+      // the shared default session -- so this exercises the flag-only view
+      // swap (ADR-0017), not a session swap.
       const granted = await app.evaluate(async (_electron, request: DevGrantRequest) => {
         const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
         if (typeof hook !== 'function') return false
@@ -127,21 +131,24 @@ it('an app finds its sessionStorage where it left it when a sign-in provider sen
       const landed = await waitForTab(chrome, expected)
       check('the callback page reads the state the start page left in sessionStorage', landed.ok, mismatch(expected, landed.info))
 
-      const seen = await app.evaluate(({ webContents, session }, args: { callbackUrl: string, partition: string, appOrigin: string, providerOrigin: string }) => {
+      const seen = await app.evaluate(({ webContents, session }, args: { callbackUrl: string, appOrigin: string, providerOrigin: string }) => {
         const all = webContents.getAllWebContents()
         const tab = all.find((c) => c.getURL() === args.callbackUrl)
         if (tab === undefined) return undefined
         return {
-          inAppSession: tab.session === session.fromPartition(args.partition),
+          inDefaultSession: tab.session === session.defaultSession,
           history: tab.navigationHistory.getAllEntries().map((entry) => entry.url),
           canGoBack: tab.navigationHistory.canGoBack(),
           providerViews: all.filter((c) => c.getURL().startsWith(args.providerOrigin)).length
         }
-      }, { callbackUrl, partition: partitionFor(originFromUrl(appOrigin) as string), appOrigin, providerOrigin })
+      }, { callbackUrl, appOrigin, providerOrigin })
 
       check('the callback page is findable in the main process', seen !== undefined)
       if (seen === undefined) return
-      check("the tab is back in the app's own session", seen.inAppSession, JSON.stringify(seen))
+      // ADR-0044: a granted, network-served app has no partition of its own
+      // any more -- it shares the default session with the provider it just
+      // visited, same as every other site.
+      check("the tab is in the shared default session", seen.inDefaultSession, JSON.stringify(seen))
       check("the app's history holds only its own pages, the start page among them",
         seen.canGoBack && seen.history.every((url) => url.startsWith(appOrigin)) && seen.history.includes(`${appOrigin}/start`),
         JSON.stringify(seen))
