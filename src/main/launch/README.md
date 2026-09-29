@@ -12,8 +12,10 @@ the OS has since reused its pid for;
 this process's own profile, the list, changes to it, and "open"; `profiles-domain.ts` is what the Profiles,
 Private and Settings pages may ask of it.
 
-**What it depends on.** `node:fs`, `node:os`, `node:child_process`; `electron` only as a type
-(`start-launch.ts` is handed the `app`). [`../shell/`](../shell/) is never imported.
+**What it depends on.** `node:fs`, `node:os`, `node:child_process`;
+[`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (`profile-store.ts`'s
+own writes); `electron` only as a type (`start-launch.ts` is handed the `app`).
+[`../shell/`](../shell/) is never imported.
 
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts) or any store that reads the data
 directory: the launch has to run before one exists.
@@ -40,10 +42,11 @@ nothing else: a debugger's port on the first process would be taken by the secon
 it ends, so `start-launch.ts` refuses one that is not directly under the temp directory, named as the
 system names a new one, and present.
 
-**What a private session starts with is a short list** (`private-session.ts`, `public-seed.ts`): the settings of
-the profile that opened it, and the light client's checkpoint file, which is public and without which a `.eth`
-name would fail once the shipped one is old. The list of IPNS names visited that sits beside the checkpoint is
-not copied: it says what the person has browsed. A new profile gets the same seed. Adding to the list is a change
+**What a private session starts with is a short list** (`private-session.ts`, `public-seed.ts`): the settings and
+keyboard shortcuts of the profile that opened it -- both preferences -- and the light client's checkpoint file,
+which is public and without which a `.eth` name would fail once the shipped one is old. Zoom levels, a list of
+sites, are never copied, and neither is the list of IPNS names visited that sits beside the checkpoint: it says
+what the person has browsed. A new profile gets the same seed. Adding to the list is a change
 to what the Private page promises.
 
 **A profile says it is in use as soon as it holds the lock** (`start-launch.ts`), not when its first window is up:

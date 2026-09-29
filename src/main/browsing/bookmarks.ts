@@ -8,8 +8,9 @@
 // restyle. ADR-0003's storage table gained a fifth tier for this: plain
 // JSON under <userData>, no safeStorage -- a bookmark list is not a
 // secret.
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { writeFileAtomicAsync } from '../../broker/adapters/atomic-write.js'
 import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 import { sanitizeDirectUrl } from './omnibox.js'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
@@ -215,7 +216,7 @@ export class BookmarkStore {
   private async writeNow (): Promise<void> {
     try {
       await mkdir(dirname(this.filePath), { recursive: true })
-      await writeFile(this.filePath, serializeBookmarksFile(this.list), 'utf8')
+      await writeFileAtomicAsync(this.filePath, serializeBookmarksFile(this.list))
     } catch (error) {
       // Loud, never silent -- same policy index.ts applies to subsystem
       // failures. Losing a write is recoverable; hiding it is not.

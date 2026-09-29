@@ -6,6 +6,11 @@ function fakeWindow (ownsTab: (contents: WebContents) => string | null): ShellWi
   return { window: {}, chrome: {}, tabs: { findTabIdByWebContents: ownsTab } } as unknown as ShellWindow
 }
 
+function liveWindow (state: { focused?: boolean, destroyed?: boolean } = {}): ShellWindow {
+  const window = { isFocused: () => state.focused ?? false, isDestroyed: () => state.destroyed ?? false }
+  return { window, chrome: {}, tabs: {} } as unknown as ShellWindow
+}
+
 const CONTENTS_A = {} as WebContents
 const CONTENTS_B = {} as WebContents
 
@@ -38,5 +43,41 @@ describe('WindowRegistry', () => {
 
     expect(registry.all()).toEqual([])
     expect(registry.findTab(CONTENTS_A)).toBeNull()
+  })
+
+  it('returns the focused window over any other', () => {
+    const registry = new WindowRegistry()
+    const background = liveWindow()
+    const active = liveWindow({ focused: true })
+    registry.add(background)
+    registry.add(active)
+
+    expect(registry.focused()).toBe(active)
+  })
+
+  it('falls back to the newest live window when none has focus', () => {
+    const registry = new WindowRegistry()
+    const older = liveWindow()
+    const newer = liveWindow()
+    registry.add(older)
+    registry.add(newer)
+
+    expect(registry.focused()).toBe(newer)
+  })
+
+  it('skips a destroyed window even if the OS still reports it focused', () => {
+    const registry = new WindowRegistry()
+    const gone = liveWindow({ focused: true, destroyed: true })
+    const survivor = liveWindow()
+    registry.add(gone)
+    registry.add(survivor)
+
+    expect(registry.focused()).toBe(survivor)
+  })
+
+  it('returns undefined when no window is open', () => {
+    const registry = new WindowRegistry()
+
+    expect(registry.focused()).toBeUndefined()
   })
 })

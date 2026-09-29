@@ -29,10 +29,11 @@ import type { ShellWindow } from './window-registry.js'
 import { HtmlFullscreen } from './fullscreen.js'
 import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
-import { devModeEnabled } from '../dev/dev-mode.js'
+import { chromeContextMenuHost } from './chrome-context-menu.js'
 import type { ShellWindowOptions } from './window-options.js'
 import { showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady } from './window-frame.js'
+import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
 import { searchUrlFor } from '../browsing/search-engines.js'
 import { SHELL_PARTITION } from './shell-session.js'
@@ -60,7 +61,7 @@ export function resolveDashboardUrl (): string {
  * `intro`: the process's first window on a launch that opens on the welcome
  * screen (./intro-state.ts). */
 export function createShellWindow (ctx: SubsystemContext, services: ShellServices, options: ShellWindowOptions = {}): BaseWindow {
-  const { intro, first, place } = options
+  const { intro, first, place, firstOfLaunch, instant } = options
   const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate)
   const { win } = frame
 
@@ -70,6 +71,11 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // same string, the pattern `--orivon-newtab-url` already establishes
   // below for the dashboard.
   const chromeUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/', '../renderer/index.html')
+  // Which strip-drag mode the chrome uses for the empty tail after the
+  // new-tab button (drag-mode.ts's own doc: a real caption click there is
+  // eaten by Chromium's window-event filter under X11, so Linux drives it
+  // from JS instead; everywhere else the native drag region still works).
+  const dragMode = dragModeFor(process.platform, process.env, app.commandLine.getSwitchValue('ozone-platform'))
 
   const chrome = new WebContentsView({
     webPreferences: {
@@ -79,7 +85,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       sandbox: true,
       nodeIntegration: false,
       webSecurity: true,
-      additionalArguments: [`--orivon-shell-url=${chromeUrl}`]
+      additionalArguments: [`--orivon-shell-url=${chromeUrl}`, `--orivon-drag-mode=${dragMode}`]
     }
   })
   win.contentView.addChildView(chrome)
@@ -190,6 +196,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const tabs = new TabManager(win.contentView, tabBounds, lastTabClosed, dashboardUrl, ctx, {
     window: win,
     htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) },
+    fullscreenTabId: () => fullscreen.tabId,
     searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query),
     internalPages: services.internalPages,
     devtools: services.devtools,
@@ -327,13 +334,10 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     const loaded = chrome.webContents.getURL()
     if (loaded !== chromeUrl) console.error(`[window] the chrome loaded ${loaded}, not ${chromeUrl}; its commands will be refused`)
   })
-  // The address bar's Cut/Copy/Paste: the same menu a tab gets. Inspect on
-  // the chrome's own page goes through DevToolsService like every other
-  // opener, so the developer.tools setting and the tracked-open set both
-  // apply to it too; devModeEnabled() keeps it out of reach outside dev mode.
+  // The address bar's Cut/Copy/Paste: the same menu a tab gets, plus Inspect
+  // where chrome-context-menu.ts's gate allows it.
   chrome.webContents.on('context-menu', (_event, params) => {
-    const canInspect = devModeEnabled() && services.devtools?.allowed(chrome.webContents) === true
-    showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, ...(canInspect ? { inspect: (x: number, y: number) => { services.devtools?.inspect(chrome.webContents, win, x, y) } } : {}) })
+    showContextMenu(chrome.webContents, params, chromeContextMenuHost(services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }))
   })
 
   // Queue item 4.4's permissions surface, now a panel inside this window
@@ -411,7 +415,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // After the first tab, so the view stacks above it.
   if (intro !== undefined) showIntro(win, tabs, intro)
 
-  showWhenReady(frame)
+  showWhenReady(frame, { firstOfLaunch, instant })
 
   return win
 }

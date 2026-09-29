@@ -2,10 +2,13 @@
 // would give each its own in-memory copy of one file, and the last to write
 // would win.
 import { join } from 'node:path'
+import { session } from 'electron'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
+import { SHELL_PARTITION } from './shell-session.js'
+import { isShellUiPage } from './shell-ui-page.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { partitionForTarget } from './tab-view.js'
 import { HistoryService } from '../history/history-service.js'
@@ -22,6 +25,7 @@ import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
+import { TearDragController } from './tear-drag.js'
 import { WindowRegistry } from './window-registry.js'
 import { TabLifecycle } from './tab-lifecycle.js'
 
@@ -35,6 +39,9 @@ export interface ShellServices {
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
   readonly shortcutStore: ShortcutStore
+  /** The floating preview a tab shows once dragged out of its strip, and the mark it leaves on whichever
+   * window's strip it is over -- one for the whole process, since only one tab can be mid-drag (tear-drag.ts). */
+  readonly tearDrag: TearDragController
   /** Every window's tab lifecycle, mirrored here (tab-lifecycle.ts) -- one
    * instance for the whole process, so a subscriber (the extension host)
    * hears every window, not just the one it happened to attach to first. */
@@ -64,7 +71,7 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
         const partition = found?.window.tabs.partitionOf(found.tabId) ?? partitionForTarget(url, ctx.broker)
         return partition === undefined || partition === INTERNAL_PARTITION ? null : { key: partition, label: originFromUrl(url) ?? 'this app' }
       },
-      isShellPage: (contents) => internalPages.pageOf(contents) !== undefined,
+      isShellPage: (contents) => isShellUiPage(contents, internalPages, session.fromPartition(SHELL_PARTITION)),
       developerMode: devModeEnabled,
       confirm: confirmOpenDevTools
     }),
@@ -74,6 +81,7 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
+    tearDrag: new TearDragController(() => windows.all()),
     tabLifecycle: new TabLifecycle(),
     windows,
     zoom: new ZoomService(zoomStore, settings),

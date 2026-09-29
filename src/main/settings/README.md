@@ -9,7 +9,7 @@ whose effect is not read on demand (today the theme).
 
 **What it depends on.** [`../browsing/search-engines.ts`](../browsing/search-engines.ts) (the
 custom search template's check), [`../storage/`](../storage/) (the debounced write) and
-[`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)
+[`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts)
 (`writeFileAtomic`). No `electron` import: the theme applier is handed the object it sets.
 
 **What it must never import.** [`../shell/`](../shell/): the shell reads settings, never the reverse.
