@@ -90,15 +90,6 @@ async function waitForRegisteredExtension (
   return await promise
 }
 
-// Orivon patch (UPSTREAM.md patch 39): isSandboxPageUrl runs synchronously
-// on the main thread for every page load and every crx-msg -- these two
-// caps bound the work a single (however malformed) manifest can demand,
-// regardless of the linear matcher below already being immune to
-// backtracking. Chrome itself has no declared limit on either; these exist
-// only as a floor under this process's own responsiveness.
-const MAX_SANDBOX_PAGES = 200
-const MAX_STARS_PER_PATTERN = 8
-
 /**
  * Linear-time match of one Chrome-style glob (`*` = any run of characters,
  * everything else literal -- the only operator `sandbox.pages` grammar
@@ -138,23 +129,45 @@ function matchesGlob (pattern: string, text: string): boolean {
 }
 
 /**
- * Orivon patch (UPSTREAM.md patch 37, normalisation added by patch 39):
- * true if `url`'s own path matches one of `pages` (an extension's manifest
- * `sandbox.pages`). Exported through `orivon:crx-extensions-router`
- * (electron-chrome-extensions-lib.d.ts) so extension-host.ts's own
- * preload-time query (the vendored preload decides whether to inject any
- * chrome.* at all) answers the identical question onExtensionMessage below
- * asks on every message -- one matcher, not two that could drift apart.
- * Normalises both sides the way Chromium does before comparing a
- * `sandbox.pages` entry against a real request: a manifest entry's own
- * leading `/` is stripped (Chrome accepts `"/sandbox.html"` and
- * `"sandbox.html"` as the same declaration), and the URL's pathname is
- * percent-decoded (`%2E` and `.` name the same file) as well as having its
- * own leading `/` stripped. A pathname that fails to decode (a malformed
- * percent-sequence) matches nothing, rather than being compared encoded --
- * silently accepting the wrong string here would be worse than refusing.
+ * Orivon patch (UPSTREAM.md patch 37, normalisation added by patch 39,
+ * corrected by patch 41): true if `url`'s own path matches one of `pages`
+ * (an extension's manifest `sandbox.pages`). Exported through
+ * `orivon:crx-extensions-router` (electron-chrome-extensions-lib.d.ts) so
+ * extension-host.ts's own preload-time query (the vendored preload decides
+ * whether to inject any chrome.* at all) answers the identical question
+ * onExtensionMessage below asks on every message -- one matcher, not two
+ * that could drift apart. `pages` is never capped or truncated here:
+ * `src/broker/policy/extension-manifest.ts`'s own `MAX_SANDBOX_PAGES`
+ * refuses to load a manifest with too many entries instead, so every
+ * `pages` array this ever sees in a real session already fits -- silently
+ * skipping some of a declared list here, as an earlier version of this
+ * function did, would leave a page past the cut still declared sandboxed
+ * by the manifest and still served by Electron, unrecognised by this
+ * matcher: no CSP, chrome.* injected, no router refusal, a silent bypass.
+ * Normalises both sides the way Chromium's own
+ * `ExtensionURLToRelativeFilePath` does before it turns this URL into the
+ * on-disk file it actually serves: ALL of a manifest entry's own leading
+ * `/` and `\` are stripped (not only the first, which let
+ * `chrome-extension://<id>//sandbox.html` or a leading `\` serve the real
+ * sandboxed file while comparing against a pathname this function still
+ * saw as un-stripped, missing it entirely), and the URL's pathname is
+ * percent-decoded (`%2E` and `.` name the same file) before having the
+ * same leading separators stripped. A pathname that fails to decode (a
+ * malformed percent-sequence) matches nothing, rather than being compared
+ * encoded -- silently accepting the wrong string here would be worse than
+ * refusing. `platform` defaults to `process.platform`, overridable for
+ * tests: on win32 and darwin, whose filesystems resolve "SANDBOX.html" and
+ * "sandbox.html" to the same file, Chromium serves the real sandboxed page
+ * for either spelling, so the match is case-insensitive there too; Linux's
+ * filesystem is case-sensitive (a differently-cased request 404s instead
+ * of reaching the real file), and this stays case-sensitive there to
+ * match.
  */
-export function isSandboxPageUrl (pages: readonly string[] | undefined, url: string): boolean {
+export function isSandboxPageUrl (
+  pages: readonly string[] | undefined,
+  url: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
   if (pages === undefined || pages.length === 0) return false
   let rawPathname: string
   try {
@@ -162,17 +175,19 @@ export function isSandboxPageUrl (pages: readonly string[] | undefined, url: str
   } catch {
     return false
   }
-  let pathname: string
+  let decodedPathname: string
   try {
-    pathname = decodeURIComponent(rawPathname).replace(/^\//, '')
+    decodedPathname = decodeURIComponent(rawPathname)
   } catch {
     return false
   }
-  return pages.slice(0, MAX_SANDBOX_PAGES).some((page) => {
-    const stars = page.split('*').length - 1
-    if (stars > MAX_STARS_PER_PATTERN) return false
-    const pattern = page.replace(/^\//, '')
-    return matchesGlob(pattern, pathname)
+  const pathname = decodedPathname.replace(/^[/\\]+/, '')
+  const caseInsensitive = platform === 'win32' || platform === 'darwin'
+  const matchPathname = caseInsensitive ? pathname.toLowerCase() : pathname
+  return pages.some((page) => {
+    const pattern = page.replace(/^[/\\]+/, '')
+    const matchPattern = caseInsensitive ? pattern.toLowerCase() : pattern
+    return matchesGlob(matchPattern, matchPathname)
   })
 }
 
@@ -274,6 +289,11 @@ class RoutingDelegate {
 
   private sessionMap: WeakMap<Session, RoutingDelegateObserver> = new WeakMap()
   private workers: WeakSet<any> = new WeakSet()
+  // Orivon patch (UPSTREAM.md patch 42): onAddListener's own deferred-add
+  // token per (extensions, listener key) -- listenerKey's own doc says why
+  // this is keyed the same way pendingRegistrations is (never across
+  // sessions).
+  private pendingListenerAdds: WeakMap<ExtensionRegistryEvents, Map<string, symbol>> = new WeakMap()
 
   private constructor() {
     ipcMain.handle('crx-msg', this.onRouterMessage)
@@ -390,10 +410,26 @@ class RoutingDelegate {
     // case): only an actual race defers to the shared wait.
     const eventSession = getSessionFromEvent(event)
     const eventSessionExtensions = eventSession.extensions || eventSession
+    // Orivon patch (UPSTREAM.md patch 42): a crx-remove-listener for this
+    // SAME subscription can arrive while the wait below is still running
+    // -- onRemoveListener cancels this token by deleting it, so the
+    // deferred add below is skipped instead of re-adding a subscription
+    // the caller already asked removed (`listenerKey`'s own doc).
+    let pending = this.pendingListenerAdds.get(eventSessionExtensions)
+    if (pending === undefined) {
+      pending = new Map()
+      this.pendingListenerAdds.set(eventSessionExtensions, pending)
+    }
+    const key = listenerKey(eventName, extensionId, listener)
+    const token = Symbol('crx-add-listener')
+    pending.set(key, token)
+    const pendingTable = pending
     void (async () => {
       if (eventSessionExtensions.getExtension(extensionId) == null) {
         await waitForRegisteredExtension(eventSessionExtensions, extensionId)
       }
+      if (pendingTable.get(key) !== token) return // cancelled by a same-subscription crx-remove-listener
+      pendingTable.delete(key)
       try {
         observer?.addListener(listener, extensionId, eventName)
       } catch (error) {
@@ -412,7 +448,8 @@ class RoutingDelegate {
       d(`crx-remove-listener refused: sender is not extension ${extensionId}`)
       return
     }
-    const observer = this.sessionMap.get(getSessionFromEvent(event))
+    const eventSession = getSessionFromEvent(event)
+    const observer = this.sessionMap.get(eventSession)
     const listener: EventListener =
       event.type === 'frame'
         ? {
@@ -424,6 +461,17 @@ class RoutingDelegate {
             type: event.type,
             extensionId,
           }
+    // Orivon patch (UPSTREAM.md patch 42): if a crx-add-listener for this
+    // exact subscription is still deferred (waiting out the registration
+    // race, patch 38), cancel it instead of falling through to
+    // removeListener below -- nothing was ever actually added yet, so
+    // there is nothing to remove, and letting the deferred add run anyway
+    // once it resolves would re-add the subscription this call asked
+    // removed.
+    const eventSessionExtensions = eventSession.extensions || eventSession
+    const key = listenerKey(eventName, extensionId, listener)
+    const pending = this.pendingListenerAdds.get(eventSessionExtensions)
+    if (pending?.delete(key) === true) return
     // Orivon patch: same reason as onAddListener above -- removeListener
     // itself never throws today, but this is the same untrusted, unawaited
     // call site, so it is guarded the same way rather than relying on that
@@ -486,6 +534,20 @@ const eventListenerEquals = (a: EventListener) => (b: EventListener) => {
     return a.host === b.host
   }
   return true
+}
+
+/**
+ * Orivon patch (UPSTREAM.md patch 42): a string key for
+ * `RoutingDelegate.pendingListenerAdds`, identifying a subscription the
+ * SAME way `eventListenerEquals` above already does (extensionId + type +
+ * host, scoped to one `eventName`) -- so a `crx-remove-listener` call can
+ * find and cancel a still-deferred `crx-add-listener` call for the exact
+ * subscription it names, never a different one that happens to share an
+ * extensionId or eventName.
+ */
+function listenerKey (eventName: string, extensionId: string, listener: EventListener): string {
+  const hostPart = listener.type === 'frame' ? String(getHostId(listener.host)) : ''
+  return `${eventName}\u0000${extensionId}\u0000${listener.type}\u0000${hostPart}`
 }
 
 export class ExtensionRouter {

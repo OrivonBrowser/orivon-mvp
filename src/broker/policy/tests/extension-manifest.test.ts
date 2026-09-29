@@ -94,6 +94,23 @@ describe('readExtensionManifest', () => {
       label: '__MSG_ names, kept as-is',
       raw: { ...VALID_MV3, name: '__MSG_extName__' },
       wantOk: true
+    },
+    {
+      label: 'a sandbox.pages list right at the 200-entry cap',
+      raw: { ...VALID_MV3, sandbox: { pages: Array.from({ length: 200 }, (_, i) => `p${String(i)}.html`) } },
+      wantOk: true
+    },
+    {
+      // isSandboxPageUrl (vendor/electron-chrome-extensions/src/browser/
+      // router.ts, UPSTREAM.md patch 41) never caps or truncates the pages
+      // it matches against -- refusing an oversized manifest here, rather
+      // than silently truncating which of its declared pages that matcher
+      // recognises, is what keeps a page past some cut from ever being
+      // declared-but-unrecognised (a silent sandbox bypass).
+      label: 'a sandbox.pages list one entry past the 200-entry cap',
+      raw: { ...VALID_MV3, sandbox: { pages: Array.from({ length: 201 }, (_, i) => `p${String(i)}.html`) } },
+      wantOk: false,
+      reason: 'sandbox.pages has 201 entries, more than the 200 this build matches'
     }
   ]
 

@@ -183,3 +183,57 @@ describe('crx-add-listener from a page whose extension is still registering (UPS
     expect(loadedRemovals).toHaveLength(1)
   })
 })
+
+describe('crx-remove-listener arriving while its own crx-add-listener is still deferred (UPSTREAM.md patch 42)', () => {
+  it('cancels the deferred add, instead of the listener coming back once registration finishes', async () => {
+    const extensions = fakeExtensions()
+    const session = { extensions, serviceWorkers: { on: vi.fn() } } as unknown as Session
+    setMessageSenderIdCheck(senderMatchesClaimedExtensionId)
+    const router = new ExtensionRouter(session)
+
+    const senderId = 'f'.repeat(32)
+    const send = vi.fn()
+    const sender = { session, id: 3, isDestroyed: () => false, send }
+    const event = { type: 'frame', sender, senderFrame: { url: `chrome-extension://${senderId}/popup.html` } }
+
+    // Both arrive while the extension is still registering: the add
+    // defers to the shared wait (patch 38), and the remove for the SAME
+    // subscription follows immediately after, before that wait ever
+    // resolves -- the exact race the review found: the remove finds
+    // nothing yet added (a silent no-op), and the deferred add then runs
+    // anyway once the extension registers, so the listener comes back.
+    onHandlers.get('crx-add-listener')!(event, senderId, 'runtime.onMessage')
+    onHandlers.get('crx-remove-listener')!(event, senderId, 'runtime.onMessage')
+
+    extensions.register({ id: senderId, manifest: {} })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    router.sendEvent(senderId, 'runtime.onMessage', 'payload')
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('still adds the listener when the remove is for a DIFFERENT subscription', async () => {
+    const extensions = fakeExtensions()
+    const session = { extensions, serviceWorkers: { on: vi.fn() } } as unknown as Session
+    setMessageSenderIdCheck(senderMatchesClaimedExtensionId)
+    const router = new ExtensionRouter(session)
+
+    const senderId = 'g'.repeat(32)
+    const send = vi.fn()
+    const sender = { session, id: 4, isDestroyed: () => false, send }
+    const event = { type: 'frame', sender, senderFrame: { url: `chrome-extension://${senderId}/popup.html` } }
+    const otherSend = vi.fn()
+    const otherSender = { session, id: 5, isDestroyed: () => false, send: otherSend }
+    const otherEvent = { type: 'frame', sender: otherSender, senderFrame: { url: `chrome-extension://${senderId}/other.html` } }
+
+    onHandlers.get('crx-add-listener')!(event, senderId, 'runtime.onMessage')
+    // A different host's subscription -- must not cancel the one above.
+    onHandlers.get('crx-remove-listener')!(otherEvent, senderId, 'runtime.onMessage')
+
+    extensions.register({ id: senderId, manifest: {} })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    router.sendEvent(senderId, 'runtime.onMessage', 'payload')
+    expect(send).toHaveBeenCalledWith('crx-runtime.onMessage', 'payload')
+  })
+})

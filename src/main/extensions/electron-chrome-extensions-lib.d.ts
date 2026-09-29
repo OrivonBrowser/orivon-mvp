@@ -83,8 +83,9 @@ declare module 'orivon:crx-extensions-router' {
   /** True if `url`'s own path matches one of `pages` (an extension's
    * manifest `sandbox.pages`) -- router.ts's own matcher, reused by
    * extension-host.ts's preload-time sandbox-page query so the two ask the
-   * identical question. */
-  export function isSandboxPageUrl (pages: readonly string[] | undefined, url: string): boolean
+   * identical question. `platform` defaults to `process.platform`;
+   * router.ts's own doc says why win32/darwin match case-insensitively. */
+  export function isSandboxPageUrl (pages: readonly string[] | undefined, url: string, platform?: NodeJS.Platform): boolean
 }
 
 declare module 'orivon:crx-extensions-cookies' {

@@ -24,14 +24,34 @@ import type { HeadersReceivedHandler } from '../sessions/web-request-owner.js'
 export const CHROME_DEFAULT_SANDBOX_CSP =
   "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';"
 
-/** Every `chrome-extension:` URL, mainFrame/subFrame only: CSP `sandbox` is
- * a document-level policy (it changes the resulting browsing context's own
- * origin and script permissions), meaningless attached to a subresource
- * fetch (`sandbox.js`) that establishes no browsing context of its own. */
-export const EXTENSION_SANDBOX_CSP_FILTER: WebRequestFilter = { urls: ['chrome-extension://*/*'], types: ['mainFrame', 'subFrame'] }
+/** Every `chrome-extension:` URL, document resource types only: CSP
+ * `sandbox` is a document-level policy (it changes the resulting browsing
+ * context's own origin and script permissions), meaningless attached to a
+ * subresource fetch (`sandbox.js`) that establishes no browsing context of
+ * its own. `object` counts as a document here too, the same reasoning
+ * `../install/granted-origin-csp.ts`'s own `GRANTED_ORIGIN_CSP_FILTER` and
+ * `documentOriginOf` already document: Electron reports a same-origin
+ * `<object>`/`<embed>` document's own response with that resource type
+ * (measured, Electron 44) -- a manifest's own `web_accessible_resources`
+ * can make a sandbox page reachable that way from an ordinary web page, and
+ * without `object` here that document was served with no CSP `sandbox` at
+ * all, silently keeping its ordinary (non-opaque) origin. */
+export const EXTENSION_SANDBOX_CSP_FILTER: WebRequestFilter = { urls: ['chrome-extension://*/*'], types: ['mainFrame', 'subFrame', 'object'] }
+
+/** True if `csp` declares an actual `sandbox` directive -- a CSP
+ * directive's name is whatever precedes the first run of whitespace in its
+ * own `;`-separated segment, so a `"sandbox"` appearing only inside some
+ * OTHER directive's value does not count. Real Chrome rejects a manifest
+ * `content_security_policy.sandbox` value that lacks this directive
+ * outright and falls back to its own default sandbox CSP instead of
+ * applying a policy that does not actually sandbox anything; this mirrors
+ * that, rather than trusting the manifest's override unconditionally. */
+function hasSandboxDirective (csp: string): boolean {
+  return csp.split(';').some((segment) => segment.trim().split(/\s+/)[0]?.toLowerCase() === 'sandbox')
+}
 
 function sandboxCspFor (details: OnHeadersReceivedListenerDetails): string | undefined {
-  if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return undefined
+  if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame' && details.resourceType !== 'object') return undefined
   const id = extensionIdFromScope(details.url)
   if (id === undefined) return undefined
   const manifest = session.defaultSession.extensions.getExtension(id)?.manifest as {
@@ -40,7 +60,8 @@ function sandboxCspFor (details: OnHeadersReceivedListenerDetails): string | und
   } | undefined
   if (manifest?.sandbox?.pages === undefined) return undefined
   if (!isSandboxPageUrl(manifest.sandbox.pages, details.url)) return undefined
-  return manifest.content_security_policy?.sandbox ?? CHROME_DEFAULT_SANDBOX_CSP
+  const override = manifest.content_security_policy?.sandbox
+  return override !== undefined && hasSandboxDirective(override) ? override : CHROME_DEFAULT_SANDBOX_CSP
 }
 
 /** `webRequestOwnerFor(session.defaultSession).onHeadersReceived`'s own

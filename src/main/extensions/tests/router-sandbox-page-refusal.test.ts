@@ -88,16 +88,46 @@ describe('isSandboxPageUrl', () => {
     expect(elapsed).toBeLessThan(200)
   })
 
-  it('refuses a pattern with more stars than MAX_STARS_PER_PATTERN outright, rather than matching it', () => {
-    const tooManyStars = 'a*'.repeat(20) + 'b'
-    expect(isSandboxPageUrl([tooManyStars], `chrome-extension://${EXT_ID}/${'a'.repeat(50)}b`)).toBe(false)
+  it('matches a pattern with many stars just fine -- the matcher is linear, so there is no star cap (UPSTREAM.md patch 41)', () => {
+    const manyStars = 'a*'.repeat(20) + 'b'
+    expect(isSandboxPageUrl([manyStars], `chrome-extension://${EXT_ID}/${'a'.repeat(50)}b`)).toBe(true)
   })
 
-  it('only considers the first MAX_SANDBOX_PAGES entries of an oversized pages list', () => {
+  it('never silently skips a declared page past some count, however long the pages list (UPSTREAM.md patch 41: the cap moved to extension-manifest.ts, refusing to load such a manifest at all, rather than truncating which of its declared pages this matches)', () => {
     const pages = Array.from({ length: 250 }, (_, i) => `page-${String(i)}.html`)
-    pages.push('sandbox.html') // entry 250, past the 200-entry cap
-    expect(isSandboxPageUrl(pages, `chrome-extension://${EXT_ID}/sandbox.html`)).toBe(false)
+    pages.push('sandbox.html') // entry 250 -- would have been past the old 200-entry cap
+    expect(isSandboxPageUrl(pages, `chrome-extension://${EXT_ID}/sandbox.html`)).toBe(true)
     expect(isSandboxPageUrl(pages, `chrome-extension://${EXT_ID}/page-0.html`)).toBe(true)
+  })
+
+  it('strips ALL leading slashes and backslashes, the way Chromium\'s ExtensionURLToRelativeFilePath does before serving the file, not just the first (UPSTREAM.md patch 41)', () => {
+    // chrome-extension://<id>//sandbox.html and .../\sandbox.html: Electron
+    // (like Chromium) still serves the real sandbox.html for either --
+    // stripping only one leading separator left the pathname here as
+    // "/sandbox.html", which never equals the manifest's "sandbox.html"
+    // pattern, so the real sandboxed page silently got no CSP and no
+    // router refusal at all.
+    expect(isSandboxPageUrl(['sandbox.html'], `chrome-extension://${EXT_ID}//sandbox.html`)).toBe(true)
+    expect(isSandboxPageUrl(['sandbox.html'], `chrome-extension://${EXT_ID}///sandbox.html`)).toBe(true)
+    expect(isSandboxPageUrl(['sandbox.html'], `chrome-extension://${EXT_ID}/\\sandbox.html`)).toBe(true)
+    expect(isSandboxPageUrl(['sandbox.html'], `chrome-extension://${EXT_ID}/\\/\\sandbox.html`)).toBe(true)
+  })
+
+  it('a manifest entry with its own extra leading slashes/backslashes still matches (symmetrical stripping)', () => {
+    expect(isSandboxPageUrl(['//sandbox.html'], `chrome-extension://${EXT_ID}/sandbox.html`)).toBe(true)
+  })
+
+  it('a dot-segment in the URL still matches -- the URL parser itself already collapses "/./" before this function ever sees it', () => {
+    expect(isSandboxPageUrl(['sandbox.html'], `chrome-extension://${EXT_ID}/./sandbox.html`)).toBe(true)
+  })
+
+  it('matches case-insensitively on win32 and darwin, whose filesystems would still serve the real file for a differently-cased request', () => {
+    expect(isSandboxPageUrl(['sandbox.html'], `chrome-extension://${EXT_ID}/SANDBOX.html`, 'win32')).toBe(true)
+    expect(isSandboxPageUrl(['sandbox.html'], `chrome-extension://${EXT_ID}/SANDBOX.html`, 'darwin')).toBe(true)
+  })
+
+  it('stays case-sensitive on linux, whose filesystem would 404 a differently-cased request rather than serve the real file', () => {
+    expect(isSandboxPageUrl(['sandbox.html'], `chrome-extension://${EXT_ID}/SANDBOX.html`, 'linux')).toBe(false)
   })
 })
 
@@ -117,6 +147,25 @@ describe('ExtensionRouter.onExtensionMessage refuses a sandboxed page', () => {
       // not opaque -- reproduced here deliberately, so this case exercises
       // the manifest-based refusal, not the opaque-origin one.
       senderFrame: { url: `chrome-extension://${EXT_ID}/sandbox.html`, origin: `chrome-extension://${EXT_ID}` }
+    }
+
+    await expect(handles.get('crx-msg')!(event, EXT_ID, 'tabs.query')).rejects.toThrow(
+      /declared sandbox page/
+    )
+    expect(query).not.toHaveBeenCalled()
+  })
+
+  it('refuses a frame whose URL has the doubled-leading-slash bypass shape too (UPSTREAM.md patch 41)', async () => {
+    const session = fakeSession({ sandbox: { pages: ['sandbox.html'] } })
+    setMessageSenderIdCheck(senderMatchesClaimedExtensionId)
+    const router = new ExtensionRouter(session)
+    const query = vi.fn()
+    router.apiHandler()('tabs.query', query)
+
+    const event = {
+      type: 'frame',
+      sender: { session },
+      senderFrame: { url: `chrome-extension://${EXT_ID}//sandbox.html`, origin: `chrome-extension://${EXT_ID}` }
     }
 
     await expect(handles.get('crx-msg')!(event, EXT_ID, 'tabs.query')).rejects.toThrow(
