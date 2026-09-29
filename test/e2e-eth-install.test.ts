@@ -16,8 +16,10 @@ import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitF
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
 import { originHash } from '../src/broker/grants/origin-hash.js'
+import { BUILTIN_ADDRESSES } from '../src/protocols/builtin.js'
 
 const ORIGIN = 'https://app.eth'
+const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
 const MANIFEST = { orivonApiVersion: 0, id: 'eth.orivon.fixture', name: 'Eth fixture', version: '1.0.0', entry: 'index.html', assets: ['app.js'], capabilities: {} }
 const APP = {
   'index.html': '<!doctype html><meta charset="utf-8"><title>eth app</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>eth app<script src="app.js"></script></body>',
@@ -63,7 +65,7 @@ it('installs a .eth app from verified IPFS content, pins its CID, and opens it f
       const chrome = findChrome(running)
       await waitForAddressBarStable(chrome)
       await clickAddressBarRetrying(chrome, `${ORIGIN}/`)
-      const loaded = await waitForTab(chrome, { address: `${ORIGIN}/`, title: 'eth app' })
+      const loaded = await waitForTab(chrome, { address: SHOWN, title: 'eth app' })
       check('app.eth loaded from the gateway', loaded.ok)
 
       const pinned = await waitFor(() => existsSync(pinFile), 25_000)
@@ -80,7 +82,7 @@ it('installs a .eth app from verified IPFS content, pins its CID, and opens it f
       await gateway.close()
       gatewayClosed = true
       await clickAddressBarRetrying(chrome, `${ORIGIN}/`)
-      const reopened = await waitForTab(chrome, { address: `${ORIGIN}/`, title: 'eth app' })
+      const reopened = await waitForTab(chrome, { address: SHOWN, title: 'eth app' })
       // The tab already showed this address and title before the reload, and installing swaps
       // its view, so poll whichever view shows it until the script's mark is there.
       let ran: string | null = null

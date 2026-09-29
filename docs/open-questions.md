@@ -1477,7 +1477,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 - **Question:** Can a middle click on the strip's empty end open a tab on Windows, macOS and native Wayland?
 - **Why it matters:** there the end stays a native drag region, which gives the page no click at all; on
-  Linux X11 the shell handles it itself (`d-0187`) and loses nothing a person sees.
+  Linux X11 the shell handles it itself (`d-0189`) and loses nothing a person sees.
 - **Options:** Windows' `hookWindowMessage` for a middle click in the caption area (rec., untested); accept it
   on macOS and Wayland, where the window manager owns the drag.
 - **Who decides:** research first
@@ -1486,7 +1486,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 ### A293: Moving the window by the strip's end on X11 bypasses the window manager **[OWNER]**
 
 - **Question:** Is a window move done by the shell good enough where the window manager's own was before?
-- **Why it matters:** `d-0187` moves the window itself so the strip's end can take a middle click. It
+- **Why it matters:** `d-0189` moves the window itself so the strip's end can take a middle click. It
   maximizes at a top edge and takes half a screen at a side, but a window manager's own tiling previews,
   quarter tiles and keyboard moves no longer start from there.
 - **Options:** keep it (rec.); go back to the native drag region and lose the middle click there.

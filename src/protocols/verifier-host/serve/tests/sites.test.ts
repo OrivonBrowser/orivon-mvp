@@ -4,6 +4,7 @@ import type { DataGatherer, MountedSite, NameResolver } from '../../../resolutio
 import { ProtocolRegistry } from '../../../registry.js'
 import { defineProtocol } from '../../../protocol.js'
 import { ENS } from '../../../ens/descriptor.js'
+import { IPFS } from '../../../ipfs/descriptor.js'
 import { FAILURE_TTL_MS, MAX_CONCURRENT_MOUNTS, MAX_SITES, Sites, SITE_TTL_MS, STALE_SERVE_MS } from '../sites.js'
 
 const P = 'https://top.example'
@@ -14,7 +15,8 @@ function registry (resolve: () => Promise<NameRecord[]>): { registry: ProtocolRe
   const calls = { n: 0 }
   const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => { calls.n++; return await resolve() } }
   const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
-  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]), calls }
+  // ENS's displayScheme names 'ipfs', so IPFS must be a given protocol too, even with no providers of its own here.
+  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] }), defineProtocol(IPFS, {})]), calls }
 }
 
 describe('Sites', () => {
@@ -110,7 +112,7 @@ function switchableRegistry (): { registry: ProtocolRegistry, resolve: { current
   const resolve = { current: async () => [record] }
   const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => { calls.n++; return await resolve.current() } }
   const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
-  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]), resolve, calls }
+  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] }), defineProtocol(IPFS, {})]), resolve, calls }
 }
 
 describe('Sites -- stale-while-revalidate', () => {
