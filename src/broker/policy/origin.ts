@@ -268,3 +268,36 @@ export function originFromSenderFrame (frame: SenderFrameLike | null | undefined
 
   return derived
 }
+
+/**
+ * A frame's origin is not the whole story: the frame must also be the top
+ * frame of the WebContents making the call (never a subframe, an embed
+ * guest, or a web-context document speaking for a top-level origin it does
+ * not run as), and that WebContents must sit in the Electron session
+ * `origin`'s own documents actually load into.
+ *
+ * The second check exists because a document can commit `origin` while
+ * still running in the wrong session: a non-typed navigation (a link, a
+ * redirect, a script, back/forward) lands in whatever session the view
+ * already had, and only a later `did-navigate` handler moves it -- so a
+ * broker call made in the gap between the two would otherwise be authorised
+ * as `origin` from a session `origin` does not own (its grants, its cached
+ * bundle, another origin's cookies).
+ *
+ * `expectedSession` is injected rather than computed here: which session an
+ * origin belongs in depends on whether it is currently served from the
+ * loader's bundle cache, and this policy layer never reaches into the
+ * loader (README.md's "what this must never import"). Compared by
+ * reference, never by a partition string this file would otherwise need to
+ * re-derive.
+ */
+export function isAttributedSession (
+  senderFrame: unknown,
+  sender: { readonly mainFrame: unknown, readonly session: unknown } | undefined,
+  origin: string,
+  expectedSession: (origin: string) => unknown
+): boolean {
+  if (sender === undefined || senderFrame === null) return false
+  if (senderFrame !== sender.mainFrame) return false
+  return sender.session === expectedSession(origin)
+}

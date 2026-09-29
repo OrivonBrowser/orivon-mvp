@@ -36,7 +36,7 @@ import type { ControlLimiter } from './control-limiter.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
 import { handleSyncFsReadRequest } from './sync-fs.js'
 import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
-import { originFromSenderFrame } from '../policy/origin.js'
+import { isAttributedSession, originFromSenderFrame } from '../policy/origin.js'
 import { fail } from '../errors.js'
 import { toFailureResponse } from './response-envelope.js'
 import { dispatchApp } from './dispatch/app.js'
@@ -193,6 +193,14 @@ async function withTimeout<T> (work: (abandoned: AbortSignal) => Promise<T>, tim
  * (never throttled; 'internal' from dispatch() if a call needing one of the
  * last two runs without it) -- real wiring always supplies every one of
  * them, see `brokerIpcSubsystem`.
+ *
+ * `sessionForOrigin`, when supplied, is `isAttributedSession`'s injected
+ * half: the Electron session `origin`'s own documents belong in, given
+ * everything the broker itself cannot see (the loader's bundle cache).
+ * Optional so this file's own test suite, which has no session to compare
+ * against, keeps exercising everything else unchanged; real wiring always
+ * supplies it, and an `app.requestGrant` call that just changed the answer
+ * reloads the calling document into it.
  */
 export async function handleControlRequest (
   broker: Broker,
@@ -201,7 +209,8 @@ export async function handleControlRequest (
   transport?: PortTransport,
   limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
-  fsTransport?: FsTransport
+  fsTransport?: FsTransport,
+  sessionForOrigin?: (origin: string) => unknown
 ): Promise<ResponseEnvelope<unknown>> {
   // The envelope itself is untrusted, not just its payload. Reading
   // `envelope.id` off a null or non-object value throws a TypeError straight
@@ -219,6 +228,15 @@ export async function handleControlRequest (
     return { id: envelope.id, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
   }
 
+  // A document can commit `origin` while its WebContents still sits in the
+  // wrong Electron session for it -- see isAttributedSession's own doc
+  // (policy/origin.ts) for when and why. Checked right after origin
+  // derivation, before the rate limiter spends any of this origin's budget
+  // on a call that is refused either way.
+  if (sessionForOrigin !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, sessionForOrigin)) {
+    return { id: envelope.id, ok: false, code: 'denied', message: 'this document is not in the session its origin belongs to' }
+  }
+
   // Checked before dispatch() ever runs, so a throttled call never reaches
   // the broker at all (A38). Which budget a method draws on, and why one of
   // them paces instead of refusing: ./control-limiter.ts.
@@ -231,6 +249,19 @@ export async function handleControlRequest (
       async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned),
       envelope.timeoutMs
     )
+    // The one call that can change, mid-request, which session `origin`
+    // belongs in: a freshly granted capability moves it out of the default
+    // session (loader/electron/serve.ts's own carriesLiveAuthority). The
+    // document making the call is still running in whatever session it
+    // called FROM, so it is reloaded into the right one now, the same way
+    // an install reported over MANIFEST_HINT already reloads its tab
+    // (main/install/manifest-hint.ts) -- otherwise every following call
+    // from the same, unreloaded document would be denied by the check
+    // above for the rest of its life.
+    if (envelope.method === 'app.requestGrant' && result === true && sessionForOrigin !== undefined &&
+      event.sender.session !== sessionForOrigin(origin) && !event.sender.isDestroyed()) {
+      event.sender.reload()
+    }
     return { id: envelope.id, ok: true, result }
   } catch (error) {
     return toFailureResponse(envelope.id, error)
@@ -252,10 +283,11 @@ export function registerBrokerIpc (
   transport: PortTransport,
   limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
-  fsTransport?: FsTransport
+  fsTransport?: FsTransport,
+  sessionForOrigin?: (origin: string) => unknown
 ): void {
   ipc.handle(CONTROL_CHANNEL, async (event, envelope) =>
-    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport))
+    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport, sessionForOrigin))
 }
 
 /**
@@ -272,9 +304,9 @@ export interface IpcMainOnLike {
 }
 
 /** Thin wiring over `handleSyncFsReadRequest`, sharing `limiter` with `registerBrokerIpc` so this channel cannot be used to dodge CONTROL_CHANNEL's rate limit. */
-export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, limiter?: RateLimiter): void {
+export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, limiter?: RateLimiter, sessionForOrigin?: (origin: string) => unknown): void {
   ipc.on(SYNC_CONTROL_CHANNEL, (event, payload) => {
-    event.returnValue = handleSyncFsReadRequest(policy, event, payload, limiter)
+    event.returnValue = handleSyncFsReadRequest(policy, event, payload, limiter, sessionForOrigin)
   })
 }
 
@@ -426,8 +458,15 @@ export const brokerIpcSubsystem: Subsystem = {
     // runs twice, so a later subsystem is guaranteed to read this same
     // instance rather than a second, disagreeing one.
     publishBroker(ctx, broker)
+    // subsystems.ts lists ../../main/sessions/session-attribution.ts's own
+    // subsystem above this one precisely so this is never undefined here --
+    // thrown rather than silently skipping the check below, since a broker
+    // channel enforcing origin without session would be a capability
+    // enforcing less than it claims to (registry.ts's own doc on
+    // `Subsystem.critical`, which this subsystem already carries).
+    if (ctx.sessionForOrigin === undefined) throw fail('internal', 'ctx.sessionForOrigin is not published -- session-attribution subsystem is missing or misordered')
     // `ctx` itself, not a captured `ctx.requestGrant` -- see RequestGrantCtx's own doc (ipc-validation.ts) for why.
-    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport)
+    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport, ctx.sessionForOrigin)
 
     // ./sync-fs-policy.ts's createSyncFsPolicy calls straight through to
     // broker.fs.confineSync -- ADR-0016's synchronous grant-check/
@@ -435,6 +474,6 @@ export const brokerIpcSubsystem: Subsystem = {
     // just wired, so a grant issued through any route (the app loader's
     // permission prompt later, src/main/dev-grant.ts's hook today) is live
     // for this channel the instant it lands on that one instance.
-    registerSyncFsIpc(ipcMain, createSyncFsPolicy(broker), limiter)
+    registerSyncFsIpc(ipcMain, createSyncFsPolicy(broker), limiter, ctx.sessionForOrigin)
   }
 }

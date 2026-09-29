@@ -155,7 +155,25 @@ export interface PortDeliveryFrame extends SenderFrameLike {
   postMessage (channel: string, message: unknown, transfer?: unknown[]): void
 }
 
-/** The per-request event shape `../ipc.ts` and `../dispatch/net.ts` both read `senderFrame` off. */
+/**
+ * The WebContents that sent a control request -- distinct from
+ * `senderFrame` above, which is the FRAME. `mainFrame` and `session` are
+ * `isAttributedSession`'s own two comparisons (policy/origin.ts): whether
+ * `senderFrame` really is this WebContents' top frame, and which Electron
+ * session it runs in. `reload`/`isDestroyed` let a call that just changed
+ * which session its own origin belongs in (`app.requestGrant`, granting the
+ * origin's first capability) move the calling document there the same way
+ * a hinted install already reloads a tab into its new partition.
+ */
+export interface ControlSender {
+  readonly mainFrame: PortDeliveryFrame | null
+  readonly session: unknown
+  reload: () => void
+  isDestroyed: () => boolean
+}
+
+/** The per-request event shape `../ipc.ts` and `../dispatch/net.ts` both read `senderFrame`/`sender` off. */
 export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
+  readonly sender: ControlSender
 }

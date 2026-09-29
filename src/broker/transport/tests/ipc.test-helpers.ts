@@ -23,12 +23,35 @@ export { stubBroker } from './stub-broker.js'
 export const APP = 'https://app.example'
 export const OTHER = 'https://other.example'
 
-/** A ControlEvent whose senderFrame resolves to `origin` via originFromSenderFrame. */
-export function frameFor (origin: string): ControlEvent {
-  return { senderFrame: { url: `${origin}/index.html`, origin, postMessage: vi.fn() } }
+/** Stand-ins for two distinct Electron `Session`s -- `===` is the only
+ * comparison `isAttributedSession` (policy/origin.ts) ever makes, so a
+ * plain tagged object serves exactly as well as a real one. */
+export const DEFAULT_SESSION = { name: 'default' }
+export const APP_SESSION = { name: 'app' }
+
+/**
+ * A ControlEvent whose senderFrame resolves to `origin` via
+ * originFromSenderFrame, and whose sender is the frame's OWN top frame in
+ * `session` (`DEFAULT_SESSION` unless a test says otherwise) -- so a test
+ * that never passes `sessionForOrigin` sees the identical event this helper
+ * always produced, and one that does gets to choose whether the sender's
+ * session matches what it injects.
+ */
+export function frameFor (origin: string, session: unknown = DEFAULT_SESSION): ControlEvent {
+  const senderFrame = { url: `${origin}/index.html`, origin, postMessage: vi.fn() }
+  return { senderFrame, sender: { mainFrame: senderFrame, session, reload: vi.fn(), isDestroyed: () => false } }
 }
 
-export const NO_FRAME: ControlEvent = { senderFrame: null }
+/** `frameFor`, but the frame is a SUBFRAME of its own WebContents -- for a
+ * test asserting T-3's own refusal (a subframe, an embed guest, or a
+ * web-context document may never speak for its top frame's origin). */
+export function subframeFor (origin: string, session: unknown = DEFAULT_SESSION): ControlEvent {
+  const senderFrame = { url: `${origin}/index.html`, origin, postMessage: vi.fn() }
+  const mainFrame = { url: `${origin}/`, origin, postMessage: vi.fn() }
+  return { senderFrame, sender: { mainFrame, session, reload: vi.fn(), isDestroyed: () => false } }
+}
+
+export const NO_FRAME: ControlEvent = { senderFrame: null, sender: { mainFrame: null, session: DEFAULT_SESSION, reload: vi.fn(), isDestroyed: () => false } }
 
 export function envelope (method: string, payload: unknown, timeoutMs = 1_000): RequestEnvelope<unknown> {
   return { id: 'req-1', method, payload, timeoutMs }

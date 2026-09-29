@@ -90,8 +90,10 @@ describe('net.udpBind over the control channel', () => {
   it('abandons the socket rather than delivering its port to a frame that changed origin', async () => {
     const fake = fakeUdpSocket(udpSource())
     let origin = APP
+    const senderFrame = { url: `${APP}/`, origin: APP, postMessage: vi.fn() } as never
     const event: ControlEvent = {
-      senderFrame: { url: `${APP}/`, origin: APP, postMessage: vi.fn() } as never
+      senderFrame,
+      sender: { mainFrame: senderFrame, session: {}, reload: vi.fn(), isDestroyed: () => false }
     }
     Object.defineProperty(event.senderFrame!, 'origin', { get: () => origin })
     Object.defineProperty(event.senderFrame!, 'url', { get: () => `${origin}/` })
