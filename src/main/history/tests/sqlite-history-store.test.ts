@@ -177,6 +177,26 @@ describe('search: substrings, case, literal % and _, agreement between the FTS a
     expect(history.list({ search: '😀x' }).map((entry) => entry.title)).toEqual(['A page titled 😀x here'])
   })
 
+  it('folds case the way LIKE does (ASCII only), the same on the FTS-accelerated path as on the forced LIKE path', () => {
+    // LIKE folds only ASCII a-z/A-Z; the trigram tokenizer folds Unicode, so ' cole' (lowercase e-acute)
+    // would match "cole" (title's E-acute) through FTS but not through a bare LIKE. Since FTS is meant to
+    // be an accelerator, not a second definition of "matches", searching for it should find nothing either
+    // way -- LIKE's fold decides, whichever path actually ran the query.
+    const accented = 'École Française'
+    const upper = 'ÉCOLE' // ASCII-fold of the rest of the word still applies; only the accented letter itself differs by case
+    const lower = 'école'
+
+    const sparse = store() // default threshold: plenty of headroom to stay on the FTS-accelerated path
+    sparse.record('https://a.example/', accented, 1000)
+    expect(sparse.list({ search: upper }).map((entry) => entry.title)).toEqual([accented])
+    expect(sparse.list({ search: lower }).map((entry) => entry.title)).toEqual([])
+
+    const dense = new SqliteHistoryStore(':memory:', { searchDensityLimit: 0 }) // forces every search dense: the LIKE fallback
+    dense.record('https://a.example/', accented, 1000)
+    expect(dense.list({ search: upper }).map((entry) => entry.title)).toEqual([accented])
+    expect(dense.list({ search: lower }).map((entry) => entry.title)).toEqual([])
+  })
+
   /** Runs the same query list() runs, but as one plain LIKE statement -- the thing both the sparse (FTS) and
    * dense (LIKE fallback) paths are checked against, so the check does not depend on which path list() took. */
   function rawLike (db: DatabaseSync, term: string, after?: { lastVisit: number, id: number }): number[] {

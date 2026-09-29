@@ -49,6 +49,9 @@ const LIST_COLUMNS = 'id, url, title, last_visit, visit_count'
 const LIST_ORDER = 'ORDER BY last_visit DESC, id DESC LIMIT ?'
 const AFTER_CONDITION = '(last_visit < ? OR (last_visit = ? AND id < ?))'
 const LIKE_CONDITION = "(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')"
+/** Same as `LIKE_CONDITION`, aliased for the FTS join: MATCH only narrows candidates fast (and folds case
+ * for Unicode, where LIKE folds only ASCII), so LIKE stays the one definition of "matches" either way. */
+const LIKE_CONDITION_P = "(p.title LIKE ? ESCAPE '\\' OR p.url LIKE ? ESCAPE '\\')"
 
 export class SqliteHistoryStore implements HistoryStore {
   readonly kind = 'sqlite'
@@ -126,13 +129,13 @@ export class SqliteHistoryStore implements HistoryStore {
           likeAfter: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages WHERE ${AFTER_CONDITION} AND ${LIKE_CONDITION} ${LIST_ORDER}`),
           fts: this.db.prepare(`
             SELECT p.id, p.url, p.title, p.last_visit, p.visit_count FROM pages p
-            JOIN pages_fts f ON f.rowid = p.id WHERE pages_fts MATCH ?
+            JOIN pages_fts f ON f.rowid = p.id WHERE pages_fts MATCH ? AND ${LIKE_CONDITION_P}
             ORDER BY p.last_visit DESC, p.id DESC LIMIT ?
           `),
           ftsAfter: this.db.prepare(`
             SELECT p.id, p.url, p.title, p.last_visit, p.visit_count FROM pages p
             JOIN pages_fts f ON f.rowid = p.id
-            WHERE (p.last_visit < ? OR (p.last_visit = ? AND p.id < ?)) AND pages_fts MATCH ?
+            WHERE (p.last_visit < ? OR (p.last_visit = ? AND p.id < ?)) AND pages_fts MATCH ? AND ${LIKE_CONDITION_P}
             ORDER BY p.last_visit DESC, p.id DESC LIMIT ?
           `)
         }
@@ -280,7 +283,8 @@ export class SqliteHistoryStore implements HistoryStore {
     // Basic Multilingual Plane (a surrogate pair, such as most emoji, counts as two).
     if ([...search].length >= FTS_MIN_SEARCH_LENGTH) {
       const term = ftsPhrase(search)
-      rows = this.isDense(term) ? this.queryLike(likePattern(search), after, limit) : this.queryFts(term, after, limit)
+      const pattern = likePattern(search)
+      rows = this.isDense(term) ? this.queryLike(pattern, after, limit) : this.queryFts(term, pattern, after, limit)
     } else if (search !== '') {
       rows = this.queryLike(likePattern(search), after, limit)
     } else {
@@ -306,11 +310,13 @@ export class SqliteHistoryStore implements HistoryStore {
       : list.likeAfter.all(after.lastVisit, after.lastVisit, after.id, pattern, pattern, limit)) as unknown as Row[]
   }
 
-  private queryFts (term: string, after: HistoryQuery['after'], limit: number): Row[] {
+  /** `pattern` is bound after the MATCH term: MATCH narrows fast, LIKE (ASCII-only case fold) is the actual
+   * definition of "matches" it must also satisfy, so a search agrees with `queryLike` however dense it is. */
+  private queryFts (term: string, pattern: string, after: HistoryQuery['after'], limit: number): Row[] {
     const { list } = this.statements
     return (after === undefined
-      ? list.fts.all(term, limit)
-      : list.ftsAfter.all(after.lastVisit, after.lastVisit, after.id, term, limit)) as unknown as Row[]
+      ? list.fts.all(term, pattern, pattern, limit)
+      : list.ftsAfter.all(after.lastVisit, after.lastVisit, after.id, term, pattern, pattern, limit)) as unknown as Row[]
   }
 
   count (): number {
