@@ -3,10 +3,18 @@ import { PaneHost } from '../pane-host.js'
 
 const B = (x: number) => ({ x, y: 0, width: 100, height: 100 })
 
+/** Electron 44's own `View`: re-adding a child already there reorders it to
+ * the top instead of appending a duplicate (electron.d.ts's own doc comment
+ * on `addChildView`); a fresh one goes at `index`, the end by default. */
 function setup (): { host: PaneHost, children: string[], view: (name: string) => { name: string, setBounds: ReturnType<typeof vi.fn> } } {
   const children: string[] = []
   const contentView = {
-    addChildView: vi.fn((view: { name: string }) => { children.push(view.name) }),
+    addChildView: vi.fn((view: { name: string }, index?: number) => {
+      const at = children.indexOf(view.name)
+      if (at !== -1) children.splice(at, 1)
+      if (at !== -1 || index === undefined) children.push(view.name)
+      else children.splice(Math.min(index, children.length), 0, view.name)
+    }),
     removeChildView: vi.fn((view: { name: string }) => { const at = children.indexOf(view.name); if (at !== -1) children.splice(at, 1) })
   }
   const views = new Map<string, { name: string, setBounds: ReturnType<typeof vi.fn> }>()
@@ -42,6 +50,20 @@ describe('PaneHost', () => {
     const { host, children, view } = setup()
     host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
     host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }], { id: 'backdrop', view: view('X') as never, bounds: B(0) })
+    expect(children).toEqual(['X', 'A', 'B'])
+  })
+
+  it('never takes a pane that is staying off the screen when a backdrop first appears beside it', () => {
+    const { host, children, view } = setup()
+    const contentView = (host as unknown as { contentView: { removeChildView: ReturnType<typeof vi.fn> } }).contentView
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+    contentView.removeChildView.mockClear()
+
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }], { id: 'backdrop', view: view('X') as never, bounds: B(0) })
+
+    // The pane already on screen (A) is never detached for a backdrop that
+    // has nothing to do with it -- only B, genuinely new here, is a fresh attach.
+    expect(contentView.removeChildView).not.toHaveBeenCalled()
     expect(children).toEqual(['X', 'A', 'B'])
   })
 

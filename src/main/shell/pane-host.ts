@@ -16,7 +16,14 @@ export class PaneHost {
 
   constructor (private readonly contentView: View) {}
 
-  /** Shows exactly these panes, sized, with `backdrop` behind them when there is one. */
+  /** Shows exactly these panes, sized, with `backdrop` behind them when there is one.
+   *
+   * Never removes and re-adds a pane that is staying on screen: Electron 44's
+   * `addChildView` reorders an already-attached view to the top rather than
+   * detaching it first, so a pane a split's backdrop appears alongside for
+   * the first time keeps painting through this call instead of losing its
+   * compositor attachment for a frame it had nothing to do with. Only a pane
+   * genuinely new to the screen goes through an actual attach. */
   show (panes: readonly PaneView[], backdrop: PaneView | null = null): void {
     const wanted = new Map(panes.map((pane) => [pane.id, pane.view]))
     for (const [id, view] of this.shown) {
@@ -27,20 +34,17 @@ export class PaneHost {
     const nextBackdrop = backdrop?.view ?? null
     if (this.backdrop !== nextBackdrop) {
       if (this.backdrop !== null) this.contentView.removeChildView(this.backdrop)
-      if (nextBackdrop !== null) {
-        // Under every pane: those already on screen come off, and go back on above it.
-        for (const view of this.shown.values()) this.contentView.removeChildView(view)
-        this.shown.clear()
-        this.contentView.addChildView(nextBackdrop)
-      }
+      // At index 0, the bottom: the panes above it (added below, in order)
+      // are left alone here, whether or not they were already on screen.
+      if (nextBackdrop !== null) this.contentView.addChildView(nextBackdrop, 0)
       this.backdrop = nextBackdrop
     }
     if (backdrop !== null) backdrop.view.setBounds(backdrop.bounds)
     for (const pane of panes) {
-      if (this.shown.get(pane.id) !== pane.view) {
-        this.contentView.addChildView(pane.view)
-        this.shown.set(pane.id, pane.view)
-      }
+      // Re-adding what is already there only raises it (no detach); a pane
+      // new to `this.shown` gets its first, real attach here.
+      this.contentView.addChildView(pane.view)
+      this.shown.set(pane.id, pane.view)
       pane.view.setBounds(pane.bounds)
     }
   }

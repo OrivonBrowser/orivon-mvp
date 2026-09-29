@@ -66,4 +66,45 @@ describe('routeInternalRequest', () => {
       expect(routeInternalRequest(url, true), url).toEqual({ kind: 'not-found' })
     }
   })
+
+  describe('/@fs/, given the roots it may read', () => {
+    const ROOT = '/home/user/orivon-mvp'
+    const ROOTS = [`${ROOT}/src`, `${ROOT}/node_modules`]
+
+    it('reaches a file inside one of them', () => {
+      expect(routeInternalRequest(`orivon://settings/@fs${ROOT}/src/protocols/builtin.ts`, true, ROOTS))
+        .toEqual({ kind: 'dev', path: `/@fs${ROOT}/src/protocols/builtin.ts` })
+      expect(routeInternalRequest(`orivon://settings/@fs${ROOT}/node_modules/vite/dist/client/env.mjs?x=1`, true, ROOTS))
+        .toEqual({ kind: 'dev', path: `/@fs${ROOT}/node_modules/vite/dist/client/env.mjs?x=1` })
+    })
+
+    it('reaches a root reported by a symlink\'s real path, not the project\'s own textual path to it', () => {
+      // What Vite actually sends when node_modules is a symlink (this
+      // project's own parallel-worktree pattern): the caller resolves each
+      // root to its real path before handing it here, so the comparison
+      // still lines up even though it no longer looks like a subpath of ROOT.
+      const realNodeModules = '/home/user/some-other-checkout/node_modules'
+      expect(routeInternalRequest(`orivon://settings/@fs${realNodeModules}/vite/dist/client/env.mjs`, true, [`${ROOT}/src`, realNodeModules]))
+        .toEqual({ kind: 'dev', path: `/@fs${realNodeModules}/vite/dist/client/env.mjs` })
+    })
+
+    it('never reaches a file outside them, however plainly named', () => {
+      for (const url of [
+        `orivon://settings/@fs${ROOT}/package.json`,
+        'orivon://settings/@fs/etc/passwd',
+        'orivon://settings/@fs/home/user/.ssh/id_rsa',
+        // A sibling directory that merely starts with the same prefix as `src` is not inside it.
+        `orivon://settings/@fs${ROOT}/src-evil/x.js`,
+        `orivon://settings/@fs${ROOT}/node_modules-evil/x.js`,
+        // The directory itself, not a file inside it.
+        `orivon://settings/@fs${ROOT}/src`
+      ]) {
+        expect(routeInternalRequest(url, true, ROOTS), url).toEqual({ kind: 'not-found' })
+      }
+    })
+
+    it('refuses every /@fs/ request when no roots are given, the safe default', () => {
+      expect(routeInternalRequest(`orivon://settings/@fs${ROOT}/src/protocols/builtin.ts`, true)).toEqual({ kind: 'not-found' })
+    })
+  })
 })
