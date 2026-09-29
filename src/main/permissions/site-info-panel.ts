@@ -11,6 +11,7 @@ import type { SiteInfoController } from './site-info-controller.js'
 import { registerSiteInfoIpc } from '../ipc/site-info-ipc.js'
 import { createPopoverView } from './popover-view.js'
 import type { PopoverAnchor } from './popover-view.js'
+import { PANEL_POPOVER_BACKGROUND } from '../shell/theme-colors.js'
 
 /** Which page the popup opens showing -- the connection row's own switches
  * (`'main'`) or the delivery-evidence page a shield click or the main
@@ -54,6 +55,7 @@ export function createSiteInfoPanel (
     preloadRelPath: '../preload/site-info.js',
     urlArgName: 'orivon-site-info-url',
     align: 'left',
+    background: PANEL_POPOVER_BACKGROUND,
     registerIpc: (webContents, onContentHeight) => {
       registerSiteInfoIpc(webContents, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openAllSites, onContentHeight)
       return () => {}

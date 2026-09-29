@@ -14,6 +14,7 @@ import { registerPermissionsIpc } from '../ipc/permissions-ipc.js'
 import { createPopoverView } from './popover-view.js'
 import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
 import type { PopoverAnchor } from './popover-view.js'
+import { PANEL_POPOVER_BACKGROUND } from '../shell/theme-colors.js'
 
 export type { PopoverAnchor as PanelAnchor } from './popover-view.js'
 
@@ -39,6 +40,7 @@ export function createPermissionsPanel (
     preloadRelPath: '../preload/permissions.js',
     urlArgName: 'orivon-permissions-url',
     align: 'right',
+    background: PANEL_POPOVER_BACKGROUND,
     registerIpc: (webContents, onContentHeight) => {
       return registerPermissionsIpc(webContents, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange })
     }

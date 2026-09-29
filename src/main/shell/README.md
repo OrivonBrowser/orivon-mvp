@@ -38,7 +38,11 @@ new-tab dashboard (a tab that happens to navigate to `file://`), stay on
 The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows (the
 names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a key that does
 not work), and `menu-panel.ts` is the popover that shows it, built on
-[`../permissions/popover-view.ts`](../permissions/popover-view.ts) like the two other toolbar popups.
+[`../permissions/popover-view.ts`](../permissions/popover-view.ts) like the two other toolbar
+popups -- the one caller that passes `warm: true`, since it takes no per-open argument the other
+two do. `theme-colors.ts` is the pre-paint background colour every view here that is attached
+ahead of its own first paint needs (a fact more than one of them shares); `view-background-
+test-hook.ts` is the e2e-only record of what each was actually set to.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types);

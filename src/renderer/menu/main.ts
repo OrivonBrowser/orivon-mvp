@@ -6,6 +6,7 @@ interface OrivonMenu {
   items: () => Promise<readonly MenuItemView[]>
   run: (id: string) => void
   reportHeight: (height: number) => void
+  onShow: (listener: () => void) => () => void
 }
 
 declare global {
@@ -40,8 +41,16 @@ function entry (item: MenuItemView): HTMLElement {
   return li
 }
 
-void menu.items().then((items) => {
+// Main keeps this popover's own view alive across opens rather than reload
+// it each time (shell/popover-view.ts's `warm`), so `refresh()` -- not just
+// the module's own first run below -- is also what a reopen (`onShow`) uses
+// to pick up a list that changed while it was last open (a remapped
+// shortcut) and to drop whatever scroll/focus state the last open left.
+const refresh = async (): Promise<void> => {
+  const items = await menu.items()
   list.replaceChildren(...items.map(entry))
+  list.scrollTop = 0
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   // `list`'s own scrollHeight is its full, unclipped content height whatever
   // the popup's CURRENT size already is (style.css's `.items { overflow-y:
   // auto }` is what makes that true); `document.documentElement`'s is not --
@@ -55,7 +64,10 @@ void menu.items().then((items) => {
   // Arrow keys still reach the first or last entry on their very first
   // press (the `at === -1` branch below), and Enter works on whichever
   // entry that leaves focused, natively.
-})
+}
+
+void refresh()
+menu.onShow(() => { void refresh() })
 
 // Arrow keys move through the entries, as in any menu, from nothing
 // highlighted as much as from one already reached.
