@@ -259,6 +259,7 @@ it('Phase 2: the real broker signs under a real id grant, and denies an ungrante
         listen: listenTcp,
         resolve: resolveHost,
         resolveLookup,
+        proxyConfigured: async () => false,
         now: () => Date.now(),
         fs: fsStub,
         pickPath: async () => { throw new Error('userSelected is not exercised by this test') },
