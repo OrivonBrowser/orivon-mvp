@@ -23,19 +23,57 @@ import type { Sites } from './sites.js'
 export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
 
 /**
- * The most this server holds at once for requests on the buffer-then-send
+ * The most ONE partition's requests hold at once on the buffer-then-send
  * path below. A file's chunks are views into blocks the cache already owns,
  * so buffering one costs little beyond holding those references -- but a
  * page that opens many requests before reading any of them queues one
  * pending response per socket, and `MAX_BUFFERED_BYTES` alone only bounds
  * ONE of those, never their sum. Four files' worth covers ordinary
- * concurrent tabs; past it, a request is refused with `503` rather than
- * added to the pile.
+ * concurrent tabs on one site; past it, THAT site's own further requests are
+ * refused with `503` rather than added to the pile -- never another site's,
+ * which is exactly what one shared, unpartitioned budget would cost every
+ * OTHER `.eth`/`ipfs://` page the moment one page opened enough requests
+ * and never read them.
  */
-const MAX_TOTAL_BUFFERED_BYTES = 4 * MAX_BUFFERED_BYTES
+const MAX_PARTITION_BUFFERED_BYTES = 4 * MAX_BUFFERED_BYTES
 
-interface BufferBudget {
-  bytes: number
+/**
+ * The most every partition's requests hold at once, combined -- a backstop
+ * against many partitions each spending up to their own share at the same
+ * time, not a limit any single well-behaved partition should ever reach on
+ * its own.
+ */
+const MAX_TOTAL_BUFFERED_BYTES = 16 * MAX_BUFFERED_BYTES
+
+/**
+ * Buffered bytes held right now, kept per partition (the same key
+ * `sites.ts` mounts by) so one page's unread requests cost only that
+ * page's own budget, plus a combined total across every partition. A
+ * request with no partition (`partitionOf` returning undefined) shares one
+ * bucket, keyed by the empty string, which no real partition ever is.
+ */
+class BufferBudget {
+  private readonly perPartition = new Map<string, number>()
+  private total = 0
+
+  /** True and reserved if both this partition's own budget and the global
+   * backstop have room; false and unchanged otherwise. */
+  reserve (partition: string | undefined, length: number): boolean {
+    const key = partition ?? ''
+    const current = this.perPartition.get(key) ?? 0
+    if (current + length > MAX_PARTITION_BUFFERED_BYTES || this.total + length > MAX_TOTAL_BUFFERED_BYTES) return false
+    this.perPartition.set(key, current + length)
+    this.total += length
+    return true
+  }
+
+  release (partition: string | undefined, length: number): void {
+    const key = partition ?? ''
+    const remaining = (this.perPartition.get(key) ?? 0) - length
+    if (remaining > 0) this.perPartition.set(key, remaining)
+    else this.perPartition.delete(key)
+    this.total -= length
+  }
 }
 
 /**
@@ -137,13 +175,12 @@ async function writeChunks (res: ServerResponse, chunks: Iterable<Uint8Array> | 
   res.end()
 }
 
-async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number, budget: BufferBudget): Promise<void> {
+async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number, budget: BufferBudget, partition: string | undefined): Promise<void> {
   if (length <= MAX_BUFFERED_BYTES) {
-    if (budget.bytes + length > MAX_TOTAL_BUFFERED_BYTES) {
+    if (!budget.reserve(partition, length)) {
       res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
       return
     }
-    budget.bytes += length
     try {
       // Read (and, in doing so, verify) the whole body before anything is
       // written, so a failure past this point is still caught below and
@@ -152,7 +189,7 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
       res.writeHead(status, headers)
       await writeChunks(res, chunks)
     } finally {
-      budget.bytes -= length
+      budget.release(partition, length)
     }
     return
   }
@@ -214,8 +251,9 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
   res.once('close', () => { left.abort(new Error('the client went away')) })
   let file: GatheredFile
   let root: string
+  const partition = partitionOf(req, host)
   try {
-    const { site } = await sites.get(host, partitionOf(req, host))
+    const { site } = await sites.get(host, partition)
     root = site.root.cid
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.
@@ -257,7 +295,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       res.writeHead(status, headers).end()
       return
     }
-    await sendBody(res, status, headers, file, length, budget)
+    await sendBody(res, status, headers, file, length, budget, partition)
   } catch (error) {
     if (res.headersSent) res.destroy()
     else sendError(res, shown, error)
@@ -266,8 +304,8 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
 
 export function createVerifierServer (registry: ProtocolRegistry, sites: Sites, certificate: RunCertificate): Server {
   // One budget for every request this server ever handles, not one per
-  // request: it is what makes the cap a GLOBAL one.
-  const budget: BufferBudget = { bytes: 0 }
+  // request: it is what lets it track every partition's own share, and their combined total.
+  const budget = new BufferBudget()
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
     // A rejection left unobserved would end the host process, and with it every protocol's page.
     handle(registry, sites, req, res, budget).catch((error: unknown) => {

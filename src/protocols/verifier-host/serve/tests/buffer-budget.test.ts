@@ -50,10 +50,12 @@ beforeAll(async () => {
 })
 afterAll(() => { server.closeAllConnections(); server.close() })
 
-async function open (i: number): Promise<{ req: ClientRequest, res: IncomingMessage }> {
+async function open (id: string | number, partition?: string): Promise<{ req: ClientRequest, res: IncomingMessage }> {
   return await new Promise((resolve, reject) => {
-    const host = `budget${String(i)}.eth`
-    const req = request({ host: '127.0.0.1', port, path: '/big.bin', servername: host, rejectUnauthorized: false, headers: { host } }, (res) => {
+    const host = `budget${String(id)}.eth`
+    const headers: Record<string, string> = { host }
+    if (partition !== undefined) headers['x-orivon-partition'] = partition
+    const req = request({ host: '127.0.0.1', port, path: '/big.bin', servername: host, rejectUnauthorized: false, headers }, (res) => {
       res.pause() // never read: an unread tab leaves the response queued this way too
       resolve({ req, res })
     })
@@ -62,10 +64,12 @@ async function open (i: number): Promise<{ req: ClientRequest, res: IncomingMess
   })
 }
 
-async function get (path: string): Promise<number> {
+async function get (path: string, partition?: string): Promise<number> {
   return await new Promise((resolve, reject) => {
     const host = 'budget-sanity.eth'
-    const req = request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host } }, (res) => {
+    const headers: Record<string, string> = { host }
+    if (partition !== undefined) headers['x-orivon-partition'] = partition
+    const req = request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers }, (res) => {
       res.resume()
       res.on('end', () => { resolve(res.statusCode ?? 0) })
     })
@@ -76,6 +80,8 @@ async function get (path: string): Promise<number> {
 
 describe('the loopback server, buffering a file before it sends it', () => {
   it('holds a shared file once, not once per request, and refuses past a total budget', async () => {
+    // None of these set a partition header: they all share the one bucket
+    // kept for requests with no partition (partitionOf returns undefined).
     const N = 12
     const before = process.memoryUsage().arrayBuffers
     const held = await Promise.all(Array.from({ length: N }, async (_, i) => await open(i)))
@@ -98,5 +104,36 @@ describe('the loopback server, buffering a file before it sends it', () => {
     // The budget is released once those responses are gone: a fresh request
     // for the same file is served again, not refused forever.
     expect(await get('/big.bin')).toBe(200)
+  }, 60_000)
+
+  it("keeps one partition's own exhaustion from refusing a different partition's request", async () => {
+    const A = 'https://a.example'
+    const B = 'https://b.example'
+    // Fills A's own share (4 requests) and pushes one past it.
+    const heldA = await Promise.all(Array.from({ length: 5 }, async (_, i) => await open(`a${String(i)}`, A)))
+    const acceptedA = heldA.filter(({ res }) => res.statusCode === 200)
+    const refusedA = heldA.filter(({ res }) => res.statusCode === 503)
+    expect(acceptedA).toHaveLength(4)
+    expect(refusedA).toHaveLength(1)
+
+    // B has spent nothing: A's own exhaustion never reaches it.
+    expect(await get('/big.bin', B)).toBe(200)
+
+    for (const { req } of heldA) req.destroy()
+  }, 60_000)
+
+  it('refuses past the combined backstop even though no single partition is over its own share', async () => {
+    // Five partitions, each filling its own per-partition share (four
+    // requests): 5 * 4 * MAX_BUFFERED_BYTES is past the combined backstop,
+    // though every partition on its own stayed at exactly its own limit.
+    const jobs = Array.from({ length: 5 }, (_, p) => `https://p${String(p)}.example`)
+      .flatMap((partition, p) => Array.from({ length: 4 }, (_, i) => ({ partition, id: `p${String(p)}-${String(i)}` })))
+    const held = await Promise.all(jobs.map(async (job) => await open(job.id, job.partition)))
+    const accepted = held.filter(({ res }) => res.statusCode === 200)
+    const refused = held.filter(({ res }) => res.statusCode === 503)
+    expect(accepted).toHaveLength(16) // the combined backstop, 16 * MAX_BUFFERED_BYTES
+    expect(refused).toHaveLength(4)
+
+    for (const { req } of held) req.destroy()
   }, 60_000)
 })
