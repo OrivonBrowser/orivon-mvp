@@ -4,16 +4,16 @@ import { createRequire, isBuiltin } from 'node:module'
 import { defineConfig } from 'electron-vite'
 import { build, normalizePath, type Plugin } from 'vite'
 import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
+import { isShimSource } from './src/shim/is-shim-source.js'
 
-const root = dirname(fileURLToPath(import.meta.url))
+export const root = dirname(fileURLToPath(import.meta.url))
 
 /** True for a file under src/shim/ itself, never its own tests (which drive real `node:*`
- * servers and disks): vitest.config.ts's `isShimSource` applies the identical rule for the unit
- * suite, kept here as its own function since electron-vite's preload build needs it too. */
+ * servers and disks): vitest.config.ts's own use of `isShimSource` applies the identical rule
+ * for the unit suite; kept as its own export here since electron-vite's preload build needs it
+ * too, and the two configs are not one bundle. */
 export function isShimImporter (importer: string | undefined): boolean {
-  if (importer === undefined) return false
-  const path = importer.replace(/\\/g, '/')
-  return path.includes('/src/shim/') && !path.includes('/tests/')
+  return isShimSource(root, importer)
 }
 
 /** The Node modules a sandboxed preload's own `require` provides (Electron's sandboxed-preload
