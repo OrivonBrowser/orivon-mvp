@@ -46,6 +46,18 @@ const MAX_PARTITION_BUFFERED_BYTES = 4 * MAX_BUFFERED_BYTES
 const MAX_TOTAL_BUFFERED_BYTES = 16 * MAX_BUFFERED_BYTES
 
 /**
+ * How long a buffered response's reservation may be held waiting for the
+ * client to take it, counted from the first byte written to the socket.
+ * Nothing here bounds how long a *read* connection may take -- only an
+ * unread one, which is what spends the shared budget for nothing: 30s is
+ * far past any ordinary page's own read of a same-machine loopback
+ * response, and short enough that a page opening several `.eth` popups and
+ * never reading any of them frees each partition's share within one such
+ * page's own lifetime, rather than however long the tab stays open.
+ */
+export const BUFFERED_RESPONSE_DEADLINE_MS = 30_000
+
+/**
  * Buffered bytes held right now, kept per partition (the same key
  * `sites.ts` mounts by) so one page's unread requests cost only that
  * page's own budget, plus a combined total across every partition. A
@@ -175,7 +187,24 @@ async function writeChunks (res: ServerResponse, chunks: Iterable<Uint8Array> | 
   res.end()
 }
 
-async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number, budget: BufferBudget, partition: string | undefined): Promise<void> {
+/**
+ * `writeChunks`, but with a flat deadline on top: a client that has not
+ * finished taking the response by then never gets to keep the reservation
+ * `sendBody` holds for it, whatever progress it made before the deadline.
+ */
+async function writeBufferedChunks (res: ServerResponse, chunks: Uint8Array[], deadlineMs: number): Promise<void> {
+  const timer = setTimeout(() => {
+    res.destroy(new Error('the client did not finish reading this response within the deadline'))
+  }, deadlineMs)
+  timer.unref()
+  try {
+    await writeChunks(res, chunks)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number): Promise<void> {
   if (length <= MAX_BUFFERED_BYTES) {
     if (!budget.reserve(partition, length)) {
       res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
@@ -187,7 +216,7 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
       // turned into an error page rather than left as a half-sent document.
       const chunks = await collect(file.body)
       res.writeHead(status, headers)
-      await writeChunks(res, chunks)
+      await writeBufferedChunks(res, chunks, bufferedResponseDeadlineMs)
     } finally {
       budget.release(partition, length)
     }
@@ -235,7 +264,7 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
   }
 }
 
-async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMessage, res: ServerResponse, budget: BufferBudget): Promise<void> {
+async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
@@ -305,20 +334,21 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       res.writeHead(status, headers).end()
       return
     }
-    await sendBody(res, status, headers, file, length, budget, partition)
+    await sendBody(res, status, headers, file, length, budget, partition, bufferedResponseDeadlineMs)
   } catch (error) {
     if (res.headersSent) res.destroy()
     else sendError(res, shown, error)
   }
 }
 
-export function createVerifierServer (registry: ProtocolRegistry, sites: Sites, certificate: RunCertificate): Server {
+/** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
+export function createVerifierServer (registry: ProtocolRegistry, sites: Sites, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
     // A rejection left unobserved would end the host process, and with it every protocol's page.
-    handle(registry, sites, req, res, budget).catch((error: unknown) => {
+    handle(registry, sites, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
       console.error('[verifier] request failed:', error)
       if (res.headersSent) res.destroy()
       else res.writeHead(500, { 'content-type': 'text/plain' }).end('the verifier failed on this request')

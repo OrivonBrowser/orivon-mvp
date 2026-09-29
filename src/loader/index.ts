@@ -147,6 +147,12 @@ export interface LoadContext {
    * requires that value be a legal one to assign, not merely an omittable key.
    */
   readonly declinedCapabilities?: readonly CapabilityKind[] | undefined
+  /**
+   * Whether grants for this origin are saved on disk from an earlier run,
+   * loaded or not: persisted grants become live only when the origin
+   * registers, which a missing pin would otherwise let happen silently.
+   */
+  readonly hasPersistedGrants?: boolean
 }
 
 export interface Loader {
@@ -261,15 +267,11 @@ async function decideAndRoute (
   // restore, disk corruption) -- so an origin the ledger already knows gets
   // no shortcut past the floor and widening checks below, exactly like a pin
   // that exists but fails to parse.
-  // versionFloor alone, not grantedPatterns too: `raiseFloor` (grant-
-  // ledger.ts) only ever moves it off '0.0.0' from inside a real
-  // `registerApp` call, which every ordinary path to a grant runs first --
-  // so it is a clean signal for "this origin was registered before,
-  // whatever pin.json says now" with no counter-example in this codebase.
-  // `grantedPatterns` alone is not: `grant-without-install.ts`'s loopback
-  // path can populate it for an origin that was never pinned AT ALL, by
-  // design (that file's own header).
-  const hasPriorAuthority = context.versionFloor !== '0.0.0'
+  // Any of three facts shows prior authority: a raised floor, a live grant,
+  // or grants saved on disk. The floor alone misses an app whose every
+  // version has been 0.0.0 (it only ever rises), and live grants alone miss
+  // saved ones that registration would restore.
+  const hasPriorAuthority = context.versionFloor !== '0.0.0' || Object.keys(context.grantedPatterns).length > 0 || context.hasPersistedGrants === true
   if (rawPin === undefined && !hasPriorAuthority) {
     // TOFU (ADR-0005): nothing was ever pinned for this origin, and the
     // ledger shows no grant or version floor for it either, so there is no

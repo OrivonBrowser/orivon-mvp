@@ -85,13 +85,37 @@ describe('VerifierStore', () => {
     expect(kept[await ipnsKey('one-more')]).toBe('1')
   })
 
-  it('reads a corrupt file as empty', async () => {
+  it('reads a corrupt checkpoint file as empty', async () => {
+    const { store: s, dir } = store()
+    s.saveIpnsSequence(KEY_1, '1') // only to create the store's directory
+    await s.flush()
+    writeFileSync(join(dir, 'checkpoint.json'), '[]')
+    expect(s.checkpoint()).toBeUndefined()
+  })
+
+  it('reads a corrupt IPNS-sequences file as empty, the first time it loads', async () => {
     const { store: s, dir } = store()
     s.saveIpnsSequence(KEY_1, '1')
     await s.flush()
     writeFileSync(join(dir, 'ipns-sequences.json'), '{not json')
-    writeFileSync(join(dir, 'checkpoint.json'), '[]')
-    expect(s.ipnsSequences()).toEqual({})
-    expect(s.checkpoint()).toBeUndefined()
+    expect(new VerifierStore(dir).ipnsSequences()).toEqual({})
+  })
+
+  it('answers a later read from the floor already in memory, not a stale file', () => {
+    const { store: s } = store()
+    s.saveIpnsSequence(KEY_1, '5')
+    // Nothing has been written yet (the debounce has not fired): a config
+    // read right now, as a host restarting within that window would trigger,
+    // must still see the floor just reported, not an empty or stale file.
+    expect(s.ipnsSequences()).toEqual({ [KEY_1]: '5' })
+    s.saveIpnsSequence(KEY_1, '9')
+    expect(s.ipnsSequences()).toEqual({ [KEY_1]: '9' })
+  })
+
+  it('flushSync writes whatever is pending immediately, without awaiting anything', () => {
+    const { store: s, dir } = store()
+    s.saveIpnsSequence(KEY_1, '7')
+    s.flushSync()
+    expect(new VerifierStore(dir).ipnsSequences()).toEqual({ [KEY_1]: '7' })
   })
 })

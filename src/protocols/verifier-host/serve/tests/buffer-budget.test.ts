@@ -55,12 +55,12 @@ beforeAll(async () => {
 })
 afterAll(() => { server.closeAllConnections(); server.close() })
 
-async function open (id: string | number, partition?: string): Promise<{ req: ClientRequest, res: IncomingMessage }> {
+async function open (id: string | number, partition?: string, targetPort: number = port): Promise<{ req: ClientRequest, res: IncomingMessage }> {
   return await new Promise((resolve, reject) => {
     const host = `budget${String(id)}.eth`
     const headers: Record<string, string> = { host }
     if (partition !== undefined) headers['x-orivon-partition'] = partition
-    const req = request({ host: '127.0.0.1', port, path: '/big.bin', servername: host, rejectUnauthorized: false, headers }, (res) => {
+    const req = request({ host: '127.0.0.1', port: targetPort, path: '/big.bin', servername: host, rejectUnauthorized: false, headers }, (res) => {
       res.pause() // never read: an unread tab leaves the response queued this way too
       resolve({ req, res })
     })
@@ -69,12 +69,12 @@ async function open (id: string | number, partition?: string): Promise<{ req: Cl
   })
 }
 
-async function get (path: string, partition?: string): Promise<number> {
+async function get (path: string, partition?: string, targetPort: number = port): Promise<number> {
   return await new Promise((resolve, reject) => {
     const host = 'budget-sanity.eth'
     const headers: Record<string, string> = { host }
     if (partition !== undefined) headers['x-orivon-partition'] = partition
-    const req = request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers }, (res) => {
+    const req = request({ host: '127.0.0.1', port: targetPort, path, servername: host, rejectUnauthorized: false, headers }, (res) => {
       res.resume()
       res.on('end', () => { resolve(res.statusCode ?? 0) })
     })
@@ -141,4 +141,34 @@ describe('the loopback server, buffering a file before it sends it', () => {
 
     for (const { req } of held) req.destroy()
   }, 60_000)
+})
+
+describe('the loopback server, releasing a buffered reservation on a deadline', () => {
+  const DEADLINE_MS = 200
+  let deadlineServer: Server
+  let deadlinePort: number
+  beforeAll(async () => {
+    deadlineServer = createVerifierServer(registry, new Sites(registry), createRunCertificate(), DEADLINE_MS)
+    await new Promise<void>((resolve) => deadlineServer.listen(0, '127.0.0.1', resolve))
+    deadlinePort = (deadlineServer.address() as AddressInfo).port
+  })
+  afterAll(() => { deadlineServer.closeAllConnections(); deadlineServer.close() })
+
+  it('frees an unread reservation once the deadline passes, for a different partition to use', async () => {
+    const A = 'https://deadline-a.example'
+    const B = 'https://deadline-b.example'
+    // Fills A's own per-partition share, and never reads any of it.
+    const heldA = await Promise.all(Array.from({ length: 4 }, async (_, i) => await open(`deadline-a${String(i)}`, A, deadlinePort)))
+    expect(heldA.every(({ res }) => res.statusCode === 200)).toBe(true)
+    // Right away, the reservation is still held: a fifth request from A is refused.
+    expect(await get('/big.bin', A, deadlinePort)).toBe(503)
+
+    // Past the deadline, none of A's four responses were ever read, yet a
+    // request from a DIFFERENT partition is served: A's reservation is gone,
+    // not just A's own retry succeeding some other way.
+    await new Promise((resolve) => setTimeout(resolve, DEADLINE_MS + 500))
+    expect(await get('/big.bin', B, deadlinePort)).toBe(200)
+
+    for (const { req } of heldA) req.destroy()
+  }, 20_000)
 })

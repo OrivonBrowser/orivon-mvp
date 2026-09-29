@@ -255,10 +255,10 @@ export const verifierSubsystem: Subsystem = {
     supervisor = host
     app.on('will-quit', () => {
       host.stop()
-      // Best effort: a debounced IPNS-sequence write still pending is worth
-      // trying to land on an ordinary quit, not only ever losing it the way
-      // a crash would.
-      store?.flush().catch((error: unknown) => { console.error('[verifier] failed to flush IPNS sequences on quit:', error) })
+      // Blocking on purpose: nothing after `will-quit` can be awaited, so an
+      // async write here would race process exit and lose whatever the
+      // debounce had not yet flushed, the same as a crash would.
+      store?.flushSync()
     })
     startAfterFirstPage(() => { host.start() })
   }
