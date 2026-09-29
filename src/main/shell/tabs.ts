@@ -88,8 +88,6 @@ export class TabManager {
       openTab: (url) => { this.createTab(url) },
       adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
       atCapacity: () => this.atCapacity(),
-      // HtmlFullscreen (../fullscreen.ts) decides whether this is the tab in
-      // front, and holds the answer; `fullscreenId` above reads it back.
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       isClosing: () => this.disposed,
       devtools: shell?.devtools
@@ -113,9 +111,8 @@ export class TabManager {
     this.order.push(id)
   }
 
-  /** The tab holding the whole window, if any: read from `HtmlFullscreen`
-   * (../fullscreen.ts), the one place that state lives, and clamped to the
-   * tab in front -- a tab left behind keeps no claim it has not heard of yet. */
+  /** The tab holding the whole window: `HtmlFullscreen`'s answer (../fullscreen.ts), the one
+   * place that state lives, and only while that tab is still the one in front. */
   private get fullscreenId (): string | null {
     const id = this.shell?.fullscreenTabId?.() ?? null
     return id === this.activeId ? id : null

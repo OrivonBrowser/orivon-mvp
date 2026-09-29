@@ -2,12 +2,14 @@
 // (index.ts's `opener`). `focused` is `WindowRegistry.focused()`'s result:
 // the window the person is using, or undefined when none is open.
 import type { ShellWindow } from './window-registry.js'
+import type { ShellWindowOptions } from './window-options.js'
 
-/** Reuses `focused` for `urls` if one is open; a brand-new window shows itself
- * once ready (`createWithUrls`), rather than being shown here before it can paint. */
-export function openUrlsOnSecondLaunch (focused: ShellWindow | undefined, urls: readonly string[], createWithUrls: (urls: readonly string[]) => void): void {
+/** Reuses `focused` for `urls` if one is open. Otherwise `create` opens a window,
+ * which shows itself once ready rather than being shown here before it can paint:
+ * the urls take the place of its new-tab page, which it keeps when there are none. */
+export function openUrlsOnSecondLaunch (focused: ShellWindow | undefined, urls: readonly string[], create: (options: ShellWindowOptions) => void): void {
   if (focused === undefined) {
-    createWithUrls(urls)
+    create(urls.length === 0 ? {} : { first: (tabs) => { for (const url of urls) tabs.createTab(url) } })
     return
   }
   if (focused.window.isMinimized()) focused.window.restore()

@@ -166,9 +166,7 @@ function boot (runtime: Runtime): void {
       setTimeout(() => { sweepPrivateDirs(); runtime.profiles.sweepDeleted() }, SWEEP_DELAY_MS).unref()
     }
     opener = (urls) => {
-      openUrlsOnSecondLaunch(shell.windows.focused(), urls, (urls) => {
-        createShellWindow(ctx, shell, { first: (tabs) => { for (const url of urls) tabs.createTab(url) } })
-      })
+      openUrlsOnSecondLaunch(shell.windows.focused(), urls, (options) => { createShellWindow(ctx, shell, options) })
     }
     markStarted()
     if (runtime.isPrivate) {
