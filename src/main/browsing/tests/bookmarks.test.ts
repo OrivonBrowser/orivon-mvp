@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -332,6 +332,22 @@ describe('BookmarkStore', () => {
       { url: 'https://a.example/', title: 'A', favicon: null },
       { url: 'https://b.example/', title: 'B', favicon: null }
     ])
+  })
+
+  // Every other test in this file goes through fsGate's wrapper around atomic-write.js -- a passthrough to
+  // the real writeFileAtomicAsync whenever nothing is gating it, which every test above already is, but
+  // none of them checks the one thing that module promises beyond "the change lands": that nothing of its
+  // own is left in the directory once it has. This one does, driving the real writer with no gate involved.
+  it('drives the real atomic writer end to end: flushPendingWrite() resolves only once the change is on disk, with no temp file left', async () => {
+    const store = new BookmarkStore(filePath)
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
+
+    await store.flushPendingWrite()
+
+    expect(parseBookmarksFile(await readFile(filePath, 'utf8'))).toEqual([
+      { url: 'https://a.example/', title: 'A', favicon: null }
+    ])
+    expect(await readdir(dirname(filePath))).toEqual(['bookmarks.json'])
   })
 
   it('flushPendingWrite settles even when a second change arrives before the debounced write has fired', async () => {
