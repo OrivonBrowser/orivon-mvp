@@ -64,7 +64,7 @@ so a full `refusals` queue drops a new refusal rather than growing without bound
 `droppedInbound`/`droppedOutbound` are getters, not values copied once, because they move for
 the socket's whole life and `Object.freeze` prevents redefining them, not reading them live.
 
-**Refusing extension code at `window.orivon` (owner, 2026-09-29).** `main-world-socket.ts`'s
+**Refusing extension code at `window.orivon`.** `main-world-socket.ts`'s
 `installOrivon` wraps every page-callable leaf (`guarded`) so a call first attributes its caller
 from a stack captured with intrinsics saved at install time, before any page or extension script
 has run -- a later main-world tamper cannot reach `RealError`/`Reflect.defineProperty`/etc.
@@ -96,7 +96,7 @@ Measured on Electron 44 at about 5 microseconds a call:
 `docs/planning/spike-results/extension-stack-probe.json`'s `mainWorld` entries. This is a
 filter, not a sandbox -- what it does not catch is stated in the security model.
 
-**A known remaining route (owner, 2026-09-29): page code that itself evaluates a string an
+**A known remaining route: page code that itself evaluates a string an
 extension supplies.** If a page exposes an eval gadget of its own -- a function that runs a
 string an extension handed it, scheduled by a `setTimeout` the extension controls so the call
 has no extension frame on its stack at the moment it runs -- that string executes as the page's
@@ -106,6 +106,15 @@ other case where an extension changes what a page's own script does (ADR-0045's 
 It is stated here because the sourceURL-spoofing fix above narrows a nearby, easily-confused
 route (extension code claiming to BE the page) and this one is easy to mistake for the same
 thing.
+
+**`orivon.ts`'s `exposeFallback()` is fail-closed, not merely `net`-less.** It runs when
+`contextBridge.executeInMainWorld` is absent or throws -- `main-world-socket.ts`'s `installOrivon`
+is the only place a caller is attributed to the page, so an extension's script refused (ADR-0045);
+`exposeFallback` crosses `contextBridge.exposeInMainWorld` with no such attribution, and a page and
+a MAIN-world extension script reaching a method there are indistinguishable. Every method it
+builds (`deniedRejection`/`deniedThrow`) keeps its real shape -- an app's own `typeof
+window.orivon.fs.open === 'function'` feature check still passes -- but refuses instead of
+forwarding, and it logs once so a silently fail-closed `window.orivon` still shows in devtools.
 
 **`net.connect`/`net.connectSecure`'s own unwrapped implementations reach `../routed/dial.ts`
 through a private symbol on `target`, never through `window.orivon.net`.** `dial.ts` is

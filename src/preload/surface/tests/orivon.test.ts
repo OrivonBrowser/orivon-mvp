@@ -64,92 +64,9 @@ beforeEach(() => {
   executeInMainWorld = undefined
 })
 
-describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" and "throws"', () => {
-  it('falls back to exposeInMainWorld (net.lookup only, no stream methods) when executeInMainWorld is absent', () => {
-    executeInMainWorld = undefined
-
-    exposeOrivon()
-
-    expect(exposeInMainWorld).toHaveBeenCalledTimes(1)
-    const [name, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
-    expect(name).toBe('orivon')
-    // net.lookup (d-0030) needs no main-world stream wrapping -- it resolves
-    // to plain data, never a live handle -- so it is genuinely wired in the
-    // fallback surface, exactly like fs.readFile below it. connect/
-    // connectSecure/udpBind are not: each would resolve to something that
-    // is not a real TcpSocket/UdpSocket without the main-world stream
-    // wrapper, which is exactly the failure mode this fallback exists to
-    // avoid shipping (exposeOrivon's own doc).
-    const net = surface.net as Record<string, unknown>
-    expect(typeof net.lookup).toBe('function')
-    expect(net.connect).toBeUndefined()
-    expect(net.connectSecure).toBeUndefined()
-    expect(net.udpBind).toBeUndefined()
-    expect(typeof (surface.app as Record<string, unknown>).manifest).toBe('function')
-    expect(typeof (surface.app as Record<string, unknown>).requestGrant).toBe('function')
-    expect(typeof (surface.id as Record<string, unknown>).publicKey).toBe('function')
-    expect(typeof (surface.id as Record<string, unknown>).sign).toBe('function')
-    // orivon.web.openContext (ADR-0019) needs no main-world stream wrapping
-    // either -- surface/web.ts's own header -- so, like the extended fs
-    // surface below, it is genuinely wired in the fallback too, not merely
-    // present as an unreachable placeholder.
-    expect(typeof (surface.web as Record<string, unknown>).openContext).toBe('function')
-    // ADR-0016's sync call is present even in the net-less fallback --
-    // ../preload/README.md's rule that a method always absent from
-    // window.orivon is worse than one that is not there does not apply here:
-    // this method is genuinely wired either way, unlike net.
-    expect(typeof (surface.fs as Record<string, unknown>).readFileSync).toBe('function')
-    // The extended fs surface (queue item 2.1) is not net -- it needs no
-    // main-world stream wrapping, so it is wired identically in both the
-    // fallback and the executeInMainWorld path, exactly like readFile/
-    // writeFile above it.
-    for (const method of ['mkdir', 'readdir', 'stat', 'rm', 'rename', 'open', 'userSelected']) {
-      expect(typeof (surface.fs as Record<string, unknown>)[method]).toBe('function')
-    }
-  })
-
-  // web.context: the fallback's `web.openContext` used to wire
-  // `webOpenContextBridge` straight through as `openContext`, so calling it
-  // with the contract's real `(origin, options?)` shape lost `origin`
-  // entirely (a bare string has no `.origin` field) and every call reached
-  // the broker as `{ origin: undefined }`. Proven here by inspecting the
-  // actual CONTROL_CHANNEL payload, not just that the method exists.
-  it('web.openContext forwards origin and options to the CONTROL_CHANNEL call, not { origin: undefined }', () => {
-    executeInMainWorld = undefined
-    invoke.mockResolvedValue(okEnvelope({ id: 'ctx-1', origin: 'https://example.com' }))
-
-    exposeOrivon()
-
-    const [, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
-    const openContext = (surface.web as { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<unknown> }).openContext
-    void openContext('https://example.com', { width: 800, height: 600 })
-
-    const [, envelope] = invoke.mock.calls[0] as [string, { method: string, payload: unknown }]
-    expect(envelope.method).toBe('web.openContext')
-    expect(envelope.payload).toEqual({ origin: 'https://example.com', width: 800, height: 600 })
-  })
-
-  it('falls back to the SAME surface when executeInMainWorld exists but throws', () => {
-    executeInMainWorld = vi.fn(() => { throw new Error('CSP refused it') })
-
-    exposeOrivon()
-
-    expect(executeInMainWorld).toHaveBeenCalledTimes(1)
-    expect(exposeInMainWorld).toHaveBeenCalledTimes(1)
-    const [, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
-    const net = surface.net as Record<string, unknown>
-    expect(typeof net.lookup).toBe('function')
-    expect(net.connect).toBeUndefined()
-  })
-
-  it('does NOT fall back when executeInMainWorld exists and succeeds', () => {
-    installViaFakeMainWorld()
-
-    exposeOrivon()
-
-    expect(exposeInMainWorld).not.toHaveBeenCalled()
-  })
-})
+// exposeFallback()'s own tests (window.orivon with no executeInMainWorld, or
+// where it throws) live in ./orivon-fallback.test.ts, split out under Rule 2's
+// line budget.
 
 // orivon.web.openContext (ADR-0019) through the REAL executeInMainWorld
 // path end to end: surface/web.ts's webOpenContextBridge, control-call.ts's

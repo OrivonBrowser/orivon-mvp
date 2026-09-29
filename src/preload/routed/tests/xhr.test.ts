@@ -200,4 +200,23 @@ describe('routed XMLHttpRequest -- the native path', () => {
     xhr.open('GET', 'https://api.example/x', false)
     expect(FakeNativeXhr.last!.calls[0]).toEqual(['open', 'GET', 'https://api.example/x', false])
   })
+
+  // A MAIN-world extension script calling open() must reach only what the
+  // page's own native XMLHttpRequest would -- never the app's granted dial.
+  // ./fetch.ts's own header has the fuller reasoning.
+  it('opens natively for a caller installOrivon\'s own check would refuse, even to a granted host', () => {
+    const target = xhrTarget(async () => { throw new Error('must not dial') }, { callerIsPage: () => false })
+    const xhr = new target.XMLHttpRequest()
+    xhr.open('GET', 'https://granted.example/x')
+    expect(FakeNativeXhr.last!.calls[0]).toEqual(['open', 'GET', 'https://granted.example/x', true])
+  })
+
+  it('still routes normally for a caller installOrivon\'s own check would accept', async () => {
+    const target = xhrTarget(async () => fakeSocket([OK_RESPONSE]), { callerIsPage: () => true })
+    const xhr = new target.XMLHttpRequest()
+    xhr.open('GET', 'https://granted.example/x')
+    xhr.send()
+    await done(xhr)
+    expect(xhr.status).toBe(200)
+  })
 })

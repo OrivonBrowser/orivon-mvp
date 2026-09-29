@@ -6,10 +6,15 @@
 // injected <script>, and a service worker's chrome.scripting.
 // executeScript({ world: 'MAIN' }) -- against a GRANTED fixture origin,
 // and each must be refused while the page's own call succeeds. Also proves
-// the CSP half (src/loader/serve/csp.ts, owner 2026-09-29): a granted
-// page's inline <script> does not run at all, only its external one does.
+// the CSP half (src/loader/serve/csp.ts): a granted page's inline <script>
+// does not run at all, only its external one does; and the routed network
+// path's own attribution (src/preload/routed/README.md's Design notes): a
+// MAIN-world extension script's fetch() to a host granted only to the app
+// gets the native path's CORS failure, never the routed dial, while the
+// page's own fetch() to the same host is routed and succeeds.
 //
-// PORTS: an ephemeral one (see startFixtureServer's own comment for why).
+// PORTS: an ephemeral one (see startFixtureServer's own comment for why),
+// and a fixed one for the routed-fetch probe (PROBE_PORT's own comment).
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-orivon-filter.test.ts
@@ -82,6 +87,15 @@ const PAGE_JS = `(async () => {
   await run('page', () => window.orivon.app.manifest())
   await run('page-eval', () => eval('window.orivon.app.manifest()'))
   await run('page-newfunction', () => (new Function('return window.orivon.app.manifest()'))())
+  // The routed network path's own worked case (src/preload/routed/README.md's
+  // Design notes): the page's OWN fetch() to the app's granted probe host
+  // must still be routed and succeed, unlike the extension's (main-world.js).
+  try {
+    const response = await fetch('http://127.0.0.1:8895/probe')
+    document.documentElement.setAttribute('data-orivon-fetch-page', 'ok:' + await response.text())
+  } catch (error) {
+    document.documentElement.setAttribute('data-orivon-fetch-page', outcomeOf(error))
+  }
 })()`
 
 function page (): string {
@@ -110,23 +124,43 @@ async function startFixtureServer (): Promise<{ server: Server, origin: string }
   return { server, origin: `http://127.0.0.1:${String(address.port)}` }
 }
 
+/**
+ * Fixed, not ephemeral: main-world.js and PAGE_JS above both hardcode this
+ * URL as a plain string literal, and a port known only after the test
+ * process starts cannot reach a static extension file (e2e-fetch-routing.
+ * test.ts's own PROBE_PORT has the fuller reasoning). Distinct from every
+ * port already in use elsewhere in this suite (8872-8887, 8889, 8893-8894,
+ * 8897-8899).
+ */
+const PROBE_PORT = 8895
+const PROBE_PATTERN = `127.0.0.1:${String(PROBE_PORT)}`
+
+/** The routed network path's own probe (finding 2): no CORS headers, so a native fetch (an extension's fallback) fails, while the routed path (a granted app's own fetch) never checks CORS at all. */
+async function startProbeServer (): Promise<Server> {
+  const probeServer = createServer((_req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('probe-ok') })
+  await new Promise<void>((resolve) => { probeServer.listen(PROBE_PORT, '127.0.0.1', resolve) })
+  return probeServer
+}
+
 const MANIFEST: Manifest = {
   orivonApiVersion: 0,
   id: 'app.orivon.extensions-orivon-filter-e2e',
   name: 'Extensions orivon-filter e2e fixture',
   version: '1.0.0',
   entry: 'index.html',
-  capabilities: {}
+  capabilities: { net: { tcp: { connect: [PROBE_PATTERN] } } }
 }
 
 let server: Server | undefined
+let probeServer: Server | undefined
 
 afterAll(async () => {
   if (server !== undefined) await new Promise<void>((resolve) => { server?.close(() => { resolve() }) })
+  if (probeServer !== undefined) await new Promise<void>((resolve) => { probeServer?.close(() => { resolve() }) })
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-const WAIT_BUDGET_MS = 8_000 + 8_000 + 20_000 + 20_000
+const WAIT_BUDGET_MS = 8_000 + 8_000 + 8_000 + 8_000 + 20_000 + 20_000
 const TEST_TIMEOUT_MS = WAIT_BUDGET_MS + 40_000
 
 it('refuses window.orivon to a MAIN-world content script, an injected web-accessible script, chrome.scripting.executeScript, a //# sourceURL=-spoofed ' +
@@ -135,6 +169,7 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
   const started = await startFixtureServer()
   server = started.server
   const origin = started.origin
+  probeServer = await startProbeServer()
 
   await runPhase('window.orivon refuses extension-code callers', async (check) => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
@@ -164,6 +199,15 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
       check('the developer-only grant hook is installed (npm run test:e2e builds with ORIVON_ENABLE_DEV_GRANT=1)', granted)
       if (!granted) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
 
+      // The routed network path's own grant (finding 2): registerApp already
+      // ran above, so this origin's tabs already carry the app-tab flag
+      // (src/main/shell/tab-view.ts's appTabArgsFor) -- one more capability
+      // on the same origin, not a second registration.
+      await app.evaluate(async (_electron, request: DevGrantRequest) => {
+        const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+        await hook?.(request)
+      }, { origin, manifest: MANIFEST, capability: 'tcp.connect', patterns: [PROBE_PATTERN] } satisfies DevGrantRequest)
+
       // ---- baseline: page succeeds; MAIN-world CS, injected script and chrome.scripting are all refused ----
       const view = await navigateToFixture(app, `${origin}/orivon-fixture/`, 'orivon-fixture')
       const baseline = await waitFor(async () => await evaluateRetrying(view, () => {
@@ -181,6 +225,23 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
       check('chrome.scripting.executeScript({ world: "MAIN" }) is refused with the denied shape', outcomes.orivonScripting === 'denied', JSON.stringify(outcomes))
       const inlineRan = await evaluateRetrying(view, () => (window as unknown as { __inlineRan?: boolean }).__inlineRan)
       check('CSP: the granted page\'s own inline <script> never ran (no \'unsafe-inline\')', inlineRan === undefined, String(inlineRan))
+
+      // ---- finding 2: the page's own fetch() to the app's granted probe host is routed and succeeds ----
+      const fetchPageSettled = await waitFor(async () => await evaluateRetrying(view, () => document.documentElement.dataset.orivonFetchPage) !== undefined)
+      check('the page\'s own fetch() to the granted probe host settles', fetchPageSettled)
+      const fetchPageOutcome = await evaluateRetrying(view, () => document.documentElement.dataset.orivonFetchPage)
+      check('the page\'s own fetch() reaches the granted probe host and reads its body', fetchPageOutcome === 'ok:probe-ok', String(fetchPageOutcome))
+
+      // ---- finding 2: a MAIN-world extension script's fetch() to the SAME granted probe host must reach only what the page's own native fetch would ----
+      const fetchView = await navigateToFixture(app, `${origin}/orivon-fixture/fetch`, 'orivon-fixture')
+      const fetchExtensionSettled = await waitFor(async () => await evaluateRetrying(fetchView, () => document.documentElement.dataset.orivonFetchExtension) !== undefined)
+      check('the extension\'s fetch() to the granted probe host settles', fetchExtensionSettled)
+      const fetchExtensionOutcome = await evaluateRetrying(fetchView, () => document.documentElement.dataset.orivonFetchExtension)
+      check(
+        'a MAIN-world extension script\'s fetch() to a host granted only to the app never reaches the routed dial -- it gets the native path\'s CORS failure instead',
+        typeof fetchExtensionOutcome === 'string' && fetchExtensionOutcome.includes('Failed to fetch'),
+        String(fetchExtensionOutcome)
+      )
 
       // ---- bypass 3: a //# sourceURL=<page-origin>/... comment on a STRING timer scheduled by extension code must still refuse ----
       const sourceUrlView = await navigateToFixture(app, `${origin}/orivon-fixture/sourceurl`, 'orivon-fixture')

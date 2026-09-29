@@ -111,6 +111,12 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
   return broker.app.isRegisteredSync(origin) ? [APP_TAB_FLAG] : undefined
 }
 
+/** `./popups.ts`'s `routePopup`'s own `isApp`: unlike `partitionForTarget` above, a held grant DOES count here -- popups.ts's README.md Design notes. */
+export function popupTargetIsApp (target: string, broker: Broker | undefined): boolean {
+  const origin = originFromUrl(target)
+  return origin !== null && (isOriginServedFromCacheSync(origin) || broker?.app.hasGrantsSync(origin) === true)
+}
+
 /** Whether `target` needs the app-tab flag `view` does not already carry, or vice
  * versa -- a partition follows CACHE-SERVING (`partitionForTarget`) but this flag
  * follows REGISTRATION (`isRegisteredSync`), so a navigation between a registered
@@ -364,7 +370,8 @@ export function wireView (id: string, record: TabRecord): void {
       record.host.adoptPopup(view, partition)
     },
     partitionFor: (url) => partitionForTarget(url),
-    webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker))
+    webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
+    isApp: (url) => popupTargetIsApp(url, record.host.broker)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
 }
 

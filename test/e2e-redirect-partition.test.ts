@@ -3,7 +3,7 @@
 // test and did nothing at all in a real window -- both tabs sat on the
 // default session. A unit test cannot reach what this file tests.
 //
-// Only a CACHE-SERVED origin gets its own partition now (2026-09-29). The
+// Only a CACHE-SERVED origin gets its own partition. The
 // destination here is a REAL, reachable loopback HTTP origin (so the
 // redirect's first hop, which runs inside the REDIRECTOR's own session --
 // the default session, since the redirector itself holds no grant and is
@@ -23,11 +23,11 @@
 //      the page once it lands there? did-navigate's committed URL is the
 //      only thing that knows, and Chromium is the only thing that fires it.
 //   2. Is it safe to close a view's own webContents from inside that same
-//      view's did-navigate handler? repartitionView() was previously only
-//      ever called from the top-level navigate(); reaching it from an event
-//      handler on the view being destroyed is a NEW reentrant pattern. If
-//      Electron dislikes it, the failure is a main-process crash or a hang,
-//      neither of which any unit test would show.
+//      view's did-navigate handler? repartitionView()'s ordinary caller is
+//      the top-level navigate(); reaching it instead from an event handler
+//      on the view being destroyed is a reentrant pattern that caller never
+//      produces. If Electron dislikes it, the failure is a main-process
+//      crash or a hang, neither of which any unit test would show.
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'

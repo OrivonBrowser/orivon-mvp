@@ -4,8 +4,7 @@
 // must be declared INSIDE its own body: no free variables, no imports, no
 // module-level consts. See README.md's Design notes for why. `bridge` is a
 // plain object of proxied closures surface/orivon.ts built, one per
-// CONTROL_CHANNEL method; `target` defaults to the real `window` (overridable,
-// matching src/shim/globals.ts) so a test never mutates the shared global.
+// CONTROL_CHANNEL method; `target` defaults to the real `window` (overridable, matching src/shim/globals.ts) so a test never mutates the shared global.
 
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../../contracts/handles.js'
@@ -319,32 +318,32 @@ export function installOrivon (
     })
   }
 
-  // Refuses extension code at every page-callable method below -- decision
-  // rule, what it catches and why: README.md's Design notes.
+  // Refuses extension code at every page-callable method below, over every built-in the decision path calls -- decision rule, what it catches and why: README.md's Design notes.
   const RealError = Error
   const nativeCaptureStackTrace = RealError.captureStackTrace
   const { defineProperty: defineOwn, getOwnPropertyDescriptor: ownDescriptor, apply: applyOwn, getPrototypeOf: getProtoOf } = Reflect
   const mapOwn = Array.prototype.map
-  // CONTAINS, not starts-with -- README.md's Design notes.
+  const someOwn = Array.prototype.some
+  const { indexOf: indexOfOwn, startsWith: startsWithOwn, lastIndexOf: lastIndexOfOwn, slice: sliceOwn } = String.prototype
+  const execOwn = RegExp.prototype.exec
   function hasSource (text: unknown, needles: readonly string[]): boolean {
-    return typeof text === 'string' && needles.some((needle) => text.indexOf(needle) !== -1)
+    return typeof text === 'string' && applyOwn(someOwn, needles, [(needle: string) => applyOwn(indexOfOwn, text, [needle]) !== -1])
   }
   interface CallerFrame { fileName?: string, scriptNameOrSourceURL?: string, evalOrigin?: string }
   /** Pure over already-captured frames (the wrapper's own already excluded). A verbatim top-level copy lives in tests/main-world-socket-extension-filter.test.ts -- one test there asserts the two never drift; this one cannot be imported (file header). */
   function callerIsRefused (frames: readonly CallerFrame[]): boolean {
     const isExtension = (f: CallerFrame): boolean =>
       hasSource(f.fileName, ['chrome-extension://']) || hasSource(f.scriptNameOrSourceURL, ['chrome-extension://']) || hasSource(f.evalOrigin, ['chrome-extension://'])
-    // fileName/eval-origin only, STARTS-WITH -- never scriptNameOrSourceURL,
-    // spoofable via a `//# sourceURL=...` comment. README.md's Design notes.
+    // fileName/eval-origin only, STARTS-WITH -- never scriptNameOrSourceURL (spoofable via `//# sourceURL=...`). README.md's Design notes.
     const startsWithAny = (text: unknown, prefixes: readonly string[]): boolean =>
-      typeof text === 'string' && prefixes.some((prefix) => text.startsWith(prefix))
+      typeof text === 'string' && applyOwn(someOwn, prefixes, [(prefix: string) => applyOwn(startsWithOwn, text, [prefix])])
     // V8 nests a repeated eval origin left to right -- the LAST '(' up to its next ')' is always the innermost, real-script URL.
     const innermostEvalScriptUrl = (evalOrigin: string): string | undefined => {
-      const openIndex = evalOrigin.lastIndexOf('(')
+      const openIndex = applyOwn(lastIndexOfOwn, evalOrigin, ['('])
       if (openIndex === -1) return undefined
-      const closeIndex = evalOrigin.indexOf(')', openIndex)
+      const closeIndex = applyOwn(indexOfOwn, evalOrigin, [')', openIndex])
       if (closeIndex === -1) return undefined
-      const match = /^(.*):\d+:\d+$/.exec(evalOrigin.slice(openIndex + 1, closeIndex))
+      const match = applyOwn(execOwn, /^(.*):\d+:\d+$/, [applyOwn(sliceOwn, evalOrigin, [openIndex + 1, closeIndex])])
       return match === null ? undefined : match[1]
     }
     const isPage = (f: CallerFrame): boolean => {
@@ -352,12 +351,11 @@ export function installOrivon (
       if (startsWithAny(f.fileName, p)) return true
       return typeof f.evalOrigin === 'string' && startsWithAny(innermostEvalScriptUrl(f.evalOrigin), p)
     }
-    if (frames.some(isExtension)) return true
-    return !frames.some(isPage)
+    if (applyOwn(someOwn, frames, [isExtension])) return true
+    return !applyOwn(someOwn, frames, [isPage])
   }
   // The four CallSite.prototype methods, saved by mapFrames' own first call
-  // (forced synchronously below) and read only through those saved
-  // references thereafter -- a live/saved mismatch is itself tamper. README.md's Design notes.
+  // (forced synchronously below); a live/saved mismatch is itself tamper. README.md's Design notes.
   let savedCallSiteMethods: CallSiteMethods | undefined
   function mapFrames (raw: readonly NodeJS.CallSite[]): CallerFrame[] {
     return applyOwn(mapOwn, raw, [(cs: NodeJS.CallSite) => {
@@ -412,9 +410,7 @@ export function installOrivon (
   function bootstrapCallSiteMethods (): void { captureCaller(bootstrapCallSiteMethods) }
   bootstrapCallSiteMethods()
   if (savedCallSiteMethods === undefined) savedCallSiteMethods = {}
-  function refusal (): Error & { code: OrivonErrorCode } {
-    return toOrivonError('denied', { message: "orivon: refused -- the caller could not be attributed to this page's own script" })
-  }
+  function refusal (): Error & { code: OrivonErrorCode } { return toOrivonError('denied', { message: "orivon: refused -- the caller could not be attributed to this page's own script" }) }
   /** Wraps one page-callable leaf: `sync` (`fs.readFileSync` alone) throws on refusal, matching its own never-a-Promise shape; every other method rejects. Internal callers reach `fn` directly (`netConnectImpl` below), never through `wrapped`. */
   function guarded<F extends (...args: never[]) => unknown> (fn: F, sync = false): F {
     function wrapped (...args: unknown[]): unknown {
@@ -490,11 +486,14 @@ export function installOrivon (
   // A plain assignment would let a page script replace orivon.net.connect for every other script on the same page.
   Object.defineProperty(target, 'orivon', { value: Object.freeze(api), writable: false, configurable: false, enumerable: true })
 
-  // A private slot for ../routed/dial.ts alone -- README.md's Design notes.
+  // A private slot for the ../routed/ installers alone -- README.md's Design notes. `callerIsPage` is `guarded`'s own attribution, shared rather than copied a third time.
   try {
     Reflect.defineProperty(target, Symbol.for('orivon.internal-net'), {
-      value: Object.freeze({ connect: netConnectImpl, connectSecure: netConnectSecureImpl }),
+      value: Object.freeze({
+        connect: netConnectImpl, connectSecure: netConnectSecureImpl,
+        callerIsPage: (exclude: (...args: never[]) => unknown) => { const c = captureCaller(exclude); return !c.tampered && !callerIsRefused(c.frames) }
+      }),
       writable: false, configurable: true, enumerable: false
     })
-  } catch { /* no internal net path for ../routed/dial.ts this session; it fails closed on its own missing-slot check */ }
+  } catch { /* no internal net path for ../routed/ this session; it fails closed on its own missing-slot check */ }
 }

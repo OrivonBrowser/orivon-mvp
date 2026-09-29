@@ -89,10 +89,13 @@ export function fakeTarget (opts: {
   location?: { origin: string, href: string }
   nativeFetch?: (input: unknown, init?: unknown) => Promise<Response>
   userAgent?: string
+  /** Simulates installOrivon's own attribution -- defaults to "the caller is the page" so every test that does not care about this keeps its existing behaviour. */
+  callerIsPage?: (exclude: (...args: never[]) => unknown) => boolean
 }): FetchRouteTarget {
   const internalNet: InternalNet = {
     connect: opts.connect ?? (async () => { throw new Error('unexpected net.connect call') }),
-    connectSecure: opts.connectSecure ?? (async () => { throw new Error('unexpected net.connectSecure call') })
+    connectSecure: opts.connectSecure ?? (async () => { throw new Error('unexpected net.connectSecure call') }),
+    callerIsPage: opts.callerIsPage ?? (() => true)
   }
   const target: FetchRouteTarget & Record<symbol, InternalNet> = {
     [Symbol.for('orivon.internal-net')]: internalNet

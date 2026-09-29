@@ -40,8 +40,8 @@ Maintenance only.
 **[`permission-gate.ts`](permission-gate.ts): wired through `app.on('session-created', ...)`,
 not at any one session's construction site.** Electron fires that event once for every `Session`
 it instantiates, `session.defaultSession` included, so one listener reaches partitions no code
-has created yet; a `partitionFor(origin)` session comes into being only for a cache-served origin
-(2026-09-29), as its tab opens. A handler in
+has created yet; a `partitionFor(origin)` session comes into being only for a cache-served
+origin, as its tab opens. A handler in
 `makeTabView()` would miss the default session (the chrome UI, the dashboard, rejected tabs).
 The subsystem is listed first in `subsystems.ts` so its `beforeReady` attaches the listener
 before any other subsystem can create a session.
@@ -104,11 +104,30 @@ call for a session that already has one silently replaces it rather than adding 
 independent features registering directly on the same session would fight over which one runs.
 `webRequestOwnerFor(session)` is the one place that ever calls Electron's own
 `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived`; every caller instead registers a
-handler with an `order` and a URL predicate, and `web-request-compose.ts`'s pure logic runs them
-in order, threading each one's result to the next. Used for `session.defaultSession` today: the
-verifier's partition stamp (`../verifier/verifier-subsystem.ts`) and the granted-origin CSP
-(`../install/granted-origin-csp.ts`). The embed session
+handler with an `order`, a `WebRequestFilter` and a URL predicate, and `web-request-compose.ts`'s
+pure logic runs them in order, threading each one's result to the next. Used for
+`session.defaultSession` today: the verifier's partition stamp (`../verifier/verifier-
+subsystem.ts`) and the granted-origin CSP (`../install/granted-origin-csp.ts`). The embed session
 ([`../embed/embed-host.ts`](../embed/embed-host.ts)), the internal-pages session
 ([`../pages/internal-session.ts`](../pages/internal-session.ts)) and an isolated `WebContext`
 session (`web-context-host.ts`, above) register directly instead: each is the only thing that
 ever touches its own session's `webRequest`, so there is nothing there for an owner to arbitrate.
+
+**Every handler declares its own `WebRequestFilter`; the owner never leaves Electron's own
+listener unfiltered.** Registering with no `{ urls }` filter at all means every single request on
+the session pays a round trip into this process, whether or not anything could possibly match --
+`unionFilter` (`web-request-owner.ts`) combines every currently-registered handler's own filter
+into the one Electron's listener is (re-)registered with, each time a handler is added. A handler
+whose own predicate is broader than any URL pattern can express (the granted-origin CSP: a grant
+can land on any origin, ADR-0044) says so plainly with `{ urls: ['<all_urls>'] }`, narrowed by
+`types` instead when the handler only ever acts on certain resource types -- `unionFilter` never
+lets a narrower sibling's `types` accidentally restrict a handler that asked for every type.
+
+**`onBeforeSendHeaders`/`onHeadersReceived` answer with a bare `{}` when nothing changed, never a
+seeded header set.** Electron reads a `responseHeaders`/`requestHeaders` key that IS present as
+"replace the headers with exactly this," even when its value is identical to what the response
+already carried -- a response with none at all (`details.responseHeaders` undefined) answered
+with an explicit `{}` object gets every real header it does have stripped. The owner tracks this
+by identity: the seed object built for each event is never handed back if some handler actually
+returned a new one; an unchanged result (no handler matched, or every one that ran chose to leave
+its input alone) answers with a bare `{}` instead.

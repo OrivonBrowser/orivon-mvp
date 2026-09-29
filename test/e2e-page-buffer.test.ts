@@ -72,12 +72,12 @@ const REPLACE = `window.__replace = (() => {
 
 // EXTERNAL, never inline, nonce kept (still checked for an external
 // `<script src>`, same as an inline one): the app origin below is
-// registered (network-served, never cache-pinned), so it is exactly the
-// case the granted-app script-src change (owner, 2026-09-29,
-// src/loader/serve/csp.ts) accepts losing inline scripts for -- 'self' in
-// Orivon's own appended policy is what admits a same-origin fetch here,
-// same as any other asset. SITE_PAGE is unaffected and stays inline: its
-// own origin below is never registered, so it gets no Orivon CSP at all.
+// registered (network-served, never cache-pinned), so the granted-app
+// script-src (src/loader/serve/csp.ts) applies and inline scripts do not
+// run there -- 'self' in Orivon's own appended policy is what admits a
+// same-origin fetch here, same as any other asset. SITE_PAGE is unaffected
+// and stays inline: its own origin below is never registered, so it gets no
+// Orivon CSP at all.
 const script = (path: string): string => `<script nonce="${NONCE}" src="${path}"></script>`
 const APP_PAGE = `<!doctype html><html><head>${script('/first.js')}<script nonce="${NONCE}" src="/shim-buffer.js"></script>${script('/replace.js')}` +
   `<title>${APP_TITLE}</title></head><body>${APP_TITLE}</body></html>`

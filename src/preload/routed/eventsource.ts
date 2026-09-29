@@ -8,7 +8,7 @@
 //
 // `installEventSourceRoute` is SERIALISED into the main world (see
 // ./wire.ts's header).
-import type { FetchRouteTarget, RoutedSlot } from './types.js'
+import type { FetchRouteTarget, InternalNet, RoutedSlot } from './types.js'
 
 export function installEventSourceRoute (
   isAppTab: boolean,
@@ -17,7 +17,9 @@ export function installEventSourceRoute (
   if (!isAppTab) return
   const slot = (target as Record<symbol, RoutedSlot | undefined>)[Symbol.for('orivon.routed-network')]
   const NativeOrNot = target.EventSource as (new (url: string, init?: EventSourceInit) => EventSource) | undefined
-  if (slot?.core === undefined || slot.events === undefined || typeof NativeOrNot !== 'function') return
+  // Attribution, not just routing -- ./fetch.ts's own header has the reasoning; ../surface/README.md's Design notes for the shared check itself.
+  const callerIsPage = (target as Record<symbol, InternalNet | undefined>)[Symbol.for('orivon.internal-net')]?.callerIsPage
+  if (slot?.core === undefined || slot.events === undefined || callerIsPage === undefined || typeof NativeOrNot !== 'function') return
   // Fresh bindings, so the narrowing above holds inside every nested function.
   const core = slot.core
   const events = slot.events
@@ -175,7 +177,10 @@ export function installEventSourceRoute (
         lastEventId: '', controller: undefined, timer: undefined, native: undefined, types: new Set(), forwarded: new Set()
       }
       states.set(this, s)
-      if (core.routes(parsed)) void connect(this, s)
+      // Attribution runs SYNCHRONOUSLY, in the constructor -- the point this
+      // class itself decides routed vs. native -- exactly like ../surface/
+      // main-world-socket.ts's `guarded`.
+      if (core.routes(parsed) && callerIsPage!(EventSource as unknown as (...args: never[]) => unknown)) void connect(this, s)
       else goNative(this, s)
     }
 

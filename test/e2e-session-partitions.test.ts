@@ -1,8 +1,8 @@
-// The end-to-end proof that a GRANT ALONE no longer isolates an origin
-// (2026-09-29): only a cache-served origin gets its own Electron session
-// partition now, because Chrome extensions load into session.defaultSession
-// and must run as one instance on every page, granted apps included -- so a
-// granted, network-served app has to share that session too.
+// The end-to-end proof that a GRANT ALONE does not isolate an origin: only a
+// cache-served origin gets its own Electron session partition, because
+// Chrome extensions load into session.defaultSession and must run as one
+// instance on every page, granted apps included -- so a granted,
+// network-served app shares that session too.
 // `e2e-redirect-partition.test.ts` is where a CACHE-SERVED origin's own
 // partition is proven, through a real redirect landing a tab in it.
 //
@@ -125,7 +125,7 @@ it('two tabs opened against two GRANTED, network-served origins share the shell\
       check('the shell reaches its launch-time window count', windowsReady, windowsReady ? undefined : `saw ${app.windows().length} window(s)`)
 
       // ---- Grant both origins: a HELD GRANT is exactly the case this file
-      // exists to prove no longer earns a partition (2026-09-29) ----
+      // exists to prove does not earn a partition ----
       const granted = await app.evaluate(async (_electron, requests: DevGrantRequest[]) => {
         const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
         if (typeof hook !== 'function') return { installed: false as const }
@@ -174,8 +174,7 @@ it('two tabs opened against two GRANTED, network-served origins share the shell\
       if (viewA === undefined || viewB === undefined) return
 
       // ---- Assertion 1 & 2: both tabs share the default session, and
-      // granting them did NOT quietly mint the partition each WOULD have
-      // had under the old rule ----
+      // granting them did NOT quietly mint a partition for either ----
       const identity = await app.evaluate(({ webContents, session }, args: { urlA: string, urlB: string, wouldBePartitionA: string, wouldBePartitionB: string }) => {
         const all = webContents.getAllWebContents()
         const wcA = all.find((wc) => wc.getURL() === args.urlA)

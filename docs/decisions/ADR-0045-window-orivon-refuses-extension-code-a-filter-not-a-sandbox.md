@@ -68,7 +68,11 @@ away, in the manner of ADR-0021.
   evaluates a string (an eval gadget), handed an extension's string through a timer, calls
   `window.orivon` as the page. So does any use of an object the page already holds, such as an
   open socket or file handle, by code that gets hold of it; the filter guards the calls on
-  `window.orivon`, not the handles they return.
+  `window.orivon`, not the handles they return. The same is true one level up: an extension can
+  plant a bound `window.orivon` method (`orivon.fs.readFile.bind(...)`) in a slot the page itself
+  calls -- a hook, `console.log` -- and the page's own call to that slot runs it with the page's
+  frame on the stack; the filter sees only that frame, never that an extension chose what sits
+  behind it.
 - An extension that makes `Error.prepareStackTrace` or `Error.stackTraceLimit` unconfigurable
   makes every `window.orivon` call on that page refuse: a denial of service an extension with
   access to the page could cause in other ways.

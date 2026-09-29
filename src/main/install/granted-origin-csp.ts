@@ -13,11 +13,22 @@
 // protocol.handle response instead, which this handler never sees (A110
 // again -- onHeadersReceived does not fire for that response at all).
 
-import type { OnHeadersReceivedListenerDetails } from 'electron'
+import type { OnHeadersReceivedListenerDetails, WebRequestFilter } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { isOriginServedFromCacheSync, liveCspHeaderFor } from '../../loader/electron/serve.js'
 import { ISOLATION_HEADERS } from '../../loader/serve/csp.js'
 import type { HeadersReceivedHandler } from '../sessions/web-request-owner.js'
+
+/**
+ * `defaultSessionGrantedOriginCsp`'s own `WebRequestFilter`: `<all_urls>`
+ * because a granted origin is not known in advance (a grant can be given to
+ * any origin at any time, per ADR-0044), restricted to `mainFrame`/
+ * `subFrame` because `documentOriginOf` below already discards every other
+ * resource type -- so this filter costs nothing beyond what the handler
+ * already throws away, while sparing every subresource response (script,
+ * image, stylesheet, xhr, ...) the round trip into this process at all.
+ */
+export const GRANTED_ORIGIN_CSP_FILTER: WebRequestFilter = { urls: ['<all_urls>'], types: ['mainFrame', 'subFrame'] }
 
 /**
  * `headers` plus `csp` as one more Content-Security-Policy value. The

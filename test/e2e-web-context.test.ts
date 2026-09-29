@@ -224,9 +224,9 @@ it(
         )
 
         // ---- (5) pins the contract's own positional-origin shape (capability-api.ts's
-        // `openContext(origin: string, options?: WebContextOptions)`): the OLD, WRONG
-        // single-object call this file itself used to make must be refused, not silently
-        // accepted as `{ origin: undefined }` (0faed54's own bug).
+        // `openContext(origin: string, options?: WebContextOptions)`): a WRONG,
+        // single-object call must be refused, not silently accepted as
+        // `{ origin: undefined }`.
         const wrongShape = await asPage(view, setFixtureAsPageScript, AS_PAGE_URL, async () => {
           const orivon = (window as unknown as {
             orivon: { web: { openContext: (origin: unknown, options?: { width?: number, height?: number }) => Promise<unknown> } }

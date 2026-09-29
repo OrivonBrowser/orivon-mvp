@@ -46,8 +46,8 @@ const ADD_WASM = new Uint8Array([
 const INDEX_HTML = '<!doctype html><html><head><title>served-csp fixture</title></head><body><h1>csp fixture</h1></body></html>'
 // Served under the app's own origin so a `data:`-URL frame that INHERITS
 // this app's CSP (below) can still load it: 'self' matches it, no inline
-// `<script>` ever could once script-src drops 'unsafe-inline' (owner,
-// 2026-09-29) -- this is the same fix as the fixture's own #frame-script.
+// `<script>` ever could, since script-src carries no 'unsafe-inline' --
+// the same as the fixture's own #frame-script.
 const FRAME_SCRIPT_JS = "let r; try { r = 'eval=' + eval('1 + 1') } catch (e) { r = 'eval-blocked' }\n" +
   "WebAssembly.compile(new Uint8Array([0,97,115,109,1,0,0,0])).then(() => parent.postMessage(r + ' wasm=ok', '*'), (e) => parent.postMessage(r + ' wasm=' + e.name, '*'))"
 const MANIFEST: Manifest = {
@@ -194,8 +194,8 @@ it('a pinned bundle compiles wasm, shows data: images, starts blob: workers, loa
           frame.src = src
           document.body.appendChild(frame)
         })
-        // EXTERNAL, never inline (owner, 2026-09-29 drops 'unsafe-inline'
-        // from script-src): the app's own CSP is what this frame inherits
+        // EXTERNAL, never inline (script-src carries no 'unsafe-inline'):
+        // the app's own CSP is what this frame inherits
         // (a data:/blob:/filesystem: document's CSP list is the navigating
         // document's own, CSP3's "initialize a document's CSP list"), so
         // 'self' -- the app's own origin, not the frame's opaque one --

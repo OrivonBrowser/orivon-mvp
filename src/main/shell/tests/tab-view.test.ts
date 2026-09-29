@@ -21,19 +21,18 @@ vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginServedFromCacheSync: (origin: string) => served.has(origin)
 }))
 
-const { appTabArgsFor, appTabFlagChanged, makeTabView, partitionChanged, partitionForTarget } = await import('../tab-view.js')
+const { appTabArgsFor, appTabFlagChanged, makeTabView, partitionChanged, partitionForTarget, popupTargetIsApp } = await import('../tab-view.js')
 
 const APP = 'https://app.example'
 const SITE = 'https://news.example'
 const OTHER_SITE = 'https://search.example'
 
-/** A minimal Broker stub for appTabArgsFor/appTabFlagChanged, which still
- * read `isRegisteredSync` -- unaffected by this rule, since the app-tab
- * flag follows REGISTRATION, never CONSENT (see the describe block below). */
-function brokerWith (opts: { registered?: string[] }): Broker {
+/** A minimal Broker stub for appTabArgsFor/appTabFlagChanged/popupTargetIsApp. */
+function brokerWith (opts: { registered?: string[], granted?: string[] }): Broker {
   return {
     app: {
-      isRegisteredSync: (origin: string) => (opts.registered ?? []).includes(origin)
+      isRegisteredSync: (origin: string) => (opts.registered ?? []).includes(origin),
+      hasGrantsSync: (origin: string) => (opts.granted ?? []).includes(origin)
     }
   } as unknown as Broker
 }
@@ -71,6 +70,36 @@ describe('partitionForTarget -- ONLY a cache-served origin gets its own partitio
     // origins, so a chrome-extension: target never matches cache coverage
     // and always stays on session.defaultSession, where extensions load.
     expect(partitionForTarget('chrome-extension://abcdefghijklmnopabcdefghijklmnop/page.html')).toBeUndefined()
+  })
+})
+
+// Unlike partitionForTarget above, a held grant DOES count here -- popups.ts's
+// README.md Design notes has the reasoning (ADR-0044's own gap).
+describe('popupTargetIsApp -- routePopup\'s own isApp: a held grant counts, unlike partitionForTarget', () => {
+  it('is true for a granted origin, even with no partition of its own', () => {
+    expect(popupTargetIsApp(APP, brokerWith({ granted: [APP] }))).toBe(true)
+  })
+
+  it('is true for a cache-served origin, granted or not', () => {
+    served.add(APP)
+    try {
+      expect(popupTargetIsApp(APP, brokerWith({}))).toBe(true)
+    } finally {
+      served.delete(APP)
+    }
+  })
+
+  it('is false for an ordinary, ungranted, non-cache-served origin', () => {
+    expect(popupTargetIsApp(SITE, brokerWith({ granted: [APP] }))).toBe(false)
+  })
+
+  it('is false with no broker to ask, and for a target with no derivable origin', () => {
+    expect(popupTargetIsApp(APP, undefined)).toBe(false)
+    expect(popupTargetIsApp('about:blank', brokerWith({ granted: [APP] }))).toBe(false)
+  })
+
+  it('does NOT read isRegisteredSync -- a merely-registered, ungranted, non-cache-served app is not "an app" for this purpose', () => {
+    expect(popupTargetIsApp(APP, brokerWith({ registered: [APP] }))).toBe(false)
   })
 })
 
@@ -115,12 +144,12 @@ describe('partitionChanged -- when a navigation must swap the view', () => {
   })
 
   it('never swaps two GRANTED, network-served origins -- they now share the default session, and a grant alone is never a reason to move', () => {
-    // The rule this file exists to prove: a held grant used to give an
-    // origin its own partition (ADR-0018, superseded 2026-09-29). Chrome
-    // extensions load into session.defaultSession and must run as one
-    // instance on every page, granted or not, so a granted app now shares
-    // that session too -- partitionChanged has no broker to even ask any
-    // more, and two granted origins produce no swap between them.
+    // The rule this file exists to prove: a held grant alone no longer gives
+    // an origin its own partition. Chrome extensions load into
+    // session.defaultSession and must run as one instance on every page,
+    // granted or not, so a granted app shares that session too --
+    // partitionChanged has no broker to even ask, and two granted origins
+    // produce no swap between them.
     expect(partitionChanged(APP, undefined)).toBeUndefined()
     expect(partitionChanged(SITE, undefined)).toBeUndefined()
   })

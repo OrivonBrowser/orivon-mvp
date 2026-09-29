@@ -12,7 +12,7 @@ import type { Pattern } from '../../contracts/index.js'
 const LOCAL_SCHEMES = ['data:', 'blob:'] as const
 
 /**
- * No `'unsafe-inline'` (owner, 2026-09-29): a Chrome extension with host
+ * No `'unsafe-inline'`: a Chrome extension with host
  * access can still write to the page's DOM, and an inline `<script>` it
  * writes there would otherwise run as the app's own code -- closing that
  * route is this directive's whole job, alongside

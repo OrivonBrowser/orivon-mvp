@@ -43,8 +43,7 @@ const BIG_MESSAGE_BYTES = 200_000
 
 // External, never inline: this page is served with the granted-without-
 // installing CSP (src/loader/serve/csp.ts) that this file exists to
-// measure, and that builder's script-src has dropped 'unsafe-inline'
-// (owner, 2026-09-29).
+// measure, and that builder's script-src carries no 'unsafe-inline'.
 const PAGE_HTML = `<!doctype html><html><head><title>${TITLE}</title><script src="bootstrap.js"></script></head><body>websocket fixture</body></html>`
 const BOOTSTRAP_JS = `
 window.__violations = []

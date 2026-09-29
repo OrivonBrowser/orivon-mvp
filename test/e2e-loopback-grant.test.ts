@@ -162,11 +162,10 @@ it.skipIf(!ORDINARY_BUILD)(
         })
         check(`the origin holds what its manifest declared: ${JSON.stringify(grants)}`, grants.includes('https.connect'))
 
-        // ---- 2026-09-29: a grant alone no longer isolates an origin -- the
-        // tab stays on the shell's shared default session, and the CSP its
-        // grants earn is appended by the default session's ONE
-        // onHeadersReceived handler (../src/main/install/granted-origin-csp.ts),
-        // not a per-origin one on a partition this origin no longer has. ----
+        // ---- A grant alone does not isolate an origin -- the tab stays on
+        // the shell's shared default session, and the CSP its grants earn is
+        // appended by the default session's ONE onHeadersReceived handler
+        // (../src/main/install/granted-origin-csp.ts). ----
         const onDefaultSession = await app.evaluate(({ webContents, session }, url: string) => {
           const wc = webContents.getAllWebContents().find((c) => c.getURL() === url)
           return wc === undefined ? undefined : wc.session === session.defaultSession

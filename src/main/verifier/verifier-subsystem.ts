@@ -6,7 +6,7 @@
 
 import { join } from 'node:path'
 import { app, session, utilityProcess } from 'electron'
-import type { Session, WebFrameMain } from 'electron'
+import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames } from '../dev/eth-resolver.js'
 import type { HostConfig, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
@@ -66,9 +66,9 @@ function installCertificateCheck (target: Session): void {
 }
 
 /** Only a request whose host a protocol actually routes to the verifier --
- * the same set `routedSuffixes()` builds Electron's own `{ urls }` filter
- * from, which this reproduces as a predicate: the owner takes no filter of
- * its own (web-request-owner.ts's own header says why). */
+ * `verifiedHostFilter` below builds Electron's own coarse `{ urls }` filter
+ * from the same `routedSuffixes()`, so this is the precise check the owner
+ * runs on whatever that filter already let through. */
 function targetsVerifiedHost (url: string): boolean {
   if (!url.startsWith('https://')) return false
   let hostname: string
@@ -80,6 +80,14 @@ function targetsVerifiedHost (url: string): boolean {
   return BUILTIN_ADDRESSES.routesToVerifier(hostname)
 }
 
+/** Electron's own `{ urls }` filter for `installPartitionStamp` below --
+ * `*.` matches a suffix's own bare host as well as any subdomain (Chromium's
+ * match-pattern syntax), covering exactly what `routesToVerifier` (and so
+ * `targetsVerifiedHost` above) accepts. */
+function verifiedHostFilter (): WebRequestFilter {
+  return { urls: BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `https://*.${suffix}/*`) }
+}
+
 /**
  * Stamps every page's request to the verifier with the partition its top-level page
  * owns, and strips whatever a request set itself: a worker's request has no
@@ -89,7 +97,7 @@ function targetsVerifiedHost (url: string): boolean {
  * including a future extension rule -- can set or remove this header.
  */
 function installPartitionStamp (target: Session): void {
-  webRequestOwnerFor(target).onBeforeSendHeaders(RUN_LAST, targetsVerifiedHost, (details, current) => {
+  webRequestOwnerFor(target).onBeforeSendHeaders(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
     let frame: WebFrameMain | null | undefined
     try {
       frame = details.frame
