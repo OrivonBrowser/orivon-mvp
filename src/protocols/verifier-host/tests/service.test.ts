@@ -13,7 +13,7 @@ const running: RunningHost[] = []
 afterEach(() => { for (const host of running.splice(0)) host.server.close() })
 
 function config (overrides: Partial<HostConfig> = {}): HostConfig {
-  return { port: 0, lightClient: undefined, gateways: [GATEWAY], unproxiedGateways: [], ipnsNameServices: [], dnsOverHttps: ['https://dns.example/q'], ipnsSequences: {}, fixtures: { 'fixture.eth': `ipfs://${dag.root.toString()}` }, ...overrides }
+  return { port: 0, lightClient: undefined, gateways: [GATEWAY], unproxiedGateways: [], ccipDirect: false, ipnsNameServices: [], dnsOverHttps: ['https://dns.example/q'], ipnsSequences: {}, fixtures: { 'fixture.eth': `ipfs://${dag.root.toString()}` }, ...overrides }
 }
 
 function deps (overrides: Partial<HostDeps> = {}): HostDeps & { posted: FromHost[] } {

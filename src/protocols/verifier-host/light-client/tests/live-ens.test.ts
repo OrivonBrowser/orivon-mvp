@@ -65,7 +65,7 @@ describe.skipIf(!LIVE)('ENS through the light client, live', () => {
     const fetch = allowlisted([...DEFAULT_ENDPOINTS.executionRpcs, DEFAULT_ENDPOINTS.consensusRpc], async (url, init) => await nodeFetch(url, init), 'the light client')
     const client = startHeliosLightClient({ executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: root }, fetch, () => {})
     await until(client, 120_000)
-    const resolver = createEnsResolver({ provider: client.provider, ccipRequest: async (p) => await guardedCcipRequest(p, { directFetch: ccipFetch, resolveHost }) })
+    const resolver = createEnsResolver({ provider: client.provider, ccipRequest: async (p) => await guardedCcipRequest(p, { directFetch: ccipFetch, fetch: async (url, init) => await nodeFetch(url, init), resolveHost, direct: true }) })
     const kinds: Record<string, string | undefined> = {}
     for (const name of ['vitalik.eth', 'ens.eth', 'tornadocash.eth', 'app.ens.eth', 'uniswap.eth']) {
       const [record] = await resolver.resolve(name)

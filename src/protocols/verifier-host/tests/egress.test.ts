@@ -27,8 +27,17 @@ function recordingDirect (answer: (url: string, init: RequestInit | undefined) =
   return Object.assign(fetch, { calls })
 }
 
+const NO_DIRECT_FETCH: DirectFetch = async () => { throw new Error('directFetch must not be called when a proxy is configured (direct: false)') }
+const NO_FETCH: WebFetch = async () => { throw new Error('fetch must not be called when no proxy is configured (direct: true)') }
+
+/** `direct: true` -- no proxy configured, the pinned dial is used. */
 function deps (directFetch: DirectFetch, dns: Record<string, string[]> = { 'gateway.example': ['93.184.216.34'] }): CcipDeps {
-  return { directFetch, resolveHost: async (host) => dns[host] ?? [] }
+  return { directFetch, fetch: NO_FETCH, resolveHost: async (host) => dns[host] ?? [], direct: true }
+}
+
+/** `direct: false` -- a proxy is configured, so the ordinary hostname fetch is used instead. */
+function proxiedDeps (fetch: WebFetch, dns: Record<string, string[]> = { 'gateway.example': ['93.184.216.34'] }): CcipDeps {
+  return { directFetch: NO_DIRECT_FETCH, fetch, resolveHost: async (host) => dns[host] ?? [], direct: false }
 }
 
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
@@ -109,5 +118,41 @@ describe('guardedCcipRequest', () => {
   it('reports every URL that failed', async () => {
     const fetch = recordingDirect(() => new Response('down', { status: 503 }))
     await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/a', 'http://gateway.example/b'] }, deps(fetch))).rejects.toThrow(/503.*only https/)
+  })
+})
+
+// T20: a configured proxy must keep doing the resolving, never be gone
+// around for CCIP-Read alone -- `direct: false` is the snapshot main takes
+// when it found one in front of the default session.
+describe('guardedCcipRequest, with a proxy configured (direct: false)', () => {
+  it('fetches by hostname, over the ordinary path, never the pinned one', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    const result = await guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/{sender}/{data}.json'] }, proxiedDeps(fetch))
+    expect(result).toBe('0xfeed')
+    expect(fetch.calls[0]?.url).toBe(`https://gateway.example/${SENDER.toLowerCase()}/${DATA}.json`)
+    expect(fetch.calls[0]?.init).toMatchObject({ method: 'GET', redirect: 'manual', credentials: 'omit' })
+  })
+
+  it('POSTs with the same body, credentials still omitted', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    await guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/lookup'] }, proxiedDeps(fetch))
+    expect(fetch.calls[0]?.init).toMatchObject({ method: 'POST', redirect: 'manual', credentials: 'omit' })
+    expect(JSON.parse(String(fetch.calls[0]?.init?.body))).toEqual({ data: DATA, sender: SENDER })
+  })
+
+  it('still refuses http, a non-443 port, and a name that resolves to a private address, without fetching', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    const dns = { 'rebind.example': ['93.184.216.34', '127.0.0.1'] }
+    for (const url of ['http://gateway.example/{data}', 'https://93.184.216.34:6379/{data}', 'https://rebind.example/{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, proxiedDeps(fetch, dns))).rejects.toThrow(/no offchain gateway answered/)
+    }
+    expect(fetch.calls).toEqual([])
+  })
+
+  it('still follows a same-origin redirect and refuses a cross-origin one', async () => {
+    const same = recording((url) => url.endsWith('/a') ? new Response(null, { status: 302, headers: { location: '/b' } }) : json({ data: '0xbeef' }))
+    expect(await guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/a'] }, proxiedDeps(same))).toBe('0xbeef')
+    const away = recording(() => new Response(null, { status: 302, headers: { location: 'https://127.0.0.1/x' } }))
+    await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/a'] }, proxiedDeps(away))).rejects.toThrow(/another origin/)
   })
 })

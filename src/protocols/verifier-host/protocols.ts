@@ -81,7 +81,7 @@ function startEns (config: HostConfig, deps: HostDeps): { protocol: Protocol, li
   const lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], deps.fetch, 'the light client'), deps.post)
   resolvers.push(createEnsResolver({
     provider: lightClient.provider,
-    ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, { directFetch: deps.ccipFetch, resolveHost: deps.resolveHost }, DEFAULT_CCIP_LIMITS, signal)
+    ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, { directFetch: deps.ccipFetch, fetch: deps.fetch, resolveHost: deps.resolveHost, direct: config.ccipDirect }, DEFAULT_CCIP_LIMITS, signal)
   }))
   return { protocol: defineProtocol(ENS, { resolvers }), lightClient }
 }

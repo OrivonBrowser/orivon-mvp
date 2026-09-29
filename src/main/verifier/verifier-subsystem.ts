@@ -104,6 +104,23 @@ async function unproxiedGatewaysFor (gateways: readonly string[], seamActive: bo
   return await unproxiedGateways(gateways, async (url) => await app.resolveProxy(url))
 }
 
+/**
+ * Whether the default session has no proxy in front of it at all, checked
+ * against a generic https URL rather than a real gateway: a CCIP-Read
+ * destination is a name's own resolver contract's choice, not known until
+ * long after the host has already started, so nothing narrower exists to
+ * check yet. Reuses `unproxiedGateways`'s own timeout and fail-closed
+ * (proxied) direction -- a check that cannot answer must never make
+ * `guardedCcipRequest` go around a proxy that is actually there. `false`
+ * (treated as proxied) under the test seam, same reasoning as
+ * `unproxiedGatewaysFor`.
+ */
+async function ccipDirectFor (seamActive: boolean): Promise<boolean> {
+  if (seamActive) return false
+  const unproxied = await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))
+  return unproxied.length > 0
+}
+
 async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
   const stored = verifierStore()
@@ -122,6 +139,7 @@ async function hostConfig (): Promise<HostConfig> {
     ...lightClient,
     gateways,
     unproxiedGateways: await unproxiedGatewaysFor(gateways, seam !== undefined),
+    ccipDirect: await ccipDirectFor(seam !== undefined),
     ipnsNameServices: seam === undefined ? DEFAULT_ENDPOINTS.ipnsNameServices : [],
     dnsOverHttps: seam?.dnsOverHttps ?? DEFAULT_ENDPOINTS.dnsOverHttps,
     ipnsSequences: stored.ipnsSequences(),

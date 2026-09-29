@@ -40,9 +40,21 @@ export interface CcipDeps {
    * `resolveHost` above saw only public ones (`direct-fetch.ts`). Configured
    * with `allowPost` (CCIP-Read's non-`{data}` form) and `allowRedirect`
    * (this module follows a redirect itself, per hop, rather than direct-fetch's
-   * ordinary gateway rule of refusing one outright).
+   * ordinary gateway rule of refusing one outright). Used only when `direct`
+   * is true: a configured proxy must keep doing the resolving (T20), so
+   * pinning an address would silently go around it.
    */
   readonly directFetch: DirectFetch
+  /** The ordinary path, over Electron's `net`, resolving `url`'s hostname a
+   * second time at connect time -- exactly the rebind window `directFetch`
+   * above exists to close, accepted here only because a proxy is the one
+   * thing that must not be gone around to close it. Used only when `direct`
+   * is false. */
+  readonly fetch: WebFetch
+  /** Whether no proxy applies to this session, checked once when the host
+   * started (`main/verifier/verifier-subsystem.ts`'s `ccipDirectFor`): a
+   * snapshot, not re-checked per request or per URL. */
+  readonly direct: boolean
 }
 
 export interface CcipLimits {
@@ -90,9 +102,14 @@ async function requestOne (template: string, parameters: CcipRequestParameters, 
   for (let hops = 0; ; hops++) {
     const check = await checkUrl(url, deps)
     if (!check.ok) throw new EgressRefused(check.refusal)
-    const response = await deps.directFetch(url, post
+    const init: RequestInit = post
       ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ data: parameters.data, sender: parameters.sender }), signal }
-      : { method: 'GET', signal }, check.addresses)
+      : { method: 'GET', signal }
+    // The URL and address checks above run either way; only the transport
+    // differs, on a choice fixed for the whole run (CcipDeps.direct).
+    const response = deps.direct
+      ? await deps.directFetch(url, init, check.addresses)
+      : await deps.fetch(url, { ...init, redirect: 'manual', credentials: 'omit' })
     if (response.status >= 300 && response.status < 400) {
       await response.body?.cancel()
       const location = response.headers.get('location')
@@ -115,11 +132,14 @@ async function requestOne (template: string, parameters: CcipRequestParameters, 
 }
 
 /**
- * viem's CCIP-Read request, fenced: https only, every address the host
- * resolves to public unicast, a redirect only within the same origin, and
- * a size and time cap. The resolver contract checks whatever comes back
- * inside a proven call, so this guards where the request goes, not what it
- * returns.
+ * viem's CCIP-Read request, fenced: https only, port 443 only, every
+ * address the host resolves to public unicast, a redirect only within the
+ * same origin, and a size and time cap. With no proxy configured
+ * (`deps.direct`), the request dials the address this module already
+ * checked; with one configured, it goes through it by hostname instead,
+ * the proxy's own resolution accepted rather than pinning around it (T20).
+ * The resolver contract checks whatever comes back inside a proven call, so
+ * this guards where the request goes, not what it returns.
  */
 export async function guardedCcipRequest (parameters: CcipRequestParameters, deps: CcipDeps, limits: CcipLimits = DEFAULT_CCIP_LIMITS, signal?: AbortSignal): Promise<Hex> {
   const errors: string[] = []
