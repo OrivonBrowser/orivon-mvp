@@ -139,6 +139,15 @@ export default defineConfig({
     // in piped/CI output.
     logLevel: 'warn',
     plugins: [pageBufferPackage()],
+    // Mirrors main's own `define` above: src/preload/sign-in-identity.ts
+    // reads this same compiled-in flag for its test-only host seam, so an
+    // ordinary preload build folds that branch away exactly like main's
+    // dev-grant code does. scripts/check-dev-grant-absent.mjs's scan covers
+    // out/ as a whole, so no separate guard change was needed for this --
+    // only this `define`, so the flag actually reaches false here too.
+    define: {
+      __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1')
+    },
     build: {
       // CommonJS, which a sandboxed preload requires: it has no ESM context
       // and loads electron via require (see src/main/index.ts).
