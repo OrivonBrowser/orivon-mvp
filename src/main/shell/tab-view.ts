@@ -15,6 +15,7 @@ import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
+import { recordViewBackground } from './view-background-test-hook.js'
 
 /** tabs.ts's own tab-count ceiling: an unbounded window.open() flood (an
  * ad/popunder pattern, not hypothetical) would otherwise mint unlimited
@@ -149,9 +150,24 @@ export function tabWebPreferences (preload: string, partition: string | undefine
 }
 
 /** Builds one tab's WebContentsView, shared by tabs.ts's createTab() and
- * repartitionView(). */
-export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[]): WebContentsView {
+ * repartitionView().
+ *
+ * `backgroundColor`, PROBE fix for the white flash a fresh tab shows before
+ * it loads: createTab() (tabs.ts) attaches this view to screen BEFORE
+ * `loadURL`, on purpose (a detached view's first paint has nowhere live to
+ * land), which means Electron's default opaque-white WebContentsView
+ * background is what actually paints first, for however long the page takes
+ * to load and apply its own CSS background. Only the shell's OWN pages
+ * (the new-tab dashboard, orivon:// internal pages) get one here -- an
+ * ordinary website's tab is deliberately left at the default, matching every
+ * browser's own new-tab-vs-site distinction (a site may itself be
+ * transparent/dark/light and this shell has no opinion on that). */
+export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[], backgroundColor?: string): WebContentsView {
   const view = new WebContentsView({ webPreferences: tabWebPreferences(preload, partition, additionalArguments) })
+  if (backgroundColor !== undefined) {
+    view.setBackgroundColor(backgroundColor)
+    recordViewBackground(view.webContents.id, backgroundColor)
+  }
   watchAppTab(view, additionalArguments)
   return view
 }

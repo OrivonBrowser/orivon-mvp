@@ -13,10 +13,11 @@ const { showMessageBoxSync, buildFromTemplate, adoptedViews } = vi.hoisted(() =>
   adoptedViews: [] as Array<{ options: Record<string, unknown> }>
 }))
 vi.mock('electron', () => ({
-  WebContentsView: vi.fn().mockImplementation(function (this: { options: Record<string, unknown>, webContents: unknown, setBounds: unknown }, options: Record<string, unknown>) {
+  WebContentsView: vi.fn().mockImplementation(function (this: { options: Record<string, unknown>, webContents: unknown, setBounds: unknown, setBackgroundColor: unknown }, options: Record<string, unknown>) {
     this.options = options
     this.webContents = options['webContents'] ?? fakeContents()
     this.setBounds = vi.fn()
+    this.setBackgroundColor = vi.fn()
     adoptedViews.push(this)
   }),
   dialog: { showMessageBoxSync },
