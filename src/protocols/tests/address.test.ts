@@ -76,6 +76,13 @@ describe('ProtocolAddresses', () => {
     }
   })
 
+  it('strips userinfo from what it shows, so a lookalike host before the @ cannot pass as the real one', () => {
+    expect(addresses.displayUrl('https://www.bank.example@evil.example/login')).toBe('https://evil.example/login')
+    expect(addresses.displayUrl('https://user:pass@example.com/path?q=1#f')).toBe('https://example.com/path?q=1#f')
+    // A served host behind userinfo still shortens once the userinfo is gone.
+    expect(addresses.displayUrl(`https://x@${CID}.ipfs.orivon/a`)).toBe(`ipfs://${CID}/a`)
+  })
+
   it('shows a served origin as its address', () => {
     expect(addresses.displayOrigin(`https://${CID}.ipfs.orivon`)).toBe(`ipfs://${CID}`)
     expect(addresses.displayOrigin('https://vitalik.eth')).toBe('https://vitalik.eth')
