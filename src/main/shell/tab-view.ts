@@ -333,8 +333,10 @@ export function wireView (id: string, record: TabRecord): void {
     })
   })
 
-  // T18: never a real OS popup window. A popup the page can talk to becomes
-  // a tab (./popups.ts); everything else opens as a new tab.
+  // T18: a popup the page can talk to becomes a tab, never an OS window
+  // (./popups.ts); a shift-click opens a new window instead, but with a
+  // fresh tab in it, partitioned exactly as an ordinary tab there would be
+  // -- never the opener's own session.
   wc.setWindowOpenHandler(windowOpenHandler({
     atCapacity: () => record.host.atCapacity(),
     openTab: (url, active) => { record.host.openTab(url, active) },
@@ -342,6 +344,7 @@ export function wireView (id: string, record: TabRecord): void {
       watchAppTab(view, appTabArgsFor(url, record.host.broker))
       record.host.adoptPopup(view, partition, active)
     },
+    openWindow: (url) => record.host.openWindow(url),
     partitionFor: (url) => partitionForTarget(url, record.host.broker),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker))
   }, () => ({ url: wc.getURL(), partition: record.partition })))

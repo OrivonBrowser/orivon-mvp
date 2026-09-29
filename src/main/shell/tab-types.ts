@@ -3,7 +3,7 @@
 // navigate fix pushed that file over Rule 2's 500-line limit. These are
 // wire-format types with no logic of their own; tabs.ts re-exports them so
 // every existing `from './tabs.js'` import keeps working unchanged.
-import type { BaseWindow, View, WebContentsView } from 'electron'
+import type { BaseWindow, View, WebContents, WebContentsView } from 'electron'
 import type { FrameState } from './split-controller.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { Bookmark } from '../browsing/bookmarks.js'
@@ -96,6 +96,10 @@ export interface TabShell {
    * reported (tab-lifecycle.ts). Absent in tests: nothing outside the tab
    * collection hears about them. */
   tabLifecycle?: TabLifecycle
+  /** Opens `url` as the only tab of a brand new window in this same process
+   * -- so a private window's new window is private too (window.ts makes
+   * every window the same way, from the same `services`). Absent in tests. */
+  openWindow?: (url: string) => WebContents
 }
 
 /** The view behind two panes: the divider, and an outline round the pane the person is in. */
@@ -142,6 +146,9 @@ export interface TabViewHost {
   /** Makes Chromium's own popup webContents, already in `partition`, a tab.
    * `active` -- see `openTab`'s own doc. */
   adoptPopup: (view: WebContentsView, partition: string | undefined, active?: boolean) => void
+  /** `url` in a new window instead of this one -- a shift-click (popups.ts's `windowOpenHandler`).
+   * Undefined when the shell has none (tests): the caller opens an ordinary tab here instead. */
+  openWindow: (url: string) => WebContents | undefined
   atCapacity: () => boolean
   htmlFullscreenChanged: (id: string, entered: boolean) => void
   /** The window is closing: nothing more is made or shown for it. */

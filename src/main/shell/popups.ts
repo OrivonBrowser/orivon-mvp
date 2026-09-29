@@ -56,6 +56,9 @@ export interface PopupHost {
   /** `url` is what the popup was opened at, for anything the tab decides from it.
    * `active` -- see `openTab`'s own doc. */
   adoptPopup: (view: WebContentsView, partition: string | undefined, url: string, active: boolean) => void
+  /** `url` in a brand new window, as Chrome opens a shift-click -- undefined
+   * when the shell cannot make one, so the caller opens a tab here instead. */
+  openWindow: (url: string) => WebContents | undefined
   /** The session a tab opened at `url` would get. */
   partitionFor: (url: string) => string | undefined
   /** The webPreferences a tab opened at `url` would get, without a
@@ -97,6 +100,13 @@ export function windowOpenHandler (
         // then has no orivon surface at all.
         const webPreferences = options.webPreferences !== undefined ? { webPreferences: options.webPreferences } : {}
         const guest = guestOf(options)
+        // Chrome opens a shift-click in a new window, not a tab; a real window.open() popup with
+        // features gets a guest even at this disposition (the OAuth pattern above) and keeps
+        // adopting into a tab, opener intact.
+        if (guest === undefined && details.disposition === 'new-window') {
+          const opened = host.openWindow(details.url)
+          if (opened !== undefined) return opened
+        }
         // No guest (guestOf's own doc): build the view ourselves, the way TabFactory.content()
         // would for an ordinary tab, and load it -- Electron never navigates a view constructed
         // here on its own. Given `webContents: undefined` directly instead, WebContentsView's

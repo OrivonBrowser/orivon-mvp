@@ -87,6 +87,7 @@ export class TabManager {
       forgetTab: (id) => { this.forgetTab(id, false) },
       openTab: (url, active) => { this.createTab(url, active) },
       adoptPopup: (view, partition, active) => { this.adoptPopup(view, partition, active) },
+      openWindow: (url) => shell?.openWindow?.(url),
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       isClosing: () => this.disposed,
