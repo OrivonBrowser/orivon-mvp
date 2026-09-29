@@ -71,12 +71,12 @@ describe('grantedOriginCspListener', () => {
     expect(cspFor).not.toHaveBeenCalled()
   })
 
-  // F7: a dedicated/shared worker's top-level script has no resourceType of
-  // its own in Electron's webRequest API -- it arrives classified as
-  // 'script' or, on some platform/version combinations, 'other' -- so
-  // EITHER, from the granted origin, still needs the document's own CSP:
-  // that policy is the only thing standing between the worker and running
-  // code the manifest's `script-src`/`connect-src` never allowed.
+  // A dedicated/shared worker's top-level script has no resourceType of its
+  // own in Electron's webRequest API -- it arrives classified as 'script'
+  // or, on some platform/version combinations, 'other' -- so EITHER, from
+  // the granted origin, still needs the document's own CSP: that policy is
+  // the only thing standing between the worker and running code the
+  // manifest's `script-src`/`connect-src` never allowed.
   it('gives a same-origin worker script (classified as script or other) the same policy a document gets', async () => {
     const listener = grantedOriginCspListener(ORIGIN, async () => CSP)
     for (const resourceType of ['script', 'other'] as const) {
@@ -101,13 +101,11 @@ describe('grantedOriginCspListener', () => {
     expect(await run(listener, details({ resourceType: 'subFrame', url: 'https://example.com/' }))).toEqual({})
   })
 
-  // F7: `http://localhost.` (a trailing dot) and `http://localhost` parse to
-  // two DIFFERENT `new URL(...).origin` strings but the SAME `originFromUrl`
-  // -- and it is `originFromUrl` the broker and `tab-view.ts`'s
-  // `partitionForTarget` both use to key this origin's grants and partition.
-  // A `new URL(...).origin` comparison denied the dotted spelling its CSP
-  // while every other part of the system still treated it as this same,
-  // granted origin's document.
+  // `http://localhost.` (a trailing dot) and `http://localhost` parse to two
+  // DIFFERENT `new URL(...).origin` strings but the SAME `originFromUrl` --
+  // and it is `originFromUrl` the broker and `tab-view.ts`'s
+  // `partitionForTarget` both use to key this origin's grants and partition,
+  // so the dotted spelling must get the same CSP as the canonical one.
   it('gives the trailing-dot spelling of the origin the same CSP as the canonical one', async () => {
     const canonical = 'http://localhost:8874'
     const listener = grantedOriginCspListener(canonical, async () => CSP)

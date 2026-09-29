@@ -49,10 +49,10 @@ describe('appInstallSubsystem', () => {
   })
 })
 
-// F10: fetchGrantManifest used to read a loopback server's WHOLE response
-// body to a string before grantWithoutInstall's own MAX_MANIFEST_BYTES
-// check ever ran -- readCapped is the fix, exercised here directly against
-// a real streamed Response rather than through the whole subsystem.
+// fetchGrantManifest never reads a loopback server's whole response body to
+// a string before grantWithoutInstall's own MAX_MANIFEST_BYTES check runs --
+// readCapped enforces that, exercised here directly against a real streamed
+// Response rather than through the whole subsystem.
 describe('readCapped', () => {
   function streamed (chunks: readonly string[]): Response {
     const encoder = new TextEncoder()

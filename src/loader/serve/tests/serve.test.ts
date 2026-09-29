@@ -215,7 +215,7 @@ describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
     expect(response.headers.get('content-security-policy')).toBe(DEFAULT_CSP)
   })
 
-  // F11: content-type here is always derived from the pinned path's own
+  // content-type here is always derived from the pinned path's own
   // extension, never sniffed from bytes -- nosniff stops a browser that DOES
   // sniff from overriding that and running a pinned, non-script asset as one.
   it('sets X-Content-Type-Options: nosniff on every pinned response', async () => {

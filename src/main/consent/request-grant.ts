@@ -42,8 +42,8 @@ export type ConsentPrompt = (origin: string, capability: CapabilityKind, pattern
  * capabilities requested concurrently for one origin are two different
  * questions, and applying one's answer to the other would be a correctness
  * bug (grant `fs` because `tcp.connect` happened to be approved, or the
- * reverse), not a UX nicety -- the flood F2 describes is the SAME capability
- * requested in a loop or a burst, which this still fully closes.
+ * reverse), not a UX nicety -- a burst of calls all asking for the SAME
+ * capability, in a loop or all at once, is what this still fully closes.
  *
  * A `Map`, not a `WeakMap`: the key is a string, not an object, and entries
  * are removed (see `requestGrant` below) the instant their call settles, so
@@ -79,11 +79,10 @@ async function requestGrantOnce (
   if (!decision.allowed) return false
 
   // Decision 10: a capability declined earlier THIS RUN resolves false with
-  // no prompt at all -- the fix for F2's "re-prompt until Allow" (a page
-  // calling requestGrant in a loop reached the 25th dialog before this
-  // existed). `install-consent.ts`'s own all-or-nothing accept, and this
-  // file's own `clearDeclinedCapability` below, are the only ways off this
-  // list -- an old "no" here is retired by a "yes", never by asking again.
+  // no prompt at all, however often a page calls requestGrant for it.
+  // `install-consent.ts`'s own all-or-nothing accept, and this file's own
+  // `clearDeclinedCapability` below, are the only ways off this list -- an
+  // old "no" here is retired by a "yes", never by asking again.
   const declined = await broker.declinedCapabilitiesFor(origin)
   if (declined?.includes(request.capability) === true) return false
 

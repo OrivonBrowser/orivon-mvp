@@ -28,9 +28,9 @@ describe('describeCapabilityGrant -- web.embed (ADR-0039)', () => {
     expect(row.message).toContain('read and change what they show')
   })
 
-  // F5: dozens of embed origins used to join onto one unbounded line --
-  // capped the same way every other per-item row list in this file now is
-  // (decision 10), folding the rest into a trailing "and N more" count.
+  // Dozens of embed origins are capped the same way every other per-item row
+  // list in this file is (decision 10), folding the rest into a trailing
+  // "and N more" count rather than joining onto one unbounded line.
   it('caps a long list of embed hosts, folding the rest into a count', () => {
     const origins = Array.from({ length: 60 }, (_, i) => `https://site-${String(i)}.example`)
     const row = describeCapabilityGrant('web.embed', origins)

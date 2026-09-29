@@ -292,17 +292,15 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
  * can ever trigger already sees its real, persisted grants, and that the
  * broker already counts the origin as registered (README.md, "A restored
  * app is a registered app from startup") when its first tab is built.
- * F3 ("hash twice"): `resolveVerifiedBundle` runs the whole-tree
- * re-verification ONCE, here, and its result is handed straight into
- * `createAppRequestHandler`'s `preResolved` parameter below -- that
- * function used to re-run the identical hash immediately after this one,
- * for every origin, on every startup and every fresh install
- * (`serve/serve.ts`'s own former doc on `verifiedManifestFor` called this a
- * "deliberate, bounded doubling"; it no longer needs to be one). A pin that
- * fails re-verification resolves `{ ok: false }` here exactly as it would
- * have inside `createAppRequestHandler`, so passing it through changes
- * nothing about what gets served -- only how many times the tree is hashed
- * to decide.
+ * `resolveVerifiedBundle` runs the whole-tree re-verification ONCE, here,
+ * and its result is handed straight into `createAppRequestHandler`'s
+ * `preResolved` parameter below, so this origin's pinned tree is hashed
+ * exactly once per restore or fresh install, not once for this function's
+ * own hydration read and again inside that one. A pin that fails
+ * re-verification resolves `{ ok: false }` here exactly as it would have
+ * inside `createAppRequestHandler`, so passing it through changes nothing
+ * about what gets served -- only how many times the tree is hashed to
+ * decide.
  */
 export async function registerServingFor (storage: LoaderStorage, origin: string, broker?: Broker): Promise<void> {
   const resolved = await resolveVerifiedBundle(storage, origin)

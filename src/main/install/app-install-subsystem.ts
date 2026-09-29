@@ -29,16 +29,14 @@ const GRANT_MANIFEST_TIMEOUT_MS = 5_000
 
 /**
  * Reads at most `capBytes` of `response`'s body, decoding only what was
- * actually read -- F10: this used to read the WHOLE body to a string first
- * (`response.text()`), with `grantWithoutInstall`'s own `MAX_MANIFEST_BYTES`
- * check only running on the result, so a compromised loopback server
- * naming an unbounded manifest was read to completion in memory regardless
- * of that limit. Stops reading (and cancels the stream) the moment the
- * total crosses `capBytes`, which is already enough for
- * `grantWithoutInstall`'s own byte-length check to reject it -- the rest of
- * the body is never pulled at all. Falls back to `response.text()` only
- * when the runtime gives no readable stream to read incrementally from;
- * real Electron's `net.fetch` always does.
+ * actually read -- never the whole body first, so a compromised loopback
+ * server naming an unbounded manifest is never read to completion in
+ * memory. Stops reading (and cancels the stream) the moment the total
+ * crosses `capBytes`, which is already enough for `grantWithoutInstall`'s
+ * own byte-length check to reject it -- the rest of the body is never
+ * pulled at all. Falls back to `response.text()` only when the runtime
+ * gives no readable stream to read incrementally from; real Electron's
+ * `net.fetch` always does.
  */
 export async function readCapped (response: Response, capBytes: number): Promise<string> {
   const reader = response.body?.getReader()
@@ -97,8 +95,8 @@ export const appInstallSubsystem: Subsystem = {
       // public unicast, before a manifest is ever read. It is granted
       // without being installed instead (./grant-without-install.ts).
       if (grantableWithoutInstall(hintingOrigin, devModeEnabled())) {
-        // F10: two tabs on the same loopback origin firing this near-
-        // simultaneously used to run two grantWithoutInstall calls
+        // Two tabs on the same loopback origin firing this near-
+        // simultaneously must not run two grantWithoutInstall calls
         // interleaved -- registerApp and requestInstallConsent are not
         // written to tolerate a second call landing mid-flight, the same
         // reason installFromHint's own bundle path already serialises per

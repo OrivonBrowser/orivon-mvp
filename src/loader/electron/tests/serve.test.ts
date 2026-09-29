@@ -309,12 +309,10 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
   })
 })
 
-// F3 ("hash twice"): registerServingFor used to whole-tree re-verify the
-// pinned bundle once for early grant hydration (A158) and once more,
-// immediately after, inside createAppRequestHandler -- the identical hash
-// over the identical bytes, every origin, every startup and every fresh
-// install. `resolveVerifiedBundle`'s single result now feeds both.
-describe('registerServingFor -- re-verifies the pinned tree once, not twice (F3)', () => {
+// registerServingFor's early grant hydration (A158) and its request handler
+// share ONE whole-tree re-verification of the pinned bundle, via
+// resolveVerifiedBundle's single result, rather than each running its own.
+describe('registerServingFor -- re-verifies the pinned tree once, not twice', () => {
   it('reads each pinned asset\'s bytes only once while registering serving for it', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-serving-hash-once-'))
     const storage = nodeLoaderStorage(userData)
@@ -327,8 +325,9 @@ describe('registerServingFor -- re-verifies the pinned tree once, not twice (F3)
 
     await registerServingFor(storage, 'https://app.example')
 
-    // One read per pinned asset (index.html, the manifest) -- if the tree
-    // were still verified twice, each path would show up here twice over.
+    // One read per pinned asset (index.html, the manifest) -- a second,
+    // independent whole-tree verification would show up here as each path
+    // being read twice over.
     const paths = readAsset.mock.calls.map(([, path]) => path)
     const uniquePaths = new Set(paths)
     expect(paths.length).toBe(uniquePaths.size)

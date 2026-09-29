@@ -128,9 +128,9 @@ describe('describeCapabilityGrant -- port breadth for a single named host (AR-02
     expect(several.message).toBe('Connect to a.example on ports 22, 443, 5432')
   })
 
-  // F5: a single named host with dozens of discrete ports used to list every
-  // one on the same line (`ports 1, 2, 3, ..., 60`) -- capped the same way
-  // every other per-item row list in this file now is (decision 10).
+  // A single named host with dozens of discrete ports is capped the same way
+  // every other per-item row list in this file is (decision 10), rather than
+  // listing every one on the same line.
   it('caps a long list of discrete ports for a single host, folding the rest into a count', () => {
     const patterns = Array.from({ length: 60 }, (_, i) => `a.example:${String(i + 1)}`)
     const summary = describeCapabilityGrant('tcp.connect', patterns)
@@ -215,8 +215,8 @@ describe('describeCapabilityGrant -- A197: a private/loopback/link-local address
     expect(summary.message).toContain('Unlimited')
   })
 
-  // F5: A197 says every sensitive address is named, never folded into a
-  // count -- decision 10's row cap still applies on top of that: past
+  // A197 says every sensitive address is named, never folded into a count --
+  // decision 10's row cap still applies on top of that: past
   // MAX_LISTED_ROWS they fold into a trailing count of their own, in BOTH
   // the headline and the per-address explanation, rather than growing the
   // dialog to match however many a manifest declares (up to MAX_PATTERNS).

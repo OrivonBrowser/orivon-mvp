@@ -474,13 +474,12 @@ describe('createLoader: refetch against an existing pin', () => {
     expect(result.outcome).toBe('needs-reconsent')
   })
 
-  // F8: apps/<hash>/pin.json can go missing (removed, a partial restore)
-  // while the LEDGER -- versionFloor, grants -- survives independently in
-  // its own storage. A MISSING pin used to be read exactly like a brand
-  // new origin: straight to a silent TOFU install, skipping the version
-  // floor (a downgrade to an old, vulnerable version needs no rollback
-  // choice) and any reconsent for a bundle that changed under an origin
-  // the ledger already trusted.
+  // apps/<hash>/pin.json can go missing (removed, a partial restore) while
+  // the LEDGER -- versionFloor, grants -- survives independently in its own
+  // storage. A missing pin for an origin the ledger already trusted must
+  // still force the version floor (a downgrade to an old, vulnerable
+  // version still needs a rollback choice) and any reconsent for a bundle
+  // that changed, never a silent TOFU install straight through.
   it('a missing pin for an origin the ledger already knows (a real version floor) forces at least a rollback choice, never silent TOFU', async () => {
     const storage = memoryStorage() // no pin.json at all for this origin
     const routes: Record<string, RouteSpec> = {

@@ -9,9 +9,9 @@ import type { SubsystemContext } from '../../registry.js'
 
 // A revoke in the permissions panel is the person saying no to that
 // capability, so the install-consent dialog, which runs again on every
-// launch's first visit, must not ask for it again. F2/decision 10: nor may
-// the app get a SECOND dialog out of it by calling app.requestGrant itself
-// -- a declined capability resolves false with no prompt, from either door,
+// launch's first visit, must not ask for it again. Decision 10: nor may the
+// app get a SECOND dialog out of it by calling app.requestGrant itself -- a
+// declined capability resolves false with no prompt, from either door,
 // until the site-info popover's own "turn on" switch (site-switches.ts)
 // clears the decline DIRECTLY, with no page involved at all.
 
@@ -75,10 +75,10 @@ describe('revoking from the permissions panel', () => {
     expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
   })
 
-  // F2/decision 10: a page cannot turn a revoked capability back on by
-  // calling app.requestGrant itself, however willing `consent` here would
-  // be to say yes -- requestGrant never even reaches it. Re-granting after
-  // a revoke is the site-info popover's own direct path
+  // Decision 10: a page cannot turn a revoked capability back on by calling
+  // app.requestGrant itself, however willing `consent` here would be to say
+  // yes -- requestGrant never even reaches it. Re-granting after a revoke is
+  // the site-info popover's own direct path
   // (site-switches.ts's turnOn, tested in its own suite), never this one.
   it('does not re-prompt through app.requestGrant after a revoke -- that door is shut until the site-info popover clears it directly', async () => {
     const broker = createBroker(baseDeps())

@@ -156,15 +156,13 @@ describe('requestGrant (stubbed broker)', () => {
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
   })
 
-  // F2: a capability already on the declined-consent record resolves false
-  // with NO prompt at all -- the fix for "a page can re-open the grant
-  // dialog after the person declined at install, as often as it likes"
-  // (the PoC reached the 25th dialog before this existed). The only door
-  // off this list is a real accept, through install-consent.ts's own
-  // all-or-nothing flow (a DIFFERENT decline record write) or the site-info
-  // popover's clearDeclinedCapability -- never another app.requestGrant call
-  // for the same, still-declined capability.
-  it('F2: a previously declined capability never re-prompts, however often app.requestGrant is called', async () => {
+  // A capability already on the declined-consent record resolves false with
+  // NO prompt at all, however often a page calls app.requestGrant for it.
+  // The only door off this list is a real accept, through install-
+  // consent.ts's own all-or-nothing flow (a DIFFERENT decline record write)
+  // or the site-info popover's clearDeclinedCapability -- never another
+  // app.requestGrant call for the same, still-declined capability.
+  it('a previously declined capability never re-prompts, however often app.requestGrant is called', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, {
       manifest: async () => manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }),
@@ -226,9 +224,9 @@ describe('requestGrant (stubbed broker)', () => {
   })
 })
 
-// F2: "150 concurrent calls -> 150 dialogs" -- a page firing a burst of
-// app.requestGrant calls for the same capability, faster than the person
-// can answer the first dialog, used to open one native dialog per call.
+// A page firing a burst of app.requestGrant calls for the same capability,
+// faster than the person can answer the first dialog, shares one dialog
+// rather than opening one native dialog per call.
 describe('requestGrant: a shared PendingGrantRequests map de-dupes concurrent calls', () => {
   it('150 concurrent calls for the same (origin, capability) share ONE consent() call', async () => {
     const calls: BrokerCall[] = []

@@ -254,13 +254,13 @@ async function decideAndRoute (
   context: LoadContext
 ): Promise<LoadResult> {
   const rawPin = await options.storage.readPin(canonicalOrigin)
-  // F8: a MISSING pin is not, by itself, proof this origin is new. The
-  // ledger (context.versionFloor/grantedPatterns, from a PRIOR registerApp)
-  // survives independently of apps/<hash>/pin.json on disk -- the two can
-  // fall out of step (the pin directory removed while grants/<hash>/ is
-  // not, a partial restore, disk corruption) -- so an origin the ledger
-  // already knows gets no shortcut past the floor and widening checks below,
-  // exactly like a pin that exists but fails to parse.
+  // A MISSING pin is not, by itself, proof this origin is new. The ledger
+  // (context.versionFloor/grantedPatterns, from a PRIOR registerApp) survives
+  // independently of apps/<hash>/pin.json on disk -- the two can fall out of
+  // step (the pin directory removed while grants/<hash>/ is not, a partial
+  // restore, disk corruption) -- so an origin the ledger already knows gets
+  // no shortcut past the floor and widening checks below, exactly like a pin
+  // that exists but fails to parse.
   // versionFloor alone, not grantedPatterns too: `raiseFloor` (grant-
   // ledger.ts) only ever moves it off '0.0.0' from inside a real
   // `registerApp` call, which every ordinary path to a grant runs first --
@@ -268,7 +268,7 @@ async function decideAndRoute (
   // whatever pin.json says now" with no counter-example in this codebase.
   // `grantedPatterns` alone is not: `grant-without-install.ts`'s loopback
   // path can populate it for an origin that was never pinned AT ALL, by
-  // design (that file's own header), which is not this finding.
+  // design (that file's own header).
   const hasPriorAuthority = context.versionFloor !== '0.0.0'
   if (rawPin === undefined && !hasPriorAuthority) {
     // TOFU (ADR-0005): nothing was ever pinned for this origin, and the
