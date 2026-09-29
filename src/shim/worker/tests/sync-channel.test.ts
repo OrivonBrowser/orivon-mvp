@@ -107,7 +107,7 @@ describe('serveOrivon\'s synchronous fallback reply, when the writer refuses wha
   it('delivers a short, fixed error when the writer\'s own refusal carries a large message, never that message\'s text', async () => {
     const bigMessage = 'x'.repeat(2_000)
     const { port1, port2 } = new MessageChannel()
-    serveOrivon(port1 as unknown as globalThis.MessagePort, { test: { ok: () => 'fine' } })
+    const server = serveOrivon(port1 as unknown as globalThis.MessagePort, { test: { ok: () => 'fine' } })
     const sent: Uint8Array[] = []
     let calls = 0
     // The FIRST send always refuses, with an exception whose own message is as large as the
@@ -122,9 +122,15 @@ describe('serveOrivon\'s synchronous fallback reply, when the writer refuses wha
       if (bytes.length > 200) throw new RangeError('too large for this channel')
     })
 
-    ;(port2 as unknown as globalThis.MessagePort).postMessage({ syncBuffer: createChannelBuffer() })
-    ;(port2 as unknown as globalThis.MessagePort).postMessage({ id: 1, path: ['test', 'ok'], args: [], sync: true })
-    await settle()
+    try {
+      ;(port2 as unknown as globalThis.MessagePort).postMessage({ syncBuffer: createChannelBuffer() })
+      ;(port2 as unknown as globalThis.MessagePort).postMessage({ id: 1, path: ['test', 'ok'], args: [], sync: true })
+      await settle()
+    } finally {
+      port1.close()
+      port2.close()
+      await server.dispose()
+    }
 
     expect(sent).toHaveLength(2)
     const fallback = decodeReply(sent[1] as Uint8Array) as { id: number, ok: boolean, error: { message: string, code: string } }
@@ -139,7 +145,7 @@ describe('serveOrivon\'s synchronous fallback reply, when the writer refuses wha
 
   it('logs rather than leaving an unhandled rejection when even the fallback reply cannot be written', async () => {
     const { port1, port2 } = new MessageChannel()
-    serveOrivon(port1 as unknown as globalThis.MessagePort, { test: { fail: () => { throw new Error('boom') } } })
+    const server = serveOrivon(port1 as unknown as globalThis.MessagePort, { test: { fail: () => { throw new Error('boom') } } })
     vi.spyOn(ReplyWriter.prototype, 'send').mockImplementation(() => { throw new Error('the channel is gone') })
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
     const rejections: unknown[] = []
@@ -152,6 +158,9 @@ describe('serveOrivon\'s synchronous fallback reply, when the writer refuses wha
       await settle()
     } finally {
       process.off('unhandledRejection', onRejection)
+      port1.close()
+      port2.close()
+      await server.dispose()
     }
 
     expect(rejections).toEqual([])
