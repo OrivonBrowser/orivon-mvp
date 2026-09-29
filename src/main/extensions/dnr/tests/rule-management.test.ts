@@ -66,6 +66,71 @@ describe('updateSessionRules', () => {
   })
 })
 
+// vendor/firefox-dnr/UPSTREAM.md patch 14: Chrome condition fields this
+// engine has no Firefox implementation to reuse for -- rejected at
+// validation, with a message naming the field, rather than silently
+// dropped (silent drop would make the rule match every request the field
+// was meant to narrow). Cast through `as never` since these fields are
+// deliberately absent from DnrRuleCondition (types.ts): a caller reading
+// only Orivon's own types can never construct one.
+describe('unsupported condition fields', () => {
+  it('rejects condition.responseHeaders on a dynamic rule', () => {
+    const engine = createDnrEngine()
+    expect(() =>
+      engine.updateDynamicRules('ext', {
+        addRules: [{ id: 1, priority: 1, condition: { responseHeaders: [{ header: 'x' }] } as never, action: { type: 'block' } }],
+      })
+    ).toThrow(/condition\.responseHeaders/)
+  })
+
+  it('rejects condition.excludedResponseHeaders on a session rule', () => {
+    const engine = createDnrEngine()
+    expect(() =>
+      engine.updateSessionRules('ext', {
+        addRules: [
+          { id: 1, priority: 1, condition: { excludedResponseHeaders: [{ header: 'x' }] } as never, action: { type: 'block' } },
+        ],
+      })
+    ).toThrow(/condition\.responseHeaders/)
+  })
+
+  it('rejects the deprecated condition.domains alias', () => {
+    const engine = createDnrEngine()
+    expect(() =>
+      engine.updateDynamicRules('ext', {
+        addRules: [{ id: 1, priority: 1, condition: { domains: ['example.com'] } as never, action: { type: 'block' } }],
+      })
+    ).toThrow(/condition\.domains.*initiatorDomains/)
+  })
+
+  it('rejects the deprecated condition.excludedDomains alias', () => {
+    const engine = createDnrEngine()
+    expect(() =>
+      engine.updateDynamicRules('ext', {
+        addRules: [{ id: 1, priority: 1, condition: { excludedDomains: ['example.com'] } as never, action: { type: 'block' } }],
+      })
+    ).toThrow(/condition\.domains.*initiatorDomains/)
+  })
+
+  it('a static ruleset tolerates one unsupported-condition rule: the rest of the ruleset still loads', () => {
+    const engine = createDnrEngine()
+    engine.setStaticRulesets('ext', [
+      {
+        id: 'r',
+        enabled: true,
+        rules: [
+          blockRule(1, { responseHeaders: [{ header: 'x' }] } as never),
+          blockRule(2, { urlFilter: 'good' }),
+        ],
+      },
+    ])
+    // The good rule still matches...
+    expect(engine.evaluate(makeRequest({ url: 'http://x/good' })).cancel).toBe(true)
+    // ...and the rejected rule was dropped, not applied unconditionally.
+    expect(engine.evaluate(makeRequest({ url: 'http://x/anything-else' })).cancel).toBeUndefined()
+  })
+})
+
 describe('setStaticRulesets / updateEnabledRulesets', () => {
   it('only enabled rulesets take part in matching', () => {
     const engine = createDnrEngine()

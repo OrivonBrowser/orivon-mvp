@@ -40,6 +40,25 @@ function validateOrThrow(
   return validated
 }
 
+/**
+ * A static ruleset's own rules, unlike `updateDynamicRules`/
+ * `updateSessionRules`'s transactional all-or-nothing contract (Chrome's
+ * documented behavior for those two, `validateOrThrow` above), tolerate an
+ * individual invalid rule: Chrome silently drops the bad rule and keeps
+ * loading the rest of the ruleset rather than failing the whole extension's
+ * DNR. `RuleValidator#addRules` already implements the per-rule skip
+ * (`vendor/firefox-dnr/src/extension-dnr.mjs`'s `addRules` only omits the
+ * one rule a `#checkCond*`/`#checkAction` call rejects); this only needs to
+ * avoid `validateOrThrow`'s own all-or-nothing throw on `getFailures()`. A
+ * ruleset-wide quota failure (`quotaCounter.tryAddRules`) still throws --
+ * that failure is not about any one rule's shape.
+ */
+function validateStaticRuleset(validator: VendorRuleValidator, quotaCounter: VendorRuleQuotaCounter, rulesetId: string): DnrRule[] {
+  const validated = validator.getValidatedRules()
+  quotaCounter.tryAddRules(rulesetId, validated)
+  return validated
+}
+
 /** Strips the vendored `Rule`/`RuleCondition` wrapper classes back to plain data. */
 function serializeRule(rule: { id: number; priority: number; condition: object; action: object }): DnrRule {
   return {
@@ -164,7 +183,7 @@ export function createDnrEngine() {
     const rulesets = enabled.map(([id, entry]) => {
       const validator: VendorRuleValidator = new RuleValidator([])
       validator.addRules(withDefaultPriority(entry.rules))
-      const rules = validateOrThrow(validator, quotaCounter, id)
+      const rules = validateStaticRuleset(validator, quotaCounter, id)
       return { id, rules, disabledRuleIds: null }
     })
     ruleManager.setEnabledStaticRulesets(rulesets)

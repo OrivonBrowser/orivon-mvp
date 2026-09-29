@@ -159,6 +159,26 @@ check. A caller applying `DnrDecision.requestHeaders` ops against real request h
 responsible for using `"; "` when appending to `Cookie` specifically, `", "` for every other
 header, per RFC 6265/7540.
 
+**A hostless request URL (`data:`, `blob:`, `about:`, `javascript:`) never throws, and a
+`requestDomains`/`excludedRequestDomains` condition treats it the same way an absent initiator is
+already treated.** `vendor/firefox-dnr/UPSTREAM.md` patch 13 has the exact mechanism (a missing
+guard around `RequestDetails#allRequestDomains`, unlike the already-guarded initiator side) and
+why Orivon reaches this path at all (`dnr-webrequest.ts` registers on `<all_urls>`; Firefox's own
+integration only ever hands DNR a network-scheme request). A rule requiring `requestDomains` does
+not match such a request; a rule excluding by `excludedRequestDomains` is not excluded by it.
+
+**A rule condition Chrome accepts but this engine cannot evaluate is refused at validation, not
+silently ignored.** `vendor/firefox-dnr/UPSTREAM.md` patch 14 covers `condition.responseHeaders`/
+`excludedResponseHeaders` (no response-header state reaches `evaluate()` at all, see the
+`modifyHeaders`/cookie entry above for the same limit on the action side) and the deprecated
+`condition.domains`/`excludedDomains` aliases (no Firefox implementation to port). Each such rule
+is dropped at `RuleValidator#addRules` with a message naming the field, the same per-rule skip
+already used for every other condition failure -- a static ruleset that mixes a handful of these
+in with thousands of ordinary rules still loads the rest (`dnr-engine.ts`'s
+`validateStaticRuleset`, patch 14's own entry has the reasoning); `updateDynamicRules`/
+`updateSessionRules` still reject the whole call for one, matching Chrome's transactional
+contract for those two APIs.
+
 **Where the tests came from.** `tests/fixtures/chrome-parity-urlfilter-vectors.json` is Chrome's
 own `#matching-algorithm` test table (developer.chrome.com), as carried into Firefox's
 `test_ext_dnr_urlFilter.js` (`test_chrome_parity`); `tests/fixtures/ambiguous-urlfilter-vectors.json`

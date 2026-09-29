@@ -336,6 +336,76 @@ patch.
     predicates from; it is a plain caller of this patch's public surface,
     not part of the vendored port.
 
+13. **`RequestEvaluator#matchesRuleCondition`'s `requestDomains`/
+    `excludedRequestDomains` checks now guard on `this.req.allRequestDomains`
+    being set, the same way the `initiatorDomains`/`excludedInitiatorDomains`
+    checks immediately below them already did.** Bug, not a behavioral
+    port decision: `RequestDetails`'s constructor sets `allRequestDomains` to
+    `''` (falsy, but not an array) when `requestURI.hostname` is empty --
+    `data:`, `blob:`, `about:` and `javascript:` URLs all have an empty
+    hostname. Upstream's initiator-side checks already handle
+    `allInitiatorDomains` being falsy this way (an initiator legitimately can
+    be absent, e.g. a top-level navigation), but the request-side checks had
+    no equivalent guard, so `#matchesDomains(cond.requestDomains, '')` called
+    `''.some(...)` and threw `TypeError: targetDomains.some is not a
+    function`. Firefox's own `NetworkIntegration` never hands DNR a
+    non-network-scheme request, so this path is unreachable there; Orivon's
+    `dnr-webrequest.ts` registers on `<all_urls>` and does reach it, for any
+    rule with `requestDomains`/`excludedRequestDomains` -- a condition
+    uBlock Origin Lite's default rulesets put on thousands of rules. Fixed
+    the same way upstream already guards the initiator side: a
+    `requestDomains` condition fails to match (rather than throwing) when
+    the request's own domain cannot be determined, and an
+    `excludedRequestDomains` condition does not exclude in that case either.
+    `src/main/extensions/dnr/tests/domain-conditions.test.ts`'s hostless-URL
+    cases are the regression test.
+
+14. **`RuleValidator` rejects `condition.responseHeaders`/
+    `excludedResponseHeaders` and the deprecated `condition.domains`/
+    `excludedDomains` aliases, with a message naming the field -- not present
+    upstream, since Firefox's own `declarative_net_request.json` (this
+    package's `schema/`) has none of the three: no Firefox implementation
+    exists to port.** Before this patch, `RuleCondition`'s constructor
+    silently dropped any condition field it does not explicitly assign
+    (unchanged upstream behavior, kept for every field this port still does
+    not recognize), which for these four fields means a rule matches every
+    request the field was meant to narrow -- e.g. a `responseHeaders`
+    condition meant to block only when a response carries a specific header
+    would block unconditionally. uBlock Origin Lite's own default
+    `ublock-filters.json` carries several `condition.responseHeaders` rules,
+    so this is not a hypothetical shape. Rejecting at validation, the same
+    place every other condition constraint in this file is enforced, turns
+    that silent over-match into a clear, caller-visible error instead
+    (`vendor/firefox-dnr/src/extension-dnr.mjs`'s new
+    `#checkCondUnsupportedFields`). Because `RuleValidator#addRules` already
+    skips only the one rule a check rejects (`continue`, not a hard stop),
+    this costs a static ruleset nothing beyond the rejected rules themselves
+    -- but see the accompanying `src/main/extensions/dnr/dnr-engine.ts`
+    change below: its `applyEnabledStaticRulesets` used to treat *any*
+    validation failure as fatal to the whole `setStaticRulesets` call
+    (`validateOrThrow`'s `getFailures().length` throw), which this patch
+    would otherwise turn into "uBOL's whole `ublock-filters` ruleset fails
+    to load" over six rejected rules out of 5,509. `dnr-engine.ts` now uses
+    a separate `validateStaticRuleset` for the static-ruleset path that
+    keeps the (already per-rule-filtered) validated subset instead, matching
+    Chrome's own documented behavior of dropping an invalid static rule
+    without failing the rest of the ruleset; `updateDynamicRules`/
+    `updateSessionRules` keep the original all-or-nothing `validateOrThrow`,
+    matching Chrome's transactional contract for those two calls.
+    `src/main/extensions/dnr/tests/rule-management.test.ts`'s "unsupported
+    condition fields" describe block and
+    `src/main/extensions/dnr/tests/real-ruleset-safety.test.ts` (gated on
+    `ORIVON_DNR_PERF`, loads uBOL's actual default rulesets) are the
+    regression tests. `topDomains`/`excludedTopDomains`, seen in uBOL's
+    `rulesets/regex/*.json`, were investigated and are not a real
+    `chrome.declarativeNetRequest` field: uBOL's own `ruleset-manager.js`
+    (`if (condition.topDomains) { continue }`) strips any rule carrying it
+    before that ruleset is ever loaded via `rule_resources` or handed to
+    `chrome.declarativeNetRequest`, and `rulesets/regex/` itself is not
+    referenced by any `rule_resources` entry in uBOL's manifest -- it is
+    uBOL's own intermediate representation from parsing uBlock filter
+    syntax, never a wire shape this engine needs to accept.
+
 Nothing else changed: class/function bodies, the top-of-file design comment,
 and every doc comment not touched by a patch above are upstream's own words,
 reformatted only where ESLint-style (`let`→`const` where safe, semicolons

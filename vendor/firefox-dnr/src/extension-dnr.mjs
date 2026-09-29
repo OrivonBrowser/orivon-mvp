@@ -1029,6 +1029,7 @@ class RuleValidator {
         !this.#checkCondRequestMethods(rule) ||
         !this.#checkCondTabIds(rule) ||
         !this.#checkCondUrlFilterAndRegexFilter(rule) ||
+        !this.#checkCondUnsupportedFields(rule) ||
         !this.#checkAction(rule)
       ) {
         continue
@@ -1114,6 +1115,35 @@ class RuleValidator {
 
     if (this.#hasOverlap(tabIds, excludedTabIds)) {
       this.#collectInvalidRule(rule, 'tabIds and excludedTabIds should not overlap')
+      return false
+    }
+    return true
+  }
+
+  // Checks: condition fields Chrome's current declarativeNetRequest schema
+  // accepts that this port cannot evaluate (UPSTREAM.md patch 14, no
+  // Firefox counterpart to reuse -- ExtensionDNR.sys.mjs implements neither).
+  // Rejecting here, rather than silently dropping the field the way an
+  // unrecognized property already is elsewhere in this file, keeps a rule
+  // whose author relied on the field from matching every request instead of
+  // only the ones they meant.
+  #checkCondUnsupportedFields(rule) {
+    const { domains, excludedDomains, responseHeaders, excludedResponseHeaders } = rule.condition
+    if (domains || excludedDomains) {
+      this.#collectInvalidRule(
+        rule,
+        'condition.domains/excludedDomains are deprecated Chrome aliases for ' +
+          'initiatorDomains/excludedInitiatorDomains and are not supported -- rewrite the ' +
+          'rule using initiatorDomains/excludedInitiatorDomains'
+      )
+      return false
+    }
+    if (responseHeaders || excludedResponseHeaders) {
+      this.#collectInvalidRule(
+        rule,
+        'condition.responseHeaders/excludedResponseHeaders are not supported -- this ' +
+          "engine's evaluate() carries no response-header state to match against"
+      )
       return false
     }
     return true
@@ -1770,15 +1800,24 @@ class RequestEvaluator {
         return false
       }
     }
+    // Patch 13 (UPSTREAM.md): guarded the same way the initiatorDomains
+    // checks below already are. requestURI always exists, but its host can
+    // still be empty (data:/blob:/about: -- schemes Firefox's own
+    // NetworkIntegration never hands to DNR, but Orivon's <all_urls>
+    // webRequest filter does), which makes RequestDetails#allRequestDomains
+    // '' rather than a string[]; unguarded, #matchesDomains would call
+    // .some() on that string and throw.
     if (
       cond.excludedRequestDomains &&
+      this.req.allRequestDomains &&
       this.#matchesDomains(cond.excludedRequestDomains, this.req.allRequestDomains)
     ) {
       return false
     }
     if (
       cond.requestDomains &&
-      !this.#matchesDomains(cond.requestDomains, this.req.allRequestDomains)
+      (!this.req.allRequestDomains ||
+        !this.#matchesDomains(cond.requestDomains, this.req.allRequestDomains))
     ) {
       return false
     }

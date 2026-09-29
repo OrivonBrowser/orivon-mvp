@@ -37,6 +37,32 @@ describe('requestDomains', () => {
       })
     ).toBe(false)
   })
+
+  // Regression: vendor/firefox-dnr/UPSTREAM.md patch 13. A request whose URL
+  // has no host (data:/blob:/about:/javascript: -- schemes Orivon's
+  // <all_urls> webRequest filter hands to evaluate() that Firefox's own
+  // NetworkIntegration never would) used to throw "targetDomains.some is not
+  // a function" for any rule with requestDomains/excludedRequestDomains,
+  // exactly the condition uBlock Origin Lite's default rulesets use on
+  // thousands of rules -- evaluate() must not throw, and a domain condition
+  // it cannot resolve a host for must not match.
+  it.each(['data:text/plain,hi', 'blob:https://example.com/1234', 'about:blank', 'javascript:void(0)'])(
+    'does not throw and does not match requestDomains for a hostless URL (%s)',
+    url => {
+      expect(() => blocksWithCondition(url, { requestDomains: ['example.com'] })).not.toThrow()
+      expect(blocksWithCondition(url, { requestDomains: ['example.com'] })).toBe(false)
+    }
+  )
+
+  it('a hostless URL does not throw against excludedRequestDomains either, and is not excluded by it', () => {
+    expect(() =>
+      blocksWithCondition('data:text/plain,hi', { excludedRequestDomains: ['example.com'] })
+    ).not.toThrow()
+    // No requestDomains restriction and nothing to exclude by (unknown
+    // host): the rule still matches, same as excludedInitiatorDomains'
+    // symmetric behavior with no initiator.
+    expect(blocksWithCondition('data:text/plain,hi', { excludedRequestDomains: ['example.com'] })).toBe(true)
+  })
 })
 
 describe('initiatorDomains', () => {
