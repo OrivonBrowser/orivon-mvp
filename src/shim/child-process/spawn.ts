@@ -10,9 +10,10 @@ import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { createChildWorker } from '../worker/launch.js'
 import { serveOrivon } from '../worker/orivon-server.js'
 import type { ToWorker } from '../worker/protocol.js'
+import type { HostStart } from '../worker/host-protocol.js'
 import { ChildProcess, type StdioMode } from './child.js'
-import type { SpawnProgram } from '../worker/protocol.js'
 import { loadProgram, spawnError } from './program.js'
+import { createRemoteWorker, hostConnection } from './host-client.js'
 import { runSpawnSync, type SpawnSyncRequest } from './spawn-sync.js'
 
 export type StdioOption = StdioMode | 'ipc' | 'overlapped' | null | undefined
@@ -73,8 +74,48 @@ export function applyLifetime (child: ChildProcess, options: SpawnOptions): void
   }
 }
 
-/** Starts the Worker. The start message goes first, then whatever was written to the child meanwhile. `extraTransfer` carries a thread's own parentPort and any transferList the app asked for; spawn and fork pass none. */
-export function launch (child: ChildProcess, name: string, start: (orivon: MessagePort) => ToWorker, extraTransfer: Transferable[] = []): void {
+/**
+ * Starts the child: through an app's own child host if one connects
+ * (ADR-0046), or a same-process Worker otherwise -- `ChildProcess` itself
+ * never knows which (`child.attach()` takes a `WorkerLike` either way).
+ *
+ * `hostStart` is what a host-routed child sends across the extra hop --
+ * never a precompiled program, which does not survive it (ADR-0046's
+ * Context) -- and is built EAGERLY, before either path is chosen, since it
+ * costs nothing to build and a host may answer before `localStart` would
+ * even finish. `localStart` builds the real start message for a
+ * same-process Worker, and may do async work a host-routed child skips
+ * entirely (a spawn's own program compile, moved to the host instead).
+ * `extraTransfer` carries a thread's own `parentPort` and any
+ * `transferList` the app asked for; spawn and fork pass none.
+ * `getHostConnection` is injectable only for a test; production code always
+ * takes the real, cached connection.
+ */
+export async function launchChild (
+  child: ChildProcess,
+  name: string,
+  hostStart: HostStart,
+  localStart: () => Promise<Omit<ToWorker, 'orivon'>> | Omit<ToWorker, 'orivon'>,
+  extraTransfer: readonly Transferable[] = [],
+  getHostConnection: () => Promise<MessagePort | undefined> = hostConnection
+): Promise<void> {
+  if (child.stopped) return
+  const host = await getHostConnection()
+  if (child.stopped) return
+  if (host !== undefined) {
+    child.attach(createRemoteWorker(host, hostStart, extraTransfer), { dispose: async () => {} })
+    return
+  }
+
+  let base: Omit<ToWorker, 'orivon'>
+  try {
+    base = await localStart()
+  } catch (error) {
+    child.fail(error as Error)
+    return
+  }
+  if (child.stopped) return
+
   let worker: Worker
   let server: ReturnType<typeof serveOrivon>
   const channel = new MessageChannel()
@@ -91,7 +132,7 @@ export function launch (child: ChildProcess, name: string, start: (orivon: Messa
     child.fail(Object.assign(new Error(`the child cannot start: ${String((error as Error)?.message ?? error)}`), { code: 'ENOEXEC', errno: -8 }))
     return
   }
-  worker.postMessage(start(channel.port2), [channel.port2, ...extraTransfer])
+  worker.postMessage({ ...base, orivon: channel.port2 } as ToWorker, [channel.port2, ...extraTransfer])
   child.attach(worker, server)
 }
 
@@ -109,16 +150,13 @@ async function start (child: ChildProcess, command: string, args: readonly strin
     child.fail(spawnError('ENOENT', command, args, `cwd ${options.cwd ?? ''} is outside the app's files`))
     return
   }
-  let program: SpawnProgram
-  try {
-    program = await loadProgram(command, args)
-  } catch (error) {
-    child.fail(error as Error)
-    return
-  }
-  if (child.stopped) return
   const env = environmentOf(options.env)
-  launch(child, `child_process ${command}`, (orivon) => ({ type: 'spawn', program, args: child.spawnargs, env, preopens, orivon }))
+  await launchChild(
+    child,
+    `child_process ${command}`,
+    { type: 'spawn', command, args: child.spawnargs, env, preopens },
+    async () => ({ type: 'spawn', program: await loadProgram(command, args), args: child.spawnargs, env, preopens })
+  )
 }
 
 export function spawn (command: string, argsOrOptions?: readonly string[] | SpawnOptions, maybeOptions?: SpawnOptions): ChildProcess {

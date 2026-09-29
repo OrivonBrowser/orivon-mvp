@@ -10,7 +10,7 @@ import { Readable, Writable } from 'stream'
 import { codedError } from '../node-errors.js'
 import { lineSink } from '../wasi/stdio.js'
 import type { OrivonServer } from '../worker/orivon-server.js'
-import type { FromWorker, StreamName, ToWorker } from '../worker/protocol.js'
+import type { FromWorker, StreamName, ToWorker, WorkerLike } from '../worker/protocol.js'
 
 export type StdioMode = 'pipe' | 'ignore' | 'inherit'
 
@@ -69,7 +69,7 @@ export class ChildProcess extends EventEmitter {
   killed = false
   connected: boolean
   readonly #options: ChildOptions
-  #worker: Worker | undefined
+  #worker: WorkerLike | undefined
   #server: OrivonServer | undefined
   #queued: ToWorker[] = []
   #ended = false
@@ -92,7 +92,7 @@ export class ChildProcess extends EventEmitter {
   }
 
   /** The Worker is running the child: flush what was written before it existed. */
-  attach (worker: Worker, server: OrivonServer): void {
+  attach (worker: WorkerLike, server: OrivonServer): void {
     this.#worker = worker
     this.#server = server
     this.pid = nextPid++
@@ -183,7 +183,11 @@ export class ChildProcess extends EventEmitter {
     else if (message.type === 'crash') this.emit('crash', message.error)
     else if (message.type === 'disconnect' && this.connected) { this.connected = false; this.emit('disconnect') }
     else if (message.type === 'failed') {
-      this.emit('error', Object.assign(new Error(message.error.message), { code: message.error.code ?? 'ENOEXEC' }))
+      this.emit('error', Object.assign(
+        new Error(message.error.message),
+        { code: message.error.code ?? 'ENOEXEC' },
+        message.error.reason === undefined ? {} : { reason: message.error.reason }
+      ))
       this.#finish(-8, null, false)
     } else if (message.type === 'exit') this.#finish(message.code, message.signal, true)
   }

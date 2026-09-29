@@ -9,14 +9,31 @@ page-side server and Worker-side client that carry the Worker's `orivon.*` calls
 (`sync-channel.ts`), `node-port.ts` (a web `MessagePort` in Node's shape: `worker_threads`'
 `parentPort`, `MessageChannel` and `MessagePort`), and `launch.ts`, which starts a Worker.
 [`../child-process/`](../child-process/) is the one user today: `child.ts`'s `ChildProcess` and
-`spawn.ts`'s `launch()` back `fork` and `thread.ts`'s `Worker` alike. A Worker reaches exactly what
-its page could, since it is the app's own code
+`spawn.ts`'s launch routing back `fork` and `thread.ts`'s `Worker` alike. A Worker reaches exactly
+what its page could, since it is the app's own code
 ([`ADR-0040`](../../../docs/decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)).
 Durable: it uses Web Workers, `MessagePort` and JSPI, no Electron API.
 
+**`host.ts`/`host-protocol.ts`: the child host's own relay** (ADR-0046). A spawn, a fork or a
+thread all run in a Worker of the app's hidden host, never the page that started it; `host.ts` is
+what runs inside that host, one real Worker per child, relaying between the Worker's ordinary
+`./protocol.ts` traffic and the page's own dedicated port for that child (`host-protocol.ts`'s
+`ToHostChild`/`StartChildMessage` -- a different, extra hop in front of the same
+`ToWorker`/`FromWorker` protocol, not a replacement for it). `../child-process/host-client.ts` is
+the page's own half: the connection handshake and the remote-Worker adapter that lets
+`launchChild()` route through a host exactly as it would start a local Worker. A spawn's own
+program (`../child-process/program.ts`'s `loadProgram`) is loaded by the host itself, never
+carried across the page -> host hop: a compiled `WebAssembly.Module` does not survive it
+(ADR-0046's Context).
+
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../wasi/`](../wasi/),
-[`../wasi-p2/`](../wasi-p2/),
-`../globals.ts`, `../virtual-root.ts`, and the `buffer` and `stream` polyfills.
+[`../wasi-p2/`](../wasi-p2/), [`../child-process/program.ts`](../child-process/program.ts) (for
+`host.ts`'s own spawn loading), `../globals.ts`, `../virtual-root.ts`, and the `buffer` and
+`stream` polyfills. Loading a program reaches a bare `import ... from 'path'`
+(`../fs/paths.ts`, `../wasi/fds.ts`), which `host.ts` bundles into a real preload script, not
+through the app bundler's own aliasing -- the preload build's own resolve plugin
+(`electron.vite.config.ts`'s `shimNodeSpecifiers`) resolves it the same way, for any importer
+under `src/shim/`.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README.
@@ -24,6 +41,18 @@ README.
 **Owner stream.** `shim`.
 
 ## Design notes
+
+**`electron.vite.config.ts`'s `shimNodeSpecifiers` needs a `config` hook, not only `resolveId`.**
+A plugin's `resolveId` alone cannot resolve a shim's bare Node specifier for the preload build:
+electron-vite's own preset puts every Node builtin into `rollupOptions.external` as a plain array,
+and Rollup's module loader checks THAT before calling any plugin's `resolveId` at all (measured: a
+shim importer's own `resolveId` here never ran, `require('path')` still in the built output) -- an
+array only Rollup's own `getIdMatcher` consults, so a matching id is external whatever a plugin
+would otherwise have resolved it to. The plugin's `config` hook runs after that preset's own (same
+`enforce: 'pre'` bucket, later in the assembled plugin list) and replaces `external` with an
+equivalent FUNCTION -- the one form of that option a plugin's `resolveId` still gets to run
+underneath, since `getIdMatcher` calls a function form directly rather than pattern-matching an
+array.
 
 **`runtime.generated.json` is `runtime.ts` bundled, and it is checked in.** A child Worker starts
 from that text through a `blob:` URL, which works whatever bundler a port uses and passes the served
@@ -92,3 +121,18 @@ the same one and the page's `worker_threads` names them without importing the ru
 **The stdout sink posts a copy of each chunk**, never the host's own array: transferring it would
 detach it, and the host reads its length afterwards for `fd_write`'s byte count, which a libc
 checks before writing again.
+
+**`host.ts` acks an orphaned child's output itself, rather than let it block.** A child's next
+chunk of a stream waits for an ack the PAGE normally sends once it reads the chunk
+(`../worker/parent.ts`'s `OutputAcks`); once the page's port is gone nothing else ever will, so a
+still-running child that keeps writing (any daemon logs) would otherwise hang at its very next
+write. Closing the port flushes one ack per stream immediately (unblocking a write already
+waiting), and every `output` message the Worker sends afterward gets its own ack in reply instead
+of a relay to the dead port.
+
+**`host.ts`'s own page<->host port must be closed-watched with `addEventListener('close', ...)`,
+never the `.onclose` property.** Measured directly: a real Chromium renderer's `MessagePort`
+dispatches `'close'` to a listener added either way, but under plain Node -- which is what this
+file's own unit tests (`tests/host.test.ts`) run a `MessagePort` pair under -- only
+`addEventListener` ever fires it; `.onclose = ...` is silently never called. `addEventListener`
+is what both agree on, so that is the only form used here.

@@ -1,6 +1,6 @@
 // `worker_threads.Worker`: an app module run as a thread in the same Web
 // Worker runtime child_process.fork uses (../worker/runtime-thread.ts),
-// reusing ChildProcess and spawn.ts's launch() for the Worker lifecycle,
+// reusing ChildProcess and spawn.ts's launchChild() for the Worker lifecycle,
 // its orivon.*, output backpressure and handle teardown on kill.
 // parentPort traffic crosses on its own MessageChannel, never
 // ChildProcess's control channel.
@@ -14,7 +14,7 @@ import { unwrapPorts, wrapPort } from '../worker/node-port.js'
 import { FORK_LIVENESS_SYMBOL, WORKER_THREADS_SYMBOL } from '../worker/symbols.js'
 import { ChildProcess } from './child.js'
 import { moduleUrl } from './fork.js'
-import { environmentOf, launch, type SpawnOptions } from './spawn.js'
+import { environmentOf, launchChild, type SpawnOptions } from './spawn.js'
 
 const warnOnce = createWarnOnce('orivon worker_threads.Worker')
 const SHARE_ENV = Symbol.for('nodejs.worker_threads.SHARE_ENV')
@@ -114,8 +114,8 @@ export class Worker extends EventEmitter {
     this.#outerLiveness?.ref()
 
     const transferList = (options.transferList ?? []).map(unwrapPorts) as Transferable[]
-    launch(child, name, (orivon) => ({
-      type: 'thread',
+    const threadStart = {
+      type: 'thread' as const,
       url,
       argv,
       env,
@@ -124,11 +124,11 @@ export class Worker extends EventEmitter {
       workerData: unwrapPorts(options.workerData),
       name,
       parentPort: portChannel.port2,
-      orivon,
       stdin: options.stdin === true,
       stdout: options.stdout === true,
       stderr: options.stderr === true
-    }), [portChannel.port2, ...transferList])
+    }
+    void launchChild(child, name, threadStart, () => threadStart, [portChannel.port2, ...transferList])
   }
 
   postMessage (value: unknown, transferList?: readonly unknown[]): void {

@@ -1,8 +1,8 @@
 # `src/preload/`: the privilege boundary
 
-**What lives here.** Ten preload scripts at ten privilege levels (`app.ts`, `shell.ts`, `newtab.ts`,
-`permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts`, `internal.ts`, `embed.ts` and
-`extension-api.ts`), the
+**What lives here.** Eleven preload scripts at eleven privilege levels (`app.ts`, `shell.ts`, `newtab.ts`,
+`permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts`, `internal.ts`, `embed.ts`,
+`child-host.ts` and `extension-api.ts`), the
 app-tab wiring they share (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`,
 `page-buffer.ts`, `ordinary-tab.ts`), and
 `orivon-error.ts`, the plain-object error shape [`surface/`](surface/) and [`ports/`](ports/)
@@ -19,7 +19,9 @@ entirely.
 [`src/contracts/`](../contracts/) for types, and, from `expose-shim-globals.ts` only,
 [`src/shim/globals.ts`](../shim/globals.ts): the one shim file with no `electron` import and no
 free identifier, so it can run in a preload and go to `contextBridge.executeInMainWorld`
-unchanged (A151). `extension-api.ts` also imports
+unchanged (A151). `child-host.ts` imports [`src/shim/worker/host.ts`](../shim/worker/host.ts)
+(ADR-0046): the one other shim file this directory reaches into, since the host runs that
+logic itself rather than exposing anything to a main world. `extension-api.ts` also imports
 [`../../vendor/electron-chrome-extensions/src/preload.js`](../../vendor/electron-chrome-extensions/src/preload.js)
 unmodified, so [`vendor/`](../../vendor/) is a dependency of this directory too.
 
@@ -42,8 +44,9 @@ across this boundary.
 | `internal.ts` | only a tab the shell opened as one of its own pages (`src/main/pages/`: Settings, History, ...) | `orivonInternal`: one `request(domain, command)` and one `onEvent`, after checking the document's scheme and host against the page the shell named; `src/main/pages/internal-ipc.ts` decides on every call what the page may reach |
 | `site-info.ts` | only the per-site popup (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info, switches, picked paths and browser data |
 | `embed.ts` | only a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest; ADR-0039) | Nothing on `window`: runs the script set with `orivon.web.setEmbedScript` before the page's own code, handing it `orivonEmbed` |
+| `child-host.ts` | only the hidden child host (`src/main/children/child-host.ts`; ADR-0046), and only at its own `/.well-known/orivon/child-host` document | Nothing on `window`: builds `orivon` in this isolated world alone and runs `src/shim/worker/host.ts`'s relay over the ports main connects |
 | `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrdinaryTabSurface()` as `app.ts` |
-| `expose-fetch-route.ts`, `expose-shim-globals.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, and `process`, `global`, `setImmediate`, `clearImmediate` and `Buffer` |
+| `expose-fetch-route.ts`, `expose-shim-globals.ts`, `expose-child-host-connect.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, `process`/`global`/`setImmediate`/`clearImmediate`/`Buffer`, and (ADR-0046) a `window.postMessage` handshake letting the page reach its app's child host with no new global |
 | `extension-api.ts` | registered as both a `'frame'` and a `'service-worker'` preload on the default session (`src/main/extensions/extension-host.ts`'s `createExtensionHost`, wired from `extensions-subsystem.ts`); injects `chrome.*` only on a `chrome-extension:` page or a `chrome-extension:`-scoped service worker (its URL read from the worker's main world: a worker's preload realm has no `location`), nothing elsewhere | `chrome.*` (`vendor/electron-chrome-extensions`'s `injectExtensionAPIs`), plus a health check that reloads a worker whose first `chrome.*` injection missed (`extension-sw-preload-recovery.ts`, A289) |
 | `vendor/electron-chrome-web-store/src/renderer/chrome-web-store.preload.ts` (not under this directory) | registered as a `'frame'` preload on the default session (`src/main/extensions/store-runner.ts`'s `startWebStore`); runs only on the top frame at exactly `https://chromewebstore.google.com` | `chrome.webstorePrivate`, and the `chrome.runtime`/`chrome.management` extras the store page's own script expects |
 

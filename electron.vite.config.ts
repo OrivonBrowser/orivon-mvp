@@ -1,11 +1,57 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { createRequire } from 'node:module'
+import { createRequire, isBuiltin } from 'node:module'
 import { defineConfig } from 'electron-vite'
 import { build, normalizePath, type Plugin } from 'vite'
 import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 
 const root = dirname(fileURLToPath(import.meta.url))
+
+/** True for a file under src/shim/ itself, never its own tests (which drive real `node:*`
+ * servers and disks): vitest.config.ts's `isShimSource` applies the identical rule for the unit
+ * suite, kept here as its own function since electron-vite's preload build needs it too. */
+export function isShimImporter (importer: string | undefined): boolean {
+  if (importer === undefined) return false
+  const path = importer.replace(/\\/g, '/')
+  return path.includes('/src/shim/') && !path.includes('/tests/')
+}
+
+/** `specifier` (bare or `node:`-prefixed) stripped to the bare form module-map.ts's table keys on. */
+function bareSpecifier (specifier: string): string {
+  return specifier.startsWith('node:') ? specifier.slice('node:'.length) : specifier
+}
+
+/**
+ * The preload build has no aliasing of its own, unlike the renderer build's
+ * `resolve.alias` below -- so shim code bundled straight into a preload
+ * (`src/shim/worker/host.ts`'s own header says which, and why) needs a bare
+ * Node specifier resolved through the SAME table. `config` and `resolveId`
+ * split one job neither can do alone; see src/shim/worker/README.md's
+ * Design notes for why both exist.
+ */
+export function shimNodeSpecifiers (): Plugin {
+  const targets = new Map(buildAliasEntries().map((entry) => [entry.specifier, entry]))
+  const isOurs = (source: string, importer: string | undefined): boolean =>
+    isShimImporter(importer) && targets.has(bareSpecifier(source))
+
+  return {
+    name: 'orivon:shim-node-specifiers',
+    enforce: 'pre',
+    config (config) {
+      const build = { ...config.build, rollupOptions: { ...config.build?.rollupOptions } }
+      build.rollupOptions.external = (source: string, importer: string | undefined) =>
+        !isOurs(source, importer) && (source === 'electron' || source.startsWith('electron/') || isBuiltin(source))
+      config.build = build
+    },
+    async resolveId (source, importer, options) {
+      if (!isOurs(source, importer)) return null
+      const entry = targets.get(bareSpecifier(source))
+      if (entry === undefined) return null
+      const target = entry.kind === 'package' ? entry.implementation : resolve(root, 'src/shim', entry.implementation)
+      return await this.resolve(target, importer, { ...options, skipSelf: true })
+    }
+  }
+}
 
 /** The name src/preload/page-buffer.ts's installer reads the `buffer` package through. */
 export const BUFFER_PACKAGE_PLACEHOLDER = '__ORIVON_BUFFER_PACKAGE__'
@@ -122,7 +168,11 @@ export default defineConfig({
     // this just keeps the remaining, now-harmless calls from being noisy
     // in piped/CI output.
     logLevel: 'warn',
-    plugins: [pageBufferPackage()],
+    // shimNodeSpecifiers must resolve BEFORE Rollup's own externalization
+    // decides a bare Node specifier is a builtin with nothing to bundle --
+    // its own header has the full reasoning. Order after pageBufferPackage
+    // is not load-bearing (different id, `enforce: 'post'` besides).
+    plugins: [pageBufferPackage(), shimNodeSpecifiers()],
     build: {
       // CommonJS, which a sandboxed preload requires: it has no ESM context
       // and loads electron via require (see src/main/index.ts).
@@ -145,6 +195,7 @@ export default defineConfig({
           menu: resolve(root, 'src/preload/menu.ts'),
           'split-frame': resolve(root, 'src/preload/split-frame.ts'),
           embed: resolve(root, 'src/preload/embed.ts'),
+          'child-host': resolve(root, 'src/preload/child-host.ts'),
           'extension-api': resolve(root, 'src/preload/extension-api.ts'),
           'web-store': resolve(
             root,
