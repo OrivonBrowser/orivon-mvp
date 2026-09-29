@@ -289,6 +289,121 @@ describe('requestGrant: a shared PendingGrantRequests map de-dupes concurrent ca
   })
 })
 
+// Decision 10/Task 1: a dialog answered by, or on behalf of, a page the
+// person is no longer looking at must never turn into a grant -- and must
+// never be written down as a decline either, since nobody who could see the
+// question actually answered "no".
+describe('requestGrant: a caller that has left by the time consent() resolves', () => {
+  it('never grants, even though consent() resolved true', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, caller)
+
+    expect(result).toBe(false)
+    expect(calls.some((call) => call.method === 'grant')).toBe(false)
+  })
+
+  it('does not record a decline for a caller that left -- a later, genuine ask still prompts', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined
+    })
+    const consent = vi.fn(async () => true)
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    await requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, caller)
+
+    expect(calls.some((call) => call.method === 'recordDeclinedConsent')).toBe(false)
+  })
+
+  it('a caller still present is unaffected -- consent()\'s own answer still governs', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+    const caller = { window: () => undefined, stillOn: () => true }
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, caller)
+
+    expect(result).toBe(true)
+    expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
+  })
+})
+
+// Task 2: keeps the per-(origin, capability) sharing above, and ALSO
+// serialises the dialog itself across DIFFERENT capabilities of one origin,
+// so a page cannot stack one dialog per capability it asks for at once.
+describe('requestGrant: a shared PendingGrantPrompts map serialises the dialog per origin', () => {
+  it('a second capability\'s dialog for the same origin waits for the first to resolve, then shows its own', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['*:*'] } }, fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    let resolveFirst: ((accepted: boolean) => void) | undefined
+    const consent = vi.fn((_origin: string, capability: string) => {
+      if (capability === 'tcp.connect') return new Promise<boolean>((resolve) => { resolveFirst = resolve })
+      return Promise.resolve(true)
+    })
+    const prompts = new Map<string, Promise<void>>()
+
+    const results = Promise.all([
+      requestGrant(broker, consent, APP, { capability: 'tcp.connect' }, undefined, undefined, prompts),
+      requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, undefined, prompts)
+    ])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // The SECOND capability's own consent() call has not been made yet --
+    // only the first dialog is open.
+    expect(consent).toHaveBeenCalledTimes(1)
+
+    resolveFirst?.(true)
+    await results
+
+    expect(consent).toHaveBeenCalledTimes(2)
+  })
+
+  it('two DIFFERENT origins never wait on each other', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    let resolveFirst: ((accepted: boolean) => void) | undefined
+    const consent = vi.fn((origin: string) => {
+      if (origin === APP) return new Promise<boolean>((resolve) => { resolveFirst = resolve })
+      return Promise.resolve(true)
+    })
+    const prompts = new Map<string, Promise<void>>()
+
+    const other = 'https://other.example'
+    const results = Promise.all([
+      requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, undefined, prompts),
+      requestGrant(broker, consent, other, { capability: 'fs' }, undefined, undefined, prompts)
+    ])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // The other origin's dialog already ran -- it never queued behind APP's.
+    expect(consent).toHaveBeenCalledTimes(2)
+
+    resolveFirst?.(true)
+    await results
+  })
+})
+
 describe('requestGrant (real broker) -- proves a real, persisted grant', () => {
   function realBroker (): Broker {
     return createBroker(baseDeps())
