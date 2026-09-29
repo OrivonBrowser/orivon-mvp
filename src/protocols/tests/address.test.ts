@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ProtocolAddresses, labelFor } from '../address.js'
 import { BUILTIN_PROTOCOLS } from '../builtin.js'
+import { describeProtocol } from '../protocol.js'
 
 const CID = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
 const addresses = new ProtocolAddresses(BUILTIN_PROTOCOLS)
@@ -63,6 +64,12 @@ describe('ProtocolAddresses', () => {
     expect(addresses.servedUrl('ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG?x')).toBe('https://ipfs.orivon/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG/?x')
   })
 
+  it('sends an address scheme written over a top-level-domain name straight to that name\'s own origin', () => {
+    expect(addresses.servedUrl('ipfs://vitalik.eth/x')).toBe('https://vitalik.eth/x')
+    expect(addresses.servedUrl('ipns://Vitalik.ETH/x')).toBe('https://vitalik.eth/x')
+    expect(addresses.servedUrl('ipfs://vitalik.eth')).toBe('https://vitalik.eth/')
+  })
+
   it.each(['https://example.com', 'magnet:?xt=1', 'ipfs://', 'ipfs:///path', 'ipfs://a b', 'ipfs://a%2fb', 'ipfs://user@cid', 'javascript://x', `ipfs://${'a'.repeat(254)}`])('does not serve %s', (input) => {
     expect(addresses.servedUrl(input)).toBeUndefined()
   })
@@ -71,7 +78,18 @@ describe('ProtocolAddresses', () => {
     expect(addresses.displayUrl(`https://${CID}.ipfs.orivon/docs/a.html?x=1#top`)).toBe(`ipfs://${CID}/docs/a.html?x=1#top`)
     expect(addresses.displayUrl('https://en-wikipedia--on--ipfs-org.ipns.orivon/')).toBe('ipns://en.wikipedia-on-ipfs.org/')
     expect(addresses.displayUrl('https://ipfs.orivon/QmAbc/x')).toBe('ipfs://QmAbc/x')
-    for (const url of ['https://vitalik.eth/', 'https://example.com/', `http://${CID}.ipfs.orivon/`, `https://${CID}.ipfs.orivon:8443/`, 'https://ipfs.orivon/', 'not a url']) {
+    for (const url of ['https://example.com/', `http://${CID}.ipfs.orivon/`, `https://${CID}.ipfs.orivon:8443/`, 'https://ipfs.orivon/', 'not a url']) {
+      expect(addresses.displayUrl(url)).toBe(url)
+    }
+  })
+
+  it('shows a .eth name under its ipfs display scheme, keeping path, query and hash', () => {
+    expect(addresses.displayUrl('https://vitalik.eth/blog/?a=1#b')).toBe('ipfs://vitalik.eth/blog/?a=1#b')
+    expect(addresses.displayOrigin('https://vitalik.eth')).toBe('ipfs://vitalik.eth')
+  })
+
+  it('leaves a .eth name unchanged when it is not https on its default port, or has a trailing dot', () => {
+    for (const url of ['http://freetube.eth/', 'https://vitalik.eth:8443/', 'https://vitalik.eth./']) {
       expect(addresses.displayUrl(url)).toBe(url)
     }
   })
@@ -85,11 +103,20 @@ describe('ProtocolAddresses', () => {
 
   it('shows a served origin as its address', () => {
     expect(addresses.displayOrigin(`https://${CID}.ipfs.orivon`)).toBe(`ipfs://${CID}`)
-    expect(addresses.displayOrigin('https://vitalik.eth')).toBe('https://vitalik.eth')
   })
 
   it('round-trips: the address a served URL shows loads that same served URL once canonical', () => {
     const shown = addresses.displayUrl(`https://${CID}.ipfs.orivon/a?b`)
     expect(addresses.servedUrl(shown)).toBe(`https://ipfs.orivon/${CID}/a?b`)
+  })
+
+  it('round-trips a .eth name: the address it is shown as loads its own origin back', () => {
+    const shown = addresses.displayUrl('https://vitalik.eth/blog/')
+    expect(addresses.servedUrl(shown)).toBe('https://vitalik.eth/blog/')
+  })
+
+  it('refuses a descriptor whose displayScheme no given protocol serves', () => {
+    const ens = describeProtocol({ id: 'ens', schemes: [], topLevelDomains: ['eth'], displayScheme: 'ipfs' })
+    expect(() => new ProtocolAddresses([ens])).toThrow(/displayScheme ipfs/)
   })
 })

@@ -16,6 +16,7 @@ import { connect as netConnect } from 'node:net'
 import type { ElectronApplication } from 'playwright'
 import { closeElectron, APP_CLOSE_RACE_MS } from './launch-electron.mjs'
 import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { BUILTIN_ADDRESSES } from '../src/protocols/builtin.js'
 /** Ceiling for waitForAddressBarStable below. Named so the budget
  * arithmetic beneath it can reuse the real number instead of retyping
  * `8_000` in two places that could quietly drift apart. */
@@ -268,8 +269,9 @@ export async function navigateToFixture (
   const chrome = findChrome(app)
   await waitForAddressBarStable(chrome)
   await clickAddressBarRetrying(chrome, url)
-  const navigated = await waitForTab(chrome, { address: url, title: expectedTitle })
-  if (!navigated.ok) throw new Error(`fixture tab did not navigate to ${url}: ${JSON.stringify(navigated.info)}`)
+  const shown = BUILTIN_ADDRESSES.displayUrl(url)
+  const navigated = await waitForTab(chrome, { address: shown, title: expectedTitle })
+  if (!navigated.ok) throw new Error(`fixture tab did not navigate to ${shown}: ${JSON.stringify(navigated.info)}`)
   const view = findViewShowing(app, chrome, url)
   if (view === undefined) throw new Error(`no view found showing ${url}`)
   return view

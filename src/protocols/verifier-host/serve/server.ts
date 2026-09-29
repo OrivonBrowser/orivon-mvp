@@ -204,6 +204,10 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
   }
 }
 
+function redirectTo (res: ServerResponse, origin: string, path: string, search: string): void {
+  res.writeHead(301, { location: `${origin}${path}${search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
+}
+
 /**
  * `https://ipfs.orivon/<name>/<path>`, where a typed or linked `ipfs://` address
  * lands: redirected to the origin of the name's canonical spelling, so one
@@ -216,10 +220,16 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
     const decoded = decodeURIComponent(written)
     // Any page can send one of these, and a protocol's parser may be slow on a long string.
     if (decoded.length > MAX_ADDRESS_NAME) throw new ResolutionError('invalid-name', `${scheme}:// names are at most ${String(MAX_ADDRESS_NAME)} characters`)
+    // A top-level-domain name already has its own origin: send it straight there, never through this scheme's own resolution.
+    const named = registry.addresses.nameOrigin(decoded)
+    if (named !== undefined) {
+      redirectTo(res, named, path, url.search)
+      return
+    }
     const name = registry.canonicalName(scheme, decoded)
     const origin = registry.addresses.originFor(scheme, name)
     if (origin === undefined) throw new ResolutionError('unsupported', `${scheme}://${name} is too long, or not lowercase, to be a host of its own`)
-    res.writeHead(301, { location: `${origin}${path}${url.search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
+    redirectTo(res, origin, path, url.search)
   } catch (error) {
     sendError(res, shown, error instanceof URIError ? new ResolutionError('invalid-name', `${shown} is not a valid address`) : error)
   }

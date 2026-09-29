@@ -29,7 +29,8 @@ over its message protocol.
    need a new way to load content. An address scheme's resolver defines `canonicalName` and
    refuses in `resolve` any other spelling: two spellings would be two origins for one site.
 2. **Its descriptor**, `<id>/descriptor.ts`: `describeProtocol({ id, schemes, topLevelDomains })`,
-   data only.
+   data only. A protocol with top-level domains may also name `displayScheme`, the address scheme
+   a name under one of them is shown with (`ipfs` for `.eth`); its origin stays unchanged.
 3. **Its entry in [`builtin.ts`](builtin.ts).** From there the shell routes, shows and
    canonicalises it everywhere: address bar, omnibox, links, consent dialogs, the certificate
    check and the resolver rules.

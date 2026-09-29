@@ -18,6 +18,8 @@ export interface ProtocolDescriptor {
   readonly schemes: readonly string[]
   /** Top-level domains whose names it resolves, each served at the name itself: `https://<name>.eth`. */
   readonly topLevelDomains: readonly string[]
+  /** The address scheme a name under `topLevelDomains` is shown with (`ipfs` for `.eth`); its origin is unchanged. Requires `topLevelDomains` to be non-empty. */
+  readonly displayScheme?: string
 }
 
 export interface Protocol {
@@ -47,7 +49,7 @@ export function namespacesOf (descriptor: ProtocolDescriptor): Namespace[] {
 
 /** Checks a descriptor and returns it frozen. Throws for one the shell could not route or show. */
 export function describeProtocol (descriptor: ProtocolDescriptor): ProtocolDescriptor {
-  const { id, schemes, topLevelDomains } = descriptor
+  const { id, schemes, topLevelDomains, displayScheme } = descriptor
   if (!ID.test(id)) throw new Error(`protocol id ${JSON.stringify(id)} is not lowercase letters, digits and hyphens`)
   for (const scheme of schemes) {
     if (!SCHEME.test(scheme)) throw new Error(`protocol ${id}: scheme ${JSON.stringify(scheme)} is not lowercase letters and digits`)
@@ -57,10 +59,20 @@ export function describeProtocol (descriptor: ProtocolDescriptor): ProtocolDescr
     if (!TOP_LEVEL_DOMAIN.test(tld)) throw new Error(`protocol ${id}: ${JSON.stringify(tld)} is not a top-level domain`)
     if (RESERVED_TOP_LEVEL_DOMAINS.has(tld)) throw new Error(`protocol ${id}: .${tld} is reserved`)
   }
+  if (displayScheme !== undefined) {
+    if (topLevelDomains.length === 0) throw new Error(`protocol ${id}: displayScheme needs a top-level domain to apply to`)
+    if (!SCHEME.test(displayScheme)) throw new Error(`protocol ${id}: displayScheme ${JSON.stringify(displayScheme)} is not lowercase letters and digits`)
+    if (RESERVED_SCHEMES.has(displayScheme) || displayScheme.startsWith(ADDRESS_SUFFIX)) throw new Error(`protocol ${id}: displayScheme ${displayScheme} is reserved`)
+  }
   const namespaces = namespacesOf(descriptor)
   if (namespaces.length === 0) throw new Error(`protocol ${id} serves no scheme and no top-level domain`)
   if (new Set(namespaces).size !== namespaces.length) throw new Error(`protocol ${id} declares a namespace twice`)
-  return Object.freeze({ id, schemes: Object.freeze([...schemes]), topLevelDomains: Object.freeze([...topLevelDomains]) })
+  return Object.freeze({
+    id,
+    schemes: Object.freeze([...schemes]),
+    topLevelDomains: Object.freeze([...topLevelDomains]),
+    ...(displayScheme === undefined ? {} : { displayScheme })
+  })
 }
 
 /**

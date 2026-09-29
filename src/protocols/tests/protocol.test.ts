@@ -25,9 +25,19 @@ describe('describeProtocol', () => {
     [{ id: 'p', schemes: [], topLevelDomains: ['orivon'] }, /reserved/],
     [{ id: 'p', schemes: [], topLevelDomains: ['-eth'] }, /not a top-level domain/],
     [{ id: 'p', schemes: [], topLevelDomains: [] }, /serves no scheme/],
-    [{ id: 'p', schemes: ['a', 'a'], topLevelDomains: [] }, /twice/]
+    [{ id: 'p', schemes: ['a', 'a'], topLevelDomains: [] }, /twice/],
+    [{ id: 'p', schemes: ['ipfs'], topLevelDomains: [], displayScheme: 'ipfs' }, /displayScheme needs a top-level domain/],
+    [{ id: 'p', schemes: [], topLevelDomains: ['eth'], displayScheme: 'IPFS' }, /lowercase/],
+    [{ id: 'p', schemes: [], topLevelDomains: ['eth'], displayScheme: 'https' }, /reserved/]
   ])('refuses %o', (descriptor, message) => {
     expect(() => describeProtocol(descriptor)).toThrow(message)
+  })
+
+  it('accepts a displayScheme only alongside a top-level domain, and keeps it out of the frozen result otherwise', () => {
+    const ens = describeProtocol({ id: 'ens', schemes: [], topLevelDomains: ['eth'], displayScheme: 'ipfs' })
+    expect(ens.displayScheme).toBe('ipfs')
+    const ipfs = describeProtocol({ id: 'ipfs', schemes: ['ipfs'], topLevelDomains: [] })
+    expect('displayScheme' in ipfs).toBe(false)
   })
 
   it('holds for every built-in protocol, whose namespaces never overlap', () => {
