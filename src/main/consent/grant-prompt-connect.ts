@@ -46,13 +46,47 @@ export interface CapabilityGrantSummary {
  * re-deriving the marker from each literal that uses it. */
 export const WARNING_MARK = '⚠ '
 
+/**
+ * Plan decision 10, "row lists capped": how many individual items (a
+ * web.context origin, an embed host, a sensitive address, a port) any ONE
+ * list in a consent dialog names before the rest fold into a single "and N
+ * more" line -- a manifest can declare up to `MAX_PATTERNS` (256) of any of
+ * these, each on its own line with nothing here that scrolls, and a native
+ * `dialog.showMessageBox` grows exactly as tall as its longest string.
+ * Deliberately well under `MAX_PATTERNS`: a real, curated declaration reads
+ * fine at this length, and the point past it is presentation, not policy --
+ * retune freely.
+ */
+export const MAX_LISTED_ROWS = 20
+
+/**
+ * `items` capped to `MAX_LISTED_ROWS`, plus how many were left out -- the
+ * one place every per-item list in this file (and grant-prompt-render.ts's
+ * web.context origins, grant-prompt-embed.ts's embed hosts) shares the same
+ * cap and the same "and N more" wording, rather than each re-deriving its
+ * own slice-and-count.
+ */
+export function cappedRows<T> (items: readonly T[]): { readonly shown: readonly T[], readonly more: number } {
+  if (items.length <= MAX_LISTED_ROWS) return { shown: items, more: 0 }
+  return { shown: items.slice(0, MAX_LISTED_ROWS), more: items.length - MAX_LISTED_ROWS }
+}
+
+/** `cappedRows` joined for an inline, comma-separated clause (embed hosts, a
+ * sensitive-address list): `"a, b, c and 5 more"` once the cap bites, never
+ * a bare, unbounded `.join(', ')`. */
+export function joinCapped (items: readonly string[]): string {
+  const { shown, more } = cappedRows(items)
+  if (more === 0) return shown.join(', ')
+  return `${shown.join(', ')} and ${String(more)} more`
+}
+
 const WARNING_HEADLINE = `${WARNING_MARK}Unlimited network access`
 
 /** `port 443`, or `ports 22, 443, 5432` for more than one -- shared by
  * `tcp.listen`/`udp.bind`'s own rendering (grant-prompt-render.ts) and
  * connect breadth here (AR-02), rather than a second joiner. */
 export function portsPhrase (patterns: readonly Pattern[]): string {
-  return patterns.length === 1 ? `port ${patterns[0]}` : `ports ${patterns.join(', ')}`
+  return patterns.length === 1 ? `port ${patterns[0]}` : `ports ${joinCapped(patterns)}`
 }
 
 /** One parsed `host:port` pattern, via the SAME grammar the runtime
@@ -236,7 +270,13 @@ function namedHostsSummaryWithSensitiveAddresses (verb: string, singular: string
     ? ''
     : ` and ${ordinaryHosts.length} other ${ordinaryHosts.length === 1 ? singular : plural}`
 
-  const sentences = sensitiveHosts.map((host) => {
+  // Every SHOWN sensitive host still gets its own sentence (A197: never
+  // folded into a bare count) -- only the ROW COUNT is capped (decision 10),
+  // and the ones left out are still named as a number, in `moreClause`
+  // below, never silently dropped the way `otherSitesClause` drops ordinary
+  // hosts.
+  const { shown: shownSensitiveHosts, more: moreSensitiveHosts } = cappedRows(sensitiveHosts)
+  const sentences = shownSensitiveHosts.map((host) => {
     const cls = classByHost.get(host)
     // Every entry in sensitiveHosts came from `sensitive`, so `cls` is
     // always defined here -- the `as` below is not a type escape hatch,
@@ -244,11 +284,12 @@ function namedHostsSummaryWithSensitiveAddresses (verb: string, singular: string
     return `${host} is ${describeAddressClass(cls as Exclude<AddressClass, 'public' | 'unparseable'>)}.`
   })
   const closingSentence = sensitiveHosts.length === 1 ? 'This is not part of the public internet.' : 'These are not part of the public internet.'
+  const moreClause = moreSensitiveHosts === 0 ? '' : ` It also names ${String(moreSensitiveHosts)} more address${moreSensitiveHosts === 1 ? '' : 'es'} like this.`
 
   return {
     warning: true,
-    message: `${WARNING_MARK}${verb} ${sensitiveHosts.join(', ')}${otherSitesClause}`,
-    explanation: `${sentences.join(' ')} ${closingSentence}`
+    message: `${WARNING_MARK}${verb} ${joinCapped(sensitiveHosts)}${otherSitesClause}`,
+    explanation: `${sentences.join(' ')} ${closingSentence}${moreClause}`
   }
 }
 

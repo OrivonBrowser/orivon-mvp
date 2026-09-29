@@ -34,43 +34,40 @@ import type { CapabilityRequest, Pattern, CapabilityKind } from '../../contracts
 export type ConsentPrompt = (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]) => Promise<boolean>
 
 /**
- * OrivonApp.requestGrant's full contract (capability-api.ts): "May prompt
- * the user. Resolves false if declined or not declared."
+ * One in-flight `requestGrant` call per (origin, capability): a second call
+ * for the same pair, made while the first is still awaiting its `consent`
+ * dialog (or anything before it), shares that first call's eventual answer
+ * instead of opening a second dialog. Keyed narrower than plan decision 10's
+ * own wording ("one pending prompt per origin") on purpose: two DIFFERENT
+ * capabilities requested concurrently for one origin are two different
+ * questions, and applying one's answer to the other would be a correctness
+ * bug (grant `fs` because `tcp.connect` happened to be approved, or the
+ * reverse), not a UX nicety -- a burst of calls all asking for the SAME
+ * capability, in a loop or all at once, is what this still fully closes.
  *
- * `request.capability` is typed as a bare `string` at the contract layer
- * (an app is untrusted input), so an unrecognised value is treated exactly
- * like "not declared" -- resolved false, no prompt, matching the same
- * fail-closed stance `decideGrantRequest` takes for a real CapabilityKind
- * the manifest never named.
- *
- * A MISSING MANIFEST (no `registerApp` ever ran for `origin`) also resolves
- * false rather than throwing: `broker.app.manifest` rejects 'internal' for
- * that case (a broker fault from ITS perspective -- every other caller is
- * expected to have registered first), but from a requester's point of view
- * "nothing was ever declared" and "not declared" are the same fact.
+ * A `Map`, not a `WeakMap`: the key is a string, not an object, and entries
+ * are removed (see `requestGrant` below) the instant their call settles, so
+ * nothing here outlives the request it was made for.
  */
-export async function requestGrant (
+export type PendingGrantRequests = Map<string, Promise<boolean>>
+
+function pendingKey (origin: string, capability: CapabilityKind): string {
+  return `${origin}\u0000${capability}`
+}
+
+/**
+ * The real work of one `requestGrant` call, split out so `requestGrant`
+ * itself can wrap it in the in-flight de-dup above without an `await`
+ * between checking `pending` and claiming a slot in it -- seeing this
+ * function's own promise is enough to claim the slot; nothing inside it
+ * needs to run first.
+ */
+async function requestGrantOnce (
   broker: Broker,
   consent: ConsentPrompt,
   origin: string,
-  request: CapabilityRequest
+  request: CapabilityRequest & { capability: CapabilityKind }
 ): Promise<boolean> {
-  if (!isCapabilityKind(request.capability)) return false
-
-  // ADR-0019, spec item 6: 'web.context' is declared-in-the-manifest-only in
-  // this version, whatever the manifest declares -- app.requestGrant must
-  // never mint one dynamically. THIS is the one door that stays shut; the
-  // install-consent dialog (grant-prompt-render.ts's own 'web.context'
-  // copy, via main/grant-changed-capabilities.ts) is the only door left.
-  // Checked here rather than inside decideGrantRequest (../broker/policy/
-  // request-grant.js): that function is ALSO grant-persistence.ts's own
-  // "does a restored grant still fit the current manifest" check and this
-  // file's own sibling's real grant call, and a blanket refusal there would
-  // silently break both -- see decideGrantRequest's own doc for why.
-  // ADR-0039's `web.embed` keeps the same one door: the install-consent
-  // dialog, never a dynamic request.
-  if (request.capability === 'web.context' || request.capability === 'web.embed') return false
-
   let manifest
   try {
     manifest = await broker.app.manifest(origin)
@@ -80,6 +77,14 @@ export async function requestGrant (
 
   const decision = decideGrantRequest(manifest, request.capability, request.patterns)
   if (!decision.allowed) return false
+
+  // Decision 10: a capability declined earlier THIS RUN resolves false with
+  // no prompt at all, however often a page calls requestGrant for it.
+  // `install-consent.ts`'s own all-or-nothing accept, and this file's own
+  // `clearDeclinedCapability` below, are the only ways off this list -- an
+  // old "no" here is retired by a "yes", never by asking again.
+  const declined = await broker.declinedCapabilitiesFor(origin)
+  if (declined?.includes(request.capability) === true) return false
 
   const accepted = await consent(origin, request.capability, decision.patterns)
   if (!accepted) return false
@@ -114,6 +119,72 @@ export async function requestGrant (
   // about -- alone.
   await clearDeclinedCapability(broker, origin, request.capability)
   return true
+}
+
+/**
+ * OrivonApp.requestGrant's full contract (capability-api.ts): "May prompt
+ * the user. Resolves false if declined or not declared."
+ *
+ * `request.capability` is typed as a bare `string` at the contract layer
+ * (an app is untrusted input), so an unrecognised value is treated exactly
+ * like "not declared" -- resolved false, no prompt, matching the same
+ * fail-closed stance `decideGrantRequest` takes for a real CapabilityKind
+ * the manifest never named.
+ *
+ * A MISSING MANIFEST (no `registerApp` ever ran for `origin`) also resolves
+ * false rather than throwing: `broker.app.manifest` rejects 'internal' for
+ * that case (a broker fault from ITS perspective -- every other caller is
+ * expected to have registered first), but from a requester's point of view
+ * "nothing was ever declared" and "not declared" are the same fact.
+ *
+ * `pending` is the real caller's ONE map, shared across every call this
+ * running app makes (`request-grant-subsystem.ts` builds it once, at
+ * wiring time) -- see `PendingGrantRequests`'s own doc for what it does and
+ * why it is keyed the way it is. Omitted (every existing test that calls
+ * this directly), the de-dup is simply off: each call is independent, which
+ * is what a test asserting one call's own behaviour wants regardless.
+ */
+export async function requestGrant (
+  broker: Broker,
+  consent: ConsentPrompt,
+  origin: string,
+  request: CapabilityRequest,
+  pending?: PendingGrantRequests
+): Promise<boolean> {
+  if (!isCapabilityKind(request.capability)) return false
+
+  // ADR-0019, spec item 6: 'web.context' is declared-in-the-manifest-only in
+  // this version, whatever the manifest declares -- app.requestGrant must
+  // never mint one dynamically. THIS is the one door that stays shut; the
+  // install-consent dialog (grant-prompt-render.ts's own 'web.context'
+  // copy, via main/grant-changed-capabilities.ts) is the only door left.
+  // Checked here rather than inside decideGrantRequest (../broker/policy/
+  // request-grant.js): that function is ALSO grant-persistence.ts's own
+  // "does a restored grant still fit the current manifest" check and this
+  // file's own sibling's real grant call, and a blanket refusal there would
+  // silently break both -- see decideGrantRequest's own doc for why.
+  // ADR-0039's `web.embed` keeps the same one door: the install-consent
+  // dialog, never a dynamic request.
+  if (request.capability === 'web.context' || request.capability === 'web.embed') return false
+
+  if (pending === undefined) return await requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability })
+
+  const key = pendingKey(origin, request.capability)
+  const inFlight = pending.get(key)
+  if (inFlight !== undefined) return await inFlight
+
+  // Claimed SYNCHRONOUSLY, in the same tick as the `pending.get` check just
+  // above, with no `await` in between: calling an async function runs it
+  // synchronously up to its own first `await`, so a concurrent call arriving
+  // before this one yields control anywhere will still find this promise
+  // already in `pending` -- see PendingGrantRequests's own doc.
+  const ask = requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability })
+  pending.set(key, ask)
+  try {
+    return await ask
+  } finally {
+    pending.delete(key)
+  }
 }
 
 /**

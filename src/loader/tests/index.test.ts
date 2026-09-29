@@ -473,6 +473,44 @@ describe('createLoader: refetch against an existing pin', () => {
     // CHANGED), not fall through to a silent re-install.
     expect(result.outcome).toBe('needs-reconsent')
   })
+
+  // apps/<hash>/pin.json can go missing (removed, a partial restore) while
+  // the LEDGER -- versionFloor, grants -- survives independently in its own
+  // storage. A missing pin for an origin the ledger already trusted must
+  // still force the version floor (a downgrade to an old, vulnerable
+  // version still needs a rollback choice) and any reconsent for a bundle
+  // that changed, never a silent TOFU install straight through.
+  it('a missing pin for an origin the ledger already knows (a real version floor) forces at least a rollback choice, never silent TOFU', async () => {
+    const storage = memoryStorage() // no pin.json at all for this origin
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '1.0.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>old, below-floor code') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    // What installFromHint builds from the ledger for an origin already
+    // registered at a higher version and already granted tcp.connect --
+    // the ledger's own state, independent of whatever apps/<hash>/ holds.
+    const result = await loader.load(ORIGIN, {
+      grantedPatterns: { 'tcp.connect': ['*:*'] },
+      versionFloor: '5.0.0',
+      acknowledgedRollbackVersion: undefined
+    })
+
+    expect(result.outcome).toBe('needs-rollback-choice')
+  })
+
+  it('a missing pin for an origin the ledger has never registered (versionFloor at its default) is still ordinary TOFU', async () => {
+    const storage = memoryStorage()
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('installed')
+  })
 })
 
 // The site-info popover's Web3 Score page (../../main/browsing/site-

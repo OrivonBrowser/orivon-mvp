@@ -9,8 +9,11 @@ import type { SubsystemContext } from '../../registry.js'
 
 // A revoke in the permissions panel is the person saying no to that
 // capability, so the install-consent dialog, which runs again on every
-// launch's first visit, must not ask for it again. The app can still ask
-// through app.requestGrant, and a yes there retires the "no".
+// launch's first visit, must not ask for it again. Decision 10: nor may the
+// app get a SECOND dialog out of it by calling app.requestGrant itself -- a
+// declined capability resolves false with no prompt, from either door,
+// until the site-info popover's own "turn on" switch (site-switches.ts)
+// clears the decline DIRECTLY, with no page involved at all.
 
 function ctxWith (broker: Broker): SubsystemContext {
   return { broker } as unknown as SubsystemContext
@@ -72,15 +75,22 @@ describe('revoking from the permissions panel', () => {
     expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
   })
 
-  it('leaves the capability requestable through app.requestGrant, whose yes retires the decline', async () => {
+  // Decision 10: a page cannot turn a revoked capability back on by calling
+  // app.requestGrant itself, however willing `consent` here would be to say
+  // yes -- requestGrant never even reaches it. Re-granting after a revoke is
+  // the site-info popover's own direct path
+  // (site-switches.ts's turnOn, tested in its own suite), never this one.
+  it('does not re-prompt through app.requestGrant after a revoke -- that door is shut until the site-info popover clears it directly', async () => {
     const broker = createBroker(baseDeps())
     await installedAndAccepted(broker)
     await createPermissionsController(ctxWith(broker)).revokeCapability(APP, 'fs')
 
-    const granted = await requestGrant(broker, async () => true, APP, { capability: 'fs' })
+    const consent = vi.fn(async () => true)
+    const granted = await requestGrant(broker, consent, APP, { capability: 'fs' })
 
-    expect(granted).toBe(true)
-    expect((await broker.app.grants(APP)).map((grant) => grant.capability).sort()).toEqual(['fs', 'tcp.connect'])
-    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+    expect(granted).toBe(false)
+    expect(consent).not.toHaveBeenCalled()
+    expect((await broker.app.grants(APP)).map((grant) => grant.capability).sort()).toEqual(['tcp.connect'])
+    expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs']) // still declined -- nothing retired it
   })
 })

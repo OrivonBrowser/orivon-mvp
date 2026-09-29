@@ -124,7 +124,16 @@ export function buildResponse (
   securePatterns: readonly Pattern[],
   crossOriginIsolated = false
 ): Response {
-  const policy: Record<string, string> = { 'content-security-policy': cspHeaderValue(connectPatterns, securePatterns) }
+  // nosniff on every pinned response -- content-type is derived from the
+  // PATH's own extension (contentTypeFor), never sniffed from bytes in this
+  // handler either way, but a browser that DOES sniff would otherwise let a
+  // pinned asset the manifest never declared as a script (an upload, an
+  // image with a polyglot payload) execute as one if it is ever reached
+  // through a context that runs what it loads.
+  const policy: Record<string, string> = {
+    'content-security-policy': cspHeaderValue(connectPatterns, securePatterns),
+    'x-content-type-options': 'nosniff'
+  }
   if (crossOriginIsolated) Object.assign(policy, ISOLATION_HEADERS)
   const total = file.byteLength
   const range = parseRange(request.headers.get('range'), total)
