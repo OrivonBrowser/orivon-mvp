@@ -92,6 +92,20 @@ export async function waitFor (predicate, timeoutMs = WAIT_TIMEOUT_MS) {
  * own "it reports, it does not just exit" rule (scripts/smoke.mjs's
  * header). Racing the evaluate itself against the deadline is what
  * actually enforces it.
+ *
+ * NEVER CALL `window.orivon.*` FROM `fn` HERE. Measured live: a stack
+ * captured inside a plain `page.evaluate()` call has no fileName at any
+ * frame, all the way down through Playwright's own internal `eval` --
+ * and neither does a `<script>` element created with `document.
+ * createElement`/`appendChild` and no `src`, which Chromium attributes
+ * `<anonymous>` regardless. src/preload/surface/main-world-socket.ts's own
+ * extension-code check (that file's README.md Design notes) refuses such a
+ * call as unattributable, correctly. Only a literal `<script>` PRESENT IN
+ * THE SERVED HTML -- parser-inserted, the same as the page's own -- is
+ * attributed to the document's URL (`extension-stack-probe.json`'s own
+ * `mainWorld` entries; scripts/smoke.mjs's `/orivon-probe` fixture route is
+ * the worked example): the calling code has to be literal HTML a real
+ * server serves, which only the caller's own fixture can supply.
  */
 export async function evaluateRetrying (page, fn, timeoutMs = WAIT_TIMEOUT_MS) {
   const TRANSIENT = /Execution context was destroyed|frame was detached/i

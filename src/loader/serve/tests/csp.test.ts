@@ -13,8 +13,8 @@ function directive (header: string, name: string): string[] | undefined {
 const EMPTY = cspHeaderValue([], [])
 
 describe('cspHeaderValue -- what a pinned bundle may do with its own bytes', () => {
-  it('admits inline script, eval and WebAssembly compilation', () => {
-    expect(directive(EMPTY, 'script-src')).toEqual(["'self'", "'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'"])
+  it('admits eval and WebAssembly compilation, but never inline script', () => {
+    expect(directive(EMPTY, 'script-src')).toEqual(["'self'", "'unsafe-eval'", "'wasm-unsafe-eval'"])
   })
 
   it('admits data: and blob: images, fonts and media -- local schemes with no network reach', () => {

@@ -44,13 +44,19 @@ const ADD_WASM = new Uint8Array([
 ])
 
 const INDEX_HTML = '<!doctype html><html><head><title>served-csp fixture</title></head><body><h1>csp fixture</h1></body></html>'
+// Served under the app's own origin so a `data:`-URL frame that INHERITS
+// this app's CSP (below) can still load it: 'self' matches it, no inline
+// `<script>` ever could once script-src drops 'unsafe-inline' (owner,
+// 2026-09-29) -- this is the same fix as the fixture's own #frame-script.
+const FRAME_SCRIPT_JS = "let r; try { r = 'eval=' + eval('1 + 1') } catch (e) { r = 'eval-blocked' }\n" +
+  "WebAssembly.compile(new Uint8Array([0,97,115,109,1,0,0,0])).then(() => parent.postMessage(r + ' wasm=ok', '*'), (e) => parent.postMessage(r + ' wasm=' + e.name, '*'))"
 const MANIFEST: Manifest = {
   orivonApiVersion: 0,
   id: 'app.orivon.served-csp-e2e',
   name: 'Served CSP e2e fixture',
   version: '1.0.0',
   entry: 'index.html',
-  assets: ['add.wasm'],
+  assets: ['add.wasm', 'frame-script.js'],
   capabilities: { net: { https: { connect: ['*:*'] } } }
 }
 
@@ -59,7 +65,8 @@ async function pinFixture (userDataDir: string): Promise<void> {
   const entries: BundleEntry[] = [
     { path: '/.well-known/orivon.json', content: new TextEncoder().encode(JSON.stringify(MANIFEST)) },
     { path: '/index.html', content: new TextEncoder().encode(INDEX_HTML) },
-    { path: '/add.wasm', content: ADD_WASM }
+    { path: '/add.wasm', content: ADD_WASM },
+    { path: '/frame-script.js', content: new TextEncoder().encode(FRAME_SCRIPT_JS) }
   ]
   const tree = await bundleTree(entries)
   for (const entry of entries) await storage.writeAsset(ORIGIN, entry.path, entry.content)
@@ -123,7 +130,7 @@ it('a pinned bundle compiles wasm, shows data: images, starts blob: workers, loa
       check(
         'the served header admits eval and wasm, data:/blob: locally, and https: for the `*` https.connect grant',
         typeof csp === 'string' &&
-          csp.includes("script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'") &&
+          csp.includes("script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'") &&
           csp.includes("img-src 'self' data: blob: https:") &&
           csp.includes("connect-src 'self' data: blob: https:") &&
           csp.includes("worker-src 'self' blob:") &&
@@ -187,12 +194,24 @@ it('a pinned bundle compiles wasm, shows data: images, starts blob: workers, loa
           frame.src = src
           document.body.appendChild(frame)
         })
-        const frameScript = "<script>let r; try { r = 'eval=' + eval('1 + 1') } catch (e) { r = 'eval-blocked' }" +
-          " WebAssembly.compile(new Uint8Array([0,97,115,109,1,0,0,0])).then(() => parent.postMessage(r + ' wasm=ok', '*'), (e) => parent.postMessage(r + ' wasm=' + e.name, '*'))</script>"
+        // EXTERNAL, never inline (owner, 2026-09-29 drops 'unsafe-inline'
+        // from script-src): the app's own CSP is what this frame inherits
+        // (a data:/blob:/filesystem: document's CSP list is the navigating
+        // document's own, CSP3's "initialize a document's CSP list"), so
+        // 'self' -- the app's own origin, not the frame's opaque one --
+        // is what admits this fetch, exactly the same as any other asset.
+        const frameScript = `<script src="${location.origin}/frame-script.js"></script>`
         const dataFrame = await frameMessage(`data:text/html,${encodeURIComponent(frameScript)}`)
         // A frame that narrows script-src with its own meta policy: the
         // control proving wasm compilation really is gated by CSP here.
-        const narrowedFrame = await frameMessage(`data:text/html,${encodeURIComponent(`<meta http-equiv="content-security-policy" content="script-src 'unsafe-inline'">${frameScript}`)}`)
+        // The literal origin, not 'self' (found live: a <meta> CSP's own
+        // 'self' binds to the data: document's OWN opaque origin, which
+        // never matches anything, unlike the INHERITED policy's 'self',
+        // still bound to the app that navigated here) -- named this way,
+        // both the inherited and this meta policy admit the script, and
+        // their intersection still lacks 'unsafe-eval'/'wasm-unsafe-eval',
+        // so it runs but neither eval nor WebAssembly.compile can.
+        const narrowedFrame = await frameMessage(`data:text/html,${encodeURIComponent(`<meta http-equiv="content-security-policy" content="script-src ${location.origin}">${frameScript}`)}`)
 
         // Negative controls: the policy is enforced, not merely present.
         const thirdPartyFrame = await frameMessage('https://elsewhere.orivon.test/')

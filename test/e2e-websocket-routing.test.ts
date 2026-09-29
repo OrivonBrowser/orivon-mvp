@@ -41,10 +41,15 @@ const GRANT_PATTERN = `${HOST}:${WS_PORT}`
 const TEST_TIMEOUT_MS = 120_000
 const BIG_MESSAGE_BYTES = 200_000
 
-const PAGE_HTML = `<!doctype html><html><head><title>${TITLE}</title><script>
+// External, never inline: this page is served with the granted-without-
+// installing CSP (src/loader/serve/csp.ts) that this file exists to
+// measure, and that builder's script-src has dropped 'unsafe-inline'
+// (owner, 2026-09-29).
+const PAGE_HTML = `<!doctype html><html><head><title>${TITLE}</title><script src="bootstrap.js"></script></head><body>websocket fixture</body></html>`
+const BOOTSTRAP_JS = `
 window.__violations = []
 document.addEventListener('securitypolicyviolation', (e) => { window.__violations.push(e.effectiveDirective + ' <- ' + e.blockedURI) })
-</script></head><body>websocket fixture</body></html>`
+`
 
 const OP = { continuation: 0, text: 1, binary: 2, close: 8, ping: 9, pong: 10 }
 
@@ -112,7 +117,12 @@ const hotReloadLog: string[] = []
 
 beforeAll(async () => {
   const csp = cspHeaderValue([GRANT_PATTERN], [])
-  pageServer = createServer((_req, res) => {
+  pageServer = createServer((req, res) => {
+    if (req.url === '/bootstrap.js') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript', 'Content-Security-Policy': csp })
+      res.end(BOOTSTRAP_JS)
+      return
+    }
     res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': csp })
     res.end(PAGE_HTML)
   })

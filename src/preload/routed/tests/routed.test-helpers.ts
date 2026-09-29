@@ -9,7 +9,7 @@ import { installRoutedWire } from '../wire.js'
 import { installRoutedDial } from '../dial.js'
 import { installRoutedCore, releaseRoutedSlot } from '../core.js'
 import { installFetchRoute } from '../fetch.js'
-import type { FetchRouteSocket, FetchRouteTarget } from '../types.js'
+import type { FetchRouteSocket, FetchRouteTarget, InternalNet } from '../types.js'
 
 type Installer = (isAppTab: boolean, target?: FetchRouteTarget) => void
 
@@ -77,7 +77,12 @@ export function fakeSocket (chunks: Uint8Array[], hold = false): FakeSocket {
   }
 }
 
-/** A plain `orivon.net`-bearing target for installers to run against. */
+/**
+ * A target carrying ../dial.ts's own internal-net slot -- never `.orivon.net`
+ * itself, which nothing under this directory reads any more
+ * (../surface/README.md's Design notes: that path now refuses a caller with
+ * no page frame, exactly dial.ts's own shape).
+ */
 export function fakeTarget (opts: {
   connect?: (o: { host: string, port: number }) => Promise<FetchRouteSocket>
   connectSecure?: (o: { host: string, port: number }) => Promise<FetchRouteSocket>
@@ -85,13 +90,12 @@ export function fakeTarget (opts: {
   nativeFetch?: (input: unknown, init?: unknown) => Promise<Response>
   userAgent?: string
 }): FetchRouteTarget {
-  const target: FetchRouteTarget = {
-    orivon: {
-      net: {
-        connect: opts.connect ?? (async () => { throw new Error('unexpected net.connect call') }),
-        connectSecure: opts.connectSecure ?? (async () => { throw new Error('unexpected net.connectSecure call') })
-      }
-    }
+  const internalNet: InternalNet = {
+    connect: opts.connect ?? (async () => { throw new Error('unexpected net.connect call') }),
+    connectSecure: opts.connectSecure ?? (async () => { throw new Error('unexpected net.connectSecure call') })
+  }
+  const target: FetchRouteTarget & Record<symbol, InternalNet> = {
+    [Symbol.for('orivon.internal-net')]: internalNet
   }
   if (opts.location !== undefined) target.location = opts.location
   if (opts.nativeFetch !== undefined) target.fetch = opts.nativeFetch

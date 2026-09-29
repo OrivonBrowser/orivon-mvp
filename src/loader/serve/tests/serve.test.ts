@@ -203,7 +203,7 @@ describe('verifiedManifestFor', () => {
   })
 })
 
-const DEFAULT_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+const DEFAULT_CSP = "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
   "connect-src 'self' data: blob:; img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; " +
   "worker-src 'self' blob:; frame-src 'self' data: blob:"
 
@@ -220,7 +220,7 @@ describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
     const response = await handler(new Request(`${ORIGIN}/`))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+      "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
       "connect-src 'self' data: blob: api.example.com:443; img-src 'self' data: blob:; font-src 'self' data: blob:; " +
       "media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )

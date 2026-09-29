@@ -13,13 +13,18 @@ export interface FetchRouteSocket {
   close: () => Promise<void>
 }
 
+/**
+ * `../dial.ts`'s own unwrapped net.connect/connectSecure, at
+ * `target[Symbol.for('orivon.internal-net')]` -- never `window.orivon.net`
+ * itself (`../surface/README.md`'s Design notes: that path now refuses a
+ * caller with no page frame, exactly dial.ts's own shape).
+ */
+export interface InternalNet {
+  connect: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
+  connectSecure: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
+}
+
 export interface FetchRouteTarget {
-  orivon?: {
-    net?: {
-      connect: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
-      connectSecure: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
-    }
-  }
   fetch?: (input: unknown, init?: unknown) => Promise<Response>
   location?: { origin: string, href: string }
   navigator?: { userAgent?: string }

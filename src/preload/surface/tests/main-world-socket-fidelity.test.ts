@@ -4,7 +4,7 @@
 // covers the ordinary lifecycle.
 import { afterEach, describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
-import { LIMITS, fakeBridge, fakeSocketBridgeResult, tick } from './main-world-socket.test-helpers.js'
+import { LIMITS, asPage, fakeBridge, fakeSocketBridgeResult, tick } from './main-world-socket.test-helpers.js'
 
 interface PageSocket {
   readable: ReadableStream<Uint8Array>
@@ -14,7 +14,7 @@ interface PageSocket {
 async function connect (result: ReturnType<typeof fakeSocketBridgeResult>): Promise<PageSocket> {
   const target: Record<string, unknown> = {}
   installOrivon(fakeBridge(result), LIMITS, target)
-  const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<PageSocket> } }
+  const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<PageSocket> } }
   return await orivon.net.connect({ host: 'x.example', port: 443 })
 }
 
@@ -73,7 +73,7 @@ describe('installOrivon -- a revived rejection', () => {
     bridge.appManifest = async () => { throw { name: 'OrivonError', message: 'orivon: closed', code: 'closed', handleId: 'h9' } }
     const target: Record<string, unknown> = {}
     installOrivon(bridge, LIMITS, target)
-    const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { app: { manifest: () => Promise<unknown> } }
 
     await expect(orivon.app.manifest()).rejects.toMatchObject({ code: 'closed', handleId: 'h9' })
   })

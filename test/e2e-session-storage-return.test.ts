@@ -40,8 +40,12 @@ async function listen (server: Server): Promise<string> {
   return `http://127.0.0.1:${String(address.port)}`
 }
 
-function page (title: string, script: string): string {
-  return `<!doctype html><title>${title}</title><script>${script}</script>`
+// External, never inline: the granted app origin below sends no CSP header
+// of its own, so Orivon's own appended one (dropping 'unsafe-inline' from
+// script-src, owner 2026-09-29) is the only policy in force, and an inline
+// <script> would not run under it.
+function page (title: string, scriptSrc: string): string {
+  return `<!doctype html><title>${title}</title><script src="${scriptSrc}"></script>`
 }
 
 afterAll(async () => {
@@ -57,23 +61,38 @@ const TEST_TIMEOUT_MS = WAIT_BUDGET_MS + 20_000
 it('an app finds its sessionStorage where it left it when a sign-in provider sends the tab back', async () => {
   let providerOrigin = ''
   appServer = createServer((req, res) => {
-    res.writeHead(200, { 'content-type': 'text/html' })
-    if (req.url === '/start') {
+    if (req.url === '/start.js') {
+      res.writeHead(200, { 'content-type': 'text/javascript' })
       // A sign-in button the test really clicks: Chromium's back button skips
       // a page that navigated away without the person's activation.
-      res.end(`<!doctype html><title>start</title><button id="login">Sign in</button><script>
+      res.end(`
         sessionStorage.setItem('oidc', 'state-123')
         document.getElementById('login').onclick = () => { location.href = '${providerOrigin}/authorize' }
-      </script>`)
+      `)
+      return
+    }
+    if (req.url === '/callback.js') {
+      res.writeHead(200, { 'content-type': 'text/javascript' })
+      res.end("document.title = 'callback:' + (sessionStorage.getItem('oidc') ?? 'missing')")
+      return
+    }
+    res.writeHead(200, { 'content-type': 'text/html' })
+    if (req.url === '/start') {
+      res.end(`<!doctype html><title>start</title><button id="login">Sign in</button><script src="start.js"></script>`)
     } else {
-      res.end(page('callback', "document.title = 'callback:' + (sessionStorage.getItem('oidc') ?? 'missing')"))
+      res.end(page('callback', 'callback.js'))
     }
   })
   const appOrigin = await listen(appServer)
   const callbackUrl = `${appOrigin}/callback?code=abc`
-  providerServer = createServer((_req, res) => {
+  providerServer = createServer((req, res) => {
+    if (req.url === '/authorize.js') {
+      res.writeHead(200, { 'content-type': 'text/javascript' })
+      res.end(`setTimeout(() => { location.href = '${callbackUrl}' }, ${String(PROVIDER_DELAY_MS)})`)
+      return
+    }
     res.writeHead(200, { 'content-type': 'text/html' })
-    res.end(page('authorize', `setTimeout(() => { location.href = '${callbackUrl}' }, ${String(PROVIDER_DELAY_MS)})`))
+    res.end(page('authorize', 'authorize.js'))
   })
   providerOrigin = await listen(providerServer)
 
