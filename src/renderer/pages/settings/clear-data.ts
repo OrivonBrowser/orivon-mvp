@@ -11,6 +11,7 @@
 // silently discarding whatever the person had chosen a moment before.
 import type { ClearRequest, HistoryRange } from '../../../main/privacy/clear-data.js'
 import { h } from '../shared/dom.js'
+import { armEnded } from '../shared/armed.js'
 import type { SettingsState } from './state.js'
 import type { ClearOutcome } from './privacy-state.js'
 
@@ -77,6 +78,10 @@ export function renderClearData (state: SettingsState): HTMLElement {
     disarm = undefined
     button.textContent = 'Clear data'
     button.classList.remove('armed')
+    // A redraw held back while this button was armed (settings/main.ts's own
+    // render gate) is not lost: this ends whether the confirm window timed
+    // out or the second click just ran, either way telling it to check again.
+    armEnded()
   }
   const request = (): ClearRequest => ({
     history: selection.historyChecked ? selection.range : 'none',

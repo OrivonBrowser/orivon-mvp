@@ -27,6 +27,46 @@ async function waitForChange (calls: () => number, ms = 2000): Promise<boolean> 
   return false
 }
 
+/**
+ * Waits until `calls()` has not changed for `quietMs`, or `ceilingMs` runs
+ * out -- more tolerant than a fixed wait of a debounce timer that fires
+ * later than usual under load: a burst that is still settling when a fixed
+ * wait's clock runs out reads as "kept scheduling forever" even though it
+ * was only running late.
+ */
+async function waitForSettled (calls: () => number, quietMs = 400, ceilingMs = 4000): Promise<number> {
+  const deadline = Date.now() + ceilingMs
+  let last = calls()
+  let quietSince = Date.now()
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const now = calls()
+    if (now !== last) { last = now; quietSince = Date.now() }
+    if (Date.now() - quietSince >= quietMs) return last
+  }
+  return last
+}
+
+/**
+ * Writes `path` repeatedly, each time a distinct change, until `calls`
+ * (relative to whatever it already was) moves or `ceilingMs` runs out --
+ * for a directory whose own watch was JUST discovered and is set up
+ * asynchronously (reconcilePerProfileWatches, run from the root-level
+ * watch's own event), rather than a fixed wait guessing how long that setup
+ * takes. A single write made before the watch exists is simply never seen;
+ * retrying is what makes this reliable under load instead of assuming a
+ * number of milliseconds that measured fine once.
+ */
+async function writeUntilSeen (path: string, calls: () => number, ceilingMs = 8000): Promise<boolean> {
+  const before = calls()
+  const deadline = Date.now() + ceilingMs
+  while (Date.now() < deadline) {
+    await writeFile(path, JSON.stringify({ name: `New-${String(Date.now())}-${String(Math.random())}` }))
+    if (await waitForChange(() => calls() - before, 300)) return true
+  }
+  return false
+}
+
 function watching (): { watcher: ProfilesWatcher, calls: () => number } {
   let count = 0
   const watcher = watchProfiles(root, () => { count += 1 })
@@ -47,14 +87,12 @@ describe('watchProfiles', () => {
     const { calls } = watching()
 
     await mkdir(join(root, 'profiles', 'abc'), { recursive: true })
-    // The mkdir above is itself what should be seen (a root-level event);
-    // this second write proves the retried, deeper watch on profiles/ is
-    // ALSO now live, not just the root-level one.
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    const before = calls()
-    await writeFile(join(root, 'profiles', 'abc', 'profile.json'), JSON.stringify({ name: 'New' }))
+    expect(await waitForChange(calls)).toBe(true) // the mkdir itself, a root-level event
 
-    expect(await waitForChange(() => calls() - before)).toBe(true)
+    // Proves the retried, deeper watch on profiles/abc is ALSO live, not
+    // just the root-level one -- writeUntilSeen's own header on why this
+    // retries the write instead of waiting a fixed amount first.
+    expect(await writeUntilSeen(join(root, 'profiles', 'abc', 'profile.json'), calls)).toBe(true)
   })
 
   it('coalesces a burst of writes into far fewer calls than writes', async () => {
@@ -63,10 +101,7 @@ describe('watchProfiles', () => {
     for (let i = 0; i < 10; i++) await writeFile(join(root, 'profile.json'), JSON.stringify({ name: `n${String(i)}` }))
 
     expect(await waitForChange(calls)).toBe(true)
-    const afterBurst = calls()
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    expect(calls()).toBe(afterBurst) // settled: the burst did not keep scheduling forever
-    expect(afterBurst).toBeLessThan(10)
+    expect(await waitForSettled(calls)).toBeLessThan(10)
   })
 
   it('never fires again once closed', async () => {
@@ -108,8 +143,7 @@ describe('watchProfiles', () => {
 
     expect(await waitForChange(calls)).toBe(true)
     const afterFirst = calls()
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    expect(calls()).toBe(afterFirst)
+    expect(await waitForSettled(calls)).toBe(afterFirst)
   })
 
   it('fires when a profile directory is added', async () => {
@@ -130,8 +164,8 @@ describe('watchProfiles', () => {
 
     const afterRemoval = calls()
     await mkdir(join(root, 'profiles', 'new-one'), { recursive: true })
-    await writeFile(join(root, 'profiles', 'new-one', 'profile.json'), JSON.stringify({ name: 'New' }))
     expect(await waitForChange(() => calls() - afterRemoval)).toBe(true)
+    expect(await writeUntilSeen(join(root, 'profiles', 'new-one', 'profile.json'), calls)).toBe(true)
   })
 
   it('does not throw when the root does not exist yet', () => {
