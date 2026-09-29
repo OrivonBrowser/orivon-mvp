@@ -1400,19 +1400,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A285: CCIP-Read egress validates a resolved hostname, then fetches the hostname again **[OWNER]**
-
-- **Question:** `urlRefusal` resolves a CCIP gateway hostname and checks every address against
-  T12, but `requestOne` then fetches the ORIGINAL url string, which resolves again -- a
-  DNS-rebinding TOCTOU `direct-fetch.ts`'s `pinnedLookup` already avoids on the sibling path.
-- **Why it matters:** a `.eth` name's own resolver contract controls the CCIP gateway url, so a
-  short-TTL rebind could point the verifier-host process at an internal address.
-- **Options:** reuse `pinnedLookup` for CCIP's POST/redirect-following path (rec.; a real change,
-  since CCIP needs a body and its own redirect loop, unlike `createDirectFetch`'s GET/HEAD-only
-  shape); accept the residual, narrowed by the existing `https`-only rule.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A286: A TTL-0 name can still rebind between the embed check and the connection **[OWNER]**
 
 - **Question:** A `"*"`-admitted document whose host is a name is resolved through the guest
