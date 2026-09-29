@@ -340,7 +340,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `printerProvider` | ⚠️ | Exists as an object; no working members measured |
 | `privacy` | ⚠️ | Inert `ChromeSetting` placeholders; a `get` call triggers a native "Unknown Extension API" log |
 | `proxy` | ⚠️ | Exists as a namespace; `settings.get` explicitly rejects `"Access to extension API denied."` |
-| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/lifecycle events/`openOptionsPage` work; `getContexts` returns a real `BACKGROUND` context entry; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below) |
+| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/lifecycle events/`openOptionsPage` work; `getContexts` lists the worker, popup, tab pages and offscreen document; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below) |
 | `scripting` | ✅ | `executeScript` measured running a real function in a tab and returning its result |
 | `sidePanel` | ⚠️ | Every method resolves as a no-op; no panel surface opens |
 | `storage.local` | ✅ | Native to Electron |
@@ -551,7 +551,7 @@ the reference set, and whether this build has it.
 | Platform authenticator (Windows Hello/Touch ID) | ❌ | Not found |
 | Security keys (FIDO2/U2F) | ❌ | Not found |
 | FedCM | ❌ | Not found |
-| Google account sign-in (on any site) | ❌ | Google rejects this build as not secure; tracked in `docs/open-questions.md` |
+| Google account sign-in (on any site) | ❌ | Google rejects this build as not secure; open question [`A297`](../open-questions.md) |
 | Basic-auth (HTTP 401) dialog | ⚠️ | No `app.on('login', ...)` handler; whatever Electron does unhandled applies, unverified without a launch |
 | Client certificate picker | ❌ | No `select-client-certificate` handler; `certificate-check.ts` pins Orivon's own verifier certificate only |
 | Sign-in / account sync | ➖ | Explicit non-goal: no sync, no Orivon-operated server for user data |
