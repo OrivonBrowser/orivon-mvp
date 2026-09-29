@@ -187,7 +187,15 @@ neither.
 
 **`allowFileAccess` is never `true`, anywhere in this directory.** An extension with file access
 could read `file://` pages, including a page-cache-served or dashboard `file://` URL the shell
-itself never grants an ordinary web page.
+itself never grants an ordinary web page. Because no extension ever gets it, a `file:` URL is
+never covered by an extension's host permission either, even by `<all_urls>` -- Chrome's own
+grammar (`../../broker/policy/extension-host-patterns.ts`'s `ALL_URLS_SCHEMES`) includes `file`
+because Chrome grants `<all_urls>` file access only through its own separate per-extension
+toggle, which has no equivalent here; `dnr/host-permissions.ts`'s `createHostAccessChecker` and
+`extension-host-access.ts`'s `hasHostAccess` both refuse a `file:` request/initiator/url
+regardless of what pattern would otherwise match, rather than changing the shared matcher itself,
+which stays a faithful, reusable copy of Chrome's grammar for callers that do not need this
+narrower rule.
 
 **The extensions page reads an entry's own loaded folder for what a list needs, never the
 registry alone.** A name or description can be a `__MSG_...` reference into `_locales/<default_locale>/messages.json`,

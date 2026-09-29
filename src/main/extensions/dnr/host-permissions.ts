@@ -23,11 +23,19 @@ export function createHostAccessChecker(
   hostPatterns: readonly string[]
 ): (requestURI: URL, initiatorURI: URL | null) => boolean {
   return (requestURI, initiatorURI) => {
+    // No extension ever gets file access, so file: is never covered here
+    // -- ../../README.md's "allowFileAccess is never true" entry has why.
+    if (requestURI.protocol === 'file:') {
+      return false
+    }
     if (!matchesAnyHostPattern(hostPatterns, requestURI.href)) {
       return false
     }
     if (initiatorURI === null) {
       return true
+    }
+    if (initiatorURI.protocol === 'file:') {
+      return false
     }
     return matchesAnyHostPattern(hostPatterns, initiatorURI.href)
   }

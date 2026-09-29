@@ -65,7 +65,11 @@ export interface DnrQueryTransform {
 }
 
 export interface DnrUrlTransform {
-  scheme?: 'http' | 'https'
+  /** Chrome's own allowed values; dnr-engine.ts's computeRedirectUrl and the
+   * vendored RuleValidator both refuse anything else (and refuse
+   * "chrome-extension" unless it names the rule's own extension) -- see
+   * this directory's README §Design notes. */
+  scheme?: 'http' | 'https' | 'ftp' | 'chrome-extension'
   username?: string
   password?: string
   host?: string
@@ -77,6 +81,7 @@ export interface DnrUrlTransform {
 }
 
 export interface DnrRedirect {
+  /** Same scheme allowlist as DnrUrlTransform.scheme (see its own doc). */
   url?: string
   extensionPath?: string
   transform?: DnrUrlTransform

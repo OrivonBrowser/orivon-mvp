@@ -154,6 +154,87 @@ describe('modifyHeaders ordering', () => {
     expect(decision.responseHeaders).toEqual([{ header: 'x-res', operation: 'set', value: 'res' }])
   })
 
+  it('rejects a requestHeaders op that "set"s the Host header', () => {
+    // vendor/firefox-dnr/UPSTREAM.md patch 17: restores Firefox's own
+    // #checkHostHeader refusal, dropped by patch 6, as a flat
+    // validation-time rejection.
+    const engine = createDnrEngine()
+    expect(() =>
+      engine.updateDynamicRules('ext', {
+        addRules: [
+          {
+            id: 1,
+            priority: 1,
+            condition: {},
+            action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Host', operation: 'set', value: 'evil.example' }] },
+          },
+        ],
+      })
+    ).toThrow(/Host header/)
+  })
+
+  it('rejects "append" and "remove" ops on the Host header too, case-insensitively', () => {
+    const engine = createDnrEngine()
+    expect(() =>
+      engine.updateDynamicRules('ext', {
+        addRules: [
+          {
+            id: 1,
+            priority: 1,
+            condition: {},
+            action: { type: 'modifyHeaders', requestHeaders: [{ header: 'HOST', operation: 'append', value: 'evil.example' }] },
+          },
+        ],
+      })
+    ).toThrow(/Host header/)
+    expect(() =>
+      engine.updateDynamicRules('ext', {
+        addRules: [
+          { id: 2, priority: 1, condition: {}, action: { type: 'modifyHeaders', requestHeaders: [{ header: 'host', operation: 'remove' }] } },
+        ],
+      })
+    ).toThrow(/Host header/)
+  })
+
+  it('a responseHeaders op naming "host" is unaffected: Host is a request-only header', () => {
+    const engine = createDnrEngine()
+    engine.updateSessionRules('ext', {
+      addRules: [
+        {
+          id: 1,
+          priority: 1,
+          condition: {},
+          action: { type: 'modifyHeaders', responseHeaders: [{ header: 'host', operation: 'set', value: 'x' }] },
+        },
+      ],
+    })
+    const decision = engine.evaluate(makeRequest({ url: 'http://example.com/' }))
+    expect(decision.responseHeaders).toEqual([{ header: 'host', operation: 'set', value: 'x' }])
+  })
+
+  it('non-Host headers Chrome does not restrict (Cookie, Referer, Origin) are still allowed', () => {
+    const engine = createDnrEngine()
+    engine.updateSessionRules('ext', {
+      addRules: [
+        {
+          id: 1,
+          priority: 1,
+          condition: {},
+          action: {
+            type: 'modifyHeaders',
+            requestHeaders: [
+              { header: 'Cookie', operation: 'set', value: 'a=b' },
+              { header: 'Referer', operation: 'set', value: 'https://r.example/' },
+              { header: 'Origin', operation: 'set', value: 'https://o.example' },
+            ],
+          },
+        },
+      ],
+    })
+    const decision = engine.evaluate(makeRequest({ url: 'http://example.com/' }))
+    expect(decision.requestHeaders).toHaveLength(3)
+  })
+
   it('modifyHeaders rules at or below an allow rule\'s priority are dropped', () => {
     const engine = createDnrEngine()
     engine.updateSessionRules('ext', {

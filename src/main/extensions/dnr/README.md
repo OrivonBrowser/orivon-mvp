@@ -142,7 +142,68 @@ resolve it against the calling extension's own origin. This engine has no origin
 own, so it assumes Orivon serves each extension's resources at `chrome-extension://<extensionId>/`,
 matching `vendor/electron-chrome-extensions`'s own convention of using the extension id as the
 host. If extensions ever get a different origin scheme, `dnr-engine.ts`'s `computeRedirectUrl`
-is the one place to change.
+is the one place to change. Unlike `redirect.url`/`redirect.transform`, it needs no scheme check
+of its own: the `chrome-extension://${extensionId}` prefix is a literal string this function
+builds, not a value any rule field controls, so it can never resolve to another scheme or another
+extension's origin. Chrome additionally requires the target to be listed in the extension's own
+`web_accessible_resources` for the requesting page's initiator, refusing the redirect otherwise;
+this engine has no manifest data at all (this directory's own "What it depends on" -- reading
+`web_accessible_resources` is `extension-manifest.ts`'s concern, not wired to `evaluate()`), so
+that check is not implemented here. Not a scheme-confusion risk (the string is fixed as above),
+only a narrower cross-extension-probing protection Chrome has and this engine currently lacks.
+
+**`redirect.url` and `redirect.transform` both refuse a target scheme Orivon does not allow.**
+Chrome's own docs restrict `redirect.url` only to "not a JavaScript URL", and
+`URLTransform.scheme` to `"http"`, `"https"`, `"ftp"`, `"chrome-extension"` -- but nothing in this
+port ever validated `redirect.url` at all before this check (Firefox's own equivalent,
+`extension.checkLoadURI`, was dropped by patch 5, UPSTREAM.md, and never covered `redirect.url`
+to begin with, only `regexSubstitution`), and `redirect.transform.scheme` was only checked for
+"does `applyURLTransform` throw", which it does not for a scheme it silently declines to apply
+(see below). Both now share one allowlist, `extension-dnr.mjs`'s `REDIRECT_TARGET_ALLOWED_SCHEMES`
+(`http:`, `https:`, `ftp:`, `chrome-extension:`) -- UPSTREAM.md patch 16 has the exact mechanism.
+`data:` is refused: Chrome's public docs do not say whether a `data:` redirect is accepted for a
+subresource request, so this is a *provisional* call (narrower than Chrome might actually allow)
+until that is confirmed one way or the other. A `chrome-extension:` target must name the rule's
+OWN extension id, never another extension's -- checked at validation for `redirect.url` (a static
+string, fully known at rule-add time) and, best-effort, for `redirect.transform.host` when
+`redirect.transform.scheme` is also `"chrome-extension"` explicitly.
+
+**Why `redirect.transform`'s scheme check cannot stop at validation time, and why
+`computeRedirectUrl` re-checks the real, final URL.** `adapters/dnr-uri.mjs`'s `applyURLTransform`
+sets `transform.scheme` through WHATWG `URL`'s own `.protocol` setter, which silently declines a
+change between a "special" scheme (`http`/`https`/`ws`/`wss`/`ftp`/`file` -- the WHATWG URL
+Standard's own category) and a non-special one, rather than throwing: `transform.scheme: "file"`
+on an `http:`/`https:` request DOES take effect (both special -- this was the actual gap the
+scheme allowlist above closes), but `transform.scheme: "chrome-extension"` does NOT (non-special),
+so validation's own check of that combination is close to unreachable in practice. It stays,
+because `transform.host` is not scheme-gated: a rule matching a request whose URL is *already*
+`chrome-extension://` (an extension's own page or resource) and setting only `transform.host` --
+leaving `transform.scheme` unset, so the original scheme carries through untouched -- can still
+produce a `chrome-extension://<attacker-chosen-id>/...` result, reaching into another extension's
+origin without ever tripping the validation-time check above (which only fires when
+`transform.scheme` is itself `"chrome-extension"`). Validation runs once, against a dummy
+`http://dummy` request, so it cannot know what the real request's own scheme will turn out to be;
+only `dnr-engine.ts`'s `computeRedirectUrl`, which sees the actual `requestURI`, can. It re-checks
+`redirect.transform`'s and `redirect.regexSubstitution`'s results (both are computed against the
+real `requestURI`, unlike the already-fully-validated static `redirect.url`) with the same shared
+allowlist (`ExtensionDNR.isRedirectTargetAllowed`), dropping the redirect -- not throwing -- if it
+fails, the same "one bad rule cannot fail an unrelated request" stance `regexSubstitution`'s
+existing non-http(s) handling already takes.
+
+**`modifyHeaders` refuses to touch the `Host` request header.** Firefox's own `#checkHostHeader`
+(dropped by patch 6, UPSTREAM.md, along with every other permission check) conditionally allowed
+rewriting `Host`, gated on the extension's host permission for the NEW value and a
+not-a-restricted-URL check -- both against a live `Extension`/principal object this port has no
+equivalent of. UPSTREAM.md patch 17 restores a flat refusal instead, at validation (any
+`requestHeaders` op naming `host`, case-insensitively, whatever the operation), rather than
+Firefox's conditional, apply-time one: rewriting the wire's own routing header is a materially
+different risk from rewriting any other header (it can point a request at a different virtual
+host behind the same connection/IP, bypassing what host-permission gating for `redirect`/
+`modifyHeaders` -- this directory's own `evaluate()` design note above -- is meant to bound), and
+this port cannot replicate Firefox's own narrower, value-dependent check. Every other header
+Chrome's docs do not name as restricted (`Cookie`, `Referer`, `Origin`, ...) stays allowed, since
+`redirect`/`modifyHeaders` host-permission gating already bounds which requests a rule can act on
+at all.
 
 **Rule limits are Chrome's published numbers, not Firefox's pref defaults, and do not model
 Chrome's dynamic-rule "safe"/"unsafe" split.** `vendor/firefox-dnr/src/dnr-limits.mjs` has the

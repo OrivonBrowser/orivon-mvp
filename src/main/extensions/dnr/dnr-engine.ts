@@ -86,17 +86,26 @@ function computeRedirectUrl(matchedRule: VendorMatchedRule, requestURI: URL): st
   if (!redirect) {
     return null
   }
+  const extensionId = matchedRule.ruleManager.extensionId as string
   if (redirect.url) {
+    // Already validated in full at rule-add time (RuleValidator's own
+    // #checkActionRedirect, vendor/firefox-dnr/UPSTREAM.md patch 16): a
+    // static, request-independent string that cannot have changed since.
     return redirect.url
   }
   if (redirect.extensionPath) {
     // Orivon serves an extension's own resources at chrome-extension://<id>/,
     // matching electron-chrome-extensions's convention (extensionId is the
     // host). See this directory's README §Design notes.
-    return `chrome-extension://${matchedRule.ruleManager.extensionId}${redirect.extensionPath}`
+    return `chrome-extension://${extensionId}${redirect.extensionPath}`
   }
   if (redirect.transform) {
-    return ExtensionDNR.applyURLTransform(requestURI, redirect.transform).href
+    // Unlike redirect.url, the final scheme/host here can depend on
+    // requestURI (a field transform.* leaves unset inherits it) -- README
+    // §Design notes has why validation alone cannot rule out every case,
+    // and why this defence-in-depth check must run against the real URL.
+    const transformed = ExtensionDNR.applyURLTransform(requestURI, redirect.transform)
+    return ExtensionDNR.isRedirectTargetAllowed(transformed, extensionId) ? transformed.href : null
   }
   if (redirect.regexSubstitution) {
     // A rule this far has already been validated; a failure here means the
@@ -104,7 +113,8 @@ function computeRedirectUrl(matchedRule: VendorMatchedRule, requestURI: URL): st
     // Treated as "no redirect" rather than surfaced, so one bad extension
     // rule cannot fail an unrelated page load.
     try {
-      return ExtensionDNR.applyRegexSubstitution(matchedRule, requestURI).href
+      const substituted = ExtensionDNR.applyRegexSubstitution(matchedRule, requestURI)
+      return ExtensionDNR.isRedirectTargetAllowed(substituted, extensionId) ? substituted.href : null
     } catch {
       return null
     }
@@ -189,7 +199,7 @@ export function createDnrEngine() {
     const quotaCounter = new RuleQuotaCounter('GUARANTEED_MINIMUM_STATIC_RULES')
     const rulesets = enabledIds.map(id => {
       const entry = state.byId.get(id)!
-      const validator: VendorRuleValidator = new RuleValidator([])
+      const validator: VendorRuleValidator = new RuleValidator([], { extensionId })
       validator.addRules(withDefaultPriority(entry.rules))
       const rules = validateStaticRuleset(validator, quotaCounter, id)
       return { id, rules, disabledRuleIds: null }
@@ -262,7 +272,7 @@ export function createDnrEngine() {
 
     updateDynamicRules(extensionId: string, options: DnrUpdateRuleOptions): void {
       const ruleManager = registry.getRuleManager(extensionId)
-      const validator: VendorRuleValidator = new RuleValidator(ruleManager.getDynamicRules())
+      const validator: VendorRuleValidator = new RuleValidator(ruleManager.getDynamicRules(), { extensionId })
       if (options.removeRuleIds) {
         validator.removeRuleIds(options.removeRuleIds)
       }
@@ -278,6 +288,7 @@ export function createDnrEngine() {
       const ruleManager = registry.getRuleManager(extensionId)
       const validator: VendorRuleValidator = new RuleValidator(ruleManager.getSessionRules(), {
         isSessionRuleset: true,
+        extensionId,
       })
       if (options.removeRuleIds) {
         validator.removeRuleIds(options.removeRuleIds)

@@ -26,7 +26,11 @@ function parsePattern (pattern: string): ParsedPattern | undefined {
 
 /** Schemes Chrome's own `<all_urls>` covers -- ws/wss and every other
  * scheme are deliberately excluded, the same allowlist-not-denylist stance
- * `origin.ts`'s `ORIGIN_BEARING_SCHEMES` documents for itself. */
+ * `origin.ts`'s `ORIGIN_BEARING_SCHEMES` documents for itself. Chrome's own
+ * grammar, kept faithfully, `file` included -- a caller needing Orivon's
+ * own narrower "no extension ever gets file access" rule applies it on top
+ * of this matcher instead (`../../main/extensions/README.md`'s
+ * "allowFileAccess is never true" entry names both callers that do). */
 const ALL_URLS_SCHEMES = new Set(['http', 'https', 'file', 'ftp'])
 
 function schemeMatches (patternScheme: string, urlScheme: string, isAllUrls: boolean): boolean {

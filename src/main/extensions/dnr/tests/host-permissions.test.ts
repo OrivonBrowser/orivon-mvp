@@ -14,6 +14,20 @@ describe('createHostAccessChecker', () => {
     expect(check(new URL('https://example.com/x'), new URL('https://other.com/'))).toBe(false)
     expect(check(new URL('https://other.com/x'), null)).toBe(false)
   })
+
+  // src/main/extensions/README.md's "allowFileAccess is never true" entry:
+  // no extension ever gets file access, so file: is never covered here,
+  // even by <all_urls>, which Chrome's own match-pattern grammar (this
+  // file's own matcher) does include.
+  it('never covers a file: request URL, even with <all_urls>', () => {
+    const check = createHostAccessChecker(['<all_urls>'])
+    expect(check(new URL('file:///etc/passwd'), null)).toBe(false)
+  })
+
+  it('never covers a file: initiator URL, even when the request URL matches', () => {
+    const check = createHostAccessChecker(['<all_urls>'])
+    expect(check(new URL('https://example.com/x'), new URL('file:///etc/passwd'))).toBe(false)
+  })
 })
 
 describe('buildActionAccess', () => {

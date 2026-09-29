@@ -435,6 +435,51 @@ patch.
     `src/main/extensions/dnr/tests/action-access.test.ts` has the regression
     tests, for both the host-access gate and the domain conditions.
 
+16. **`redirect.url` and `redirect.transform.scheme` are now checked against a scheme
+    allowlist, and a `chrome-extension:` target must name the rule's own extension.**
+    Neither was validated at all before this patch. Firefox's own equivalent for a redirect
+    target, `extension.checkLoadURI` (a privileged-URI check against the caller's principal),
+    was already dropped by patch 5 above -- but patch 5 only ever wired its plain-scheme
+    replacement into `regexSubstitution`'s own path (`applyRegexSubstitution`); `redirect.url`
+    never got an equivalent check at all, and `redirect.transform.scheme` was only checked for
+    "does `applyURLTransform` throw", which it does not for every invalid scheme (see below).
+    `#checkActionRedirect` gains a new `url` block (parses `redirect.url`, rejects an unparsable
+    one or one whose scheme is outside `REDIRECT_TARGET_ALLOWED_SCHEMES` -- `http:`, `https:`,
+    `ftp:`, `chrome-extension:`, module-level, new) and a `redirect.transform.scheme` check
+    (same allowlist, values without the trailing `:`), both before `applyURLTransform`'s own
+    throw-only check runs. A `chrome-extension:` target additionally must name the rule's own
+    extension: `RuleValidator` gains an `extensionId` constructor option (`dnr-engine.ts`'s three
+    call sites now pass it) so `#checkActionRedirect` can compare a parsed `redirect.url`'s
+    hostname, or an explicit `redirect.transform.host` paired with `redirect.transform.scheme:
+    "chrome-extension"`, against it. `src/main/extensions/dnr/README.md`'s Design notes has the
+    reasoning `data:` stays refused (provisional -- Chrome's own docs do not say whether it is
+    valid for a subresource redirect) and why the `chrome-extension`+`transform.host` validation-
+    time check is necessarily incomplete: `redirect.transform` is also re-checked against the
+    real, final URL in `dnr-engine.ts`'s `computeRedirectUrl` (a new exported
+    `isRedirectTargetAllowed(url, extensionId)`, shared by both the validator and that function),
+    which is where the incompleteness is actually closed. `regexSubstitution`'s own existing
+    http(s)-only check (patch 5) is unchanged, but its result is now ALSO re-checked there, for
+    the same defence-in-depth reason. `src/main/extensions/dnr/tests/redirect.test.ts`'s
+    "redirect target validation" `describe` block is the regression test.
+
+17. **`modifyHeaders` refuses to touch the `Host` request header, restoring Firefox's own
+    `#checkHostHeader` refusal (patch 6) that patch 6 dropped along with every other permission
+    check.** Firefox's version is conditional and apply-time: it allows rewriting `Host` when the
+    new value falls within the extension's own host permission and is not a restricted URL,
+    checked against a live `Extension`/principal object this port has no equivalent of (the same
+    reason patch 6 gives for dropping it in the first place). This patch instead adds a flat,
+    validation-time refusal in `#checkActionModifyHeaders`: any `requestHeaders` op (`set`,
+    `append`, or `remove`) naming `header: "host"` (case-insensitively) is rejected outright,
+    never reaching evaluation at all. `src/main/extensions/dnr/README.md`'s Design notes has the
+    reasoning (rewriting the wire's own routing header is a different class of risk from any
+    other header, and this port cannot replicate Firefox's own value-dependent check); every
+    other header stays allowed, including ones Firefox's schema layer would also restrict but
+    Chrome's own published `declarativeNetRequest` reference does not name as unsafe (`Cookie`,
+    `Referer`, `Origin`), since `redirect`/`modifyHeaders` host-permission gating (patch 12)
+    already bounds which requests a rule may act on at all. `responseHeaders` is unaffected:
+    `Host` is a request-only header. `src/main/extensions/dnr/tests/modify-headers.test.ts`'s
+    "Host header" `describe` block is the regression test.
+
 Nothing else changed: class/function bodies, the top-of-file design comment,
 and every doc comment not touched by a patch above are upstream's own words,
 reformatted only where ESLint-style (`let`→`const` where safe, semicolons

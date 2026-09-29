@@ -36,6 +36,9 @@ export function hasApiPermission (manifest: unknown, name: string): boolean {
  * cookie domain) carries nothing a host pattern could cover. */
 export function hasHostAccess (manifest: unknown, url: string | undefined): boolean {
   if (url === undefined) return false
+  // No extension ever gets file access, so file: is never covered here --
+  // README.md's "allowFileAccess is never true" entry has why.
+  if (url.startsWith('file:')) return false
   const result = readExtensionManifest(manifest)
   if (!result.ok) return false
   return matchesAnyHostPattern(result.facts.hostPermissions, url)

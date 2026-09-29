@@ -44,6 +44,13 @@ describe('hasHostAccess', () => {
   it('is false for a URL covered only by a content_scripts match, with no host_permissions', () => {
     expect(hasHostAccess(MANIFEST_WITH_CONTENT_SCRIPT_ONLY, 'https://a.example/path')).toBe(false)
   })
+
+  // README.md's "allowFileAccess is never true" entry: no extension ever
+  // gets file access, so file: is never covered here, even by <all_urls>.
+  it('is false for a file: URL, even with an <all_urls> host permission', () => {
+    const manifestWithAllUrls = { manifest_version: 3, name: 'x', version: '1.0.0', host_permissions: ['<all_urls>'] }
+    expect(hasHostAccess(manifestWithAllUrls, 'file:///etc/passwd')).toBe(false)
+  })
 })
 
 describe('hasApiOrHostAccess', () => {

@@ -75,6 +75,35 @@ import { newURI, applyQueryTransform, applyURLTransform } from '../adapters/dnr-
 import { getBaseDomain } from '../adapters/dnr-domain.mjs'
 import { ExtensionDNRLimits } from './dnr-limits.mjs'
 
+// Patch 16 (UPSTREAM.md): the scheme allowlist a redirect's final target
+// must satisfy -- Chrome's documented URLTransform.scheme allowed values
+// ("http", "https", "ftp", "chrome-extension"), reused for redirect.url too
+// since Chrome's own docs state no wider a rule for it (only "not a
+// JavaScript URL"). Shared between #checkActionRedirect (validation, below)
+// and dnr-engine.ts's computeRedirectUrl (evaluation-time defence in depth
+// for redirect.transform/regexSubstitution, whose final URL can depend on
+// the real request and so cannot be fully checked against a dummy one at
+// validation time) -- see src/main/extensions/dnr/README.md's Design notes
+// for why data:/file:/javascript: and every other scheme stay refused.
+const REDIRECT_TARGET_ALLOWED_SCHEMES = new Set(['http:', 'https:', 'ftp:', 'chrome-extension:'])
+
+/**
+ * @param {URL} url - A redirect's fully-resolved target.
+ * @param {string} extensionId - The rule's own extension id.
+ * @returns {boolean} Whether `url` is a redirect target Orivon allows: an
+ *   allowed scheme, and -- when that scheme is chrome-extension: -- a host
+ *   equal to the rule's own extension (never another extension's origin).
+ */
+function isRedirectTargetAllowed(url, extensionId) {
+  if (!REDIRECT_TARGET_ALLOWED_SCHEMES.has(url.protocol)) {
+    return false
+  }
+  if (url.protocol === 'chrome-extension:' && url.hostname !== extensionId) {
+    return false
+  }
+  return true
+}
+
 // Ruleset precedence: session > dynamic > static (order from manifest.json).
 const PRECEDENCE_SESSION_RULESET = 1
 const PRECEDENCE_DYNAMIC_RULESET = 2
@@ -977,10 +1006,19 @@ class ModifyResponseHeaders extends ModifyHeadersBase {
 }
 
 class RuleValidator {
-  constructor(alreadyValidatedRules, { isSessionRuleset = false } = {}) {
+  // Patch 16 (UPSTREAM.md): extensionId, new -- needed to check a
+  // chrome-extension:// redirect target (url, or transform.scheme +
+  // transform.host) names this rule's OWN extension, never another one's.
+  // Optional and defaulting to null so a caller (a test, mainly) that
+  // constructs a RuleValidator without one still gets every other check;
+  // dnr-engine.ts's three call sites always pass the real extensionId.
+  /** @param {Array} alreadyValidatedRules
+   *  @param {{isSessionRuleset?: boolean, extensionId?: string | null}} [options] */
+  constructor(alreadyValidatedRules, { isSessionRuleset = false, extensionId = null } = {}) {
     this.rulesMap = new Map(alreadyValidatedRules.map(r => [r.id, r]))
     this.failures = []
     this.isSessionRuleset = isSessionRuleset
+    this.extensionId = extensionId
   }
 
   /**
@@ -1248,6 +1286,30 @@ class RuleValidator {
       return false
     }
 
+    // Patch 16 (UPSTREAM.md): redirect.url has no privileged-URI check to
+    // port (Firefox's own extension.checkLoadURI, dropped by patch 5, only
+    // ever covered regexSubstitution) and no schema layer runs ahead of
+    // this file (this package's own README), so nothing validated it at
+    // all before this patch -- an extension's own rule JSON, read straight
+    // off disk, chose the target scheme unchecked.
+    if (url) {
+      let parsedUrl
+      try {
+        parsedUrl = newURI(url)
+      } catch {
+        this.#collectInvalidRule(rule, 'redirect.url is not a valid URL')
+        return false
+      }
+      if (!isRedirectTargetAllowed(parsedUrl, this.extensionId)) {
+        this.#collectInvalidRule(
+          rule,
+          `redirect.url may not target scheme "${parsedUrl.protocol}" ` +
+            '(allowed: http, https, ftp, or chrome-extension for this extension\'s own id)'
+        )
+        return false
+      }
+    }
+
     if (transform) {
       if (transform.query != null && transform.queryTransform) {
         this.#collectInvalidRule(
@@ -1282,6 +1344,38 @@ class RuleValidator {
         this.#collectInvalidRule(
           rule,
           "redirect.transform.fragment should be empty or start with a '#'"
+        )
+        return false
+      }
+      // Patch 16 (UPSTREAM.md): transform.scheme's own allowlist. Unlike
+      // Firefox's schema (http(s) only), Chrome's declarativeNetRequest
+      // reference also allows "ftp" and "chrome-extension" here -- but
+      // WHATWG URL's protocol setter (adapters/dnr-uri.mjs's applyURLTransform)
+      // silently accepts ANY scheme string that is itself a "special"
+      // scheme (the WHATWG URL Standard's term: http/https/ws/wss/ftp/file
+      // share that category and freely rewrite into each other), so an
+      // unchecked transform.scheme: "file" would produce a file: URL
+      // without ever throwing -- the gap this check closes.
+      if (transform.scheme != null && !REDIRECT_TARGET_ALLOWED_SCHEMES.has(`${transform.scheme}:`)) {
+        this.#collectInvalidRule(
+          rule,
+          `redirect.transform.scheme "${transform.scheme}" is not allowed ` +
+            '(allowed: http, https, ftp, chrome-extension)'
+        )
+        return false
+      }
+      // A chrome-extension: transform.host is only ever meaningful as the
+      // rule's own extension id -- src/main/extensions/dnr/README.md's
+      // Design notes has why this check alone is not enough, and why
+      // dnr-engine.ts's computeRedirectUrl re-checks the real, final URL.
+      if (
+        transform.scheme === 'chrome-extension' &&
+        transform.host != null &&
+        transform.host !== this.extensionId
+      ) {
+        this.#collectInvalidRule(
+          rule,
+          "redirect.transform.host must be this extension's own id when transform.scheme is chrome-extension"
         )
         return false
       }
@@ -1349,6 +1443,16 @@ class RuleValidator {
         return false
       }
       return true
+    }
+    // Patch 17 (UPSTREAM.md): restores Firefox's own #checkHostHeader
+    // refusal (dropped by patch 6 along with every other permission check),
+    // as a flat validation-time rejection rather than Firefox's apply-time,
+    // permission-gated one -- see this package's README for why (no live
+    // Extension/principal object to check a rewritten Host value's target
+    // against). requestHeaders only: Host is a request header.
+    if (requestHeaders?.some(op => op.header?.toLowerCase() === 'host')) {
+      this.#collectInvalidRule(rule, 'requestHeaders may not modify the Host header')
+      return false
     }
     if (
       (requestHeaders && !requestHeaders.every(isValidModifyHeadersOp)) ||
@@ -2049,6 +2153,7 @@ export const ExtensionDNR = {
   createRuleManagerRegistry,
   applyRegexSubstitution,
   applyURLTransform,
+  isRedirectTargetAllowed,
   ModifyRequestHeaders,
   ModifyResponseHeaders,
   // Test-only: forces #collectMatchInRuleset back to a full scan of
