@@ -1,13 +1,15 @@
 # `src/main/sessions/`: what an Electron `Session` is allowed to do
 
 **What lives here.** `permission-gate.ts` denies every Chromium permission (camera, clipboard
-reads, geolocation, ...) on every session a tab can reach, except the names in the table below.
-`external-links.ts` and `site-notifications.ts` decide the two that ask the person;
-`notification-decisions.ts` remembers each site's notification answer; `tab-prompts.ts` is what
-each tab remembers between questions. `web-context-host.ts` is `ADR-0019`'s Electron half of the
-isolated `WebContext`: the real `WebContextHost`
-[`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) calls through
-`CreateBrokerOptions.webContextHost`.
+reads, geolocation, ...) on every session a tab can reach, except the names in the table below,
+plus one conditional case: `'media'` for a `chrome-extension://` origin redeeming a live
+`chrome.tabCapture` grant (`tab-capture-grants.ts`'s own doc; wired from
+[`../extensions/extension-host.ts`](../extensions/extension-host.ts)). `external-links.ts` and
+`site-notifications.ts` decide the two that ask the person; `notification-decisions.ts` remembers
+each site's notification answer; `tab-prompts.ts` is what each tab remembers between questions.
+`web-context-host.ts` is `ADR-0019`'s Electron half of the isolated `WebContext`: the real
+`WebContextHost` [`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) calls
+through `CreateBrokerOptions.webContextHost`.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
@@ -24,8 +26,8 @@ Electron-free by its own rule, which is why this directory exists. The partition
 construction and the network confinement have to live somewhere Electron-shaped, and this is it.
 
 **Durable or tied to Electron.** `permission-gate.ts` and `web-context-host.ts` are tied to
-Electron's `Session`; the decision files and the notification store are plain Node and would
-survive an engine change.
+Electron's `Session`; the decision files, the notification store and `tab-capture-grants.ts` are
+plain Node and would survive an engine change.
 
 **Owner stream.** `shell` (`permission-gate.ts`); `ADR-0019` (`web-context-host.ts`).
 Maintenance only.
@@ -50,6 +52,13 @@ A name passes on one of two grounds (A202; `ADR-0025` has the amended wording):
 2. **The person answers a real prompt**, in the window showing the page, naming the site that
    asks. Nothing passes before the answer, and the check handler, which cannot ask, never allows
    on the person's behalf.
+
+**`media` meets neither ground, and is not in the table below for that reason: it stays denied
+for an ordinary page.** The one case it passes is a THIRD ground: an extension itself already
+proved a legitimate capture request by calling the permission-gated `chrome.tabCapture` API,
+which is what `tab-capture-grants.ts` checks for. No person is asked, because the person's own
+consent already happened once, at install, over the `tabCapture` permission line the install
+prompt showed.
 
 | Name | Ground | What meets it | ADR |
 |---|---|---|---|
