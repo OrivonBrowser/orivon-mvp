@@ -72,6 +72,14 @@ export interface WireError {
    * reads off a spawn failure (`ENOEXEC` for a native program names `'excluded'`) -- carried
    * across the wire so a host-routed spawn's refusal reads the same as a local one's. */
   readonly reason?: string
+  /** Node's own `errno`, `syscall`, `path` and `spawnargs` (shim finding 14) -- without these a
+   * host-routed spawn failure's `catch (e) { e.errno }` reads `undefined` where the local path
+   * (and Node) has the real value, and `ChildProcess.#finish` had nothing but a fixed -8 to
+   * report as the exit code, where the local path (and Node) reports ENOENT's real -2. */
+  readonly errno?: number
+  readonly syscall?: string
+  readonly path?: string
+  readonly spawnargs?: readonly string[]
 }
 
 export type FromWorker =
@@ -103,11 +111,18 @@ export interface WorkerLike {
 
 export function toWireError (error: unknown): WireError {
   if (typeof error !== 'object' || error === null) return { name: 'Error', message: String(error) }
-  const { name, message, code, reason } = error as { name?: unknown, message?: unknown, code?: unknown, reason?: unknown }
+  const { name, message, code, reason, errno, syscall, path, spawnargs } = error as {
+    name?: unknown, message?: unknown, code?: unknown, reason?: unknown
+    errno?: unknown, syscall?: unknown, path?: unknown, spawnargs?: unknown
+  }
   return {
     name: typeof name === 'string' ? name : 'Error',
     message: typeof message === 'string' ? message : String(error),
     ...(typeof code === 'string' ? { code } : {}),
-    ...(typeof reason === 'string' ? { reason } : {})
+    ...(typeof reason === 'string' ? { reason } : {}),
+    ...(typeof errno === 'number' ? { errno } : {}),
+    ...(typeof syscall === 'string' ? { syscall } : {}),
+    ...(typeof path === 'string' ? { path } : {}),
+    ...(Array.isArray(spawnargs) ? { spawnargs: spawnargs.map(String) } : {})
   }
 }

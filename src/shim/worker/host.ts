@@ -19,7 +19,6 @@
 // bundler uses (module-map.ts), for any importer under src/shim/.
 
 import type { Orivon } from '../../contracts/capability-api.js'
-import { preferLocalWorkers } from '../child-process/host-client.js'
 import { loadProgram } from '../child-process/program.js'
 import { spawn } from '../child-process/spawn.js'
 import { runSpawnSync, type SpawnSyncRequest } from '../child-process/spawn-sync.js'
@@ -87,9 +86,16 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
     // local (non-host) path already passes to the identical `loadProgram`.
     let program: Awaited<ReturnType<typeof loadProgram>>
     try {
-      program = await loadProgram(start.command, start.args)
+      // `start.args` is `child.spawnargs` (argv0 included, matching the
+      // worker's OWN `args` field below -- Node's WASI argv convention) --
+      // never what `loadProgram` wants, which is the plain args a real
+      // process's argv[0] never counts as one of (shim finding 14: this
+      // mismatch, unique to the host path, used to hand a spawned program
+      // one extra leading argument the local path never did).
+      program = await loadProgram(start.command, start.args.slice(1))
     } catch (error) {
       port.postMessage(failedMessage(error))
+      port.close()
       return
     }
     base = { type: 'spawn', program, args: start.args, env: start.env, preopens: start.preopens }
@@ -100,6 +106,7 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
     // could, in principle, send anything over its own port.
     if (!isSameOrigin(start.url)) {
       port.postMessage(failedMessage(new Error(`${start.type === 'fork' ? 'a forked' : 'a threaded'} module must be on the app's own origin`)))
+      port.close()
       return
     }
     base = start
@@ -115,6 +122,7 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
   } catch (error) {
     void server.dispose()
     port.postMessage(failedMessage(error))
+    port.close()
     return
   }
 
@@ -134,19 +142,29 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
   const ackOutput = (stream: StreamName): void => { worker.postMessage({ type: 'ack', stream }) }
 
   worker.onmessage = (event: MessageEvent<FromWorker>) => {
-    if (event.data.type === 'exit' || event.data.type === 'crash') disposeOnce()
+    const terminal = event.data.type === 'exit' || event.data.type === 'crash'
+    if (terminal) disposeOnce()
     if (orphaned) {
       if (event.data.type === 'output') ackOutput(event.data.stream)
+      // Nobody reads this port any more, but it must still be freed --
+      // shim finding 16: an orphaned child that never gets here otherwise
+      // leaks its port pair for as long as the page's own connection lives.
+      if (terminal) port.close()
       return
     }
     try {
       port.postMessage(event.data)
     } catch { /* the page's own port is already gone */ }
+    // Freed only AFTER the terminal message is queued for delivery above --
+    // close() never recalls an already-sent message, only stops the next
+    // one (shim finding 16: both ends stayed entangled forever otherwise).
+    if (terminal) port.close()
   }
   worker.onerror = (event) => {
     event.preventDefault()
     disposeOnce()
     if (!orphaned) { try { port.postMessage(failedMessage(new Error(event.message))) } catch { /* gone */ } }
+    port.close()
   }
 
   const dispatch = (message: ToHostChild): void => {
@@ -187,10 +205,14 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
 }
 
 export function createChildHost (orivon: Orivon): ChildHost {
-  preferLocalWorkers()
-  // child-process/spawn.ts's launchChild still reaches for getOrivon() to serve a LOCAL child's
-  // own Worker (a spawnSync's own nested spawn, not just this host's own first-level children) --
-  // orivon-global.ts's own header has the full reasoning.
+  // No `expose-child-host-connect.ts` runs in this preload (`README.md`'s own
+  // table -- only ordinary app tabs get it), so `hasChildHost()` (F1's
+  // structural, synchronous check) already answers false here with no work
+  // at all: a spawnSync's own nested spawn, served on this same host, runs
+  // as a local Worker of it, never a doomed attempt to reach a host of a
+  // host. child-process/spawn.ts's launchChild still reaches for
+  // getOrivon() to serve that local child's own Worker -- orivon-global.ts's
+  // own header has the full reasoning.
   setOrivon(orivon)
   function addPage (port: MessagePort): void {
     port.start()

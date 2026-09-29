@@ -89,13 +89,19 @@ export class ChildProcess extends EventEmitter {
     this.stderr = stderrMode === 'pipe' ? new OutputStream() : null
     this.stdio = [this.stdin, this.stdout, this.stderr]
     this.#inherit = { stdout: lineSink((line) => console.log(line)), stderr: lineSink((line) => console.error(line)) }
+    // Node's own spawn/fork assign `pid` synchronously, before either ever
+    // returns (measured; shim finding 9) -- `attach()` used to be where this
+    // happened, which was fine while launching was itself synchronous, but a
+    // host-routed child's own `attach()` now runs at least a microtask (and,
+    // on a slow first connection, much longer) after `spawn()`/`fork()`
+    // already handed the caller this object with `pid` still unset.
+    this.pid = nextPid++
   }
 
   /** The Worker is running the child: flush what was written before it existed. */
   attach (worker: WorkerLike, server: OrivonServer): void {
     this.#worker = worker
     this.#server = server
-    this.pid = nextPid++
     worker.onmessage = (event: MessageEvent<FromWorker>) => { this.#receive(event.data) }
     worker.onerror = (event) => {
       event.preventDefault()
@@ -183,12 +189,22 @@ export class ChildProcess extends EventEmitter {
     else if (message.type === 'crash') this.emit('crash', message.error)
     else if (message.type === 'disconnect' && this.connected) { this.connected = false; this.emit('disconnect') }
     else if (message.type === 'failed') {
+      const err = message.error
+      // Shim finding 14: a host-routed spawn used to lose everything but
+      // name/message/code/reason, so `catch (e) { e.errno }` and friends
+      // read `undefined` where the local path (and Node) has the real
+      // value, and every host-routed failure reported -8 even for one
+      // Node (and the local path) report as ENOENT's -2.
       this.emit('error', Object.assign(
-        new Error(message.error.message),
-        { code: message.error.code ?? 'ENOEXEC' },
-        message.error.reason === undefined ? {} : { reason: message.error.reason }
+        new Error(err.message),
+        { code: err.code ?? 'ENOEXEC' },
+        err.reason === undefined ? {} : { reason: err.reason },
+        err.errno === undefined ? {} : { errno: err.errno },
+        err.syscall === undefined ? {} : { syscall: err.syscall },
+        err.path === undefined ? {} : { path: err.path },
+        err.spawnargs === undefined ? {} : { spawnargs: err.spawnargs }
       ))
-      this.#finish(-8, null, false)
+      this.#finish(err.errno ?? -8, null, false)
     } else if (message.type === 'exit') this.#finish(message.code, message.signal, true)
   }
 
