@@ -95,6 +95,44 @@ describe('broker.embed.setScript / scriptSync', () => {
     await broker.revoke(APP, grant.id)
     expect(broker.embed.scriptSync(APP)).toBeUndefined()
   })
+
+  // `scriptSync` already answers undefined post-revoke because it
+  // checks the LIVE GRANT first (above) -- that alone does not prove the
+  // string itself is gone from `createEmbedCapability`'s own map. Re-
+  // granting with NO further `setScript` call makes the grant live again
+  // with nothing else changed: if the old string were still sitting in
+  // that map, `scriptSync` would read it right back out here.
+  it('the stored script itself is cleared on revoke, not just made unreachable while the grant is down', async () => {
+    const broker = await granted()
+    await broker.embed.setScript(APP, { source: 'window.x = 1' })
+    const [grant] = await broker.app.grants(APP)
+    if (grant === undefined) throw new Error('no grant')
+
+    await broker.revoke(APP, grant.id)
+    await broker.grant(APP, 'web.embed', ORIGINS)
+
+    expect(broker.embed.scriptSync(APP)).toBeUndefined()
+  })
+
+  it('revokePersisted clears the stored script the same way revoke does', async () => {
+    const broker = await granted()
+    await broker.embed.setScript(APP, { source: 'window.x = 1' })
+
+    await broker.revokePersisted(APP, 'web.embed')
+    await broker.grant(APP, 'web.embed', ORIGINS)
+
+    expect(broker.embed.scriptSync(APP)).toBeUndefined()
+  })
+
+  it('revoking a DIFFERENT capability leaves an origin\'s embed script alone', async () => {
+    const broker = await granted()
+    await broker.embed.setScript(APP, { source: 'window.x = 1' })
+    const fsGrant = await broker.grant(APP, 'fs', [])
+
+    await broker.revoke(APP, fsGrant.id)
+
+    expect(broker.embed.scriptSync(APP)).toBe('window.x = 1')
+  })
 })
 
 describe('broker.embed.attach', () => {
