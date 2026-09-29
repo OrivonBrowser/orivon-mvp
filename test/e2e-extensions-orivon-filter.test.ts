@@ -187,7 +187,7 @@ async function startFixtureServer (): Promise<{ server: Server, origin: string }
 const PROBE_PORT = 8895
 const PROBE_PATTERN = `127.0.0.1:${String(PROBE_PORT)}`
 
-/** The routed network path's own probe (finding 2): no CORS headers, so a native fetch (an extension's fallback) fails, while the routed path (a granted app's own fetch) never checks CORS at all. */
+/** The routed network path's own probe: no CORS headers, so a native fetch (an extension's fallback) fails, while the routed path (a granted app's own fetch) never checks CORS at all. */
 async function startProbeServer (): Promise<Server> {
   const probeServer = createServer((_req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('probe-ok') })
   await new Promise<void>((resolve) => { probeServer.listen(PROBE_PORT, '127.0.0.1', resolve) })
@@ -251,7 +251,7 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
       check('the developer-only grant hook is installed (npm run test:e2e builds with ORIVON_ENABLE_DEV_GRANT=1)', granted)
       if (!granted) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
 
-      // The routed network path's own grant (finding 2): registerApp already
+      // The routed network path's own grant: registerApp already
       // ran above, so this origin's tabs already carry the app-tab flag
       // (src/main/shell/tab-view.ts's appTabArgsFor) -- one more capability
       // on the same origin, not a second registration.
@@ -278,13 +278,13 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
       const inlineRan = await evaluateRetrying(view, () => (window as unknown as { __inlineRan?: boolean }).__inlineRan)
       check('CSP: the granted page\'s own inline <script> never ran (no \'unsafe-inline\')', inlineRan === undefined, String(inlineRan))
 
-      // ---- finding 2: the page's own fetch() to the app's granted probe host is routed and succeeds ----
+      // ---- the page's own fetch() to the app's granted probe host is routed and succeeds ----
       const fetchPageSettled = await waitFor(async () => await evaluateRetrying(view, () => document.documentElement.dataset.orivonFetchPage) !== undefined)
       check('the page\'s own fetch() to the granted probe host settles', fetchPageSettled)
       const fetchPageOutcome = await evaluateRetrying(view, () => document.documentElement.dataset.orivonFetchPage)
       check('the page\'s own fetch() reaches the granted probe host and reads its body', fetchPageOutcome === 'ok:probe-ok', String(fetchPageOutcome))
 
-      // ---- finding 2: a MAIN-world extension script's fetch() to the SAME granted probe host must reach only what the page's own native fetch would ----
+      // ---- a MAIN-world extension script's fetch() to the SAME granted probe host must reach only what the page's own native fetch would ----
       const fetchView = await navigateToFixture(app, `${origin}/orivon-fixture/fetch`, 'orivon-fixture')
       const fetchExtensionSettled = await waitFor(async () => await evaluateRetrying(fetchView, () => document.documentElement.dataset.orivonFetchExtension) !== undefined)
       check('the extension\'s fetch() to the granted probe host settles', fetchExtensionSettled)
@@ -328,7 +328,21 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
         JSON.stringify(tamperOutcomes)
       )
 
-      // ---- finding 1: a same-origin <object> document on the granted page never loads, and its inline script never runs ----
+      // ---- the extension tries to replace CallSite.prototype.getFileName at document_start: V8 refuses, attribution is unchanged ----
+      const callSiteView = await navigateToFixture(app, `${origin}/orivon-fixture/callsite`, 'orivon-fixture')
+      const callSiteSettled = await waitFor(async () => await evaluateRetrying(callSiteView, () => {
+        const d = document.documentElement.dataset
+        return d.orivonCallsiteExtension !== undefined && d.orivonPage !== undefined
+      }))
+      check('both the CallSite-patching extension call and the page\'s own call settle', callSiteSettled)
+      const callSiteOutcomes = await evaluateRetrying(callSiteView, () => ({ ...document.documentElement.dataset }))
+      check(
+        'CallSite.prototype.getFileName cannot be replaced from the main world, so the extension\'s call is still refused and the page\'s still allowed',
+        callSiteOutcomes.orivonCallsitePatch === 'refused' && callSiteOutcomes.orivonCallsiteExtension === 'denied' && callSiteOutcomes.orivonPage === 'allowed',
+        JSON.stringify(callSiteOutcomes)
+      )
+
+      // ---- a same-origin <object> document on the granted page never loads, and its inline script never runs ----
       const objectView = await navigateToFixture(app, `${origin}/orivon-fixture/object`, 'orivon-fixture')
       const objectSettled = await waitFor(async () => await evaluateRetrying(objectView, () => document.documentElement.dataset.orivonObjectSettled) !== undefined)
       check('the <object> probe settles (fires load, fires error, or times out)', objectSettled)

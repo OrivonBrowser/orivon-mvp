@@ -85,5 +85,28 @@
     return
   }
 
+  if (location.pathname === '/orivon-fixture/callsite') {
+    // Tries to replace CallSite.prototype.getFileName at document_start so
+    // every frame would claim the page's own script. V8 defines those
+    // methods non-writable and non-configurable, so the strict-mode
+    // assignment throws and the extension's own frame still names it.
+    const previous = Error.prepareStackTrace
+    Error.prepareStackTrace = (_error, callSites) => callSites
+    const callSite = new Error().stack[0]
+    Error.prepareStackTrace = previous
+    const patched = (function () {
+      'use strict'
+      try {
+        Object.getPrototypeOf(callSite).getFileName = function () { return location.origin + '/page.js' }
+        return 'replaced'
+      } catch (error) {
+        return 'refused'
+      }
+    })()
+    report('callsite-patch', patched)
+    void call('callsite-extension')
+    return
+  }
+
   void call('main-world')
 })()
