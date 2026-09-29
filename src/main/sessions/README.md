@@ -7,10 +7,12 @@ reads, geolocation, ...) on every session a tab can reach, except the names in t
 each tab remembers between questions. `web-context-host.ts` is `ADR-0019`'s Electron half of the
 isolated `WebContext`: the real `WebContextHost`
 [`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) calls through
-`CreateBrokerOptions.webContextHost`. `session-attribution.ts` publishes `ctx.sessionForOrigin`
-(`../registry.ts`): the Electron session an origin's documents belong in, reusing
+`CreateBrokerOptions.webContextHost`. `session-attribution.ts` publishes `ctx.senderAttributed`
+(`../registry.ts`): whether a WebContents is attributed to the origin it claims, decided at that
+document's own commit and reused afterward rather than re-decided live, reusing
 [`../shell/tab-view.ts`](../shell/tab-view.ts)'s own `partitionForTarget` rule so every
-renderer-reachable broker channel can refuse a call whose WebContents sits in the wrong one.
+renderer-reachable broker channel can refuse a call whose WebContents never committed the origin
+it claims in the session it belongs in.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
@@ -85,6 +87,21 @@ runs only on a private session bus
 are the only thing keeping every name above away from a document running another site's script;
 they look like duplication and are not. The grant ledger is untouched by the gate: it governs
 `orivon.*` capabilities, not Chromium's own.
+
+**[`session-attribution.ts`](session-attribution.ts) decides attribution at a document's own
+commit, never by re-checking a live document against the CURRENT ledger.** A live re-check
+sounds simpler, and was the original rule, but it strands every already-open, already-attributed
+document of an origin the instant a grant or a revoke changes which session that origin belongs
+in next: a tab whose app just lost its last grant is denied even `app.requestGrant` to ask again,
+and a second tab of an app already granted is denied the moment the first one's grant lands,
+because neither tab's `WebContents` ever moves on its own. Recording what a document's session
+was found to be at its own last main-frame `did-navigate`, and trusting that record afterward,
+lets an already-attributed document keep calling successfully until it next navigates -- the same
+navigation that already triggers `../shell/tab-view.ts`'s own partition swap for any other
+cross-origin move. A cache-served (pinned) origin is the one exception, checked live and strictly
+regardless of any record, because its bundle is only ever intercepted inside its own partition
+(`ADR-0007`): a document attributed to it must run there at every call, not merely at whatever
+moment it committed.
 
 **[`web-context-host.ts`](web-context-host.ts): two WebRTC belts, and why the discard-port
 proxy does not break the context's own `fetch()`.** `protocol.handle` and

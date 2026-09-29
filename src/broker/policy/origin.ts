@@ -281,14 +281,15 @@ export function originFromSenderFrame (frame: SenderFrameLike | null | undefined
  *
  * Attribution is decided once, when a document commits, not re-decided
  * under a live document on every call -- see
- * `../../main/sessions/session-attribution.ts`'s own header for the full
- * three-way rule `attributed` implements (a cache-served origin checked
- * live and strictly; an already-committed document's own recorded answer;
- * a live check as the fallback when no record exists yet). This is what
- * lets an already-open, already-attributed document survive a grant or a
- * revoke that changes which session `origin` belongs in NEXT -- it keeps
- * calling successfully until it next navigates, rather than being denied
- * everything the instant the ledger changes underneath it.
+ * `../../main/sessions/session-attribution.ts` for the three-way rule
+ * `attributed` implements (a cache-served origin checked live and
+ * strictly; an already-committed document's own recorded answer; a live
+ * check as the fallback when no record exists yet) and that directory's
+ * README for why it is shaped this way. This is what lets an already-open,
+ * already-attributed document survive a grant or a revoke that changes
+ * which session `origin` belongs in NEXT -- it keeps calling successfully
+ * until it next navigates, rather than being denied everything the instant
+ * the ledger changes underneath it.
  *
  * A document can still commit `origin` while sitting in the wrong session:
  * a non-typed navigation (a link, a redirect, a script, back/forward) lands

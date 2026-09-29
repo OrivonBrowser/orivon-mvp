@@ -9,18 +9,8 @@
 // facts for a navigating tab; this reuses it rather than re-deriving the
 // rule a second time.
 //
-// ATTRIBUTION IS DECIDED AT COMMIT, NOT RE-DECIDED UNDER A LIVE DOCUMENT.
-// Checking a document's LIVE session against what its origin currently
-// expects (the only thing the previous version of this file did) strands a
-// document the instant a grant or a revoke moves that expectation: an app
-// that just lost its only grant is denied even `app.requestGrant` from the
-// tab it is already showing in, and a second tab of the same app is denied
-// outright the moment the first one is granted, because neither tab's
-// WebContents ever moves on its own. Recording what a document's session
-// was found to be AT ITS OWN COMMIT, and trusting that record afterward,
-// is what lets an already-attributed document keep calling successfully
-// until it next navigates -- the same navigation that already triggers
-// tab-view.ts's own partition swap for any other cross-origin move.
+// Why attribution is decided at a document's own commit, never re-decided
+// under a live document: README.md's Design notes.
 import { app, session } from 'electron'
 import type { WebContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
