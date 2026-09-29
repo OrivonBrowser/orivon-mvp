@@ -1,9 +1,9 @@
 // Confines the OTHER direction from ./paths.ts's confinePath: not "does a
 // requested path escape a picked root", but "should the picker refuse this
-// root at all". §Contracts (the security-audit fix plan) and the picker
-// decision it records: a folder or file pick that is Orivon's own data, a
-// filesystem root, the account's home folder, or a short fixed list of
-// system directories is never a valid pick -- not because an app would
+// root at all". `orivon.fs.userSelected`'s contract (d-0185): a folder or
+// file pick that is Orivon's own data, a filesystem root, the account's
+// home folder, or a short fixed list of system directories is never a valid
+// pick -- not because an app would
 // later escape it (confinePath still answers that question, unchanged),
 // but because the folder ITSELF holds state the picker's "read, change and
 // delete everything here" warning was never written to cover: another
