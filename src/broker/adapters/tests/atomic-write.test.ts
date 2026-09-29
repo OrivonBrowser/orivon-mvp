@@ -9,7 +9,11 @@ import { writeFileAtomic, writeFileAtomicAsync } from '../atomic-write.js'
 // module. Declared through vi.hoisted because vi.mock's factory runs before the rest of this file.
 // `opensByPath` proves writeFileAtomicAsync opens the temp file once, not once to write it and again to
 // fsync it -- counted per path, since fsyncDirectoryAsync legitimately opens the directory too.
-const syncGate = vi.hoisted(() => ({ failWriteWith: null as Error | null, failRenameWith: null as Error | null }))
+const syncGate = vi.hoisted(() => ({
+  failWriteWith: null as Error | null,
+  failRenameWith: null as Error | null,
+  firstOpenPath: null as string | null
+}))
 const asyncGate = vi.hoisted(() => ({
   failWriteWith: null as Error | null,
   failRenameWith: null as Error | null,
@@ -20,6 +24,10 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
+    openSync: (...args: Parameters<typeof actual.openSync>) => {
+      syncGate.firstOpenPath ??= String(args[0])
+      return actual.openSync(...args)
+    },
     writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
       if (syncGate.failWriteWith !== null) {
         const failure = syncGate.failWriteWith
@@ -119,6 +127,22 @@ describe('writeFileAtomic', () => {
 
     expect(readdirSync(dir)).toEqual([])
   })
+
+  it('the temp name carries this process\'s pid', () => {
+    syncGate.firstOpenPath = null
+    writeFileAtomic(path, 'hello')
+    expect(syncGate.firstOpenPath).toBe(`${path}.${String(process.pid)}.tmp`)
+  })
+
+  it('a failing write leaves alone a leftover .tmp belonging to another pid', () => {
+    const otherPidTmp = join(dir, 'value.json.999999999.tmp')
+    writeFileSync(otherPidTmp, 'left behind by another process')
+    syncGate.failWriteWith = new Error('ENOSPC: no space left on device')
+
+    expect(() => writeFileAtomic(path, 'replacement')).toThrow('ENOSPC')
+
+    expect(readFileSync(otherPidTmp, 'utf8')).toBe('left behind by another process')
+  })
 })
 
 describe('writeFileAtomicAsync', () => {
@@ -156,7 +180,23 @@ describe('writeFileAtomicAsync', () => {
   it('opens the temp file once, not once to write it and again to fsync it', async () => {
     asyncGate.opensByPath.clear()
     await writeFileAtomicAsync(path, 'hello')
-    expect(asyncGate.opensByPath.get(`${path}.tmp`)).toBe(1)
+    expect(asyncGate.opensByPath.get(`${path}.${String(process.pid)}.tmp`)).toBe(1)
+  })
+
+  it('the temp name carries this process\'s pid', async () => {
+    asyncGate.opensByPath.clear()
+    await writeFileAtomicAsync(path, 'hello')
+    expect([...asyncGate.opensByPath.keys()]).toContain(`${path}.${String(process.pid)}.tmp`)
+  })
+
+  it('a failing write leaves alone a leftover .tmp belonging to another pid', async () => {
+    const otherPidTmp = join(dir, 'value.json.999999999.tmp')
+    writeFileSync(otherPidTmp, 'left behind by another process')
+    asyncGate.failWriteWith = new Error('ENOSPC: no space left on device')
+
+    await expect(writeFileAtomicAsync(path, 'replacement')).rejects.toThrow('ENOSPC')
+
+    expect(await fsReadFile(otherPidTmp, 'utf8')).toBe('left behind by another process')
   })
 
   it('a failed write leaves the previous file intact, and no .tmp file behind', async () => {

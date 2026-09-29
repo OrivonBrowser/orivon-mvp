@@ -1,10 +1,19 @@
 // Every store under src/main/ and src/broker/grants/ that persists a small
 // JSON file uses this instead of a bare write, so a crash mid-write leaves
-// the previous file intact rather than truncated.
+// the previous file intact rather than truncated. Each path has exactly one
+// writer per process -- DebouncedWriter gives every async store that, and a
+// sync store is only ever called from its one owning object -- so the temp
+// name only needs to be unique per process, not per call.
 
 import { closeSync, fsyncSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { open, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
+
+/** Scoped by this process's pid: two processes can legitimately write the same path -- a profile store, for
+ * one, writes another profile's `profile.json` from whichever process the person is renaming or deleting it
+ * from -- and a name shared between them would let one process's temp file collide with, or its failure
+ * cleanup unlink, the other's. */
+const tmpPathFor = (path: string): string => `${path}.${String(process.pid)}.tmp`
 
 /**
  * Writes `text` to `path` atomically: a temp file in the SAME directory
@@ -23,7 +32,7 @@ import { dirname } from 'node:path'
  * keeps a crash from destroying what was there before.
  */
 export function writeFileAtomic (path: string, text: string): void {
-  const tmp = `${path}.tmp`
+  const tmp = tmpPathFor(path)
   try {
     const fd = openSync(tmp, 'w')
     try {
@@ -52,7 +61,7 @@ export function writeFileAtomic (path: string, text: string): void {
  * over `path`, fsync the directory.
  */
 export async function writeFileAtomicAsync (path: string, text: string): Promise<void> {
-  const tmp = `${path}.tmp`
+  const tmp = tmpPathFor(path)
   try {
     const handle = await open(tmp, 'w')
     try {
