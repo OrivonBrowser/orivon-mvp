@@ -14,6 +14,8 @@ import type { DataGatherer, MountedSite, NameResolver } from '../../../resolutio
 import { ProtocolRegistry } from '../../../registry.js'
 import { defineProtocol } from '../../../protocol.js'
 import { ENS } from '../../../ens/descriptor.js'
+import { IPFS } from '../../../ipfs/descriptor.js'
+import { createIpfsAddressResolvers } from '../../../ipfs/address-resolver.js'
 import { createRunCertificate } from '../certificate.js'
 import { MAX_BUFFERED_BYTES, createVerifierServer } from '../server.js'
 import { Sites } from '../sites.js'
@@ -39,7 +41,10 @@ const site: MountedSite = {
 const record: NameRecord = { type: 'contenthash', pointer: { kind: 'ipfs', cid: ROOT }, provenance: { via: 'fixture' } }
 const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
 const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
-const registry = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })])
+const registry = new ProtocolRegistry([
+  defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] }),
+  defineProtocol(IPFS, { resolvers: createIpfsAddressResolvers() })
+])
 
 let server: Server
 let port: number

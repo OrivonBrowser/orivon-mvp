@@ -93,7 +93,9 @@ it(
         await running.evaluate(({ dialog }) => {
           const globals = globalThis as unknown as { __dialogCalls?: unknown[] }
           globals.__dialogCalls = []
-          dialog.showMessageBox = (async (options: { type?: string, message?: string, detail?: string }) => {
+          // A dialog may be parented to its tab's window, so the options are the last argument.
+          dialog.showMessageBox = (async (...args: unknown[]) => {
+            const options = args.at(-1) as { type?: string, message?: string, detail?: string }
             globals.__dialogCalls!.push({ type: options.type, message: options.message, detail: options.detail })
             return { response: 0, checkboxChecked: false }
           }) as unknown as typeof dialog.showMessageBox
