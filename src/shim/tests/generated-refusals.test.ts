@@ -76,6 +76,10 @@ async function expectedSource (target: RefusalTarget): Promise<string> {
   return lines.join('\n')
 }
 
+// Each case imports a shim module for real; worker_threads' graph carries the whole child
+// runtime bundle, which takes seconds to transform on a loaded machine.
+const IMPORT_TIMEOUT_MS = 30_000
+
 describe('generated refusal stand-ins (A287)', () => {
   it.each(REFUSAL_TARGETS)('$specifier: generated/*.ts is current', async (target) => {
     const fresh = await expectedSource(target)
@@ -86,7 +90,7 @@ describe('generated refusal stand-ins (A287)', () => {
     }
     expect(existsSync(path), `${target.generatedFile} is missing -- regenerate with ORIVON_WRITE_SHIM_REFUSALS=1`).toBe(true)
     expect(readFileSync(path, 'utf8')).toBe(fresh)
-  })
+  }, IMPORT_TIMEOUT_MS)
 
   it.each(REFUSAL_TARGETS)('$specifier: every generated stand-in throws the module\'s own named refusal', async (target) => {
     const [generated, source] = await Promise.all([
@@ -109,5 +113,5 @@ describe('generated refusal stand-ins (A287)', () => {
         expect((error as { api?: unknown }).api, `${target.specifier}.${name}`).toBe(`${target.specifier}.${name}`)
       }
     }
-  })
+  }, IMPORT_TIMEOUT_MS)
 })
