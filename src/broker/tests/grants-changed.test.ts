@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createBroker } from '../index.js'
-import { APP, baseDeps, manifestWith } from './index.test-helpers.js'
+import { APP, baseDeps, manifestWith, stubFs } from './index.test-helpers.js'
 import type { PickPathResult } from '../broker-contracts.js'
 
 // `onGrantsChanged` (grant-events.ts) is the Settings Apps list's live-update
@@ -13,6 +13,10 @@ import type { PickPathResult } from '../broker-contracts.js'
 
 function pickedDirectory (path: string): () => Promise<PickPathResult> {
   return async () => ({ canceled: false, paths: [path] })
+}
+
+function pickedFiles (paths: readonly string[]): () => Promise<PickPathResult> {
+  return async () => ({ canceled: false, paths })
 }
 
 describe('Broker.onGrantsChanged', () => {
@@ -50,6 +54,42 @@ describe('Broker.onGrantsChanged', () => {
     expect(await broker.revokePersisted(APP, 'tcp.connect')).toBe(false)
 
     expect(seen).toEqual([APP])
+  })
+
+  it('fires when a folder is picked (a fresh pick is as much a change as a grant)', async () => {
+    const broker = createBroker(baseDeps({ pickPath: pickedDirectory('/home/user/Downloads') }))
+    broker.registerApp(APP, manifestWith({}))
+    const seen: string[] = []
+    broker.onGrantsChanged((origin) => { seen.push(origin) })
+
+    await broker.fs.userSelected(APP, { directory: true })
+
+    expect(seen).toEqual([APP])
+  })
+
+  it('fires once per file when several are picked at once', async () => {
+    const broker = createBroker(baseDeps({
+      fs: stubFs({ files: new Map([['/home/user/a.txt', new Uint8Array([1])], ['/home/user/b.txt', new Uint8Array([2])]]) }),
+      pickPath: pickedFiles(['/home/user/a.txt', '/home/user/b.txt'])
+    }))
+    broker.registerApp(APP, manifestWith({}))
+    const seen: string[] = []
+    broker.onGrantsChanged((origin) => { seen.push(origin) })
+
+    await broker.fs.userSelected(APP, { multiple: true })
+
+    expect(seen).toEqual([APP, APP])
+  })
+
+  it('never fires when the picker is cancelled', async () => {
+    const broker = createBroker(baseDeps({ pickPath: async () => ({ canceled: true }) }))
+    broker.registerApp(APP, manifestWith({}))
+    let calls = 0
+    broker.onGrantsChanged(() => { calls += 1 })
+
+    await broker.fs.userSelected(APP, { directory: true })
+
+    expect(calls).toBe(0)
   })
 
   it('fires after revokeUserSelectedPath() removes a pick', async () => {

@@ -132,7 +132,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // capabilities/fs.ts -- it is authorised by the picker choice, not by the
   // `fs` grant every other method here checks, and that difference is
   // structural (handles.ts's "FileHandle" exception), not cosmetic.
-  const fs = { ...createFsCapability({ deps, handleTable, ledger, canonical }), ...createUserSelectedCapability({ deps, handleTable, ledger, pickedPaths, canonical }) }
+  const fs = { ...createFsCapability({ deps, handleTable, ledger, canonical }), ...createUserSelectedCapability({ deps, handleTable, ledger, pickedPaths, canonical, notifyGrantsChanged: grantsChanged.emit }) }
 
   async function manifest (origin: string): Promise<Manifest> {
     const found = registeredManifest(canonical(origin))
