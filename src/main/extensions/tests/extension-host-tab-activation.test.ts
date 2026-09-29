@@ -21,7 +21,7 @@ vi.mock('electron', () => ({
   ipcMain: { on: vi.fn() },
   session: {
     defaultSession: {
-      extensions: { getExtension },
+      extensions: { getExtension, addListener: vi.fn() },
       serviceWorkers: { on: vi.fn() }
     },
     fromPartition: vi.fn()

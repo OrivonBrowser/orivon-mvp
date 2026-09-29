@@ -120,11 +120,14 @@ declare module 'orivon:crx-extensions-tab-capture' {
    * predicate shell-services.ts's own DevTools prompt uses). */
   export function setTabCaptureAppRefusalCheck (check: (tab: Electron.WebContents) => boolean): void
   /** Called once per successful getMediaStreamId, so permission-gate.ts's
-   * own 'media' carve-out (tab-capture-grants.ts) knows to allow it. */
-  export function setTabCaptureGrantRecorder (recorder: (extensionId: string) => void): void
+   * own 'media' carve-out (tab-capture-grants.ts) knows to allow it, for
+   * this exact (extensionId, targetTabId) pair -- item F: never extension
+   * alone. */
+  export function setTabCaptureGrantRecorder (recorder: (extensionId: string, targetTabId: number) => void): void
   /** True once permission-gate.ts has actually allowed a 'media' request
-   * for this extension (tab-capture-grants.ts's wasTabCaptureGrantConsumed)
-   * -- the real "did a capture actually start" signal the safety net in
+   * for this exact (extensionId, targetTabId) pair
+   * (tab-capture-grants.ts's wasTabCaptureGrantConsumed) -- the real "did a
+   * capture actually start for THIS tab" signal the safety net in
    * tab-capture.ts checks once, at the minted id's own validity window. */
-  export function setTabCaptureConsumedCheck (check: (extensionId: string) => boolean): void
+  export function setTabCaptureConsumedCheck (check: (extensionId: string, targetTabId: number) => boolean): void
 }

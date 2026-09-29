@@ -64,7 +64,13 @@ for an ordinary page.** The one case it passes is a THIRD ground: an extension i
 proved a legitimate capture request by calling the permission-gated `chrome.tabCapture` API,
 which is what `tab-capture-grants.ts` checks for. No person is asked, because the person's own
 consent already happened once, at install, over the `tabCapture` permission line the install
-prompt showed.
+prompt showed. That carve-out is narrower than "this extension holds a live grant": the REQUEST
+handler's own `contents` argument must be the exact tab the grant named, and the request's own
+`mediaTypes` must be empty -- a device request (`getUserMedia({ audio: true })`, say) fires with
+`contents` as the extension's OWN page and a non-empty `mediaTypes`, so a live tabCapture grant
+never widens into real microphone/camera access. The CHECK handler answers `false` for `'media'`
+unconditionally: it fires speculatively, with no real call behind it, and carries neither the
+captured tab's identity nor the request shape to check either signal against.
 
 | Name | Ground | What meets it | ADR |
 |---|---|---|---|
