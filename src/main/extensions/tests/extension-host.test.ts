@@ -20,8 +20,9 @@ vi.mock('electron', () => ({
   ipcMain: { on: vi.fn() },
   session: {
     defaultSession: {
-      extensions: { getExtension },
-      serviceWorkers: { on: vi.fn() }
+      extensions: { getExtension, addListener: vi.fn() },
+      serviceWorkers: { on: vi.fn() },
+      webRequest: { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn(), onHeadersReceived: vi.fn() }
     },
     fromPartition: vi.fn()
   }

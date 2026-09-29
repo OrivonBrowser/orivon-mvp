@@ -273,6 +273,77 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
     })
   }, TEST_TIMEOUT_MS)
 
+  // A live tabCapture grant must never widen into a real
+  // device grant: permission-gate.ts's 'media' carve-out must never
+  // allow ANY 'media' request from a chrome-extension:// origin holding a
+  // live grant, regardless of what it actually asked for -- an extension
+  // could mint a tabCapture id once, then call getUserMedia({audio:true,
+  // video:true}) on its own page and silently receive the real
+  // microphone/camera. `--use-fake-device-for-media-stream` gives Chromium
+  // a fake input device to grant, so a pass here proves the REFUSAL is
+  // real (a NotAllowedError with no device at all would prove nothing) --
+  // never the real mic/camera, which this switch specifically avoids
+  // touching (smoke-helpers.mjs / launch-electron.mjs's own silent-launch
+  // rule still applies regardless).
+  it('a minted tabCapture grant never widens into a real device getUserMedia() grant', async () => {
+    const started = await startFixtureServer()
+    const fixtureUrl = `${started.origin}/`
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    let extensionId = ''
+    try {
+      app = await launchElectron({
+        appPath: '.',
+        args: [HERMETIC_RESOLVER, '--autoplay-policy=no-user-gesture-required', '--use-fake-device-for-media-stream'],
+        seedProfile: async (dir) => { extensionId = seedFixture(dir, FIXTURE_DIR, SLOT) },
+        sandbox: true
+      })
+      const liveApp = app
+      await navigateToFixture(app, fixtureUrl, 'offscreen-capture-fixture')
+      const chrome = findChrome(app)
+      await new Promise((resolve) => setTimeout(resolve, 10_000))
+
+      // A real toolbar click invokes the fixture tab, then the popup's own
+      // #capture button mints a real, live tabCapture grant for it --
+      // exactly test 1's own "allowed after a real toolbar click" path.
+      const actionSelector = `#${extensionId}`
+      await waitFor(async () => await chrome.evaluate(
+        (sel: string) => document.querySelector('browser-action-list')?.shadowRoot?.querySelector(sel) != null, actionSelector
+      ), 5000)
+      await chrome.click(actionSelector)
+      await waitFor(async () => findPopup(liveApp.windows(), extensionId) !== undefined, 8000)
+      const popup = findPopup(liveApp.windows(), extensionId)
+      if (popup === undefined) throw new Error('popup did not open')
+      await popup.click('#capture')
+      const gotResult = await waitFor(async () =>
+        (await evaluateRetrying(popup, () => document.getElementById('result')?.textContent ?? '')).length > 0
+      , 8000).catch(() => false)
+      expect(gotResult).toBe(true)
+      const resultText = await evaluateRetrying(popup, () => document.getElementById('result')?.textContent ?? '')
+      const captureResult = JSON.parse(resultText) as { ok: boolean, streamId?: string }
+      expect(captureResult.ok).toBe(true)
+
+      // The SAME extension, from its OWN page (never the captured tab),
+      // now asks for the real devices. `contents` for THIS call is the
+      // popup's own webContents -- not the captured tab -- and
+      // `mediaTypes` is non-empty, so both the tab-identity and mediaTypes
+      // checks must refuse it independent of the still-live grant.
+      const deviceRequest = await popup.evaluate(async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          return { ok: true, tracks: stream.getTracks().map((t) => t.kind) }
+        } catch (error) {
+          return { ok: false, name: (error as { name?: string }).name, message: String(error) }
+        }
+      })
+      expect(deviceRequest.ok).toBe(false)
+      expect((deviceRequest as { name?: string }).name).toBe('NotAllowedError')
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      started.server.close()
+      expect(await assertNoElectronSurvivors()).toEqual([])
+    }
+  }, TEST_TIMEOUT_MS)
+
   it('releases an unconsumed capture (getMediaStreamId called, getUserMedia never) at its own 10s validity window, never earlier', async () => {
     const started = await startFixtureServer()
     const fixtureUrl = `${started.origin}/`

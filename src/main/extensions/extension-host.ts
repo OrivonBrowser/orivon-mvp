@@ -11,14 +11,14 @@
 //      are created after every subsystem runs, so the impl callbacks below
 //      (createTab, createWindow, ...) reject cleanly if an extension somehow
 //      calls one before this runs.
-import { app, ipcMain, session } from 'electron'
+import { app, session } from 'electron'
 import type { BaseWindow, Session, WebContents } from 'electron'
 // Virtual specifiers (electron-chrome-extensions-lib.d.ts's own header says
 // why): electron.vite.config.ts's alias resolves each to the real vendor
 // file for bundling; tsc uses that .d.ts's ambient declaration instead.
 import { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setSessionPartitionResolver } from 'orivon:crx-extensions-partition'
-import { isSandboxPageUrl, setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
+import { setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
 import { setCookieHostAccessCheck } from 'orivon:crx-extensions-cookies'
 import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensions-tabs'
 import { setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
@@ -28,14 +28,18 @@ import type { ShellServices } from '../shell/shell-services.js'
 import type { SubsystemContext } from '../registry.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { mintTabCaptureGrant, wasTabCaptureGrantConsumed } from '../sessions/tab-capture-grants.js'
+import { setTabCaptureMediaAppRefusalCheck } from '../sessions/permission-gate.js'
+import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { EXTENSION_SANDBOX_CSP_FILTER, extensionSandboxCsp } from './extension-sandbox-csp.js'
 import { appOrigin } from '../shell/devtools-app-origin.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
-import { extensionIdFromScope, watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
+import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
-import { EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL } from '../channels.js'
+import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
 import { hasApiOrHostAccess, hasApiPermission, hasHostAccess } from './extension-host-access.js'
-import { clearInvocation, hasRecentInvocation, recordInvocation } from './extension-tab-invocation.js'
+import { clearInvocationsForExtension, hasRecentInvocation } from './extension-tab-invocation.js'
+import { recordTabCaptureInvocation } from './extension-tab-capture-invocation.js'
 
 /** The `<browser-action-list partition="...">` token that resolves to
  * `session.defaultSession`, where every extension runs -- the default
@@ -177,57 +181,6 @@ function setupWindowOpenPolicy (contents: WebContents): void {
   })
 }
 
-/** Tabs a (extensionId, tab) pair already has its clear-on-navigate/
- * clear-on-close listeners attached for -- recordTabCaptureInvocation runs
- * on every toolbar click, and a person can click the same extension's
- * action on the same tab many times over a long-lived tab's life; without
- * this, each click would add another pair of listeners that never comes
- * off, an unbounded leak on that WebContents. recordInvocation/
- * clearInvocation are themselves idempotent Set operations, so only the
- * listener wiring needs the guard. */
-const wiredInvocations = new WeakMap<WebContents, Set<string>>()
-
-/** browser-action.ts's activateClick calls this on every toolbar click --
- * extension-tab-invocation.ts's own ledger says why this exists at all
- * (Chrome's tabCapture rule). Cleared the moment the tab navigates to a
- * different origin or is closed, mirroring activeTab's own real lifetime;
- * `tab.getURL()` at grant time is the origin measured against, not the
- * origin the CLICK happened on, since both are the same thing here (the
- * click always happens on the tab as it exists right now). */
-function recordTabCaptureInvocation (extensionId: string, tab: WebContents): void {
-  recordInvocation(extensionId, tab.id)
-
-  const wired = wiredInvocations.get(tab) ?? new Set<string>()
-  wiredInvocations.set(tab, wired)
-  if (wired.has(extensionId)) return
-  wired.add(extensionId)
-
-  const grantedOrigin = originFromUrl(tab.getURL())
-  const clear = (): void => { clearInvocation(extensionId, tab.id) }
-  const onNavigate = (): void => {
-    if (tab.isDestroyed() || originFromUrl(tab.getURL()) === grantedOrigin) return
-    clear()
-    tab.removeListener('destroyed', clear)
-    tab.removeListener('did-navigate', onNavigate)
-    wired.delete(extensionId)
-  }
-  tab.once('destroyed', clear)
-  tab.on('did-navigate', onNavigate)
-}
-
-/** Answers EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL (channels.ts's own doc)
- * entirely from `frame`'s own URL -- an id parsed the same way
- * extension-sw-preload-recovery.ts's own worker-scope check does, and the
- * REAL loaded manifest read back from the session, never anything the
- * calling preload's query itself could pass. */
-function isSenderDeclaredSandboxPage (frame: Electron.WebFrameMain | null): boolean {
-  if (frame === null) return false
-  const id = extensionIdFromScope(frame.url)
-  if (id === undefined) return false
-  const manifest = session.defaultSession.extensions.getExtension(id)?.manifest as { sandbox?: { pages?: string[] } } | undefined
-  return isSandboxPageUrl(manifest?.sandbox?.pages, frame.url)
-}
-
 /** Constructs the library, once, before any extension loads. `preloadPath`
  * is `extensions-subsystem.ts`'s bundle of `vendor/.../src/preload.ts` PLUS
  * Orivon's own service-worker-preload health check
@@ -251,14 +204,31 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   setTabHostAccessCheck(hasHostAccess)
   setTabCaptureInvocationRecorder(recordTabCaptureInvocation)
   setTabCaptureInvocationCheck(hasRecentInvocation)
-  setTabCaptureGrantRecorder((extensionId) => { mintTabCaptureGrant(extensionId, Date.now()) })
+  setTabCaptureGrantRecorder((extensionId, targetTabId) => { mintTabCaptureGrant(extensionId, targetTabId, Date.now()) })
   setTabCaptureConsumedCheck(wasTabCaptureGrantConsumed)
+  // Orivon patch (UPSTREAM.md patch 33): the activeTab-style
+  // invocation ledger (extension-tab-invocation.ts) otherwise survives a
+  // disable/uninstall/crash -- the same 'extension-unloaded' signal
+  // offscreen.ts's own listener and tab-capture.ts's own listener already
+  // key their own teardown off.
+  const invocationSessionExtensions = session.defaultSession.extensions || session.defaultSession
+  invocationSessionExtensions.addListener('extension-unloaded', (_event, extension) => {
+    clearInvocationsForExtension(extension.id)
+  })
   // Orivon patch (UPSTREAM.md patch 37): the vendored preload's own
   // synchronous query, before it ever calls injectExtensionAPIs() --
-  // isSenderDeclaredSandboxPage's own doc.
-  ipcMain.on(EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL, (event) => {
-    event.returnValue = isSenderDeclaredSandboxPage(event.senderFrame)
-  })
+  // extension-sandbox-page-query.ts's own doc.
+  registerSandboxPageQuery()
+  // Orivon patch (UPSTREAM.md patch 40): the real A299 fix -- gives a
+  // manifest sandbox.pages document Chrome's own CSP `sandbox`, so it
+  // actually gets an opaque origin, rather than only withholding chrome.*
+  // (patch 37) from a page that still runs at the extension's own origin.
+  webRequestOwnerFor(session.defaultSession).onHeadersReceived(
+    RUN_LAST,
+    EXTENSION_SANDBOX_CSP_FILTER,
+    (url) => url.startsWith('chrome-extension://'),
+    extensionSandboxCsp()
+  )
 
   hostExtensions = new ElectronChromeExtensions({
     license: 'GPL-3.0',
@@ -361,8 +331,20 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
       ? undefined
       : bridge.services.windows.all().find((w) => w.window === popup.parent)
     const activeTabWc = shellWindow?.tabs.activeWebContents()
-    const closePopup = (): void => { if (!popup.isDestroyed()) popup.destroy() }
-    activeTabWc?.once('did-start-navigation', closePopup)
+    // Only a real navigation of the tab's OWN top document: an ad iframe
+    // reloading, or the page's own history.pushState/replaceState (a
+    // same-document navigation, changing nothing the popup was anchored
+    // to), must not close it -- Chrome doesn't, and any web page holding
+    // an ad iframe or calling pushState could otherwise close a person's
+    // still-open password-manager popup out from under them. `.on`, not
+    // `.once`: a one-shot listener would already be consumed by the first
+    // (filtered-out) subframe/same-document event, silently going deaf to
+    // the real navigation that should have closed the popup.
+    const closePopup = (details: { isMainFrame: boolean, isSameDocument: boolean }): void => {
+      if (!details.isMainFrame || details.isSameDocument) return
+      if (!popup.isDestroyed()) popup.destroy()
+    }
+    activeTabWc?.on('did-start-navigation', closePopup)
     popup.browserWindow?.webContents.once('destroyed', () => {
       if (currentPopup === popup) currentPopup = undefined
       activeTabWc?.removeListener('did-start-navigation', closePopup)
@@ -426,10 +408,17 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   // default session tabCapture's own tab store tracks -- the same
   // predicate shell-services.ts's own DevTools prompt uses for the
   // identical "is this tab an app I granted, not an ordinary site" question.
-  setTabCaptureAppRefusalCheck((tab) => {
+  const tabCaptureAppRefusal = (tab: WebContents): boolean => {
     const origin = appOrigin(originFromUrl, tab)
     return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
-  })
+  }
+  setTabCaptureAppRefusalCheck(tabCaptureAppRefusal)
+  // The same predicate, registered a second time for permission-gate.ts's
+  // own re-check inside the 'media' REQUEST handler -- setTabCaptureMediaAppRefusalCheck's
+  // own doc says why a single registration point (this file's own
+  // `setTabCaptureAppRefusalCheck`, read only by the vendored tab-capture.ts)
+  // is not enough on its own.
+  setTabCaptureMediaAppRefusalCheck(tabCaptureAppRefusal)
 
   services.tabLifecycle.subscribe({
     tabCreated: (wc, win) => {

@@ -1,11 +1,11 @@
 // Reusing a tab's view across a navigation that changes which session it
 // must run in: an app tab leaving for another origin parks its view on
 // about:blank instead of closing it, so returning to the app does not pay
-// for a fresh renderer and a fresh capability re-check. Split out of
-// tab-view.ts (see that directory's README, `## Design notes`, for why) once
-// this half of it -- park, retire, take back, or repartition outright --
-// grew past a shared concern with "how one tab's WebContentsView is
-// constructed" into one of its own.
+// for a fresh renderer and a fresh capability re-check. A concern of its
+// own -- park, retire, take back, or repartition outright -- separate from
+// tab-view.ts's own "how one tab's WebContentsView is constructed and
+// wired" (see that directory's README, `## Design notes`, for why the two
+// stay apart).
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import type { TabRecord } from './tab-types.js'

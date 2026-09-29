@@ -297,7 +297,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `storage.managed_schema` | ❌ | No enterprise policy delivery in this build |
 | `declarative_net_request` (ruleset key) | ⚠️ | Read and recorded, not applied; the API it would drive is a stub (Table 7c) |
 | `content_security_policy` | ⚠️ | Chromium enforces an extension's own declared CSP; not separately measured |
-| `sandbox` (sandboxed pages) | ⚠️ | No `chrome.*` API reaches one; but Electron serves it at the extension's own origin, not Chrome's opaque one (A299) |
+| `sandbox` (sandboxed pages) | ✅ | No `chrome.*` API reaches one, and it is served with Chrome's own CSP `sandbox` directive, giving it a genuinely opaque origin (`d-0207`) |
 | `file_browser_handlers`, `file_handlers` | ➖ | ChromeOS / native file-handler surfaces with no equivalent here |
 | `default_locale`, `_locales/*/messages.json` (`__MSG_...`) | ✅ | The extensions page resolves a name/description/icon reference the same way Chrome does |
 | `oauth2` | ❌ | No `chrome.identity` (Table 7c), so this key drives nothing |
@@ -334,7 +334,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `idle` | ✅ | `queryState()` measured returning `"active"` |
 | `management` | ⚠️ | Only `getPermissionWarningsByManifest`/`getSelf`/`uninstallSelf` are real; `getAll` is not a function |
 | `notifications` | ⚠️ | `clear`/`getAll`/`update`/its three events present; `create`'s live effect is untested by policy (nothing here reaches a real OS notification) |
-| `offscreen` | ✅ | `createDocument`/`closeDocument`/`hasDocument`; one document per extension, never shown (`vendor/electron-chrome-extensions/src/browser/api/offscreen.ts`) |
+| `offscreen` | ✅ | `createDocument`/`closeDocument`/`hasDocument`; one document per extension, in no window, with no `window.open` and no navigation off the extension |
 | `permissions` | ⚠️ | `contains`/`getAll`/`request` work against the manifest's declared set; `remove` always reports success without removing anything |
 | `power` | ✅ | `requestKeepAwake`/`releaseKeepAwake` callable; not independently verified to keep the OS awake |
 | `printerProvider` | ⚠️ | Exists as an object; no working members measured |
@@ -347,7 +347,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `storage.sync`, `storage.managed` | ⚠️ | Alias `local`; no real multi-device sync or policy delivery |
 | `storage.session` | ✅ | Measured round-tripping in a service worker/popup/options/tab; present as a real function in an MV3 isolated content script, absent in MV2's |
 | `system.cpu`, `system.display`, `system.memory`, `system.storage` | ✅ | `system.cpu.getInfo()` measured returning real hardware data (actual CPU model, core count, per-core usage) |
-| `tabCapture` | ✅ | `getMediaStreamId`/`getCapturedTabs`/`onStatusChanged`; needs the extension invoked on that tab by its toolbar button, refuses internal pages, another extension's pages and a granted app's tab; the captured tab is muted locally, since Electron duplicates rather than diverts its audio (`vendor/electron-chrome-extensions/src/browser/api/tab-capture.ts`) |
+| `tabCapture` | ✅ | `getMediaStreamId`/`getCapturedTabs`/`onStatusChanged`; needs a click on the extension's toolbar button on that tab; only an http(s) tab of no app holding grants; the tab is muted locally while captured |
 | `tabs` | ⚠️ | A rich working set, filtered by permission/host access; `captureVisibleTab` specifically is not a function |
 | `topSites` | ⚠️ | `get()` resolves an empty stub |
 | `userScripts` | ⚠️ | Every method resolves as a no-op; no user-script world runs |

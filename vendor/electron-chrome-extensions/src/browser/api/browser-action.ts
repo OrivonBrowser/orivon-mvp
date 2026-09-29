@@ -416,8 +416,35 @@ export class BrowserActionAPI {
     return { activeTabId: activeTab?.id, actions }
   }
 
-  private activate({ type, sender }: ExtensionEvent, details: ActivateDetails) {
+  // Orivon patch (UPSTREAM.md, patch 33):
+  // `browser-action.ts`'s own chrome-view preload (`injectBrowserAction`'s
+  // `activate()`) calls this EXCLUSIVELY through `crx-msg-remote` -- no
+  // extension code, real Chrome or otherwise, is ever meant to reach this
+  // handler at all. `event.extension` is the verified signal for which
+  // channel a call arrived on: `router.ts`'s `onRemoteMessage` always
+  // passes `extensionId: undefined` (so `event.extension` is undefined for
+  // EVERY remote call, `setRemoteMessageSenderCheck`'s own
+  // `isFromChromeView` gate is what makes that path trustworthy), while
+  // `onRouterMessage` (local `crx-msg`) resolves it from the caller's own
+  // VERIFIED extension id. Before this fix, a plain extension page could
+  // call `browserAction.activate` directly over `crx-msg` with a
+  // `details.extensionId`/`details.tabId` of its own choosing -- fields
+  // inside the RPC payload, never checked against the caller's real
+  // identity -- and open another extension's popup, or fire
+  // `browserAction.onClicked` for a tab it has no access to. Refusing
+  // every LOCAL call outright closes that route entirely, and is also
+  // exactly why `activateClick`'s own invocation recording below only ever
+  // runs for a call that reaches here at all: `chrome.action.openPopup()`
+  // (no click, no gesture) calls `activateClick` directly, bypassing this
+  // handler -- see `openPopup`'s own doc for why that call must still open
+  // the popup but never record an invocation.
+  private activate({ type, sender, extension }: ExtensionEvent, details: ActivateDetails) {
     if (type != 'frame') return
+    if (extension !== undefined) {
+      throw new Error(
+        `browserAction.activate refused: '${extension.id}' called it directly, not through a real toolbar click.`,
+      )
+    }
     const { eventType, extensionId, tabId } = details
 
     d(
@@ -426,7 +453,10 @@ export class BrowserActionAPI {
 
     switch (eventType) {
       case 'click':
-        this.activateClick(details)
+        // `true`: this call only ever reaches here once the guard above
+        // has confirmed it came from the real chrome view over
+        // crx-msg-remote, i.e. a genuine toolbar click.
+        this.activateClick(details, true)
         break
       case 'contextmenu':
         this.activateContextMenu(details)
@@ -436,7 +466,7 @@ export class BrowserActionAPI {
     }
   }
 
-  private activateClick(details: ActivateDetails) {
+  private activateClick(details: ActivateDetails, recordInvocation: boolean = false) {
     const { extensionId, tabId, anchorRect, alignment } = details
 
     if (this.popup) {
@@ -456,9 +486,14 @@ export class BrowserActionAPI {
       throw new Error(`Unable to get active tab`)
     }
 
-    // Orivon patch (UPSTREAM.md, patch 33): a click IS an invocation,
-    // whether or not it opens a popup -- both branches below count.
-    gTabCaptureInvocationRecorder?.(extensionId, tab)
+    // Orivon patch (UPSTREAM.md, patch 33): a real toolbar click IS
+    // an invocation, whether or not it opens a popup -- both branches below
+    // count. `recordInvocation` is false for `openPopup`'s own call (no
+    // click, no gesture -- see its own doc) and true only for the one
+    // caller that already proved this is a real click (`activate`, above).
+    if (recordInvocation) {
+      gTabCaptureInvocationRecorder?.(extensionId, tab)
+    }
 
     const popupUrl = this.getPopupUrl(extensionId, tab.id)
 
@@ -551,6 +586,13 @@ export class BrowserActionAPI {
     })
   }
 
+  // chrome.action.openPopup() is a real, legitimate extension API
+  // (no toolbar click, no gesture, callable from a service worker) --
+  // refusing it is not the fix. What it must never do is count as a
+  // tabCapture invocation: `activateClick` below is called directly,
+  // skipping `activate`'s own remote-only guard, with NO `recordInvocation`
+  // argument (defaults false), the same call shape `activate` itself uses
+  // only once it has confirmed a real click.
   private openPopup = (event: ExtensionEvent, options?: chrome.action.OpenPopupOptions) => {
     const window =
       typeof options?.windowId === 'number'

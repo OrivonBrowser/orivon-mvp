@@ -35,11 +35,13 @@
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
 //   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-serve-from-cache.test.ts
-import { afterAll, expect, it } from 'vitest'
+import { afterAll, beforeAll, expect, it } from 'vitest'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createServer, type Server } from 'node:http'
+import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { HERMETIC_RESOLVER, evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { HERMETIC_RESOLVER, evaluateRetrying, findChrome, findViewShowing, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
@@ -56,16 +58,37 @@ import { partitionFor } from '../src/broker/grants/origin-hash.js'
 // except the registered cache handler.
 const ORIGIN = 'https://serve-from-cache-e2e.orivon.test'
 
+// An ORDINARY page, on a real loopback server, that links to the pinned
+// app's origin -- for the shift-click regression below: routePopup's isApp
+// check returns 'new-tab' for a cross-origin app target from a page that is
+// not itself the app (before disposition is ever weighed), so a shift-click
+// there needs its own carve-out to still open a window, not a tab.
+const ORDINARY_HOST = '127.0.0.1'
+const ORDINARY_PORT = 8945
+const ORDINARY_ORIGIN = `http://${ORDINARY_HOST}:${ORDINARY_PORT}`
+const ORDINARY_PAGE = `<!doctype html><meta charset="utf-8"><title>ordinary page</title><body>
+<a id="to-app" href="${ORIGIN}/">the pinned app</a>
+</body>`
+let ordinaryServer: Server
+
 const APP_JS_BODY = 'window.__fixtureAppRan = true;\n'.padEnd(600, '/* padding for a real Range assertion */ ')
+// A same-origin link and a data: link, for the middle-click regression below:
+// a middle click inside this pinned app must land the new tab in the SAME
+// pinned partition (never session.defaultSession), and a middle click on a
+// dangerous scheme must never render it.
 const INDEX_HTML = '<!doctype html><html><head><title>serve-from-cache fixture</title></head>' +
-  '<body><h1>serve-from-cache fixture</h1><script src="app.js"></script></body></html>'
+  '<body><h1>serve-from-cache fixture</h1><script src="app.js"></script>' +
+  '<a id="same-origin" href="/other.html">other</a>' +
+  '<a id="data-link" href="data:text/html,should-not-render">data</a>' +
+  '</body></html>'
+const OTHER_HTML = '<!doctype html><html><head><title>serve-from-cache other</title></head><body>other</body></html>'
 const MANIFEST_JSON = JSON.stringify({
   orivonApiVersion: 0,
   id: 'app.orivon.serve-from-cache-e2e',
   name: 'Serve-from-cache e2e fixture',
   version: '1.0.0',
   entry: 'index.html',
-  assets: ['app.js'],
+  assets: ['app.js', 'other.html'],
   capabilities: {}
 })
 
@@ -80,16 +103,53 @@ async function pinFixture (userDataDir: string): Promise<void> {
   const entries: BundleEntry[] = [
     { path: '/.well-known/orivon.json', content: new TextEncoder().encode(MANIFEST_JSON) },
     { path: '/index.html', content: new TextEncoder().encode(INDEX_HTML) },
-    { path: '/app.js', content: new TextEncoder().encode(APP_JS_BODY) }
+    { path: '/app.js', content: new TextEncoder().encode(APP_JS_BODY) },
+    { path: '/other.html', content: new TextEncoder().encode(OTHER_HTML) }
   ]
   const tree = await bundleTree(entries)
   for (const entry of entries) await storage.writeAsset(ORIGIN, entry.path, entry.content)
   await storage.writePin(ORIGIN, fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0))
 }
 
+/** Launches, pins the fixture and registers it for real through the dev-only
+ * serve hook -- the shared setup both tests in this file need, factored out
+ * once a second test needed it too. Throws if the hook is missing (a build
+ * not made via `npm run test:e2e`). */
+async function launchWithFixtureServed (): Promise<{ app: Awaited<ReturnType<typeof launchElectron>>, userDataDir: string }> {
+  const app = await launchElectron({
+    appPath: '.',
+    args: [HERMETIC_RESOLVER, '--alsa-output-device=null'],
+    env: { PULSE_SERVER: 'unix:/nonexistent' }
+  })
+  const userDataDir = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+  await pinFixture(userDataDir)
+  const hookPresent = await app.evaluate(async (_electron, origin: string) => {
+    const hook = (globalThis as unknown as { __orivonDevRegisterServing?: (origin: string) => Promise<void> }).__orivonDevRegisterServing
+    if (typeof hook !== 'function') return false
+    await hook(origin)
+    return true
+  }, ORIGIN)
+  if (!hookPresent) throw new Error('dev-serve hook missing -- was this built via npm run test:e2e?')
+  return { app, userDataDir }
+}
+
+beforeAll(async () => {
+  ordinaryServer = createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' })
+    res.end(ORDINARY_PAGE)
+  })
+  await new Promise<void>((resolve) => { ordinaryServer.listen(ORDINARY_PORT, ORDINARY_HOST, resolve) })
+})
+
 afterAll(async () => {
+  await new Promise<void>((resolve) => { ordinaryServer.close(() => { resolve() }) })
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
+
+/** Every chrome (shell) view in `app`, one per window -- e2e-multi-window.test.ts's own pattern. */
+function chromePages (app: ElectronApplication): Page[] {
+  return app.windows().filter((w) => w.url().endsWith('/renderer/index.html'))
+}
 
 const WAIT_BUDGET_MS =
   8_000 + // initial two-window wait
@@ -106,7 +166,11 @@ it(
     await runPhase('serve-from-cache', async (check) => {
       let app: Awaited<ReturnType<typeof launchElectron>> | undefined
       try {
-        app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+        app = await launchElectron({
+          appPath: '.',
+          args: [HERMETIC_RESOLVER, '--alsa-output-device=null'],
+          env: { PULSE_SERVER: 'unix:/nonexistent' }
+        })
 
         const userDataDir = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
         await pinFixture(userDataDir)
@@ -223,6 +287,134 @@ it(
           'serving stale local bytes for a real website")',
           !partitionScoped.defaultSessionHandled
         )
+      } finally {
+        if (app !== undefined) await closeElectronApp(app)
+      }
+    })
+  },
+  TEST_TIMEOUT_MS
+)
+
+it(
+  'a middle click on a same-origin link inside this pinned app opens its new tab in the SAME app ' +
+  'partition, never session.defaultSession, and a middle click on a data: link never renders it',
+  async () => {
+    await runPhase('serve-from-cache-middle-click', async (check) => {
+      let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+      try {
+        ({ app } = await launchWithFixtureServed())
+
+        const windowsReady = await waitFor(() => (app as NonNullable<typeof app>).windows().length === 2)
+        check('the shell reaches its launch-time window count', windowsReady)
+
+        const chrome = findChrome(app)
+        await waitForAddressBarStable(chrome)
+        await clickAddressBarRetrying(chrome, `${ORIGIN}/`)
+        const navigated = await waitForTab(chrome, { address: `${ORIGIN}/`, title: 'serve-from-cache fixture' })
+        check('the pinned origin loads through the registered handler', navigated.ok, navigated.ok ? undefined : JSON.stringify(navigated.info))
+        if (!navigated.ok) throw new Error('fixture tab failed to navigate')
+
+        const view = findViewShowing(app, chrome, `${ORIGIN}/`)
+        check('the navigated tab is identifiable by its own URL', view !== undefined)
+        if (view === undefined) throw new Error('no view found showing the pinned origin')
+
+        // ---- THE HIGH DEFECT THIS GUARDS ---------------------------------
+        // A middle click never carries a guest webContents to adopt
+        // (popups.ts's guestOf), and this app's own partition equals its
+        // opener's (routePopup's 'adopt'), which used to skip the ordinary
+        // tab pipeline entirely and build an unpartitioned view instead --
+        // landing this same-origin, network-served page in
+        // session.defaultSession with the app's own grants still attached
+        // (T6/T18/T21).
+        const before = await tabIds(chrome)
+        await view.click('#same-origin', { button: 'middle' })
+        check('the middle click opened a new tab', await waitFor(async () => (await tabIds(chrome)).length > before.length))
+
+        // A background tab's view is never attached to any window (it stays
+        // detached until activated), so it never shows up walking a
+        // BaseWindow's own contentView -- getAllWebContents() finds it by
+        // its committed URL regardless of attachment.
+        const otherUrl = `${ORIGIN}/other.html`
+        check('the new tab actually loaded the pinned /other.html, through the same registered handler',
+          await waitFor(async () => await (app as NonNullable<typeof app>).evaluate(({ webContents }, url: string) => {
+            return webContents.getAllWebContents().some((c) => c.getURL() === url)
+          }, otherUrl)))
+
+        const partitionCheck = await app.evaluate(({ webContents, session }, args: { url: string, partition: string }) => {
+          const wc = webContents.getAllWebContents().find((c) => c.getURL() === args.url)
+          return {
+            found: wc !== undefined,
+            samePartition: wc?.session === session.fromPartition(args.partition),
+            isDefaultSession: wc?.session === session.defaultSession
+          }
+        }, { url: otherUrl, partition: partitionFor(ORIGIN) })
+        check('the new tab was found by its committed URL', partitionCheck.found)
+        check('the new tab runs in the app\'s own partition, not a fresh unpartitioned view', partitionCheck.samePartition, JSON.stringify(partitionCheck))
+        check('the new tab is never session.defaultSession', !partitionCheck.isDefaultSession)
+
+        // ---- LOW: a middle click on a dangerous scheme never renders it --
+        // Measured: Chromium's own top-frame data: URL restriction refuses
+        // the whole attempt before it ever reaches setWindowOpenHandler, so
+        // no new tab appears at all here -- stronger than sanitizeDirectUrl
+        // mapping it to about:blank, which is what would happen instead if
+        // this ever did reach our handler (a script-driven window.open() to
+        // a data: URL, unlike a link click, is not subject to that Chromium
+        // restriction). Either way, the one property that must hold: the
+        // data: page never renders, in this tab or a new one.
+        await view.click('#data-link', { button: 'middle' }).catch(() => {})
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        const dataRendered = await app.evaluate(({ webContents }) => {
+          return webContents.getAllWebContents().some((c) => c.getURL().startsWith('data:'))
+        })
+        check('a middle click on a data: link never renders it, whatever Chromium or sanitizeDirectUrl does with the attempt', !dataRendered)
+      } finally {
+        if (app !== undefined) await closeElectronApp(app)
+      }
+    })
+  },
+  TEST_TIMEOUT_MS
+)
+
+it(
+  'a shift-click on the pinned app\'s origin, from an ordinary page that is not itself the app, ' +
+  'still opens a new window rather than a tab',
+  async () => {
+    await runPhase('serve-from-cache-shift-click', async (check) => {
+      let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+      try {
+        ({ app } = await launchWithFixtureServed())
+
+        const windowsReady = await waitFor(() => (app as NonNullable<typeof app>).windows().length === 2)
+        check('the shell reaches its launch-time window count', windowsReady)
+
+        const chrome = findChrome(app)
+        await waitForAddressBarStable(chrome)
+        await clickAddressBarRetrying(chrome, `${ORDINARY_ORIGIN}/`)
+        const navigated = await waitForTab(chrome, { address: `${ORDINARY_ORIGIN}/`, title: 'ordinary page' })
+        check('the ordinary (unpinned) page loads over a real loopback server', navigated.ok, navigated.ok ? undefined : JSON.stringify(navigated.info))
+        if (!navigated.ok) throw new Error('ordinary fixture tab failed to navigate')
+
+        const view = findViewShowing(app, chrome, `${ORDINARY_ORIGIN}/`)
+        check('the ordinary tab is identifiable by its own URL', view !== undefined)
+        if (view === undefined) throw new Error('no view found showing the ordinary page')
+        const ordinaryTabsBefore = await tabIds(chrome)
+
+        // routePopup's isApp check returns 'new-tab' for this cross-origin app
+        // target before disposition is ever weighed -- the carve-out this
+        // guards sends a shift-click there to a window anyway.
+        await view.click('#to-app', { modifiers: ['Shift'] })
+
+        check('a new window opens', await waitFor(() => chromePages(app as NonNullable<typeof app>).length === 2))
+        const second = chromePages(app).find((page) => page !== chrome)
+        check('the new window\'s chrome view appeared', second !== undefined)
+        if (second === undefined) throw new Error('the new window\'s chrome view did not appear')
+        const secondNavigated = await waitForTab(second, { address: `${ORIGIN}/`, title: 'serve-from-cache fixture' })
+        check(
+          'the new window\'s own tab loads the pinned app, through the registered handler, not a tab in the first window',
+          secondNavigated.ok,
+          secondNavigated.ok ? undefined : JSON.stringify(secondNavigated.info)
+        )
+        check('the ordinary window\'s own tabs are unchanged', JSON.stringify(await tabIds(chrome)) === JSON.stringify(ordinaryTabsBefore))
       } finally {
         if (app !== undefined) await closeElectronApp(app)
       }

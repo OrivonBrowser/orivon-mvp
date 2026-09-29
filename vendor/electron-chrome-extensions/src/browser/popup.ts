@@ -198,6 +198,15 @@ export class PopupView extends EventEmitter {
       if (this.destroyed || !this.hidden) return
       d('preferred-size-changed did not arrive in time; showing with a default size')
       this.setSize(PopupView.FALLBACK_BOUNDS)
+      // Orivon patch (UPSTREAM.md patch 35): setSize alone leaves the popup
+      // at its CONSTRUCTOR bounds' position (screen centre, roughly --
+      // BrowserWindow's own default with no `x`/`y` given), never anchored
+      // to the toolbar button that opened it, since nothing here calls
+      // updatePosition() the way updatePreferredSize does on the OTHER path
+      // to show(). Positioned before show(), not after: showing first would
+      // flash the popup at the wrong spot for one frame before it jumped to
+      // the right one.
+      this.updatePosition()
       this.show()
     }, PopupView.VISIBILITY_FALLBACK_MS)
   }

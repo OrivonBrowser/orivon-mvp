@@ -8,18 +8,21 @@
 // One document per extension, matching Chrome's own limit -- a second
 // createDocument() call while one is open rejects with Chrome's own error
 // text (developer.chrome.com/docs/extensions/reference/api/offscreen).
-// Hosted as a BrowserWindow, never shown: a bare, unattached WebContents
-// has no public constructor of its own (Electron creates one only by way
-// of a BrowserWindow or a WebContentsView attached to one), and a
-// WebContentsView never added to any BaseWindow.contentView is exactly as
-// unshowable while needing the same BrowserWindow-adjacent plumbing this
-// already has, so it is not a smaller surface, only a less familiar one.
-// `show: false` and never calling `.show()`/`.showInactive()` anywhere in
-// this file is what keeps it off screen; `paintWhenInitiallyHidden`
-// defaults to `true` and is left there deliberately -- `false` would stop
-// the page rendering (and its getUserMedia/Web Audio graph running) until
-// shown, which it never is.
-import { BrowserWindow } from 'electron'
+//
+// Hosted as a `WebContentsView`, never a `BrowserWindow`. MEASURED
+// (docs/planning's tabCapture/offscreen probe): a `WebContentsView`
+// constructed and used WITHOUT ever attaching it to any `BaseWindow`'s
+// `contentView` still gets this library's own preload injected and
+// chrome.runtime messaging works in full (`chrome.runtime.id` reads back
+// correctly through it) -- and, unlike a hidden `BrowserWindow`, it never
+// appears in `BrowserWindow.getAllWindows()` at all (measured: 0 before, 0
+// after creating and loading one). A hidden `BrowserWindow` DOES appear
+// there, which is exactly the bug this replaces: `src/main/index.ts` quits
+// on `window-all-closed` and recreates a window on macOS `activate` by
+// counting real windows, so an offscreen document hosted as a
+// `BrowserWindow` kept the whole app resident with no window on screen, and
+// blocked `activate` from ever reopening one on macOS.
+import { WebContentsView } from 'electron'
 import type { ExtensionContext } from '../context'
 import type { ExtensionEvent } from '../router'
 
@@ -33,7 +36,7 @@ const OFFSCREEN_REASONS = new Set([
 ])
 
 interface OffscreenEntry {
-  win: Electron.BrowserWindow
+  view: Electron.WebContentsView
 }
 
 export class OffscreenAPI {
@@ -66,7 +69,7 @@ export class OffscreenAPI {
    * itself has no webContents of its own. */
   getDocumentWebContents (extensionId: string): Electron.WebContents | undefined {
     const entry = this.docs.get(extensionId)
-    return entry === undefined || entry.win.isDestroyed() ? undefined : entry.win.webContents
+    return entry === undefined || entry.view.webContents.isDestroyed() ? undefined : entry.view.webContents
   }
 
   private async createDocument (
@@ -75,7 +78,7 @@ export class OffscreenAPI {
   ): Promise<void> {
     const extensionId = event.extension.id
     const existing = this.docs.get(extensionId)
-    if (existing !== undefined && !existing.win.isDestroyed()) {
+    if (existing !== undefined && !existing.view.webContents.isDestroyed()) {
       throw new Error('Only a single offscreen document may be created.')
     }
 
@@ -90,20 +93,62 @@ export class OffscreenAPI {
 
     const url = resolveOwnPageUrl(extensionId, parameters.url)
 
-    const win = new BrowserWindow({
-      show: false,
+    const view = new WebContentsView({
       webPreferences: { session: this.ctx.session, sandbox: true },
     })
-    this.docs.set(extensionId, { win })
-    win.on('closed', () => {
-      if (this.docs.get(extensionId)?.win === win) this.docs.delete(extensionId)
+    this.docs.set(extensionId, { view })
+
+    // An offscreen document has no tab, no toolbar chrome and no
+    // one watching it -- `window.open` from it, left to the library's own
+    // default new-window handling, created a raw, frameless,
+    // always-on-top `BrowserWindow`; denying it outright is correct
+    // because nothing about an offscreen document's own job (hosting a
+    // `getUserMedia`/Web Audio graph, a `DOMParser`, ...) ever calls for a
+    // second window. Navigation is locked to the extension's own origin
+    // for the mirror-image reason: an offscreen document that could
+    // navigate itself to an arbitrary URL would let a compromised or
+    // malicious extension turn its own hidden, sandboxed, never-shown
+    // document into an equally hidden window onto anywhere else on the
+    // web.
+    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    const ownOriginPrefix = `chrome-extension://${extensionId}/`
+    const refuseForeignNavigation = (navigationEvent: Electron.Event, targetUrl: string): void => {
+      if (!targetUrl.startsWith(ownOriginPrefix)) navigationEvent.preventDefault()
+    }
+    view.webContents.on('will-navigate', refuseForeignNavigation)
+    view.webContents.on('will-redirect', refuseForeignNavigation)
+
+    // A renderer crash leaves `webContents.isDestroyed()` false --
+    // electron.d.ts's own `isCrashed()` getter exists because the
+    // WebContents object survives a crash on its own, reloadable in
+    // principle -- so without this, a crashed offscreen document would
+    // keep `hasDocument`/`getContexts` reporting it present forever, and a
+    // fresh `createDocument()` call would keep throwing "Only a single
+    // offscreen document may be created." for a document that can no
+    // longer do anything. Dropping the map entry alone is enough for both:
+    // `getDocumentWebContents`/`hasDocument` key off entry PRESENCE first,
+    // and `createDocument`'s own guard reads the same map. MEASURED,
+    // deliberately NOT done here: calling `close()` on the crashed
+    // webContents to force it destroyed too -- `close()`'s own "as if
+    // window.close() had been called" contract (electron.d.ts) waits on a
+    // beforeunload round-trip with a renderer that, post-crash, can never
+    // answer it; reproduced directly as Chromium's own hung-process
+    // watchdog fataling the whole child process. Whatever native resources
+    // the crashed webContents still holds are Electron's own to reclaim,
+    // the same as any other crashed, never-explicitly-closed webContents
+    // elsewhere in this codebase.
+    view.webContents.once('render-process-gone', () => {
+      if (this.docs.get(extensionId)?.view === view) this.docs.delete(extensionId)
+    })
+    view.webContents.once('destroyed', () => {
+      if (this.docs.get(extensionId)?.view === view) this.docs.delete(extensionId)
     })
 
     try {
-      await win.loadURL(url)
+      await view.webContents.loadURL(url)
     } catch (error) {
-      if (!win.isDestroyed()) win.destroy()
-      if (this.docs.get(extensionId)?.win === win) this.docs.delete(extensionId)
+      if (!view.webContents.isDestroyed()) view.webContents.close()
+      if (this.docs.get(extensionId)?.view === view) this.docs.delete(extensionId)
       throw error
     }
   }
@@ -114,7 +159,7 @@ export class OffscreenAPI {
 
   private async hasDocument (event: ExtensionEvent): Promise<boolean> {
     const entry = this.docs.get(event.extension.id)
-    return entry !== undefined && !entry.win.isDestroyed()
+    return entry !== undefined && !entry.view.webContents.isDestroyed()
   }
 
   /** Extension-unloaded (disable/uninstall/crash), `closeDocument()`, or a
@@ -122,7 +167,7 @@ export class OffscreenAPI {
   closeForExtension (extensionId: string): void {
     const entry = this.docs.get(extensionId)
     this.docs.delete(extensionId)
-    if (entry !== undefined && !entry.win.isDestroyed()) entry.win.destroy()
+    if (entry !== undefined && !entry.view.webContents.isDestroyed()) entry.view.webContents.close()
   }
 }
 

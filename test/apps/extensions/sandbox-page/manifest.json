@@ -9,5 +9,5 @@
   "sandbox": {
     "pages": ["sandbox.html"]
   },
-  "permissions": ["tabs"]
+  "permissions": ["tabs", "storage"]
 }

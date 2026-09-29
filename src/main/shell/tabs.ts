@@ -10,7 +10,7 @@
 // link, form or script navigation that changes a tab's origin is caught by
 // wireView()'s did-navigate handler, which repartitions the same way a typed
 // cross-origin navigation does (repartitionView()'s own doc: the residual).
-import type { WebContentsView, View } from 'electron'
+import type { LoadURLOptions, WebContentsView, View } from 'electron'
 import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
 import { parseOmniboxInput } from '../browsing/omnibox.js'
@@ -86,9 +86,9 @@ export class TabManager {
       emitState: () => { this.emitState() },
       captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },
       forgetTab: (id) => { this.forgetTab(id, false) },
-      openTab: (url, active) => { this.createTab(url, active) },
+      openTab: (url, active, loadOptions) => this.liveWebContents(this.createTab(url, active, loadOptions)),
       adoptPopup: (view, partition, active) => { this.adoptPopup(view, partition, active) },
-      openWindow: (url) => shell?.openWindow?.(url),
+      openWindow: (url, loadOptions) => shell?.openWindow?.(url, loadOptions),
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       isClosing: () => this.disposed,
@@ -148,10 +148,10 @@ export class TabManager {
     }
   }
 
-  /** `active` false leaves the new tab's view detached, behind the current
-   * tab, until a later `activateTab` -- popups.ts's `windowOpenHandler` on a
-   * middle click or a plain ctrl+click. */
-  createTab (url?: string, active = true): string {
+  /** `active` false leaves the new tab's view detached, behind the current tab, until a later
+   * `activateTab` -- popups.ts's `windowOpenHandler` on a middle click or a plain ctrl+click.
+   * `loadOptions` -- its own `loadOptionsFor`'s doc: a modifier-click form submit's referrer/POST body. */
+  createTab (url?: string, active = true, loadOptions?: LoadURLOptions): string {
     if (this.atCapacity()) {
       // Refuse rather than crash -- see MAX_TABS above. A caller that uses
       // the id (a split's partner) checks atCapacity() first.
@@ -164,7 +164,7 @@ export class TabManager {
     // nowhere live to land (pane-host.ts's own fix is the other half).
     if (active) this.activateTab(id)
     else this.emitState()
-    void record.view.webContents.loadURL(target)
+    void record.view.webContents.loadURL(target, loadOptions)
     return id
   }
 

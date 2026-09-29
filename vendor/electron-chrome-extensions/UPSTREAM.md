@@ -253,19 +253,20 @@
     files this suite's own tests (`browser-action-popup-url.test.ts`) now import by real path.
 32. **`chrome.offscreen` and a real `chrome.runtime.getContexts`.** New
     `src/browser/api/offscreen.ts` (`OffscreenAPI`): `createDocument`/
-    `closeDocument`/`hasDocument`, one never-shown, sandboxed `BrowserWindow`
-    per extension, validated the way Chrome does (`url` resolved and refused
-    unless it is the calling extension's own page; `reasons` non-empty and
-    each a name from Chrome's own enum; `justification` a non-empty string;
-    a second `createDocument()` while one is open throws Chrome's own
-    "Only a single offscreen document may be created."), closed by
-    `Session`'s own `'extension-unloaded'` event so disable, uninstall and a
-    crash all tear it down through one native listener, no separate wiring
-    from `extension-host.ts` needed. `src/browser/api/runtime.ts`'s
-    `RuntimeAPI` gained two constructor parameters (`OffscreenAPI`,
-    `BrowserActionAPI`) and a `runtime.getContexts` handler covering
-    BACKGROUND (`session.serviceWorkers`), OFFSCREEN_DOCUMENT (the map
-    above), POPUP (`browser-action.ts`'s own `getOpenPopup`, below) and TAB
+    `closeDocument`/`hasDocument`, one never-shown, sandboxed
+    `WebContentsView` per extension (see below), validated the way Chrome does
+    (`url` resolved and refused unless it is the calling extension's own
+    page; `reasons` non-empty and each a name from Chrome's own enum;
+    `justification` a non-empty string; a second `createDocument()` while
+    one is open throws Chrome's own "Only a single offscreen document may
+    be created."), closed by `Session`'s own `'extension-unloaded'` event
+    so disable, uninstall and a crash all tear it down through one native
+    listener, no separate wiring from `extension-host.ts` needed.
+    `src/browser/api/runtime.ts`'s `RuntimeAPI` gained two constructor
+    parameters (`OffscreenAPI`, `BrowserActionAPI`) and a
+    `runtime.getContexts` handler covering BACKGROUND
+    (`session.serviceWorkers`), OFFSCREEN_DOCUMENT (the map above), POPUP
+    (`browser-action.ts`'s own `getOpenPopup`, below) and TAB
     (`ExtensionStore.tabs` filtered to the calling extension's own pages),
     matching Chrome's `ContextFilter` fields (`contextTypes`, `contextIds`,
     `tabIds`, `windowIds`, `documentUrls`, `documentOrigins`, `incognito`).
@@ -290,30 +291,70 @@
     a native one, and a `createDocument()` call creates exactly one new
     `chrome-extension://` `webContents` -- no second, native document
     alongside it.
+
+    **`WebContentsView`, not a `BrowserWindow`.**
+    The document was originally a hidden `BrowserWindow`; measured directly
+    (docs/planning's tabCapture/offscreen probe) that a never-attached
+    `WebContentsView` still gets this library's own preload and
+    `chrome.runtime` messaging in full, and -- unlike the `BrowserWindow` it
+    replaces -- contributes nothing to `BrowserWindow.getAllWindows()` at
+    all. A hidden `BrowserWindow` DID count there, so an open offscreen
+    document kept `src/main/index.ts`'s process alive past the last real
+    shell window closing, and blocked its macOS `activate` handler from ever
+    reopening one, since both read that same count.
+
+    **Denies `window.open`, locks navigation to the extension's own origin.**
+    `setWindowOpenHandler` denies every `window.open` from the
+    document outright (the library's own default new-window handling
+    otherwise opened a raw, frameless, always-on-top `BrowserWindow`); a
+    shared `will-navigate`/`will-redirect` handler refuses any URL outside
+    `chrome-extension://<the extension's own id>/`. An offscreen document has
+    no tab, no toolbar and no one watching it, so neither capability serves
+    any real use and either one, left open, would let a compromised or
+    malicious extension turn its own hidden document into an equally hidden
+    window onto the rest of the web.
+
+    **Cleans up on a renderer crash.** A `'render-process-gone'`
+    listener drops the document's own map entry immediately -- its
+    `WebContents` otherwise survives a crash on its own (`isCrashed()`'s own
+    existence implies as much), so without this, `hasDocument`/
+    `getContexts` kept reporting a crashed document present forever, and a
+    fresh `createDocument()` kept throwing "Only a single offscreen document
+    may be created." for one that could no longer do anything. Deliberately
+    does NOT also call `close()` on the crashed `WebContents`: measured
+    directly, `close()`'s own "as if `window.close()` had been called"
+    contract waits on a beforeunload round trip a crashed renderer can never
+    answer, reproducing as Chromium's own hung-process watchdog fataling the
+    whole child process.
 33. **`chrome.tabCapture.getMediaStreamId`, plus the activeTab-style
     invocation grant it requires.** New `src/browser/api/tab-capture.ts`
     (`TabCaptureAPI`): resolves `targetTabId` (or the active tab) through
     `ExtensionStore.getTabById`/`getActiveTabOfCurrentWindow` only, refuses
-    a tab outside the extension's own session or (`setTabCaptureAppRefusalCheck`,
-    `src/main/extensions/extension-host.ts`) belonging to a granted app,
-    refuses one the extension was never invoked on with Chrome's own error
-    text ("Extension has not been invoked for the current page...",
-    `setTabCaptureInvocationCheck`), resolves the capture's consumer as
-    `consumerTabId` when given or else the extension's own open offscreen
-    document (patch 32), then calls `webContents.getMediaSourceId()`. A
-    successful call mutes the target tab's local playback (Electron
-    duplicates a captured tab's audio instead of diverting it the way
-    Chrome does -- measured directly: muting the source does not also
-    silence what the consumer receives) and restores it once every
-    capturer has released the tab: a closed tab, the offscreen document
-    closing, or -- the one still on a timer -- a 10-second safety net for
-    a minted id that was never actually redeemed, checked against
+    a tab outside the extension's own session, refuses a target whose URL is
+    not `http:`/`https:` (below), refuses one
+    (`setTabCaptureAppRefusalCheck`, `src/main/extensions/extension-host.ts`)
+    belonging to a granted app, refuses one the extension was never invoked
+    on with Chrome's own error text ("Extension has not been invoked for the
+    current page...", `setTabCaptureInvocationCheck`), resolves the
+    capture's consumer as `consumerTabId` when given or else the extension's
+    own open offscreen document (patch 32), then calls
+    `webContents.getMediaSourceId()`. A successful call mutes the target
+    tab's local playback (Electron duplicates a captured tab's audio instead
+    of diverting it the way Chrome does -- measured directly: muting the
+    source does not also silence what the consumer receives) and restores it
+    once every capturer has released the tab: a closed tab, the ACTUAL
+    consumer (the offscreen document, or the `consumerTabId` tab, below)
+    being destroyed or crashing, `'extension-unloaded'`, the tab's own
+    navigation newly failing the app-refusal or http(s) check (below),
+    or -- the one still on a timer, and now per (extension, target
+    tab), never per extension alone (below) -- a 10-second safety
+    net for a minted id that was never actually redeemed, checked against
     `tab-capture-grants.ts`'s own `wasTabCaptureGrantConsumed`
-    (`setTabCaptureConsumedCheck`), true only once
-    `permission-gate.ts` has actually allowed a `'media'` REQUEST (never a
-    CHECK, which fires speculatively with no `getUserMedia()` behind it --
-    measured, marking on it released an unredeemed grant early) for this
-    extension. Originally built on `WebContents`'s own
+    (`setTabCaptureConsumedCheck`), true only once `permission-gate.ts` has
+    actually allowed a `'media'` REQUEST (never a CHECK, which fires
+    speculatively with no `getUserMedia()` behind it -- measured, marking on
+    it released an unredeemed grant early) for this exact
+    (extensionId, targetTabId) pair. Originally built on `WebContents`'s own
     `'media-started-playing'` event; replaced after measuring directly
     that it fires for an `AudioContext` routed to `ctx.destination` too
     (the opposite of what was assumed), which said nothing about the one
@@ -325,13 +366,100 @@
     `setTabCaptureInvocationRecorder` hook with the clicked tab, the same
     shape as `setEventListenerFilter`; `extension-host.ts`'s own wiring
     clears that grant when the tab closes or navigates to a different
-    origin (`extension-tab-invocation.ts`'s ledger). `src/browser/index.ts`
-    constructs `TabCaptureAPI` with the same `OffscreenAPI` instance patch
-    32 already builds. Reason: absent from Electron entirely; only
+    origin (`extension-tab-invocation.ts`'s ledger), and on the extension's
+    own unload.
+
+    **Also in `browser-action.ts`: the invocation was
+    forgeable.** `browserAction.activate` exists solely for the chrome
+    view's own `<browser-action>` element, which calls it EXCLUSIVELY over
+    `crx-msg-remote` (`browser-action.ts`, the injected preload) -- no
+    extension code is ever meant to reach it. Before this fix, nothing
+    enforced that: a plain extension page could call it directly over the
+    LOCAL `crx-msg` channel with a `details.extensionId`/`details.tabId` of
+    its own choosing (fields inside the RPC payload, never checked against
+    the caller's real, verified identity) and record an invocation -- or
+    open another extension's popup, or fire its `onClicked` -- for a tab it
+    had no access to. `chrome.action.openPopup()` (a real API, callable with
+    no gesture at all) reaches the same `activateClick` by calling it
+    directly, bypassing `activate`'s own router-level checks entirely, and
+    used to record an invocation the same way a real click did. Fixed:
+    `activate` now refuses outright whenever `event.extension` is defined --
+    `router.ts`'s own `onRemoteMessage` ALWAYS passes `extensionId:
+    undefined`, so `event.extension` is undefined for every genuine remote
+    call (the one `setRemoteMessageSenderCheck`'s own `isFromChromeView`
+    gate already restricts to the chrome view) and defined only for a local
+    `crx-msg` call, whatever it claims. `activateClick` gained a
+    `recordInvocation` parameter, `false` by default: `activate` passes
+    `true` only once it has confirmed the call is genuinely remote;
+    `openPopup` still calls `activateClick` directly (so the popup still
+    opens, or `onClicked` still fires, exactly as before) but never passes
+    it, so `chrome.action.openPopup()` can no longer mint an invocation.
+    `src/browser/index.ts` constructs
+    `TabCaptureAPI` with the same `OffscreenAPI` instance patch 32 already
+    builds. Reason: absent from Electron entirely; only
     `webContents.getMediaSourceId(requestWebContents)` exists as the
     underlying primitive. `capture()` is not implemented: an MV3 extension
     using an offscreen document (patch 32) always calls `getMediaStreamId`
     and does its own `getUserMedia`, never `capture()`.
+
+    **Additional fixes in this patch.**
+    - **The `'media'` carve-out widened into real
+      device access.** `../sessions/tab-capture-grants.ts`'s own
+      `isTabCaptureMediaRequestAllowed` and `../sessions/permission-gate.ts`'s
+      own doc comments have the full account -- a live tabCapture grant used
+      to be allowed for any `'media'` request from its extension's origin,
+      regardless of what the request actually asked for. Fixed at the
+      request-handler level, not here; this file's own contribution is
+      passing `targetTab.id` through `setTabCaptureGrantRecorder`/
+      `setTabCaptureConsumedCheck` so the ledger can key on it.
+    - **Consumption and release now key on (extension, target tab),
+      never extension alone.** The old ledger and this file's own safety net
+      both let one tab's redemption, or one tab's unconsumed-release timer,
+      affect a DIFFERENT tab the same extension was also capturing.
+    - **Capture-end now watches the real consumer, plus
+      `'extension-unloaded'` directly.** The old code assumed the consumer
+      was always the offscreen document and watched only ITS teardown;
+      `observeConsumerTeardown` now watches whichever `WebContents`
+      `getMediaStreamId` actually used (the offscreen document, or an
+      explicit `consumerTabId`), for both `'destroyed'` and
+      `'render-process-gone'`, and a direct `'extension-unloaded'` listener
+      on this class covers a `consumerTabId` consumer that never itself
+      dies. DECIDED, and deliberately not built: a periodic
+      `isCurrentlyAudible()` poll on the consumer to catch "the extension
+      stopped the track but kept the document open" -- a consumer that only
+      records the stream (`MediaRecorder`, never played back audibly) is
+      legitimately silent for a capture's entire real duration, and
+      `media-paused`/`audio-state-changed` never fire for a `MediaStreamTrack`
+      piped through Web Audio at all (Volume Master's own shape), so neither
+      candidate signal is safe or general enough to build on.
+    - **A target must be an `http(s)` tab.** `ctx.store` tracks
+      every `wc.session === session.defaultSession` tab, which (ADR-0044)
+      includes a granted app's own tab -- `setTabCaptureAppRefusalCheck`'s
+      own job -- but ALSO another extension's own page (its popup or
+      options page opened as a tab, another extension's offscreen document),
+      which is not a granted app at all: `devtools-app-origin.ts`'s own
+      `appOrigin` returns null for a `chrome-extension://` page, so the
+      app-refusal check alone never refused it. DECIDED: refuse every
+      non-`http(s)` target outright, the caller's own pages included, rather
+      than carving out an exception for them.
+    - **The app-refusal and http(s) checks are re-run on the
+      captured tab's own navigation, and the app-refusal check again inside
+      the `'media'` REQUEST handler itself.** A tab that was an ordinary page
+      at mint time can navigate to a granted app's origin, or to a
+      non-http(s) URL, without ever closing; `getMediaStreamId`'s own checks
+      previously ran once, at mint, and never again. `recheckCaptureStillAllowed`
+      (this file), wired to the captured tab's own `'did-navigate'`, ends
+      every capture of it the moment either check newly refuses.
+      `../sessions/permission-gate.ts`'s own `setTabCaptureMediaAppRefusalCheck`
+      registration covers the second half: a live, still-unexpired grant
+      handed to the REQUEST handler for a tab that has since become a
+      granted app's own.
+    - **The captured tab's own `'destroyed'`/`'did-navigate'`
+      listeners are now removed on an ordinary release.** Previously
+      attached once per tab and never removed unless the tab itself was
+      destroyed -- releasing a capture without the tab dying (the ordinary
+      case) left one more armed listener on it, stacking with every
+      capture/release cycle of the same tab.
 34. **`popup.ts`: a popup closes on more than its own `blur`.** `PopupView`'s constructor now also
     closes it when the parent window moves, resizes or minimises (`'move'`/`'resize'`/`'minimize'`,
     all removed again in `destroy()`), and when Escape is pressed inside it
@@ -358,9 +486,12 @@
     gave such a popup a second way to become visible; it would stay `show: false` --
     fully loaded and interactive over CDP, but invisible and unfocusable to a real person -- for
     its entire life. A 500ms timer now shows it anyway, at a fixed reasonable size
-    (`FALLBACK_BOUNDS`, 320x400), if `'preferred-size-changed'` has not arrived yet; a later
-    `'preferred-size-changed'` still resizes and repositions it correctly on arrival regardless
-    (`updatePreferredSize` does not check `hidden` first). Second, the `backgroundColor` passed to
+    (`FALLBACK_BOUNDS`, 320x400) positioned against the same anchor rect `updatePosition()`
+    always uses, if `'preferred-size-changed'` has not arrived yet -- `updatePosition()` runs
+    before `show()`, since showing first would flash the popup at the wrong spot for one frame
+    before it jumped to the right one; a later `'preferred-size-changed'` still resizes and
+    repositions it correctly on arrival regardless (`updatePreferredSize` does not check `hidden`
+    first). Second, the `backgroundColor` passed to
     `new BrowserWindow(...)` -- paints before the extension's own popup page has a pixel to show --
     now follows `nativeTheme.shouldUseDarkColors` instead of always being `'#ffffff'`. Reason: a
     fixed light background flashed white for a moment on every popup open in dark mode.
@@ -388,17 +519,74 @@
     `EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL` doc says why the literal is duplicated rather than
     imported) whether THIS frame is one of its own extension's declared `sandbox.pages`; main
     answers from `event.senderFrame`'s own URL and the extension's REAL loaded manifest, never
-    from anything the query itself could pass. Also checks `location.origin === 'null'`
-    (opaque) first, cheaper and needing no round trip -- forward-compatible only: measured, this
-    Electron build does NOT give a sandboxed page an opaque origin the way real Chrome does, so
-    the main-process query is what actually catches today's case. `router.ts`'s
-    `onExtensionMessage` refuses independently, on every message, from the SAME two signals read
-    off `event.senderFrame` and the extension's own resolved manifest (`isSandboxPageUrl`, a new
-    exported matcher using Chrome's own `sandbox.pages` glob grammar, `*` matching any run of
-    characters) -- defense in depth: even a `crx-msg` that somehow reached the router without
-    going through the preload's own gate is refused the same way. Measured after: `chrome.tabs`
-    is `undefined` in the sandboxed page, and a direct `chrome.tabs.query` attempt never reaches
-    a real call.
+    from anything the query itself could pass. Also checks `self.origin === 'null'` (opaque)
+    first, cheaper and needing no round trip -- `self.origin`, not `location.origin`, which
+    stays the ordinary `chrome-extension://<id>` string on this Electron build even for a
+    genuinely CSP-sandboxed document (measured). `router.ts`'s `onExtensionMessage` refuses
+    independently, on every message, from the SAME two signals read off `event.senderFrame` and
+    the extension's own resolved manifest (`isSandboxPageUrl`, a new exported matcher using
+    Chrome's own `sandbox.pages` glob grammar, `*` matching any run of characters) -- defense in
+    depth: even a `crx-msg` that somehow reached the router without going through the preload's
+    own gate is refused the same way. Measured after: `chrome.tabs` is `undefined` in the
+    sandboxed page, and a direct `chrome.tabs.query` attempt never reaches a real call. Neither
+    check's own opaque-origin branch actually had anything to fire from until patch 40 below
+    served these pages the CSP that makes an origin opaque at all on this Electron build; each
+    still refuses on the manifest's own `sandbox.pages` list alone in the meantime, which needs
+    no origin support.
+38. **`router.ts`: the registration-race wait (patch 36) also covers `crx-add-listener`, and is
+    shared per extension id instead of one wait per call.** `onAddListener` used to call
+    `observer.addListener(...)` synchronously and directly; a page whose extension was still
+    registering hit the exact same race `onRouterMessage`'s own crx-msg path does (a popup's own
+    top-level `chrome.runtime.onMessage.addListener()` call, before `session.extensions`
+    reflects the load already in flight) and lost the subscription for good, since
+    `addListener` throws synchronously for an unregistered id and the surrounding `ipcMain.on`
+    handler is fire-and-forget. Now resolved in the same tick when the extension is already
+    registered (the common case), and deferred to `waitForRegisteredExtension` only on an actual
+    race. `waitForRegisteredExtension` itself now shares ONE pending wait, one
+    `'extension-loaded'` listener and one timer, per `(extensions, extensionId)`
+    (`pendingRegistrations`, a `WeakMap<extensions, Map<extensionId, Promise>>`) -- a stale page
+    of a disabled or reloading extension previously paid the full 2s wait, and added a new
+    listener, on every call it ever made; concurrent callers racing the same extension id (a
+    crx-msg and one or more crx-add-listener calls, all from the same still-loading extension)
+    now await the identical promise instead.
+39. **`isSandboxPageUrl`: a linear-time glob match, replacing a backtracking regex built from
+    the extension's own manifest; normalised the way Chromium normalises before comparing.**
+    The regex this replaced (`pattern.split('*').map(escapeRegExp).join('.*')`, anchored)
+    is correct but a pattern with several `*`s is the textbook catastrophic-backtracking shape,
+    and this runs synchronously on the main thread, on every page load and every `crx-msg` --
+    measured: `'a*'.repeat(8) + 'b'` against a 40-character near-miss string already took over a
+    second with the old regex; the new matcher (`matchesGlob`: split on `*`, `indexOf` each
+    literal piece in order, anchored ends) resolves a 5000-character version in under a
+    millisecond. `MAX_SANDBOX_PAGES` (200) and `MAX_STARS_PER_PATTERN` (8) additionally cap the
+    work any one manifest can demand, on top of the matcher's own linear bound. Also normalises
+    both sides the way Chromium does: a manifest `sandbox.pages` entry's own leading `/` is
+    stripped (Chrome accepts `"/sandbox.html"` and `"sandbox.html"` as the same declaration),
+    and the URL's pathname is percent-decoded (`%2E` and `.` name the same file) before
+    comparison; a pathname that fails to decode matches nothing, rather than being compared
+    still encoded.
+40. **A manifest `sandbox.pages` document is now actually served with Chrome's own CSP
+    `sandbox` directive, giving it a genuinely opaque origin -- the real fix behind patch 37's
+    own opaque-origin checks.** New `src/main/extensions/extension-sandbox-csp.ts`, registered
+    through `../sessions/web-request-owner.ts` (never `session.webRequest` directly). Reason
+    (`docs/decisions/resolved-questions.md` A299): patch 37 alone stops a `chrome.*` binding from being
+    injected into the sandboxed page itself, but Electron still serves it at its extension's own
+    `chrome-extension://<id>` origin -- measured, this let a sandboxed iframe framed by an
+    ordinary extension page reach `parent.chrome` and `parent.document` directly (same-origin,
+    no restriction at all), a complete bypass. `webRequestOwnerFor(session.defaultSession)
+    .onHeadersReceived` DOES fire for a `chrome-extension:` response in the default session --
+    measured directly, not assumed. The handler appends Chrome's own default sandbox CSP
+    (`sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self'
+    'unsafe-inline' 'unsafe-eval'; child-src 'self';`, no `allow-same-origin`) to a document
+    response (`mainFrame`/`subFrame` only -- CSP `sandbox` is meaningless on a subresource
+    fetch) whose URL matches the extension's own `isSandboxPageUrl`, or the manifest's own
+    `content_security_policy.sandbox` string when the manifest sets one. Measured after: the
+    sandboxed page's `self.origin` reads the literal string `"null"` (real Chrome's own
+    behaviour) -- `location.origin` still does not, on this Electron build, which is why
+    patch 37's own checks read `self.origin`; a framed sandboxed iframe's `parent.chrome` and
+    `parent.document` both throw `Blocked a frame with origin "null" from accessing a
+    cross-origin frame`, closing the bypass; and `chrome.storage`/`chrome.runtime.connect`
+    (Electron's own native bindings, unaffected by patch 37's JS-injection-only fix) are also
+    unusable there now.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

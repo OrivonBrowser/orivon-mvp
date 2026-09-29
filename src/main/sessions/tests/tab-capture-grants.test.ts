@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { extensionIdFromChromeExtensionOrigin, hasLiveTabCaptureGrant, isTabCaptureMediaAllowed, markTabCaptureGrantConsumed, mintTabCaptureGrant, wasTabCaptureGrantConsumed } from '../tab-capture-grants.js'
+import {
+  extensionIdFromChromeExtensionOrigin,
+  hasLiveTabCaptureGrant,
+  isTabCaptureMediaRequestAllowed,
+  markTabCaptureGrantConsumed,
+  mintTabCaptureGrant,
+  wasTabCaptureGrantConsumed
+} from '../tab-capture-grants.js'
 
 // The ledger is a real module-level singleton (matches its production
 // shape), so every test mints its OWN extension id -- sharing one across
@@ -26,111 +33,151 @@ describe('extensionIdFromChromeExtensionOrigin', () => {
   })
 })
 
-describe('mintTabCaptureGrant / hasLiveTabCaptureGrant', () => {
+describe('mintTabCaptureGrant / hasLiveTabCaptureGrant -- keyed by (extension, target tab)', () => {
   it('has no live grant before one is minted', () => {
-    expect(hasLiveTabCaptureGrant(freshExtensionId(), 0)).toBe(false)
+    expect(hasLiveTabCaptureGrant(freshExtensionId(), 1, 0)).toBe(false)
   })
 
   it('is live immediately after minting, within the 10s validity window', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 1000)
-    expect(hasLiveTabCaptureGrant(id, 1000)).toBe(true)
-    expect(hasLiveTabCaptureGrant(id, 1000 + 9_999)).toBe(true)
+    mintTabCaptureGrant(id, 1, 1000)
+    expect(hasLiveTabCaptureGrant(id, 1, 1000)).toBe(true)
+    expect(hasLiveTabCaptureGrant(id, 1, 1000 + 9_999)).toBe(true)
   })
 
   it('expires at exactly its own 10s window', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 2000)
-    expect(hasLiveTabCaptureGrant(id, 2000 + 10_000)).toBe(false)
+    mintTabCaptureGrant(id, 1, 2000)
+    expect(hasLiveTabCaptureGrant(id, 1, 2000 + 10_000)).toBe(false)
   })
 
   it('never leaks to a different extension id', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 3000)
-    expect(hasLiveTabCaptureGrant(freshExtensionId(), 3000)).toBe(false)
+    mintTabCaptureGrant(id, 1, 3000)
+    expect(hasLiveTabCaptureGrant(freshExtensionId(), 1, 3000)).toBe(false)
+  })
+
+  it('never leaks to a different target tab id, even for the same extension', () => {
+    const id = freshExtensionId()
+    mintTabCaptureGrant(id, 1, 3500)
+    expect(hasLiveTabCaptureGrant(id, 2, 3500)).toBe(false)
   })
 })
 
-describe('isTabCaptureMediaAllowed -- the permission-gate policy function', () => {
-  it('denies a non-extension origin outright, even with a live grant for that id', () => {
+describe('isTabCaptureMediaRequestAllowed -- the permission-gate policy function', () => {
+  it('denies a non-extension origin outright, even with a live grant for that id/tab', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 4000)
-    expect(isTabCaptureMediaAllowed('https://example.com/', 4000)).toBe(false)
+    mintTabCaptureGrant(id, 1, 4000)
+    expect(isTabCaptureMediaRequestAllowed('https://example.com/', 1, [], 4000)).toBe(false)
   })
 
   it('denies a chrome-extension:// origin with no live grant', () => {
     const id = freshExtensionId()
-    expect(isTabCaptureMediaAllowed(`chrome-extension://${id}/`, 5000)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, [], 5000)).toBe(false)
   })
 
-  it('allows a chrome-extension:// origin with a live grant', () => {
+  it('allows a chrome-extension:// origin with a live grant for the SAME captured tab, tab-capture shape', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 6000)
-    expect(isTabCaptureMediaAllowed(`chrome-extension://${id}/html/offscreen.html`, 6000)).toBe(true)
+    mintTabCaptureGrant(id, 1, 6000)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/html/offscreen.html`, 1, [], 6000)).toBe(true)
   })
 
   it('denies once the grant expires', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 7000)
-    expect(isTabCaptureMediaAllowed(`chrome-extension://${id}/`, 7000 + 10_000)).toBe(false)
+    mintTabCaptureGrant(id, 1, 7000)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, [], 7000 + 10_000)).toBe(false)
   })
 
   it('denies an undefined origin', () => {
-    expect(isTabCaptureMediaAllowed(undefined, 8000)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(undefined, 1, [], 8000)).toBe(false)
+  })
+
+  it('denies a live grant if the captured webContents is NOT the minted target tab -- a device request opens on the extension\'s OWN page, never the target tab', () => {
+    const id = freshExtensionId()
+    mintTabCaptureGrant(id, 1, 8500)
+    // details.securityOrigin still names the extension, but `contents` the
+    // caller passes is the extension's OWN page (tab id 99), not the
+    // captured tab (1) -- measured: a real getUserMedia({audio,video})
+    // device request's `contents` is the requester itself.
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 99, [], 8500)).toBe(false)
+  })
+
+  it('denies a device-shaped request (non-empty mediaTypes) even against the right tab', () => {
+    const id = freshExtensionId()
+    mintTabCaptureGrant(id, 1, 9000)
+    // Measured: a real device getUserMedia({audio:true,video:true}) request
+    // carries mediaTypes: ['audio','video']; tab capture carries [].
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, ['audio', 'video'], 9000)).toBe(false)
+    expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 1, ['audio'], 9000)).toBe(false)
   })
 })
 
-describe('markTabCaptureGrantConsumed / wasTabCaptureGrantConsumed', () => {
+describe('markTabCaptureGrantConsumed / wasTabCaptureGrantConsumed -- keyed by (extension, target tab)', () => {
   it('is never consumed before a grant exists at all', () => {
-    expect(wasTabCaptureGrantConsumed(freshExtensionId())).toBe(false)
+    expect(wasTabCaptureGrantConsumed(freshExtensionId(), 1)).toBe(false)
   })
 
   it('is not consumed immediately after minting, before anything redeems it', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 9000)
-    expect(wasTabCaptureGrantConsumed(id)).toBe(false)
+    mintTabCaptureGrant(id, 1, 9500)
+    expect(wasTabCaptureGrantConsumed(id, 1)).toBe(false)
   })
 
   it('becomes consumed once marked, within the live window', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 10_000)
-    markTabCaptureGrantConsumed(id, 10_000)
-    expect(wasTabCaptureGrantConsumed(id)).toBe(true)
+    mintTabCaptureGrant(id, 1, 10_000)
+    markTabCaptureGrantConsumed(id, 1, 10_000)
+    expect(wasTabCaptureGrantConsumed(id, 1)).toBe(true)
   })
 
   it('stays consumed long after the 10s minting window elapses -- the whole point', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 11_000)
-    markTabCaptureGrantConsumed(id, 11_000)
-    expect(wasTabCaptureGrantConsumed(id)).toBe(true)
-    // Far past TAB_CAPTURE_GRANT_MS (10s) -- a consumed capture must never
-    // look "expired" to a caller checking hours into a real capture.
-    expect(wasTabCaptureGrantConsumed(id)).toBe(true)
+    mintTabCaptureGrant(id, 1, 11_000)
+    markTabCaptureGrantConsumed(id, 1, 11_000)
+    expect(wasTabCaptureGrantConsumed(id, 1)).toBe(true)
   })
 
   it('marking consumed after the grant already expired is a no-op', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 12_000)
-    markTabCaptureGrantConsumed(id, 12_000 + 10_000)
-    expect(wasTabCaptureGrantConsumed(id)).toBe(false)
+    mintTabCaptureGrant(id, 1, 12_000)
+    markTabCaptureGrantConsumed(id, 1, 12_000 + 10_000)
+    expect(wasTabCaptureGrantConsumed(id, 1)).toBe(false)
   })
 
   it('never leaks consumption to a different extension id', () => {
     const a = freshExtensionId()
     const b = freshExtensionId()
-    mintTabCaptureGrant(a, 13_000)
-    mintTabCaptureGrant(b, 13_000)
-    markTabCaptureGrantConsumed(a, 13_000)
-    expect(wasTabCaptureGrantConsumed(a)).toBe(true)
-    expect(wasTabCaptureGrantConsumed(b)).toBe(false)
+    mintTabCaptureGrant(a, 1, 13_000)
+    mintTabCaptureGrant(b, 1, 13_000)
+    markTabCaptureGrantConsumed(a, 1, 13_000)
+    expect(wasTabCaptureGrantConsumed(a, 1)).toBe(true)
+    expect(wasTabCaptureGrantConsumed(b, 1)).toBe(false)
+  })
+
+  it('never leaks consumption to a different target tab of the SAME extension: mint A + mint B + A\'s request must not mark B', () => {
+    const id = freshExtensionId()
+    mintTabCaptureGrant(id, 1, 13_500)
+    mintTabCaptureGrant(id, 2, 13_500)
+    markTabCaptureGrantConsumed(id, 1, 13_500)
+    expect(wasTabCaptureGrantConsumed(id, 1)).toBe(true)
+    expect(wasTabCaptureGrantConsumed(id, 2)).toBe(false)
+  })
+
+  it('the reverse direction: consuming tab B never marks tab A', () => {
+    const id = freshExtensionId()
+    mintTabCaptureGrant(id, 1, 13_600)
+    mintTabCaptureGrant(id, 2, 13_600)
+    markTabCaptureGrantConsumed(id, 2, 13_600)
+    expect(wasTabCaptureGrantConsumed(id, 2)).toBe(true)
+    expect(wasTabCaptureGrantConsumed(id, 1)).toBe(false)
   })
 
   it('a fresh mint after an earlier consumed grant starts unconsumed again', () => {
     const id = freshExtensionId()
-    mintTabCaptureGrant(id, 14_000)
-    markTabCaptureGrantConsumed(id, 14_000)
-    expect(wasTabCaptureGrantConsumed(id)).toBe(true)
-    mintTabCaptureGrant(id, 14_500)
-    expect(wasTabCaptureGrantConsumed(id)).toBe(false)
+    mintTabCaptureGrant(id, 1, 14_000)
+    markTabCaptureGrantConsumed(id, 1, 14_000)
+    expect(wasTabCaptureGrantConsumed(id, 1)).toBe(true)
+    mintTabCaptureGrant(id, 1, 14_500)
+    expect(wasTabCaptureGrantConsumed(id, 1)).toBe(false)
   })
 })
