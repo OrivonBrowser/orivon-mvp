@@ -122,6 +122,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Fixed
 
 - **A middle, ctrl, shift or ctrl+shift click on a link no longer closes the browser.**
+- **An extension's sandbox page gets no extension APIs**, as in Chrome, so untrusted code an extension runs there
+  cannot act with the extension's permissions.
 - **New tabs, internal pages, the window and every toolbar panel open in the theme's colour**, with no white
   flash, and the main menu opens without being rebuilt.
 - **An extension's popup closes** on a click elsewhere in Orivon, a tab switch, a navigation, a window move or
