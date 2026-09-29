@@ -78,6 +78,14 @@ export function extensionIdsWithBadgeTextEnabled(): string[] {
   return [...badgeTextEnabled.entries()].filter(([, enabled]) => enabled).map(([extensionId]) => extensionId)
 }
 
+/** Whether ANY extension currently has badge-count mode on -- half of
+ * `dnr-webrequest.ts`'s gate on whether `recordMatches` (below) is worth
+ * calling at all for a given request; the other half is
+ * `extensions-dnr.ts`'s `hasFeedbackCapableExtension`. */
+export function hasAnyBadgeCountModeEnabled(): boolean {
+  return [...badgeTextEnabled.values()].some((enabled) => enabled)
+}
+
 export function incrementActionCount(extensionId: string, tabId: number, delta: number): void {
   const key = actionCountKey(extensionId, tabId)
   actionCounts.set(key, (actionCounts.get(key) ?? 0) + delta)

@@ -60,6 +60,20 @@ only through the virtual specifiers above).
 
 ## Design notes
 
+**`extension-sw-preload-recovery.ts` must import nothing beyond `electron`'s ambient types.**
+Its own exports (the two health-check channel constants, `extensionIdFromScope`) are imported by
+`src/preload/extension-sw-verify.ts`, a PRELOAD script that runs in every extension service
+worker. A real import added to `extension-sw-preload-recovery.ts` -- even one nothing in that
+file ever calls -- bundles that whole dependency's module graph into that preload script too: a
+bundler's tree-shaking works per used export, not per file, and cannot prune an import with real
+side effects (disk I/O, a vendored library) just because the importing file's own exports never
+reach it. Measured directly: adding `extensions-dnr.ts` as an unused import there added several
+seconds to a single e2e run seeding four real extensions (dNR's own vendored rule engine and its
+`node:fs` I/O layer riding along into every service worker's preload). `watchForMissedServiceWorkerPreload`'s
+`onReloadBoundary` parameter is how a caller-side concern (dNR's own reload marking, wired from
+`extension-host.ts`'s call site instead) reaches this file's generic hook without this file ever
+importing that caller's module itself.
+
 **Why `loadableManifest` (`../../broker/policy/extension-manifest.ts`) strips `webRequest*`,
 `declarativeNetRequest*` and `nativeMessaging`, and why `extensions-subsystem.ts` is listed in
 `../subsystems.ts` right after `verifierSubsystem`.** Measured

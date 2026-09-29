@@ -176,3 +176,44 @@ it('applies a loaded extension\'s static block rule and its service worker\'s dy
     }
   })
 }, TEST_TIMEOUT_MS)
+
+it('a fresh install through the real install path blocks with no restart (extensions-dnr.ts\'s registerPendingDnrInstall)', async () => {
+  let installServer: Server | undefined
+  await runPhase('extensions dnr install path', async (check) => {
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    try {
+      // No seedProfile: the whole point is finishInstall's real
+      // loadExtension call, not registry.json seeded ahead of boot.
+      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], sandbox: true })
+      const liveApp = app
+
+      const outcome = await liveApp.evaluate(async ({ dialog }, dir: string) => {
+        // Auto-approve the one consent dialog finishInstall shows -- there
+        // is no native dialog for a headless run to click through.
+        ;(dialog as unknown as { showMessageBox: unknown }).showMessageBox = async () => ({ response: 0, checkboxChecked: false })
+        const hook = (globalThis as unknown as {
+          __orivonDevExtensionsInstall?: { installFromFolder: (dir: string) => Promise<{ installed: boolean }> }
+        }).__orivonDevExtensionsInstall
+        if (hook === undefined) {
+          throw new Error('extensions-install-test-hook.ts\'s seam is not installed -- build with ORIVON_ENABLE_DEV_GRANT=1 (scripts/build-e2e.mjs)')
+        }
+        return await hook.installFromFolder(dir)
+      }, FIXTURE_DIR)
+      check('installFromFolder installed the fixture', outcome.installed === true, JSON.stringify(outcome))
+
+      const started = await startDnrFixtureServer()
+      installServer = started.server
+
+      // No restart of app between the install above and this navigation:
+      // the static block rule must already be live in the SAME process.
+      const view = await navigateToFixture(app, `${started.origin}/`, 'dnr-fixture')
+      const adBlocked = await waitFor(async () =>
+        await evaluateRetrying(view, () => Boolean((window as unknown as { __adBlocked?: boolean }).__adBlocked))
+      )
+      check('the static block rule already blocks the ad script, with no restart', adBlocked)
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      if (installServer !== undefined) await new Promise<void>((resolve) => { installServer?.close(() => { resolve() }) })
+    }
+  })
+}, TEST_TIMEOUT_MS)

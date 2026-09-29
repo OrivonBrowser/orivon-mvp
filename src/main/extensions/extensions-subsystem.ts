@@ -16,6 +16,7 @@ import { createExtensionInstallPrompt } from './extension-install-prompt.js'
 import { createExtensionHost } from './extension-host.js'
 import { startWebStore } from './store-runner.js'
 import { installStoreTestHook } from './store-test-hook.js'
+import { installExtensionsInstallTestHook } from './extensions-install-test-hook.js'
 import type { InstalledExtension } from './registry.js'
 import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
 import { installDnrPermissionCheck, registerDnrApiHandlers } from './dnr-api.js'
@@ -81,7 +82,7 @@ export const extensionsSubsystem: Subsystem = {
     // router/webRequest wiring may as well go right alongside it: nothing
     // reaches either before the first extension loads regardless.
     attachExtensionsDnr(session.defaultSession, userDataPath)
-    installDnrPermissionCheck(session.defaultSession, userDataPath)
+    installDnrPermissionCheck(session.defaultSession)
     const { onRuleMatched, onTabNavigated } = registerDnrApiHandlers(hostExtensions.getRouter(), hostExtensions, userDataPath)
     installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
 
@@ -91,7 +92,7 @@ export const extensionsSubsystem: Subsystem = {
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     const store = await startWebStore(install, preloadPath)
     installStoreTestHook(store)
-    publishExtensions(ctx, {
+    const extensionsApi: ExtensionsApi = {
       installFromFolder: async (dir) => await installFromFolder(install, dir),
       installFromFile: async (filePath) => await installFromFile(install, filePath),
       uninstall: async (id) => { await uninstall(install, id) },
@@ -100,6 +101,8 @@ export const extensionsSubsystem: Subsystem = {
       installFromStore: store.installFromStore,
       checkForUpdates: store.checkForUpdates,
       updateFromStore: store.updateFromStore
-    })
+    }
+    installExtensionsInstallTestHook(extensionsApi)
+    publishExtensions(ctx, extensionsApi)
   }
 }

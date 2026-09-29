@@ -148,6 +148,6 @@ describe('allowAllRequests frame inheritance', () => {
       makeRequest({ url: 'http://ads.example.net/pixel.gif', resourceType: 'image', tabId: 1, frameId: 0 })
     )
     expect(decision.cancel).toBeUndefined()
-    expect(decision.matchedRules).toContainEqual({ extensionId: 'ext', rulesetId: '_session', ruleId: 1 })
+    expect(decision.matchedRules).toContainEqual({ extensionId: 'ext', rulesetId: '_session', ruleId: 1, actionType: 'allowAllRequests' })
   })
 })

@@ -96,11 +96,11 @@ export function writeEnabledRulesetOverride(slotDir: string, enabledIds: readonl
 /**
  * Deletes `slotDir`'s persisted dynamic rules and enabled-ruleset choice --
  * `install-runner.ts`'s `uninstall` calls this, matching Chrome's own
- * behavior of clearing an extension's dynamic rules on uninstall (`README.md`'s
- * Design notes on where these two files live and why they used to
- * outlive one). Never touches `key.pub`, one level up in the same
- * directory: that file's own job is to survive an uninstall, so a
- * reinstall into the same slot still resolves to the same extension id.
+ * behavior of clearing an extension's dynamic rules on uninstall
+ * (`README.md`'s Design notes on where these two files live). Never touches
+ * `key.pub`, one level up in the same directory: that file's own job is to
+ * survive an uninstall, so a reinstall into the same slot still resolves to
+ * the same extension id.
  */
 export function clearPersistedRuleState(slotDir: string): void {
   rmSync(dynamicRulesPath(slotDir), { force: true })

@@ -381,13 +381,13 @@ patch.
     skips only the one rule a check rejects (`continue`, not a hard stop),
     this costs a static ruleset nothing beyond the rejected rules themselves
     -- but see the accompanying `src/main/extensions/dnr/dnr-engine.ts`
-    change below: its `applyEnabledStaticRulesets` used to treat *any*
-    validation failure as fatal to the whole `setStaticRulesets` call
-    (`validateOrThrow`'s `getFailures().length` throw), which this patch
-    would otherwise turn into "uBOL's whole `ublock-filters` ruleset fails
-    to load" over six rejected rules out of 5,509. `dnr-engine.ts` now uses
-    a separate `validateStaticRuleset` for the static-ruleset path that
-    keeps the (already per-rule-filtered) validated subset instead, matching
+    change below: `validateOrThrow` (`getFailures().length` throw) treats
+    *any* validation failure as fatal to the whole `setStaticRulesets` call,
+    which would turn this patch's per-rule rejection into "uBOL's whole
+    `ublock-filters` ruleset fails to load" over six rejected rules out of
+    5,509. `dnr-engine.ts` instead uses a separate `validateStaticRuleset`
+    for the static-ruleset path that keeps the (already per-rule-filtered)
+    validated subset instead, matching
     Chrome's own documented behavior of dropping an invalid static rule
     without failing the rest of the ruleset; `updateDynamicRules`/
     `updateSessionRules` keep the original all-or-nothing `validateOrThrow`,
@@ -405,6 +405,35 @@ patch.
     referenced by any `rule_resources` entry in uBOL's manifest -- it is
     uBOL's own intermediate representation from parsing uBlock filter
     syntax, never a wire shape this engine needs to accept.
+
+15. **`RequestEvaluator#isActionAllowed` never gates a `main_frame`/
+    `sub_frame` request's host-permission check on its initiator.** Chrome's
+    own documented behavior (developer.chrome.com's
+    `declarativeNetRequest` reference, "Host permissions" section): host
+    permission for the request URL is required for `redirect`/
+    `modifyHeaders` (and, for a `declarativeNetRequestWithHostAccess`-only
+    extension, every action type), and host permission for the *initiator*
+    is additionally required for every request type EXCEPT a navigation
+    request (`main_frame`/`sub_frame`), where only the request URL is
+    checked. Patch 12's original port called `access.hasHostAccess(requestURI,
+    initiatorURI)` unconditionally, so a navigation whose `initiatorURI`
+    happened to be set would wrongly need host access to that initiator too.
+    `src/main/extensions/dnr/host-permissions.ts`'s `createHostAccessChecker`
+    already treated a `null` initiator as "skip the initiator check" (Chrome
+    checks the initiator only when one is known); this patch is what now
+    passes `null` for a navigation request specifically, regardless of what
+    `RequestDetails#initiatorURI` carries -- `src/main/extensions/dnr-webrequest.ts`'s
+    own `initiatorOf` doc has the reason a navigation's `initiatorURI` is
+    not reliable enough to gate on in the first place (it approximates
+    Chrome's initiator for a renderer-initiated navigation, e.g. a link
+    click, but Electron's `webRequest` API exposes no way to tell that apart
+    from a browser-initiated one, e.g. a typed URL, where Chrome reports no
+    initiator at all). `initiatorDomains`/`excludedInitiatorDomains`/
+    `domainType` conditions are unaffected: they still read
+    `RequestDetails#allInitiatorDomains`/`domainType`, computed from the same
+    `initiatorURI` this patch does not touch.
+    `src/main/extensions/dnr/tests/action-access.test.ts` has the regression
+    tests, for both the host-access gate and the domain conditions.
 
 Nothing else changed: class/function bodies, the top-of-file design comment,
 and every doc comment not touched by a patch above are upstream's own words,

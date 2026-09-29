@@ -1763,7 +1763,12 @@ class RequestEvaluator {
    * outcome Chrome's own per-candidate check produces. `RuleManager#actionAccess`
    * defaults to "always allowed" (`DEFAULT_ACTION_ACCESS`), so an engine
    * whose caller never calls `setActionAccess` matches exactly as before
-   * this patch.
+   * this patch. Patch 15 (UPSTREAM.md): a navigation request (`main_frame`/
+   * `sub_frame`) never gates on its initiator here, regardless of what the
+   * caller's `RequestDetails` carries for one -- Chrome's own documented
+   * behavior requires host permission for the initiator on every request
+   * type EXCEPT a navigation request, where only the request URL itself is
+   * checked.
    * @param {Rule} rule
    * @returns {boolean}
    */
@@ -1772,7 +1777,12 @@ class RequestEvaluator {
     const type = rule.action.type
     const needsHostAccess =
       access.requiresHostAccessForAllActions || type === 'redirect' || type === 'modifyHeaders'
-    return !needsHostAccess || access.hasHostAccess(this.req.requestURI, this.req.initiatorURI)
+    if (!needsHostAccess) {
+      return true
+    }
+    const isNavigationRequest = this.req.type === 'main_frame' || this.req.type === 'sub_frame'
+    const initiatorURI = isNavigationRequest ? null : this.req.initiatorURI
+    return access.hasHostAccess(this.req.requestURI, initiatorURI)
   }
 
   /** @param {RuleCondition} cond @returns {boolean} Whether the condition matched. */

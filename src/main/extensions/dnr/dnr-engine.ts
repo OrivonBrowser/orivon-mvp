@@ -117,6 +117,7 @@ function toMatchedRuleInfo(matchedRules: VendorMatchedRule[]): DnrMatchedRuleInf
     extensionId: mr.ruleManager.extensionId as string,
     rulesetId: mr.ruleset.id as string,
     ruleId: mr.rule.id as number,
+    actionType: mr.rule.action.type as DnrMatchedRuleInfo['actionType'],
   }))
 }
 
@@ -169,24 +170,35 @@ export function createDnrEngine() {
   const staticState = new Map<string, StaticState>()
   const frameAncestry = new FrameAncestryTracker()
 
-  function applyEnabledStaticRulesets(extensionId: string, state: StaticState): void {
-    const ruleManager = registry.getRuleManager(extensionId)
-    const quotaCounter = new RuleQuotaCounter('GUARANTEED_MINIMUM_STATIC_RULES')
-    const enabled = state.order
-      .map(id => [id, state.byId.get(id)!] as const)
-      .filter(([, entry]) => entry.enabled)
-    if (enabled.length > ExtensionDNRLimits.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS) {
+  /**
+   * Validates and applies exactly the given `enabledIds` (manifest order
+   * already applied by the caller) as `extensionId`'s enabled static
+   * rulesets -- the one function that can fail this way (the enabled-count
+   * limit, or a ruleset's own quota), so both `setStaticRulesets` (which has
+   * no prior state to protect) and `updateEnabledRulesets` (which does, see
+   * its own doc) route through it with the FULL proposed set, never a
+   * partially-mutated one.
+   */
+  function applyEnabledStaticRulesets(extensionId: string, state: StaticState, enabledIds: readonly string[]): void {
+    if (enabledIds.length > ExtensionDNRLimits.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS) {
       throw new Error(
         `Enabled static rulesets exceed MAX_NUMBER_OF_ENABLED_STATIC_RULESETS (${ExtensionDNRLimits.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS}).`
       )
     }
-    const rulesets = enabled.map(([id, entry]) => {
+    const ruleManager = registry.getRuleManager(extensionId)
+    const quotaCounter = new RuleQuotaCounter('GUARANTEED_MINIMUM_STATIC_RULES')
+    const rulesets = enabledIds.map(id => {
+      const entry = state.byId.get(id)!
       const validator: VendorRuleValidator = new RuleValidator([])
       validator.addRules(withDefaultPriority(entry.rules))
       const rules = validateStaticRuleset(validator, quotaCounter, id)
       return { id, rules, disabledRuleIds: null }
     })
     ruleManager.setEnabledStaticRulesets(rulesets)
+  }
+
+  function enabledIdsInOrder(state: StaticState): string[] {
+    return state.order.filter(id => state.byId.get(id)!.enabled)
   }
 
   return {
@@ -208,26 +220,44 @@ export function createDnrEngine() {
         byId: new Map(rulesets.map(r => [r.id, { enabled: r.enabled, rules: r.rules }])),
       }
       staticState.set(extensionId, state)
-      applyEnabledStaticRulesets(extensionId, state)
+      applyEnabledStaticRulesets(extensionId, state, enabledIdsInOrder(state))
     },
 
+    /**
+     * Validates the PROPOSED enabled set (every id, the enabled-count limit
+     * and each newly-enabled ruleset's own quota) against a copy of
+     * `state.byId`'s flags before touching the real ones: a rejected call
+     * (an unknown id, too many rulesets enabled, or a ruleset that blows the
+     * GUARANTEED_MINIMUM_STATIC_RULES quota once actually validated) must
+     * change nothing at all, not leave some ids flipped and others not.
+     * Applying the flags to a scratch Map first, computing the proposed
+     * enabled-id list from THAT, and only committing it onto `state.byId`
+     * after `applyEnabledStaticRulesets` returns without throwing is what
+     * makes this call atomic either way.
+     */
     updateEnabledRulesets(extensionId: string, options: DnrUpdateRulesetOptions): void {
       const state = staticState.get(extensionId)
       if (!state) {
         return
       }
-      for (const id of [...(options.enableRulesetIds ?? []), ...(options.disableRulesetIds ?? [])]) {
+      const disableIds = options.disableRulesetIds ?? []
+      const enableIds = options.enableRulesetIds ?? []
+      for (const id of [...enableIds, ...disableIds]) {
         if (!state.byId.has(id)) {
           throw new Error(`Invalid ruleset id: "${id}"`)
         }
       }
-      for (const id of options.disableRulesetIds ?? []) {
-        state.byId.get(id)!.enabled = false
+      const proposedFlags = new Map(state.byId)
+      for (const id of disableIds) {
+        proposedFlags.set(id, { ...proposedFlags.get(id)!, enabled: false })
       }
-      for (const id of options.enableRulesetIds ?? []) {
-        state.byId.get(id)!.enabled = true
+      for (const id of enableIds) {
+        proposedFlags.set(id, { ...proposedFlags.get(id)!, enabled: true })
       }
-      applyEnabledStaticRulesets(extensionId, state)
+      const proposedEnabledIds = state.order.filter(id => proposedFlags.get(id)!.enabled)
+      applyEnabledStaticRulesets(extensionId, state, proposedEnabledIds)
+      // Only reached once the proposed set validated and applied cleanly.
+      state.byId = proposedFlags
     },
 
     updateDynamicRules(extensionId: string, options: DnrUpdateRuleOptions): void {

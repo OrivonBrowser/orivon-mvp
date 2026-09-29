@@ -18,18 +18,19 @@ const engine = {
 }
 
 vi.mock('orivon:crx-extensions-router', () => ({ setPermissionCheck: vi.fn() }))
+let registryEntries: InstalledExtension[] = []
 vi.mock('../extensions-dnr.js', () => ({
   getDnrEngine: vi.fn(() => engine),
   slotDirForLoadedExtension: vi.fn(() => undefined),
+  // dnr-api.ts reads permissions from extensions-dnr.ts's own load-time
+  // cache, not registry.json, now (finding 6's per-match disk read): faked
+  // here from the same registryEntries a test sets, standing in for "what
+  // the cache would hold once this extension loaded".
+  getCachedStrippedPermissions: (id: string) => registryEntries.find((entry) => entry.id === id)?.stripped.permissions ?? [],
 }))
 vi.mock('../dnr/dnr-runner.js', () => ({
   writeDynamicRules: vi.fn(),
   writeEnabledRulesetOverride: vi.fn(),
-}))
-
-let registryEntries: InstalledExtension[] = []
-vi.mock('../registry-runner.js', () => ({
-  readRegistry: () => registryEntries,
 }))
 
 const { registerDnrApiHandlers } = await import('../dnr-api.js')
@@ -144,10 +145,10 @@ describe('registerDnrApiHandlers', () => {
     const router = fakeRouter()
     const { onRuleMatched } = registerDnrApiHandlers(router as any, fakeBadgeHost(), '/userdata')
 
-    onRuleMatched(7, { extensionId: 'no-feedback', rulesetId: '_session', ruleId: 1 })
+    onRuleMatched(7, { extensionId: 'no-feedback', rulesetId: '_session', ruleId: 1, actionType: 'block' })
     expect(router.sendEvent).not.toHaveBeenCalled()
 
-    onRuleMatched(7, { extensionId: 'has-feedback', rulesetId: '_session', ruleId: 1 })
+    onRuleMatched(7, { extensionId: 'has-feedback', rulesetId: '_session', ruleId: 1, actionType: 'block' })
     expect(router.sendEvent).toHaveBeenCalledWith(
       'has-feedback',
       'declarativeNetRequest.onRuleMatchedDebug',
@@ -161,14 +162,14 @@ describe('registerDnrApiHandlers', () => {
     const badgeHost = fakeBadgeHost()
     const { onRuleMatched } = registerDnrApiHandlers(router as any, badgeHost, '/userdata')
 
-    onRuleMatched(7, { extensionId: 'ext-1', rulesetId: '_session', ruleId: 1 })
+    onRuleMatched(7, { extensionId: 'ext-1', rulesetId: '_session', ruleId: 1, actionType: 'block' })
     expect(badgeHost.setBadgeText).not.toHaveBeenCalled()
 
     const setExtensionActionOptions = router.handlers.get('declarativeNetRequest.setExtensionActionOptions')!
     setExtensionActionOptions.callback({ extension: { id: 'ext-1' } }, { displayActionCountAsBadgeText: true })
 
-    onRuleMatched(7, { extensionId: 'ext-1', rulesetId: '_session', ruleId: 1 })
-    onRuleMatched(7, { extensionId: 'ext-1', rulesetId: '_session', ruleId: 2 })
+    onRuleMatched(7, { extensionId: 'ext-1', rulesetId: '_session', ruleId: 1, actionType: 'block' })
+    onRuleMatched(7, { extensionId: 'ext-1', rulesetId: '_session', ruleId: 2, actionType: 'block' })
     expect(badgeHost.setBadgeText).toHaveBeenNthCalledWith(1, 'ext-1', 7, '1')
     expect(badgeHost.setBadgeText).toHaveBeenNthCalledWith(2, 'ext-1', 7, '2')
   })
@@ -184,7 +185,7 @@ describe('registerDnrApiHandlers', () => {
     const setExtensionActionOptions = router.handlers.get('declarativeNetRequest.setExtensionActionOptions')!
     setExtensionActionOptions.callback({ extension: { id: 'watches' } }, { displayActionCountAsBadgeText: true })
 
-    onRuleMatched(7, { extensionId: 'watches', rulesetId: '_session', ruleId: 1 })
+    onRuleMatched(7, { extensionId: 'watches', rulesetId: '_session', ruleId: 1, actionType: 'block' })
     badgeHost.setBadgeText.mockClear()
 
     onTabNavigated(7)
@@ -193,7 +194,7 @@ describe('registerDnrApiHandlers', () => {
 
     // The running count really is reset, not just the badge display: the
     // next match on this tab starts back at "1".
-    onRuleMatched(7, { extensionId: 'watches', rulesetId: '_session', ruleId: 1 })
+    onRuleMatched(7, { extensionId: 'watches', rulesetId: '_session', ruleId: 1, actionType: 'block' })
     expect(badgeHost.setBadgeText).toHaveBeenLastCalledWith('watches', 7, '1')
   })
 })

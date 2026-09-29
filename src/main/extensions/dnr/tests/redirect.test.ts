@@ -148,6 +148,6 @@ describe('redirect validation', () => {
     })
     const decision = engine.evaluate(makeRequest({ url: 'http://from/alert(1)' }))
     expect(decision.redirectUrl).toBeUndefined()
-    expect(decision.matchedRules).toContainEqual({ extensionId: 'ext', rulesetId: '_session', ruleId: 1 })
+    expect(decision.matchedRules).toContainEqual({ extensionId: 'ext', rulesetId: '_session', ruleId: 1, actionType: 'redirect' })
   })
 })

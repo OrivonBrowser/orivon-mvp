@@ -10,9 +10,8 @@
 import type { ExtensionRouterHandle } from 'orivon:crx-extensions'
 import { setPermissionCheck } from 'orivon:crx-extensions-router'
 import type { Session } from 'electron'
-import { getDnrEngine, slotDirForLoadedExtension } from './extensions-dnr.js'
+import { getCachedStrippedPermissions, getDnrEngine, slotDirForLoadedExtension } from './extensions-dnr.js'
 import { writeDynamicRules, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
-import { readRegistry } from './registry-runner.js'
 import {
   extensionIdsWithBadgeTextEnabled,
   getActionCount,
@@ -29,6 +28,7 @@ import type {
 import type { DnrRequest, DnrResourceType, DnrRule, DnrUpdateRuleOptions, DnrUpdateRulesetOptions } from './dnr/types.js'
 
 const DNR_PERMISSION = 'declarativeNetRequest'
+const DNR_HOST_ACCESS_PERMISSION = 'declarativeNetRequestWithHostAccess'
 
 /** The one method `registerDnrApiHandlers`'s badge wiring needs from
  * `ElectronChromeExtensions` (`setBadgeText`, UPSTREAM.md patch 22) --
@@ -48,8 +48,14 @@ export function isStrippedPermissionName(permission: string): boolean {
   return permission === 'nativeMessaging' || permission.startsWith('declarativeNetRequest') || permission.startsWith('webRequest')
 }
 
-function strippedPermissionsFor(userDataPath: string, extensionId: string): readonly string[] {
-  return readRegistry(userDataPath).find((entry) => entry.id === extensionId)?.stripped.permissions ?? []
+/** `extensionId`'s ORIGINAL (pre-strip) permission list -- `extensions-dnr.ts`'s
+ * own load-time cache, not a fresh `registry.json` read: this is called once
+ * per matched rule on the `onBeforeRequest` hot path (`onRuleMatched`,
+ * below), so a disk read and a full-registry JSON parse per match would
+ * scale with request volume rather than with how often an extension loads
+ * or unloads. */
+function strippedPermissionsFor(extensionId: string): readonly string[] {
+  return getCachedStrippedPermissions(extensionId)
 }
 
 /**
@@ -57,11 +63,24 @@ function strippedPermissionsFor(userDataPath: string, extensionId: string): read
  * router's default manifest-permission check globally (there is one router
  * per session, and Orivon runs extensions in exactly one), falling back to
  * the loaded manifest's own permissions for a name that was never stripped.
+ * Chrome unlocks `chrome.declarativeNetRequest` for either
+ * `declarativeNetRequest` or `declarativeNetRequestWithHostAccess`
+ * (`extensions-dnr.ts`'s own `hasDnrPermission` doc has the citation this
+ * package's runtime gating agrees with); every handler below gates on the
+ * plain `declarativeNetRequest` string (`DNR_PERMISSION`, `gated`), so this
+ * is the one place that string is treated as "either permission" rather
+ * than a literal match. `declarativeNetRequestFeedback` is never accepted
+ * here as a substitute -- `getMatchedRules`'s own handler checks it
+ * separately, as Chrome requires.
  */
-export function installDnrPermissionCheck(defaultSession: Session, userDataPath: string): void {
+export function installDnrPermissionCheck(defaultSession: Session): void {
   setPermissionCheck((extensionId, permission) => {
+    if (permission === DNR_PERMISSION) {
+      const stripped = strippedPermissionsFor(extensionId)
+      return stripped.includes(DNR_PERMISSION) || stripped.includes(DNR_HOST_ACCESS_PERMISSION)
+    }
     if (isStrippedPermissionName(permission)) {
-      return strippedPermissionsFor(userDataPath, extensionId).includes(permission)
+      return strippedPermissionsFor(extensionId).includes(permission)
     }
     const extension = defaultSession.extensions.getExtension(extensionId)
     const manifest = extension?.manifest as { permissions?: string[] } | undefined
@@ -200,8 +219,8 @@ export function registerDnrApiHandlers(
       // This engine's regexFilter matcher is a plain JS RegExp
       // (vendor/firefox-dnr/src/extension-dnr.mjs's compileRegexFilter), not
       // RE2 like Chrome's real one: this answers "does RegExp accept it",
-      // not Chrome's own (narrower) RE2 syntax/complexity limits -- see this
-      // file's own doc, and dnr/README.md, on that gap.
+      // not whether Chrome's own (narrower) RE2 syntax or complexity limits
+      // would also accept it.
       try {
         // eslint-disable-next-line no-new -- validity check only
         new RegExp(options.regex, options.isCaseSensitive === false ? 'i' : '')
@@ -221,6 +240,13 @@ export function registerDnrApiHandlers(
       }
       if (options.tabUpdate !== undefined) {
         incrementActionCount(event.extension.id, options.tabUpdate.tabId, options.tabUpdate.increment)
+        // Chrome re-renders the badge the moment this call changes the
+        // count, not on the next matched rule -- a caller using tabUpdate to
+        // set an initial or corrected count would otherwise see the old
+        // badge text until something else happened to trigger a render.
+        if (isDisplayActionCountAsBadgeTextEnabled(event.extension.id)) {
+          badgeHost.setBadgeText(event.extension.id, options.tabUpdate.tabId, String(getActionCount(event.extension.id, options.tabUpdate.tabId)))
+        }
       }
     },
     gated
@@ -228,12 +254,14 @@ export function registerDnrApiHandlers(
 
   // Chrome gates getMatchedRules on declarativeNetRequestFeedback OR
   // activeTab-for-the-requested-tab; only the Feedback branch is
-  // implemented here (see this work's own report for why) -- so this
-  // handler checks permission itself rather than through `gated`.
+  // implemented here -- Orivon records no per-tab activeTab grant state
+  // anywhere in this codebase, so there is nothing yet for the activeTab
+  // branch to check. This handler checks permission itself rather than
+  // through `gated`.
   handle(
     'declarativeNetRequest.getMatchedRules',
     (event, options?: { tabId?: number }) => {
-      if (!strippedPermissionsFor(userDataPath, event.extension.id).includes('declarativeNetRequestFeedback')) {
+      if (!strippedPermissionsFor(event.extension.id).includes('declarativeNetRequestFeedback')) {
         throw new Error('declarativeNetRequest.getMatchedRules requires the declarativeNetRequestFeedback permission')
       }
       const matched = getLoggedMatches(event.extension.id, options?.tabId)
@@ -258,14 +286,22 @@ export function registerDnrApiHandlers(
   )
 
   const onRuleMatched: OnRuleMatched = (tabId, info) => {
-    const permissions = strippedPermissionsFor(userDataPath, info.extensionId)
-    if (isDisplayActionCountAsBadgeTextEnabled(info.extensionId)) {
+    const permissions = strippedPermissionsFor(info.extensionId)
+    // Chrome's own ActionTracker::OnRuleMatched counts every action type
+    // EXCEPT allow/allowAllRequests -- an allow-type match takes no action
+    // on the request, so it never moves the badge, even though it is still
+    // reported (below) through onRuleMatchedDebug/getMatchedRules like any
+    // other match.
+    if (info.actionType !== 'allow' && info.actionType !== 'allowAllRequests' && isDisplayActionCountAsBadgeTextEnabled(info.extensionId)) {
       incrementActionCount(info.extensionId, tabId, 1)
       badgeHost.setBadgeText(info.extensionId, tabId, String(getActionCount(info.extensionId, tabId)))
     }
     // Chrome fires onRuleMatchedDebug only for an unpacked (development)
     // extension holding declarativeNetRequestFeedback; this checks the
-    // permission only -- see this file's own doc on the load-source gap.
+    // permission only, not the load source -- registry.ts's
+    // InstalledExtension.source.kind records "unpacked" already, but
+    // strippedPermissionsFor above does not read it, so this event reaches
+    // every extension holding the permission, not only an unpacked one.
     if (permissions.includes('declarativeNetRequestFeedback')) {
       router.sendEvent(info.extensionId, 'declarativeNetRequest.onRuleMatchedDebug', {
         rule: { ruleId: info.ruleId, rulesetId: info.rulesetId },

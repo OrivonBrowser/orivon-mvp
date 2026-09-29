@@ -32,7 +32,7 @@ describe('testMatch', () => {
     engine.updateSessionRules('ext-a', { addRules: [blockRule(1, { urlFilter: 'x' })] })
     engine.updateSessionRules('ext-b', { addRules: [blockRule(1, { urlFilter: 'x' })] })
     const matched = engine.testMatch('ext-a', makeRequest({ url: 'http://x/' }))
-    expect(matched).toEqual([{ extensionId: 'ext-a', rulesetId: '_session', ruleId: 1 }])
+    expect(matched).toEqual([{ extensionId: 'ext-a', rulesetId: '_session', ruleId: 1, actionType: 'block' }])
   })
 
   it('ignores this extension\'s own host-permission gate', () => {
@@ -43,7 +43,7 @@ describe('testMatch', () => {
     engine.setActionAccess('ext', { hasHostAccess: () => false, requiresHostAccessForAllActions: false })
     expect(engine.evaluate(makeRequest({ url: 'http://x/' })).redirectUrl).toBeUndefined()
     expect(engine.testMatch('ext', makeRequest({ url: 'http://x/' }))).toEqual([
-      { extensionId: 'ext', rulesetId: '_session', ruleId: 1 },
+      { extensionId: 'ext', rulesetId: '_session', ruleId: 1, actionType: 'redirect' },
     ])
   })
 

@@ -155,6 +155,13 @@ export interface DnrMatchedRuleInfo {
   extensionId: string
   rulesetId: string
   ruleId: number
+  /** The matched rule's own action type -- `dnr-api.ts`'s `onRuleMatched`
+   * needs this to know whether a match should count toward the per-tab
+   * action-count badge: Chrome counts `block`/`redirect`/`upgradeScheme`/
+   * `modifyHeaders` matches, never `allow`/`allowAllRequests` (which report
+   * through `getMatchedRules`/`onRuleMatchedDebug` the same as any other
+   * match, just without incrementing the count). */
+  actionType: DnrActionType
 }
 
 /**

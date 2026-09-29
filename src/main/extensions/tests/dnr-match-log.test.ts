@@ -29,9 +29,9 @@ describe('recordMatches / getLoggedMatches', () => {
   })
 
   it('logs one entry per matched rule, filterable by extensionId and tabId', () => {
-    recordMatches(1, [{ extensionId: 'rec-a', rulesetId: '_session', ruleId: 1 }])
-    recordMatches(2, [{ extensionId: 'rec-a', rulesetId: '_session', ruleId: 2 }])
-    recordMatches(1, [{ extensionId: 'rec-b', rulesetId: '_session', ruleId: 3 }])
+    recordMatches(1, [{ extensionId: 'rec-a', rulesetId: '_session', ruleId: 1, actionType: 'block' }])
+    recordMatches(2, [{ extensionId: 'rec-a', rulesetId: '_session', ruleId: 2, actionType: 'block' }])
+    recordMatches(1, [{ extensionId: 'rec-b', rulesetId: '_session', ruleId: 3, actionType: 'block' }])
 
     const allForA = getLoggedMatches('rec-a', undefined)
     expect(allForA).toHaveLength(2)
@@ -48,7 +48,7 @@ describe('recordMatches / getLoggedMatches', () => {
     vi.useFakeTimers()
     try {
       vi.setSystemTime(0)
-      recordMatches(1, [{ extensionId: 'rec-a', rulesetId: '_session', ruleId: 1 }])
+      recordMatches(1, [{ extensionId: 'rec-a', rulesetId: '_session', ruleId: 1, actionType: 'block' }])
       expect(getLoggedMatches('rec-a', undefined)).toHaveLength(1)
 
       vi.setSystemTime(5 * 60 * 1000 + 1)
@@ -123,8 +123,8 @@ describe('action counts', () => {
 
 describe('clearExtensionMatchLog', () => {
   it('clears one extension\'s matches, badge flag and counts, leaves other extensions alone', () => {
-    recordMatches(1, [{ extensionId: 'clear-a', rulesetId: '_session', ruleId: 1 }])
-    recordMatches(1, [{ extensionId: 'clear-b', rulesetId: '_session', ruleId: 2 }])
+    recordMatches(1, [{ extensionId: 'clear-a', rulesetId: '_session', ruleId: 1, actionType: 'block' }])
+    recordMatches(1, [{ extensionId: 'clear-b', rulesetId: '_session', ruleId: 2, actionType: 'block' }])
     setDisplayActionCountAsBadgeText('clear-a', true)
     setDisplayActionCountAsBadgeText('clear-b', true)
     incrementActionCount('clear-a', 1, 4)

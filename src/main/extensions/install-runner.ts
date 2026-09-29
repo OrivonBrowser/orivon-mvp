@@ -21,6 +21,7 @@ import { unpackZip } from './unpack-runner.js'
 import { patchStoreUpdater, readRegistry, writeRegistry } from './registry-runner.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
 import { clearPersistedRuleState } from './dnr/dnr-runner.js'
+import { clearPendingDnrInstall, registerPendingDnrInstall } from './extensions-dnr.js'
 import { generateId } from '../../../vendor/electron-chrome-web-store/src/browser/id.js'
 import { downloadCrxBytes } from '../../../vendor/electron-chrome-web-store/src/browser/installer.js'
 import { storeCrxDownloadUrl, storeTestPublisherKeyHash } from './store-download-seam.js'
@@ -45,16 +46,11 @@ function slotHash (input: Buffer): string {
   return `u-${createHash('sha256').update(input).digest('hex').slice(0, 16)}`
 }
 
-/**
- * True when `child` resolves to a path strictly inside `parent` -- the same
+/** True when `child` resolves to a path strictly inside `parent` -- the same
  * shape `unpack-runner.ts`'s `checkZipEntryPath` applies to a zip entry
- * name, applied here to the slot and version-numbered directories
- * `finishInstall` is about to write into. This check is independent of
- * `readExtensionManifest`'s own `version` grammar (`extension-manifest.ts`):
- * that grammar already refuses a `version` shaped like a path, but this
- * function is the layer that holds even if a future caller, or a bug in
- * that grammar, ever let one through.
- */
+ * name, applied here to the slot/version directories `finishInstall` writes
+ * into, independent of (and a backstop for) `readExtensionManifest`'s own
+ * `version` grammar (`extension-manifest.ts`). */
 export function isStrictlyInsideDirectory (parent: string, child: string): boolean {
   const resolvedParent = resolve(parent)
   const resolvedChild = resolve(child)
@@ -94,15 +90,11 @@ function slotKeyPath (userDataPath: string, slot: string): string {
   return join(extensionsRoot(userDataPath), slot, 'key.pub')
 }
 
-/**
- * The per-slot RSA public key (SPKI DER, base64) that keeps a folder or
- * `.zip` install's extension id stable across every update into `slot` --
- * `resolveInstallKey`'s own doc says where this ranks against a manifest's
- * own `key` and a `.crx`'s developer key. Generated once and persisted at
- * `slotKeyPath`, then reused for every later install into the same slot;
- * the matching private key is never exported, since nothing here signs
- * with it.
- */
+/** The per-slot RSA public key (SPKI DER, base64) that keeps a folder or
+ * `.zip` install's id stable across an update (`resolveInstallKey`'s own
+ * doc ranks it against a manifest key and a `.crx`'s developer key).
+ * Generated once, persisted at `slotKeyPath`, reused after; the private
+ * key is never exported. */
 export function resolveSlotKey (userDataPath: string, slot: string): string {
   const keyPath = slotKeyPath(userDataPath, slot)
   try {
@@ -119,15 +111,12 @@ export function resolveSlotKey (userDataPath: string, slot: string): string {
 
 /**
  * The `key` (SPKI DER, base64) every loaded copy in `pending.slot` carries,
- * so Electron derives a stable id across an update instead of one that
- * embeds the version-numbered load path (README.md's Design notes, "Why
- * every installed copy's manifest carries a key"). A `.crx`'s verified
- * developer key (crx.ts's own doc) wins outright when there is one -- Chrome
- * itself ignores a packed CRX's manifest `key`, so a `.crx` whose manifest
- * claims a different `key` never gets to borrow another extension's id
- * this way. Only a folder or `.zip` install, which carries no signature at
- * all, falls back to the manifest's own `key` (Chrome keeps it there), else
- * the slot's generated key.
+ * so Electron derives a stable id across an update (README.md's Design
+ * notes, "Why every installed copy's manifest carries a key"). A `.crx`'s
+ * verified developer key wins outright when there is one -- Chrome itself
+ * ignores a packed CRX's manifest `key`, so a claimed different one never
+ * borrows another extension's id this way. A folder or `.zip` install,
+ * signing nothing, falls back to the manifest's own `key`, else the slot's.
  */
 function resolveInstallKey (ctx: InstallContext, pending: PendingInstall, manifestKey: string | undefined): string {
   if (pending.developerPublicKey !== undefined) return pending.developerPublicKey.toString('base64')
@@ -259,17 +248,9 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
     throw error
   }
 
-  let loaded: Awaited<ReturnType<Session['extensions']['loadExtension']>>
-  try {
-    loaded = await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
-  } catch (error) {
-    await restoreAsideOnFailure()
-    throw error
-  }
-
   const now = Date.now()
   const entry: InstalledExtension = {
-    id: loaded.id,
+    id,
     name: facts.name,
     version: facts.version,
     enabled: true,
@@ -279,6 +260,30 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
     updater: pending.updater,
     path: targetDir,
     stripped
+  }
+
+  // Handed to the dNR service BEFORE loadExtension below: writeRegistry
+  // (further down) does not run until after the load resolves, so its own
+  // 'extension-loaded' listener would otherwise find no registry entry (a
+  // fresh install) or the OLD one (an update) -- extensions-dnr.ts's own doc
+  // has the full account.
+  registerPendingDnrInstall(entry)
+
+  try {
+    const loaded = await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
+    if (loaded.id !== id) {
+      // Never observed: resolveInstallKey's ordering exists so Electron
+      // derives this same id from manifest.key. Logged, not thrown -- `id`
+      // is what was registered above and gets written to the registry below.
+      console.error(`[extensions] ${id}: Electron loaded it as ${loaded.id}, not the id generateId(key) computed for its manifest key`)
+    }
+  } catch (error) {
+    // Otherwise the pending entry above would still be sitting there next
+    // time this id loads -- restoreAsideOnFailure below may reload the
+    // PREVIOUS version under this very id, and it would get mistaken for it.
+    clearPendingDnrInstall(id)
+    await restoreAsideOnFailure()
+    throw error
   }
 
   const kept = registry.filter((existing) => !previousInSlot.includes(existing))
@@ -339,10 +344,8 @@ export async function installFromFile (ctx: InstallContext, filePath: string): P
 
 /** The lines `describeExtensionInstall(next, 'store').detail` has that
  * `describeExtensionInstall(previous, 'store').detail` does not -- reuses
- * the install prompt's own wording rather than inventing a second way to
- * describe a permission, so a held-back update's registered reason and a
- * store install's prompt never disagree about what a given permission
- * means. */
+ * the install prompt's own wording, so a held-back update's registered
+ * reason and a store install's prompt never disagree about a permission. */
 function describeWhatIsNew (previous: ExtensionManifestFacts, next: ExtensionManifestFacts): string {
   const before = new Set(describeExtensionInstall(previous, 'store').detail.split('\n'))
   const added = describeExtensionInstall(next, 'store').detail.split('\n').filter((line) => line !== '' && !before.has(line))
@@ -434,12 +437,11 @@ export async function installFromStoreCrx (
 }
 
 /**
- * The e2e-only entry point `test/e2e-extensions-store.test.ts` drives
- * (through `store-test-hook.ts`'s dev-only `globalThis` hook -- no
- * `chrome.webstorePrivate` page exists in that suite to trigger the real
- * flow from) and the seam that lets it point at a fixture server instead of
- * the real store: `storeCrxDownloadUrl` returns the real store's URL unless
- * store-download-seam.ts's env-driven override is compiled in and set.
+ * The e2e-only entry point `test/e2e-extensions-store.test.ts` drives, via
+ * `store-test-hook.ts`'s dev-only `globalThis` hook (no real
+ * `chrome.webstorePrivate` page in that suite): `storeCrxDownloadUrl`
+ * returns the real store's URL unless store-download-seam.ts's env-driven
+ * override is compiled in and set.
  */
 export async function installFromStore (ctx: InstallContext, expectedId: string): Promise<InstallOutcome> {
   const { bytes } = await downloadCrxBytes(storeCrxDownloadUrl(expectedId))
@@ -447,13 +449,10 @@ export async function installFromStore (ctx: InstallContext, expectedId: string)
 }
 
 /**
- * The "Update" button's own action: re-downloads exactly the update a held-
- * back check found (`entry.updater.pendingUpdate`, set by
- * `installFromStoreCrx` above) and installs it with no `approvedManifest`,
- * so nothing is held back a second time -- the person clicking this button
- * IS the consent -- and no `skipPrompt`, so the ordinary store install
- * prompt still shows, built from the update's own permissions, before it
- * lands.
+ * The "Update" button's own action: re-downloads exactly the update a
+ * held-back check found (`entry.updater.pendingUpdate`) and installs it
+ * with no `approvedManifest` (clicking IS the consent, nothing held back
+ * again) and no `skipPrompt` (the ordinary install prompt still shows).
  */
 export async function updateFromStore (ctx: InstallContext, id: string): Promise<InstallOutcome> {
   const entry = readRegistry(ctx.userDataPath).find((candidate) => candidate.id === id)

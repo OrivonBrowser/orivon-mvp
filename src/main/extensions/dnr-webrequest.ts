@@ -23,8 +23,8 @@ import {
 import type { DnrEngine } from './dnr/dnr-engine.js'
 import { mapElectronResourceType, type ElectronResourceType } from './dnr/resource-types.js'
 import type { DnrDecision, DnrModifyOps, DnrRequest } from './dnr/types.js'
-import { recordMatches } from './dnr-match-log.js'
-import { onDnrActiveChange } from './extensions-dnr.js'
+import { hasAnyBadgeCountModeEnabled, recordMatches } from './dnr-match-log.js'
+import { hasFeedbackCapableExtension, onDnrActiveChange } from './extensions-dnr.js'
 
 /**
  * Strictly before `RUN_LAST` (the verifier's partition stamp,
@@ -75,11 +75,21 @@ function safeFrame(details: { frame?: WebFrameMain | null }): WebFrameMain | nul
   }
 }
 
-/** The origin of the frame that made the request -- for a subresource or
- * sub_frame load, `frame` already IS the requesting document; for a
- * main_frame navigation, `frame.origin` still reads the PREVIOUS document's
- * origin at this point (the new one has not committed), which is what
- * Chrome's own `initiator` means for a navigation. `"null"` (Chrome's own
+/** The origin of the frame that made the request -- for a subresource load,
+ * `frame` already IS the requesting document. For a `main_frame`/`sub_frame`
+ * navigation, `frame.origin` still reads the PREVIOUS document's origin at
+ * this point (the new one has not committed): a best-effort approximation of
+ * Chrome's own `initiator` for a RENDERER-initiated navigation (e.g. a link
+ * click, where the previous document and the initiator are the same page),
+ * but not for a BROWSER-initiated one (typed in the address bar, a bookmark,
+ * forward/back), where Chrome reports no initiator at all and this still
+ * reads whatever the frame's previous document happened to be -- Electron's
+ * `webRequest` API exposes no field to tell the two apart (`OnBeforeRequestListenerDetails`
+ * has no `initiator`). Used for `initiatorDomains`/`domainType` matching
+ * regardless of this gap; the host-permission gate does not use it for a
+ * navigation at all (`vendor/firefox-dnr/UPSTREAM.md` patch 15), so the gap
+ * cannot widen what an extension may `redirect`/`modifyHeaders`, only affect
+ * `initiatorDomains`-conditioned rule matching. `"null"` (Chrome's own
  * serialization of an opaque origin) and `""` both mean "no usable
  * initiator" here. */
 export function initiatorOf(frame: WebFrameMain | null): string | undefined {
@@ -274,7 +284,14 @@ export function installDnrWebRequestHandlers(
             onTabNavigated(scoped.tabId)
           }
           const decision = engine.evaluate(scoped.dnrRequest)
-          recordMatches(scoped.tabId, decision.matchedRules)
+          // The match log only feeds declarativeNetRequest.getMatchedRules
+          // (Feedback-gated, per extension) and the badge-count display --
+          // pushing into it (and later pruning by TTL) when NO loaded
+          // extension holds Feedback and NONE is in badge-count mode would
+          // grow an array nothing ever reads, on every matched request.
+          if (hasFeedbackCapableExtension() || hasAnyBadgeCountModeEnabled()) {
+            recordMatches(scoped.tabId, decision.matchedRules)
+          }
           for (const info of decision.matchedRules) {
             onRuleMatched(scoped.tabId, info)
           }

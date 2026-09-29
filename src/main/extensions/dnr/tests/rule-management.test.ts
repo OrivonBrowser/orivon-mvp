@@ -164,6 +164,32 @@ describe('setStaticRulesets / updateEnabledRulesets', () => {
     expect(() => engine.setStaticRulesets('ext', rulesets)).toThrow(/MAX_NUMBER_OF_ENABLED_STATIC_RULESETS/)
   })
 
+  it('updateEnabledRulesets is atomic: a rejected call changes nothing, even internally', () => {
+    // Exactly at the limit already (50 enabled); 'extra' starts disabled.
+    const engine = createDnrEngine()
+    const enabled = Array.from({ length: 50 }, (_, i) => ({ id: `r${i}`, enabled: true, rules: [] }))
+    engine.setStaticRulesets('ext', [...enabled, { id: 'extra', enabled: false, rules: [] }])
+    expect(engine.getEnabledRulesets('ext')).toHaveLength(50)
+
+    // Enabling 'extra' would push the enabled count to 51 -- over the limit,
+    // so this must throw and leave EVERY ruleset's enabled flag exactly as
+    // it was, not just the engine's own applied ruleset set.
+    expect(() => engine.updateEnabledRulesets('ext', { enableRulesetIds: ['extra'] })).toThrow(
+      /MAX_NUMBER_OF_ENABLED_STATIC_RULESETS/
+    )
+
+    // A later, unrelated, legitimate toggle is the probe: if the rejected
+    // call above had already flipped 'extra'.enabled to true internally
+    // (only failing to call setEnabledStaticRulesets on the real rule
+    // manager), disabling one of the original 50 here would leave the
+    // enabled count back at 50 -- silently INCLUDING 'extra', which the
+    // caller was told never took effect.
+    engine.updateEnabledRulesets('ext', { disableRulesetIds: ['r0'] })
+    const nowEnabled = engine.getEnabledRulesets('ext')
+    expect(nowEnabled).toHaveLength(49)
+    expect(nowEnabled).not.toContain('extra')
+  })
+
   it('rejects a duplicate static ruleset id', () => {
     const engine = createDnrEngine()
     expect(() =>
