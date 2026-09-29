@@ -445,6 +445,38 @@ describe('a store with too many pages', () => {
   })
 })
 
+describe('removeRange()\'s count of how many pages it would empty', () => {
+  it('agrees with the all-pages NOT EXISTS scan it replaced, on a fixture mixing every case', () => {
+    const history = store()
+    // A: one visit, inside the range. B: several visits, all inside. C: visits on both sides of the range
+    // (must NOT count -- it survives). D: visits entirely outside the range. E and F: a visit exactly on
+    // each boundary (inclusive both ends). G: no visits recorded in this setup at all -- excluded by
+    // definition, since `record` always leaves at least one.
+    history.record('https://a.example/', 'A', 150)
+    history.record('https://b.example/', 'B', 120)
+    history.record('https://b.example/', 'B', 180)
+    history.record('https://c.example/', 'C', 50)
+    history.record('https://c.example/', 'C', 150)
+    history.record('https://d.example/', 'D', 900)
+    history.record('https://e.example/', 'E', 100) // from, inclusive
+    history.record('https://f.example/', 'F', 200) // to, inclusive
+    history.flush()
+
+    const db = (history as unknown as { db: DatabaseSync }).db
+    const oldQuery = db.prepare(`
+      SELECT COUNT(*) AS n FROM pages p
+      WHERE NOT EXISTS (SELECT 1 FROM visits v WHERE v.page_id = p.id AND (v.at < ? OR v.at > ?))
+    `)
+    const newQuery = (history as unknown as { statements: { removeRangeCountToDelete: StatementSync } }).statements.removeRangeCountToDelete
+
+    for (const [from, to] of [[100, 200], [0, 1000], [140, 160], [1, 1]] as const) {
+      const old = (oldQuery.get(from, to) as { n: number }).n
+      const fresh = (newQuery.get(from, to, from, to) as { n: number }).n
+      expect(fresh, `[${String(from)}, ${String(to)}]`).toBe(old)
+    }
+  })
+})
+
 describe('what clearing leaves in the file', () => {
   it('is none of the addresses that were cleared', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'orivon-history-file-'))

@@ -158,11 +158,13 @@ export class SqliteHistoryStore implements HistoryStore {
             last_visit = COALESCE((SELECT MAX(at) FROM visits WHERE page_id = pages.id), 0)
         `),
         removeRangeDeleteEmptyPages: this.db.prepare('DELETE FROM pages WHERE visit_count = 0'),
-        // A page ends up with none of its visits left once [from, to] is removed exactly when every visit
-        // it has now falls inside that range -- there is no visit of its outside it.
+        // A page ends up with none of its visits left once [from, to] is removed exactly when it has a
+        // visit inside that range and none outside it. Starting from the pages with a visit in range (the
+        // visits_at index makes that narrow, however many pages exist in total) rather than scanning every
+        // page is what makes this cheap for a range that only ever touches a small slice of a full history.
         removeRangeCountToDelete: this.db.prepare(`
-          SELECT COUNT(*) AS n FROM pages p
-          WHERE NOT EXISTS (SELECT 1 FROM visits v WHERE v.page_id = p.id AND (v.at < ? OR v.at > ?))
+          SELECT COUNT(*) AS n FROM (SELECT DISTINCT page_id FROM visits WHERE at >= ? AND at <= ?) AS v
+          WHERE NOT EXISTS (SELECT 1 FROM visits v2 WHERE v2.page_id = v.page_id AND (v2.at < ? OR v2.at > ?))
         `),
         searchDensityProbe: this.db.prepare(
           `SELECT COUNT(*) AS n FROM (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ? LIMIT ${String(this.limits.searchDensityLimit)})`
@@ -412,7 +414,7 @@ export class SqliteHistoryStore implements HistoryStore {
 
   removeRange (from: number, to: number): void {
     this.drain()
-    const toDelete = (this.statements.removeRangeCountToDelete.get(from, to) as { n: number }).n
+    const toDelete = (this.statements.removeRangeCountToDelete.get(from, to, from, to) as { n: number }).n
     const total = (this.statements.count.get() as { n: number }).n
     this.deleteRows(toDelete, total - toDelete, () => {
       this.statements.removeRangeDeleteVisits.run(from, to)
