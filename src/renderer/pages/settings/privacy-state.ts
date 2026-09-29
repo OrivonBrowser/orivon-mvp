@@ -13,6 +13,7 @@
 import type { HistoryStatus } from '../../../main/history/history-service.js'
 import type { ClearRequest, ClearResult } from '../../../main/privacy/clear-data.js'
 import type { OrivonInternal } from '../shared/bridge.js'
+import { coalesce } from '../shared/coalesce.js'
 
 export interface PrivacyStatus {
   readonly history: HistoryStatus
@@ -30,8 +31,14 @@ export type ClearOutcome =
 export class PrivacyState {
   status: PrivacyStatus | null = null
   lastClear: ClearOutcome | null = null
+  private readonly reload: () => void
 
-  constructor (private readonly bridge: OrivonInternal, private readonly changed: () => void) {}
+  constructor (private readonly bridge: OrivonInternal, private readonly changed: () => void) {
+    // A history import, or several visits landing close together, can each
+    // fire `privacy.changed` -- coalesced so it costs one reload, not one
+    // per change (AppsState's own `apps.changed` does the same).
+    this.reload = coalesce(() => { void this.load().then(() => { this.changed() }) })
+  }
 
   async load (): Promise<void> {
     this.status = await this.bridge.request('privacy', { type: 'status' }) as PrivacyStatus
@@ -40,7 +47,7 @@ export class PrivacyState {
   /** True once this was for a `privacy.changed` push. */
   handle (topic: string): boolean {
     if (topic !== 'privacy.changed') return false
-    void this.load().then(() => { this.changed() })
+    this.reload()
     return true
   }
 

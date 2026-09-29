@@ -42,15 +42,16 @@ describe('SettingsState dispatch', () => {
   })
 
   it('routes privacy.changed to PrivacyState and redraws', async () => {
+    vi.useFakeTimers()
     const { state, fire } = await loadedState()
     let notified = 0
     state.onChange(() => { notified += 1 })
 
     fire('privacy.changed')
-    await Promise.resolve()
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(1000)
 
     expect(notified).toBe(1)
+    vi.useRealTimers()
   })
 
   it('routes usage.changed to UsageState and redraws', async () => {
@@ -78,6 +79,7 @@ describe('SettingsState dispatch', () => {
   })
 
   it('reloads the profiles list on profiles.changed', async () => {
+    vi.useFakeTimers()
     let profileCalls = 0
     let handler: ((topic: string, payload: unknown) => void) | undefined
     const names = ['Default', 'Renamed']
@@ -90,10 +92,31 @@ describe('SettingsState dispatch', () => {
     expect(state.profiles?.profiles[0]?.name).toBe('Default')
 
     handler?.('profiles.changed', undefined)
-    await Promise.resolve()
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(1000)
 
     expect(state.profiles?.profiles[0]?.name).toBe('Renamed')
+    vi.useRealTimers()
+  })
+
+  it('coalesces a burst of profiles.changed into one reload', async () => {
+    vi.useFakeTimers()
+    let profileCalls = 0
+    let handler: ((topic: string, payload: unknown) => void) | undefined
+    const bridge = {
+      request: async (domain: string) => domain === 'profiles' ? { profiles: [], isPrivate: false, call: profileCalls++ } : REPLIES[domain],
+      onEvent: (listener: (topic: string, payload: unknown) => void) => { handler = listener; return () => {} }
+    } as unknown as OrivonInternal
+    const state = new SettingsState(bridge)
+    await state.load()
+    const before = profileCalls
+
+    handler?.('profiles.changed', undefined)
+    handler?.('profiles.changed', undefined)
+    handler?.('profiles.changed', undefined)
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(profileCalls - before).toBe(1)
+    vi.useRealTimers()
   })
 
   it('still handles settings.changed exactly as before', async () => {

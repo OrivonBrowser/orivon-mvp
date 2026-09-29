@@ -22,8 +22,15 @@ let server: Server
 let origin = ''
 
 beforeAll(async () => {
-  server = createServer((_request, response) => {
+  server = createServer((request, response) => {
     response.setHeader('content-type', 'text/html')
+    if (request.url === '/retitle') {
+      // Never navigates again after the one visit: every subsequent history
+      // write is `titled()`, never `visit()` -- the case this page exists to
+      // stress, since only that one must never publish `privacy.changed`.
+      response.end('<!doctype html><title>Retitling fixture</title><script>let n=0;setInterval(()=>{document.title="Retitled "+(n++)},200)</script>')
+      return
+    }
     response.end('<!doctype html><title>Live update fixture</title><p>hello</p>')
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
@@ -131,6 +138,33 @@ it('shows a page visited in another tab on an already-open History page', async 
     // history.changed, well inside the coalescing window (about a second).
     expect(await waitFor(async () => (await page.locator('.entry').count()) === 1)).toBe(true)
     expect(await page.locator('.entry .title').first().textContent()).toBe('Live update fixture')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('arms, then confirms, Clear data while a tab is retitling itself every 200ms', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { newTab: () => void } }).orivonShell.newTab() })
+    await clickAddressBarRetrying(chrome, `${origin}/retitle`)
+    expect((await waitForTab(chrome, { address: `${origin}/retitle` })).ok).toBe(true)
+
+    const page = await openInternal(app, chrome, 'settings', '/privacy')
+    await page.waitForSelector('#row-clear-data')
+    const block = page.locator('#row-clear-data')
+    const button = block.locator('button', { hasText: 'Clear data' })
+
+    // Arms, then waits out most of the 4-second confirm window while the
+    // other tab keeps retitling -- every one of those is a `titled()` call,
+    // which must never publish `privacy.changed` and redraw this section
+    // out from under the still-armed button.
+    await button.click()
+    await page.waitForTimeout(3000)
+    await block.locator('button', { hasText: 'Click again to clear' }).click()
+
+    expect(await waitFor(async () => (await block.locator('[role=status]').textContent()) === 'Cleared.')).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

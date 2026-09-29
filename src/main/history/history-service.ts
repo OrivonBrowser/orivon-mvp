@@ -15,8 +15,16 @@ export interface HistoryStatus {
   readonly count: number
 }
 
+/**
+ * What changed, for a listener that does not care about the entries
+ * themselves, only about `status()`'s own `count` -- Settings' Privacy
+ * section shows a count, never a title. `'titled'` is the one call that never
+ * changes it (an existing row's title, in place); everything else can.
+ */
+export type HistoryChange = 'titled' | 'entries'
+
 export class HistoryService {
-  private readonly listeners = new Set<() => void>()
+  private readonly listeners = new Set<(change: HistoryChange) => void>()
 
   constructor (
     private readonly store: HistoryStore,
@@ -38,13 +46,13 @@ export class HistoryService {
   visit (url: string, title: string): void {
     if (!this.remembering) return
     this.store.record(url, title, this.now())
-    this.notify()
+    this.notify('entries')
   }
 
   titled (url: string, title: string): void {
     if (!this.remembering) return
     this.store.setTitle(url, title)
-    this.notify()
+    this.notify('titled')
   }
 
   list (query?: HistoryQuery): HistoryEntry[] {
@@ -53,17 +61,17 @@ export class HistoryService {
 
   remove (id: number): void {
     this.store.remove(id)
-    this.notify()
+    this.notify('entries')
   }
 
   removeRange (from: number, to: number): void {
     this.store.removeRange(from, to)
-    this.notify()
+    this.notify('entries')
   }
 
   clear (): void {
     this.store.clear()
-    this.notify()
+    this.notify('entries')
   }
 
   /** Forgets what is older than the person chose to keep. Run at start and when the choice changes. */
@@ -73,20 +81,20 @@ export class HistoryService {
     // Run at start, where a failure would end the browser on every start and leave no way into Settings to clear it.
     try {
       this.store.removeRange(0, this.now() - Number(days) * DAY_MS)
-      this.notify()
+      this.notify('entries')
     } catch (error) {
       console.error('[orivon] history could not be pruned:', error)
     }
   }
 
   /** The History page, and Settings' Privacy section, both read `status()`/`list()` again on this. Returns the unsubscribe. */
-  onChange (listener: () => void): () => void {
+  onChange (listener: (change: HistoryChange) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
 
-  private notify (): void {
-    for (const listener of this.listeners) listener()
+  private notify (change: HistoryChange): void {
+    for (const listener of this.listeners) listener(change)
   }
 
   flush (): void {
