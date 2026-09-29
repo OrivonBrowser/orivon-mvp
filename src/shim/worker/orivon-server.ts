@@ -197,6 +197,10 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
     const sync = request.sync === true
     const transfer: Transferable[] = []
     let reply: ServerMessage
+    // What a SUCCESSFUL reply's `value` encodes, kept so a refused reply can release it --
+    // encode() has already run by then (describe() registers a handle the moment it is seen,
+    // never when the Worker actually receives its number), so this is the only reference left.
+    let carried: unknown
     try {
       const { fn, self } = target(request)
       if (typeof fn !== 'function') throw new TypeError(`orivon has no method ${'path' in request ? request.path.join('.') : request.method}`)
@@ -205,6 +209,7 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
         release(value)
         throw notSynchronous()
       }
+      carried = value
       reply = { id: request.id, ok: true, value: encode(value, transfer) }
     } catch (error) {
       reply = { id: request.id, ok: false, error: wireErrorOf(error) }
@@ -215,12 +220,17 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
       } catch {
         // The writer refused this reply (too large for the length header, most often): a fixed,
         // short fallback replaces it -- never one built from the refusal's own error, which may
-        // be exactly as large as what was refused. Guarded again: ReplyWriter exposes no way to
-        // release a waiting Worker without writing a reply, so if even this cannot be written,
-        // the Worker stays blocked in Atomics.wait and this is the last thing that can be done.
+        // be exactly as large as what was refused. If the refused reply was a SUCCESSFUL one,
+        // release what it carried the same way notSynchronous's own refusal does: the Worker
+        // never receives the handle numbers this reply's encode() already registered, so
+        // nothing else will ever close them.
+        if (reply.ok) release(carried)
         try {
           replies?.send(encodeSync({ id: request.id, ok: false, error: FALLBACK_REPLY_ERROR }))
         } catch (error) {
+          // ReplyWriter exposes no way to release a waiting Worker without writing it a reply,
+          // so if even this cannot be written, the Worker stays blocked in Atomics.wait -- this
+          // is the last thing that can be done.
           console.error('[orivon] a synchronous reply could not be delivered to its Worker:', error)
         }
       }

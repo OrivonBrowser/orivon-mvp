@@ -153,4 +153,43 @@ describe('serveOrivon\'s synchronous fallback reply, when the writer refuses wha
     expect(rejections).toEqual([])
     expect(errorLog).toHaveBeenCalled()
   })
+
+  it('releases a handle a refused SUCCESSFUL reply would have carried, leaving no entry in the handle table', async () => {
+    let closeCalls = 0
+    let resolveClosed: () => void = () => {}
+    const closed = new Promise<void>((resolve) => { resolveClosed = resolve })
+    // Matches isHandle: an `id` string and a `close` method. describe() registers it (and
+    // wires handles.delete(id) to run once `closed` resolves) the moment encode() sees it,
+    // before the reply carrying it is ever attempted on the wire.
+    const handle = { id: 'h1', close: async (): Promise<void> => { closeCalls++; resolveClosed() }, closed }
+    const { port1, port2 } = new MessageChannel()
+    const server = serveOrivon(port1 as unknown as globalThis.MessagePort, { test: { handle: () => handle } })
+    vi.spyOn(ReplyWriter.prototype, 'send').mockImplementation(() => { throw new Error('refused') })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const p2 = port2 as unknown as globalThis.MessagePort
+    const received: unknown[] = []
+    p2.onmessage = (event: MessageEvent) => { received.push(event.data) }
+
+    try {
+      p2.postMessage({ syncBuffer: createChannelBuffer() })
+      p2.postMessage({ id: 1, path: ['test', 'handle'], args: [], sync: true })
+      await settle()
+
+      expect(closeCalls).toBe(1)
+
+      // The id counter starts at 1 for a fresh serveOrivon instance, and this was the only
+      // handle it ever described: an ordinary (async) call against that same id now finds it
+      // gone from the table, the same way it would for a handle the Worker itself closed.
+      p2.postMessage({ id: 2, handle: 1, method: 'whatever', args: [] })
+      await settle()
+    } finally {
+      port1.close()
+      port2.close()
+      await server.dispose()
+    }
+
+    expect(received).toContainEqual(expect.objectContaining({
+      id: 2, ok: false, error: expect.objectContaining({ message: 'handle is closed' })
+    }))
+  })
 })
