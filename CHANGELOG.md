@@ -18,10 +18,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   strip a line marks where the tab will land. On Linux X11 a middle click on the strip's empty end opens a tab.
 - **Settings and History have a new look**, shared with Profiles and Private: Settings' sections are grouped
   in a sidebar with icons and its search; History marks each site and heads each day with a rule.
-- **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
-  `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
-  popups and options pages work on every website and on apps holding permissions, whose `window.orivon` refuses extension code.
-  popups and options pages work on every website; blocking rules and apps holding permissions come next.
+- **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` or a folder; `orivon://extensions` says who
+  updates each one. Content scripts, workers, toolbar buttons, popups and options pages work on every website and on
+  apps holding permissions, whose `window.orivon` refuses extension code; blocking rules come next.
 - **`worker_threads` and `vm` import**: `worker_threads` answers as Node's main thread does, and
   `vm` runs code in the page's own context; starting a thread, or a context of its own, refuses
   by name.
