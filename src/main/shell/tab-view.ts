@@ -3,7 +3,7 @@
 // `## Design notes`, for why). Pure with respect to TabManager: neither
 // function here reads or writes any tab-collection state.
 import { WebContentsView } from 'electron'
-import type { WebContents, WebPreferences } from 'electron'
+import type { WebPreferences } from 'electron'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { shouldClearFavicon } from '../browsing/favicon.js'
@@ -13,8 +13,11 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import { showContextMenu } from './context-menu.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
+import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
+
+export { popupTargetIsApp } from './popup-opener.js'
 
 /** tabs.ts's own tab-count ceiling: an unbounded window.open() flood (an
  * ad/popunder pattern, not hypothetical) would otherwise mint unlimited
@@ -109,12 +112,6 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
   const origin = originFromUrl(target)
   if (origin === null) return undefined
   return broker.app.isRegisteredSync(origin) ? [APP_TAB_FLAG] : undefined
-}
-
-/** `./popups.ts`'s `routePopup`'s own `isApp`: unlike `partitionForTarget` above, a held grant DOES count here -- popups.ts's README.md Design notes. */
-export function popupTargetIsApp (target: string, broker: Broker | undefined): boolean {
-  const origin = originFromUrl(target)
-  return origin !== null && (isOriginServedFromCacheSync(origin) || broker?.app.hasGrantsSync(origin) === true)
 }
 
 /** Whether `target` needs the app-tab flag `view` does not already carry, or vice
@@ -216,14 +213,6 @@ function reportAppFailures (view: WebContentsView): void {
   })
 }
 
-/** A popup whose opener still exists stays in its opener's session on the
- * open web: moving it to the default session would sever `window.opener`,
- * which is what the page opened it for. A move INTO an isolated app still
- * happens, since that is the only session serving the app's pinned bundle. */
-function keepsOpenerSession (wc: WebContents, swap: PartitionSwap): boolean {
-  return swap.to === undefined && wc.opener !== null && wc.opener !== undefined
-}
-
 /** Every event a tab's WebContentsView needs wired -- shared by createTab(),
  * repartitionView() and an adopted popup (Rule 3): each gets EXACTLY the
  * same favicon/title/loading/crash handling and the same popup handling
@@ -270,14 +259,19 @@ export function wireView (id: string, record: TabRecord): void {
     }
     if (!record.isDashboardTab) {
       const swap = partitionChanged(navigatedUrl, record.partition)
-      if (swap !== undefined && !keepsOpenerSession(wc, swap)) {
+      const cutOpener = openerCutNeeded(wc, navigatedUrl, record.host.broker)
+      if (swap !== undefined && (cutOpener || !keepsOpenerSession(wc, swap))) {
         repartitionView(id, record, navigatedUrl, swap.to)
         return
       }
+      // The partition can stay `undefined` on both sides while the opener still must be cut (README.md's Design notes, `openerCutNeeded`).
+      if (swap === undefined && cutOpener) {
+        repartitionView(id, record, navigatedUrl, partitionForTarget(navigatedUrl))
+        return
+      }
       // No partition swap does not mean no rebuild is needed: the app-tab
-      // flag follows a different predicate (isRegisteredSync) than the
-      // partition does (cache-serving), and can flip while the partition
-      // -- and so `swap` -- stays undefined.
+      // flag follows isRegisteredSync, not cache-serving, and can flip
+      // while the partition -- and so `swap` -- stays undefined.
       if (swap === undefined && appTabFlagChanged(navigatedUrl, view, record.host.broker)) {
         repartitionView(id, record, navigatedUrl, record.partition)
         return
@@ -291,9 +285,15 @@ export function wireView (id: string, record: TabRecord): void {
       // can only be read here, before a later navigation overwrites it).
       // Also what lets two granted apps navigated straight into one
       // another (ADR-0044, no swap between them) each retire under their
-      // own, current origin rather than the first one this view ever had.
+      // own, current origin rather than the first one this view ever had --
+      // and, for the same reason, why developer tools close HERE too
+      // (README.md's Design notes), not only in retireView().
       if (appTabViews.has(view)) {
         const origin = originFromUrl(navigatedUrl)
+        const previousOrigin = appTabOrigins.get(view) ?? null
+        if (origin !== null && origin !== previousOrigin && popupTargetIsApp(navigatedUrl, record.host.broker)) {
+          record.host.devtools?.closeFor(wc)
+        }
         if (origin !== null) appTabOrigins.set(view, origin)
       }
     }

@@ -43,9 +43,9 @@ export function routePopup (
   if (seversOpener(details.features) || BUILTIN_ADDRESSES.servedUrl(details.url) !== undefined) return 'new-tab'
   // A granted or cache-served origin popped open from a DIFFERENT origin
   // keeps no opener link, whatever session the two happen to share --
-  // ADR-0044 stopped a grant alone from putting an app in its own
-  // partition, so `targetPartition === opener.partition` below can no
-  // longer be trusted to catch this case (both are commonly undefined at
+  // a grant alone puts no app in its own partition (ADR-0044), so
+  // `targetPartition === opener.partition` below cannot be trusted to
+  // catch this case (both are commonly undefined at
   // once: the app's own default-session partition and an ordinary site's).
   // A same-origin popup (an app opening one to itself) is unaffected.
   const targetOrigin = originFromUrl(details.url)

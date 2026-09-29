@@ -30,7 +30,7 @@ vi.mock('electron', () => ({
 // is initialised.
 vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' }))
 
-const { wireView } = await import('../tab-view.js')
+const { wireView, makeTabView } = await import('../tab-view.js')
 type Record_ = Parameters<typeof wireView>[1]
 type Host = Record_['host']
 
@@ -271,6 +271,69 @@ describe('wireView -- a popup keeps its session while its opener holds it', () =
   })
 })
 
+describe('wireView -- a popup\'s opener is cut once it navigates itself into a DIFFERENT granted app', () => {
+  // routePopup's own isApp check (popups.ts) only ever runs at window.open()
+  // time, against the URL window.open() was given. A same-origin popup that
+  // later moves itself (w.location = ...) into a granted app never goes
+  // through routePopup again, so did-navigate is where this has to be
+  // caught -- using the very same isApp reading (popupTargetIsApp).
+  it('rebuilds the view, dropping the stale opener, when a same-origin popup navigates itself into a granted, network-served app', () => {
+    const R = 'https://r.example'
+    const G = 'https://g.example'
+    const host = fakeHost({
+      broker: { app: { isRegisteredSync: (o: string) => o === R || o === G, hasGrantsSync: (o: string) => o === G } } as unknown as Broker
+    })
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${R}/`)
+    const wc = view.webContents as unknown as FakeContents
+    wc.opener = { url: `${R}/` }
+    const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
+    wireView('tab-1', r)
+
+    wc.emit('did-navigate', {}, `${G}/`)
+
+    // G is granted but not cache-served, so its partition is the same
+    // `undefined` R's was -- the fix must still rebuild the view, since a
+    // freshly built WebContents is the only thing Electron gives with no
+    // `.opener` at all.
+    expect(r.partition).toBeUndefined()
+    expect(r.view).not.toBe(view)
+  })
+
+  it('moves the view out of a cache-served opener\'s own partition when it navigates itself into a different granted app, opener or not', () => {
+    const X = APP // cache-served, per this file's own module mock
+    const G = 'https://g.example'
+    const host = fakeHost({
+      broker: { app: { isRegisteredSync: (o: string) => o === X || o === G, hasGrantsSync: (o: string) => o === G } } as unknown as Broker
+    })
+    const view = makeTabView('/preload/app.js', APP_PARTITION, ['--orivon-app-tab'], `${X}/`)
+    const wc = view.webContents as unknown as FakeContents
+    wc.opener = { url: `${X}/` }
+    const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: APP_PARTITION, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
+    wireView('tab-1', r)
+
+    wc.emit('did-navigate', {}, `${G}/`)
+
+    expect(r.partition).toBeUndefined()
+  })
+
+  it('still keeps the opener session for a popup that navigates itself onto another registered site that holds no grant and is not cache-served', () => {
+    const R = 'https://r.example'
+    const R2 = 'https://r2.example'
+    const host = fakeHost({
+      broker: { app: { isRegisteredSync: (o: string) => o === R || o === R2, hasGrantsSync: () => false } } as unknown as Broker
+    })
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${R}/`)
+    const wc = view.webContents as unknown as FakeContents
+    wc.opener = { url: `${R}/` }
+    const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
+    wireView('tab-1', r)
+
+    wc.emit('did-navigate', {}, `${R2}/`)
+
+    expect(r.view).toBe(view)
+  })
+})
+
 describe('wireView -- context menu', () => {
   it('builds a menu for a right-click in the tab', () => {
     const wc = fakeContents()
@@ -342,5 +405,48 @@ describe('wireView -- a tab that changes host', () => {
     wc.emit('will-prevent-unload', { preventDefault: vi.fn() })
 
     expect(showMessageBoxSync.mock.calls[0]?.[0]).toBe(newWindow)
+  })
+})
+
+describe('wireView -- developer tools do not survive a navigation between two granted apps', () => {
+  // Both A and B hold grants and are served from the network (neither is
+  // in the cache-served mock above), so a navigation between them swaps no
+  // partition and flips no app-tab flag: the SAME view and webContents stay
+  // in place. Without closing devtools here, whatever was confirmed for A
+  // keeps working, unprompted, once the page is actually B's.
+  it('closes an open console when an in-place navigation changes the origin between two granted, network-served apps', () => {
+    const A = 'https://app-a.example'
+    const B = 'https://app-b.example'
+    const closeFor = vi.fn()
+    const host = fakeHost({
+      broker: { app: { isRegisteredSync: () => true, hasGrantsSync: (origin: string) => origin === A || origin === B } } as unknown as Broker,
+      devtools: { allowed: vi.fn(), inspect: vi.fn(), closeFor } as unknown as Host['devtools']
+    })
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${A}/`)
+    const wc = view.webContents as unknown as FakeContents
+    const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
+    wireView('tab-1', r)
+
+    wc.emit('did-navigate', {}, `${B}/`)
+
+    expect(closeFor).toHaveBeenCalledWith(wc)
+    expect(r.view).toBe(view) // neither a partition swap nor a flag change rebuilt the view
+  })
+
+  it('leaves the console alone across an in-place navigation that stays on the same granted app\'s origin', () => {
+    const A = 'https://app-a.example'
+    const closeFor = vi.fn()
+    const host = fakeHost({
+      broker: { app: { isRegisteredSync: () => true, hasGrantsSync: (origin: string) => origin === A } } as unknown as Broker,
+      devtools: { allowed: vi.fn(), inspect: vi.fn(), closeFor } as unknown as Host['devtools']
+    })
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${A}/page-one`)
+    const wc = view.webContents as unknown as FakeContents
+    const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
+    wireView('tab-1', r)
+
+    wc.emit('did-navigate', {}, `${A}/page-two`)
+
+    expect(closeFor).not.toHaveBeenCalled()
   })
 })

@@ -357,7 +357,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       siteInfoPanel.close()
       permissionsPanel.toggle(siteInfoMemory.anchor ?? { x: 0, y: chromeHeight(), width: 0, height: 0 }, siteInfoMemory.origin)
     },
-    // N2's disclosure's own "Manage" link (docs/planning/extensions-
+    // The extensions disclosure's own "Manage" link (docs/planning/extensions-
     // exploration.md): the same close-then-navigate shape as the row
     // above, but to a real page (`tabs.openInternal`, `../pages/pages-
     // domain.ts`'s own mechanism for one internal page linking to another)
