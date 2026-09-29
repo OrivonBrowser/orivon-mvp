@@ -6,7 +6,7 @@
 - License: GPL-3.0 (see `LICENSE.md`, `LICENSE-GPL`, `LICENSE-PATRON.md`), combinable with
   Orivon's AGPL-3.0-only under GPLv3 §13
 - Vendored from: `packages/electron-chrome-extensions/src/` (no `spec/`, no build output)
-- Modified: by the Orivon project, as the patches below list; last modified 2026-09-29
+- Modified: by the Orivon project, as the patches below list; last modified 2026-09-30
 
 ## Patches
 
@@ -557,13 +557,13 @@
     measured: `'a*'.repeat(8) + 'b'` against a 40-character near-miss string already took over a
     second with the old regex; the new matcher (`matchesGlob`: split on `*`, `indexOf` each
     literal piece in order, anchored ends) resolves a 5000-character version in under a
-    millisecond. `MAX_SANDBOX_PAGES` (200) and `MAX_STARS_PER_PATTERN` (8) additionally cap the
-    work any one manifest can demand, on top of the matcher's own linear bound. Also normalises
-    both sides the way Chromium does: a manifest `sandbox.pages` entry's own leading `/` is
-    stripped (Chrome accepts `"/sandbox.html"` and `"sandbox.html"` as the same declaration),
-    and the URL's pathname is percent-decoded (`%2E` and `.` name the same file) before
-    comparison; a pathname that fails to decode matches nothing, rather than being compared
-    still encoded.
+    millisecond, however many stars the pattern has -- no cap on the star count is needed, since
+    the matcher's own bound already covers it (patch 41 drops the separate star cap). Also
+    normalises both sides the way Chromium does: a manifest `sandbox.pages` entry's own leading
+    `/` is stripped (Chrome accepts `"/sandbox.html"` and `"sandbox.html"` as the same
+    declaration), and the URL's pathname is percent-decoded (`%2E` and `.` name the same file)
+    before comparison; a pathname that fails to decode matches nothing, rather than being
+    compared still encoded.
 40. **A manifest `sandbox.pages` document is now actually served with Chrome's own CSP
     `sandbox` directive, giving it a genuinely opaque origin -- the real fix behind patch 37's
     own opaque-origin checks.** New `src/main/extensions/extension-sandbox-csp.ts`, registered
@@ -587,6 +587,30 @@
     cross-origin frame`, closing the bypass; and `chrome.storage`/`chrome.runtime.connect`
     (Electron's own native bindings, unaffected by patch 37's JS-injection-only fix) are also
     unusable there now.
+41. **`isSandboxPageUrl` strips ALL leading `/` and `\`, not just the first, and matches
+    case-insensitively on win32/darwin; the page-count and star caps are gone.** Real Chromium's
+    `ExtensionURLToRelativeFilePath` strips every leading `/`/`\` before resolving the on-disk
+    file, so `chrome-extension://<id>//sandbox.html` (a doubled leading slash) still serves the
+    real `sandbox.html` -- measured directly, on Linux, through a framed iframe whose `src` never
+    goes through `extension-url-policy.ts`'s own tab-open gate. Stripping only the first
+    separator (patch 39) left the compared pathname with one still attached, silently missing
+    every such request: no CSP, no router refusal, `chrome.*` injected in full. A literal
+    backslash is measured to become a second forward slash under Chromium's own URL parsing for
+    this scheme, so it resolves to the identical case; a `"/./"` segment is already collapsed by
+    the URL parser itself (WHATWG dot-segment removal) before this function ever sees it, so it
+    was never a distinct case. On win32/darwin, whose filesystems resolve "SANDBOX.html" and
+    "sandbox.html" to the same file, the match is now case-insensitive too (`platform` param,
+    default `process.platform`); Linux stays case-sensitive, matching what its filesystem
+    actually serves (measured: a differently-cased request 404s there instead of reaching the
+    real file). Both of patch 39's own caps are removed rather than fixed: they failed open (the
+    201st declared page, or a pattern past 8 stars, was silently treated as NOT a sandbox page
+    at all, the opposite of refusing) and the star cap was never needed in the first place (the
+    matcher is linear regardless of star count). The page-count limit moves to
+    `src/broker/policy/extension-manifest.ts`'s own `MAX_SANDBOX_PAGES`, which refuses to load a
+    manifest over the cap entirely, so `isSandboxPageUrl` itself never needs to skip anything a
+    real session's manifest declares. A residual, not fixed by this patch: `chrome.tabs.query`
+    still answers real data for the doubled-leading-slash URL despite every check in this fork
+    correctly refusing it (`docs/open-questions.md` A300) -- filed open, not asserted away.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

@@ -2,4 +2,18 @@
 <title>framer</title>
 <body>
 <iframe id="f" src="sandbox.html"></iframe>
+<!-- UPSTREAM.md patch 41: a STATIC iframe src, present at the document's
+     own initial parse (never set later by a script, which measured
+     differently -- see the header on
+     test/e2e-extensions-sandbox-page.test.ts's own seedSandboxPage for why
+     that mattered): these measure what Electron's chrome-extension:
+     protocol handler itself actually serves for each URL variant, with no
+     tab-open policy layer able to confound the result, the same as the
+     canonical #f iframe above. __EXTENSION_ID__ is substituted for the
+     real generated id at seed time (the id is not known until then);
+     the fixture's own tracked copy keeps the literal placeholder. -->
+<iframe id="doubled-slash" name="doubled-slash" src="chrome-extension://__EXTENSION_ID__//sandbox.html"></iframe>
+<iframe id="backslash" name="backslash" src="chrome-extension://__EXTENSION_ID__/\sandbox.html"></iframe>
+<iframe id="dot-segment" name="dot-segment" src="chrome-extension://__EXTENSION_ID__/./sandbox.html"></iframe>
+<iframe id="cased" name="cased" src="chrome-extension://__EXTENSION_ID__/SANDBOX.html"></iframe>
 <script src="framer.js"></script>

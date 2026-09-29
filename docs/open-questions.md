@@ -1581,3 +1581,16 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** record the invocation from `chrome.commands` and `contextMenus.onClicked` too (rec.); leave it.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A300: `chrome.tabs.query` still answers real data for a `chrome-extension://<id>//sandbox.html` request **[AI-REC]**
+
+- **Question:** UPSTREAM.md patch 41 fixed `isSandboxPageUrl`'s leading-slash normalisation (`//sandbox.html`
+  now gets the sandbox CSP, an opaque origin, and a provable refusal from this fork's own preload and router),
+  yet `chrome.tabs.query({})` still answers real tab data there, confirmed independent of Playwright via
+  `WebFrameMain.executeJavaScript`. Reported, not hidden, in `test/e2e-extensions-sandbox-page.test.ts`.
+- **Why it matters:** a sandboxed page reachable by a non-canonical URL spelling can still read live tab data.
+- **Options:** find and patch the real source (suspected: Electron's own native extensions bindings, outside
+  this fork); redirect every non-canonical `chrome-extension://` request to its canonical form before anything
+  sees it and confirm that closes it; leave it, scoped.
+- **Who decides:** AI, the recommendation (investigate the native binding) stands unless the owner objects
+- **Blocks:** nothing yet; blocks full closure of A299

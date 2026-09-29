@@ -9,6 +9,7 @@ document.documentElement.dataset.hasTabs = String(typeof chrome !== 'undefined' 
 // window.origin is the one that actually reflects the opaque origin.
 document.documentElement.dataset.origin = location.origin
 document.documentElement.dataset.windowOrigin = String(window.origin)
+document.documentElement.dataset.href = location.href
 
 function describeErr (e) {
   return String(e && e.message ? e.message : e)

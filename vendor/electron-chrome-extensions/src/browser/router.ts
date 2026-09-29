@@ -90,15 +90,6 @@ async function waitForRegisteredExtension (
   return await promise
 }
 
-// Orivon patch (UPSTREAM.md patch 39): isSandboxPageUrl runs synchronously
-// on the main thread for every page load and every crx-msg -- these two
-// caps bound the work a single (however malformed) manifest can demand,
-// regardless of the linear matcher below already being immune to
-// backtracking. Chrome itself has no declared limit on either; these exist
-// only as a floor under this process's own responsiveness.
-const MAX_SANDBOX_PAGES = 200
-const MAX_STARS_PER_PATTERN = 8
-
 /**
  * Linear-time match of one Chrome-style glob (`*` = any run of characters,
  * everything else literal -- the only operator `sandbox.pages` grammar
@@ -138,23 +129,45 @@ function matchesGlob (pattern: string, text: string): boolean {
 }
 
 /**
- * Orivon patch (UPSTREAM.md patch 37, normalisation added by patch 39):
- * true if `url`'s own path matches one of `pages` (an extension's manifest
- * `sandbox.pages`). Exported through `orivon:crx-extensions-router`
- * (electron-chrome-extensions-lib.d.ts) so extension-host.ts's own
- * preload-time query (the vendored preload decides whether to inject any
- * chrome.* at all) answers the identical question onExtensionMessage below
- * asks on every message -- one matcher, not two that could drift apart.
- * Normalises both sides the way Chromium does before comparing a
- * `sandbox.pages` entry against a real request: a manifest entry's own
- * leading `/` is stripped (Chrome accepts `"/sandbox.html"` and
- * `"sandbox.html"` as the same declaration), and the URL's pathname is
- * percent-decoded (`%2E` and `.` name the same file) as well as having its
- * own leading `/` stripped. A pathname that fails to decode (a malformed
- * percent-sequence) matches nothing, rather than being compared encoded --
- * silently accepting the wrong string here would be worse than refusing.
+ * Orivon patch (UPSTREAM.md patch 37, normalisation added by patch 39,
+ * corrected by patch 41): true if `url`'s own path matches one of `pages`
+ * (an extension's manifest `sandbox.pages`). Exported through
+ * `orivon:crx-extensions-router` (electron-chrome-extensions-lib.d.ts) so
+ * extension-host.ts's own preload-time query (the vendored preload decides
+ * whether to inject any chrome.* at all) answers the identical question
+ * onExtensionMessage below asks on every message -- one matcher, not two
+ * that could drift apart. `pages` is never capped or truncated here:
+ * `src/broker/policy/extension-manifest.ts`'s own `MAX_SANDBOX_PAGES`
+ * refuses to load a manifest with too many entries instead, so every
+ * `pages` array this ever sees in a real session already fits -- silently
+ * skipping some of a declared list here, as an earlier version of this
+ * function did, would leave a page past the cut still declared sandboxed
+ * by the manifest and still served by Electron, unrecognised by this
+ * matcher: no CSP, chrome.* injected, no router refusal, a silent bypass.
+ * Normalises both sides the way Chromium's own
+ * `ExtensionURLToRelativeFilePath` does before it turns this URL into the
+ * on-disk file it actually serves: ALL of a manifest entry's own leading
+ * `/` and `\` are stripped (not only the first, which let
+ * `chrome-extension://<id>//sandbox.html` or a leading `\` serve the real
+ * sandboxed file while comparing against a pathname this function still
+ * saw as un-stripped, missing it entirely), and the URL's pathname is
+ * percent-decoded (`%2E` and `.` name the same file) before having the
+ * same leading separators stripped. A pathname that fails to decode (a
+ * malformed percent-sequence) matches nothing, rather than being compared
+ * encoded -- silently accepting the wrong string here would be worse than
+ * refusing. `platform` defaults to `process.platform`, overridable for
+ * tests: on win32 and darwin, whose filesystems resolve "SANDBOX.html" and
+ * "sandbox.html" to the same file, Chromium serves the real sandboxed page
+ * for either spelling, so the match is case-insensitive there too; Linux's
+ * filesystem is case-sensitive (a differently-cased request 404s instead
+ * of reaching the real file), and this stays case-sensitive there to
+ * match.
  */
-export function isSandboxPageUrl (pages: readonly string[] | undefined, url: string): boolean {
+export function isSandboxPageUrl (
+  pages: readonly string[] | undefined,
+  url: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
   if (pages === undefined || pages.length === 0) return false
   let rawPathname: string
   try {
@@ -162,17 +175,19 @@ export function isSandboxPageUrl (pages: readonly string[] | undefined, url: str
   } catch {
     return false
   }
-  let pathname: string
+  let decodedPathname: string
   try {
-    pathname = decodeURIComponent(rawPathname).replace(/^\//, '')
+    decodedPathname = decodeURIComponent(rawPathname)
   } catch {
     return false
   }
-  return pages.slice(0, MAX_SANDBOX_PAGES).some((page) => {
-    const stars = page.split('*').length - 1
-    if (stars > MAX_STARS_PER_PATTERN) return false
-    const pattern = page.replace(/^\//, '')
-    return matchesGlob(pattern, pathname)
+  const pathname = decodedPathname.replace(/^[/\\]+/, '')
+  const caseInsensitive = platform === 'win32' || platform === 'darwin'
+  const matchPathname = caseInsensitive ? pathname.toLowerCase() : pathname
+  return pages.some((page) => {
+    const pattern = page.replace(/^[/\\]+/, '')
+    const matchPattern = caseInsensitive ? pattern.toLowerCase() : pattern
+    return matchesGlob(matchPattern, matchPathname)
   })
 }
 
