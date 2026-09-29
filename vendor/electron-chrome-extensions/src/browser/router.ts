@@ -16,6 +16,53 @@ export type IpcEvent = Electron.IpcMainEvent | Electron.IpcMainServiceWorkerEven
 export type IpcInvokeEvent = Electron.IpcMainInvokeEvent | Electron.IpcMainServiceWorkerInvokeEvent
 export type IpcAnyEvent = IpcEvent | IpcInvokeEvent
 
+// Orivon patch (UPSTREAM.md patch 36): see waitForRegisteredExtension below.
+const EXTENSION_REGISTRATION_WAIT_MS = 2000
+
+/**
+ * A genuine page of an already-loading extension can call a crx-msg
+ * handler in the same tick its own webContents is created -- before
+ * `session.extensions.getExtension(id)` reflects the load already in
+ * flight (a real extension's popup script that calls a chrome.* API as its
+ * first statement wins this race every time; a fixture popup whose calls
+ * wait for a button click never does). `extensionId` is only ever set here
+ * from `onRouterMessage`, which already refused the call if
+ * `gMessageSenderIdCheck` was set and did not confirm `extensionId` names
+ * THIS sender's own origin -- so waiting instead of refusing outright adds
+ * no way for an unrelated page to spoof another extension's identity, only
+ * a bounded grace period for the real owner to finish registering.
+ */
+interface ExtensionRegistryEvents {
+  getExtension: (id: string) => Electron.Extension | null
+  on: (event: 'extension-loaded', listener: (event: Electron.Event, extension: Electron.Extension) => void) => unknown
+  removeListener: (event: 'extension-loaded', listener: (event: Electron.Event, extension: Electron.Extension) => void) => unknown
+}
+
+async function waitForRegisteredExtension (
+  extensions: ExtensionRegistryEvents,
+  extensionId: string,
+): Promise<Electron.Extension | undefined> {
+  const already = extensions.getExtension(extensionId)
+  if (already) return already
+  return await new Promise((resolve) => {
+    let settled = false
+    const onLoaded = (_event: Electron.Event, extension: Electron.Extension): void => {
+      if (settled || extension.id !== extensionId) return
+      settled = true
+      clearTimeout(timer)
+      extensions.removeListener('extension-loaded', onLoaded)
+      resolve(extension)
+    }
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      extensions.removeListener('extension-loaded', onLoaded)
+      resolve(extensions.getExtension(extensionId) ?? undefined)
+    }, EXTENSION_REGISTRATION_WAIT_MS)
+    extensions.on('extension-loaded', onLoaded)
+  })
+}
+
 const getSessionFromEvent = (event: IpcAnyEvent): Electron.Session => {
   if (event.type === 'service-worker') {
     return event.session
@@ -464,7 +511,12 @@ export class ExtensionRouter {
       throw new Error(`${handlerName} does not support calling from a remote session`)
     }
 
-    const extension = extensionId ? eventSessionExtensions.getExtension(extensionId) : undefined
+    // Orivon patch (UPSTREAM.md patch 36): was a single unconditional
+    // `getExtension` read; see waitForRegisteredExtension's own doc.
+    let extension = extensionId ? eventSessionExtensions.getExtension(extensionId) : undefined
+    if (!extension && handler.extensionContext && extensionId !== undefined) {
+      extension = await waitForRegisteredExtension(eventSessionExtensions, extensionId)
+    }
     if (!extension && handler.extensionContext) {
       throw new Error(`${handlerName} was sent from an unknown extension context`)
     }
