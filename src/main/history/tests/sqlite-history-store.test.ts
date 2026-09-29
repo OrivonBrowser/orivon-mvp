@@ -168,6 +168,15 @@ describe('search: substrings, case, literal % and _, agreement between the FTS a
     expect(history.list({ search: 'searchable' })).toEqual([])
   })
 
+  it('counts Unicode characters, not UTF-16 code units, deciding whether a search reaches the FTS threshold', () => {
+    // '😀x' is two characters but three UTF-16 code units (the emoji is a surrogate pair): .length says 3,
+    // [...search].length says 2. At three code units the old check wrongly took the FTS path, where the
+    // trigram tokenizer -- needing three actual characters -- never matches a two-character query.
+    const history = store()
+    history.record('https://a.example/emoji', 'A page titled 😀x here', 1000)
+    expect(history.list({ search: '😀x' }).map((entry) => entry.title)).toEqual(['A page titled 😀x here'])
+  })
+
   /** Runs the same query list() runs, but as one plain LIKE statement -- the thing both the sparse (FTS) and
    * dense (LIKE fallback) paths are checked against, so the check does not depend on which path list() took. */
   function rawLike (db: DatabaseSync, term: string, after?: { lastVisit: number, id: number }): number[] {

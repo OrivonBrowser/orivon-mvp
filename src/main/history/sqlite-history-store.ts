@@ -275,7 +275,10 @@ export class SqliteHistoryStore implements HistoryStore {
     const after = query.after
     const search = query.search?.trim() ?? ''
     let rows: Row[]
-    if (search.length >= FTS_MIN_SEARCH_LENGTH) {
+    // The trigram tokenizer needs three actual characters; [...search].length counts those (Unicode code
+    // points), where search.length counts UTF-16 code units and over-counts any character outside the
+    // Basic Multilingual Plane (a surrogate pair, such as most emoji, counts as two).
+    if ([...search].length >= FTS_MIN_SEARCH_LENGTH) {
       const term = ftsPhrase(search)
       rows = this.isDense(term) ? this.queryLike(likePattern(search), after, limit) : this.queryFts(term, after, limit)
     } else if (search !== '') {
