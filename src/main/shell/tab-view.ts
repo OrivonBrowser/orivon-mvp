@@ -388,12 +388,12 @@ export function wireView (id: string, record: TabRecord): void {
   // -- never the opener's own session.
   wc.setWindowOpenHandler(windowOpenHandler({
     atCapacity: () => record.host.atCapacity(),
-    openTab: (url, active) => record.host.openTab(url, active),
+    openTab: (url, active, loadOptions) => record.host.openTab(url, active, loadOptions),
     adoptPopup: (view, partition, url, active) => {
       watchAppTab(view, appTabArgsFor(url, record.host.broker), url)
       record.host.adoptPopup(view, partition, active)
     },
-    openWindow: (url) => record.host.openWindow(url),
+    openWindow: (url, loadOptions) => record.host.openWindow(url, loadOptions),
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker)
