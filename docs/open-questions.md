@@ -1520,3 +1520,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   element, a raw CDP client).
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A295: A `<webview>`'s own `webpreferences` attribute may reach a shown page **[AI-REC]**
+
+- **Question:** If Electron parses a `<webview>`'s `webpreferences` attribute into `webPreferences`
+  before `will-attach-webview`, deleting `params.webpreferences` in `hardenGuest` stops nothing, and
+  a key it does not set itself (`experimentalFeatures`, say) reaches a `web.embed` guest. Does it?
+- **Why it matters:** a shown page is another site's document; every preference it runs with
+  should be the shell's choice, never the embedding app's. No escalation through it is known.
+- **Options:** measure it in an e2e and, if the attribute gets through, build the guest's
+  `webPreferences` from an allowlist rather than overriding named keys (rec.); leave it as it is.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
