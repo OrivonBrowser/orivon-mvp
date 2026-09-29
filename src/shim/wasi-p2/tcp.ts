@@ -24,16 +24,20 @@ function rethrow (error: unknown): never {
   throw typeof failure === 'string' ? error : failure
 }
 
-/** The streams of a connected orivon.net socket. */
-function streamsOf (socket: OrivonTcpSocket): { input: InputStream, output: OutputStream, reader: ReadableStreamDefaultReader<Uint8Array>, writer: WritableStreamDefaultWriter<Uint8Array> } {
+/** The streams of a connected orivon.net socket. `wrote()` reports whether the program has ever handed this socket a byte -- see [Symbol.dispose]'s own doc for why. */
+function streamsOf (socket: OrivonTcpSocket): { input: InputStream, output: OutputStream, reader: ReadableStreamDefaultReader<Uint8Array>, writer: WritableStreamDefaultWriter<Uint8Array>, wrote: () => boolean } {
   const reader = socket.readable.getReader()
   const writer = socket.writable.getWriter()
+  let wrote = false
   const input = new InputStream(async () => {
     const { done, value } = await reader.read().catch(rethrow)
     return done ? new Uint8Array(0) : value
   }, networkCode)
-  const output = new OutputStream(async (bytes) => { await writer.write(bytes).catch(rethrow) }, networkCode)
-  return { input, output, reader, writer }
+  const output = new OutputStream(async (bytes) => {
+    wrote = true
+    await writer.write(bytes).catch(rethrow)
+  }, networkCode)
+  return { input, output, reader, writer, wrote: () => wrote }
 }
 
 export interface TcpContext {
@@ -263,10 +267,30 @@ export class TcpSocket {
     if (how !== 'receive') void streams.writer.close().catch(() => {})
   }
 
+  /**
+   * A program that wrote to this socket and then simply lets it go out of
+   * scope -- no explicit shutdown() -- must not lose that output. Once the
+   * program has handed this socket a byte, this closes the CONNECTION
+   * THROUGH ITS OWN WRITABLE STREAM rather than through `this.#socket`'s
+   * handle-level close(): that close() is a call to the Worker's separate
+   * orivon control channel (../worker/orivon-client.ts/orivon-server.ts),
+   * independent of the MessagePort relaying this stream's still-in-flight
+   * writes across that same Worker boundary -- and was measured
+   * (tests/tcp-dispose-race.test.ts) to reach the broker and end the real
+   * socket before an already-"flushed" write had actually landed there,
+   * silently dropping it. Closing through the writer instead keeps this
+   * socket's own FIN strictly behind every write already queued on it,
+   * because both travel the one channel the writer itself uses.
+   *
+   * A socket the program never wrote to (an unaccepted, queued connection
+   * dropped along with its listener, say) has nothing to lose this way, so
+   * it keeps the direct, immediate handle close.
+   */
   [Symbol.dispose] (): void {
     this.#state = 'closed'
     this.#signal.notify()
-    void this.#socket?.close().catch(() => {})
+    if (this.#streams?.wrote() === true) void this.#streams.writer.close().catch(() => {})
+    else void this.#socket?.close().catch(() => {})
     void this.#server?.close().catch(() => {})
     for (const [socket] of this.#accepted.splice(0)) socket[Symbol.dispose]()
   }
