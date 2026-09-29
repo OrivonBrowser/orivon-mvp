@@ -48,6 +48,28 @@ describe('extensionSandboxCsp (UPSTREAM.md patch 40)', () => {
     expect(result.responseHeaders['Content-Security-Policy']).toEqual(['sandbox; script-src *'])
   })
 
+  it('falls back to Chrome\'s default sandbox CSP when the manifest\'s own override has no "sandbox" directive at all -- Chrome rejects such a value outright', async () => {
+    getExtension.mockReturnValue({
+      manifest: { sandbox: { pages: ['sandbox.html'] }, content_security_policy: { sandbox: "script-src 'self'" } }
+    })
+    const handler = extensionSandboxCsp()
+
+    const result = await handler(detailsFor(`chrome-extension://${EXT_ID}/sandbox.html`, 'mainFrame'), { responseHeaders: {} })
+
+    expect(result.responseHeaders['Content-Security-Policy']).toContain(CHROME_DEFAULT_SANDBOX_CSP)
+  })
+
+  it('accepts an override whose "sandbox" directive is not the first one, and is cased differently', async () => {
+    getExtension.mockReturnValue({
+      manifest: { sandbox: { pages: ['sandbox.html'] }, content_security_policy: { sandbox: "script-src 'self'; SANDBOX allow-scripts" } }
+    })
+    const handler = extensionSandboxCsp()
+
+    const result = await handler(detailsFor(`chrome-extension://${EXT_ID}/sandbox.html`, 'mainFrame'), { responseHeaders: {} })
+
+    expect(result.responseHeaders['Content-Security-Policy']).toEqual(["script-src 'self'; SANDBOX allow-scripts"])
+  })
+
   it('leaves an ordinary (non-sandbox) extension page completely untouched', () => {
     getExtension.mockReturnValue({ manifest: { sandbox: { pages: ['sandbox.html'] } } })
     const handler = extensionSandboxCsp()
@@ -87,8 +109,17 @@ describe('extensionSandboxCsp (UPSTREAM.md patch 40)', () => {
     expect(result.responseHeaders['Content-Security-Policy']).toContain(CHROME_DEFAULT_SANDBOX_CSP)
   })
 
-  it('the filter scopes to chrome-extension: URLs and document resource types only', () => {
+  it('the filter scopes to chrome-extension: URLs and document resource types only, including object', () => {
     expect(EXTENSION_SANDBOX_CSP_FILTER.urls).toEqual(['chrome-extension://*/*'])
-    expect(EXTENSION_SANDBOX_CSP_FILTER.types).toEqual(['mainFrame', 'subFrame'])
+    expect(EXTENSION_SANDBOX_CSP_FILTER.types).toEqual(['mainFrame', 'subFrame', 'object'])
+  })
+
+  it('applies to an object/embed document response (granted-origin-csp.ts\'s own doc: Electron reports a same-origin <object>/<embed> document\'s response with resourceType "object", measured Electron 44) -- a web-accessible sandbox page embedded that way must not skip this CSP', async () => {
+    getExtension.mockReturnValue({ manifest: { sandbox: { pages: ['sandbox.html'] } } })
+    const handler = extensionSandboxCsp()
+
+    const result = await handler(detailsFor(`chrome-extension://${EXT_ID}/sandbox.html`, 'object'), { responseHeaders: {} })
+
+    expect(result.responseHeaders['Content-Security-Policy']).toContain(CHROME_DEFAULT_SANDBOX_CSP)
   })
 })
