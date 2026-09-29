@@ -113,7 +113,11 @@ it('resizes with the divider, within limits, and goes back to half on a double c
     await openTabs(chrome, '/a')
     await runCommand(chrome, 'split.toggle')
     expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
-    const frame = app.windows().find((w) => w.url().includes('/split-frame/')) as Page
+    // The frame's view is Playwright's page only once its own session has attached, which can
+    // come after the layout reports it.
+    const frameOf = (): Page | undefined => app.windows().find((w) => w.url().includes('/split-frame/'))
+    expect(await waitFor(() => frameOf() !== undefined)).toBe(true)
+    const frame = frameOf() as Page
     await frame.waitForSelector('#divider:not([hidden])')
     await frame.locator('#divider').waitFor({ state: 'visible' })
     const divider = await frame.locator('#divider').boundingBox()
@@ -220,7 +224,9 @@ it('previews where a dragged tab would go over a page edge, and splits when it i
       const pane = inWindow(views, `${origin}/a`)
       return backdropAt(views) !== undefined && pane !== undefined && pane.x > area.width / 2 - 10 && pane.width < area.width / 2
     })).toBe(true)
-    const frame = app.windows().find((w) => w.url().includes('/split-frame/')) as Page
+    const frameOf = (): Page | undefined => app.windows().find((w) => w.url().includes('/split-frame/'))
+    expect(await waitFor(() => frameOf() !== undefined)).toBe(true)
+    const frame = frameOf() as Page
     await frame.waitForSelector('#placeholder:not([hidden])')
 
     // Back over the strip, the page is whole again.
