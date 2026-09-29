@@ -72,8 +72,15 @@ function wireErrorOf (error: unknown): WireError & { platformCode?: string } {
   return { ...toWireError(error), ...(typeof platformCode === 'string' ? { platformCode } : {}) }
 }
 
-/** What a Worker sees when its reply could not be written at all: fixed and short, never the failed write's own error text, which may be exactly what made it too large to write in the first place. */
-const FALLBACK_REPLY_ERROR: WireError = { name: 'OrivonShimError', message: 'the reply to this call could not be delivered', code: 'unavailable' }
+/**
+ * What a Worker sees when its reply could not be written at all: fixed and
+ * short, never the failed write's own error text, which may be exactly what
+ * made it too large to write in the first place. `'limit'`, not
+ * `'unavailable'`: errors.ts documents `'unavailable'` as a call the SAME
+ * grant may still succeed on later, but a reply this large crosses
+ * ReplyWriter's fixed MAX_REPLY_LENGTH header on every retry, not just this one.
+ */
+const FALLBACK_REPLY_ERROR: WireError = { name: 'OrivonShimError', message: 'the reply to this call was too large to deliver', code: 'limit' }
 
 function notSynchronous (): Error {
   return Object.assign(new Error('a stream cannot be returned by a synchronous call'), { name: 'OrivonShimError', reason: 'not-applicable' })

@@ -127,10 +127,14 @@ describe('serveOrivon\'s synchronous fallback reply, when the writer refuses wha
     await settle()
 
     expect(sent).toHaveLength(2)
-    const fallback = decodeReply(sent[1] as Uint8Array) as { id: number, ok: boolean, error: { message: string } }
+    const fallback = decodeReply(sent[1] as Uint8Array) as { id: number, ok: boolean, error: { message: string, code: string } }
     expect(fallback).toMatchObject({ id: 1, ok: false })
     expect(fallback.error.message).not.toContain(bigMessage)
     expect(fallback.error.message.length).toBeLessThan(200)
+    // Never 'unavailable': errors.ts documents that code as a call the SAME grant may still
+    // succeed on later, but a reply this large crosses ReplyWriter's fixed length header on
+    // every retry, not just this one.
+    expect(fallback.error.code).toBe('limit')
   })
 
   it('logs rather than leaving an unhandled rejection when even the fallback reply cannot be written', async () => {
