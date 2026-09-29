@@ -96,6 +96,12 @@ export const INTERNAL_COMMAND_CHANNEL = 'orivon-internal:command'
 /** The main menu popover's own WebContentsView -> main: what it lists, and which entry was chosen. See ./ipc/menu-ipc.ts. */
 export const MENU_COMMAND_CHANNEL = 'orivon-menu:command'
 
+/** Main -> the menu popover's own WebContentsView: it was just shown again. The
+ * menu is kept warm (shell/popover-view.ts's `warm`) rather than reloaded on
+ * every open, so this is what tells its already-loaded page to re-fetch its
+ * list and reset its own state (scroll position, keyboard focus). */
+export const MENU_SHOWN_CHANNEL = 'orivon-menu:shown'
+
 /** The split backdrop's own view -> main: the divider being dragged or reset. See ./shell/split-frame.ts. */
 export const SPLIT_FRAME_CHANNEL = 'orivon-split:command'
 

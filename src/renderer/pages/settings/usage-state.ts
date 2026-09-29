@@ -1,6 +1,8 @@
 // Usage statistics as the page knows them: whether the person has chosen, the
 // exact text that would be sent, and what has been. The page shows main's words
-// and payload as they are: nothing here decides or rounds anything.
+// and payload as they are: nothing here decides or rounds anything. `sent`
+// grows in the background as the telemetry runner actually sends; `handle`
+// reloads on `usage.changed` rather than polling for that.
 import type { OrivonInternal } from '../shared/bridge.js'
 
 export interface UsageStatus {
@@ -16,6 +18,13 @@ export class UsageState {
   private loading = false
 
   constructor (private readonly bridge: OrivonInternal, private readonly changed: () => void) {}
+
+  /** True once this was for a `usage.changed` push. */
+  handle (topic: string): boolean {
+    if (topic !== 'usage.changed') return false
+    void this.load()
+    return true
+  }
 
   async load (): Promise<void> {
     if (this.loading) return

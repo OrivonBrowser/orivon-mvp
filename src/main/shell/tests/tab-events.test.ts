@@ -13,10 +13,11 @@ const { showMessageBoxSync, buildFromTemplate, adoptedViews } = vi.hoisted(() =>
   adoptedViews: [] as Array<{ options: Record<string, unknown> }>
 }))
 vi.mock('electron', () => ({
-  WebContentsView: vi.fn().mockImplementation(function (this: { options: Record<string, unknown>, webContents: unknown, setBounds: unknown }, options: Record<string, unknown>) {
+  WebContentsView: vi.fn().mockImplementation(function (this: { options: Record<string, unknown>, webContents: unknown, setBounds: unknown, setBackgroundColor: unknown }, options: Record<string, unknown>) {
     this.options = options
     this.webContents = options['webContents'] ?? fakeContents()
     this.setBounds = vi.fn()
+    this.setBackgroundColor = vi.fn()
     adoptedViews.push(this)
   }),
   dialog: { showMessageBoxSync },
@@ -283,7 +284,7 @@ describe('wireView -- a popup\'s opener is cut once it navigates itself into a D
     const host = fakeHost({
       broker: { app: { isRegisteredSync: (o: string) => o === R || o === G, hasGrantsSync: (o: string) => o === G } } as unknown as Broker
     })
-    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${R}/`)
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], { target: `${R}/` })
     const wc = view.webContents as unknown as FakeContents
     wc.opener = { url: `${R}/` }
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
@@ -305,7 +306,7 @@ describe('wireView -- a popup\'s opener is cut once it navigates itself into a D
     const host = fakeHost({
       broker: { app: { isRegisteredSync: (o: string) => o === X || o === G, hasGrantsSync: (o: string) => o === G } } as unknown as Broker
     })
-    const view = makeTabView('/preload/app.js', APP_PARTITION, ['--orivon-app-tab'], `${X}/`)
+    const view = makeTabView('/preload/app.js', APP_PARTITION, ['--orivon-app-tab'], { target: `${X}/` })
     const wc = view.webContents as unknown as FakeContents
     wc.opener = { url: `${X}/` }
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: APP_PARTITION, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
@@ -322,7 +323,7 @@ describe('wireView -- a popup\'s opener is cut once it navigates itself into a D
     const host = fakeHost({
       broker: { app: { isRegisteredSync: (o: string) => o === R || o === R2, hasGrantsSync: () => false } } as unknown as Broker
     })
-    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${R}/`)
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], { target: `${R}/` })
     const wc = view.webContents as unknown as FakeContents
     wc.opener = { url: `${R}/` }
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
@@ -422,7 +423,7 @@ describe('wireView -- developer tools do not survive a navigation between two gr
       broker: { app: { isRegisteredSync: () => true, hasGrantsSync: (origin: string) => origin === A || origin === B } } as unknown as Broker,
       devtools: { allowed: vi.fn(), inspect: vi.fn(), closeFor } as unknown as Host['devtools']
     })
-    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${A}/`)
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], { target: `${A}/` })
     const wc = view.webContents as unknown as FakeContents
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
     wireView('tab-1', r)
@@ -440,7 +441,7 @@ describe('wireView -- developer tools do not survive a navigation between two gr
       broker: { app: { isRegisteredSync: () => true, hasGrantsSync: (origin: string) => origin === A } } as unknown as Broker,
       devtools: { allowed: vi.fn(), inspect: vi.fn(), closeFor } as unknown as Host['devtools']
     })
-    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${A}/page-one`)
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], { target: `${A}/page-one` })
     const wc = view.webContents as unknown as FakeContents
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
     wireView('tab-1', r)

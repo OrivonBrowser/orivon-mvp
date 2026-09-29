@@ -291,6 +291,9 @@ export function stubBroker (
     },
     revokeUserSelectedPath: async () => {
       throw new Error('revokeUserSelectedPath is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
-    }
+    },
+    // Satisfies `Broker`; no ipc.ts-facing test here drives a live-update
+    // listener, so subscribing is a no-op that never fires.
+    onGrantsChanged: () => () => {}
   }
 }

@@ -5,6 +5,8 @@
 import { removePrivateDir, createPrivateDir } from './private-session.js'
 import { flagsFor, DEFAULT_PROFILE_ID } from './launch-context.js'
 import { spawnPeer } from './peer-spawn.js'
+import { watchProfiles } from './profiles-watcher.js'
+import type { ProfilesWatcher } from './profiles-watcher.js'
 import type { Profile } from './profile-store.js'
 import type { Outcome } from './profile-store.js'
 import type { Runtime } from './start-launch.js'
@@ -25,6 +27,7 @@ export interface ProfileLook {
 
 export class ProfilesService {
   private readonly listeners = new Set<() => void>()
+  private watcher: ProfilesWatcher | undefined
 
   constructor (private readonly runtime: Runtime, private readonly spawn: typeof spawnPeer = spawnPeer) {}
 
@@ -103,6 +106,24 @@ export class ProfilesService {
   onChange (listener: () => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+
+  /**
+   * Starts watching for a change another profile's own process makes to the
+   * shared registry (profiles-watcher.ts's own header). Never called from a
+   * plain `new ProfilesService(runtime)` in a test -- only main/index.ts's
+   * real boot -- so no test gains a real `fs.watch` it did not ask for.
+   * Idempotent.
+   */
+  startWatching (): void {
+    if (this.watcher !== undefined) return
+    this.watcher = watchProfiles(this.runtime.profiles.registryDir, () => { this.notify() })
+  }
+
+  /** Stops the watcher `startWatching` began, if any. Call once, at quit. */
+  stopWatching (): void {
+    this.watcher?.close()
+    this.watcher = undefined
   }
 
   private notify (): void {
