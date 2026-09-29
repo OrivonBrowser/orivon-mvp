@@ -32,12 +32,16 @@ const results = {
   rename: outcome(() => { fs.renameSync('dir/copy.txt', 'dir/renamed.txt'); return true }),
   readBack: outcome(() => new TextDecoder().decode(fs.readFileSync('dir/renamed.txt') as Uint8Array)),
   access: outcome(() => { fs.accessSync('dir/renamed.txt'); return true }),
+  realpath: outcome(() => fs.realpathSync('dir/renamed.txt')),
   unlink: outcome(() => { fs.unlinkSync('dir/renamed.txt'); return true }),
   mkdtemp: outcome(() => fs.mkdtempSync('dir/tmp-')),
-  // orivon.fs has one remove primitive, which always needs `recursive` for a
-  // directory (core-sync.ts's own doRmdirSync doc comment) -- true here even
-  // though 'dir/nested' is empty.
-  rmdir: outcome(() => { fs.rmdirSync('dir/nested', { recursive: true }); return true }),
+  // 'dir/nested' is empty (nothing was ever written under it) -- no
+  // `recursive` needed, unlike orivon.fs's own one remove primitive, which
+  // always needs it for a directory (core-sync.ts's own doRmdirSync doc
+  // comment): rmdirSync itself checks emptiness first and asks for
+  // `recursive` only once it has confirmed there is nothing to lose.
+  rmdirNonEmptyFails: outcome(() => { fs.rmdirSync('dir'); return true }),
+  rmdir: outcome(() => { fs.rmdirSync('dir/nested'); return true }),
   rm: outcome(() => { fs.rmSync('dir', { recursive: true }); return true }),
   missingAfterRm: outcome(() => fs.statSync('dir'))
 }

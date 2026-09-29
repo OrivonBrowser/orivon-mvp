@@ -10,6 +10,7 @@ import esbuild from 'esbuild'
 import { describe, expect, it } from 'vitest'
 import { createRealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { serveOrivon } from '../../worker/orivon-server.js'
+import { VIRTUAL_ROOT } from '../../virtual-root.js'
 
 async function bundledEntry (): Promise<string> {
   const built = await esbuild.build({
@@ -20,7 +21,7 @@ async function bundledEntry (): Promise<string> {
 }
 
 describe('fs *Sync exports in a Worker of a cross-origin isolated app', () => {
-  it('block a real thread on a real disk: mkdir, write, append, stat, lstat, readdir, copy, rename, read, access, unlink, mkdtemp, rmdir, rm', async () => {
+  it('block a real thread on a real disk: mkdir, write, append, stat, lstat, readdir, copy, rename, read, access, realpath, unlink, mkdtemp, rmdir, rm', async () => {
     const disk = await createRealDiskFs()
     const { port1, port2 } = new MessageChannel()
     const server = serveOrivon(port1 as unknown as globalThis.MessagePort, disk.orivon)
@@ -41,8 +42,10 @@ describe('fs *Sync exports in a Worker of a cross-origin isolated app', () => {
       expect(result.rename).toEqual({ value: true })
       expect(result.readBack).toEqual({ value: 'hello sync!' })
       expect(result.access).toEqual({ value: true })
+      expect(result.realpath).toEqual({ value: `${VIRTUAL_ROOT}/dir/renamed.txt` })
       expect(result.unlink).toEqual({ value: true })
       expect((result.mkdtemp?.value as string | undefined)?.startsWith('dir/tmp-')).toBe(true)
+      expect(result.rmdirNonEmptyFails).toMatchObject({ error: { code: 'ENOTEMPTY' } })
       expect(result.rmdir).toEqual({ value: true })
       expect(result.rm).toEqual({ value: true })
       expect(result.missingAfterRm).toMatchObject({ error: { code: 'ENOENT' } })

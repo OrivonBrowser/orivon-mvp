@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../../contracts/capability-api.js'
 import { VIRTUAL_ROOT } from '../../virtual-root.js'
+import { Buffer } from 'buffer'
 
 const SYNCHRONOUS = Symbol.for('orivon.synchronous')
 
@@ -135,6 +136,7 @@ describe('the Worker-only *Sync calls, on the page or without shared memory', ()
     expect(() => fs.lstatSync('x')).toThrow(expect.objectContaining({ code: 'ERR_ORIVON_FS_SYNC_UNSUPPORTED' }))
     expect(() => fs.copyFileSync('x', 'y')).toThrow(expect.objectContaining({ code: 'ERR_ORIVON_FS_SYNC_UNSUPPORTED' }))
     expect(() => fs.mkdtempSync('x')).toThrow(expect.objectContaining({ code: 'ERR_ORIVON_FS_SYNC_UNSUPPORTED' }))
+    expect(() => fs.realpathSync('x')).toThrow(expect.objectContaining({ api: 'fs.realpathSync', code: 'ERR_ORIVON_FS_SYNC_UNSUPPORTED' }))
   })
 
   // orivon-client.ts (worker/tests/orivon-proxy.test.ts) is what actually
@@ -145,10 +147,87 @@ describe('the Worker-only *Sync calls, on the page or without shared memory', ()
 })
 
 describe('realpathSync', () => {
-  it('always refuses: no async realpath exists here to share a core with', async () => {
-    installSyncTwin({})
+  it('answers from a stat through the twin, returning the normalised absolute path under the virtual root', async () => {
+    const calls = installSyncTwin({ stat: (path: string) => { if (path === 'missing') throw orivonError('notFound', 'ENOENT'); return { size: 0, isFile: true, isDirectory: false, mtimeMs: 0 } } })
     const fs = await import('../fs.js')
-    expect(() => fs.realpathSync('x')).toThrow(expect.objectContaining({ api: 'fs.realpathSync', code: 'ERR_ORIVON_FS_SYNC_UNSUPPORTED' }))
+    expect(fs.realpathSync('settings.json')).toBe(`${VIRTUAL_ROOT}/settings.json`)
+    expect(calls).toEqual([{ member: 'stat', args: ['settings.json'] }])
+  })
+
+  it('is ENOENT for a missing path', async () => {
+    installSyncTwin({ stat: () => { throw orivonError('notFound', 'ENOENT') } })
+    const fs = await import('../fs.js')
+    expect(() => fs.realpathSync('missing')).toThrow(expect.objectContaining({ code: 'ENOENT' }))
+  })
+
+  it('the root resolves to the virtual root, without asking the twin', async () => {
+    const calls = installSyncTwin({ stat: () => { throw new Error('should not be called') } })
+    const fs = await import('../fs.js')
+    expect(fs.realpathSync(VIRTUAL_ROOT)).toBe(VIRTUAL_ROOT)
+    expect(calls).toEqual([])
+  })
+
+  it('encoding: \'buffer\' returns a Buffer of the same path', async () => {
+    installSyncTwin({ stat: () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }) })
+    const fs = await import('../fs.js')
+    const result = fs.realpathSync('settings.json', { encoding: 'buffer' })
+    expect(Buffer.isBuffer(result)).toBe(true)
+    expect(result.toString()).toBe(`${VIRTUAL_ROOT}/settings.json`)
+  })
+
+  it('.native answers the same way -- this shim keeps no cache for it to bypass', async () => {
+    installSyncTwin({ stat: () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }) })
+    const fs = await import('../fs.js')
+    expect(fs.realpathSync.native('settings.json')).toBe(`${VIRTUAL_ROOT}/settings.json`)
+  })
+})
+
+describe('rmdirSync, over the synchronous twin', () => {
+  it('removes an EMPTY directory with no recursive option -- unlike rm, which fails on ANY directory without one', async () => {
+    const calls = installSyncTwin({
+      stat: () => ({ size: 0, isFile: false, isDirectory: true, mtimeMs: 0 }),
+      readdir: () => [],
+      rm: () => {}
+    })
+    const fs = await import('../fs.js')
+    expect(() => fs.rmdirSync('empty-dir')).not.toThrow()
+    expect(calls.map((c) => c.member)).toEqual(['stat', 'readdir', 'rm'])
+    expect(calls[2]).toEqual({ member: 'rm', args: ['empty-dir', { recursive: true }] })
+  })
+
+  it('is ENOTEMPTY for a non-empty directory, never asking the twin to remove anything', async () => {
+    const calls = installSyncTwin({
+      stat: () => ({ size: 0, isFile: false, isDirectory: true, mtimeMs: 0 }),
+      readdir: () => ['a.txt'],
+      rm: () => { throw new Error('must not be called') }
+    })
+    const fs = await import('../fs.js')
+    expect(() => fs.rmdirSync('full-dir')).toThrow(expect.objectContaining({ code: 'ENOTEMPTY' }))
+    expect(calls.map((c) => c.member)).toEqual(['stat', 'readdir'])
+  })
+
+  it('is ENOTDIR for a file, never calling readdir', async () => {
+    const calls = installSyncTwin({ stat: () => ({ size: 3, isFile: true, isDirectory: false, mtimeMs: 0 }) })
+    const fs = await import('../fs.js')
+    expect(() => fs.rmdirSync('a-file')).toThrow(expect.objectContaining({ code: 'ENOTDIR' }))
+    expect(calls.map((c) => c.member)).toEqual(['stat'])
+  })
+
+  it('is ENOENT for a missing path', async () => {
+    installSyncTwin({ stat: () => { throw orivonError('notFound', 'ENOENT') } })
+    const fs = await import('../fs.js')
+    expect(() => fs.rmdirSync('missing')).toThrow(expect.objectContaining({ code: 'ENOENT' }))
+  })
+
+  it('{ recursive: true } removes the tree, skipping every check, exactly like rmSync', async () => {
+    const calls = installSyncTwin({
+      stat: () => { throw new Error('must not be called') },
+      readdir: () => { throw new Error('must not be called') },
+      rm: () => {}
+    })
+    const fs = await import('../fs.js')
+    expect(() => fs.rmdirSync('a-tree', { recursive: true })).not.toThrow()
+    expect(calls).toEqual([{ member: 'rm', args: ['a-tree', { recursive: true }] }])
   })
 })
 
