@@ -6,12 +6,18 @@
   border-radius: 8px;
   background: var(--wsurface);
   cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
 }
 .btn:hover { background: var(--whover); }
 .btn[disabled] { opacity: 0.5; cursor: default; }
 .btn.primary { background: var(--waccent); border-color: var(--waccent); color: var(--waccent-ink); }
+/* Outline until the action is the confirming click of an armed pair: every
+   destructive button starts this way, and only the rare one-way action (a
+   wipe, a delete) ever turns solid, when its own confirm arms it. */
 .btn.danger { color: var(--wdanger); border-color: color-mix(in srgb, var(--wdanger) 50%, var(--wborder)); }
+.btn.danger:hover { background: var(--wdanger-wash); border-color: var(--wdanger); }
 .btn.danger.armed { background: var(--wdanger); border-color: var(--wdanger); color: #fff; }
+.btn.danger.armed:hover { filter: brightness(1.08); }
 
 .select, .text {
   min-width: 220px;
@@ -26,7 +32,7 @@
 .switch {
   position: relative;
   display: inline-block;
-  width: 40px;
+  width: 38px;
   height: 22px;
   flex: none;
 }
@@ -34,9 +40,10 @@
 .switch .track {
   position: absolute;
   inset: 0;
+  border: 1px solid var(--wborder);
   border-radius: 11px;
-  background: var(--wborder);
-  transition: background 0.15s;
+  background: var(--wsurface);
+  transition: background-color 0.15s, border-color 0.15s;
   pointer-events: none;
 }
 .switch .track::after {
@@ -44,12 +51,42 @@
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: #fff;
-  transition: transform 0.15s;
+  background: var(--wink-off);
+  transition: transform 0.15s, background-color 0.15s;
 }
-.switch input:checked + .track { background: var(--waccent); }
-.switch input:checked + .track::after { transform: translateX(18px); }
+.switch input:checked + .track { background: var(--waccent); border-color: var(--waccent); }
+.switch input:checked + .track::after { background: #fff; transform: translateX(16px); }
 .switch input:focus-visible + .track { outline: 2px solid var(--waccent); outline-offset: 2px; }
+
+/* A named colour for a mark someone chose (a profile) or one a page picked for
+   them (a History row's site letter, or the protocol a dweb address needs
+   flagged): one set of colours, so a chip, a swatch and a history row's mark
+   never each carry their own copy of the same eight-plus-three values
+   (code-guidelines.md Rule 3). No default is set here for `--dot` itself: a
+   swatch's own colour dot has to inherit it from its `[data-color]` button,
+   and declaring one on `.mark` directly would shadow that inheritance --
+   `var(--dot, ...)`'s fallback covers a mark drawn with no colour at all. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: #fff;
+  font-weight: 600;
+  background: var(--dot, #3b82f6);
+}
+[data-color='blue'] { --dot: #3b82f6; }
+[data-color='green'] { --dot: #22c55e; }
+[data-color='orange'] { --dot: #f97316; }
+[data-color='red'] { --dot: #ef4444; }
+[data-color='purple'] { --dot: #a855f7; }
+[data-color='pink'] { --dot: #ec4899; }
+[data-color='teal'] { --dot: #14b8a6; }
+[data-color='gray'] { --dot: #9ca3af; }
+/* A history row's mark, when the address is a dweb one a plain letter would not explain. */
+[data-color='ipfs'] { --dot: #0d9488; }
+[data-color='ipns'] { --dot: #6366f1; }
+[data-color='ens'] { --dot: #7c3aed; }

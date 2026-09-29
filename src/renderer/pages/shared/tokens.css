@@ -6,16 +6,20 @@
 
 :root {
   --wbg: #f4f4f8;
+  --wbg-2: #e7e7f1;
   --wpanel: #ffffff;
   --wsurface: #ebebf1;
   --wborder: color-mix(in srgb, var(--wbg) 82%, black);
   --wink: rgba(0, 0, 0, 0.90);
+  --wink-strong: rgba(0, 0, 0, 0.96);
   --wink-dim: rgba(0, 0, 0, 0.58);
   --wink-off: rgba(0, 0, 0, 0.38);
   --whover: rgba(0, 0, 0, 0.06);
   --waccent: #4f46e5;
   --waccent-ink: #ffffff;
+  --waccent-wash: color-mix(in srgb, var(--waccent) 14%, transparent);
   --wdanger: #dc2626;
+  --wdanger-wash: color-mix(in srgb, var(--wdanger) 10%, transparent);
   --wok: #00a848;
   --wwarn: #f97316;
   --wradius: 10px;
@@ -25,10 +29,12 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --wbg: #17181c;
+    --wbg-2: #202129;
     --wpanel: #1e1f24;
     --wsurface: #2b2c31;
     --wborder: #3b3c42;
     --wink: #e6e7e8;
+    --wink-strong: #f5f6f7;
     --wink-dim: #a4a5af;
     --wink-off: #6b7280;
     --whover: rgba(255, 255, 255, 0.07);
@@ -41,7 +47,7 @@
 html, body {
   margin: 0;
   min-height: 100%;
-  background: var(--wbg);
+  background: linear-gradient(160deg, var(--wbg) 0%, var(--wbg-2) 100%) fixed;
   color: var(--wink);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;

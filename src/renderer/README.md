@@ -59,7 +59,9 @@ them, so this view's CSP stays `img-src 'self' data:`; the renderer never fetche
 
 **Icons are hand-drawn inline SVG**, no icon font or library (Rule 8;
 [`ADR-0002`](../../docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)), with paths
-matching `orivon-browser-v2` ported from lucide (ISC), credited in `icons.ts`. A control with no
+matching `orivon-browser-v2` ported from lucide (ISC), credited in `icons.ts`. `pages/shared/icons.ts`
+builds the shell's own pages' icons (Settings' nav, History's marks) on the same `svg`/`path`/`circle`/
+`rect`/`line` primitives, drawn for those pages rather than ported. A control with no
 behaviour yet ships `disabled` with an honest `title`, never omitted or silently clickable
 (A32).
 
