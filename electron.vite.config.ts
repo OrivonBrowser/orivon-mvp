@@ -16,6 +16,16 @@ export function isShimImporter (importer: string | undefined): boolean {
   return path.includes('/src/shim/') && !path.includes('/tests/')
 }
 
+/** The Node modules a sandboxed preload's own `require` provides (Electron's sandboxed-preload
+ * docs); every other builtin a bundled package asks for fails there at load time. */
+const SANDBOX_PRELOAD_MODULES = new Set(['events', 'timers', 'url'])
+
+/** A polyfill package the shim pulls into a preload (readable-stream, for one) asks for Node
+ * builtins itself: those it could not `require` in a sandbox resolve through the shim's table too. */
+function isPackageImporter (importer: string | undefined): boolean {
+  return importer !== undefined && importer.replace(/\\/g, '/').includes('/node_modules/')
+}
+
 /** `specifier` (bare or `node:`-prefixed) stripped to the bare form module-map.ts's table keys on. */
 function bareSpecifier (specifier: string): string {
   return specifier.startsWith('node:') ? specifier.slice('node:'.length) : specifier
@@ -31,8 +41,11 @@ function bareSpecifier (specifier: string): string {
  */
 export function shimNodeSpecifiers (): Plugin {
   const targets = new Map(buildAliasEntries().map((entry) => [entry.specifier, entry]))
-  const isOurs = (source: string, importer: string | undefined): boolean =>
-    isShimImporter(importer) && targets.has(bareSpecifier(source))
+  const isOurs = (source: string, importer: string | undefined): boolean => {
+    const bare = bareSpecifier(source)
+    if (!targets.has(bare)) return false
+    return isShimImporter(importer) || (isPackageImporter(importer) && !SANDBOX_PRELOAD_MODULES.has(bare))
+  }
 
   return {
     name: 'orivon:shim-node-specifiers',

@@ -33,7 +33,9 @@ carried across the page -> host hop: a compiled `WebAssembly.Module` does not su
 (`../fs/paths.ts`, `../wasi/fds.ts`), which `host.ts` bundles into a real preload script, not
 through the app bundler's own aliasing -- the preload build's own resolve plugin
 (`electron.vite.config.ts`'s `shimNodeSpecifiers`) resolves it the same way, for any importer
-under `src/shim/`.
+under `src/shim/`, and for a package the shim brings in (readable-stream asks for `buffer` and
+`util`) whenever the builtin is one a sandboxed preload cannot `require` (all but `events`,
+`timers` and `url`).
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README.

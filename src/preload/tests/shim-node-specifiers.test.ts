@@ -4,6 +4,7 @@ import { isShimImporter, shimNodeSpecifiers } from '../../../electron.vite.confi
 const SHIM_IMPORTER = '/repo/src/shim/wasi/fds.ts'
 const SHIM_TEST_IMPORTER = '/repo/src/shim/wasi/tests/fds.test.ts'
 const PRELOAD_IMPORTER = '/repo/src/preload/child-host.ts'
+const PACKAGE_IMPORTER = '/repo/node_modules/readable-stream/lib/internal/streams/buffer_list.js'
 
 describe('isShimImporter', () => {
   it('is true only for a file under src/shim/, never its own tests', () => {
@@ -65,6 +66,23 @@ describe('the preload build\'s shimNodeSpecifiers plugin', () => {
 
     expect(ctx.resolve).not.toHaveBeenCalled()
     expect(result).toBeNull()
+  })
+
+  it('resolves a builtin a bundled package asks for when a sandboxed preload could not require it', async () => {
+    // readable-stream, which the shim's stream polyfill brings in, requires 'buffer' and 'util' itself.
+    for (const specifier of ['buffer', 'util']) {
+      const ctx = fakeContext()
+      await resolveIdOf(shimNodeSpecifiers()).call(ctx, specifier, PACKAGE_IMPORTER)
+      expect(ctx.resolve, specifier).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('leaves a package\'s events, timers and url to the sandboxed preload\'s own require', async () => {
+    for (const specifier of ['events', 'timers', 'url']) {
+      const ctx = fakeContext()
+      expect(await resolveIdOf(shimNodeSpecifiers()).call(ctx, specifier, PACKAGE_IMPORTER), specifier).toBeNull()
+      expect(ctx.resolve).not.toHaveBeenCalled()
+    }
   })
 
   it('leaves a relative or absolute import alone', async () => {
