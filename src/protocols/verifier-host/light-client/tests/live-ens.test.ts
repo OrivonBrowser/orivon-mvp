@@ -1,12 +1,21 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createServer } from 'node:http'
+import { lookup } from 'node:dns/promises'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { createEnsResolver } from '../../../ens/resolver.js'
 import { DEFAULT_ENDPOINTS } from '../../../../main/verifier/endpoints.js'
 import { allowlisted, guardedCcipRequest } from '../../egress.js'
+import { createDirectFetch } from '../../direct-fetch.js'
 import { startHeliosLightClient } from '../light-client.js'
 import type { LightClient } from '../../service.js'
+
+/** The real answer for `host`, exactly as `guardedCcipRequest` will pin its dial to: this test hits real CCIP gateways, so a stub address would only ever fail to connect. */
+async function resolveHost (host: string): Promise<string[]> {
+  return (await lookup(host, { all: true })).map((entry) => entry.address)
+}
+
+const ccipFetch = createDirectFetch({ allowPost: true, allowRedirect: true })
 
 // Opt-in, live: ORIVON_LIVE_ETH=1 npx vitest run src/protocols/verifier-host/light-client/tests/live-ens.test.ts
 // It contacts mainnet RPC and beacon endpoints, so no ordinary run does.
@@ -56,7 +65,7 @@ describe.skipIf(!LIVE)('ENS through the light client, live', () => {
     const fetch = allowlisted([...DEFAULT_ENDPOINTS.executionRpcs, DEFAULT_ENDPOINTS.consensusRpc], async (url, init) => await nodeFetch(url, init), 'the light client')
     const client = startHeliosLightClient({ executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: root }, fetch, () => {})
     await until(client, 120_000)
-    const resolver = createEnsResolver({ provider: client.provider, ccipRequest: async (p) => await guardedCcipRequest(p, { fetch: async (url, init) => await nodeFetch(url, init), resolveHost: async () => ['93.184.216.34'] }) })
+    const resolver = createEnsResolver({ provider: client.provider, ccipRequest: async (p) => await guardedCcipRequest(p, { directFetch: ccipFetch, resolveHost }) })
     const kinds: Record<string, string | undefined> = {}
     for (const name of ['vitalik.eth', 'ens.eth', 'tornadocash.eth', 'app.ens.eth', 'uniswap.eth']) {
       const [record] = await resolver.resolve(name)

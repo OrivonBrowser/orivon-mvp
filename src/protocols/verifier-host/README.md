@@ -27,10 +27,15 @@ and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
 
 ## Design notes
 
-**Every request leaves through [`egress.ts`](egress.ts), over Electron's `net`**, so a configured
-proxy applies. A CCIP-Read URL, which a name's resolver contract chooses, gets the loader's install
-guard, but `net` cannot pin a request to the address that was checked: a name that re-resolves in
-between is a residual window (`open-questions.md` A66). The one path around `net` is
-[`dns-fallback.ts`](dns-fallback.ts), only for a gateway that had no proxy configured when the
-host started (ADR-0030's 2026-09-26 amendment); taking it for a proxied gateway would silently
-bypass that proxy, and the check being a snapshot is `security-model.md` T40's residual.
+**Every request leaves through [`egress.ts`](egress.ts), over Electron's `net`, except CCIP-Read
+and the DNS-tamper fallback below.** A configured proxy applies to everything that does. A
+CCIP-Read URL, which a name's resolver contract chooses, is dialled through
+[`direct-fetch.ts`](direct-fetch.ts) at the address `resolveHost` already checked -- `net` cannot
+pin a request to an address a check already resolved (confirmed against Electron 44's API, the
+same gap `open-questions.md`'s A66 names for a different caller), so nothing between the check
+and the request can hand it a different one (rebinding). This costs CCIP-Read a configured proxy,
+the same trade [`dns-fallback.ts`](dns-fallback.ts) already makes for its own narrower case, since
+pinning and `net`'s proxy support are not available together. The one OTHER path around `net` is
+that file, only for a gateway that had no proxy configured when the host started (ADR-0030's
+2026-09-26 amendment); taking it for a proxied gateway would silently bypass that proxy, and the
+check being a snapshot is `security-model.md` T40's residual.
