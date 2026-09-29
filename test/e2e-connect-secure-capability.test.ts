@@ -59,7 +59,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { closeElectronApp, forwardOutput, killChild, moveIntoAttributedSession, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { generateTlsFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -198,7 +198,7 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
   await runPhase('Phase 2 (connectSecure)', async (check) => {
     const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
     try {
-      const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+      const beforeGrant = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
       // A manifest CONSTRUCTED for this test, not fetched from the real
       // fixture (test/apps/fixture/.well-known/orivon.json declares only
@@ -234,6 +234,12 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
         grantOutcome.grant.capability === 'https.connect' && JSON.stringify(grantOutcome.grant.patterns) === JSON.stringify([grantPattern]),
         JSON.stringify(grantOutcome.grant)
       )
+
+      // The dev-only hook lands on the broker directly, with no IPC round
+      // trip to reload this page into its now-granted session the way a
+      // real app.requestGrant call would (transport/ipc.ts) -- move it
+      // there the same way before making any granted call from it.
+      const view = await moveIntoAttributedSession(app, beforeGrant, FIXTURE_URL)
 
       // (a) OUTSIDE the granted pattern: '127.0.0.1' is the identical TCP
       // peer as 'localhost' (the server is bound to 127.0.0.1), but
