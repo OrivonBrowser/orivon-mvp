@@ -13,14 +13,86 @@
 // which no longer executes any of node:internal/webstreams/adapters.js's
 // `finished()`-driven code at all, survives the same churn.
 
-import { createServer, type Server } from 'node:net'
+import { EventEmitter } from 'node:events'
+import { createServer, type Server, type Socket } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import { dialTcp } from '../node-adapters.js'
-import { WRITABLE_ALREADY_ENDED_CODE } from '../socket-streams.js'
+import { socketReadable, socketWritable, WRITABLE_ALREADY_ENDED_CODE } from '../socket-streams.js'
 
 function neverAborts (): AbortSignal {
   return new AbortController().signal
 }
+
+/** A Socket-shaped double, real enough for socketReadable: an EventEmitter with the few methods it calls. */
+class FakeReadableSocket extends EventEmitter {
+  readableHighWaterMark = 64 * 1024
+  pause (): this { return this }
+  resume (): this { return this }
+  destroy (): this { return this }
+}
+
+function fakeSocket (): Socket {
+  return new FakeReadableSocket() as unknown as Socket
+}
+
+describe('socketReadable -- chunk copying', () => {
+  it('copies a data chunk rather than exposing a view over its own backing buffer', async () => {
+    const socket = fakeSocket()
+    const reader = socketReadable(socket).getReader()
+
+    // A pooled/shared allocation: the chunk 'data' hands over is a VIEW into
+    // a LARGER buffer with real neighbouring bytes on both sides -- the shape
+    // a future Node/Electron read buffer could take (this Node version
+    // always allocates exact-size, so this double is what stands in for
+    // "future").
+    const pool = Buffer.alloc(16, 0xff)
+    const chunk = pool.subarray(4, 8)
+    chunk.fill(1)
+    socket.emit('data', chunk)
+    const { value } = await reader.read()
+    expect(Array.from(value ?? [])).toEqual([1, 1, 1, 1])
+
+    // A view would let this reach bytes the renderer already "received":
+    // mutating the pool afterwards must never change what was already read.
+    pool.fill(0xee)
+    expect(Array.from(value ?? [])).toEqual([1, 1, 1, 1])
+  })
+})
+
+/** A Socket-shaped double whose write() always tells the kernel to accept immediately, deferring its flush callback until flush() is called by hand. */
+function fakeWritableSocket (): { socket: Socket, flush: () => void } {
+  const deferred: Array<() => void> = []
+  class FakeWritableSocket extends EventEmitter {
+    writable = true
+    writableHighWaterMark = 64 * 1024
+    write (_chunk: unknown, cb?: (error?: Error) => void): boolean {
+      if (cb !== undefined) deferred.push(cb)
+      return true
+    }
+
+    end (cb?: (error?: Error) => void): this { cb?.(); return this }
+  }
+  const socket = new FakeWritableSocket()
+  return { socket: socket as unknown as Socket, flush: () => { while (deferred.length > 0) deferred.shift()?.() } }
+}
+
+describe('socketWritable -- pipelining', () => {
+  it('resolves a write once the kernel accepts it, not once its own flush callback fires', async () => {
+    const { socket, flush } = fakeWritableSocket()
+    const writer = socketWritable(socket).getWriter()
+
+    const writes = Promise.all([1, 2, 3, 4, 5].map(async (n) => { await writer.write(new Uint8Array([n])) }))
+
+    // flush() is never called in this test: the flush callback stays
+    // pending forever. Waiting for it (as the old code did, one write at a
+    // time) would leave `writes` unsettled -- resolving on socket.write()'s
+    // own return value instead is what lets every write settle regardless.
+    await expect(Promise.race([writes, new Promise((resolve) => setTimeout(() => resolve('timed-out'), 200))]))
+      .resolves.not.toBe('timed-out')
+
+    flush() // drains the never-needed callbacks so nothing here leaks a timer
+  })
+})
 
 describe('socketReadable / socketWritable -- basic correctness', () => {
   let server: Server
@@ -89,6 +161,33 @@ describe('socketReadable / socketWritable -- basic correctness', () => {
     const writer = dialed.writable.getWriter()
     await expect(writer.write(new Uint8Array([1]))).rejects.toMatchObject({ code: WRITABLE_ALREADY_ENDED_CODE })
     await dialed.destroy('failed')
+  })
+
+  it('a local destroy() with no error and no prior end/error reports the readable as a clean end, not an AbortError', async () => {
+    // The one real caller that reaches this: node-adapters.ts's destroySocket
+    // drain-deadline timeout, which always resolves for 'closed'/'sessionEnded'
+    // regardless -- so the read side reporting a clean end here matches an
+    // already-successful close, rather than turning it into a spurious
+    // failure the way copying Duplex.toWeb's old AbortError-on-destroy
+    // behaviour would.
+    server = createServer(() => {}) // accepts and does nothing: never ends, never errors
+    port = await new Promise((resolve) => {
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address()
+        resolve(typeof address === 'object' && address !== null ? address.port : 0)
+      })
+    })
+
+    const dialed = await dialTcp(['127.0.0.1'], port, neverAborts())
+    const reader = dialed.readable.getReader()
+    const readPromise = reader.read()
+
+    // Neither the peer nor our own reader ever ends this socket -- only the
+    // raw destroy() below does, with no error, exactly as destroySocket's
+    // deadline path calls it.
+    await dialed.destroy('failed')
+
+    await expect(readPromise).resolves.toEqual({ done: true, value: undefined })
   })
 
   it('reader.cancel() destroys the whole socket, matching the load-bearing Duplex.toWeb behaviour socket.ts depends on', async () => {

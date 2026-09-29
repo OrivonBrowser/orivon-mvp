@@ -41,7 +41,17 @@ export function socketReadable (socket: Socket): ReadableStream<Uint8Array> {
     start (controller) {
       const onData = (chunk: Buffer): void => {
         if (settled) return
-        controller.enqueue(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength))
+        // A COPY, not a view over `chunk`'s own backing buffer. Node
+        // allocates each socket read at exactly its size today (measured:
+        // `chunk.buffer.byteLength === chunk.byteLength` at offset 0), which
+        // is what makes a zero-copy view safe -- but it is an unspecified
+        // Node detail, not a documented guarantee, and a future pooled or
+        // shared read buffer would ship neighbouring bytes to the renderer:
+        // `MessagePortMain` structured-clones the WHOLE backing `ArrayBuffer`
+        // a chunk points into, not just the view's own bytes. `new
+        // Uint8Array(chunk)` copies chunk's elements into a fresh buffer,
+        // matching what `Duplex.toWeb` did.
+        controller.enqueue(new Uint8Array(chunk))
         if (controller.desiredSize !== null && controller.desiredSize <= 0) socket.pause()
       }
       const onEnd = (): void => {
@@ -54,6 +64,19 @@ export function socketReadable (socket: Socket): ReadableStream<Uint8Array> {
         settled = true
         controller.error(error)
       }
+      // Reachable with `settled` still false only when something OUTSIDE
+      // this stream destroys the socket directly, with no error, before
+      // 'end' or 'error' ever fired: cancel() above already sets `settled`
+      // first, so this is never that path. The one real caller is
+      // ../node-adapters.ts's `destroySocket`'s drain-deadline timeout (a
+      // peer that stops draining our writable) -- and that path is a
+      // graceful, app-initiated close for which `destroySocket` itself
+      // always resolves. Reporting THIS side as a clean end matches that:
+      // ../transport/relay/socket.ts's pump would otherwise turn an
+      // already-successful close into a spurious 'internal' read failure
+      // (Node's own old `Duplex.toWeb` errored the readable with an
+      // AbortError here instead; this adapter deliberately does not copy
+      // that -- see socket-streams.test.ts's own case for this).
       const onClose = (): void => {
         if (settled) return
         settled = true
@@ -103,8 +126,36 @@ export function socketWritable (socket: Socket): WritableStream<Uint8Array> {
       if (!socket.writable) {
         return Promise.reject(Object.assign(new Error('the writable already ended'), { code: WRITABLE_ALREADY_ENDED_CODE }))
       }
+      // Resolves like `Duplex.toWeb` did: once the kernel accepts this chunk
+      // (`socket.write` returns `true`), or -- past `writableHighWaterMark`
+      // -- once `'drain'` fires, never on the write's own flush callback.
+      // Waiting for that callback let only one chunk be in flight at a time;
+      // this lets writes pipeline the way a real Writable's backpressure
+      // does. A write error still rejects, through the same callback, as
+      // long as this one has not already resolved -- once resolved, a later
+      // failure surfaces on `controller.error` (the listener above) rather
+      // than retracting an already-settled write, the same as any other
+      // WHATWG stream.
       return new Promise<void>((resolve, reject) => {
-        socket.write(chunk, (error) => { if (error != null) reject(error); else resolve() })
+        let writeSettled = false
+        const onError = (error: Error): void => {
+          if (writeSettled) return
+          writeSettled = true
+          socket.off('drain', onDrain)
+          reject(error)
+        }
+        const onDrain = (): void => {
+          if (writeSettled) return
+          writeSettled = true
+          resolve()
+        }
+        const acceptedByKernel = socket.write(chunk, (error) => { if (error != null) onError(error) })
+        if (acceptedByKernel) {
+          writeSettled = true
+          resolve()
+        } else {
+          socket.once('drain', onDrain)
+        }
       })
     },
     close () {
