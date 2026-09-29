@@ -33,9 +33,9 @@ export const APP_SESSION = { name: 'app' }
  * A ControlEvent whose senderFrame resolves to `origin` via
  * originFromSenderFrame, and whose sender is the frame's OWN top frame in
  * `session` (`DEFAULT_SESSION` unless a test says otherwise) -- so a test
- * that never passes `sessionForOrigin` sees the identical event this helper
- * always produced, and one that does gets to choose whether the sender's
- * session matches what it injects.
+ * that never passes an `attributed` predicate sees the identical event this
+ * helper always produced, and one that does gets to choose whether the
+ * sender's session matches what it injects.
  */
 export function frameFor (origin: string, session: unknown = DEFAULT_SESSION): ControlEvent {
   const senderFrame = { url: `${origin}/index.html`, origin, postMessage: vi.fn() }
