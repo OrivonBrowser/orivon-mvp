@@ -29,7 +29,8 @@ function fakeFrame (origin: string | null): FakeFrame {
 }
 
 function event (frame: FakeFrame | null): ControlEvent {
-  return { senderFrame: frame as unknown as ControlEvent['senderFrame'] }
+  const sender = { mainFrame: frame, session: {}, reload: () => {}, isDestroyed: () => false }
+  return { senderFrame: frame as unknown as ControlEvent['senderFrame'], sender: sender as unknown as ControlEvent['sender'] }
 }
 
 interface FakeHost { origin: string, postPagePort: ReturnType<typeof vi.fn> }
@@ -65,6 +66,24 @@ describe('createChildHostRegistry.connect', () => {
     await registry.connect(event(null))
 
     expect(pool.getOrCreate).not.toHaveBeenCalled()
+  })
+
+  it('refuses a document that committed its origin outside the session it belongs in, as the broker does', async () => {
+    const pool = fakePool(host)
+    const registry = createChildHostRegistry(() => fakeBroker(new Set([APP_ORIGIN])), pool, fakeTracker(), () => () => false)
+
+    await registry.connect(event(fakeFrame(APP_ORIGIN)))
+
+    expect(pool.getOrCreate).not.toHaveBeenCalled()
+  })
+
+  it('connects a document attributed to its origin\'s session', async () => {
+    const pool = fakePool(host)
+    const registry = createChildHostRegistry(() => fakeBroker(new Set([APP_ORIGIN])), pool, fakeTracker(), () => () => true)
+
+    await registry.connect(event(fakeFrame(APP_ORIGIN)))
+
+    expect(pool.getOrCreate).toHaveBeenCalledWith(APP_ORIGIN)
   })
 
   it('refuses a frame whose origin is not a registered app', async () => {

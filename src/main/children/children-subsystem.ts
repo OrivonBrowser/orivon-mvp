@@ -23,7 +23,7 @@ export const childrenSubsystem: Subsystem = {
     watchPages(app, tracker)
 
     const pool = createChildHostPool(getBroker)
-    const registry = createChildHostRegistry(getBroker, pool, tracker)
+    const registry = createChildHostRegistry(getBroker, pool, tracker, () => ctx.senderAttributed)
 
     // F5: an uncaught rejection here reaches index.ts's own
     // `unhandledRejection` handler, which is `app.exit(1)` -- the whole

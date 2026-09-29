@@ -7,7 +7,7 @@
 // testable on its own (README.md's own note).
 
 import { MessageChannelMain } from 'electron'
-import { originFromSenderFrame } from '../../broker/policy/origin.js'
+import { isAttributedSession, originFromSenderFrame } from '../../broker/policy/origin.js'
 import type { ControlEvent, PortDeliveryFrame } from '../../broker/transport/relay/port-transport.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { CHILD_HOST_PORT_CHANNEL } from '../channels.js'
@@ -32,7 +32,9 @@ export interface ChildHostRegistry {
 export function createChildHostRegistry (
   getBroker: () => Broker,
   pool: ChildHostPool,
-  tracker: PageTracker
+  tracker: PageTracker,
+  /** `ctx.senderAttributed`, read lazily: the same session check every broker channel applies. */
+  getAttributed: () => ((sender: unknown, origin: string) => boolean) | undefined = () => undefined
 ): ChildHostRegistry {
   /** Origins with a live `tracker.onceEmpty` subscription -- at most one per
    * origin at a time, so two connect() calls for the same origin before its
@@ -68,6 +70,10 @@ export function createChildHostRegistry (
   async function connect (event: ControlEvent): Promise<void> {
     const origin = originFromSenderFrame(event.senderFrame)
     if (origin === null) return
+    // A document that committed this origin outside the session it belongs in gets no host, as it
+    // gets no broker call (../../broker/policy/origin.ts's isAttributedSession).
+    const attributed = getAttributed()
+    if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) return
     const broker = getBroker()
     if (!broker.app.isRegisteredSync(origin)) {
       // F2/F5: the app may have just been removed (or never finished

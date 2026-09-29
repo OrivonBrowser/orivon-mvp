@@ -197,6 +197,19 @@ export interface ChildHostPool {
   closeAll (): Promise<void>
 }
 
+/** Every host this pool built, by the origin it was built for: `isChildHostFor` reads it. */
+const builtHosts = new WeakMap<WebContents, string>()
+
+/**
+ * Whether `contents` is the child host this process built for `origin`, still showing its own
+ * document. The broker attributes a call to an origin only from that origin's session
+ * (../sessions/session-attribution.ts); a host runs in a session of its own, so it is recognised
+ * here instead, and nothing else in that session ever is.
+ */
+export function isChildHostFor (contents: WebContents, origin: string): boolean {
+  return builtHosts.get(contents) === origin && !contents.isDestroyed() && contents.getURL() === wellKnownUrl(origin)
+}
+
 interface HostRecord {
   readonly view: WebContentsView
   readonly webContents: WebContents
@@ -232,6 +245,7 @@ export function createChildHostPool (
       }
     })
     const webContents = view.webContents
+    builtHosts.set(webContents, origin)
     reportChildHostFailures(origin, webContents)
 
     // F5: a crash (or any other reason the renderer is gone) must close
