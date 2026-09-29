@@ -1440,8 +1440,8 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A288: One extension instance everywhere undoes per-app sessions **[OWNER]**
 
-- **Question:** Extensions run on granted apps as one instance (owner, 2026-09-28). Does a grant
-  then stop implying a session partition, with only a pinned cache keeping one?
+- **Question:** The owner chose one extension instance for granted apps too (2026-09-28). Does a
+  grant then stop implying a session partition, with only a pinned cache keeping one?
 - **Why it matters:** ADR-0018, ADR-0003 and T18/T22 isolate each granted origin in
   `persist:app-*`; Electron loads an extension per session, so one instance means one session.
 - **Options:** granted network-served origins join the default session, cache-served ones keep
@@ -1451,16 +1451,27 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
 
-- **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs.
-  Sandboxed it runs, though a fresh extension's first worker races it and misses every time
-  (20/20 fixture, 4/4 real) -- the reload already in place recovers every miss. `--no-sandbox`
-  was a Playwright default, not Orivon's/the kernel's; a restricted-namespace AppImage/deb would.
+- **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs. Sandboxed it
+  runs, though a fresh extension's first worker races it and misses every time (20/20 fixture, 4/4 real)
+  -- the reload in place recovers every miss. `--no-sandbox` was a Playwright default, not Orivon's/the
+  kernel's; an AppImage on a namespace-restricted machine would; a `.deb` installs the setuid helper.
 - **Why it matters:** there, every worker keeps Electron's native, partial `chrome.tabs`/`windows`
   permanently, with no reload able to fix it.
 - **Options:** confirm real packaged-launch flags on such a machine (rec., unresearched); warn and
   run with partial APIs; refuse to load extensions when unsandboxed.
 - **Who decides:** research first
 - **Blocks:** extensions build plan package 4's MV3 service-worker API surface
+
+### A291: The packaged app carries no licence texts for its bundled code **[OWNER]**
+
+- **Question:** The packaged app (`out/**` plus `package.json`) bundles vendored and npm code
+  with no licence texts anywhere in it. Does the package ship any?
+- **Why it matters:** `vendor/`'s GPL-3.0, MIT and BSD-3-Clause code, and every npm dependency's
+  own licence, reach a person's machine with nothing beside them once packaged.
+- **Options:** a generated third-party notices file shipped in the package (rec.); the licence
+  texts shipped beside each bundle instead.
+- **Who decides:** owner
+- **Blocks:** the first public release
 
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 

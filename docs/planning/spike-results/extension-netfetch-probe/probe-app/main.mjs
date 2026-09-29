@@ -1,9 +1,10 @@
 // One-shot measurement probe: does net.fetch / session.fetch misbehave while
 // an extension declaring webRequest / declarativeNetRequest is loaded in the
-// session being fetched on? Not product code -- lives entirely outside
-// orivon-mvp. All work happens inside app.whenReady().then(); no window is
-// ever shown. Every step writes the results file immediately, so a native
-// crash (segfault) still leaves a record of how far the run got.
+// session being fetched on? Not product code -- kept here as the probe's
+// own source, with no dependency on this repository's code. All work
+// happens inside app.whenReady().then(); no window is ever shown. Every
+// step writes the results file immediately, so a native crash (segfault)
+// still leaves a record of how far the run got.
 import { app, session, net, BrowserWindow } from 'electron'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'

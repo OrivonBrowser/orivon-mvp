@@ -237,7 +237,7 @@ service-worker setup, not to `BaseWindow` in general.
 ### Checking against real Chrome extensions
 
 [`test/e2e-extensions-real.test.ts`](../../test/e2e-extensions-real.test.ts) installs whichever
-of uBOL Origin Lite, Dark Reader, Bitwarden and MetaMask it finds unpacked in
+of uBlock Origin Lite, Dark Reader, Bitwarden and MetaMask it finds unpacked in
 `ORIVON_REAL_EXTENSIONS_DIR` (one subdirectory per extension, named `ubol`/`darkreader`/
 `bitwarden`/`metamask`) through the real install path, then records per extension: whether its
 service worker is still running 10s after load and its first console errors, whether its

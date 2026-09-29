@@ -138,7 +138,8 @@ the set stays small enough to review. Long comments are allowed when they are ge
 necessary and not shortenable, but never silently.
 
 **Not checked:** `src/contracts/` (the carve-out above), test files (Rule 2 already gives them a
-higher budget for the same reason), and `spike/` (documented throwaway).
+higher budget for the same reason), `spike/` (documented throwaway), and `vendor/` (third-party
+source kept in its upstream shape, patched as its `UPSTREAM.md` lists).
 
 ---
 

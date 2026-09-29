@@ -1,14 +1,13 @@
 // A repeatable check against real, unpacked Chrome extensions -- the
 // closest thing this repo has to "does it work with the newest real
 // extensions" (the owner's own success metric,
-// docs/planning/extensions-build-plan.md D1). Skipped entirely unless
+// docs/planning/extensions-build-plan.md). Skipped entirely unless
 // ORIVON_REAL_EXTENSIONS_DIR points at a folder of unpacked extension
-// directories (this repo's own scratchpad convention:
-// <dir>/<slot>/manifest.json for each of ubol, darkreader, bitwarden,
-// metamask -- any subset present is measured, the rest are skipped with a
-// logged reason). Never committed extension code; re-download the latest
-// releases from each project's GitHub releases when the directory is
-// missing (see docs/development/testing.md).
+// directories (<dir>/<slot>/manifest.json for each of ubol, darkreader,
+// bitwarden, metamask -- any subset present is measured, the rest are
+// skipped with a logged reason). Never committed extension code;
+// re-download the latest releases from each project's GitHub releases
+// when the directory is missing (see docs/development/testing.md).
 //
 // Installs each through the real path: loadableManifest's stripped
 // manifest copy and a real per-slot key, the same as
