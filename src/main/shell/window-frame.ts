@@ -122,9 +122,9 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   // skip it there rather than call a method on a platform it doesn't
   // apply to. Registered through theme-colors.ts's `onThemeUpdated`, not a
   // `nativeTheme.on('updated', ...)` of its own -- `nativeTheme` is one
-  // process-wide EventEmitter, and one direct listener per window is what
-  // used to print `MaxListenersExceededWarning [NativeTheme]` from the 4th
-  // window on. Unregistered on 'closed', or a later theme change would call
+  // process-wide EventEmitter, and one direct listener per window would
+  // print `MaxListenersExceededWarning [NativeTheme]` from the 4th window
+  // on. Unregistered on 'closed', or a later theme change would call
   // setTitleBarOverlay on an already-destroyed window.
   function applyOverlayForTheme (): void {
     win.setBackgroundColor(background())

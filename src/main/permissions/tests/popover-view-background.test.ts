@@ -3,8 +3,9 @@
 // popup's own page has loaded its stylesheet. This proves createPopoverView
 // sets the popup's OWN theme colour before it is ever attached to the
 // screen, that it tracks nativeTheme rather than a value baked in once, and
-// (for a `warm` popup, ./menu-panel.ts's own case) that the fix survives
-// being kept open across shows instead of rebuilt on every one.
+// (for a `warm` popup, ./menu-panel.ts's own case) that the colour stays
+// correct across being kept open across shows instead of rebuilt on every
+// one.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const { calls, nativeThemeState, nativeThemeListeners } = vi.hoisted(() => ({
@@ -93,10 +94,10 @@ afterEach(() => {
   calls.length = 0
   nativeThemeState.shouldUseDarkColors = false
   // NOT nativeThemeListeners.length = 0: popover-view.ts registers through
-  // theme-colors.ts's onThemeUpdated now (defect 2's fix), which installs
-  // the one real `nativeTheme.on('updated', ...)` once for this whole
-  // module's life and never removes it -- clearing this array between tests
-  // would desync it from that real, still-installed listener.
+  // theme-colors.ts's onThemeUpdated, which installs the one real
+  // `nativeTheme.on('updated', ...)` once for this whole module's life and
+  // never removes it -- clearing this array between tests would desync it
+  // from that real, still-installed listener.
   nextWebContentsId = 1
   vi.mocked(WebContentsView).mockClear()
 })
@@ -229,8 +230,8 @@ describe('createPopoverView: a `warm` popup (menu-panel.ts\'s own case)', () => 
     })
     popover.prewarm()
     // THIS test's own warm view, not the shared `calls` log: onThemeUpdated
-    // (theme-colors.ts, defect 2's fix) fans one real listener out to every
-    // popover still registered, which in this file also includes earlier
+    // (theme-colors.ts) fans one real listener out to every popover still
+    // registered, which in this file also includes earlier
     // tests' own warm popovers (their window never fired 'closed', so they
     // never unregistered -- correctly mirroring a real process, where a
     // window simply garbage collected without closing would leak the same
