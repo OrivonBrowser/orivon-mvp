@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { asPage } from './main-world-socket.test-helpers.js'
 
 // surface/orivon.ts imports `contextBridge`/`ipcRenderer` directly from
 // 'electron' at module scope (including a module-load-time
@@ -63,92 +64,9 @@ beforeEach(() => {
   executeInMainWorld = undefined
 })
 
-describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" and "throws"', () => {
-  it('falls back to exposeInMainWorld (net.lookup only, no stream methods) when executeInMainWorld is absent', () => {
-    executeInMainWorld = undefined
-
-    exposeOrivon()
-
-    expect(exposeInMainWorld).toHaveBeenCalledTimes(1)
-    const [name, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
-    expect(name).toBe('orivon')
-    // net.lookup (d-0030) needs no main-world stream wrapping -- it resolves
-    // to plain data, never a live handle -- so it is genuinely wired in the
-    // fallback surface, exactly like fs.readFile below it. connect/
-    // connectSecure/udpBind are not: each would resolve to something that
-    // is not a real TcpSocket/UdpSocket without the main-world stream
-    // wrapper, which is exactly the failure mode this fallback exists to
-    // avoid shipping (exposeOrivon's own doc).
-    const net = surface.net as Record<string, unknown>
-    expect(typeof net.lookup).toBe('function')
-    expect(net.connect).toBeUndefined()
-    expect(net.connectSecure).toBeUndefined()
-    expect(net.udpBind).toBeUndefined()
-    expect(typeof (surface.app as Record<string, unknown>).manifest).toBe('function')
-    expect(typeof (surface.app as Record<string, unknown>).requestGrant).toBe('function')
-    expect(typeof (surface.id as Record<string, unknown>).publicKey).toBe('function')
-    expect(typeof (surface.id as Record<string, unknown>).sign).toBe('function')
-    // orivon.web.openContext (ADR-0019) needs no main-world stream wrapping
-    // either -- surface/web.ts's own header -- so, like the extended fs
-    // surface below, it is genuinely wired in the fallback too, not merely
-    // present as an unreachable placeholder.
-    expect(typeof (surface.web as Record<string, unknown>).openContext).toBe('function')
-    // ADR-0016's sync call is present even in the net-less fallback --
-    // ../preload/README.md's rule that a method always absent from
-    // window.orivon is worse than one that is not there does not apply here:
-    // this method is genuinely wired either way, unlike net.
-    expect(typeof (surface.fs as Record<string, unknown>).readFileSync).toBe('function')
-    // The extended fs surface (queue item 2.1) is not net -- it needs no
-    // main-world stream wrapping, so it is wired identically in both the
-    // fallback and the executeInMainWorld path, exactly like readFile/
-    // writeFile above it.
-    for (const method of ['mkdir', 'readdir', 'stat', 'rm', 'rename', 'open', 'userSelected']) {
-      expect(typeof (surface.fs as Record<string, unknown>)[method]).toBe('function')
-    }
-  })
-
-  // web.context: the fallback's `web.openContext` used to wire
-  // `webOpenContextBridge` straight through as `openContext`, so calling it
-  // with the contract's real `(origin, options?)` shape lost `origin`
-  // entirely (a bare string has no `.origin` field) and every call reached
-  // the broker as `{ origin: undefined }`. Proven here by inspecting the
-  // actual CONTROL_CHANNEL payload, not just that the method exists.
-  it('web.openContext forwards origin and options to the CONTROL_CHANNEL call, not { origin: undefined }', () => {
-    executeInMainWorld = undefined
-    invoke.mockResolvedValue(okEnvelope({ id: 'ctx-1', origin: 'https://example.com' }))
-
-    exposeOrivon()
-
-    const [, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
-    const openContext = (surface.web as { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<unknown> }).openContext
-    void openContext('https://example.com', { width: 800, height: 600 })
-
-    const [, envelope] = invoke.mock.calls[0] as [string, { method: string, payload: unknown }]
-    expect(envelope.method).toBe('web.openContext')
-    expect(envelope.payload).toEqual({ origin: 'https://example.com', width: 800, height: 600 })
-  })
-
-  it('falls back to the SAME surface when executeInMainWorld exists but throws', () => {
-    executeInMainWorld = vi.fn(() => { throw new Error('CSP refused it') })
-
-    exposeOrivon()
-
-    expect(executeInMainWorld).toHaveBeenCalledTimes(1)
-    expect(exposeInMainWorld).toHaveBeenCalledTimes(1)
-    const [, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
-    const net = surface.net as Record<string, unknown>
-    expect(typeof net.lookup).toBe('function')
-    expect(net.connect).toBeUndefined()
-  })
-
-  it('does NOT fall back when executeInMainWorld exists and succeeds', () => {
-    installViaFakeMainWorld()
-
-    exposeOrivon()
-
-    expect(exposeInMainWorld).not.toHaveBeenCalled()
-  })
-})
+// exposeFallback()'s own tests (window.orivon with no executeInMainWorld, or
+// where it throws) live in ./orivon-fallback.test.ts, split out under Rule 2's
+// line budget.
 
 // orivon.web.openContext (ADR-0019) through the REAL executeInMainWorld
 // path end to end: surface/web.ts's webOpenContextBridge, control-call.ts's
@@ -165,7 +83,7 @@ describe('exposeOrivon -- orivon.web.openContext, real wiring end to end', () =>
     })
     exposeOrivon()
 
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       web: { openContext: (origin: string) => Promise<{ id: string, origin: string, evaluate: (s: string) => Promise<unknown> }> }
     }
     const context = await orivon.web.openContext('https://example.com')
@@ -189,7 +107,7 @@ describe('exposeOrivon -- P-F4: a failure after net.connect cleans up the broker
       })
 
       exposeOrivon()
-      const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<unknown> } }
+      const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<unknown> } }
 
       const connecting = orivon.net.connect({ host: 'x.example', port: 80 })
       const assertion = expect(connecting).rejects.toBeDefined()
@@ -218,7 +136,7 @@ describe('exposeOrivon -- P-F4: a failure after net.connect cleans up the broker
       })
 
       exposeOrivon()
-      const orivon = target.orivon as { net: { connectSecure: (opts: unknown) => Promise<unknown> } }
+      const orivon = asPage(target.orivon) as { net: { connectSecure: (opts: unknown) => Promise<unknown> } }
 
       const connecting = orivon.net.connectSecure({ host: 'x.example', port: 443 })
       const assertion = expect(connecting).rejects.toBeDefined()
@@ -254,7 +172,7 @@ describe('exposeOrivon -- P-F5: control-call failures are always OrivonError-sha
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     exposeOrivon()
-    const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { app: { manifest: () => Promise<unknown> } }
 
     let reason: unknown
     try { await orivon.app.manifest() } catch (error) { reason = error }
@@ -271,7 +189,7 @@ describe('exposeOrivon -- P-F5: control-call failures are always OrivonError-sha
     invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'outside the granted pattern' })
 
     exposeOrivon()
-    const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { app: { manifest: () => Promise<unknown> } }
 
     await expect(orivon.app.manifest()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
   })
@@ -288,7 +206,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     })
 
     exposeOrivon()
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<Record<string, unknown>> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<Record<string, unknown>> } }
     const connecting = orivon.net.connect({ host: 'x.example', port: 443 })
 
     // Deliver the port over PORT_CHANNEL -- socket-bridge.ts's own listener.
@@ -313,7 +231,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     })
 
     exposeOrivon()
-    const orivon = target.orivon as { net: { connectSecure: (opts: unknown) => Promise<Record<string, unknown>> } }
+    const orivon = asPage(target.orivon) as { net: { connectSecure: (opts: unknown) => Promise<Record<string, unknown>> } }
     const connecting = orivon.net.connectSecure({ host: 'x.example', port: 443 })
 
     portListener?.({ ports: [fakeMessagePort()] }, { handleId: 'sock-3' })
@@ -331,7 +249,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'https.connect is not granted to this origin' })
 
     exposeOrivon()
-    const orivon = target.orivon as { net: { connectSecure: (opts: unknown) => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { net: { connectSecure: (opts: unknown) => Promise<unknown> } }
 
     await expect(orivon.net.connectSecure({ host: 'x.example', port: 443 }))
       .rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
@@ -350,7 +268,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     })
 
     exposeOrivon()
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       id: {
         publicKey: (opts: { curve: string }) => Promise<Uint8Array>
         sign: (opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
@@ -371,7 +289,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'id is not granted to this origin for this curve' })
 
     exposeOrivon()
-    const orivon = target.orivon as { id: { sign: (opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array> } }
+    const orivon = asPage(target.orivon) as { id: { sign: (opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array> } }
 
     await expect(orivon.id.sign({ curve: 'P-256', payload: new Uint8Array(1) }))
       .rejects.toMatchObject({ code: 'denied' })
@@ -388,7 +306,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     })
 
     exposeOrivon()
-    const orivon = target.orivon as { net: { lookup: (opts: { hostname: string }) => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { net: { lookup: (opts: { hostname: string }) => Promise<unknown> } }
 
     // No portListener delivery step (unlike net.connect's own test above):
     // this resolves the instant the CONTROL_CHANNEL reply arrives.
@@ -401,7 +319,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'the hostname was not authorised by any held network grant' })
 
     exposeOrivon()
-    const orivon = target.orivon as { net: { lookup: (opts: { hostname: string }) => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { net: { lookup: (opts: { hostname: string }) => Promise<unknown> } }
 
     await expect(orivon.net.lookup({ hostname: 'what-i-stole.attacker.example' }))
       .rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
@@ -416,7 +334,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     })
 
     exposeOrivon()
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       app: { requestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean> }
     }
 
@@ -433,7 +351,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     invoke.mockResolvedValue(okEnvelope(false))
 
     exposeOrivon()
-    const orivon = target.orivon as { app: { requestGrant: (request: { capability: string }) => Promise<boolean> } }
+    const orivon = asPage(target.orivon) as { app: { requestGrant: (request: { capability: string }) => Promise<boolean> } }
 
     expect(await orivon.app.requestGrant({ capability: 'fs' })).toBe(false)
   })
@@ -451,7 +369,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     })
 
     exposeOrivon()
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       fs: {
         mkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
         readdir: (path: string) => Promise<readonly string[]>
@@ -481,7 +399,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: "the path is outside this app's files directory" })
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { rm: (path: string) => Promise<void> } }
+    const orivon = asPage(target.orivon) as { fs: { rm: (path: string) => Promise<void> } }
 
     await expect(orivon.fs.rm('../../etc/passwd')).rejects.toMatchObject({ code: 'denied' })
   })
@@ -504,7 +422,7 @@ describe('exposeOrivon -- P-F11 continued: net.listen (A114, d-0028)', () => {
     })
 
     exposeOrivon()
-    const orivon = target.orivon as { net: { listen: (opts: unknown) => Promise<{ id: string, localAddress: string, localPort: number, connections: ReadableStream }> } }
+    const orivon = asPage(target.orivon) as { net: { listen: (opts: unknown) => Promise<{ id: string, localAddress: string, localPort: number, connections: ReadableStream }> } }
     const listening = orivon.net.listen({ port: 4001 })
 
     // Deliver the SERVER's own port over PORT_CHANNEL -- socket-bridge.ts's
@@ -555,7 +473,7 @@ describe('exposeOrivon -- fs.open and its handle-scoped siblings', () => {
     })
 
     exposeOrivon()
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       fs: {
         open: (path: string, flags: string) => Promise<{
           id: string
@@ -594,7 +512,7 @@ describe('exposeOrivon -- fs.open and its handle-scoped siblings', () => {
     invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'fs is not granted to this origin' })
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { open: (path: string, flags: string) => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { fs: { open: (path: string, flags: string) => Promise<unknown> } }
 
     await expect(orivon.fs.open('a', 'r')).rejects.toMatchObject({ code: 'denied' })
   })
@@ -607,7 +525,7 @@ describe('exposeOrivon -- fs.open and its handle-scoped siblings', () => {
     })
 
     exposeOrivon()
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       fs: { open: (path: string, flags: string) => Promise<{ read: (opts: { position: number, length: number }) => Promise<Uint8Array> }> }
     }
     const file = await orivon.fs.open('a', 'r')
@@ -634,7 +552,7 @@ describe('exposeOrivon -- fs.userSelected (A194, d-0032) -- the file shape only'
     })
 
     exposeOrivon()
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       fs: {
         userSelected: (opts?: { multiple?: boolean }) => Promise<ReadonlyArray<{
           id: string
@@ -656,7 +574,7 @@ describe('exposeOrivon -- fs.userSelected (A194, d-0032) -- the file shape only'
     invoke.mockResolvedValue(okEnvelope([]))
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { userSelected: () => Promise<readonly unknown[]> } }
+    const orivon = asPage(target.orivon) as { fs: { userSelected: () => Promise<readonly unknown[]> } }
 
     await expect(orivon.fs.userSelected()).resolves.toEqual([])
   })
@@ -666,7 +584,7 @@ describe('exposeOrivon -- fs.userSelected (A194, d-0032) -- the file shape only'
     const budgets: number[] = []
     invoke.mockImplementation(async (_channel: string, envelope: { timeoutMs: number }) => { budgets.push(envelope.timeoutMs); return okEnvelope(null) })
     exposeOrivon()
-    const orivon = target.orivon as { fs: { userSelected: (opts?: { directory?: boolean }) => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { fs: { userSelected: (opts?: { directory?: boolean }) => Promise<unknown> } }
 
     await orivon.fs.userSelected({ directory: true }).catch(() => {})
     await orivon.fs.userSelected().catch(() => {})
@@ -689,7 +607,7 @@ describe('exposeOrivon -- fs.userSelected (A195, closing A194) -- the folder sha
     })
 
     exposeOrivon()
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       fs: {
         userSelected: (opts: { directory: true }) => Promise<{
           id: string
@@ -718,7 +636,7 @@ describe('exposeOrivon -- fs.userSelected (A195, closing A194) -- the folder sha
     invoke.mockResolvedValue(okEnvelope(null))
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { userSelected: (opts: { directory: true }) => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { fs: { userSelected: (opts: { directory: true }) => Promise<unknown> } }
 
     await expect(orivon.fs.userSelected({ directory: true })).resolves.toBeNull()
   })
@@ -731,7 +649,7 @@ describe('exposeOrivon -- fs.readFileSync (ADR-0016)', () => {
     sendSync.mockReturnValue({ id: '', ok: true, result: bytes })
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+    const orivon = asPage(target.orivon) as { fs: { readFileSync: (path: string) => Uint8Array } }
     const result = orivon.fs.readFileSync('/a/b.txt')
 
     expect(result).toBe(bytes)
@@ -744,7 +662,7 @@ describe('exposeOrivon -- fs.readFileSync (ADR-0016)', () => {
     sendSync.mockReturnValue({ id: '', ok: false, code: 'denied', message: 'fs is not granted to this origin' })
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+    const orivon = asPage(target.orivon) as { fs: { readFileSync: (path: string) => Uint8Array } }
 
     let caught: unknown
     try {
@@ -761,7 +679,7 @@ describe('exposeOrivon -- fs.readFileSync (ADR-0016)', () => {
     sendSync.mockReturnValue({ id: '', ok: false, code: 'denied', message: "the path is outside this app's files directory" })
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+    const orivon = asPage(target.orivon) as { fs: { readFileSync: (path: string) => Uint8Array } }
 
     let caught: unknown
     try {
@@ -778,7 +696,7 @@ describe('exposeOrivon -- fs.readFileSync (ADR-0016)', () => {
     sendSync.mockReturnValue({ id: '', ok: false, code: 'notFound', message: 'the filesystem operation failed', platformCode: 'ENOENT' })
 
     exposeOrivon()
-    const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+    const orivon = asPage(target.orivon) as { fs: { readFileSync: (path: string) => Uint8Array } }
 
     let caught: unknown
     try {

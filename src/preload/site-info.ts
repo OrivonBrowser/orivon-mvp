@@ -50,6 +50,9 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     openAllSites: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openAllSites' } satisfies SiteInfoCommand)
     },
+    openExtensions: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openExtensions' } satisfies SiteInfoCommand)
+    },
     /** Fire-and-forget, same as settings.ts's own reportHeight -- a popup
      * that failed to resize is cosmetic, and must never break rendering. */
     reportHeight: (height: number): void => {

@@ -5,9 +5,9 @@ import { join } from 'node:path'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
-import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { partitionForTarget } from './tab-view.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { appOrigin } from './devtools-app-origin.js'
 import { HistoryService } from '../history/history-service.js'
 import { NullHistoryStore } from '../history/history-store.js'
 import { openHistory } from '../history/open-history.js'
@@ -16,13 +16,13 @@ import type { Runtime } from '../launch/start-launch.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmOpenDevTools } from '../devtools/devtools-prompt.js'
 import { DevToolsService } from '../devtools/devtools-service.js'
-import type { SubsystemContext } from '../registry.js'
 import { CommandBus } from '../shortcuts/command-bus.js'
 import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
 import { WindowRegistry } from './window-registry.js'
+import type { SubsystemContext } from '../registry.js'
 import { TabLifecycle } from './tab-lifecycle.js'
 
 export interface ShellServices {
@@ -44,8 +44,7 @@ export interface ShellServices {
   readonly zoomStore: ZoomStore
 }
 
-/** `ctx.broker` is read when a page is asked about, not now: the broker is published after the shell starts. */
-export function createShellServices (userDataPath: string, ctx: Pick<SubsystemContext, 'broker'>, runtime: Runtime, platform: NodeJS.Platform = process.platform): ShellServices {
+export function createShellServices (userDataPath: string, runtime: Runtime, ctx: SubsystemContext, platform: NodeJS.Platform = process.platform): ShellServices {
   const shortcutStore = new ShortcutStore(join(userDataPath, 'shortcuts.json'), platform)
   const settings = new SettingsStore(join(userDataPath, 'settings.json'))
   const zoomStore = new ZoomStore(join(userDataPath, 'zoom.json'))
@@ -57,12 +56,16 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
     commands: new CommandBus(),
     devtools: new DevToolsService(settings, {
+      // A security prompt: it must key on the app HOLDING GRANTS (ADR-0044)
+      // or being cache-served, never on whether its tab happens to sit in
+      // its own partition -- a granted origin served from the network runs
+      // in the shared default session, same as every other site.
       appOf: (contents) => {
-        const url = contents.getURL()
-        // The session the page runs in, and only after that its address: a popup an app opened is at about:blank, with the app's opener.
-        const found = windows.findTab(contents)
-        const partition = found?.window.tabs.partitionOf(found.tabId) ?? partitionForTarget(url, ctx.broker)
-        return partition === undefined || partition === INTERNAL_PARTITION ? null : { key: partition, label: originFromUrl(url) ?? 'this app' }
+        const origin = appOrigin(originFromUrl, contents)
+        if (origin === null) return null
+        const isApp = ctx.broker?.app.hasGrantsSync(origin) === true || isOriginServedFromCacheSync(origin)
+        if (!isApp) return null
+        return { key: origin, label: origin }
       },
       isShellPage: (contents) => internalPages.pageOf(contents) !== undefined,
       developerMode: devModeEnabled,

@@ -149,6 +149,12 @@ describe("TabManager -- ADR-0017's synchronous fetch()-routing flag (appTabArgsF
     manager.navigate(id, 'https://plain-website.example/')
     expect(additionalArgumentsOf(createdViews[1] as RecordedView)).toBeUndefined()
     manager.navigate(id, 'https://app.example/page')
-    expect(additionalArgumentsOf(createdViews[2] as RecordedView)).toEqual(['--orivon-app-tab'])
+    // ADR-0044: this app holds no partition of its own, but the view it left
+    // parked under its own origin (tab-view.ts's parkKeyFor) rather than
+    // closing, so returning to it hands the SAME view back instead of
+    // building a third one -- and it still carries the flag it was built
+    // with, unchanged.
+    expect(createdViews.length).toBe(2)
+    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toEqual(['--orivon-app-tab'])
   })
 })

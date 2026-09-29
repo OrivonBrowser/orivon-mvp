@@ -151,6 +151,34 @@ describe('installFetchRoute -- routing decisions', () => {
   })
 })
 
+// A MAIN-world extension script calling the replaced fetch() must reach only
+// what the page's own native fetch would -- never the app's granted dial.
+// README.md's Design notes.
+describe('installFetchRoute -- caller attribution: a refused caller never dials, even to a granted host', () => {
+  it('a caller installOrivon\'s own check would refuse falls straight through to native fetch, without dialling', async () => {
+    let dialled = false
+    const target = fakeTarget({
+      connectSecure: async () => { dialled = true; return fakeSocket([OK_RESPONSE]) },
+      nativeFetch: async () => new Response('native path'),
+      callerIsPage: () => false
+    })
+    installRouted(target)
+    const response = await target.fetch!('https://granted.example/')
+    expect(await response.text()).toBe('native path')
+    expect(dialled).toBe(false)
+  })
+
+  it('a caller installOrivon\'s own check would accept dials as usual', async () => {
+    const target = fakeTarget({
+      connectSecure: async () => fakeSocket([OK_RESPONSE]),
+      callerIsPage: () => true
+    })
+    installRouted(target)
+    const response = await target.fetch!('https://granted.example/')
+    expect(response.status).toBe(200)
+  })
+})
+
 describe('installFetchRoute -- a request that cannot be written never keeps its socket', () => {
   // A header value with a raw CR or LF cannot be put on the wire. The request
   // fails, and the socket it dialled is closed rather than held against the

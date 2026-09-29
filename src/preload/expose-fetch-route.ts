@@ -41,15 +41,22 @@ const INSTALLERS: ReadonlyArray<(isAppTab: boolean) => void> = [
  * run in the main world and have no `process` -- so it crosses as a plain
  * boolean argument instead. Each installer's trailing `target` parameter is
  * left OMITTED, so its own default (the real main-world `window`) applies.
+ *
+ * The final `releaseRoutedSlot` call runs even when `isAppTab` is false,
+ * unlike the installer loop above it: `exposeOrivon()` (surface/orivon.ts),
+ * which ran before this on every ordinary tab, always leaves its own
+ * private internal-net slot on `target` (surface/README.md's Design
+ * notes), app tab or not, and this is what releases it.
  */
 export function exposeFetchRoute (): void {
   const isAppTab = process.argv.includes(APP_TAB_FLAG)
-  if (!isAppTab) return
-  for (const func of INSTALLERS) {
-    try {
-      contextBridge.executeInMainWorld({ func, args: [isAppTab] })
-    } catch (error) {
-      console.error('[orivon] a routed network global was not installed', error)
+  if (isAppTab) {
+    for (const func of INSTALLERS) {
+      try {
+        contextBridge.executeInMainWorld({ func, args: [isAppTab] })
+      } catch (error) {
+        console.error('[orivon] a routed network global was not installed', error)
+      }
     }
   }
   try {

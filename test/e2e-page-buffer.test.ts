@@ -1,8 +1,11 @@
-// A registered app tab has the `buffer` package as its `Buffer` global when
-// the page's FIRST inline <head> script runs, under a page CSP that refuses
-// eval; the page can replace, shadow and delete it (ADR-0021); it is the
-// very class the shim's own `buffer` module exports, so instanceof agrees;
-// and an ordinary website, opened in the same tab afterwards, has none.
+// A registered app tab has the `buffer` package as its `Buffer` global
+// before the page's FIRST script runs (an external one here: this fixture
+// is network-served, never cache-pinned, so its own granted-app CSP admits
+// no inline script at all -- src/loader/serve/csp.ts), under a page CSP
+// that refuses eval; the page can replace, shadow and delete it
+// (ADR-0021); it is the very class the shim's own `buffer` module exports,
+// so instanceof agrees; and an ordinary website, opened in the same tab
+// afterwards, has none.
 //
 // The fixture origin is registered through the developer-only grant hook
 // before navigating, as e2e-app-loader-journey.test.ts does and for the same
@@ -67,8 +70,16 @@ const REPLACE = `window.__replace = (() => {
   return r
 })()`
 
-const script = (body: string): string => `<script nonce="${NONCE}">${body}</script>`
-const APP_PAGE = `<!doctype html><html><head>${script(FIRST)}<script nonce="${NONCE}" src="/shim-buffer.js"></script>${script(REPLACE)}` +
+// EXTERNAL, never inline, nonce kept (still checked for an external
+// `<script src>`, same as an inline one): the app origin below is
+// registered (network-served, never cache-pinned), so the granted-app
+// script-src (src/loader/serve/csp.ts) applies and inline scripts do not
+// run there -- 'self' in Orivon's own appended policy is what admits a
+// same-origin fetch here, same as any other asset. SITE_PAGE is unaffected
+// and stays inline: its own origin below is never registered, so it gets no
+// Orivon CSP at all.
+const script = (path: string): string => `<script nonce="${NONCE}" src="${path}"></script>`
+const APP_PAGE = `<!doctype html><html><head>${script('/first.js')}<script nonce="${NONCE}" src="/shim-buffer.js"></script>${script('/replace.js')}` +
   `<title>${APP_TITLE}</title></head><body>${APP_TITLE}</body></html>`
 const SITE_PAGE = `<!doctype html><html><head><script>window.__first = { type: typeof window.Buffer, process: typeof window.process }</script>` +
   `<title>${SITE_TITLE}</title></head><body>${SITE_TITLE}</body></html>`
@@ -119,6 +130,16 @@ it('gives a registered app tab the buffer package as its Buffer global before it
         res.end(shimBundle)
         return
       }
+      if (req.url === '/first.js') {
+        res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' })
+        res.end(FIRST)
+        return
+      }
+      if (req.url === '/replace.js') {
+        res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' })
+        res.end(REPLACE)
+        return
+      }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': STRICT_CSP })
       res.end(APP_PAGE)
     })
@@ -137,7 +158,7 @@ it('gives a registered app tab the buffer package as its Buffer global before it
       const view = await navigateToFixture(app, appUrl, APP_TITLE)
       const first = await evaluateRetrying(view, () => (window as unknown as { __first: Record<string, unknown> }).__first)
       check('the page CSP refuses eval, so nothing below depends on it', first.evalAllowed === false, JSON.stringify(first))
-      check('Buffer is defined when the first inline <head> script runs', first.type === 'function', JSON.stringify(first))
+      check('Buffer is defined when the page\'s first <head> script runs', first.type === 'function', JSON.stringify(first))
       check('it is the buffer package, working', first.hex === '6869' && first.base64 === 'hi' && first.isUint8Array === true, JSON.stringify(first))
       check('it carries Node\'s descriptor: a writable, configurable, non-enumerable data property',
         JSON.stringify(first.descriptor) === JSON.stringify({ data: true, writable: true, enumerable: false, configurable: true }),
