@@ -1,13 +1,18 @@
-// The main menu is kept warm (shell/popover-view.ts's `warm`): its
-// WebContentsView is built once, before the first click, and reused on
-// every open rather than destroyed and rebuilt. This is what removes the
-// delay the owner reported before the menu appears. A fresh view (any
-// other tab or popup) still needs its own pre-paint background colour set
-// before it is ever attached -- checked here for a brand-new tab via the
-// e2e-only view-background-test-hook.ts.
+// The main menu is kept warm (shell/popover-view.ts's `warm`): once built,
+// its WebContentsView is reused on every open rather than destroyed and
+// rebuilt. It is NOT built at window construction -- every window would
+// otherwise carry a hidden renderer process nobody may ever open (this is
+// what `npm run smoke`'s own two-window count at launch, and every e2e
+// launch, would catch). Instead the toolbar button's own hover or focus
+// (renderer/main.ts) asks main to build it ahead of the click that usually
+// follows; a click with no prior hover (keyboard, a direct programmatic
+// click) still builds it, just not ahead of time. A fresh view (any other
+// tab or popup) still needs its own pre-paint background colour set before
+// it is ever attached -- checked here for a brand-new tab via the e2e-only
+// view-background-test-hook.ts.
 import { expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from './launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from './smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 45_000
 
@@ -18,27 +23,36 @@ const SILENT = {
   args: [HERMETIC_RESOLVER, '--alsa-output-device=null']
 }
 
-it('the menu popover is already built before the first click, and reused on every later one', async () => {
+function menuWebContentsId (app: Awaited<ReturnType<typeof launchElectron>>): Promise<number | undefined> {
+  return app.evaluate(({ webContents }) =>
+    webContents.getAllWebContents().find((wc) => wc.getURL().includes('/menu/'))?.id)
+}
+
+function menuPage (app: Awaited<ReturnType<typeof launchElectron>>): ReturnType<typeof app.windows>[number] | undefined {
+  return app.windows().find((w) => w.url().endsWith('/menu/index.html'))
+}
+
+it('builds no menu view at launch, builds one on the button\'s own hover, and reuses it on every open', async () => {
   const app = await launchElectron({ appPath: '.', ...SILENT })
   try {
     expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
     const chrome = findChrome(app)
 
-    const menuWebContentsId = async (): Promise<number | undefined> =>
-      await app.evaluate(({ webContents }) =>
-        webContents.getAllWebContents().find((wc) => wc.getURL().includes('/menu/'))?.id)
-    const menuPage = (): ReturnType<typeof app.windows>[number] | undefined =>
-      app.windows().find((w) => w.url().endsWith('/menu/index.html'))
+    // Absence cannot be polled for the instant chrome exists -- settle first
+    // (scripts/smoke.mjs's own rule 3), then confirm it never showed up.
+    await new Promise((resolve) => { setTimeout(resolve, ABSENCE_SETTLE_MS) })
+    expect(await menuWebContentsId(app)).toBeUndefined()
 
-    // Built ahead of any click (prewarm's own setImmediate, run once the
-    // window is idle) -- not merely reachable quickly after one.
-    expect(await waitFor(async () => await menuWebContentsId() !== undefined)).toBe(true)
-    const builtBeforeClick = await menuWebContentsId()
+    // hover(), not click(): moves the pointer onto the button without
+    // pressing it, the same `pointerenter` a real user's mouse fires.
+    await chrome.hover('#menu')
+    expect(await waitFor(async () => await menuWebContentsId(app) !== undefined)).toBe(true)
+    const builtOnHover = await menuWebContentsId(app)
 
     await chrome.click('#menu')
     expect(await waitFor(async () => await popoverShown(app, '/menu/'))).toBe(true)
-    await menuPage()?.waitForSelector('.item')
-    expect(await menuWebContentsId()).toBe(builtBeforeClick)
+    await menuPage(app)?.waitForSelector('.item')
+    expect(await menuWebContentsId(app)).toBe(builtOnHover)
 
     // Close (the same button toggles it) and reopen: the webContents
     // survives being hidden (popoverShown reads that; app.windows() cannot --
@@ -53,8 +67,27 @@ it('the menu popover is already built before the first click, and reused on ever
     await new Promise((resolve) => { setTimeout(resolve, 350) })
     await chrome.click('#menu')
     expect(await waitFor(async () => await popoverShown(app, '/menu/'))).toBe(true)
-    await menuPage()?.waitForSelector('.item')
-    expect(await menuWebContentsId()).toBe(builtBeforeClick)
+    await menuPage(app)?.waitForSelector('.item')
+    expect(await menuWebContentsId(app)).toBe(builtOnHover)
+  } finally {
+    await closeElectron(app)
+    expect(await assertNoElectronSurvivors()).toEqual([])
+  }
+}, TEST_TIMEOUT_MS)
+
+it('a click with no prior hover still opens the menu, building it then', async () => {
+  const app = await launchElectron({ appPath: '.', ...SILENT })
+  try {
+    expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
+    const chrome = findChrome(app)
+
+    // A programmatic click, unlike chrome.click(), moves no real pointer --
+    // no `pointerenter` fires, matching a keyboard Enter on a button that
+    // was tab-stopped to without a preceding hover.
+    await chrome.evaluate(() => { document.querySelector<HTMLButtonElement>('#menu')?.click() })
+
+    expect(await waitFor(async () => await popoverShown(app, '/menu/'))).toBe(true)
+    await menuPage(app)?.waitForSelector('.item')
   } finally {
     await closeElectron(app)
     expect(await assertNoElectronSurvivors()).toEqual([])
