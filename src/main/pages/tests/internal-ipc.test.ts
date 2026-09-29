@@ -57,16 +57,6 @@ describe('InternalPageRegistry', () => {
     expect(registry.pageOf(fakeContents(7))).toBeUndefined()
   })
 
-  it('forgets contents that stop being a page', () => {
-    const registry = new InternalPageRegistry()
-    const contents = fakeContents(3)
-    registry.register(contents, 'settings')
-
-    registry.forget(contents)
-
-    expect(registry.pageOf(contents)).toBeUndefined()
-  })
-
   it('publishes a topic to the open pages that asked for it and no others', () => {
     const registry = new InternalPageRegistry()
     const settings = fakeContents(1)

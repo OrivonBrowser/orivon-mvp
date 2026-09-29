@@ -66,7 +66,7 @@ export interface UnpackedZip {
  * would leave a half-written folder behind, so the whole archive is
  * validated first, then written to `<targetDir>.tmp-<random>` and renamed
  * into place, the same write-then-rename shape
- * `src/broker/grants/node-ledger-storage.ts`'s `writeFileAtomic` uses for
+ * `src/broker/adapters/atomic-write.ts`'s `writeFileAtomic` uses for
  * the identical reason: a reader (the extensions subsystem, on the next
  * boot) must only ever see the old state or the new one, never a partial
  * write caught mid-extraction by a crash.

@@ -3,8 +3,8 @@
 
 export const ZOOM_PERCENTS: readonly number[] = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500]
 
-export const MIN_ZOOM_PERCENT = 25
-export const MAX_ZOOM_PERCENT = 500
+export const MIN_ZOOM_PERCENT = Math.min(...ZOOM_PERCENTS)
+export const MAX_ZOOM_PERCENT = Math.max(...ZOOM_PERCENTS)
 
 /** Whether `value` is a level the store may hold: a whole percent within the range. */
 export function isZoomPercent (value: unknown): value is number {

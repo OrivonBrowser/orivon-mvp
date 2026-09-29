@@ -24,8 +24,8 @@ session**, for its whole life.
   profile that is running is never deleted. Deleting one renames its directory first, so a browser
   started for it in the meantime finds nothing rather than half a directory.
 - **A private session is a peer process on a fresh directory** in the system temp directory (mode
-  0700), made by the browser that opens it and holding a copy of that profile's `settings.json` and of the
-  light client's verified checkpoint, which is public. It never receives history, bookmarks, grants,
+  0700), made by the browser that opens it and holding a copy of that profile's `settings.json` and `shortcuts.json` and of
+  the light client's verified checkpoint, which is public. It never receives history, bookmarks, grants,
   installed apps, identity, zoom levels or site data. `orivon.*` works in it, consent is asked again (its
   ledger starts empty), and two things differ from a profile, both true to the contract: its identity seed
   lives in memory only, so `orivon.secrets.available()` is false and `orivon.id` is a new identity every

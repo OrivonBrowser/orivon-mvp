@@ -12,7 +12,8 @@ the loader, the verifier or `../dev/` itself.
 outside a real Electron process the package's entry point is a path string.
 
 **What it depends on.** [`../../broker/policy/`](../../broker/policy/) (`address.ts`,
-`origin.ts`; `pin.ts`, `connect.ts` types), [`../../trust/`](../../trust/),
+`origin.ts`; `pin.ts`, `connect.ts` types), [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts)
+(`writeFileAtomicAsync`, `bookmarks.ts`'s own write), [`../../trust/`](../../trust/),
 [`../../loader/electron/resolve.ts`](../../loader/electron/resolve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts),
 [`../verifier/name-evidence.ts`](../verifier/name-evidence.ts) (types), `node:fs/promises`,

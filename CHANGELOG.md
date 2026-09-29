@@ -114,6 +114,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A crash while bookmarks or a profile are being saved leaves the previous file whole.**
+- **A second start with no window open shows a window only once it is drawn**, on its new-tab page
+  when no address was given.
+- **History search answers at once on a long history**, whether most pages match or almost none do.
+- **A private window keeps the keyboard shortcuts** of the profile that opened it.
 - **Settings, History, Profiles and a private window's first page load under `npm run dev`**; they were blank.
 - **The main menu shows every entry with no scroll bar**, and a new split shows both panes painted at once.
 - **A `.eth` or `ipfs://` site can be framed only by a page of its own origin**, so another site cannot

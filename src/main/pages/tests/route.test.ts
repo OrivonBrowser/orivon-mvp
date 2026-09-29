@@ -88,6 +88,12 @@ describe('routeInternalRequest', () => {
         .toEqual({ kind: 'dev', path: `/@fs${realNodeModules}/vite/dist/client/env.mjs` })
     })
 
+    it('holds a differently cased `/@FS/` to the same roots', () => {
+      for (const url of ['orivon://settings/@FS/etc/passwd', `orivon://settings/@Fs${ROOT}/package.json`]) {
+        expect(routeInternalRequest(url, true, ROOTS)).toEqual({ kind: 'not-found' })
+      }
+    })
+
     it('never reaches a file outside them, however plainly named', () => {
       for (const url of [
         `orivon://settings/@fs${ROOT}/package.json`,

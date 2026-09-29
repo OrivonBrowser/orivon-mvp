@@ -2,10 +2,13 @@
 // would give each its own in-memory copy of one file, and the last to write
 // would win.
 import { join } from 'node:path'
+import { session } from 'electron'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
+import { SHELL_PARTITION } from './shell-session.js'
+import { isShellUiPage } from './shell-ui-page.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { partitionForTarget } from './tab-view.js'
 import { HistoryService } from '../history/history-service.js'
@@ -68,7 +71,7 @@ export function createShellServices (userDataPath: string, ctx: Pick<SubsystemCo
         const partition = found?.window.tabs.partitionOf(found.tabId) ?? partitionForTarget(url, ctx.broker)
         return partition === undefined || partition === INTERNAL_PARTITION ? null : { key: partition, label: originFromUrl(url) ?? 'this app' }
       },
-      isShellPage: (contents) => internalPages.pageOf(contents) !== undefined,
+      isShellPage: (contents) => isShellUiPage(contents, internalPages, session.fromPartition(SHELL_PARTITION)),
       developerMode: devModeEnabled,
       confirm: confirmOpenDevTools
     }),

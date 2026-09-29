@@ -218,10 +218,11 @@ it('shows a tab\'s own new window at once, without waiting on ready-to-show', as
   const { app, chrome } = await launched()
   try {
     await openTabs(app, chrome, '/torn')
-    const before = Date.now()
     const dragged = chrome.locator('.tab', { hasText: 'Page /torn' })
+    await dragged.waitFor({ state: 'visible' })
     const box = await dragged.boundingBox()
     if (box === null) throw new Error('the tab has no box')
+    const before = Date.now()
     await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await chrome.mouse.down()
     await chrome.mouse.move(box.x + box.width / 2, box.y + 1500, { steps: 6 })
