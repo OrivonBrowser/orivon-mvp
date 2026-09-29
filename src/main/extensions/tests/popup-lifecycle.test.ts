@@ -240,6 +240,34 @@ describe('PopupView: never becomes permanently invisible (UPSTREAM.md patch 35)'
     }
   })
 
+  it('positions itself against the anchor rect before showing, not just at its default size (regression: was left centred)', async () => {
+    vi.useFakeTimers()
+    try {
+      const parent = fakeParent()
+      const popup = makePopup(parent)
+      await popup.whenReady()
+
+      await vi.advanceTimersByTimeAsync(600)
+
+      // fakeParent(): getBounds {x:0,y:0,w:800,h:600}, getContentBounds
+      // {x:0,y:0,w:800,h:564} -> a 36px native titlebar. makePopup()'s own
+      // anchorRect is {x:0,y:0,w:10,h:10}. Had armVisibilityFallback never
+      // called updatePosition(), this would still read {x:0,y:0} -- the
+      // BrowserWindow's own constructor default with no explicit position,
+      // which reads as "centred on screen" on a real desktop, not "wrong
+      // by a small amount": nothing here ever calls setPosition at all
+      // without this fix.
+      expect(browserWindowOf(popup).getBounds()).toEqual({
+        x: 0 + 0 + 10 - 320, // winBounds.x + anchorRect.x + anchorRect.width - viewBounds.width
+        y: 0 + 36 + 0 + 10 + 5, // winBounds.y + titlebar + anchorRect.y + anchorRect.height + POSITION_PADDING
+        width: 320,
+        height: 400
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not re-show or resize once preferred-size-changed already did', async () => {
     vi.useFakeTimers()
     try {

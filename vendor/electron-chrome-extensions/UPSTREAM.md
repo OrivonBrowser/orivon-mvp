@@ -358,9 +358,12 @@
     gave such a popup a second way to become visible; it would stay `show: false` --
     fully loaded and interactive over CDP, but invisible and unfocusable to a real person -- for
     its entire life. A 500ms timer now shows it anyway, at a fixed reasonable size
-    (`FALLBACK_BOUNDS`, 320x400), if `'preferred-size-changed'` has not arrived yet; a later
-    `'preferred-size-changed'` still resizes and repositions it correctly on arrival regardless
-    (`updatePreferredSize` does not check `hidden` first). Second, the `backgroundColor` passed to
+    (`FALLBACK_BOUNDS`, 320x400) positioned against the same anchor rect `updatePosition()`
+    always uses, if `'preferred-size-changed'` has not arrived yet -- `updatePosition()` runs
+    before `show()`, since showing first would flash the popup at the wrong spot for one frame
+    before it jumped to the right one; a later `'preferred-size-changed'` still resizes and
+    repositions it correctly on arrival regardless (`updatePreferredSize` does not check `hidden`
+    first). Second, the `backgroundColor` passed to
     `new BrowserWindow(...)` -- paints before the extension's own popup page has a pixel to show --
     now follows `nativeTheme.shouldUseDarkColors` instead of always being `'#ffffff'`. Reason: a
     fixed light background flashed white for a moment on every popup open in dark mode.
