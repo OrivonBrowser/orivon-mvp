@@ -7,12 +7,18 @@
 
 ## Decision
 
-A child an app starts (`spawn`, `exec`, `execFile`, `fork`, a `worker_threads` thread) runs in a
-hidden **child host** the shell keeps for that app, not in the page that started it. The shell
-creates the host when the app first starts a child, and closes it once no page of the app is left
-open; every child in it ends then. So a child outlives the page that started it while another page
-of the app is open, and never outlives the app's last page: `detached` and `unref()` do not extend
-it. Reloading an app's only page ends its children, as closing it would.
+A child process an app starts (`spawn`, `exec`, `execFile`, `fork`) runs in a hidden **child
+host** the shell keeps for that app, not in the page that started it. The shell creates the host
+when the app first starts a child, and closes it once no page of the app is left open; every
+child in it ends then. So a child outlives the page that started it while another page of the app
+is open, and never outlives the app's last page: `detached` and `unref()` do not extend it.
+Reloading an app's only page ends its children, as closing it would.
+
+A `worker_threads` thread is not a child process, and this lifetime rule does not cover it: a Node
+thread lives and dies with the process that started it, so it stays a local Worker of whatever
+created it (the page, or a forked child already running in the host), never routed through the
+child host itself. That keeps a `SharedArrayBuffer` or a shared `WebAssembly.Memory`/`Module` in
+its `workerData` reachable, which crossing into another renderer process would break.
 
 The host is a page at the app's own origin, in a session of its own, that runs Orivon's host script
 and never the app's own page code. It carries the app's grants, its CSP and, when the manifest asks,
@@ -91,7 +97,7 @@ changes.
 - A child's web storage (IndexedDB, Cache Storage) is the host session's, not the app pages'.
   Node-shaped code keeps its state through `orivon.fs`, which is the app's; a child that reaches for
   web storage sees a store of its own.
-- Program loading moves from the page to the host for a spawn, a fork or a thread alike. Loading a
+- Program loading moves from the page to the host for a spawn or a fork alike. Loading a
   spawned program pulls in a dependency a real preload script cannot bundle on its own (measured:
   an unresolved `path` import throws, taking the whole preload down, not only spawn); the preload
   build resolves it the same way the app bundler already does for the app's own code, through a

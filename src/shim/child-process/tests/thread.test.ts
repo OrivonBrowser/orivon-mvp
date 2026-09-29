@@ -10,10 +10,17 @@ import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk
 import type { NodeMessagePort } from '../../worker/node-port.js'
 import { FORK_LIVENESS_SYMBOL, WORKER_THREADS_SYMBOL, type WorkerThreadsGlobals } from '../../worker/symbols.js'
 import { fork } from '../fork.js'
+import { hostConnection } from '../host-client.js'
 import { Worker } from '../thread.js'
-import { forkModules, threadModules } from './support/in-process-worker.js'
+import { failNext, forkModules, threadModules, workers } from './support/in-process-worker.js'
 
 vi.mock('../../worker/launch.js', async () => ({ createChildWorker: (await import('./support/in-process-worker.js')).createInProcessWorker }))
+// Wraps the real function (never fakes it) so a call to it is still observable: the point is
+// that a thread's own launchChild() call never reaches it at all, cache or no cache.
+vi.mock('../host-client.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../host-client.js')>()
+  return { ...actual, hostConnection: vi.fn(actual.hostConnection) }
+})
 
 const ORIGIN = 'https://thread-unit.test'
 
@@ -34,6 +41,8 @@ afterEach(async () => {
   vi.unstubAllGlobals()
   forkModules.clear()
   threadModules.clear()
+  failNext.worker = false
+  failNext.postMessage = false
   delete (globalThis as Record<symbol, unknown>)[WORKER_THREADS_SYMBOL]
   delete (globalThis as Record<symbol, unknown>)[FORK_LIVENESS_SYMBOL]
   await disk.cleanup()
@@ -67,6 +76,52 @@ describe('Worker', () => {
     const reply = new Promise((resolve) => worker.once('message', resolve))
     worker.postMessage({ a: channel.port2, b: channel.port2 }, [channel.port2])
     expect(await reply).toEqual({ isPort: true, same: true })
+    await worker.terminate()
+  })
+
+  it('exposes stdout and stderr as Readables even when neither option is set, as Node\'s Worker always does', async () => {
+    threadModules.set(`${ORIGIN}/quiet-io.js`, (scope) => { threadGlobals(scope).parentPort.on('message', () => {}) })
+    const worker = new Worker('/quiet-io.js')
+    expect(worker.stdout).not.toBeNull()
+    expect(worker.stderr).not.toBeNull()
+    expect(worker.stdin).toBeNull()
+    await worker.terminate()
+  })
+
+  it('throws DataCloneError synchronously from the constructor for workerData structured clone cannot carry, as Node\'s does', () => {
+    let caught: unknown
+    try {
+      const worker = new Worker('/x.js', { workerData: { onDone () {} } })
+      void worker
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as { name?: string } | undefined)?.name).toBe('DataCloneError')
+  })
+
+  it('does not reject workerData over a port that is also named in transferList: the port is real and transferable, not something to clone', async () => {
+    const { port1, port2 } = new MessageChannel()
+    threadModules.set(`${ORIGIN}/take-port.js`, (scope) => { threadGlobals(scope).parentPort.on('message', () => {}) })
+    let worker: Worker | undefined
+    expect(() => { worker = new Worker('/take-port.js', { workerData: { port: port2 }, transferList: [port2] }) }).not.toThrow()
+    await worker?.terminate()
+    port1.close()
+  })
+
+  it('never leaks the Worker when the real send to it fails after construction already succeeded', async () => {
+    failNext.postMessage = true
+    threadModules.set(`${ORIGIN}/never-runs.js`, () => {})
+    const worker = new Worker('/never-runs.js')
+    const errored = new Promise((resolve) => worker.once('error', resolve))
+    await errored
+    expect(workers.at(-1)?.terminated).toBe(true)
+  })
+
+  it('never asks for a host connection to start: launchChild\'s shared, cached hostConnection() is never called for a thread', async () => {
+    threadModules.set(`${ORIGIN}/local-only.js`, (scope) => { threadGlobals(scope).parentPort.on('message', () => {}) })
+    const worker = new Worker('/local-only.js')
+    await new Promise((resolve) => worker.once('online', resolve))
+    expect(hostConnection).not.toHaveBeenCalled()
     await worker.terminate()
   })
 
@@ -131,6 +186,38 @@ describe('Worker', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(forkExited).toBe(false)
     await hosted?.terminate()
+    expect(await exited).toBe(0)
+  })
+
+  it('releases a forked child\'s liveness ref even when the thread inside it never starts, since \'close\' fires but \'exit\' never does for a failed start', async () => {
+    forkModules.set(`${ORIGIN}/host-failed-thread.js`, (scope) => {
+      (globalThis as Record<symbol, unknown>)[FORK_LIVENESS_SYMBOL] = (scope as unknown as Record<symbol, unknown>)[FORK_LIVENESS_SYMBOL]
+      failNext.worker = true
+      const doomed = new Worker('/never-runs.js')
+      doomed.on('error', () => {})
+      ;(scope.process as unknown as { disconnect: () => void }).disconnect()
+    })
+    const child = fork('/host-failed-thread.js')
+    const exited = new Promise<number | null>((resolve) => { child.once('exit', (code: number | null) => { resolve(code) }) })
+    expect(await exited).toBe(0)
+  })
+
+  it('does not resurrect a forked child\'s liveness ref by calling ref() after the thread has already exited, as Node\'s ref() post-exit is a no-op', async () => {
+    let hosted: Worker | undefined
+    threadModules.set(`${ORIGIN}/quick.js`, (scope) => { threadGlobals(scope).parentPort.on('message', () => {}) })
+    forkModules.set(`${ORIGIN}/host-late-ref.js`, (scope) => {
+      (globalThis as Record<symbol, unknown>)[FORK_LIVENESS_SYMBOL] = (scope as unknown as Record<symbol, unknown>)[FORK_LIVENESS_SYMBOL]
+      hosted = new Worker('/quick.js')
+      ;(scope.process as unknown as { disconnect: () => void }).disconnect()
+    })
+    const child = fork('/host-late-ref.js')
+    const exited = new Promise<number | null>((resolve) => { child.once('exit', (code: number | null) => { resolve(code) }) })
+    // The fork's own module runs on a later microtask than fork() itself returns, the same as the
+    // sibling test above: without this wait, `hosted` is still undefined and `hosted?.terminate()`
+    // silently no-ops instead of actually exercising it.
+    await vi.waitFor(() => { expect(hosted).toBeDefined() })
+    await hosted?.terminate()
+    hosted?.ref()
     expect(await exited).toBe(0)
   })
 })

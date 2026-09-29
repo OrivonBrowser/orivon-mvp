@@ -14,17 +14,19 @@ what its page could, since it is the app's own code
 ([`ADR-0040`](../../../docs/decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)).
 Durable: it uses Web Workers, `MessagePort` and JSPI, no Electron API.
 
-**`host.ts`/`host-protocol.ts`: the child host's own relay** (ADR-0046). A spawn, a fork or a
-thread all run in a Worker of the app's hidden host, never the page that started it; `host.ts` is
-what runs inside that host, one real Worker per child, relaying between the Worker's ordinary
-`./protocol.ts` traffic and the page's own dedicated port for that child (`host-protocol.ts`'s
+**`host.ts`/`host-protocol.ts`: the child host's own relay** (ADR-0046). A spawn or a fork runs in
+a Worker of the app's hidden host, never the page that started it; `host.ts` is what runs inside
+that host, one real Worker per child, relaying between the Worker's ordinary `./protocol.ts`
+traffic and the page's own dedicated port for that child (`host-protocol.ts`'s
 `ToHostChild`/`StartChildMessage` -- a different, extra hop in front of the same
 `ToWorker`/`FromWorker` protocol, not a replacement for it). `../child-process/host-client.ts` is
 the page's own half: the connection handshake and the remote-Worker adapter that lets
 `launchChild()` route through a host exactly as it would start a local Worker. A spawn's own
 program (`../child-process/program.ts`'s `loadProgram`) is loaded by the host itself, never
 carried across the page -> host hop: a compiled `WebAssembly.Module` does not survive it
-(ADR-0046's Context).
+(ADR-0046's Context). A `worker_threads` thread never takes this route: it stays a local Worker of
+whatever started it (ADR-0046's amendment), so `thread.ts`'s `Worker` never asks for a host
+connection at all.
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../wasi/`](../wasi/),
 [`../wasi-p2/`](../wasi-p2/), [`../child-process/program.ts`](../child-process/program.ts) (for

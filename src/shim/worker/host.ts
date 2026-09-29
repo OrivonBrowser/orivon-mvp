@@ -6,7 +6,8 @@
 // contract ../child-process/spawn.ts's own `launchChild()` already keeps for a
 // same-process child.
 //
-// Spawn routes through the host exactly like fork and thread: a spawn's own
+// Spawn routes through the host exactly like fork (a `worker_threads` thread
+// never does -- ADR-0046's amendment, thread.ts): a spawn's own
 // program (../child-process/program.ts's `loadProgram`) is loaded HERE,
 // never carried across the page -> host hop, since a compiled
 // `WebAssembly.Module` does not survive it (ADR-0046's Context). That
@@ -28,7 +29,7 @@ import { createChildWorker } from './launch.js'
 import { serveOrivon } from './orivon-server.js'
 import { toWireError } from './protocol.js'
 import type { FromWorker, SpawnStart, StreamName, ToWorker } from './protocol.js'
-import type { HostForkStart, HostStart, HostThreadStart, StartChildMessage, ToHostChild } from './host-protocol.js'
+import type { HostForkStart, HostStart, StartChildMessage, ToHostChild } from './host-protocol.js'
 
 export interface ChildHost {
   /** One page just connected: relays every child it starts over `port`, until the page's own
@@ -50,7 +51,6 @@ function isSameOrigin (url: string): boolean {
 
 function workerNameFor (start: HostStart): string {
   if (start.type === 'fork') return `child_process fork ${new URL(start.url).pathname}`
-  if (start.type === 'thread') return start.name
   return `child_process ${start.command}`
 }
 
@@ -61,7 +61,7 @@ function workerNameFor (start: HostStart): string {
 async function startChild (port: MessagePort, start: HostStart, extra: readonly Transferable[], orivon: Orivon): Promise<void> {
   port.start()
 
-  // A spawn's own program load below is asynchronous (unlike fork/thread's),
+  // A spawn's own program load below is asynchronous (unlike fork's),
   // so the page may write stdin, or even close its own connection, before
   // the real Worker exists to receive any of it. A `MessagePort` already
   // `.start()`ed dispatches to whatever `.onmessage` is set to AT THE
@@ -79,8 +79,8 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
   // discriminated union, so that would collapse to only the fields every
   // member shares. This union, built from each member's own already-correct
   // omission, keeps `program`/`args`/`env`/`preopens` on the spawn branch and
-  // `url`/`argv`/... on the other two.
-  let base: Omit<SpawnStart, 'orivon'> | HostForkStart | HostThreadStart
+  // `url`/`argv`/... on the fork branch.
+  let base: Omit<SpawnStart, 'orivon'> | HostForkStart
   if (start.type === 'spawn') {
     // The program itself, loaded here rather than on the page: this file's
     // own header says why. `command`/`args` name the same values spawn.ts's
@@ -94,12 +94,12 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
     }
     base = { type: 'spawn', program, args: start.args, env: start.env, preopens: start.preopens }
   } else {
-    // A forked or threaded module must be on the host's own origin -- the
-    // page already refuses this before ever reaching here (fork.ts's own
-    // moduleUrl()), but the host re-checks rather than trusting a page that
-    // could, in principle, send anything over its own port.
+    // A forked module must be on the host's own origin -- the page already
+    // refuses this before ever reaching here (fork.ts's own moduleUrl()), but
+    // the host re-checks rather than trusting a page that could, in
+    // principle, send anything over its own port.
     if (!isSameOrigin(start.url)) {
-      port.postMessage(failedMessage(new Error(`${start.type === 'fork' ? 'a forked' : 'a threaded'} module must be on the app's own origin`)))
+      port.postMessage(failedMessage(new Error("a forked module must be on the app's own origin")))
       return
     }
     base = start
