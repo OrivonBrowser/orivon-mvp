@@ -59,8 +59,14 @@ export type { PickedPath } from './grants/picked-path-ledger.js'
  * the origin. An implementation may use it to name the app in the dialog's
  * own chrome (d-0032) -- `transport/ipc.ts`'s `describePickerDialog` is the
  * real one that does.
+ *
+ * `origin` is the canonical origin asking, always present and never
+ * attacker-chosen the way `appName` is (a manifest's declared `name` is the
+ * app's own claim about itself) -- the dialog names the ORIGIN, not just
+ * the name, so a page cannot pick a friendly `appName` to launder what it
+ * actually is.
  */
-export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: string | undefined }) => Promise<PickPathResult>
+export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: string | undefined, origin: string }) => Promise<PickPathResult>
 
 /**
  * `canceled: true` for a dismissed dialog -- capability-api.ts is explicit
@@ -224,6 +230,17 @@ export interface CreateBrokerOptions {
    */
   readonly ledgerStorage?: LedgerStorage
   readonly webContextHost?: WebContextHost
+  /**
+   * Every OTHER profile and live private-session directory, beyond
+   * `fs.dataRoot()` (this session's own) -- the picker guard's full
+   * account of "every profile and private-session directory, not only the
+   * current userData" (`./capabilities/user-selected.ts`'s
+   * `createPickGuardCheck`; `../transport/picker-guard-wiring.ts` computes
+   * these for real). Omitted (every test) means "just this session's own".
+   */
+  readonly additionalProtectedRoots?: readonly string[]
+  /** Tells the person why their pick was refused, injected like `webContextHost` so the picker guard never imports `electron` itself. Omitted, the refusal stays silent to the person; the app-facing outcome (a plain cancellation, never a distinguishable error) is identical either way. */
+  readonly notifyPickRefused?: (info: { readonly origin: string, readonly appName: string | undefined, readonly reason: string }) => void
 }
 
 /**
