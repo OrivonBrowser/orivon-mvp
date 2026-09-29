@@ -43,11 +43,12 @@ import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { launchElectron } from './launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
+import { HERMETIC_RESOLVER } from './smoke-helpers.mjs'
 import {
-  ADDRESS_BAR_STABLE_TIMEOUT_MS, closeElectronApp, forwardOutput, killChild,
+  ADDRESS_BAR_STABLE_TIMEOUT_MS, asPage, closeElectronApp, forwardOutput, killChild,
   navigateToFixture, runPhase, waitForTcpReady
 } from './e2e-helpers.js'
+import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
@@ -55,6 +56,9 @@ import type { Grant, Manifest } from '../src/contracts/index.js'
 const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
+
+/** asPage's (e2e-helpers.ts) own same-origin script URL, on this file's fixture origin -- see fixture-as-page.ts's own header for why this is a same-origin write rather than a new server route. */
+const AS_PAGE_SCRIPT_FULL_URL = `${FIXTURE_ORIGIN}/${AS_PAGE_SCRIPT_URL}`
 
 /** Same figure and reason as every other capability e2e file's own. */
 const APP_CLOSE_RACE_MS = 8_000
@@ -87,7 +91,7 @@ it('Phase 1: the real shell launches, and a real fs.mkdir through the full IPC p
       try {
         const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
-        const state = await evaluateRetrying(view, async (): Promise<{ methods: string[], outcome: CallOutcome }> => {
+        const state = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async (): Promise<{ methods: string[], outcome: CallOutcome }> => {
           const orivon = (window as unknown as {
             orivon: {
               fs: {
@@ -130,6 +134,7 @@ it('Phase 1: the real shell launches, and a real fs.mkdir through the full IPC p
         )
       } finally {
         await closeElectronApp(app)
+        clearFixtureAsPageScript()
       }
     } catch (e) {
       check('Phase 1 (real shell launch + navigation) ran without an uncaught failure', false, String((e as Error)?.stack ?? e))
@@ -175,7 +180,7 @@ it('Phase 2: a real fs grant lets a real page build, list, stat, rename and dele
         // (a) BUILD A REAL NESTED TREE ON REAL DISK, then list, stat, rename
         // and delete it -- one evaluate() so every step runs against the
         // exact same real confinement root, in order.
-        const walk = await evaluateRetrying(view, async () => {
+        const walk = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
           const orivon = (window as unknown as {
             orivon: {
               fs: {
@@ -252,6 +257,7 @@ it('Phase 2: a real fs grant lets a real page build, list, stat, rename and dele
         check('the deleted subtree is really gone from real disk (notFound)', !walk.readAfterRmGone.ok && walk.readAfterRmGone.error?.code === 'notFound', JSON.stringify(walk.readAfterRmGone))
       } finally {
         await closeElectronApp(app)
+        clearFixtureAsPageScript()
       }
     } catch (e) {
       check('Phase 2 (a real fs grant, exercised over the real IPC pipe on real disk) ran without an unexpected failure', false, String((e as Error)?.stack ?? e))

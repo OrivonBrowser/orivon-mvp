@@ -55,3 +55,10 @@ author.
   `https:` does not admit `wss:` (measured, `test/e2e-served-csp.test.ts`).
 - **No `form-action`.** Restricting it would also refuse a form-post sign-in's redirects, and
   would bound nothing: top-level navigation is not governed by CSP (A42).
+- **`object-src 'none'`.** `default-src 'self'` alone still admits a same-origin
+  `<object>`/`<embed>` document, and Chromium reports such a document's response to
+  `onHeadersReceived` as resource type `object` (measured, Electron 44) -- a granted-without-
+  install origin's `'unsafe-inline'`-free policy reaches it only because
+  `../../main/install/granted-origin-csp.ts`'s own filter and `documentOriginOf` also treat
+  `object` as a document type. `object-src 'none'` is the second, unconditional lock: even if
+  that filter's document-type list were ever wrong, no such document loads at all.

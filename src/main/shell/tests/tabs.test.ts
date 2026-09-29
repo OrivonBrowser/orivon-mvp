@@ -99,6 +99,14 @@ vi.mock('../../browsing/favicon.js', async (importOriginal) => {
   return { ...actual, fetchFaviconDataUrlCached: vi.fn().mockResolvedValue(null) }
 })
 
+// ONLY a cache-served origin gets its own partition: mocked the same way
+// tab-view.test.ts does, since the real registry is a module-level Set this
+// file never populates otherwise.
+const { served } = vi.hoisted(() => ({ served: new Set<string>() }))
+vi.mock('../../../loader/electron/serve.js', () => ({
+  isOriginServedFromCacheSync: (origin: string) => served.has(origin)
+}))
+
 const { TabManager } = await import('../tabs.js')
 const { fetchFaviconDataUrlCached } = await import('../../browsing/favicon.js')
 
@@ -125,21 +133,24 @@ function additionalArgumentsOf (view: RecordedView): string[] | undefined {
   return view.options.webPreferences?.['additionalArguments'] as string[] | undefined
 }
 
-/** A fake `SubsystemContext` whose broker answers from a caller-supplied set of origins --
- * everything else throws if touched, since no test here needs it. The set answers BOTH
- * `hasGrantsSync` (which decides the partition) and `isRegisteredSync` (which decides
- * ADR-0017's app-tab fetch flag), because these tests predate the two being separate and
- * assert on both: `tab-view.test.ts` is where the distinction itself is proven. */
+/** A fake `SubsystemContext` for a caller-supplied set of ORIGINS THAT ARE
+ * REAL INSTALLED APPS: registered with the broker (ADR-0017's app-tab fetch
+ * flag) and served from the pinned cache (the only thing that earns a
+ * partition) -- what a real install always does at once, so these tests
+ * keep exercising one installed app rather than the two questions
+ * separately. `tab-view.test.ts` is where the registered/cache-served
+ * DISTINCTION itself is proven. */
 function ctxWithRegisteredOrigins (...origins: string[]): SubsystemContext {
   const registered = new Set(origins)
-  const known = (origin: string): boolean => registered.has(origin)
+  for (const origin of origins) served.add(origin)
   return {
-    broker: { app: { isRegisteredSync: known, hasGrantsSync: known } }
+    broker: { app: { isRegisteredSync: (origin: string) => registered.has(origin) } }
   } as unknown as SubsystemContext
 }
 
 beforeEach(() => {
   createdViews.length = 0
+  served.clear()
   fakeContentView.addChildView.mockClear()
   fakeContentView.removeChildView.mockClear()
 })
@@ -622,9 +633,14 @@ describe('TabManager -- a tab coming back to an app it left gets the app\'s own 
   })
 
   it('builds a fresh view instead when the kept one no longer matches its origin\'s app-tab flag', () => {
+    // The partition must stay CONSTANT across the whole test (cache-served,
+    // from the start) while REGISTRATION alone flips mid-test -- that split
+    // is the scenario this test is about, so it cannot use
+    // ctxWithRegisteredOrigins, which ties both to the same origin set.
+    served.add(APP)
     const registered = new Set<string>()
     const ctx = {
-      broker: { app: { hasGrantsSync: (o: string) => o === APP, isRegisteredSync: (o: string) => registered.has(o) } }
+      broker: { app: { isRegisteredSync: (o: string) => registered.has(o) } }
     } as unknown as SubsystemContext
     const { manager, app, provider } = leftForProvider(ctx)
     registered.add(APP)

@@ -2,8 +2,8 @@
 
 **What lives here.** `clear-data.ts` does "Clear browsing data": history back as far as chosen, the
 cookies and storage of ordinary websites, the cache, the saved zoom levels, and (only when asked for by
-name) the browser storage of every app that holds permissions. `privacy-domain.ts` is what the Settings page
-may ask: how much is kept, and to clear.
+name) the browser storage of every cache-served app that holds permissions. `privacy-domain.ts` is what the
+Settings page may ask: how much is kept, and to clear.
 
 **What it depends on.** `electron` (types: the sessions cleared);
 [`../history/`](../history/) and [`../zoom/`](../zoom/) (what is forgotten through them);
@@ -21,9 +21,11 @@ which sessions there are is decided by [`../pages/start-internal-pages.ts`](../p
 **A time range applies to history only.** Electron clears a session's data by type and origin, with no time range,
 so site data and the cache are all or nothing, and the page says so.
 
-**An app's storage is a separate choice.** An app keeps working data (a signed-in session, a local database) in
-its own session, so clearing "cookies and site data" never reaches it. Choosing App data clears the browser
-storage of every app that holds permissions; the files an app saved in its own folder, its permissions and its
-installed code are not touched.
+**An app's storage is a separate choice, only for a cache-served app.** Such an app keeps working data (a
+signed-in session, a local database) in its own session, so clearing "cookies and site data" never reaches it;
+choosing App data clears every cache-served app's own session instead, leaving the files an app saved in its
+own folder, its permissions and its installed code untouched. A granted-without-install app has no session of
+its own: its storage sits in the same session ordinary websites use, so "cookies and site data" reaches it and
+App data does not.
 
 **One part failing does not stop the others.** The result names what could not be cleared.

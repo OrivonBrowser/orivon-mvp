@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { asPage } from './main-world-socket.test-helpers.js'
 
 // net.connectSecure through the real preload wiring -- surface/orivon.ts's
 // bridge closures, surface/net.ts's descriptor handling and installOrivon --
@@ -58,7 +59,7 @@ describe('net.connectSecure end to end through the preload', () => {
       }
     })
     exposeOrivon()
-    const orivon = target.orivon as { net: { connectSecure: (opts: unknown) => Promise<Record<string, unknown>> } }
+    const orivon = asPage(target.orivon) as { net: { connectSecure: (opts: unknown) => Promise<Record<string, unknown>> } }
     const options = { host: 'electrum.example', port: 50002, ca: 'PEM', servername: 'electrum.example', alpnProtocols: ['h2'] }
 
     const connecting = orivon.net.connectSecure(options)

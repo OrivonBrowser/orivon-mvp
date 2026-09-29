@@ -18,6 +18,8 @@ import { publishRequestGrant } from '../registry.js'
 import { requestGrant } from './request-grant.js'
 import { createGrantPrompt } from './request-grant-prompt.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
+import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 
 export const requestGrantSubsystem: Subsystem = {
   name: 'request-grant',
@@ -27,7 +29,17 @@ export const requestGrantSubsystem: Subsystem = {
     }
     const broker = ctx.broker
     // ADR-0037: same developer-only override as app-install-subsystem.ts.
-    const consent = createGrantPrompt(broker, scoreLevelOverrideFor)
+    // The extensions disclosure (docs/planning/extensions-exploration.md): listed
+    // fresh from ctx.extensions on every prompt, never cached -- extensions
+    // are installed and enabled far less often than a grant prompt fires,
+    // but a stale list would still be the wrong list to show. extensionsSubsystem
+    // runs before this one (../subsystems.ts), so ctx.extensions is already
+    // published by the time a real page can trigger a prompt.
+    const extensionsOnSite = async (origin: string): Promise<readonly string[]> => {
+      const extensions = ctx.extensions
+      return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
+    }
+    const consent = createGrantPrompt(broker, scoreLevelOverrideFor, extensionsOnSite)
     publishRequestGrant(ctx, async (origin, request) => await requestGrant(broker, consent, origin, request))
   }
 }
