@@ -12,7 +12,10 @@ Every call into `window.orivon` is attributed from its JavaScript call stack, ca
 page's main world by the object's own code with intrinsics saved when the preload installs it.
 A call is refused, with the capability's ordinary `denied` failure, when a frame of its stack, or
 the origin of an `eval` in it, is an extension's script (`chrome-extension://`); when no frame is
-the page's own code; or when the stack machinery has been tampered with. Orivon's own main-world
+the page's own code; or when the stack machinery has been tampered with. A frame is the page's
+own only by the URL of the script it was loaded from: string-compiled code (`eval`,
+`new Function`, a string timer) counts only through the page frame that called it, since a
+`//# sourceURL=` comment rewrites every other name V8 reports for it. Orivon's own main-world
 plumbing calls the functions it captured before they were wrapped, so it is never attributed.
 
 An app a person has granted permissions to is served with `script-src` without
@@ -78,7 +81,11 @@ away, in the manner of ADR-0021.
   access to the page could cause in other ways.
 - A page's own call made from a callback with no page frame on the stack (a bound
   `orivon` method passed straight to `setTimeout` or `addEventListener`) is refused. Calls from
-  the page's own functions, including `async` ones after an `await`, keep their frames.
+  the page's own functions, including `async` ones after an `await`, keep their frames. So is a
+  call from string-compiled code that runs with no page script beneath it: a string timer, or a
+  callback or `async` continuation defined inside `eval` or `new Function` (an eval-based
+  development build's modules among them). The same code called from a page function is
+  allowed.
 - An app that needs inline scripts does not work once the person grants it a permission. A
   pinned app could keep its own inline scripts through `'sha256-...'` sources Orivon computes
   from the HTML it serves; that is not built.

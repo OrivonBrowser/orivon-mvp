@@ -70,10 +70,10 @@ function seedExtension (userDataDir: string): void {
 /**
  * External, never inline (CSP's own point): the page's own comparison
  * calls, run on every /orivon-fixture/* path. Alongside the plain call,
- * the page's OWN `eval` and `new Function` -- proving bypass 3's fix
- * (main-world-socket.ts's README.md Design notes) narrows page attribution
- * to fileName/eval-origin only WITHOUT also refusing a page's genuine use
- * of either.
+ * the page's OWN `eval` and `new Function`, called from a page function --
+ * proving that page attribution by a real script's URL only
+ * (main-world-socket.ts's README.md Design notes) still allows a page's
+ * genuine use of either.
  */
 const PAGE_JS = `(async () => {
   function outcomeOf (error) {
@@ -270,7 +270,7 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
       check('the page, the MAIN-world content script, the injected script and chrome.scripting all reported an outcome', baseline)
       const outcomes = await evaluateRetrying(view, () => ({ ...document.documentElement.dataset }))
       check('the page\'s own call succeeds', outcomes.orivonPage === 'allowed', JSON.stringify(outcomes))
-      check('the page\'s own eval(...) call succeeds -- bypass 3\'s fix does not also refuse genuine page eval', outcomes.orivonPageEval === 'allowed', JSON.stringify(outcomes))
+      check('the page\'s own eval(...) call, made from a page function, succeeds', outcomes.orivonPageEval === 'allowed', JSON.stringify(outcomes))
       check('the page\'s own new Function(...) call succeeds -- same as above', outcomes.orivonPageNewfunction === 'allowed', JSON.stringify(outcomes))
       check('the "world": "MAIN" content script is refused with the denied shape', outcomes.orivonMainWorld === 'denied', JSON.stringify(outcomes))
       check('the isolated content script\'s web-accessible injected <script> is refused with the denied shape', outcomes.orivonInjected === 'denied', JSON.stringify(outcomes))
@@ -295,12 +295,16 @@ it('refuses window.orivon to a MAIN-world content script, an injected web-access
         String(fetchExtensionOutcome)
       )
 
-      // ---- bypass 3: a //# sourceURL=<page-origin>/... comment on a STRING timer scheduled by extension code must still refuse ----
+      // ---- a //# sourceURL= comment on a STRING timer scheduled by extension code, naming the page or forging its eval origin, must refuse ----
       const sourceUrlView = await navigateToFixture(app, `${origin}/orivon-fixture/sourceurl`, 'orivon-fixture')
       const sourceUrlSettled = await waitFor(async () => await evaluateRetrying(sourceUrlView, () => document.documentElement.dataset.orivonSourceurl) !== undefined)
       check('the sourceURL-spoofed string timer settles', sourceUrlSettled)
       const sourceUrlOutcome = await evaluateRetrying(sourceUrlView, () => document.documentElement.dataset.orivonSourceurl)
       check('a //# sourceURL=-spoofed string timer scheduled by extension code is refused with the denied shape', sourceUrlOutcome === 'denied', String(sourceUrlOutcome))
+      const evalOriginSettled = await waitFor(async () => await evaluateRetrying(sourceUrlView, () => document.documentElement.dataset.orivonSourceurlEvalOrigin) !== undefined)
+      check('the forged-eval-origin string timer settles', evalOriginSettled)
+      const evalOriginOutcome = await evaluateRetrying(sourceUrlView, () => document.documentElement.dataset.orivonSourceurlEvalOrigin)
+      check('a string timer whose sourceURL forges a page eval origin is refused with the denied shape', evalOriginOutcome === 'denied', String(evalOriginOutcome))
 
       // ---- a deferred bound call, scheduled by the MAIN-world content script ----
       const deferredView = await navigateToFixture(app, `${origin}/orivon-fixture/deferred`, 'orivon-fixture')

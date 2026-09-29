@@ -80,12 +80,13 @@ method. The decision, over the CallSites excluding `guarded`'s own frame
 name, script name or eval origin CONTAINS a `chrome-extension://` script (refusing more is
 safe); otherwise refuse unless some frame is page code -- checked STARTS-WITH, and only over the
 frame's real script URL (`getFileName()`: an `http:`/`https:` URL, or a `blob:` URL whose inner
-origin is `http(s)`) or an eval origin whose innermost script URL (the URL inside the last,
-innermost `(...)` V8 nests a repeated eval origin in) starts with one of those. Page attribution
-never reads `scriptNameOrSourceURL`: a `//# sourceURL=https://...` comment lets string-compiled
-code (`eval`, `new Function`, a string passed to `setTimeout`) claim any script name it likes, so
-that field is read only for the (safely broader) extension check above, never to decide a frame
-is the page's own. Otherwise allow. Refusing when NO frame qualifies either way (rather than only
+origin is `http(s)`). Page attribution never reads `scriptNameOrSourceURL` or an eval origin: a
+`//# sourceURL=...` comment on string-compiled code (`eval`, `new Function`, a string passed to
+`setTimeout`) sets its script name to any value without whitespace, and V8 reports that value as
+the eval origin of the code and of every eval nested inside it, so
+`//# sourceURL=x(https://app.example/a.js:1:1)` reads exactly like a page eval. String-compiled
+code therefore counts as the page's only through the real page frame that called it; those two
+fields are read only for the (safely broader) extension check above. Otherwise allow. Refusing when NO frame qualifies either way (rather than only
 when one names an extension) is deliberate fail-closed default-deny: a
 `setTimeout(orivon.x.bind(...))` scheduled by extension code fires with no caller stack at all,
 and a stack that cannot be captured because `Error.prepareStackTrace` was frozen first, or whose
@@ -103,9 +104,8 @@ has no extension frame on its stack at the moment it runs -- that string execute
 own code, correctly attributed, and `window.orivon` allows it. This is not a gap in the filter:
 the code really is running as the page by the time it calls `window.orivon`, the same as any
 other case where an extension changes what a page's own script does (ADR-0045's Consequences).
-It is stated here because the sourceURL-spoofing fix above narrows a nearby, easily-confused
-route (extension code claiming to BE the page) and this one is easy to mistake for the same
-thing.
+It is stated here because the sourceURL rule above closes a nearby, easily-confused route
+(extension code claiming to BE the page) and this one is easy to mistake for the same thing.
 
 **`orivon.ts`'s `exposeFallback()` is fail-closed, not merely `net`-less.** It runs when
 `contextBridge.executeInMainWorld` is absent or throws -- `main-world-socket.ts`'s `installOrivon`
