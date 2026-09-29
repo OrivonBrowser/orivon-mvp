@@ -45,29 +45,27 @@ const INTERNAL_SCHEME_PREFIX = 'orivon'
 const SCHEME_GRAMMAR = /^[a-z][a-z0-9+.-]*$/
 
 /**
- * BEP 0009's info-hash shapes: 40 hex characters (SHA-1, hex) or 32 base32
- * characters (SHA-1, base32) -- the only two `xt=urn:btih:` may carry.
+ * The exact topics a magnet link may name: a BitTorrent v1 info hash (BEP 9:
+ * 40 hex or 32 base32 characters) or a v2 one (BEP 52: a SHA-256 multihash,
+ * `1220` then 64 hex characters). A hybrid torrent names one of each.
  */
-const BTIH_HEX = /^[0-9a-f]{40}$/i
-const BTIH_BASE32 = /^[a-z2-7]{32}$/i
+const BTIH = /^urn:btih:(?:[0-9a-f]{40}|[a-z2-7]{32})$/i
+const BTMH = /^urn:btmh:1220[0-9a-f]{64}$/i
 
 /**
- * Every magnet parameter this browser will pass on to the OS: BEP 0009's own
- * set (`xt`, `dn`, `tr`, `xl`, `kt`, `ws`, `as`, `xs`) plus `mt`/`so`, in wide
- * client use for a manifest torrent and a webtorrent-style source selection.
- * Not a registry of every parameter any client has ever invented -- a fixed
- * list all the same: one outside it is refused rather than passed through
- * unexamined.
+ * Every magnet parameter this browser will pass on to the OS: BEP 9's set
+ * (`xt`, `dn`, `tr`, `xl`, `kt`, `ws`, `as`, `xs`, `x.pe`) plus `mt` and
+ * `so`, in wide client use. A parameter outside it is refused rather than
+ * passed through unexamined.
  */
-const KNOWN_MAGNET_PARAMS: ReadonlySet<string> = new Set(['xt', 'dn', 'tr', 'xl', 'kt', 'ws', 'as', 'xs', 'mt', 'so'])
+const KNOWN_MAGNET_PARAMS: ReadonlySet<string> = new Set(['xt', 'dn', 'tr', 'xl', 'kt', 'ws', 'as', 'xs', 'x.pe', 'mt', 'so'])
 
 /**
  * Whether a `magnet:` URL is well-formed enough to hand to the OS: no path
- * before its query, no parameter outside the known set, and exactly one
- * `xt=urn:btih:<hash>` with a hash BEP 0009 could have produced. T23's own
- * fix for protocol-handler argument injection -- refuse anything a strict
- * grammar does not recognise, rather than pass it on to whatever the OS
- * associates with the scheme.
+ * before its query, no parameter outside the known set, and one `xt` per
+ * BitTorrent version, at least one, each a hash that version could have
+ * produced. Anything a strict grammar does not recognise is refused rather
+ * than passed to whatever the OS associates with the scheme (T23).
  */
 function isWellFormedMagnetLink (parsed: URL): boolean {
   if (parsed.pathname !== '') return false
@@ -76,9 +74,9 @@ function isWellFormedMagnetLink (parsed: URL): boolean {
     if (!KNOWN_MAGNET_PARAMS.has(name)) return false
   }
   const xt = params.getAll('xt')
-  if (xt.length !== 1) return false
-  const hash = /^urn:btih:(.+)$/i.exec(xt[0] ?? '')?.[1]
-  return hash !== undefined && (BTIH_HEX.test(hash) || BTIH_BASE32.test(hash))
+  const v1 = xt.filter((topic) => BTIH.test(topic)).length
+  const v2 = xt.filter((topic) => BTMH.test(topic)).length
+  return xt.length > 0 && v1 + v2 === xt.length && v1 <= 1 && v2 <= 1
 }
 
 /** The scheme to ask about, lower-cased and without its colon, or null for
