@@ -16,6 +16,19 @@ import { windowOpenHandler } from './popups.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 
+/** tabs.ts's own tab-count ceiling: an unbounded window.open() flood (an
+ * ad/popunder pattern, not hypothetical) would otherwise mint unlimited
+ * WebContentsViews -- each its own renderer process -- until the machine
+ * OOMs. Refusing beyond this ceiling is far cheaper than crashing the
+ * whole browser; no legitimate manual use opens anywhere near 100 tabs.
+ * Lives here, not in tabs.ts, only to keep that file under Rule 2's line
+ * limit -- it is TabManager's own constant, used nowhere in this file. */
+export const MAX_TABS = 100
+
+/** tabs.ts's exitHtmlFullscreen(): any id but 0 (the page's own world) and
+ * 999 (the preload's). Same reason as MAX_TABS for living here. */
+export const EXIT_FULLSCREEN_WORLD_ID = 1001
+
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
  * again in preload/routed/fetch.ts rather than imported, for the reason
  * `appTabArgsFor` gives below; within this file it is one constant. */
@@ -31,10 +44,15 @@ const APP_TAB_FLAG = '--orivon-app-tab'
  * `registerAppOrigin` itself writes -- deciding it from a different one is
  * what made a served app unreachable (A109).
  *
- * A held grant, on its own, is NOT isolated: a Chrome extension runs as one
- * instance across every page, granted or not, so the granted app itself has
- * to share the session an extension reaches (owner, 2026-09-29). Do not add
- * `broker.app.hasGrantsSync` back as an arm here. */
+ * A held grant, on its own, is not isolated: a Chrome extension runs as one
+ * instance across every page, granted or not, so a granted app shares the
+ * session an extension reaches (ADR-0044). Do not add
+ * `broker.app.hasGrantsSync` back as an arm here.
+ *
+ * `originFromUrl` derives an origin only for `http:`/`https:`, so a
+ * `chrome-extension:` target always answers undefined: tabs.ts's
+ * openTrusted() relies on this to put an extension-opened tab on
+ * session.defaultSession, the one session extensions load into. */
 export function partitionForTarget (target: string): string | undefined {
   const origin = originFromUrl(target)
   if (origin === null) return undefined
@@ -390,6 +408,10 @@ export function repartitionView (
   record.internalPage = null
   if (parked === undefined) wireView(id, record)
   else keepOnlyOwnEntriesOnReturn(record, parked, target)
+
+  // Same tab, fresh WebContents -- the lifecycle seam's one event tab-
+  // view.ts raises directly (tab-lifecycle.ts's own doc says why).
+  host.tabLifecycle?.viewReplaced(oldView.webContents, newView.webContents, host.window)
 
   // Only once the record shows the new view: the old one's handlers then
   // ignore it, so closing it here cannot reach forgetTab().

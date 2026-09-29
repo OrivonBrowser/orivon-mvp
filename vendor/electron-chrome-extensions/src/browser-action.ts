@@ -84,15 +84,19 @@ export const injectBrowserAction = () => {
       (globalThis as any).browserAction || __browserAction__
 
     class BrowserActionElement extends HTMLButtonElement {
-      private updateId?: number
-      private badge?: HTMLDivElement
-      private pendingIcon?: HTMLImageElement
+      // Orivon patch: `| undefined` added to all three (exactOptionalPropertyTypes) --
+      // this class assigns `undefined` to each below, which the bare `?:` form refuses.
+      private updateId?: number | undefined
+      private badge?: HTMLDivElement | undefined
+      private pendingIcon?: HTMLImageElement | undefined
 
-      get id(): string {
+      // Orivon patch: `override` added (noImplicitOverride) -- both accessors override
+      // the inherited Element.id.
+      override get id(): string {
         return this.getAttribute('id') || ''
       }
 
-      set id(id: string) {
+      override set id(id: string) {
         this.setAttribute('id', id)
       }
 

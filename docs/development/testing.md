@@ -227,6 +227,28 @@ The driver does fail to attach to one window, spike gate 3's, for a cause still 
 direct launch without Playwright, and the failure is specific to that gate's video and
 service-worker setup, not to `BaseWindow` in general.
 
+### Checking against real Chrome extensions
+
+[`test/e2e-extensions-real.test.ts`](../../test/e2e-extensions-real.test.ts) installs whichever
+of uBOL Origin Lite, Dark Reader, Bitwarden and MetaMask it finds unpacked in
+`ORIVON_REAL_EXTENSIONS_DIR` (one subdirectory per extension, named `ubol`/`darkreader`/
+`bitwarden`/`metamask`) through the real install path, then records per extension: whether its
+service worker is still running 10s after load and its first console errors, whether its
+toolbar action popup renders a non-empty body, and one SW-independent behaviour each (MetaMask's
+`window.ethereum`, Bitwarden's content-script response, Dark Reader's injected style, uBOL's
+popup). It is skipped entirely with no directory set, so `npm run test:e2e` never runs it. Run it
+directly:
+
+```
+ORIVON_REAL_EXTENSIONS_DIR=/path/to/extracted node scripts/build-e2e.mjs && \
+  node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-real.test.ts
+```
+
+Re-download each extension's latest release from its own GitHub releases page when the directory
+is missing or stale; never commit the extracted folders. Run sandboxed (`launchElectron`'s
+`sandbox: true`) -- under `--no-sandbox`, [`open-questions.md`](../open-questions.md) A289's cause
+makes every service-worker-dependent check fail, which is not a sign this file is broken.
+
 ---
 
 ## Guards

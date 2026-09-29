@@ -413,3 +413,19 @@ own session — leave it alone.** A `/tmp/orivon-test-*` profile is a test run a
 leak that does not exist. Use the `/proc/<pid>/exe` recipe in "A launch that leaves anything
 behind" before concluding a run left something, or you will "clean up" a run that already tore
 down correctly.
+
+## Chrome extensions: the sandbox, service-worker preloads, and `net.fetch`
+
+- **Playwright's `_electron.launch` adds `--no-sandbox` on Linux** unless the launch passes
+  `chromiumSandbox: true`, and hides it from `process.argv` (`app.commandLine.hasSwitch` still
+  sees it). `launchElectron({ sandbox: true })` in `test/launch-electron.mjs` passes it.
+- **Electron runs no `service-worker` session preload under `--no-sandbox`.** An extension's
+  worker then lacks everything electron-chrome-extensions injects (`tabs` events, `windows`,
+  `action`), and real extensions die at start. Extension e2e tests launch sandboxed (A289).
+- **Sandboxed, a newly loaded extension's first worker still misses the preload**, every time;
+  `src/main/extensions/extension-sw-preload-recovery.ts` checks each worker and reloads once.
+- **`net.fetch` on a session that holds an extension declaring `webRequest` or
+  `declarativeNetRequest` segfaults the main process** (Electron 44, 15 of 15 runs). Orivon strips
+  both from every extension copy it loads (`ADR-0043`).
+- **Any embedder `session.webRequest` listener silences extensions' own `webRequest` and
+  `declarativeNetRequest`**, and static dNR rules never apply at all.

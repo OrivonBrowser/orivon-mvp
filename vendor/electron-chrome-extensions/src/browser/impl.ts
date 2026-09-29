@@ -15,6 +15,13 @@ export interface ChromeExtensionImpl {
   createWindow?(details: chrome.windows.CreateData): Promise<Electron.BaseWindow>
   removeWindow?(window: Electron.BaseWindow): void
 
+  /**
+   * Orivon patch: when provided, used by tabs.ts's `update()` instead of
+   * calling `tab.loadURL(url)` directly, so a `chrome.tabs.update({ url })`
+   * navigation passes through the same URL policy a created tab does.
+   */
+  navigateTab?(tab: Electron.WebContents, url: string): void | Promise<void>
+
   requestPermissions?(
     extension: Electron.Extension,
     permissions: chrome.permissions.Permissions,

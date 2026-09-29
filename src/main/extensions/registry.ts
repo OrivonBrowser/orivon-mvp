@@ -22,7 +22,19 @@ export type ExtensionSource =
  */
 export type ExtensionUpdater =
   | { readonly kind: 'none', readonly reason: string }
-  | { readonly kind: 'store', readonly lastCheckedAt?: number, readonly lastResult?: string }
+  | {
+    readonly kind: 'store'
+    readonly lastCheckedAt?: number
+    readonly lastResult?: string
+    /** Set when the last check found an update whose facts widen on what is
+     * installed (T19's subset rule): the exact bytes the "Update" button
+     * re-fetches, without another Omaha check, once the person reviews and
+     * approves it (install-runner.ts's `updateFromStore`). A successful
+     * install into this slot replaces the whole registry entry, including
+     * this field; a later check that finds no update does not clear it on
+     * its own (install-runner.ts's own doc on `updateFromStore`). */
+    readonly pendingUpdate?: { readonly url: string, readonly version: string }
+  }
 
 export interface InstalledExtension {
   readonly id: string
@@ -49,8 +61,17 @@ export interface InstalledExtension {
  */
 export function describeUpdater (entry: InstalledExtension): string {
   if (entry.updater.kind === 'store') {
-    return 'Updated by the Chrome Web Store (Google), checked at start and every 5 hours. ' +
+    const parts = [
+      'Updated by the Chrome Web Store (Google), checked at start and every 5 hours. ' +
       'Each update is checked against Google\'s and the developer\'s signatures before it runs.'
+    ]
+    if (entry.updater.lastCheckedAt !== undefined) {
+      parts.push(`Last checked ${new Date(entry.updater.lastCheckedAt).toISOString()}.`)
+    }
+    if (entry.updater.lastResult !== undefined) {
+      parts.push(entry.updater.lastResult.endsWith('.') ? entry.updater.lastResult : `${entry.updater.lastResult}.`)
+    }
+    return parts.join(' ')
   }
   if (entry.source.kind === 'unpacked') {
     return `No automatic updates. Reload it from ${entry.source.from} to pick up changes.`
@@ -88,13 +109,22 @@ function parseUpdater (raw: unknown): ExtensionUpdater | undefined {
   if (kind === 'store') {
     const lastCheckedAt = ownProperty(raw, 'lastCheckedAt', isFiniteNumber)
     const lastResult = ownProperty(raw, 'lastResult', isString)
+    const pendingUpdate = parsePendingUpdate(ownProperty(raw, 'pendingUpdate', (v): v is object => typeof v === 'object' && v !== null))
     return {
       kind,
       ...(lastCheckedAt === undefined ? {} : { lastCheckedAt }),
-      ...(lastResult === undefined ? {} : { lastResult })
+      ...(lastResult === undefined ? {} : { lastResult }),
+      ...(pendingUpdate === undefined ? {} : { pendingUpdate })
     }
   }
   return undefined
+}
+
+function parsePendingUpdate (raw: unknown): { readonly url: string, readonly version: string } | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const url = ownProperty(raw, 'url', isString)
+  const version = ownProperty(raw, 'version', isString)
+  return url === undefined || version === undefined ? undefined : { url, version }
 }
 
 function parseStripped (raw: unknown): StrippedRecord | undefined {

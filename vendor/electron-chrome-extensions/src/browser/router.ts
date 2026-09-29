@@ -1,4 +1,5 @@
-import { app, ipcMain, Session } from 'electron'
+import { app, ipcMain } from 'electron'
+import type { Session } from 'electron'
 import debug from 'debug'
 
 import { resolvePartition } from './partition'
@@ -48,6 +49,35 @@ interface RoutingDelegateObserver {
 }
 
 let gRoutingDelegate: RoutingDelegate
+
+/**
+ * Orivon patch: an optional predicate `crx-msg-remote` is checked against
+ * before being routed to another session's observer -- unset, every sender
+ * in an observed session may address any other observed session's tabs and
+ * windows APIs (browserAction.activate among them). Set once, before the
+ * first remote message arrives (extension-host.ts's attachExtensionShell).
+ */
+type RemoteMessageSenderCheck = (event: IpcAnyEvent) => boolean
+let gRemoteMessageSenderCheck: RemoteMessageSenderCheck | undefined
+
+export function setRemoteMessageSenderCheck(check: RemoteMessageSenderCheck): void {
+  gRemoteMessageSenderCheck = check
+}
+
+/**
+ * Orivon patch: an optional predicate checked, on every `crx-msg`, against
+ * the `extensionId` the message names -- unset, a page or worker of one
+ * loaded extension can name any other loaded extension's id and reach its
+ * handlers under that identity (permission checks in onExtensionMessage
+ * read `extensionId`, not who actually sent the message). Set once, before
+ * the first message arrives (extension-host.ts).
+ */
+type MessageSenderIdCheck = (event: IpcAnyEvent, claimedExtensionId: string | undefined) => boolean
+let gMessageSenderIdCheck: MessageSenderIdCheck | undefined
+
+export function setMessageSenderIdCheck(check: MessageSenderIdCheck): void {
+  gMessageSenderIdCheck = check
+}
 
 /**
  * Handles event routing IPCs and delivers them to the observer with the
@@ -103,6 +133,12 @@ class RoutingDelegate {
   ) => {
     d(`received '${handlerName}'`, args)
 
+    // Orivon patch: refuses a message whose named extensionId does not
+    // match the sender's own, when a check is set.
+    if (gMessageSenderIdCheck && !gMessageSenderIdCheck(event as IpcAnyEvent, extensionId)) {
+      throw new Error(`${handlerName} refused: sender is not extension ${extensionId}`)
+    }
+
     const observer = this.sessionMap.get(getSessionFromEvent(event))
 
     return observer?.onExtensionMessage(event, extensionId, handlerName, ...args)
@@ -116,6 +152,12 @@ class RoutingDelegate {
   ) => {
     d(`received remote '${handlerName}' for '${sessionPartition}'`, args)
 
+    // Orivon patch: refuses a remote call before it reaches any observer,
+    // when a sender check is set.
+    if (gRemoteMessageSenderCheck && !gRemoteMessageSenderCheck(event)) {
+      throw new Error(`${handlerName} refused: sender is not allowed to call a remote session`)
+    }
+
     const ses =
       sessionPartition === DEFAULT_SESSION
         ? getSessionFromEvent(event)
@@ -127,6 +169,13 @@ class RoutingDelegate {
   }
 
   private onAddListener = (event: IpcAnyEvent, extensionId: string, eventName: string) => {
+    // Orivon patch: same check as onRouterMessage above -- without it, one
+    // loaded extension's page or worker could subscribe to any other loaded
+    // extension's events by naming its id here instead of its own.
+    if (gMessageSenderIdCheck && !gMessageSenderIdCheck(event, extensionId)) {
+      d(`crx-add-listener refused: sender is not extension ${extensionId}`)
+      return
+    }
     const observer = this.sessionMap.get(getSessionFromEvent(event))
     const listener: EventListener =
       event.type === 'frame'
@@ -147,6 +196,11 @@ class RoutingDelegate {
     extensionId: string,
     eventName: string,
   ) => {
+    // Orivon patch: same check as onAddListener above.
+    if (gMessageSenderIdCheck && !gMessageSenderIdCheck(event as IpcAnyEvent, extensionId)) {
+      d(`crx-remove-listener refused: sender is not extension ${extensionId}`)
+      return
+    }
     const observer = this.sessionMap.get(getSessionFromEvent(event))
     const listener: EventListener =
       event.type === 'frame'
@@ -186,7 +240,7 @@ export interface HandlerOptions {
   /** Whether an extension context is required to invoke the handler. */
   extensionContext: boolean
   /** Required extension permission to run the handler. */
-  permission?: chrome.runtime.ManifestPermissions
+  permission?: chrome.runtime.ManifestPermissions | undefined
 }
 
 interface Handler extends HandlerOptions {

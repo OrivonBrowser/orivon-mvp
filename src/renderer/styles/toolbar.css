@@ -239,6 +239,15 @@
   margin-right: 4px;
   background: var(--wborder);
 }
+/* electron-chrome-extensions' own element (ADR-0043): a flex row of 28px
+   action buttons in its shadow DOM already, so only alignment in the
+   cluster and its hover colour need setting here. Empty (no extension has
+   an action) collapses to zero width -- no gap either side to reserve. */
+browser-action-list {
+  display: flex;
+  align-items: center;
+  --browser-action-hover-bg: var(--whover-strong);
+}
 .iconbtn {
   width: 32px;
   height: 32px;

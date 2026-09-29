@@ -13,7 +13,8 @@ interface SettingsRequest {
 
 export function settingsDomain (settings: SettingsStore): InternalDomain {
   return {
-    pages: ['settings'],
+    // The extensions page reads and writes 'extensions.developerMode' here rather than through a domain of its own.
+    pages: ['settings', 'extensions'],
     handle: (command) => {
       const request = (typeof command === 'object' && command !== null ? command : {}) as SettingsRequest
       const key = typeof request.key === 'string' ? request.key : ''

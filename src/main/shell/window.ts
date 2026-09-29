@@ -193,7 +193,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query),
     internalPages: services.internalPages,
     devtools: services.devtools,
-    backdrop: splitFrame
+    backdrop: splitFrame,
+    tabLifecycle: services.tabLifecycle
   })
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one

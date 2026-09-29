@@ -18,9 +18,13 @@ export function compareVersions(version1: string, version2: string) {
   const v1 = version1.split('.').map(Number)
   const v2 = version2.split('.').map(Number)
 
+  // Orivon patch: `?? 0` -- the root tsconfig's noUncheckedIndexedAccess
+  // makes a plain index access `number | undefined`; a version string with
+  // fewer than 3 dot-separated parts is missing components, which is
+  // exactly what should compare as lower, the same as `0`.
   for (let i = 0; i < 3; i++) {
-    if (v1[i] > v2[i]) return 1
-    if (v1[i] < v2[i]) return -1
+    if ((v1[i] ?? 0) > (v2[i] ?? 0)) return 1
+    if ((v1[i] ?? 0) < (v2[i] ?? 0)) return -1
   }
   return 0
 }

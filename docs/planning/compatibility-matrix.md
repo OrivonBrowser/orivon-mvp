@@ -237,3 +237,25 @@ Check the code, do not trust the tables above.
 
 **Do not let this grow into a second copy of `app-compatibility.md`.** If an entry starts
 explaining *why a tier exists*, it belongs there.
+
+## Table 7: Chrome extensions
+
+What a Chrome extension gets in this build. Measured with uBlock Origin Lite, Dark Reader,
+Bitwarden and MetaMask through `test/e2e-extensions-real.test.ts` (opt-in), run with the
+Chromium sandbox.
+
+| Part | Works | Note |
+|---|---|---|
+| Install: unpacked folder, `.crx`, `.zip` | ✅ | `orivon://extensions`; a `.crx` needs its developer signature |
+| Install and update from the Chrome Web Store | ✅ | The store's own button; developer and store signatures checked (`ADR-0043`) |
+| Content scripts, isolated and `"world": "MAIN"`, in frames and subframes | ✅ | Every website and Web3 page, and apps holding grants unless served from their pinned copy |
+| Service worker with `tabs`, `windows`, `action`, `contextMenus`, `cookies`, `notifications`, `webNavigation`, `commands`, `permissions` | ✅ | From electron-chrome-extensions; the worker's first start is reloaded once to receive them |
+| Toolbar button, badge and popup | ✅ | |
+| Options page in a tab | ✅ | |
+| `declarativeNetRequest` | ❌ | Present so extensions start; its rules are not applied yet |
+| `webRequest` | ❌ | Present, never fires |
+| `sidePanel`, `userScripts` | ❌ | Present as no-ops |
+| Native messaging | 🚫 | Off: it starts desktop programs outside the broker |
+| Apps a person has granted permissions to | ✅ | One instance, in the default session (`ADR-0044`); extension code is refused at `window.orivon` (`ADR-0045`). An app served from its pinned copy keeps its own partition and runs none |
+| Private windows | ❌ | A private session starts with no extensions |
+| Running without the Chromium sandbox | ❌ | Electron runs no service-worker preload then, so workers lack most `chrome.*` APIs (A289) |

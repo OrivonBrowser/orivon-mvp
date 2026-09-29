@@ -320,7 +320,21 @@ function setupChromeWebStoreApi() {
   }
 }
 
-if (location.href.startsWith('https://chromewebstore.google.com')) {
+// Orivon patch: `location.href.startsWith(...)` also accepts
+// `https://chromewebstore.google.com.evil.com`, and ran in every frame of
+// every site regardless of nesting -- an exact origin match, and a
+// requirement that this frame is the top one (never an iframe embedded by
+// some other page), close both. `window.top === window` mirrors the
+// `frame.top === frame` main-process check (../browser/api.ts's own doc).
+function isWebStoreMainFrame(): boolean {
+  try {
+    return new URL(location.href).origin === 'https://chromewebstore.google.com' && window.top === window
+  } catch {
+    return false
+  }
+}
+
+if (isWebStoreMainFrame()) {
   log('Injecting Chrome Web Store API')
   setupChromeWebStoreApi()
 }

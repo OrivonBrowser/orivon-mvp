@@ -261,7 +261,13 @@ export class TabsAPI {
     const props = updateProperties
 
     const url = props.url ? validateExtensionUrl(props.url, event.extension) : undefined
-    if (url) await tab.loadURL(url)
+    if (url) {
+      // Orivon patch: routes through navigateTab (impl.ts) when the app
+      // supplied one, instead of always loading the URL directly.
+      const { navigateTab } = this.ctx.store.impl
+      if (typeof navigateTab === 'function') await navigateTab(tab, url)
+      else await tab.loadURL(url)
+    }
 
     if (typeof props.muted === 'boolean') tab.setAudioMuted(props.muted)
 

@@ -1,4 +1,4 @@
-import { Menu, MenuItem, protocol, nativeImage, app } from 'electron'
+import { Menu, MenuItem, nativeImage } from 'electron'
 import { ExtensionContext } from '../context'
 import { PopupView } from '../popup'
 import { ExtensionEvent } from '../router'
@@ -14,9 +14,10 @@ import debug from 'debug'
 
 const d = debug('electron-chrome-extensions:browserAction')
 
-if (!app.isReady()) {
-  protocol.registerSchemesAsPrivileged([{ scheme: 'crx', privileges: { bypassCSP: true } }])
-}
+// Orivon patch: the module-level protocol.registerSchemesAsPrivileged() call
+// upstream makes here is removed. ADR-0041 gives Orivon exactly one call
+// site for that API (src/main/pages/internal-session.ts, before ready);
+// 'crx' is registered there instead, with the same privileges.
 
 interface ExtensionAction {
   color?: string

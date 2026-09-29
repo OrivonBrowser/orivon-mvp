@@ -64,6 +64,14 @@ describe('partitionForTarget -- ONLY a cache-served origin gets its own partitio
   it('has no partition for a target with no derivable origin', () => {
     expect(partitionForTarget('about:blank')).toBeUndefined()
   })
+
+  it('leaves a chrome-extension: target on the default session, same as any other target with no derivable origin', () => {
+    // The trusted path an extension-opened tab takes (tabs.ts's
+    // openTrusted() relies on this: originFromUrl only derives http(s)
+    // origins, so a chrome-extension: target never matches cache coverage
+    // and always stays on session.defaultSession, where extensions load.
+    expect(partitionForTarget('chrome-extension://abcdefghijklmnopabcdefghijklmnop/page.html')).toBeUndefined()
+  })
 })
 
 describe('partitionChanged -- when a navigation must swap the view', () => {

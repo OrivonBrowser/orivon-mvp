@@ -89,6 +89,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'window.close': window.close(); return
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
     case 'settings.open': tabs.openInternal('settings'); return
+    case 'extensions.open': tabs.openInternal('extensions'); return
     case 'app.quit': deps.quit(); return
   }
 }
