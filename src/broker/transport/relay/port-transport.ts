@@ -157,13 +157,17 @@ export interface PortDeliveryFrame extends SenderFrameLike {
 
 /**
  * The WebContents that sent a control request -- distinct from
- * `senderFrame` above, which is the FRAME. `mainFrame` and `session` are
- * `isAttributedSession`'s own two comparisons (policy/origin.ts): whether
- * `senderFrame` really is this WebContents' top frame, and which Electron
- * session it runs in. `reload`/`isDestroyed` let a call that just changed
- * which session its own origin belongs in (`app.requestGrant`, granting the
- * origin's first capability) move the calling document there the same way
- * a hinted install already reloads a tab into its new partition.
+ * `senderFrame` above, which is the FRAME. `isAttributedSession`
+ * (policy/origin.ts) compares `mainFrame` against `senderFrame` itself to
+ * refuse a subframe, an embed guest or a web-context document speaking for
+ * its top frame's origin, then hands this whole object to the injected
+ * `attributed` predicate, which reads `session` (and this object's own
+ * identity) to decide whether it is the WebContents `origin`'s documents
+ * belong in. `isDestroyed` guards `stillOn`'s live re-check
+ * (`dispatch()`'s `app.requestGrant` case); `reload` mirrors the real
+ * WebContents this type stands in for, though nothing on this channel
+ * calls it -- attribution is decided at a document's own commit, not
+ * re-established by reloading it mid-call.
  */
 export interface ControlSender {
   readonly mainFrame: PortDeliveryFrame | null

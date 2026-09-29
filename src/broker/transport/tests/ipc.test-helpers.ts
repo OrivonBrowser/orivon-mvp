@@ -57,6 +57,20 @@ export function envelope (method: string, payload: unknown, timeoutMs = 1_000): 
   return { id: 'req-1', method, payload, timeoutMs }
 }
 
+/**
+ * Builds an `attributed` predicate (`isAttributedSession`'s injected half,
+ * policy/origin.ts) from an old-style "which session does this origin
+ * belong in" function -- lets a test still express the ANSWER per origin
+ * while matching the real predicate's `(sender, origin) => boolean` shape.
+ * Stands in for the live-check fallback only: the record-based and
+ * cache-served branches live entirely inside
+ * src/main/sessions/session-attribution.ts, which this file's own
+ * `handleControlRequest` tests never reach.
+ */
+export function attributedFrom (expectedSession: (origin: string) => unknown): (sender: unknown, origin: string) => boolean {
+  return (sender, origin) => (sender as { session: unknown }).session === expectedSession(origin)
+}
+
 /** A promise that never settles -- models a broker call still in flight when a timeout fires. */
 export function never<T> (): Promise<T> {
   return new Promise<T>(() => {})

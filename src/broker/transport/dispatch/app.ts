@@ -28,7 +28,8 @@ export async function dispatchApp (
   method: AppControlMethod,
   payload: unknown,
   requestGrantCtx: RequestGrantCtx | undefined,
-  caller: RequestGrantCaller
+  caller: RequestGrantCaller,
+  abandoned?: AbortSignal
 ): Promise<unknown> {
   switch (method) {
     case 'app.manifest':
@@ -44,7 +45,7 @@ export async function dispatchApp (
       const request: CapabilityRequest = payload.patterns === undefined
         ? { capability: payload.capability }
         : { capability: payload.capability, patterns: payload.patterns }
-      return await requestGrantCtx.requestGrant(origin, request, caller)
+      return await requestGrantCtx.requestGrant(origin, request, caller, abandoned)
     }
     default: {
       // Exhaustiveness check, same reasoning and shape as ../ipc.ts's own

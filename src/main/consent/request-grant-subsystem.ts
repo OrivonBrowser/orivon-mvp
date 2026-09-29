@@ -39,6 +39,6 @@ export const requestGrantSubsystem: Subsystem = {
     // a page cannot stack one dialog per capability it asks for at once --
     // see PendingGrantPrompts's own doc.
     const prompts: PendingGrantPrompts = new Map()
-    publishRequestGrant(ctx, async (origin, request, caller) => await requestGrant(broker, consent, origin, request, pending, caller, prompts))
+    publishRequestGrant(ctx, async (origin, request, caller, abandoned) => await requestGrant(broker, consent, origin, request, pending, caller, prompts, abandoned))
   }
 }

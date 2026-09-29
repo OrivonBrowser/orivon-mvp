@@ -36,8 +36,9 @@ export interface ManifestHintEvent {
   /**
    * The tab that reported the hint, when the caller has one. Optional and
    * structural so a test drives this listener with a plain object, exactly
-   * as `senderFrame` already is. `mainFrame`/`session` are
-   * `isAttributedSession`'s own two comparisons (../../broker/policy/origin.js).
+   * as `senderFrame` already is. `mainFrame` is `isAttributedSession`'s own
+   * comparison; `session` is read by the injected `attributed` predicate
+   * (../../broker/policy/origin.js).
    */
   readonly sender?: { reload: () => void, isDestroyed: () => boolean, mainFrame: SenderFrameLike | null, session: unknown }
 }
@@ -80,7 +81,7 @@ export function createManifestHintListener (
     refillPerSecond: HINT_RATE_LIMIT_REFILL_PER_SECOND,
     now: () => Date.now()
   }),
-  sessionForOrigin?: (origin: string) => unknown,
+  attributed?: (sender: unknown, origin: string) => boolean,
   windowForSender?: (sender: unknown) => unknown
 ): (event: ManifestHintEvent, hintedUrl: unknown) => void {
   return (event, hintedUrl) => {
@@ -90,7 +91,7 @@ export function createManifestHintListener (
     // Same check, same reason, as ../../broker/transport/ipc.ts's own
     // CONTROL_CHANNEL handler -- see isAttributedSession's doc
     // (../../broker/policy/origin.js).
-    if (sessionForOrigin !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, sessionForOrigin)) return
+    if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) return
     if (!limiter.tryConsume(origin)) return
 
     // Built fresh, never cached: `installApp`'s own consent dialog can be
@@ -150,10 +151,10 @@ export function createManifestHintListener (
 export function registerManifestHintIpc (
   ipc: IpcMainOnLike,
   installApp: InstallApp,
-  sessionForOrigin?: (origin: string) => unknown,
+  attributed?: (sender: unknown, origin: string) => boolean,
   windowForSender?: (sender: unknown) => unknown
 ): void {
-  ipc.on(MANIFEST_HINT_CHANNEL, createManifestHintListener(installApp, undefined, sessionForOrigin, windowForSender))
+  ipc.on(MANIFEST_HINT_CHANNEL, createManifestHintListener(installApp, undefined, attributed, windowForSender))
 }
 
 /**
@@ -180,6 +181,6 @@ export const manifestHintSubsystem: Subsystem = {
     // transport/ipc.ts's own brokerIpcSubsystem wiring: it is published in
     // main/index.ts once the shell exists, well after this subsystem's
     // afterReady runs.
-    registerManifestHintIpc(ipcMain, ctx.installApp, ctx.sessionForOrigin, (sender) => ctx.windowForSender?.(sender as WebContents))
+    registerManifestHintIpc(ipcMain, ctx.installApp, ctx.senderAttributed, (sender) => ctx.windowForSender?.(sender as WebContents))
   }
 }

@@ -273,31 +273,40 @@ export function originFromSenderFrame (frame: SenderFrameLike | null | undefined
  * A frame's origin is not the whole story: the frame must also be the top
  * frame of the WebContents making the call (never a subframe, an embed
  * guest, or a web-context document speaking for a top-level origin it does
- * not run as), and that WebContents must sit in the Electron session
- * `origin`'s own documents actually load into.
+ * not run as), and that WebContents must be ATTRIBUTED to `origin` -- the
+ * second question `attributed` answers, injected because deciding it needs
+ * facts this policy layer never reaches for itself (README.md's "what this
+ * must never import"): the loader's bundle cache, and a per-document record
+ * of what a document's session was found to be AT ITS OWN COMMIT.
  *
- * The second check exists because a document can commit `origin` while
- * still running in the wrong session: a non-typed navigation (a link, a
- * redirect, a script, back/forward) lands in whatever session the view
- * already had, and only a later `did-navigate` handler moves it -- so a
- * broker call made in the gap between the two would otherwise be authorised
- * as `origin` from a session `origin` does not own (its grants, its cached
- * bundle, another origin's cookies).
+ * Attribution is decided once, when a document commits, not re-decided
+ * under a live document on every call -- see
+ * `../../main/sessions/session-attribution.ts`'s own header for the full
+ * three-way rule `attributed` implements (a cache-served origin checked
+ * live and strictly; an already-committed document's own recorded answer;
+ * a live check as the fallback when no record exists yet). This is what
+ * lets an already-open, already-attributed document survive a grant or a
+ * revoke that changes which session `origin` belongs in NEXT -- it keeps
+ * calling successfully until it next navigates, rather than being denied
+ * everything the instant the ledger changes underneath it.
  *
- * `expectedSession` is injected rather than computed here: which session an
- * origin belongs in depends on whether it is currently served from the
- * loader's bundle cache, and this policy layer never reaches into the
- * loader (README.md's "what this must never import"). Compared by
- * reference, never by a partition string this file would otherwise need to
- * re-derive.
+ * A document can still commit `origin` while sitting in the wrong session:
+ * a non-typed navigation (a link, a redirect, a script, back/forward) lands
+ * in whatever session the view already had, and only a later
+ * `did-navigate` handler moves it -- so a broker call made in the gap
+ * between the two is refused as `origin` from a session `origin` does not
+ * own (its grants, its cached bundle, another origin's cookies), and stays
+ * refused through that WebContents even after the swap, since the swap
+ * replaces the view (a fresh WebContents) rather than fixing this one's
+ * record.
  */
 export function isAttributedSession (
   senderFrame: unknown,
-  sender: { readonly mainFrame: unknown, readonly session: unknown } | undefined,
+  sender: { readonly mainFrame: unknown } | undefined,
   origin: string,
-  expectedSession: (origin: string) => unknown
+  attributed: (sender: unknown, origin: string) => boolean
 ): boolean {
   if (sender === undefined || senderFrame === null) return false
   if (senderFrame !== sender.mainFrame) return false
-  return sender.session === expectedSession(origin)
+  return attributed(sender, origin)
 }

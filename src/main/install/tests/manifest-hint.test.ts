@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createManifestHintListener, registerManifestHintIpc } from '../manifest-hint.js'
 import type { InstallApp, IpcMainOnLike } from '../manifest-hint.js'
 import { MANIFEST_HINT_CHANNEL } from '../../channels.js'
-import { APP, APP_SESSION, DEFAULT_SESSION, frameFor, NO_FRAME, OTHER } from '../../../broker/transport/tests/ipc.test-helpers.js'
+import { APP, APP_SESSION, attributedFrom, DEFAULT_SESSION, frameFor, NO_FRAME, OTHER } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import { createTokenBucketLimiter } from '../../../broker/transport/token-bucket.js'
 import type { LoadResult } from '../../../loader/index.js'
 
@@ -70,7 +70,7 @@ describe('createManifestHintListener', () => {
   describe('session-bound attribution', () => {
     it('ignores a hint from a sender in the default session when the origin belongs in an isolated one', async () => {
       const installApp = fakeInstallApp()
-      const listener = createManifestHintListener(installApp, undefined, () => APP_SESSION)
+      const listener = createManifestHintListener(installApp, undefined, attributedFrom(() => APP_SESSION))
 
       listener(frameFor(APP, DEFAULT_SESSION), `${APP}/manifest.json`)
       await flush()
@@ -80,7 +80,7 @@ describe('createManifestHintListener', () => {
 
     it('accepts a hint from a sender already in the session its origin belongs in', async () => {
       const installApp = fakeInstallApp()
-      const listener = createManifestHintListener(installApp, undefined, () => APP_SESSION)
+      const listener = createManifestHintListener(installApp, undefined, attributedFrom(() => APP_SESSION))
 
       listener(frameFor(APP, APP_SESSION), `${APP}/manifest.json`)
       await flush()
@@ -88,7 +88,7 @@ describe('createManifestHintListener', () => {
       expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`, ANY_CALLER)
     })
 
-    it('never checks the session when no sessionForOrigin is injected', async () => {
+    it('never checks the session when no attributed predicate is injected', async () => {
       const installApp = fakeInstallApp()
       const listener = createManifestHintListener(installApp)
 
