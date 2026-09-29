@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { matchesAnyHostPattern, matchesHostPattern } from '../extension-host-patterns.js'
 
 describe('matchesHostPattern', () => {
-  it('matches <all_urls> against any http(s)/file/ftp URL', () => {
+  it('matches <all_urls> against any http(s)/ftp URL, never a file:// one', () => {
     expect(matchesHostPattern('<all_urls>', 'https://a.example/path')).toBe(true)
     expect(matchesHostPattern('<all_urls>', 'http://a.example/')).toBe(true)
     expect(matchesHostPattern('<all_urls>', 'ftp://a.example/')).toBe(true)
-    expect(matchesHostPattern('<all_urls>', 'file:///etc/passwd')).toBe(true)
+    expect(matchesHostPattern('<all_urls>', 'file:///etc/passwd')).toBe(false)
   })
 
   it('a * scheme matches http and https only', () => {
@@ -54,6 +54,14 @@ describe('matchesHostPattern', () => {
     expect(matchesHostPattern('https://a.example/api?*', 'https://a.example/api')).toBe(false)
     expect(matchesHostPattern('https://a.example/api?*', 'https://a.example/apfoo')).toBe(false)
     expect(matchesHostPattern('https://a.example/api?*', 'https://a.example/apiXfoo')).toBe(false)
+  })
+
+  it('matches a many-`*` path pattern against a long path in a few milliseconds, not seconds', () => {
+    const pattern = '/*a*a*a*a*a*a*b'
+    const path = `/${'a'.repeat(99)}c` // never ends in "b": the worst case, no early exit on a match
+    const startedAt = performance.now()
+    expect(matchesHostPattern(`https://a.example${pattern}`, `https://a.example${path}`)).toBe(false)
+    expect(performance.now() - startedAt).toBeLessThan(200)
   })
 })
 

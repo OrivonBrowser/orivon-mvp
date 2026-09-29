@@ -6,23 +6,31 @@
 // matching `src/main/install/app-install.ts`'s own split from its real
 // dialog.
 
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, extname, join, resolve, sep } from 'node:path'
-import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { extname, join, resolve, sep } from 'node:path'
+import { createHash, randomBytes } from 'node:crypto'
 import type { Session } from 'electron'
-import AdmZip from 'adm-zip'
 import {
   describeExtensionInstall, loadableManifest, readExtensionManifest, updateRequiresConsent,
   type ExtensionInstallDescription, type ExtensionInstallSource, type ExtensionManifestFacts
 } from '../../broker/policy/extension-manifest.js'
 import { isString, ownProperty } from '../../broker/policy/own-property.js'
 import { verifyCrx3 } from './crx.js'
-import { unpackZip } from './unpack-runner.js'
-import { patchStoreUpdater, readRegistry, writeRegistry } from './registry-runner.js'
+import { peekManifest, readManifestObject, unpackZip, writeFolderCopy, writeManifestOver } from './unpack-runner.js'
+import {
+  canonicalizeManifestKey, patchStoreUpdater, readRegistry, resolveInstallKey, slotOfFileEntry, withRegistryLock,
+  writeRegistry
+} from './registry-runner.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
 import { generateId } from '../../../vendor/electron-chrome-web-store/src/browser/id.js'
 import { downloadCrxBytes } from '../../../vendor/electron-chrome-web-store/src/browser/installer.js'
 import { storeCrxDownloadUrl, storeTestPublisherKeyHash } from './store-download-seam.js'
+
+// resolveSlotKey moved to registry-runner.ts (key.pub is persisted
+// bookkeeping under <userData>/extensions/, the same concern registry.json
+// itself is) -- re-exported here since e2e fixtures and test/
+// extensions-fixtures.ts import it from this file's own public surface.
+export { resolveSlotKey } from './registry-runner.js'
 
 export type InstallPrompt = (description: ExtensionInstallDescription) => Promise<boolean>
 
@@ -60,90 +68,16 @@ export function isStrictlyInsideDirectory (parent: string, child: string): boole
   return resolvedChild !== resolvedParent && resolvedChild.startsWith(resolvedParent + sep)
 }
 
-function readManifestObject (raw: unknown, context: string): Record<string, unknown> {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new Error(`${context}: manifest.json is not an object`)
-  }
-  return raw as Record<string, unknown>
-}
-
-/** Writes `sourceDir`'s contents to `targetDir`, tmp-directory-then-rename
- * like `unpackZip` (../extensions/unpack-runner.ts's own doc): a copy that
- * dies partway must never leave `targetDir` half-written for the next boot
- * to load. `manifestJson` replaces whatever `manifest.json` the source
- * folder had. */
-function writeFolderCopy (sourceDir: string, targetDir: string, manifestJson: string): void {
-  mkdirSync(dirname(targetDir), { recursive: true })
-  const tmpDir = `${targetDir}.tmp-${randomBytes(6).toString('hex')}`
-  try {
-    cpSync(sourceDir, tmpDir, { recursive: true })
-    writeManifestOver(tmpDir, manifestJson)
-    renameSync(tmpDir, targetDir)
-  } catch (error) {
-    rmSync(tmpDir, { recursive: true, force: true })
-    throw error
-  }
-}
-
-function writeManifestOver (dir: string, manifestJson: string): void {
-  writeFileSync(join(dir, 'manifest.json'), manifestJson)
-}
-
-function slotKeyPath (userDataPath: string, slot: string): string {
-  return join(extensionsRoot(userDataPath), slot, 'key.pub')
-}
-
-/**
- * The per-slot RSA public key (SPKI DER, base64) that keeps a folder or
- * `.zip` install's extension id stable across every update into `slot` --
- * `resolveInstallKey`'s own doc says where this ranks against a manifest's
- * own `key` and a `.crx`'s developer key. Generated once and persisted at
- * `slotKeyPath`, then reused for every later install into the same slot;
- * the matching private key is never exported, since nothing here signs
- * with it.
- */
-export function resolveSlotKey (userDataPath: string, slot: string): string {
-  const keyPath = slotKeyPath(userDataPath, slot)
-  try {
-    return readFileSync(keyPath, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-  const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
-  const encoded = publicKey.export({ type: 'spki', format: 'der' }).toString('base64')
-  mkdirSync(dirname(keyPath), { recursive: true })
-  writeFileSync(keyPath, encoded)
-  return encoded
-}
-
-/**
- * The `key` (SPKI DER, base64) every loaded copy in `pending.slot` carries,
- * so Electron derives a stable id across an update instead of one that
- * embeds the version-numbered load path (README.md's Design notes, "Why
- * every installed copy's manifest carries a key"). A `.crx`'s verified
- * developer key (crx.ts's own doc) wins outright when there is one -- Chrome
- * itself ignores a packed CRX's manifest `key`, so a `.crx` whose manifest
- * claims a different `key` never gets to borrow another extension's id
- * this way. Only a folder or `.zip` install, which carries no signature at
- * all, falls back to the manifest's own `key` (Chrome keeps it there), else
- * the slot's generated key.
- */
-function resolveInstallKey (ctx: InstallContext, pending: PendingInstall, manifestKey: string | undefined): string {
-  if (pending.developerPublicKey !== undefined) return pending.developerPublicKey.toString('base64')
-  if (manifestKey !== undefined) return manifestKey
-  return resolveSlotKey(ctx.userDataPath, pending.slot)
-}
-
-/** `manifest.json`'s bytes read straight out of a zip archive, without
- * extracting anything else to disk -- `installFromFile`'s `.crx`/`.zip`
- * paths both need to read the manifest BEFORE they know the final
- * `<slot>/<version>/` target directory `unpackZip` writes to. */
-function peekManifest (archive: Buffer): Record<string, unknown> {
-  const zip = new AdmZip(archive)
-  const entry = zip.getEntry('manifest.json')
-  if (entry === null) throw new Error('archive has no manifest.json')
-  const parsed: unknown = JSON.parse(entry.getData().toString('utf8'))
-  return readManifestObject(parsed, 'archive')
+/** The slot of the existing `source.kind === 'file'` registry entry whose
+ * id matches `rawManifest`'s own (canonicalized) `key` -- `undefined` when
+ * `rawManifest` carries no key, the key does not parse, or no such entry
+ * exists. */
+function slotForZipUpdate (userDataPath: string, rawManifest: Record<string, unknown>): string | undefined {
+  const manifestKey = ownProperty(rawManifest, 'key', isString)
+  if (manifestKey === undefined) return undefined
+  const canonical = canonicalizeManifestKey(manifestKey)
+  if (canonical === undefined) return undefined
+  return slotOfFileEntry(userDataPath, generateId(canonical))
 }
 
 interface PendingInstall {
@@ -178,7 +112,9 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
 
   const { manifest, stripped } = loadableManifest(pending.rawManifest)
   const manifestKey = ownProperty(pending.rawManifest, 'key', isString)
-  const key = resolveInstallKey(ctx, pending, manifestKey)
+  const keyResult = resolveInstallKey(ctx.userDataPath, pending.slot, pending.developerPublicKey, manifestKey)
+  if (!keyResult.ok) return { installed: false, reason: `install refused: ${keyResult.reason}` }
+  const key = keyResult.key
   manifest.key = key
   const id = generateId(key)
 
@@ -266,6 +202,25 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
     throw error
   }
 
+  // Belt and suspenders on top of resolveInstallKey's own canonicalization:
+  // Electron derives its own id from the manifest `key` this function just
+  // wrote, independently of the `id` this function computed for its own
+  // slot/registry bookkeeping above. The two must agree, or the copy just
+  // loaded is rolled back the same way a failed load is -- an id that
+  // slipped past canonicalization some other way must never be registered
+  // under a name it does not actually run as.
+  if (loaded.id !== id) {
+    ctx.session.extensions.removeExtension(loaded.id)
+    // Loading under an installed extension's id replaced it in the session: load that one back.
+    const displaced = readRegistry(ctx.userDataPath).find((existing) => existing.id === loaded.id && existing.enabled)
+    if (displaced !== undefined) {
+      await ctx.session.extensions.loadExtension(displaced.path, { allowFileAccess: false })
+        .catch((error: unknown) => { console.error('[extensions] could not reload the extension a refused install displaced', displaced.id, error) })
+    }
+    await restoreAsideOnFailure()
+    return { installed: false, reason: 'install refused: the loaded extension\'s id does not match its resolved key' }
+  }
+
   const now = Date.now()
   const entry: InstalledExtension = {
     id: loaded.id,
@@ -280,8 +235,17 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
     stripped
   }
 
-  const kept = registry.filter((existing) => !previousInSlot.includes(existing))
-  writeRegistry(ctx.userDataPath, [...kept, entry])
+  // Re-reads the registry inside the lock rather than reusing the `registry`
+  // read at the top of this function -- concurrent installs, uninstalls and
+  // updater checks (registry-runner.ts's own doc on `withRegistryLock`)
+  // resolve to at most one holder at a time, so this call's own change never
+  // overwrites one that landed on the registry while `pending.write` and
+  // `loadExtension` above were running.
+  await withRegistryLock(ctx.userDataPath, (freshRegistry) => {
+    const stillPreviousInSlot = freshRegistry.filter((existing) => existing.path.startsWith(`${slotDir}${sep}`))
+    const kept = freshRegistry.filter((existing) => !stillPreviousInSlot.includes(existing))
+    writeRegistry(ctx.userDataPath, [...kept, entry])
+  })
 
   // Only after the new version has actually loaded and been registered
   // (README.md's Design notes): a failure above already restored the old
@@ -320,8 +284,15 @@ export async function installFromFile (ctx: InstallContext, filePath: string): P
 
   const crx = isCrx ? verifyCrx3(bytes, { requirePublisherProof: false }) : undefined
   const archive = crx?.archive ?? bytes
-  const slot = crx?.id ?? slotHash(bytes)
   const rawManifest = peekManifest(archive)
+  // A keyed `.zip` lands in the SAME slot as an already-installed `.zip`/
+  // `.crx` whose id (from its own canonicalized manifest key) matches --
+  // an update, the same way a `.crx` with the same developer key always
+  // has (registry.ts's own doc on `describeUpdater`'s wording for a `.zip`
+  // entry). A key-less `.zip`, or one whose key resolves to no existing
+  // `file` entry, keeps the previous behaviour: slotted by its own bytes,
+  // so two different key-less `.zip`s never collide.
+  const slot = crx?.id ?? slotForZipUpdate(ctx.userDataPath, rawManifest) ?? slotHash(bytes)
 
   return await finishInstall(ctx, {
     rawManifest,
@@ -412,7 +383,7 @@ export async function installFromStoreCrx (
     if (!approved.ok || !next.ok) return { installed: false, reason: 'the approved or downloaded manifest could not be read' }
     if (updateRequiresConsent(approved.facts, next.facts)) {
       const reason = `needs your approval: ${describeWhatIsNew(approved.facts, next.facts)}`
-      patchStoreUpdater(ctx.userDataPath, expectedId, {
+      await patchStoreUpdater(ctx.userDataPath, expectedId, {
         lastCheckedAt: Date.now(),
         lastResult: reason,
         ...(options.downloadUrl === undefined ? {} : { pendingUpdate: { url: options.downloadUrl, version: next.facts.version } })
@@ -462,29 +433,37 @@ export async function updateFromStore (ctx: InstallContext, id: string): Promise
   return await installFromStoreCrx(ctx, bytes, id)
 }
 
+/** Runs entirely under `withRegistryLock` (registry-runner.ts's own doc):
+ * an install landing on the same `userDataPath` while this is in flight
+ * reads a registry that already reflects this removal, or this reads one
+ * that already reflects that install -- never a copy read before the
+ * other's own write. */
 export async function uninstall (ctx: InstallContext, id: string): Promise<void> {
-  const registry = readRegistry(ctx.userDataPath)
-  const entry = registry.find((candidate) => candidate.id === id)
-  if (entry === undefined) return
-  ctx.session.extensions.removeExtension(id)
-  rmSync(entry.path, { recursive: true, force: true })
-  writeRegistry(ctx.userDataPath, registry.filter((candidate) => candidate.id !== id))
+  await withRegistryLock(ctx.userDataPath, (registry) => {
+    const entry = registry.find((candidate) => candidate.id === id)
+    if (entry === undefined) return
+    ctx.session.extensions.removeExtension(id)
+    rmSync(entry.path, { recursive: true, force: true })
+    writeRegistry(ctx.userDataPath, registry.filter((candidate) => candidate.id !== id))
+  })
 }
 
 /**
  * Electron has no "disable" for a loaded extension, only load/unload
  * (../README.md's Design notes): disabling removes it from the session and
  * flips `enabled: false` in the registry, so extensions-subsystem.ts simply
- * skips it on the next boot; enabling loads it again right away.
+ * skips it on the next boot; enabling loads it again right away. Runs
+ * entirely under `withRegistryLock`, the same reason `uninstall` above does.
  */
 export async function setEnabled (ctx: InstallContext, id: string, enabled: boolean): Promise<void> {
-  const registry = readRegistry(ctx.userDataPath)
-  const entry = registry.find((candidate) => candidate.id === id)
-  if (entry === undefined || entry.enabled === enabled) return
-  if (enabled) {
-    await ctx.session.extensions.loadExtension(entry.path, { allowFileAccess: false })
-  } else {
-    ctx.session.extensions.removeExtension(id)
-  }
-  writeRegistry(ctx.userDataPath, registry.map((candidate) => candidate.id === id ? { ...candidate, enabled } : candidate))
+  await withRegistryLock(ctx.userDataPath, async (registry) => {
+    const entry = registry.find((candidate) => candidate.id === id)
+    if (entry === undefined || entry.enabled === enabled) return
+    if (enabled) {
+      await ctx.session.extensions.loadExtension(entry.path, { allowFileAccess: false })
+    } else {
+      ctx.session.extensions.removeExtension(id)
+    }
+    writeRegistry(ctx.userDataPath, registry.map((candidate) => candidate.id === id ? { ...candidate, enabled } : candidate))
+  })
 }

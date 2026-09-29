@@ -19,9 +19,17 @@ describe('describeUpdater', () => {
     expect(describeUpdater(BASE)).toBe('No automatic updates. Reload it from /home/person/my-extension to pick up changes.')
   })
 
-  it('says to install a newer file for a file-sourced extension', () => {
-    const entry: InstalledExtension = { ...BASE, source: { kind: 'file', fileName: 'my-extension.zip' } }
+  it('says to install a newer file for a .crx-sourced extension', () => {
+    const entry: InstalledExtension = { ...BASE, source: { kind: 'file', fileName: 'my-extension.crx' } }
     expect(describeUpdater(entry)).toBe('No automatic updates. Install a newer file to update it.')
+  })
+
+  it('does not promise an in-place update for a .zip-sourced extension', () => {
+    const entry: InstalledExtension = { ...BASE, source: { kind: 'file', fileName: 'my-extension.zip' } }
+    expect(describeUpdater(entry)).toBe(
+      'No automatic updates. A newer .zip with the same key updates it in place; ' +
+      'a .zip with no key, or a different key, installs as a separate extension.'
+    )
   })
 
   it('names the Chrome Web Store and its check cadence for a store-updated extension', () => {

@@ -16,9 +16,8 @@ export type ExtensionSource =
 /**
  * Who updates this extension, tracked separately from `source` (a `file`
  * install and an `unpacked` one are both `{ kind: 'none' }`, for different
- * reasons `reason` names) -- the owner's requirement that who updates an
- * extension is always shown means this can never be left implicit in
- * `source` alone.
+ * reasons `reason` names) -- `orivon://extensions` always shows who updates
+ * each extension, so this can never be left implicit in `source`.
  */
 export type ExtensionUpdater =
   | { readonly kind: 'none', readonly reason: string }
@@ -75,6 +74,10 @@ export function describeUpdater (entry: InstalledExtension): string {
   }
   if (entry.source.kind === 'unpacked') {
     return `No automatic updates. Reload it from ${entry.source.from} to pick up changes.`
+  }
+  if (entry.source.kind === 'file' && entry.source.fileName.toLowerCase().endsWith('.zip')) {
+    return 'No automatic updates. A newer .zip with the same key updates it in place; ' +
+      'a .zip with no key, or a different key, installs as a separate extension.'
   }
   return 'No automatic updates. Install a newer file to update it.'
 }
