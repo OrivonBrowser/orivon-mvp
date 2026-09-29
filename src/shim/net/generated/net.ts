@@ -13,7 +13,6 @@ const classify = otherNetMember
 
 export const BlockList = refusingExport('BlockList', classify)
 export const SocketAddress = refusingExport('SocketAddress', classify)
-export const Stream = refusingExport('Stream', classify)
 export const _createServerHandle = refusingExport('_createServerHandle', classify)
 export const _normalizeArgs = refusingExport('_normalizeArgs', classify)
 export const getDefaultAutoSelectFamily = refusingExport('getDefaultAutoSelectFamily', classify)

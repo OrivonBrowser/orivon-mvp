@@ -58,9 +58,8 @@ export function createServerRelay (options: ServerRelayOptions): ServerRelay {
     // `handleTable.release` (`server.close`'s own body, capabilities/net.ts).
     // `pump.stop()` cancelling `server.connections` cannot substitute -- that
     // stream is hand-rolled with no `cancel` algorithm, so cancelling it is a
-    // spec no-op against the real listener (unlike a `Duplex.toWeb` socket,
-    // where cancelling the reader destroys the duplex as a side effect,
-    // A84). Calling `server.close()` unconditionally here -- on every path
+    // spec no-op against the real listener (unlike a socket's own stream,
+    // whose cancel destroys the socket as a side effect, A84). Calling `server.close()` unconditionally here -- on every path
     // that reaches `cleanup`, an abandoned port with the handle still live,
     // or `server.onUnlink`/`server.closed` having already released it
     // moments ago -- is safe because `close()` is idempotent

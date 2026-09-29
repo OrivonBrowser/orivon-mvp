@@ -250,6 +250,35 @@ describe('listenTcp against a real TCP client', () => {
     expect(error.code).toBe('ECONNRESET')
   })
 
+  it('a peer that resets a still-queued connection is dropped from the queue and never crashes the process', async () => {
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const first = await connectClient(listened.localPort)
+    const second = await connectClient(listened.localPort)
+    // Give the server's 'connection' handler a tick to queue both -- nothing
+    // has called accept() yet, so both land in the internal queue with no
+    // listener beyond the one this fix adds.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    let crashed: unknown = null
+    const onUncaught = (error: unknown): void => { if (crashed === null) crashed = error }
+    process.on('uncaughtException', onUncaught)
+
+    first.resetAndDestroy()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    process.removeListener('uncaughtException', onUncaught)
+    if (crashed !== null) throw crashed
+
+    // The reset connection must also be gone from the queue, not merely
+    // survived: the next accept() serves the connection still alive, not the
+    // one just torn down.
+    const accepted = await listened.accept()
+    expect(accepted?.remotePort).toBe(second.localPort)
+
+    second.destroy()
+    await listened.destroy('closed')
+  })
+
   it('rejects a listen with no free port in the granted range', async () => {
     const first = await listenTcp([{ lo: 30020, hi: 30020 }], neverAborts())
 

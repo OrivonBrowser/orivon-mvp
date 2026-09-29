@@ -11,9 +11,7 @@ import { otherHttpMember } from '../unsupported.js'
 
 const classify = otherHttpMember('http')
 
-export const ClientRequest = refusingExport('ClientRequest', classify)
 export const CloseEvent = refusingExport('CloseEvent', classify)
-export const IncomingMessage = refusingExport('IncomingMessage', classify)
 export const MessageEvent = refusingExport('MessageEvent', classify)
 export const OutgoingMessage = refusingExport('OutgoingMessage', classify)
 export const Server = refusingExport('Server', classify)

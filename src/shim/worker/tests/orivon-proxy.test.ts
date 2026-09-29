@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createOrivonClient } from '../orivon-client.js'
-import { type OrivonServer, serveOrivon } from '../orivon-server.js'
+import { type OrivonServer, type RunSpawnSync, serveOrivon } from '../orivon-server.js'
 import { createChannelBuffer, decodeReply } from '../sync-channel.js'
 
 interface FakeHandle { id: string, closed: Promise<void>, close: () => Promise<void>, closedCount: () => number }
@@ -160,7 +160,7 @@ describe('synchronous calls', () => {
 })
 
 /** spawnSync's own request kind (CallBody's spawnSync variant): answered by the runSpawnSync serveOrivon is given, never by an orivon.* path. */
-async function syncSpawnReply (runSpawnSync: (payload: unknown) => Promise<unknown>, payload: unknown): Promise<unknown> {
+async function syncSpawnReply (runSpawnSync: RunSpawnSync, payload: unknown): Promise<unknown> {
   channel = new MessageChannel()
   server = serveOrivon(channel.port1, {}, runSpawnSync)
   const buffer = createChannelBuffer()
@@ -198,4 +198,37 @@ describe('child_process\'s spawnSync request kind', () => {
   // child-process/tests/child-process.test.ts's runSpawnSync suite proves
   // what the server side does with a spawnSync payload against real WASI
   // programs.
+
+  // Finding 20: a Worker killed (or its page tab closed) while blocked in
+  // spawnSync used to leave its own grandchild running forever on this
+  // side -- nothing here ever asked it to stop. `registerChild` is how
+  // runSpawnSync now hands this server a way to.
+  it('dispose() kills a spawnSync grandchild still running when the Worker that asked for it goes away', async () => {
+    let killed = false
+    let started: (() => void) | undefined
+    const stillRunning = new Promise<void>((resolve) => { started = resolve })
+    const runSpawnSync: RunSpawnSync = async (_payload, registerChild) => {
+      registerChild((/* kill */) => { killed = true })
+      started?.()
+      return await new Promise(() => {}) // never resolves on its own -- only dispose() ends this test's own wait
+    }
+    channel = new MessageChannel()
+    server = serveOrivon(channel.port1, {}, runSpawnSync)
+    channel.port2.postMessage({ spawnSync: { command: '/bin/x' }, id: 1 })
+    await stillRunning
+    expect(killed).toBe(false)
+    await server.dispose()
+    expect(killed).toBe(true)
+  })
+
+  it('does not try to kill a spawnSync grandchild that already finished', async () => {
+    let killCalls = 0
+    const runSpawnSync: RunSpawnSync = async (_payload, registerChild) => {
+      registerChild(() => { killCalls++ })
+      return { pid: 1, status: 0, signal: null }
+    }
+    expect(await syncSpawnReply(runSpawnSync, { command: '/bin/x' })).toMatchObject({ ok: true })
+    await server?.dispose()
+    expect(killCalls).toBe(0)
+  })
 })

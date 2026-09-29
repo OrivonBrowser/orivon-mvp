@@ -14,17 +14,19 @@ what its page could, since it is the app's own code
 ([`ADR-0040`](../../../docs/decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)).
 Durable: it uses Web Workers, `MessagePort` and JSPI, no Electron API.
 
-**`host.ts`/`host-protocol.ts`: the child host's own relay** (ADR-0046). A spawn, a fork or a
-thread all run in a Worker of the app's hidden host, never the page that started it; `host.ts` is
-what runs inside that host, one real Worker per child, relaying between the Worker's ordinary
-`./protocol.ts` traffic and the page's own dedicated port for that child (`host-protocol.ts`'s
+**`host.ts`/`host-protocol.ts`: the child host's own relay** (ADR-0046). A spawn or a fork runs in
+a Worker of the app's hidden host, never the page that started it; `host.ts` is what runs inside
+that host, one real Worker per child, relaying between the Worker's ordinary `./protocol.ts`
+traffic and the page's own dedicated port for that child (`host-protocol.ts`'s
 `ToHostChild`/`StartChildMessage` -- a different, extra hop in front of the same
 `ToWorker`/`FromWorker` protocol, not a replacement for it). `../child-process/host-client.ts` is
 the page's own half: the connection handshake and the remote-Worker adapter that lets
 `launchChild()` route through a host exactly as it would start a local Worker. A spawn's own
 program (`../child-process/program.ts`'s `loadProgram`) is loaded by the host itself, never
 carried across the page -> host hop: a compiled `WebAssembly.Module` does not survive it
-(ADR-0046's Context).
+(ADR-0046's Context). A `worker_threads` thread never takes this route: it stays a local Worker of
+whatever started it (ADR-0046's amendment), so `thread.ts`'s `Worker` never asks for a host
+connection at all.
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../wasi/`](../wasi/),
 [`../wasi-p2/`](../wasi-p2/), [`../child-process/program.ts`](../child-process/program.ts) (for
@@ -110,7 +112,9 @@ the unwrapped `setTimeout` that `trackScope` returns.
 keeps it alive instead is a ref'd `parentPort` listener. `node-port.ts`'s wrapper calls back only
 on the 0-to-1 or 1-to-0 edge of "ref'd, started, and at least one `'message'`/`'messageerror'`
 listener", never on every listener change, since a caller's own ref count would otherwise be
-double-counted. `unref()`, `close()`, or the last listener going away all release it.
+double-counted. `unref()`, `close()`, or the last listener going away all release it. Unlike
+Node, a message a thread posts on `parentPort` just before it exits can reach the parent after
+`'exit'`: the two travel on separate channels, and nothing orders one against the other yet.
 
 **A `worker_threads.Worker` nested in a forked child keeps that child alive while it is ref'd**
 (the default): `runtime-fork.ts` publishes its own `Liveness` under `FORK_LIVENESS_SYMBOL`, which

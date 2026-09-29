@@ -10,8 +10,8 @@ import { WRITABLE_ALREADY_ENDED_CODE } from '../../adapters/socket-streams.js'
 // Pure and Electron-free like ./port-pump.ts -- `writable` is already a
 // real WHATWG WritableStream, `send` is injected. See
 // src/broker/README.md's "Design notes" for why there is no sequence
-// number, why the heartbeat exists, and the Duplex.toWeb close()
-// measurement the trap below is written around.
+// number, why the heartbeat exists, and the stalled-peer measurement the
+// trap below is written around.
 
 export interface PortSinkOptions {
   readonly handleId: string
@@ -170,11 +170,15 @@ export function createPortSink (options: PortSinkOptions): PortSink {
     if (!ending || pendingCount > 0 || ended) return
     ended = true
     clearHeartbeat()
-    // NEVER AWAIT THIS. Duplex.toWeb's close() (Node 24.11.1) does not
-    // settle until the whole duplex is destroyed -- after the readable side
-    // also ends -- not when this call's own FIN is flushed. Awaiting it
-    // would deadlock a peer that (correctly, per half-close) keeps reading
-    // after our FIN and waits for a reply before sending its own. A
+    // NEVER AWAIT THIS. ../../adapters/socket-streams.ts's close() settles
+    // once THIS side's own FIN is flushed -- it no longer waits on the
+    // readable side too, the way Duplex.toWeb's close() did -- but flushing
+    // still waits on the peer's receive window draining, with no deadline of
+    // its own (A84): a peer that stops reading leaves it pending
+    // indefinitely. Awaiting it here would block this whole handler on that
+    // stall; ../../adapters/node-adapters.ts's destroySocket is the one
+    // place a deadline eventually forces it (a SEPARATE `socket.end()` call,
+    // reached through the handle table's own teardown, not through here). A
     // rejection here still needs reporting -- the FIN may never have gone
     // out, and the app should not believe its half-close succeeded.
     writer.close().catch((error: unknown) => { send(toWriteFailed(handleId, mapError(error), error)) })

@@ -32,3 +32,15 @@ describe('the shim\'s `buffer` module and the page\'s Buffer global', () => {
     expect(buffer.Buffer).toBe(PageBuffer)
   })
 })
+
+// A287: Node's buffer.File is the platform's own File class, same as Blob --
+// not a gap this shim leaves open, so it must be the real class, both named
+// and on the default export, never the generic "unimplemented" refusal.
+describe('buffer.File', () => {
+  it('is the platform\'s File class, both named and on the default export', async () => {
+    const buffer = await freshBufferModule()
+
+    expect(buffer.File).toBe(globalThis.File)
+    expect(buffer.default.File).toBe(globalThis.File)
+  })
+})
