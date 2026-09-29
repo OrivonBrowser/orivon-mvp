@@ -35,7 +35,7 @@ const NOT_INVOKED_MESSAGE =
   'Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured.'
 
 /**
- * (item H) A capturable target is an ordinary web page, never a
+ * A capturable target is an ordinary web page, never a
  * `chrome-extension://` page. MEASURED: `ctx.store` (this file's own header)
  * tracks every `wc.session === session.defaultSession` tab, and ADR-0044
  * put a granted app's own `chrome-extension://`-hosted... no -- put a
@@ -66,7 +66,7 @@ export function setTabCaptureInvocationCheck (check: InvocationCheck): void {
 /** True when `tab` must be refused outright -- a granted app's own tab
  * (this file's own header). Unset, every tab the store tracks is eligible,
  * which is correct for a session with no granted apps in it at all (a unit
- * test's fake store, for instance). Consulted twice per capture (item I):
+ * test's fake store, for instance). Consulted twice per capture:
  * once here at mint time, and again on the captured tab's own
  * `did-navigate` (`recheckCaptureStillAllowed`) -- a tab minted while
  * ungranted can navigate to a granted app's origin mid-capture, and a mint
@@ -79,8 +79,8 @@ export function setTabCaptureAppRefusalCheck (check: AppRefusalCheck): void {
 
 /** Called once per successful `getMediaStreamId`, so `permission-gate.ts`'s
  * `'media'` carve-out (`tab-capture-grants.ts`) knows this extension is
- * mid-capture FOR THIS EXACT TAB (item F: the ledger is keyed by
- * (extensionId, targetTabId), never extension alone). Set once, before the
+ * mid-capture FOR THIS EXACT TAB: the ledger is keyed by
+ * (extensionId, targetTabId), never extension alone. Set once, before the
  * first call (extension-host.ts). */
 type GrantRecorder = (extensionId: string, targetTabId: number) => void
 let gGrantRecorder: GrantRecorder | undefined
@@ -93,10 +93,11 @@ export function setTabCaptureGrantRecorder (recorder: GrantRecorder): void {
  * own `wasTabCaptureGrantConsumed`, wired from `extension-host.ts`. This is
  * `scheduleUnconsumedRelease`'s real "did a getUserMedia('tab') call for
  * THIS tab's grant ever actually happen" signal -- see its own doc for why
- * a media-playback event cannot answer that question, and item F's own doc
- * for why this is per-tab, not per-extension: an extension capturing two
- * tabs at once must have each tab's own still-unredeemed mint judged (and
- * released) independently of the other's. */
+ * a media-playback event cannot answer that question. This is per-tab, not
+ * per-extension, for the same reason the grant ledger above is: an
+ * extension capturing two tabs at once must have each tab's own
+ * still-unredeemed mint judged (and released) independently of the
+ * other's. */
 type ConsumedCheck = (extensionId: string, targetTabId: number) => boolean
 let gConsumedCheck: ConsumedCheck | undefined
 export function setTabCaptureConsumedCheck (check: ConsumedCheck): void {
@@ -106,20 +107,20 @@ export function setTabCaptureConsumedCheck (check: ConsumedCheck): void {
 interface CapturedTabRecord {
   previousMuted: boolean
   capturedBy: Set<string>
-  /** (item J) Stored so `releaseCapture` can remove it: the original code
-   * attached this with `tab.once(...)` but never removed it if the capture
-   * ended WITHOUT the tab dying (the ordinary case) -- a tab captured,
-   * released, and captured again leaked one more armed 'destroyed' listener
-   * on it every cycle, forever, since `once` only self-removes when the
-   * event it is waiting for actually fires. */
+  /** Stored so `releaseCapture` can remove it: attaching it with
+   * `tab.once(...)` alone and never removing it would leak one more armed
+   * 'destroyed' listener on the tab every time a capture ends WITHOUT the
+   * tab dying (the ordinary case) and then starts again, forever, since
+   * `once` only self-removes when the event it is waiting for actually
+   * fires. */
   onDestroyed: () => void
-  /** (item I) The captured tab's own re-check on navigation; same removal
+  /** The captured tab's own re-check on navigation; same removal
    * requirement as `onDestroyed`, and the same reason: this is `.on`, not
    * `.once`, so it never self-removes at all. */
   onNavigate: () => void
 }
 
-/** (item G) One entry per live capture, keyed by (extensionId, targetTabId)
+/** One entry per live capture, keyed by (extensionId, targetTabId)
  * -- exists only so `observeConsumerTeardown` can find every capture that
  * shares a given CONSUMER webContents (the offscreen document, or the
  * `consumerTabId` tab) when that consumer dies, without having to search
@@ -151,7 +152,7 @@ export class TabCaptureAPI {
     handle('tabCapture.getMediaStreamId', this.getMediaStreamId.bind(this), { permission: 'tabCapture' })
     handle('tabCapture.getCapturedTabs', this.getCapturedTabs.bind(this), { permission: 'tabCapture' })
 
-    // (item G) "release on extension-unloaded regardless": this fires for
+    // Releases on extension-unloaded regardless: this fires for
     // disable, uninstall AND a crashed extension alike, whether the
     // consumer was an offscreen document (whose own destruction already
     // cascades here through observeConsumerTeardown) or a `consumerTabId`
@@ -221,7 +222,7 @@ export class TabCaptureAPI {
    * schedule. A CONSUMED capture is never released on a timer again,
    * however long it goes on to run.
    *
-   * (item F) Releases ONLY `targetTab`'s own capture, never every tab this
+   * Releases ONLY `targetTab`'s own capture, never every tab this
    * extension holds: an extension minting a grant for tab A and, separately,
    * a still-live grant for tab B, must have A's own unconsumed timer leave
    * B alone. The old code called `releaseExtensionCaptures(extensionId)`
@@ -258,9 +259,10 @@ export class TabCaptureAPI {
       tab.setAudioMuted(true)
       tab.once('destroyed', onDestroyed)
       // `did-navigate` fires only for a main-frame navigation (Electron's
-      // own docs), which is exactly item I's own scope -- an iframe inside
-      // the captured page navigating elsewhere is not the tab "becoming a
-      // different page" the granted-app/http(s) refusal cares about.
+      // own docs), which is exactly the scope this re-check needs -- an
+      // iframe inside the captured page navigating elsewhere is not the tab
+      // "becoming a different page" the granted-app/http(s) refusal cares
+      // about.
       tab.on('did-navigate', onNavigate)
     }
     const isNewCapture = !record.capturedBy.has(extensionId)
@@ -280,7 +282,7 @@ export class TabCaptureAPI {
     }
   }
 
-  /** (item I) Re-run at the captured tab's own `did-navigate`: a tab that
+  /** Re-run at the captured tab's own `did-navigate`: a tab that
    * was an ordinary page at mint time can navigate to a granted app's
    * origin, or (defensively) to a non-http(s) URL, without ever closing --
    * `getMediaStreamId`'s own checks only ever ran once, at mint. Ends every
@@ -295,7 +297,7 @@ export class TabCaptureAPI {
     for (const extensionId of Array.from(record.capturedBy)) this.endCapture(extensionId, tab)
   }
 
-  /** (item G) Watches the actual CONSUMER of a capture -- the offscreen
+  /** Watches the actual CONSUMER of a capture -- the offscreen
    * document by default, or the `consumerTabId` tab when the extension
    * named one explicitly -- rather than assuming it is always the offscreen
    * document (the old code's `observeOffscreenTeardown` did). Both
@@ -375,7 +377,7 @@ export class TabCaptureAPI {
     this.extensionCaptures.get(extensionId)?.delete(tab)
     if (record.capturedBy.size === 0) {
       this.capturedTabs.delete(tab)
-      // (item J) Removed here, not just left to `once` to self-clean: a tab
+      // Removed here, not just left to `once` to self-clean: a tab
       // released without dying (the ordinary case) never fires 'destroyed'
       // at all, and `did-navigate` is `.on`, which never self-removes.
       if (!tab.isDestroyed()) {

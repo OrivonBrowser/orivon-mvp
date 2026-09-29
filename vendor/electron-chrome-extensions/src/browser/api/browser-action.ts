@@ -416,7 +416,7 @@ export class BrowserActionAPI {
     return { activeTabId: activeTab?.id, actions }
   }
 
-  // Orivon patch (UPSTREAM.md, patch 33; item B, MEDIUM):
+  // Orivon patch (UPSTREAM.md, patch 33):
   // `browser-action.ts`'s own chrome-view preload (`injectBrowserAction`'s
   // `activate()`) calls this EXCLUSIVELY through `crx-msg-remote` -- no
   // extension code, real Chrome or otherwise, is ever meant to reach this
@@ -486,7 +486,7 @@ export class BrowserActionAPI {
       throw new Error(`Unable to get active tab`)
     }
 
-    // Orivon patch (UPSTREAM.md, patch 33; item B): a real toolbar click IS
+    // Orivon patch (UPSTREAM.md, patch 33): a real toolbar click IS
     // an invocation, whether or not it opens a popup -- both branches below
     // count. `recordInvocation` is false for `openPopup`'s own call (no
     // click, no gesture -- see its own doc) and true only for the one
@@ -586,7 +586,7 @@ export class BrowserActionAPI {
     })
   }
 
-  // (item B) chrome.action.openPopup() is a real, legitimate extension API
+  // chrome.action.openPopup() is a real, legitimate extension API
   // (no toolbar click, no gesture, callable from a service worker) --
   // refusing it is not the fix. What it must never do is count as a
   // tabCapture invocation: `activateClick` below is called directly,

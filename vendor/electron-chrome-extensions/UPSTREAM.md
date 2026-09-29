@@ -292,7 +292,7 @@
     `chrome-extension://` `webContents` -- no second, native document
     alongside it.
 
-    **`WebContentsView`, not a `BrowserWindow` (security review, item C).**
+    **`WebContentsView`, not a `BrowserWindow`.**
     The document was originally a hidden `BrowserWindow`; measured directly
     (docs/planning's tabCapture/offscreen probe) that a never-attached
     `WebContentsView` still gets this library's own preload and
@@ -303,8 +303,8 @@
     shell window closing, and blocked its macOS `activate` handler from ever
     reopening one, since both read that same count.
 
-    **Denies `window.open`, locks navigation to the extension's own origin
-    (item D).** `setWindowOpenHandler` denies every `window.open` from the
+    **Denies `window.open`, locks navigation to the extension's own origin.**
+    `setWindowOpenHandler` denies every `window.open` from the
     document outright (the library's own default new-window handling
     otherwise opened a raw, frameless, always-on-top `BrowserWindow`); a
     shared `will-navigate`/`will-redirect` handler refuses any URL outside
@@ -314,7 +314,7 @@
     malicious extension turn its own hidden document into an equally hidden
     window onto the rest of the web.
 
-    **Cleans up on a renderer crash (item E).** A `'render-process-gone'`
+    **Cleans up on a renderer crash.** A `'render-process-gone'`
     listener drops the document's own map entry immediately -- its
     `WebContents` otherwise survives a crash on its own (`isCrashed()`'s own
     existence implies as much), so without this, `hasDocument`/
@@ -331,7 +331,7 @@
     (`TabCaptureAPI`): resolves `targetTabId` (or the active tab) through
     `ExtensionStore.getTabById`/`getActiveTabOfCurrentWindow` only, refuses
     a tab outside the extension's own session, refuses a target whose URL is
-    not `http:`/`https:` (security review item H, below), refuses one
+    not `http:`/`https:` (below), refuses one
     (`setTabCaptureAppRefusalCheck`, `src/main/extensions/extension-host.ts`)
     belonging to a granted app, refuses one the extension was never invoked
     on with Chrome's own error text ("Extension has not been invoked for the
@@ -343,11 +343,11 @@
     of diverting it the way Chrome does -- measured directly: muting the
     source does not also silence what the consumer receives) and restores it
     once every capturer has released the tab: a closed tab, the ACTUAL
-    consumer (the offscreen document, or the `consumerTabId` tab -- item G,
-    below) being destroyed or crashing, `'extension-unloaded'`, the tab's own
-    navigation newly failing the app-refusal or http(s) check (item I,
-    below), or -- the one still on a timer, and now per (extension, target
-    tab), never per extension alone (item F, below) -- a 10-second safety
+    consumer (the offscreen document, or the `consumerTabId` tab, below)
+    being destroyed or crashing, `'extension-unloaded'`, the tab's own
+    navigation newly failing the app-refusal or http(s) check (below),
+    or -- the one still on a timer, and now per (extension, target
+    tab), never per extension alone (below) -- a 10-second safety
     net for a minted id that was never actually redeemed, checked against
     `tab-capture-grants.ts`'s own `wasTabCaptureGrantConsumed`
     (`setTabCaptureConsumedCheck`), true only once `permission-gate.ts` has
@@ -367,9 +367,9 @@
     shape as `setEventListenerFilter`; `extension-host.ts`'s own wiring
     clears that grant when the tab closes or navigates to a different
     origin (`extension-tab-invocation.ts`'s ledger), and on the extension's
-    own unload (security review item K).
+    own unload.
 
-    **Item B (MEDIUM), also in `browser-action.ts`: the invocation was
+    **Also in `browser-action.ts`: the invocation was
     forgeable.** `browserAction.activate` exists solely for the chrome
     view's own `<browser-action>` element, which calls it EXCLUSIVELY over
     `crx-msg-remote` (`browser-action.ts`, the injected preload) -- no
@@ -402,8 +402,8 @@
     using an offscreen document (patch 32) always calls `getMediaStreamId`
     and does its own `getUserMedia`, never `capture()`.
 
-    **Security review findings and fixes.**
-    - **Item A (HIGH): the `'media'` carve-out widened into real
+    **Additional fixes in this patch.**
+    - **The `'media'` carve-out widened into real
       device access.** `../sessions/tab-capture-grants.ts`'s own
       `isTabCaptureMediaRequestAllowed` and `../sessions/permission-gate.ts`'s
       own doc comments have the full account -- a live tabCapture grant used
@@ -412,11 +412,11 @@
       request-handler level, not here; this file's own contribution is
       passing `targetTab.id` through `setTabCaptureGrantRecorder`/
       `setTabCaptureConsumedCheck` so the ledger can key on it.
-    - **Item F: consumption and release now key on (extension, target tab),
+    - **Consumption and release now key on (extension, target tab),
       never extension alone.** The old ledger and this file's own safety net
       both let one tab's redemption, or one tab's unconsumed-release timer,
       affect a DIFFERENT tab the same extension was also capturing.
-    - **Item G: capture-end now watches the real consumer, plus
+    - **Capture-end now watches the real consumer, plus
       `'extension-unloaded'` directly.** The old code assumed the consumer
       was always the offscreen document and watched only ITS teardown;
       `observeConsumerTeardown` now watches whichever `WebContents`
@@ -432,7 +432,7 @@
       `media-paused`/`audio-state-changed` never fire for a `MediaStreamTrack`
       piped through Web Audio at all (Volume Master's own shape), so neither
       candidate signal is safe or general enough to build on.
-    - **Item H: a target must be an `http(s)` tab.** `ctx.store` tracks
+    - **A target must be an `http(s)` tab.** `ctx.store` tracks
       every `wc.session === session.defaultSession` tab, which (ADR-0044)
       includes a granted app's own tab -- `setTabCaptureAppRefusalCheck`'s
       own job -- but ALSO another extension's own page (its popup or
@@ -442,7 +442,7 @@
       app-refusal check alone never refused it. DECIDED: refuse every
       non-`http(s)` target outright, the caller's own pages included, rather
       than carving out an exception for them.
-    - **Item I: the app-refusal and http(s) checks are re-run on the
+    - **The app-refusal and http(s) checks are re-run on the
       captured tab's own navigation, and the app-refusal check again inside
       the `'media'` REQUEST handler itself.** A tab that was an ordinary page
       at mint time can navigate to a granted app's origin, or to a
@@ -454,7 +454,7 @@
       registration covers the second half: a live, still-unexpired grant
       handed to the REQUEST handler for a tab that has since become a
       granted app's own.
-    - **Item J: the captured tab's own `'destroyed'`/`'did-navigate'`
+    - **The captured tab's own `'destroyed'`/`'did-navigate'`
       listeners are now removed on an ordinary release.** Previously
       attached once per tab and never removed unless the tab itself was
       destroyed -- releasing a capture without the tab dying (the ordinary

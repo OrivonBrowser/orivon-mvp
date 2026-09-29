@@ -273,9 +273,9 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
     })
   }, TEST_TIMEOUT_MS)
 
-  // (HIGH, item A) A live tabCapture grant must never widen into a real
-  // device grant: before this fix, permission-gate.ts's 'media' carve-out
-  // allowed ANY 'media' request from a chrome-extension:// origin holding a
+  // A live tabCapture grant must never widen into a real
+  // device grant: permission-gate.ts's 'media' carve-out must never
+  // allow ANY 'media' request from a chrome-extension:// origin holding a
   // live grant, regardless of what it actually asked for -- an extension
   // could mint a tabCapture id once, then call getUserMedia({audio:true,
   // video:true}) on its own page and silently receive the real
@@ -285,7 +285,7 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
   // never the real mic/camera, which this switch specifically avoids
   // touching (smoke-helpers.mjs / launch-electron.mjs's own silent-launch
   // rule still applies regardless).
-  it('(HIGH, item A) a minted tabCapture grant never widens into a real device getUserMedia() grant', async () => {
+  it('a minted tabCapture grant never widens into a real device getUserMedia() grant', async () => {
     const started = await startFixtureServer()
     const fixtureUrl = `${started.origin}/`
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
@@ -325,8 +325,8 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
       // The SAME extension, from its OWN page (never the captured tab),
       // now asks for the real devices. `contents` for THIS call is the
       // popup's own webContents -- not the captured tab -- and
-      // `mediaTypes` is non-empty, so both of item A's own checks must
-      // refuse it independent of the still-live grant.
+      // `mediaTypes` is non-empty, so both the tab-identity and mediaTypes
+      // checks must refuse it independent of the still-live grant.
       const deviceRequest = await popup.evaluate(async () => {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true })

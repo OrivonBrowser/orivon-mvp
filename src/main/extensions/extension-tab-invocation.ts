@@ -24,7 +24,7 @@ export function clearInvocation (extensionId: string, tabId: number): void {
   grants.delete(key(extensionId, tabId))
 }
 
-/** (item K) The ledger otherwise survives an extension's own unload: a
+/** The ledger otherwise survives an extension's own unload: a
  * disabled, uninstalled or crashed extension keeps whatever (extensionId,
  * tabId) grants it had, and a same-id reinstall (or, before Chrome's own
  * id-reuse rules, an unrelated extension landing on the same id slot) would

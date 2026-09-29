@@ -206,7 +206,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   setTabCaptureInvocationCheck(hasRecentInvocation)
   setTabCaptureGrantRecorder((extensionId, targetTabId) => { mintTabCaptureGrant(extensionId, targetTabId, Date.now()) })
   setTabCaptureConsumedCheck(wasTabCaptureGrantConsumed)
-  // Orivon patch (UPSTREAM.md patch 33; item K): the activeTab-style
+  // Orivon patch (UPSTREAM.md patch 33): the activeTab-style
   // invocation ledger (extension-tab-invocation.ts) otherwise survives a
   // disable/uninstall/crash -- the same 'extension-unloaded' signal
   // offscreen.ts's own listener and tab-capture.ts's own listener already
@@ -413,11 +413,11 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
     return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
   }
   setTabCaptureAppRefusalCheck(tabCaptureAppRefusal)
-  // (item I, second half) The same predicate, registered a second time for
-  // permission-gate.ts's own re-check inside the 'media' REQUEST handler --
-  // setTabCaptureMediaAppRefusalCheck's own doc says why a single
-  // registration point (this file's own `setTabCaptureAppRefusalCheck`,
-  // read only by the vendored tab-capture.ts) is not enough on its own.
+  // The same predicate, registered a second time for permission-gate.ts's
+  // own re-check inside the 'media' REQUEST handler -- setTabCaptureMediaAppRefusalCheck's
+  // own doc says why a single registration point (this file's own
+  // `setTabCaptureAppRefusalCheck`, read only by the vendored tab-capture.ts)
+  // is not enough on its own.
   setTabCaptureMediaAppRefusalCheck(tabCaptureAppRefusal)
 
   services.tabLifecycle.subscribe({

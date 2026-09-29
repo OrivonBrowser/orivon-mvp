@@ -1,5 +1,5 @@
-// The offscreen document's own lifecycle and navigation policy -- items C,
-// D and E of the tabCapture/offscreen security review, kept separate from
+// The offscreen document's own lifecycle and navigation policy: process
+// exit, window.open denial and renderer-crash cleanup. Kept separate from
 // test/e2e-extensions-offscreen-capture.test.ts because none of these
 // actually exercise tabCapture itself. Reuses that file's own fixture
 // (test/apps/extensions/offscreen-capture/) and seeding helper shape.
@@ -63,7 +63,7 @@ async function ensureOffscreenDocument (app: Awaited<ReturnType<typeof launchEle
 const TEST_TIMEOUT_MS = 60_000
 
 describe('offscreen document lifecycle and navigation policy', () => {
-  // (item C) Measured directly (docs/planning's tabCapture/offscreen
+  // Measured directly (docs/planning's tabCapture/offscreen
   // probe): a never-attached WebContentsView contributes nothing to
   // BrowserWindow.getAllWindows(), so it can no longer keep the process
   // alive past the last real shell window closing -- src/main/index.ts's
@@ -72,7 +72,7 @@ describe('offscreen document lifecycle and navigation policy', () => {
   // true off macOS). Before this fix, the offscreen document was a hidden
   // BrowserWindow, which DOES count, and the process stayed resident with
   // no window on screen at all.
-  it('(item C) closing the last shell window quits the process even with an offscreen document open', async () => {
+  it('closing the last shell window quits the process even with an offscreen document open', async () => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     let extensionId = ''
     try {
@@ -110,9 +110,9 @@ describe('offscreen document lifecycle and navigation policy', () => {
     }
   }, TEST_TIMEOUT_MS)
 
-  // (item D) window.open from the offscreen document must never create a
+  // window.open from the offscreen document must never create a
   // window at all -- it has no tab, no toolbar, and no one watching it.
-  it('(item D) window.open() from the offscreen document is denied outright', async () => {
+  it('window.open() from the offscreen document is denied outright', async () => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     let extensionId = ''
     try {
@@ -130,7 +130,7 @@ describe('offscreen document lifecycle and navigation policy', () => {
         const offscreen = webContents.getAllWebContents().find((wc) => wc.getURL() === `chrome-extension://${id}/offscreen.html`)
         if (offscreen === undefined) return { ok: false, error: 'offscreen webContents not found' }
         const opened = await offscreen.executeJavaScript(`!!window.open('https://example.com/', '_blank')`)
-        // The only thing item D actually promises: no webContents ever
+        // The only thing this denial actually promises: no webContents ever
         // loads example.com at all -- `getAllWebContents()`'s own count
         // otherwise races unrelated teardown (the sender page
         // ensureOffscreenDocument used to create this document is
@@ -149,8 +149,8 @@ describe('offscreen document lifecycle and navigation policy', () => {
     }
   }, TEST_TIMEOUT_MS)
 
-  // (item D) Navigation is locked to the extension's own origin.
-  it('(item D) the offscreen document cannot navigate itself away from its own extension origin', async () => {
+  // Navigation is locked to the extension's own origin.
+  it('the offscreen document cannot navigate itself away from its own extension origin', async () => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     let extensionId = ''
     try {
@@ -171,8 +171,8 @@ describe('offscreen document lifecycle and navigation policy', () => {
         // `will-navigate` fires for a RENDERER-initiated navigation, never
         // a main-process `loadURL()` call (Electron's own documented
         // distinction) -- `window.location = ...`, run from inside the
-        // page's own script, is the shape item D's policy actually has to
-        // refuse: an offscreen document's own (possibly compromised) page
+        // page's own script, is the shape this navigation policy actually
+        // has to refuse: an offscreen document's own (possibly compromised) page
         // navigating itself, not this test harness calling loadURL().
         await offscreen.executeJavaScript(`window.location = 'https://example.com/'`).catch(() => {})
         await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -187,9 +187,9 @@ describe('offscreen document lifecycle and navigation policy', () => {
     }
   }, TEST_TIMEOUT_MS)
 
-  // (item E) A crashed offscreen renderer must stop being reported, and a
+  // A crashed offscreen renderer must stop being reported, and a
   // fresh createDocument() must succeed again afterward.
-  it('(item E) a crashed offscreen document stops being reported and a fresh one can be created', async () => {
+  it('a crashed offscreen document stops being reported and a fresh one can be created', async () => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     let extensionId = ''
     try {
@@ -226,7 +226,7 @@ describe('offscreen document lifecycle and navigation policy', () => {
       // 'render-process-gone' round trip is what this test is measuring,
       // and creating a fresh sender BrowserWindow on every poll tick
       // (this file's only way to ask hasDocument(), a real extension API)
-      // adds load of its own under xvfb that is not what item E is about.
+      // adds load of its own under xvfb that is not what this test is about.
       await new Promise((resolve) => setTimeout(resolve, 5000))
 
       const hasDocAfterCrash = await liveApp.evaluate(async ({ session, BrowserWindow }, id: string) => {

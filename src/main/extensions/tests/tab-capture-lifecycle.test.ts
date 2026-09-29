@@ -4,9 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Drives the REAL TabCaptureAPI (vendor/.../api/tab-capture.ts, no 'electron'
 // value import of its own -- only Electron.WebContents as a TYPE -- so no
 // vi.mock('electron', ...) is needed here, unlike
-// browser-action-popup-url.test.ts's own sibling suite). Covers items F, G,
-// H, I and J of the tabCapture/offscreen security review; item A is covered
-// end to end by test/e2e-extensions-offscreen-capture.test.ts, and item B by
+// browser-action-popup-url.test.ts's own sibling suite). Covers consumption
+// and release tracked per (extension, target tab), capture-end teardown
+// keyed on the real consumer, the http(s)-only target check, its re-check on
+// the captured tab's own navigation, and listener cleanup on an ordinary
+// release; the 'media' carve-out itself is covered end to end by
+// test/e2e-extensions-offscreen-capture.test.ts, and a forged invocation by
 // browser-action-tab-capture-invocation.test.ts.
 const {
   TabCaptureAPI,
@@ -79,7 +82,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('TabCaptureAPI (item H): only an http(s) target tab may be captured', () => {
+describe('TabCaptureAPI: only an http(s) target tab may be captured', () => {
   it('refuses a chrome-extension:// target outright', async () => {
     const { session } = fakeSession()
     const tab = new FakeWebContents(1, 'chrome-extension://other-ext/popup.html', session)
@@ -107,7 +110,7 @@ describe('TabCaptureAPI (item H): only an http(s) target tab may be captured', (
   })
 })
 
-describe('TabCaptureAPI (item F): consumption/release tracked per (extension, target tab)', () => {
+describe('TabCaptureAPI: consumption/release tracked per (extension, target tab)', () => {
   it("tab A's own unconsumed-release timer never releases tab B, minted by the same extension", async () => {
     const { session } = fakeSession()
     const tabA = new FakeWebContents(1, HTTP_URL, session)
@@ -134,7 +137,7 @@ describe('TabCaptureAPI (item F): consumption/release tracked per (extension, ta
   })
 })
 
-describe('TabCaptureAPI (item I): re-checked on the captured tab\'s own navigation', () => {
+describe('TabCaptureAPI: re-checked on the captured tab\'s own navigation', () => {
   it('ends the capture once the app-refusal check newly refuses, after navigation', async () => {
     const { session } = fakeSession()
     const tab = new FakeWebContents(1, HTTP_URL, session)
@@ -185,7 +188,7 @@ describe('TabCaptureAPI (item I): re-checked on the captured tab\'s own navigati
   })
 })
 
-describe('TabCaptureAPI (item J): the tab\'s own listeners are removed on an ordinary release, not leaked', () => {
+describe('TabCaptureAPI: the tab\'s own listeners are removed on an ordinary release, not leaked', () => {
   it('removes both the destroyed and did-navigate listeners once every capturer has released the tab', async () => {
     const { session } = fakeSession()
     const tab = new FakeWebContents(1, HTTP_URL, session)
@@ -225,7 +228,7 @@ describe('TabCaptureAPI (item J): the tab\'s own listeners are removed on an ord
   })
 })
 
-describe('TabCaptureAPI (item G): the actual consumer\'s teardown ends every capture that used it', () => {
+describe('TabCaptureAPI: the actual consumer\'s teardown ends every capture that used it', () => {
   it('a consumer\'s own "destroyed" event ends every capture using it, and only those', async () => {
     const { session } = fakeSession()
     const tabA = new FakeWebContents(1, HTTP_URL, session)

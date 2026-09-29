@@ -31,7 +31,7 @@ describe('extension-tab-invocation', () => {
     expect(() => { clearInvocation('ext-never', 99) }).not.toThrow()
   })
 
-  describe('clearInvocationsForExtension (item K)', () => {
+  describe('clearInvocationsForExtension', () => {
     it('revokes every tab grant for the given extension, regardless of which tab', () => {
       recordInvocation('ext-k1', 1)
       recordInvocation('ext-k1', 2)

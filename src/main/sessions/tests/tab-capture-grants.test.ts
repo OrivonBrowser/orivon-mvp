@@ -57,14 +57,14 @@ describe('mintTabCaptureGrant / hasLiveTabCaptureGrant -- keyed by (extension, t
     expect(hasLiveTabCaptureGrant(freshExtensionId(), 1, 3000)).toBe(false)
   })
 
-  it('never leaks to a different target tab id, even for the same extension (item F)', () => {
+  it('never leaks to a different target tab id, even for the same extension', () => {
     const id = freshExtensionId()
     mintTabCaptureGrant(id, 1, 3500)
     expect(hasLiveTabCaptureGrant(id, 2, 3500)).toBe(false)
   })
 })
 
-describe('isTabCaptureMediaRequestAllowed -- the permission-gate policy function (item A)', () => {
+describe('isTabCaptureMediaRequestAllowed -- the permission-gate policy function', () => {
   it('denies a non-extension origin outright, even with a live grant for that id/tab', () => {
     const id = freshExtensionId()
     mintTabCaptureGrant(id, 1, 4000)
@@ -92,7 +92,7 @@ describe('isTabCaptureMediaRequestAllowed -- the permission-gate policy function
     expect(isTabCaptureMediaRequestAllowed(undefined, 1, [], 8000)).toBe(false)
   })
 
-  it('(HIGH, item A) denies a live grant if the captured webContents is NOT the minted target tab -- a device request opens on the extension\'s OWN page, never the target tab', () => {
+  it('denies a live grant if the captured webContents is NOT the minted target tab -- a device request opens on the extension\'s OWN page, never the target tab', () => {
     const id = freshExtensionId()
     mintTabCaptureGrant(id, 1, 8500)
     // details.securityOrigin still names the extension, but `contents` the
@@ -102,7 +102,7 @@ describe('isTabCaptureMediaRequestAllowed -- the permission-gate policy function
     expect(isTabCaptureMediaRequestAllowed(`chrome-extension://${id}/`, 99, [], 8500)).toBe(false)
   })
 
-  it('(HIGH, item A) denies a device-shaped request (non-empty mediaTypes) even against the right tab', () => {
+  it('denies a device-shaped request (non-empty mediaTypes) even against the right tab', () => {
     const id = freshExtensionId()
     mintTabCaptureGrant(id, 1, 9000)
     // Measured: a real device getUserMedia({audio:true,video:true}) request
@@ -154,7 +154,7 @@ describe('markTabCaptureGrantConsumed / wasTabCaptureGrantConsumed -- keyed by (
     expect(wasTabCaptureGrantConsumed(b, 1)).toBe(false)
   })
 
-  it('(item F) never leaks consumption to a different target tab of the SAME extension: mint A + mint B + A\'s request must not mark B', () => {
+  it('never leaks consumption to a different target tab of the SAME extension: mint A + mint B + A\'s request must not mark B', () => {
     const id = freshExtensionId()
     mintTabCaptureGrant(id, 1, 13_500)
     mintTabCaptureGrant(id, 2, 13_500)
@@ -163,7 +163,7 @@ describe('markTabCaptureGrantConsumed / wasTabCaptureGrantConsumed -- keyed by (
     expect(wasTabCaptureGrantConsumed(id, 2)).toBe(false)
   })
 
-  it('(item F) the reverse direction: consuming tab B never marks tab A', () => {
+  it('the reverse direction: consuming tab B never marks tab A', () => {
     const id = freshExtensionId()
     mintTabCaptureGrant(id, 1, 13_600)
     mintTabCaptureGrant(id, 2, 13_600)

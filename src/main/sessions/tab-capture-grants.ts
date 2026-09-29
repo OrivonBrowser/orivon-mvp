@@ -93,7 +93,7 @@ export function wasTabCaptureGrantConsumed (extensionId: string, targetTabId: nu
  *    CAPTURED TAB there for this call shape, never the requester's),
  *  - `mediaTypes` is empty.
  *
- * The last point is load-bearing (HIGH severity, item A): measured
+ * The last point is load-bearing: measured
  * directly, a real tab-capture `getUserMedia({ audio: { mandatory: {
  * chromeMediaSource: 'tab', ... } } })` request carries `mediaTypes: []`,
  * while an ordinary device request -- `getUserMedia({ audio: true })` or

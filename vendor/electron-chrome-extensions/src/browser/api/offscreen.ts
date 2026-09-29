@@ -9,7 +9,7 @@
 // createDocument() call while one is open rejects with Chrome's own error
 // text (developer.chrome.com/docs/extensions/reference/api/offscreen).
 //
-// (item C) Hosted as a `WebContentsView`, never a `BrowserWindow`. MEASURED
+// Hosted as a `WebContentsView`, never a `BrowserWindow`. MEASURED
 // (docs/planning's tabCapture/offscreen probe): a `WebContentsView`
 // constructed and used WITHOUT ever attaching it to any `BaseWindow`'s
 // `contentView` still gets this library's own preload injected and
@@ -98,7 +98,7 @@ export class OffscreenAPI {
     })
     this.docs.set(extensionId, { view })
 
-    // (item D) An offscreen document has no tab, no toolbar chrome and no
+    // An offscreen document has no tab, no toolbar chrome and no
     // one watching it -- `window.open` from it, left to the library's own
     // default new-window handling, created a raw, frameless,
     // always-on-top `BrowserWindow`; denying it outright is correct
@@ -118,7 +118,7 @@ export class OffscreenAPI {
     view.webContents.on('will-navigate', refuseForeignNavigation)
     view.webContents.on('will-redirect', refuseForeignNavigation)
 
-    // (item E) A renderer crash leaves `webContents.isDestroyed()` false --
+    // A renderer crash leaves `webContents.isDestroyed()` false --
     // electron.d.ts's own `isCrashed()` getter exists because the
     // WebContents object survives a crash on its own, reloadable in
     // principle -- so without this, a crashed offscreen document would

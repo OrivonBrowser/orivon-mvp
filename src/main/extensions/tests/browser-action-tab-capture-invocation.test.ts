@@ -1,9 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-// (item B, MEDIUM) Drives the REAL BrowserActionAPI.activate/activateClick/
-// openPopup (private, reached the same way browser-action-popup-url.test.ts
-// reaches getPopupUrl: `(api as any)`), proving both forgery routes the
-// review named are refused:
+// Drives the REAL BrowserActionAPI.activate/activateClick/openPopup (private,
+// reached the same way browser-action-popup-url.test.ts reaches getPopupUrl:
+// `(api as any)`), proving both forgery routes into a tabCapture invocation
+// are refused:
 //  - a LOCAL crx-msg call to browserAction.activate (event.extension
 //    defined -- router.ts's own onRouterMessage resolves it from the
 //    caller's VERIFIED extension id) must be refused outright, whatever
@@ -53,7 +53,7 @@ beforeEach(() => {
   setTabCaptureInvocationRecorder(recorder)
 })
 
-describe('BrowserActionAPI: tabCapture invocation only ever recorded for a real toolbar click (item B)', () => {
+describe('BrowserActionAPI: tabCapture invocation only ever recorded for a real toolbar click', () => {
   it('a REMOTE click (event.extension undefined -- the real chrome-view path) records an invocation', () => {
     const tab = fakeTab(1)
     const api = new BrowserActionAPI(fakeCtx(tab))

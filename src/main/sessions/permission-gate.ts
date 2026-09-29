@@ -76,7 +76,7 @@ function isAllowed (permission: string, details: object | undefined): boolean {
 }
 
 /**
- * (item I, second half) The SAME "is this tab a granted app" question
+ * The SAME "is this tab a granted app" question
  * `vendor/.../tab-capture.ts`'s own `setTabCaptureAppRefusalCheck` answers
  * at mint time and on navigation -- repeated here because a mint-time
  * refusal alone leaves a gap this handler is the last line against: a tab
@@ -108,7 +108,7 @@ export function setTabCaptureMediaAppRefusalCheck (check: MediaAppRefusalCheck):
  * the requester's, for this exact call shape -- only `details.securityOrigin`
  * names the requesting `chrome-extension://` origin.
  *
- * (HIGH, item A) `contents` is exactly the fact that makes this carve-out
+ * `contents` is exactly the fact that makes this carve-out
  * safe to check tightly: a real device request -- `getUserMedia({ audio:
  * true, video: true })`, called by the extension on its OWN page to reach
  * the real microphone/camera -- hands `contents` as the CALLING page
@@ -152,7 +152,7 @@ function allowTabCaptureMediaRequest (contents: WebContents, details: object | u
   const now = Date.now()
   const allowed = isTabCaptureMediaRequestAllowed(origin, contents.id, mediaTypes, now)
   if (!allowed) return false
-  // (item I) Re-run against `contents` -- the captured tab, for this call
+  // Re-run against `contents` -- the captured tab, for this call
   // shape -- one more time, right before actually granting: see
   // setTabCaptureMediaAppRefusalCheck's own doc for why a mint-time-only
   // check is not enough.
@@ -210,13 +210,13 @@ function denyByDefault (target: Session): void {
   // here, and notifications answer from what the person already said.
   target.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) => {
     if (permission === 'notifications') return siteNotifications.check(requestingOrigin, details.embeddingOrigin)
-    // (HIGH, item A) Always false for 'media', never a shape check --
+    // Always false for 'media', never a shape check --
     // allowTabCaptureMediaRequest's own doc says why: this handler fires
     // speculatively, with no getUserMedia() call behind it (marking
     // consumption here released a still-unredeemed grant early, measured),
     // AND it has no captured-tab identity to check against even when a real
     // call is behind it -- `wc`/`requestingOrigin` here are the REQUESTER's
-    // own, never the target tab, so the tab-identity half of item A's fix
+    // own, never the target tab, so the tab-identity check
     // cannot be applied in this handler at all. Refusing 'media' here
     // outright costs nothing real: Electron only consults this handler to
     // decide whether to ask via setPermissionRequestHandler in the first

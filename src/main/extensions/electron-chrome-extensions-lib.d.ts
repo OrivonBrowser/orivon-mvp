@@ -121,8 +121,9 @@ declare module 'orivon:crx-extensions-tab-capture' {
   export function setTabCaptureAppRefusalCheck (check: (tab: Electron.WebContents) => boolean): void
   /** Called once per successful getMediaStreamId, so permission-gate.ts's
    * own 'media' carve-out (tab-capture-grants.ts) knows to allow it, for
-   * this exact (extensionId, targetTabId) pair -- item F: never extension
-   * alone. */
+   * this exact (extensionId, targetTabId) pair -- never extension alone, so
+   * one tab's redemption never marks a different tab the same extension is
+   * also capturing. */
   export function setTabCaptureGrantRecorder (recorder: (extensionId: string, targetTabId: number) => void): void
   /** True once permission-gate.ts has actually allowed a 'media' request
    * for this exact (extensionId, targetTabId) pair
