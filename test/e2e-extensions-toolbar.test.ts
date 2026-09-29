@@ -13,10 +13,10 @@
 // on it.
 //
 // chrome.runtime.openOptionsPage() and chrome.tabs.create() with a
-// chrome-extension: target both used to crash the popup's own renderer
-// with SIGSEGV under `--no-sandbox`; sandboxed, neither does (measured
-// below) -- Chromium's real namespace sandbox, not this file's own
-// URL-policy code, was the actual precondition the crash needed.
+// chrome-extension: target both need Chromium's real namespace sandbox, not
+// only this file's own URL-policy code, to run without crashing the popup's
+// own renderer (measured below) -- another reason this suite always runs
+// sandboxed.
 //
 // Fixture: test/apps/extensions/action-popup/ (MV3, one browser action with
 // a popup that calls chrome.tabs.query/chrome.tabs.create directly and

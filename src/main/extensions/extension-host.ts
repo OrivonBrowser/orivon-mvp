@@ -40,8 +40,11 @@ interface ShellBridge { ctx: SubsystemContext, services: ShellServices }
 let bridge: ShellBridge | undefined
 let hostExtensions: ElectronChromeExtensions | undefined
 
+/** `session.defaultSession.extensions.getExtension` answers `null` for an id
+ * it does not hold (Electron's own contract), never `undefined` -- checked
+ * against both, so a URL policy check bound to this never trivially passes. */
 function isLoadedExtension (id: string): boolean {
-  return session.defaultSession.extensions.getExtension(id) !== undefined
+  return session.defaultSession.extensions.getExtension(id) != null
 }
 
 function windowFor (windowId: number | undefined): BaseWindow | undefined {
@@ -79,10 +82,11 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
       if (win === undefined) throw new Error('extensions: no window to open a tab in')
       const shellWindow = bridge.services.windows.all().find((w) => w.window === win)
       if (shellWindow === undefined) throw new Error('extensions: window has no tabs')
-      if (details.url !== undefined && extensionOpenedUrl(details.url, isLoadedExtension) === undefined) {
+      const target = details.url === undefined ? undefined : extensionOpenedUrl(details.url, isLoadedExtension)
+      if (details.url !== undefined && target === undefined) {
         throw new Error(`extensions: refused to open ${details.url}`)
       }
-      const opened = shellWindow.tabs.openTrusted(details.url)
+      const opened = shellWindow.tabs.openTrusted(target)
       if (opened === undefined) throw new Error('extensions: tab capacity reached')
       return [opened[1], win]
     },

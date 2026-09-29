@@ -1,4 +1,5 @@
-import { app, ipcMain, Session } from 'electron'
+import { app, ipcMain } from 'electron'
+import type { Session } from 'electron'
 import debug from 'debug'
 
 import { resolvePartition } from './partition'
@@ -168,6 +169,13 @@ class RoutingDelegate {
   }
 
   private onAddListener = (event: IpcAnyEvent, extensionId: string, eventName: string) => {
+    // Orivon patch: same check as onRouterMessage above -- without it, one
+    // loaded extension's page or worker could subscribe to any other loaded
+    // extension's events by naming its id here instead of its own.
+    if (gMessageSenderIdCheck && !gMessageSenderIdCheck(event, extensionId)) {
+      d(`crx-add-listener refused: sender is not extension ${extensionId}`)
+      return
+    }
     const observer = this.sessionMap.get(getSessionFromEvent(event))
     const listener: EventListener =
       event.type === 'frame'
@@ -188,6 +196,11 @@ class RoutingDelegate {
     extensionId: string,
     eventName: string,
   ) => {
+    // Orivon patch: same check as onAddListener above.
+    if (gMessageSenderIdCheck && !gMessageSenderIdCheck(event as IpcAnyEvent, extensionId)) {
+      d(`crx-remove-listener refused: sender is not extension ${extensionId}`)
+      return
+    }
     const observer = this.sessionMap.get(getSessionFromEvent(event))
     const listener: EventListener =
       event.type === 'frame'
@@ -227,7 +240,7 @@ export interface HandlerOptions {
   /** Whether an extension context is required to invoke the handler. */
   extensionContext: boolean
   /** Required extension permission to run the handler. */
-  permission?: chrome.runtime.ManifestPermissions
+  permission?: chrome.runtime.ManifestPermissions | undefined
 }
 
 interface Handler extends HandlerOptions {

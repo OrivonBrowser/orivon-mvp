@@ -4,12 +4,12 @@
 // transport (electron-chrome-web-store's own vendored `verifyCrx` hook,
 // UPSTREAM.md patch 1, is what install-runner.ts wires this into).
 //
-// Format reference: Chromium's own crx_verifier.cc,
+// Format reference: Chromium's own crx_verifier.cc, pinned at
 // https://github.com/chromium/chromium/blob/3b505743bc9f8871e748b0dc79fff94d5a3c2416/components/crx_file/crx_verifier.cc
-// (Cr-Commit-Position refs/heads/main@{#1702232}, fetched 2026-09-28). The
-// protobuf reader for the header is reimplemented in ./crx3-format.ts, not
-// imported from vendor/electron-chrome-web-store/src/browser/crx3.ts --
-// ./README.md's Design notes say why.
+// (Cr-Commit-Position refs/heads/main@{#1702232}). The protobuf reader for
+// the header is reimplemented in ./crx3-format.ts, not imported from
+// vendor/electron-chrome-web-store/src/browser/crx3.ts -- ./README.md's
+// Design notes say why.
 
 import { createHash, createPublicKey, verify as verifySignature } from 'node:crypto'
 import Pbf from 'pbf'

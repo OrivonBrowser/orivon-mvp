@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createHash, createPrivateKey, generateKeyPairSync, sign as signWithKey, type KeyObject } from 'node:crypto'
 import AdmZip from 'adm-zip'
 import Pbf from 'pbf'
-import { installFromFile, installFromFolder, installFromStoreCrx, setEnabled, uninstall, type InstallContext } from '../install-runner.js'
+import { installFromFile, installFromFolder, installFromStoreCrx, resolveSlotKey, setEnabled, uninstall, type InstallContext } from '../install-runner.js'
 import { readRegistry } from '../registry-runner.js'
 import { convertHexadecimalToIDAlphabet, generateId } from '../../../../vendor/electron-chrome-web-store/src/browser/id.js'
 
@@ -233,6 +233,62 @@ describe('installFromFolder', () => {
       expect(registry[0]).toEqual(first.entry)
     })
   })
+
+  it('reinstalls the same version over itself (Developer mode Reload, or a same-version store reinstall) without ENOTEMPTY', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session, loaded, removedIds } = fakeSession()
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(first.installed).toBe(true)
+      if (!first.installed) return
+      const firstId = first.entry.id
+      const firstPath = first.entry.path
+
+      // No version bump -- edited content only, as a Reload click would produce.
+      writeFileSync(join(source, 'content.js'), 'console.log(2)')
+      const second = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(second.installed).toBe(true)
+      if (!second.installed) return
+
+      expect(second.entry.path).toBe(firstPath)
+      expect(second.entry.id).toBe(firstId)
+      expect(readFileSync(join(second.entry.path, 'content.js'), 'utf8')).toBe('console.log(2)')
+      expect(removedIds).toEqual([firstId])
+      expect(loaded.get(firstId)).toBe(firstPath)
+      expect(readRegistry(userDataPath)).toHaveLength(1)
+      // The moved-aside old folder was deleted once the new one loaded.
+      const siblings = readdirSync(dirname(firstPath))
+      expect(siblings.some((name) => name.includes('.old-'))).toBe(false)
+    })
+  })
+
+  it('on a failed same-version reinstall, restores the old folder\'s own content and reloads it', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session, loaded, removedIds, setFailNextLoad } = fakeSession()
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(first.installed).toBe(true)
+      if (!first.installed) return
+      const firstId = first.entry.id
+      const firstPath = first.entry.path
+
+      writeFileSync(join(source, 'content.js'), 'console.log(2)')
+      setFailNextLoad(new Error('boom: simulated reinstall failure'))
+      await expect(installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)).rejects.toThrow('boom')
+
+      // The old folder's own content is back in place, loaded again under the same id.
+      expect(readFileSync(join(firstPath, 'content.js'), 'utf8')).toBe('console.log(1)')
+      expect(loaded.get(firstId)).toBe(firstPath)
+      expect(removedIds).toEqual([firstId])
+      const registry = readRegistry(userDataPath)
+      expect(registry).toHaveLength(1)
+      expect(registry[0]).toEqual(first.entry)
+      const siblings = readdirSync(dirname(firstPath))
+      expect(siblings.some((name) => name.includes('.old-'))).toBe(false)
+    })
+  })
 })
 
 interface KeyPair { readonly publicKey: Buffer, readonly privateKey: KeyObject }
@@ -323,6 +379,48 @@ describe('installFromFile', () => {
       const { session } = fakeSession()
       await expect(installFromFile({ userDataPath, session, prompt: ALWAYS_ALLOW }, crxPath)).rejects.toThrow()
       expect(existsSync(join(userDataPath, 'extensions'))).toBe(false)
+    })
+  })
+
+  it('replaces a signed .crx\'s own manifest key with the verified developer key, never keeping the manifest\'s claim', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      // A manifest key plausibly belonging to another, already-installed
+      // extension -- Chrome ignores a packed CRX's manifest `key`, and so
+      // must this install: keeping it would let a signed .crx take over
+      // whatever id that key derives.
+      const foreignKey = resolveSlotKey(userDataPath, 'someone-elses-slot')
+      const crxBytes = buildCrx({ ...FIXTURE_MANIFEST, key: foreignKey })
+      const crxPath = join(root, 'fixture.crx')
+      writeFileSync(crxPath, crxBytes)
+      const outcome = await installFromFile({ userDataPath, session, prompt: ALWAYS_ALLOW }, crxPath)
+      expect(outcome.installed).toBe(true)
+      if (!outcome.installed) return
+      const written = JSON.parse(readFileSync(join(outcome.entry.path, 'manifest.json'), 'utf8')) as Record<string, unknown>
+      expect(written.key).not.toBe(foreignKey)
+      expect(outcome.entry.id).not.toBe(generateId(foreignKey))
+    })
+  })
+
+  it('refuses an install whose resolved id is already used by a different slot', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      const crxBytes = buildCrx(FIXTURE_MANIFEST)
+      const crxPath = join(root, 'fixture.crx')
+      writeFileSync(crxPath, crxBytes)
+      const first = await installFromFile({ userDataPath, session, prompt: ALWAYS_ALLOW }, crxPath)
+      expect(first.installed).toBe(true)
+      if (!first.installed) return
+      const smuggledKey = (JSON.parse(readFileSync(join(first.entry.path, 'manifest.json'), 'utf8')) as { key: string }).key
+
+      // A folder install (no developer key of its own) whose manifest
+      // claims the .crx's own derived key -- the same id, a different slot.
+      const folderDir = writeFixtureFolder(root, { ...FIXTURE_MANIFEST, name: 'Impostor', key: smuggledKey })
+      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, folderDir)
+      expect(outcome).toEqual({ installed: false, reason: 'another installed extension already uses this id' })
+      expect(readRegistry(userDataPath)).toHaveLength(1)
     })
   })
 })

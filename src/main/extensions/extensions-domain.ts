@@ -1,7 +1,7 @@
 // What the extensions page may ask of the installed extensions: list them
 // with their resolved names, descriptions and icons, the details of one,
-// enable or disable, remove, and -- Developer mode only -- load unpacked,
-// reload an unpacked install, or install from a file. Every request is data
+// enable or disable, remove, install from a file, and -- Developer mode
+// only -- load unpacked or reload an unpacked install. Every request is data
 // from a document, so every field is checked here; an id that names no
 // registry entry is refused exactly like a malformed request (ADR-0041).
 import type { InternalDomain } from '../pages/internal-ipc.js'

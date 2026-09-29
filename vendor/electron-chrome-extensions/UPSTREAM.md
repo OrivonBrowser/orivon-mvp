@@ -54,15 +54,19 @@
    `updateId?: number`, `badge?: HTMLDivElement` and `pendingIcon?: HTMLImageElement` each gained
    `| undefined` -- the class already assigns `undefined` to all three. Reason: root tsconfig's
    `exactOptionalPropertyTypes`, which `vendor/tsconfig.json` does not set; no behaviour change.
-9. **`crx-msg` sender-id check.** `src/browser/router.ts`: added `setMessageSenderIdCheck(check)`
-   and an optional module-level predicate, checked in `onRouterMessage` before a message reaches
-   `onExtensionMessage`. Reason: `onExtensionMessage`'s permission checks trust the `extensionId`
-   argument the message itself carries, which a page or worker of one loaded extension can set to
-   any other loaded extension's id by calling `window.electron.invokeExtension` directly, not only
-   through the generated `chrome.*` wrappers. Orivon wires this to derive the real id from the
-   sender's own `chrome-extension://<id>/` URL (`src/main/extensions/extension-sender-id-check.ts`)
-   and refuse a mismatch -- `crx-msg-remote` already had an equivalent check (patch 5); this is
-   its `crx-msg` counterpart.
+9. **`crx-msg`/`crx-add-listener`/`crx-remove-listener` sender-id check.** `src/browser/
+   router.ts`: added `setMessageSenderIdCheck(check)` and an optional module-level predicate,
+   checked in `onRouterMessage`, `onAddListener` and `onRemoveListener` before a message reaches
+   `onExtensionMessage` or a listener is added or removed. Reason: `onExtensionMessage`'s
+   permission checks, and `addListener`/`removeListener`'s own subscriptions, all trust the
+   `extensionId` argument the message itself carries, which a page or worker of one loaded
+   extension can set to any other loaded extension's id by calling
+   `window.electron.invokeExtension`/`addListener`/`removeListener` directly, not only through the
+   generated `chrome.*` wrappers -- letting it read another extension's own events, not only call
+   its handlers. Orivon wires this to derive the real id from the sender's own
+   `chrome-extension://<id>/` URL (`src/main/extensions/extension-sender-id-check.ts`) and refuse
+   a mismatch -- `crx-msg-remote` already had an equivalent check (patch 5); this is its `crx-msg`
+   counterpart, now covering all three channels a claimed extension id can arrive on.
 10. **`declarativeNetRequest`, `sidePanel`, `userScripts`, and the rest of `webRequest`.**
     `src/renderer/index.ts`'s `apiDefinitions`: added factories for all four, following the
     file's own existing pattern (a `webRequest.onHeadersReceived`-only stub was already there).
@@ -96,13 +100,23 @@
     scuttled page regardless of this patch). Provisional: real Chrome's own native `chrome`
     binding is believed non-configurable for the same reason (so a real Chrome extension's own
     LavaMoat setup never needed to protect it) -- unconfirmed against real Chrome's own internals.
+13. **`Session` imported type-only.** `src/browser/router.ts`: `import { app, ipcMain, Session }
+    from 'electron'` split into a value import (`app`, `ipcMain`) and `import type { Session }`.
+    Reason: root tsconfig's `verbatimModuleSyntax`, which `vendor/tsconfig.json` does not set;
+    `Session` is used only as a type here; no behaviour change.
+14. **One field widened to `| undefined`.** `src/browser/router.ts`'s `HandlerOptions`:
+    `permission?: chrome.runtime.ManifestPermissions` gained `| undefined` -- `handle()` already
+    assigns it `undefined` when no permission is given. Reason: root tsconfig's
+    `exactOptionalPropertyTypes`, which `vendor/tsconfig.json` does not set; no behaviour change.
 
-`src/browser/index.ts`, `partition.ts` and `router.ts` are reached only through the virtual
-specifiers `src/main/extensions/electron-chrome-extensions-lib.d.ts` declares, never their real
-path -- that file's own header, and `src/main/extensions/README.md`'s Design notes, say why. Their
-own diagnostics under the root tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are
+`src/browser/index.ts` and `partition.ts` are reached only through the virtual specifiers
+`src/main/extensions/electron-chrome-extensions-lib.d.ts` declares, never their real path -- that
+file's own header, and `src/main/extensions/README.md`'s Design notes, say why. Their own
+diagnostics under the root tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are
 therefore not patched: nothing in `src/` opens those files directly, and `vendor/tsconfig.json`'s
-own, looser check already covers them as authored.
+own, looser check already covers them as authored. `router.ts` is the one exception: patches 13-14
+above make it satisfy the root tsconfig too, so `src/main/extensions/tests/` can unit-test patches
+5 and 9 directly against the real file, instead of only against a same-shaped local fake.
 
 Nothing else changed; upstream code is not reformatted.
 

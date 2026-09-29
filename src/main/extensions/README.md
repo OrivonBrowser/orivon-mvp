@@ -96,13 +96,21 @@ so Electron derives the same extension id from every version loaded into a slot,
 Chrome Web Store expects. Without one, Electron derives an unpacked extension's id from its own
 load path (Chromium's `id_util::GenerateIdForPath`), which embeds the version number and so
 changes on every update, silently losing `chrome.storage`, logins and every other
-per-extension setting keyed by id. Order: the manifest's own `key` (Chrome keeps it); else a
-`.crx`'s developer public key; else a key Orivon generates once per slot and persists at
-`<userData>/extensions/<slot>/key.pub`, reused for every later install into that slot.
+per-extension setting keyed by id. Order: a `.crx`'s verified developer public key wins outright
+(Chrome itself ignores a packed CRX's manifest `key`, so a `.crx` install does too -- a manifest
+`key` that differs is replaced, never kept); else, for a folder or `.zip` install, the manifest's
+own `key` (Chrome keeps it there); else a key Orivon generates once per slot and persists at
+`<userData>/extensions/<slot>/key.pub`, reused for every later install into that slot. An id
+resolving to an entry already installed under a DIFFERENT slot is refused outright
+(`install-runner.ts`'s `finishInstall`), so this ordering can never hand two slots the same id.
 
 **The previous version is found by slot** (`install-runner.ts`'s `finishInstall`). The slot,
 `<userData>/extensions/<slot>/`, is where every version of one install lives; the version segment
-beneath it is what changes on an update.
+beneath it is what changes on an update. A reinstall of the SAME version (Developer mode's Reload
+with no version bump, or a same-version store reinstall) targets its own existing folder: that
+folder is moved aside before the new copy is written and loaded, and only deleted once the new
+copy has actually loaded -- a failure restores it and reloads it, so a person never ends up with
+neither.
 
 **`allowFileAccess` is never `true`, anywhere in this directory.** An extension with file access
 could read `file://` pages, including a page-cache-served or dashboard `file://` URL the shell

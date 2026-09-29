@@ -35,20 +35,35 @@ const verifyCrx: VerifyCrx = (crx, expectedId) => {
   }
 }
 
+/**
+ * The vendored library's own write path (`WebStoreHost`): every actual
+ * install and uninstall still goes through install-runner.ts's own
+ * functions (this file's own header). `installCrx` throws when
+ * `installFromStoreCrx` refuses the install (a download that asks for more
+ * than what was approved, or no approved manifest at all) -- the library's
+ * `beginInstall` (vendor/.../src/browser/api.ts) catches exactly this and
+ * turns it into an `INSTALL_ERROR` result the store page shows as a failed
+ * install; without the throw, a refused install silently reports success.
+ */
+export function buildWebStoreHost (ctx: InstallContext): WebStoreHost {
+  return {
+    installCrx: async (crx, expectedId, approvedManifest, downloadUrl) => {
+      const outcome = await installFromStoreCrx(ctx, crx, expectedId, approvedManifest, {
+        skipPrompt: true,
+        ...(downloadUrl === undefined ? {} : { downloadUrl })
+      })
+      if (!outcome.installed) throw new Error(outcome.reason)
+    },
+    uninstall: async (id) => { await uninstall(ctx, id) }
+  }
+}
+
 /** `state.session` is the default session for both the store's own IPC and
  * every extension Orivon loads, so an update check's
  * `session.extensions.getAllExtensions()` already sees what Orivon
  * installed with no bookkeeping of its own. */
 export async function startWebStore (ctx: InstallContext, preloadPath: string): Promise<StoreApi> {
-  const host: WebStoreHost = {
-    installCrx: async (crx, expectedId, approvedManifest, downloadUrl) => {
-      await installFromStoreCrx(ctx, crx, expectedId, approvedManifest, {
-        skipPrompt: true,
-        ...(downloadUrl === undefined ? {} : { downloadUrl })
-      })
-    },
-    uninstall: async (id) => { await uninstall(ctx, id) }
-  }
+  const host = buildWebStoreHost(ctx)
 
   const onUpdateCheck = (result: UpdateCheckResult): void => {
     const lastResult = result.error !== undefined

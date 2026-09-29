@@ -6,8 +6,8 @@
 // result back out of the popup's own DOM.
 //
 // #options calls chrome.runtime.openOptionsPage(), driven by the e2e test
-// (its own header: this used to crash the popup's own renderer under
-// `--no-sandbox`; sandboxed, it opens the options page as an ordinary tab).
+// (its own header: sandboxed, it opens the options page as an ordinary
+// tab).
 document.title = 'Action Popup'
 
 const result = document.getElementById('result')

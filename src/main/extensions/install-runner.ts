@@ -6,7 +6,7 @@
 // matching `src/main/install/app-install.ts`'s own split from its real
 // dialog.
 
-import { cpSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, sep } from 'node:path'
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
 import type { Session } from 'electron'
@@ -104,13 +104,17 @@ export function resolveSlotKey (userDataPath: string, slot: string): string {
  * The `key` (SPKI DER, base64) every loaded copy in `pending.slot` carries,
  * so Electron derives a stable id across an update instead of one that
  * embeds the version-numbered load path (README.md's Design notes, "Why
- * every installed copy's manifest carries a key"). The manifest's own `key`
- * wins outright when it has one (Chrome keeps it); else a `.crx`'s
- * developer key (crx.ts's own doc); else the slot's generated key.
+ * every installed copy's manifest carries a key"). A `.crx`'s verified
+ * developer key (crx.ts's own doc) wins outright when there is one -- Chrome
+ * itself ignores a packed CRX's manifest `key`, so a `.crx` whose manifest
+ * claims a different `key` never gets to borrow another extension's id
+ * this way. Only a folder or `.zip` install, which carries no signature at
+ * all, falls back to the manifest's own `key` (Chrome keeps it there), else
+ * the slot's generated key.
  */
 function resolveInstallKey (ctx: InstallContext, pending: PendingInstall, manifestKey: string | undefined): string {
-  if (manifestKey !== undefined) return manifestKey
   if (pending.developerPublicKey !== undefined) return pending.developerPublicKey.toString('base64')
+  if (manifestKey !== undefined) return manifestKey
   return resolveSlotKey(ctx.userDataPath, pending.slot)
 }
 
@@ -159,11 +163,8 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   const { manifest, stripped } = loadableManifest(pending.rawManifest)
   const manifestKey = ownProperty(pending.rawManifest, 'key', isString)
   const key = resolveInstallKey(ctx, pending, manifestKey)
-  if (manifestKey === undefined) manifest.key = key
+  manifest.key = key
   const id = generateId(key)
-
-  const targetDir = join(extensionsRoot(ctx.userDataPath), pending.slot, facts.version)
-  pending.write(targetDir, JSON.stringify(manifest))
 
   // Matched by SLOT, the directory the versions of one install live under
   // (README.md's Design notes); the key resolved above makes `id` stable
@@ -172,24 +173,65 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   const registry = readRegistry(ctx.userDataPath)
   const previousInSlot = registry.filter((existing) => existing.path.startsWith(`${slotDir}${sep}`))
 
+  // An id belongs to at most one slot. resolveInstallKey above already stops
+  // a signed .crx's manifest `key` from smuggling another extension's id
+  // into this slot, but a folder or `.zip` install still trusts its own
+  // manifest `key` outright -- refused here, before anything is written, so
+  // the registry never ends up with two entries sharing one id.
+  const usedInAnotherSlot = registry.some((existing) => existing.id === id && !previousInSlot.includes(existing))
+  if (usedInAnotherSlot) return { installed: false, reason: 'another installed extension already uses this id' }
+
+  const targetDir = join(extensionsRoot(ctx.userDataPath), pending.slot, facts.version)
+
   // The old version, if this slot's id is currently loaded, is removed
-  // BEFORE the new one loads -- Electron never holds two loaded extensions
-  // under the same id at once. A load failure below is recovered by
-  // reloading that same previous version back from its own path, so a
-  // person never ends up with neither.
+  // BEFORE anything on disk changes -- Electron never holds two loaded
+  // extensions under the same id at once, and a same-version reinstall
+  // below must free the old folder (locked while loaded, especially on
+  // Windows) before it can be moved aside. A load failure later on is
+  // recovered by reloading the same previous version back, so a person
+  // never ends up with neither.
   // Electron answers null for an id it does not hold; the tests' fake answers undefined.
   const loadedNow = ctx.session.extensions.getExtension(id)
-  const wasLoaded = loadedNow !== null && loadedNow !== undefined
+  const wasLoaded = loadedNow != null
   if (wasLoaded) ctx.session.extensions.removeExtension(id)
+
+  // A same-version reinstall (Developer mode's Reload with no version bump,
+  // or a same-version store reinstall) targets its own previous folder:
+  // moved aside first, so `pending.write`'s own tmp-dir-then-rename never
+  // lands on a non-empty targetDir (unpack-runner.ts's own doc: it "must not
+  // already exist").
+  const asideDir = existsSync(targetDir) ? `${targetDir}.old-${randomBytes(6).toString('hex')}` : undefined
+  if (asideDir !== undefined) renameSync(targetDir, asideDir)
+
+  /** Undoes the move above: whatever `targetDir` holds now (nothing, or a
+   * partially or fully written new copy) is discarded, the old folder comes
+   * back, and -- if it was loaded before this call started -- it is loaded
+   * again, so a failed reinstall never leaves the slot with neither copy. */
+  async function restoreAsideOnFailure (): Promise<void> {
+    if (asideDir === undefined) {
+      const previous = previousInSlot[0]
+      if (wasLoaded && previous !== undefined) {
+        await ctx.session.extensions.loadExtension(previous.path, { allowFileAccess: false })
+      }
+      return
+    }
+    rmSync(targetDir, { recursive: true, force: true })
+    renameSync(asideDir, targetDir)
+    if (wasLoaded) await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
+  }
+
+  try {
+    pending.write(targetDir, JSON.stringify(manifest))
+  } catch (error) {
+    await restoreAsideOnFailure()
+    throw error
+  }
 
   let loaded: Awaited<ReturnType<Session['extensions']['loadExtension']>>
   try {
     loaded = await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
   } catch (error) {
-    const previous = previousInSlot[0]
-    if (wasLoaded && previous !== undefined) {
-      await ctx.session.extensions.loadExtension(previous.path, { allowFileAccess: false })
-    }
+    await restoreAsideOnFailure()
     throw error
   }
 
@@ -210,12 +252,14 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   const kept = registry.filter((existing) => !previousInSlot.includes(existing))
   writeRegistry(ctx.userDataPath, [...kept, entry])
 
-  // Only after the new version has actually loaded (README.md's Design
-  // notes): a load failure above already threw, leaving every OLD folder
-  // and registry entry untouched.
+  // Only after the new version has actually loaded and been registered
+  // (README.md's Design notes): a failure above already restored the old
+  // folder and returned early, leaving every OLD folder and registry entry
+  // untouched.
   for (const previous of previousInSlot) {
     if (previous.path !== entry.path) rmSync(previous.path, { recursive: true, force: true })
   }
+  if (asideDir !== undefined) rmSync(asideDir, { recursive: true, force: true })
 
   return { installed: true, entry }
 }

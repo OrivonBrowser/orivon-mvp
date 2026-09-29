@@ -16,9 +16,8 @@ import { windowOpenHandler } from './popups.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 
-/** tabs.ts's own tab-count ceiling. Found 2026-08-28 investigating a
- * reported crash: an unbounded window.open() flood (an ad/popunder
- * pattern, not hypothetical) would otherwise mint unlimited
+/** tabs.ts's own tab-count ceiling: an unbounded window.open() flood (an
+ * ad/popunder pattern, not hypothetical) would otherwise mint unlimited
  * WebContentsViews -- each its own renderer process -- until the machine
  * OOMs. Refusing beyond this ceiling is far cheaper than crashing the
  * whole browser; no legitimate manual use opens anywhere near 100 tabs.

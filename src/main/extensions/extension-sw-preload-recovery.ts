@@ -16,10 +16,10 @@
 // `ipcRenderer.on` listener instead of firing a report on its own, so main
 // controls the timing and attaches its own reply listener before asking --
 // no window where either side's message can be sent before the other is
-// listening. (An earlier, worker-announced version was measured to also
-// never arrive under --no-sandbox, for the same root cause as the missing
-// injection itself: the whole preload script, this file's own listener
-// included, never ran.)
+// listening. A worker-announced report would depend on the very preload
+// injection this check exists to verify: under `--no-sandbox`, where that
+// injection never runs at all, the worker's own report would never arrive
+// either, for the same root cause.
 import type { Session, ServiceWorkerMain } from 'electron'
 
 export const EXTENSION_SW_HEALTH_CHECK_CHANNEL = 'orivon-extension-sw-health-check'
