@@ -407,6 +407,27 @@ describe('what clearing leaves in the file', () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  it('is none of a single page remove() forgot either, and not only once the store is closed', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'orivon-history-remove-wal-'))
+    try {
+      const path = join(dir, 'history.db')
+      const history = new SqliteHistoryStore(path)
+      history.record('https://a.example/visited-marker', 'A title to forget', 1000)
+      history.flush()
+      const id = history.list()[0]?.id ?? -1
+      history.remove(id)
+      // Checked while the store is still open -- remove() must checkpoint the WAL itself, the way
+      // removeRange() and clear() already do, rather than leaving a forgotten page there until close().
+      for (const name of ['history.db', 'history.db-wal']) {
+        const bytes = await readFile(join(dir, name)).catch(() => Buffer.alloc(0))
+        expect(bytes.includes('visited-marker'), name).toBe(false)
+      }
+      history.close()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('what forgetting a page leaves in the FTS5 index', () => {
@@ -421,12 +442,12 @@ describe('what forgetting a page leaves in the FTS5 index', () => {
   // it nothing, so the shadow table stays near its empty, structural size however many rows were forgotten.
   const NEAR_EMPTY_FOOTPRINT = 2000
 
-  async function forgetsCleanly (name: string, forget: (history: SqliteHistoryStore) => void): Promise<void> {
+  async function forgetsCleanly (name: string, rows: number, forget: (history: SqliteHistoryStore) => void): Promise<void> {
     const dir = await mkdtemp(join(tmpdir(), `orivon-history-fts-privacy-${name}-`))
     try {
       const path = join(dir, 'history.db')
       const history = new SqliteHistoryStore(path)
-      for (let n = 0; n < 400; n += 1) history.record(`https://churn${String(n)}.example/marker${String(n)}`, `Churn Title ${String(n)}`, n)
+      for (let n = 0; n < rows; n += 1) history.record(`https://churn${String(n)}.example/marker${String(n)}`, `Churn Title ${String(n)}`, n)
       history.flush()
       forget(history)
       history.close()
@@ -437,17 +458,19 @@ describe('what forgetting a page leaves in the FTS5 index', () => {
   }
 
   it('remove(), one page at a time, does not accumulate stale postings', async () => {
-    await forgetsCleanly('remove', (history) => {
-      for (const entry of history.list({ limit: 500 })) history.remove(entry.id)
+    // Fewer rows than the other two below: remove() now checkpoints the WAL on every call (dropLog(), the
+    // same as removeRange()/clear()), so this one pays that cost once per page rather than once overall.
+    await forgetsCleanly('remove', 60, (history) => {
+      for (const entry of history.list({ limit: 60 })) history.remove(entry.id)
     })
-  })
+  }, 15_000)
 
   it('removeRange(), over everything, does not accumulate stale postings', async () => {
-    await forgetsCleanly('removeRange', (history) => { history.removeRange(0, 10_000) })
+    await forgetsCleanly('removeRange', 400, (history) => { history.removeRange(0, 10_000) })
   })
 
   it('clear() does not accumulate stale postings', async () => {
-    await forgetsCleanly('clear', (history) => { history.clear() })
+    await forgetsCleanly('clear', 400, (history) => { history.clear() })
   })
 })
 

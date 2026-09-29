@@ -390,7 +390,9 @@ export class SqliteHistoryStore implements HistoryStore {
 
   remove (id: number): void {
     this.drain()
-    this.statements.remove.run(id)
+    const total = (this.statements.count.get() as { n: number }).n
+    this.deleteRows(1, Math.max(total - 1, 0), () => { this.statements.remove.run(id) })
+    this.dropLog()
   }
 
   removeRange (from: number, to: number): void {
