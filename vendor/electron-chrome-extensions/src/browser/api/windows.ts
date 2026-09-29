@@ -1,6 +1,7 @@
 import type { ExtensionContext } from '../context'
 import type { ExtensionEvent } from '../router'
 import { validateExtensionUrl } from './common'
+import { filterTabDetails } from './tabs'
 import debug from 'debug'
 
 const d = debug('electron-chrome-extensions:windows')
@@ -30,7 +31,22 @@ export class WindowsAPI {
     this.ctx.store.on('window-added', this.observeWindow.bind(this))
   }
 
+  /** Every window this instance has already attached focus/resized/closed
+   * listeners to -- 'window-added' fires again for a window that never
+   * really left (extension-host.ts's own `trackedTabs` doc: a one-tab
+   * window's only tab being removed then re-added, e.g. on a view
+   * replacement, deletes and re-adds the WINDOW too as a side effect of
+   * store.ts's own "clear window if it has no remaining tabs" cleanup);
+   * without this guard, observeWindow would attach a second, independent
+   * listener set the 'closed' handler below never fully cleans up (each
+   * `.once('closed', ...)` fires exactly once, so two of them fire
+   * onRemoved/removeWindow twice for the same window). */
+  private observedWindows = new WeakSet<Electron.BaseWindow>()
+
   private observeWindow(window: Electron.BrowserWindow) {
+    if (this.observedWindows.has(window)) return
+    this.observedWindows.add(window)
+
     const windowId = window.id
 
     window.on('focus', () => {
@@ -42,6 +58,7 @@ export class WindowsAPI {
     })
 
     window.once('closed', () => {
+      this.observedWindows.delete(window)
       this.ctx.store.windowDetailsCache.delete(windowId)
       this.ctx.store.removeWindow(window)
       this.onRemoved(windowId)
@@ -86,6 +103,36 @@ export class WindowsAPI {
     return details
   }
 
+  /**
+   * Orivon patch: `details` (the CACHED, unfiltered copy every extension's
+   * request shares -- same reasoning as tabDetailsCache) narrowed for
+   * `event`'s own calling extension, into a fresh shallow copy so the
+   * shared cache entry is never mutated: `tabs` is included only when
+   * `populate` is true (Chrome's own default is false for get/getAll/
+   * getCurrent/getLastFocused; update carries no populate option at all, so
+   * it never gets one), and every included tab's own url/title/favIconUrl
+   * still goes through filterTabDetails -- `tabs` permission or host access
+   * to THAT tab, same as a direct tabs.get. Before this patch, every one of
+   * get/getAll/getCurrent/getLastFocused/create/update returned every open
+   * tab's url/title/favIconUrl to any extension regardless of permission.
+   */
+  private toExtensionWindow(
+    event: ExtensionEvent,
+    details: Partial<chrome.windows.Window> | undefined,
+    populate: boolean,
+  ): Partial<chrome.windows.Window> | undefined {
+    if (!details) return details
+    const copy: Partial<chrome.windows.Window> = { ...details }
+    if (populate) {
+      copy.tabs = (details.tabs ?? []).map(
+        (tab) => filterTabDetails(event, tab) as chrome.tabs.Tab,
+      )
+    } else {
+      delete copy.tabs
+    }
+    return copy
+  }
+
   private getWindowFromId(id: number) {
     if (id === WindowsAPI.WINDOW_ID_CURRENT) {
       return this.ctx.store.getCurrentWindow()
@@ -94,19 +141,23 @@ export class WindowsAPI {
     }
   }
 
-  private get(event: ExtensionEvent, windowId: number) {
+  private get(event: ExtensionEvent, windowId: number, getInfo?: chrome.windows.QueryOptions) {
     const win = this.getWindowFromId(windowId)
     if (!win) return { id: WindowsAPI.WINDOW_ID_NONE }
-    return this.getWindowDetails(win)
+    return this.toExtensionWindow(event, this.getWindowDetails(win), getInfo?.populate === true)
   }
 
-  private getLastFocused(event: ExtensionEvent) {
+  private getLastFocused(event: ExtensionEvent, getInfo?: chrome.windows.QueryOptions) {
     const win = this.ctx.store.getLastFocusedWindow()
-    return win ? this.getWindowDetails(win) : null
+    if (!win) return null
+    return this.toExtensionWindow(event, this.getWindowDetails(win), getInfo?.populate === true)
   }
 
-  private getAll(event: ExtensionEvent) {
-    return Array.from(this.ctx.store.windows).map(this.getWindowDetails.bind(this))
+  private getAll(event: ExtensionEvent, getInfo?: chrome.windows.QueryOptions) {
+    const populate = getInfo?.populate === true
+    return Array.from(this.ctx.store.windows).map((win) =>
+      this.toExtensionWindow(event, this.getWindowDetails(win), populate),
+    )
   }
 
   private async create(event: ExtensionEvent, details: chrome.windows.CreateData) {
@@ -116,7 +167,9 @@ export class WindowsAPI {
       details = { ...details, url: Array.isArray(details.url) ? resolved : resolved[0] }
     }
     const win = await this.ctx.store.createWindow(event, details)
-    return this.getWindowDetails(win)
+    // Populated by default: the tabs a create() call just asked for opened,
+    // never a stranger's -- still filtered per this extension's own access.
+    return this.toExtensionWindow(event, this.getWindowDetails(win), true)
   }
 
   private async update(
@@ -146,7 +199,10 @@ export class WindowsAPI {
       }
     }
 
-    return this.createWindowDetails(win)
+    // update() takes no populate option -- never carries tabs (Chrome's own
+    // behaviour; also closes the leak an unconditional `tabs` array here
+    // used to hand any caller, filter or not).
+    return this.toExtensionWindow(event, this.createWindowDetails(win), false)
   }
 
   private async remove(event: ExtensionEvent, windowId: number = WindowsAPI.WINDOW_ID_CURRENT) {

@@ -212,7 +212,18 @@ class RoutingDelegate {
             type: event.type,
             extensionId,
           }
-    return observer?.addListener(listener, extensionId, eventName)
+    // Orivon patch: addListener (below) throws synchronously for an
+    // extensionId no longer registered in the session -- an options tab
+    // left open across a disable/uninstall, or a page whose extension is
+    // mid-reload (extension-sw-preload-recovery.ts). This runs inside a
+    // plain ipcMain.on listener, never awaited by anything: an uncaught
+    // throw here becomes an uncaughtException in main/index.ts, which exits
+    // the whole process for one page's stale subscription.
+    try {
+      return observer?.addListener(listener, extensionId, eventName)
+    } catch (error) {
+      d(`crx-add-listener failed for ${extensionId}: %s`, error)
+    }
   }
 
   private onRemoveListener = (
@@ -237,7 +248,15 @@ class RoutingDelegate {
             type: event.type,
             extensionId,
           }
-    return observer?.removeListener(listener, extensionId, eventName)
+    // Orivon patch: same reason as onAddListener above -- removeListener
+    // itself never throws today, but this is the same untrusted, unawaited
+    // call site, so it is guarded the same way rather than relying on that
+    // staying true.
+    try {
+      return observer?.removeListener(listener, extensionId, eventName)
+    } catch (error) {
+      d(`crx-remove-listener failed for ${extensionId}: %s`, error)
+    }
   }
 }
 

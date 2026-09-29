@@ -162,19 +162,107 @@
     `ExtensionEvent`, used only as types here, now `import type`. Reason: `tabs.ts` (patch 18)
     imports `WindowsAPI` from this file as a value, which puts this file on the same root-tsconfig
     import path; no behaviour change.
+21. **`chrome.windows.*`: the same url/title/favIconUrl gate as patch 18, plus `populate`.**
+    `src/browser/api/windows.ts`: `filterTabDetails` (patch 18) exported from `api/tabs.ts`, and a
+    new `toExtensionWindow` maps every window's own `tabs` array through it for the calling
+    extension. `tabs` itself is now included only when `getInfo.populate === true`
+    (get/getAll/getCurrent/getLastFocused; `create` always populates its own newly opened tabs;
+    `update` takes no `populate` option at all, so it never carries `tabs`). Before this patch,
+    every one of get/getAll/getCurrent/getLastFocused/create/update handed any extension every
+    open tab's url/title/favIconUrl regardless of permission, unconditionally. `windows.onCreated`/
+    `onBoundsChanged` keep broadcasting the unfiltered, shared `windowDetailsCache` entry (as
+    before) -- their own per-listener stripping is patch 15's hook, wired in `extension-host.ts`.
+22. **`crx-add-listener`/`crx-remove-listener` never throw out of the ipcMain.on listener.**
+    `src/browser/router.ts`: `onAddListener`/`onRemoveListener` wrap their own
+    `addListener`/`removeListener` calls in try/catch, logging and swallowing rather than letting
+    a throw escape. Reason: both run inside a plain `ipcMain.on` listener, never awaited by
+    anything -- `addListener` throws synchronously for an extensionId no longer registered in the
+    session (an options tab left open across a disable/uninstall, or a page whose extension is
+    mid-reload), and an uncaught throw there becomes an `uncaughtException` in `src/main/index.ts`,
+    which exits the whole process for one page's stale subscription. `onRouterMessage`/
+    `onRemoteMessage` need no equivalent guard: both are `async`, so a throw there already becomes
+    a rejected `ipcMain.handle` promise, which Electron forwards to the caller without crashing.
+23. **`chrome.tabs.insertCSS`: host access, never the `tabs` permission alone.** `src/browser/
+    api/tabs.ts`: a second setter, `setTabHostAccessCheck(check)` (patch 18's own shape), checked
+    in `insertCSS` against the target tab's URL. Reason: `insertCSS` had no permission check of
+    any kind -- any loaded extension could inject CSS into any tracked tab; and the `tabs`
+    permission alone (which patch 18's own `gTabUrlAccessCheck` accepts) never authorizes an
+    injection under Chrome's own rule, only url/title/favIconUrl visibility.
+24. **`ExtensionStore.createTab` refuses a webContents from a different session.** `src/browser/
+    store.ts`: the constructor takes an optional `session` (patch 25 below passes its own),
+    stored and checked in `createTab` against the returned webContents's own `.session`, alongside
+    the existing "must be a WebContents"/"must be a BrowserWindow" checks; a mismatch throws
+    rather than calling `addTab`. Reason: `ElectronChromeExtensions.addTab`'s own
+    `checkWebContentsArgument` already refuses a host-initiated call for the wrong session, but
+    `createTab` (an extension's own `chrome.tabs.create`) never went through it -- an app's
+    creator function can legitimately open a granted app's URL in that app's OWN session (its own
+    partition), and without this check the extension still received that tab's id, and could
+    update/reload/insertCSS into it and receive its webNavigation events, in a session none of its
+    own permissions ever covered. The tab itself is left open; only the extension's own request is
+    refused.
+25. **`ExtensionStore` constructed with the session, for patch 24.** `src/browser/index.ts`:
+    `new ExtensionStore(impl, session)` in place of `new ExtensionStore(impl)`.
+26. **`chrome.notifications`: the `notifications` permission.** `src/browser/api/notifications.ts`:
+    all five handlers now declare `permission: 'notifications'` (router.ts's own `permission`
+    option). Reason: none of the five checked for any permission at all -- any loaded extension
+    could raise OS notifications. `src/renderer/index.ts`'s own `notifications` factory gained a
+    matching `shouldInject`, the same belt-and-suspenders shape `cookies` and `webNavigation`
+    already use.
+27. **`browserAction.setPopup`/`default_popup`: only the extension's own origin.**
+    `src/browser/api/browser-action.ts`: `getPopupUrl` now resolves `popupPath` against
+    `chrome-extension://<extensionId>/` and refuses the result unless its own `protocol` and
+    `hostname` still match -- an absolute URL naming any OTHER origin (`file:`, `data:`, an
+    http(s) page, or a different extension's own `chrome-extension://<id>/`) returns `undefined`
+    instead of being resolved and returned as-is. Reason: `PopupView.load()` hands whatever this
+    returns straight to a main-process `loadURL`, with no pass through Orivon's own
+    extension-url-policy at all -- before this patch, any extension whose page called
+    `chrome.action.setPopup` could point its own toolbar button at an arbitrary URL.
+28. **`ExtensionStore.clearActiveTab`, and `ElectronChromeExtensions.clearActiveTab`.**
+    `src/browser/store.ts` and `src/browser/index.ts`: a new method clears `windowToActiveTab`'s
+    own entry for a given window and emits `active-tab-changed`, exposed publicly the same way
+    `selectTab`/`removeTab` already are. Reason: nothing in the public API let a host say "no
+    tracked tab is active here" -- only "this specific tab is" (`selectTab`) -- so a host whose UI
+    switched to a tab this library never learned about (`extension-host.ts`'s own doc) had no way
+    to stop the library's own idea of the active tab from staying pointed at whatever tracked tab
+    was active before.
+29. **`observeTab`/`observeWindow` are idempotent.** `src/browser/api/tabs.ts` and `src/browser/
+    api/windows.ts`: each keeps its own `WeakSet` of webContents/windows it has already attached
+    listeners to, and returns immediately on a repeat. Reason: `tab-added`/`window-added` can fire
+    again for the SAME webContents/window (a tab handed to another window, or a one-tab window's
+    view replaced -- `extension-host.ts`'s own doc), and neither method checked for that before --
+    a second call attached a second, independent listener set the `destroyed`/`closed` handler
+    from the FIRST set never cleaned up (it only fires once, and only on the object's real
+    destruction), doubling every `tabs.onUpdated`/`windows.onFocusChanged`/`onBoundsChanged`/
+    `onRemoved` event from then on.
+30. **A worker's own scope, not `process.type`, gates preload injection.** `src/preload.ts`:
+    injects only when the context's URL is `chrome-extension:`. A frame reads `location.href`; a
+    service worker's preload runs in Electron's preload realm, which has no `location`, so it
+    reads the worker's own URL from its main world through `contextBridge.executeInMainWorld`.
+    Reason: `process.type === 'service-worker'` alone injected into EVERY service worker this
+    session preload runs for, including an ordinary website's own worker, handing it a
+    non-deletable `self.electron` and a non-configurable `chrome` global it never should have had
+    (a fingerprinting surface, and a `let chrome` in the page's own script throws).
+31. **`api/browser-action.ts`, `popup.ts` and `api/notifications.ts` satisfy the root tsconfig.**
+    Type-only imports (`ExtensionContext`/`ExtensionEvent`/`Extension`/`Session`), `| undefined`
+    added to several already-optional fields and one constructor-options cast
+    (`exactOptionalPropertyTypes`), and three `?? ''`/`?? {}`/`= 0` fallbacks where an array read
+    or object index is now typed as possibly absent (`noUncheckedIndexedAccess`) -- the same
+    reasons, and the same "no behaviour change" stance, as patches 13-14 and 16-20's own entries.
+    Reason patches 27-28 above needed this: they touch `getPopupUrl`/`clearActiveTab`, both in
+    files this suite's own tests (`browser-action-popup-url.test.ts`) now import by real path.
 
-`src/browser/index.ts` and `partition.ts` are reached only through the virtual specifiers
-`src/main/extensions/electron-chrome-extensions-lib.d.ts` declares, never their real path -- that
-file's own header, and `src/main/extensions/README.md`'s Design notes, say why. Their own
-diagnostics under the root tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are
-therefore not patched: nothing in `src/` opens those files directly, and `vendor/tsconfig.json`'s
-own, looser check already covers them as authored. `router.ts`, `api/cookies.ts`, `api/tabs.ts`,
-`api/web-navigation.ts`, `api/windows.ts` and `store.ts` are the exceptions: patches 13-14 and
-16-20 above make them satisfy the root tsconfig too, so `src/main/extensions/tests/` can
-unit-test the sender-id, permission and host-access patches directly against the real files,
-instead of only against a same-shaped local fake. `context.ts`, `api/common.ts` and `impl.ts` sit
-on the same import path and needed no such patch: measured, `npx tsc --noEmit -p tsconfig.json`
-reports nothing for them as authored.
+`partition.ts` is reached only through the virtual specifier `src/main/extensions/
+electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and
+`src/main/extensions/README.md`'s Design notes, say why. Its own diagnostics under the root
+tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are therefore not patched: nothing in
+`src/` opens it directly, and `vendor/tsconfig.json`'s own, looser check already covers it as
+authored. `browser/index.ts`, `router.ts`, `api/cookies.ts`, `api/tabs.ts`, `api/web-navigation.ts`,
+`api/windows.ts`, `store.ts`, `api/browser-action.ts`, `popup.ts` and `api/notifications.ts` are
+the exceptions: patches 13-14, 16-20 and 21-31 above make them satisfy the root tsconfig too, so
+`src/main/extensions/tests/` can unit-test the sender-id, permission and host-access patches
+directly against the real files, instead of only against a same-shaped local fake. `context.ts`
+and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of their own: measured,
+`npx tsc --noEmit -p tsconfig.json` reports nothing for any of them as authored.
 
 Nothing else changed; upstream code is not reformatted.
 

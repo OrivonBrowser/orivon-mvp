@@ -155,7 +155,7 @@ export class ElectronChromeExtensions extends EventEmitter {
     sessionMap.set(session, this)
 
     const router = new ExtensionRouter(session)
-    const store = new ExtensionStore(impl)
+    const store = new ExtensionStore(impl, session)
 
     this.ctx = {
       emit: this.emit.bind(this),
@@ -245,6 +245,12 @@ export class ElectronChromeExtensions extends EventEmitter {
     if (this.ctx.store.tabs.has(tab)) {
       this.api.tabs.onActivated(tab.id)
     }
+  }
+
+  /** Notify extension system that no tracked tab is active in `window`
+   * right now -- ExtensionStore.clearActiveTab's own doc. */
+  clearActiveTab(window: Electron.BaseWindow) {
+    this.ctx.store.clearActiveTab(window)
   }
 
   /**

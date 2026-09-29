@@ -1,7 +1,7 @@
 import { Menu, MenuItem, nativeImage } from 'electron'
-import { ExtensionContext } from '../context'
+import type { ExtensionContext } from '../context'
 import { PopupView } from '../popup'
-import { ExtensionEvent } from '../router'
+import type { ExtensionEvent } from '../router'
 import {
   getExtensionUrl,
   getExtensionManifest,
@@ -70,7 +70,10 @@ interface ExtensionActionStore extends Partial<ExtensionAction> {
 
 export class BrowserActionAPI {
   private actionMap = new Map</* extensionId */ string, ExtensionActionStore>()
-  private popup?: PopupView
+  // Orivon patch: `| undefined` added (exactOptionalPropertyTypes) --
+  // activateClick assigns `undefined` here, which the bare `?:` form
+  // refuses.
+  private popup?: PopupView | undefined
 
   private observers: Set<Electron.WebContents> = new Set()
   private queuedUpdate: boolean = false
@@ -225,9 +228,15 @@ export class BrowserActionAPI {
           const tabId = url.searchParams.get('tabId')
 
           const fragments = url.pathname.split('/')
-          const extensionId = fragments[1]
-          const imageSize = parseInt(fragments[2], 10)
-          const resizeType = parseInt(fragments[3], 10) || ResizeType.Up
+          // Orivon patch: `?? ''` on all three -- root tsconfig's
+          // noUncheckedIndexedAccess (vendor/tsconfig.json does not set it)
+          // types an array read as possibly `undefined`; a genuinely short
+          // pathname behaves exactly as before (no matching extension/icon
+          // found, or NaN into parseInt, same as an `undefined` argument
+          // gave previously).
+          const extensionId = fragments[1] ?? ''
+          const imageSize = parseInt(fragments[2] ?? '', 10)
+          const resizeType = parseInt(fragments[3] ?? '', 10) || ResizeType.Up
 
           const sessionExtensions = this.ctx.session.extensions || this.ctx.session
           const extension = sessionExtensions.getExtension(extensionId)
@@ -317,19 +326,26 @@ export class BrowserActionAPI {
       popupPath = actionPopupValue
     }
 
+    if (!popupPath) return undefined
+
+    // Orivon patch: only a URL under THIS extension's own
+    // chrome-extension://<extensionId>/ origin is ever returned -- a
+    // relative popup path (the common case: default_popup/setPopup almost
+    // always set one) resolves against that origin exactly as before, but
+    // an ABSOLUTE popupPath naming a different origin (file:, data:, an
+    // http(s) page, or another extension's chrome-extension://<id>/) is now
+    // refused instead of resolved and returned as-is. PopupView.load()
+    // hands whatever this returns straight to a main-process loadURL, with
+    // no pass through extension-url-policy.ts at all -- before this patch,
+    // any extension whose page called chrome.action.setPopup could point
+    // its own toolbar button at an arbitrary URL of its choosing.
     let url: string | undefined
-
-    // Allow absolute URLs
     try {
-      url = popupPath && new URL(popupPath).href
+      const resolved = new URL(popupPath, `chrome-extension://${extensionId}/`)
+      if (resolved.protocol === 'chrome-extension:' && resolved.hostname === extensionId) {
+        url = resolved.href
+      }
     } catch {}
-
-    // Fallback to relative path
-    if (!url) {
-      try {
-        url = popupPath && new URL(popupPath, `chrome-extension://${extensionId}`).href
-      } catch {}
-    }
 
     return url
   }
@@ -351,7 +367,10 @@ export class BrowserActionAPI {
       const tabsInfo: { [key: string]: any } = {}
 
       for (const tabId of Object.keys(tabs)) {
-        const { icon, ...rest } = tabs[tabId]
+        // Orivon patch: `?? {}` -- noUncheckedIndexedAccess, tabId is
+        // always one of this same object's own keys, so this fallback
+        // never actually applies.
+        const { icon, ...rest } = tabs[tabId] ?? {}
         tabsInfo[tabId] = rest
       }
 
@@ -508,7 +527,10 @@ export class BrowserActionAPI {
     const activeTab = this.ctx.store.getActiveTabFromWindow(window)
     if (!activeTab) return
 
-    const [width] = window.getSize()
+    // Orivon patch: `?? 0` -- noUncheckedIndexedAccess types a
+    // destructured array element as possibly undefined; getSize() always
+    // returns a 2-element tuple, so this fallback never actually applies.
+    const [width = 0] = window.getSize()
     const anchorSize = 64
 
     this.activateClick({

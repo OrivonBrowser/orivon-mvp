@@ -16,6 +16,7 @@ let capturedOptions: any
 const getExtension = vi.fn<(id: string) => unknown>()
 
 vi.mock('electron', () => ({
+  app: { on: vi.fn() },
   session: {
     defaultSession: {
       extensions: { getExtension },
@@ -28,6 +29,7 @@ vi.mock('electron', () => ({
 vi.mock('orivon:crx-extensions', () => ({
   ElectronChromeExtensions: class {
     static handleCRXProtocol = vi.fn()
+    on = vi.fn()
     constructor (opts: any) { capturedOptions = opts }
   }
 }))
@@ -47,7 +49,8 @@ vi.mock('orivon:crx-extensions-cookies', () => ({
 }))
 
 vi.mock('orivon:crx-extensions-tabs', () => ({
-  setTabUrlAccessCheck: vi.fn()
+  setTabUrlAccessCheck: vi.fn(),
+  setTabHostAccessCheck: vi.fn()
 }))
 
 const { createExtensionHost, attachExtensionShell } = await import('../extension-host.js')

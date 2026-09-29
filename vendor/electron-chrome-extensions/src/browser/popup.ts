@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
-import { BrowserWindow, Session } from 'electron'
+import { BrowserWindow } from 'electron'
+import type { Session } from 'electron'
 import { getAllWindows } from './api/common'
 import debug from 'debug'
 
@@ -18,7 +19,11 @@ interface PopupViewOptions {
   parent: Electron.BaseWindow
   url: string
   anchorRect: PopupAnchorRect
-  alignment?: string
+  // Orivon patch: `| undefined` added (exactOptionalPropertyTypes) --
+  // browser-action.ts's own activateClick passes `alignment: string |
+  // undefined` through unchanged (its own ActivateDetails already allows
+  // it), which the bare `?:` form refuses.
+  alignment?: string | undefined
 }
 
 const supportsPreferredSize = () => {
@@ -36,14 +41,18 @@ export class PopupView extends EventEmitter {
     maxHeight: 600,
   }
 
-  browserWindow?: BrowserWindow
-  parent?: Electron.BaseWindow
+  // Orivon patch: `| undefined` added to all three (exactOptionalPropertyTypes)
+  // -- destroy() assigns `undefined` to browserWindow/parent, and the
+  // constructor assigns opts.alignment (now `string | undefined`) to
+  // alignment; the bare `?:` form refuses both.
+  browserWindow?: BrowserWindow | undefined
+  parent?: Electron.BaseWindow | undefined
   extensionId: string
 
   private anchorRect: PopupAnchorRect
   private destroyed: boolean = false
   private hidden: boolean = true
-  private alignment?: string
+  private alignment?: string | undefined
 
   /** Preferred size changes are only received in Electron v12+ */
   private usingPreferredSize = supportsPreferredSize()
