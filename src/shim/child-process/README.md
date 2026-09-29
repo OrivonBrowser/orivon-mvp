@@ -14,9 +14,11 @@ Also `thread.ts`'s `Worker`, `worker_threads`' target (`../polyfills/worker-thre
 
 `host-client.ts` is [ADR-0046](../../../docs/decisions/ADR-0046-an-app-s-children-live-until-its-last-page-closes.md)'s
 page-side half: the connection handshake to the app's own child host, and the remote-Worker
-adapter `launchChild()` (`spawn.ts`) routes a child through when a host answers. Where none does
-(a page outside Orivon, a Worker's own nested children, a unit test), `launchChild()` starts a
-same-process Worker exactly as it always has.
+adapter `launchChild()` (`spawn.ts`) routes a fork or a thread through when a host answers. Where
+none does (a page outside Orivon, a Worker's own nested children, a unit test), `launchChild()`
+starts a same-process Worker exactly as it always has -- which is also, for now, every `spawn`:
+it never asks a host for a connection at all
+([`../worker/host.ts`](../worker/host.ts)'s own header says why).
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../worker/`](../worker/),
 [`../wasi/`](../wasi/), [`../wasi-p2/`](../wasi-p2/) (`run.ts`, to check a component's jco output), `../fs/paths.ts`, `../node-errors.ts`, `../errors.ts`,
@@ -59,12 +61,14 @@ operating system reaps the child; code that calls `kill()` and then listens for 
 `kill(0)` answers whether the child still runs. A Worker the page cannot create (a CSP without
 `blob:` workers, no `window.orivon`) is a spawn failure: `'error'`, then `'close'`.
 
-**A child's lifetime is its app's, not its page's** ([`ADR-0046`](../../../docs/decisions/ADR-0046-an-app-s-children-live-until-its-last-page-closes.md)).
-A child started in an app tab with a child host outlives the page that started it, for as long as
-another page of the same app is open, and ends only with the app's last page -- `detached` and
-`unref()` do not extend it further. The page that started a child stops hearing from it the moment
-its own connection port closes (a navigation, a close, a crash): the child keeps running, its
-output is dropped rather than queued, its stdin ends, and a fork is told to disconnect, the same
-signal a real Node child gets when its parent process dies. Nothing reattaches a later page to a
-child already running -- an app that wants to reach one again does so the way its own code already
-would, by the port a daemon it started opened.
+**A forked or threaded child's lifetime is its app's, not its page's** ([`ADR-0046`](../../../docs/decisions/ADR-0046-an-app-s-children-live-until-its-last-page-closes.md)).
+Routed through a child host, it outlives the page that started it, for as long as another page of
+the same app is open, and ends only with the app's last page -- `detached` and `unref()` do not
+extend it further. The page that started it stops hearing from it the moment its own connection
+port closes (a navigation, a close, a crash): the child keeps running, its output is dropped
+rather than queued, its stdin ends, and a fork is told to disconnect, the same signal a real Node
+child gets when its parent process dies. Nothing reattaches a later page to a child already
+running -- an app that wants to reach one again does so the way its own code already would, by
+the port a daemon it started opened. **A spawned program is the one exception for now**: it still
+ends with the page that started it, exactly as before this ADR (see above, and
+`../worker/host.ts`'s own header).

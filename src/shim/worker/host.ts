@@ -5,14 +5,26 @@
 // here is `MessagePort`, `MessageChannel` and a Web Worker, the same
 // contract ../child-process/spawn.ts's own `launchChild()` already keeps for a
 // same-process child.
+//
+// SPAWN DOES NOT ROUTE THROUGH THE HOST YET. `../child-process/program.ts`'s
+// loading pulls in ../wasi-p2/filesystem.ts, which needs ../fs/paths.ts and
+// ../wasi/fds.ts -- both `import ... from 'path'`, aliased away only when an
+// APP's own code is bundled (module-map.ts's app-bundler substitution). This
+// file is bundled directly by electron-vite as part of a real preload
+// script, which has no such aliasing and cannot `require('path')` at all in
+// a sandboxed preload -- measured: the whole preload script then fails to
+// load, taking fork and thread down with it, not just spawn. Until that
+// dependency is removed or the alias is reproduced for this bundle,
+// `spawn.ts` never asks a host for a connection at all (its own header
+// says where), and this file refuses a `'spawn'` start by name rather than
+// silently mis-starting one, should anything ever reach it regardless.
 
-import { loadProgram } from '../child-process/program.js'
 import type { Orivon } from '../../contracts/capability-api.js'
 import { createChildWorker } from './launch.js'
 import { serveOrivon } from './orivon-server.js'
 import { toWireError } from './protocol.js'
 import type { FromWorker, ToWorker } from './protocol.js'
-import type { HostStart, StartChildMessage, ToHostChild } from './host-protocol.js'
+import type { HostForkStart, HostStart, HostThreadStart, StartChildMessage, ToHostChild } from './host-protocol.js'
 
 export interface ChildHost {
   /** One page just connected: relays every child it starts over `port`, until the page's own
@@ -32,10 +44,8 @@ function isSameOrigin (url: string): boolean {
   }
 }
 
-function workerNameFor (start: HostStart): string {
-  if (start.type === 'spawn') return `child_process ${start.command}`
-  if (start.type === 'fork') return `child_process fork ${new URL(start.url).pathname}`
-  return start.name
+function workerNameFor (start: HostForkStart | HostThreadStart): string {
+  return start.type === 'fork' ? `child_process fork ${new URL(start.url).pathname}` : start.name
 }
 
 /**
@@ -45,25 +55,19 @@ function workerNameFor (start: HostStart): string {
 async function startChild (port: MessagePort, start: HostStart, extra: readonly Transferable[], orivon: Orivon): Promise<void> {
   port.start()
 
+  // See this file's own header: spawn does not route through the host yet.
+  if (start.type === 'spawn') {
+    port.postMessage(failedMessage(new Error('spawn does not run in a child host yet -- child_process.spawn always runs in the page (see src/shim/worker/host.ts)')))
+    return
+  }
+
   // A forked or threaded module must be on the host's own origin -- the page
   // already refuses this before ever reaching here (fork.ts's own
   // moduleUrl()), but the host re-checks rather than trusting a page that
   // could, in principle, send anything over its own port.
-  if ((start.type === 'fork' || start.type === 'thread') && !isSameOrigin(start.url)) {
+  if (!isSameOrigin(start.url)) {
     port.postMessage(failedMessage(new Error(`${start.type === 'fork' ? 'a forked' : 'a threaded'} module must be on the app's own origin`)))
     return
-  }
-
-  let programBase: Omit<ToWorker & { type: 'spawn' }, 'orivon'> | undefined
-  if (start.type === 'spawn') {
-    let program
-    try {
-      program = await loadProgram(start.command, start.args)
-    } catch (error) {
-      port.postMessage(failedMessage(error))
-      return
-    }
-    programBase = { type: 'spawn', program, args: start.args, env: start.env, preopens: start.preopens }
   }
 
   const orivonChannel = new MessageChannel()
@@ -120,8 +124,7 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
     if (start.type === 'fork') worker.postMessage({ type: 'disconnect' })
   })
 
-  const finalStart = (programBase ?? (start as Omit<ToWorker, 'orivon'>)) as Omit<ToWorker, 'orivon'>
-  worker.postMessage({ ...finalStart, orivon: orivonChannel.port2 } as ToWorker, [orivonChannel.port2, ...extra])
+  worker.postMessage({ ...start, orivon: orivonChannel.port2 } as ToWorker, [orivonChannel.port2, ...extra])
 }
 
 export function createChildHost (orivon: Orivon): ChildHost {

@@ -35,12 +35,6 @@ vi.mock('../orivon-server.js', () => ({
   serveOrivon: vi.fn(() => ({ dispose: vi.fn(async () => { disposedServers.push(() => {}) }) }))
 }))
 
-const loadProgram = vi.fn(async (command: string, _args: readonly string[]) => {
-  if (command === 'missing') throw Object.assign(new Error('spawn missing ENOENT'), { code: 'ENOENT' })
-  return { kind: 'core', module: {} } as const
-})
-vi.mock('../../child-process/program.js', () => ({ loadProgram }))
-
 const { createChildHost } = await import('../host.js')
 
 const HOST_ORIGIN = 'https://app.example'
@@ -48,7 +42,6 @@ const HOST_ORIGIN = 'https://app.example'
 beforeEach(() => {
   createdWorkers.length = 0
   disposedServers.length = 0
-  loadProgram.mockClear()
   vi.stubGlobal('location', { origin: HOST_ORIGIN })
 })
 
@@ -115,35 +108,18 @@ describe('createChildHost', () => {
     expect(worker.posted.at(-1)?.message).toEqual({ type: 'ipc', message: { hello: 1 } })
   })
 
-  it('a spawn loads its program itself, from the command the page sent (never a precompiled module)', async () => {
+  it('a spawn is refused by name -- it does not route through a host yet (this file\'s own header says why)', async () => {
     const host = createChildHost({} as never)
     const { page, hostSide } = pagePortPair()
     host.addPage(hostSide)
 
-    const { message } = startChildMessage({ type: 'spawn', command: '/prog', args: [], env: {}, preopens: {} })
-    page.postMessage(message, [message.port])
-
-    await waitFor(() => loadProgram.mock.calls.length === 1, 'loadProgram to be called')
-    expect(loadProgram).toHaveBeenCalledWith('/prog', [])
-    await waitFor(() => createdWorkers.length === 1, 'the Worker to be created after the program loads')
-    const worker = createdWorkers[0] as FakeWorker
-    const started = worker.posted[0]?.message as ToWorker & { type: 'spawn' }
-    expect(started.type).toBe('spawn')
-    expect(started.program).toEqual({ kind: 'core', module: {} })
-  })
-
-  it('a spawn whose command does not resolve fails the child, never creating a Worker', async () => {
-    const host = createChildHost({} as never)
-    const { page, hostSide } = pagePortPair()
-    host.addPage(hostSide)
-
-    const { message, childPage } = startChildMessage({ type: 'spawn', command: 'missing', args: [], env: {}, preopens: {} })
+    const { message, childPage } = startChildMessage({ type: 'spawn', command: '/prog', args: [], env: {}, preopens: {} })
     page.postMessage(message, [message.port])
 
     const received: FromWorker[] = []
     childPage.onmessage = (event) => { received.push(event.data as FromWorker) }
     await waitFor(() => received.length === 1, 'a failed reply')
-    expect(received[0]).toMatchObject({ type: 'failed', error: { code: 'ENOENT' } })
+    expect(received[0]).toMatchObject({ type: 'failed' })
     expect(createdWorkers).toHaveLength(0)
   })
 

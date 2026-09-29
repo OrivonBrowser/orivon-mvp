@@ -14,23 +14,22 @@ what its page could, since it is the app's own code
 ([`ADR-0040`](../../../docs/decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)).
 Durable: it uses Web Workers, `MessagePort` and JSPI, no Electron API.
 
-**`host.ts`/`host-protocol.ts`: the child host's own relay** (ADR-0046). Every child now runs in a
-Worker of the app's hidden host, never the page that started it; `host.ts` is what runs inside that
-host, one real Worker per child, relaying between the Worker's ordinary `./protocol.ts` traffic and
-the page's own dedicated port for that child (`host-protocol.ts`'s `ToHostChild`/`StartChildMessage`
--- a different, extra hop in front of the same `ToWorker`/`FromWorker` protocol, not a
-replacement for it). `../child-process/host-client.ts` is the page's own half: the connection
-handshake and the remote-Worker adapter that lets `launchChild()` route through a host exactly as
-it would start a local Worker.
+**`host.ts`/`host-protocol.ts`: the child host's own relay** (ADR-0046). A fork or a thread now
+runs in a Worker of the app's hidden host, never the page that started it; `host.ts` is what runs
+inside that host, one real Worker per child, relaying between the Worker's ordinary
+`./protocol.ts` traffic and the page's own dedicated port for that child (`host-protocol.ts`'s
+`ToHostChild`/`StartChildMessage` -- a different, extra hop in front of the same
+`ToWorker`/`FromWorker` protocol, not a replacement for it). `../child-process/host-client.ts` is
+the page's own half: the connection handshake and the remote-Worker adapter that lets
+`launchChild()` route through a host exactly as it would start a local Worker. **A spawned
+program does not route through the host yet** -- `host.ts`'s own header says why (a dependency
+its loading needs cannot be bundled into a real preload script, measured, not merely suspected);
+`spawn.ts` never asks a host for one, and a spawned child still ends with its own page.
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../wasi/`](../wasi/),
 [`../wasi-p2/`](../wasi-p2/),
-`../globals.ts`, `../virtual-root.ts`, and the `buffer` and `stream` polyfills.
-`host.ts` (ADR-0046) also imports [`../child-process/program.ts`](../child-process/program.ts)'s
-`loadProgram`: the one place this directory's own dependency direction runs the other way, since
-the host is the one thing that can load a spawn's program at all (a compiled
-`WebAssembly.Module` does not survive the page -> host hop) and duplicating that loading would
-be a second implementation of the same idea (code-guidelines.md Rule 3).
+`../globals.ts`, `../virtual-root.ts`, and the `buffer` and `stream` polyfills. `host.ts` imports
+none of `../child-process/` -- see its own header for why that is load-bearing, not incidental.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README.
