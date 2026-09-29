@@ -42,17 +42,29 @@ function entry (item: MenuItemView): HTMLElement {
 
 void menu.items().then((items) => {
   list.replaceChildren(...items.map(entry))
-  // The list is short and fixed: its height is the document's.
-  menu.reportHeight(Math.ceil(document.documentElement.scrollHeight))
-  list.querySelector<HTMLButtonElement>('.item')?.focus()
+  // `list`'s own scrollHeight is its full, unclipped content height whatever
+  // the popup's CURRENT size already is (style.css's `.items { overflow-y:
+  // auto }` is what makes that true); `document.documentElement`'s is not --
+  // once the document itself never scrolls (style.css's `overflow: hidden`,
+  // for the popup's own rounded corners), it reports only what already fits,
+  // which is exactly the wrong number to ask main to grow the popup to.
+  const inset = list.getBoundingClientRect().top + (parseFloat(getComputedStyle(list).marginBottom) || 0)
+  menu.reportHeight(Math.ceil(list.scrollHeight + inset))
+  // No entry starts focused: opened by a mouse click (the only way today),
+  // a highlighted "New tab" reads as already chosen, not merely first.
+  // Arrow keys still reach the first or last entry on their very first
+  // press (the `at === -1` branch below), and Enter works on whichever
+  // entry that leaves focused, natively.
 })
 
-// Arrow keys move through the entries, as in any menu.
+// Arrow keys move through the entries, as in any menu, from nothing
+// highlighted as much as from one already reached.
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
   const buttons = [...list.querySelectorAll<HTMLButtonElement>('.item')]
   const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
-  const next = event.key === 'ArrowDown' ? (at + 1) % buttons.length : (at - 1 + buttons.length) % buttons.length
+  const down = event.key === 'ArrowDown'
+  const next = at === -1 ? (down ? 0 : buttons.length - 1) : down ? (at + 1) % buttons.length : (at - 1 + buttons.length) % buttons.length
   buttons[next]?.focus()
   event.preventDefault()
 })

@@ -16,11 +16,14 @@ export function moveToWindow (from: ShellWindow, id: string, to: ShellWindow, in
   return true
 }
 
-/** Opens a window for the tab. A window's only tab stays where it is: moving it would only move the window. */
+/** Opens a window for the tab. A window's only tab stays where it is: moving it would only move the window.
+ * Shown at once (window-options.ts's `instant`): the tab it opens on is already rendered, so there is
+ * nothing worth waiting on `ready-to-show` for. */
 export function moveToNewWindow (from: ShellWindow, id: string, openWindow: (options: ShellWindowOptions) => void, place?: Placement): boolean {
   if (from.tabs.tabCount < 2 || from.shortcutsSuspended()) return false
   openWindow({
     ...(place === undefined ? {} : { place }),
+    instant: true,
     first: (tabs) => {
       const record = from.tabs.takeTab(id)
       // Gone since it was asked for: the window still opens on a page.
@@ -31,12 +34,33 @@ export function moveToNewWindow (from: ShellWindow, id: string, openWindow: (opt
   return true
 }
 
-interface Point { readonly x: number, readonly y: number }
-interface Rect { readonly x: number, readonly y: number, readonly width: number, readonly height: number }
+export interface Point { readonly x: number, readonly y: number }
+export interface Rect { readonly x: number, readonly y: number, readonly width: number, readonly height: number }
 
-/** Whether a point of the screen is within a window's top `height` pixels: its tab strip and toolbar. */
-function inTop (bounds: Rect, point: Point, height: number): boolean {
+/** Whether a point of the screen is within a window's top `height` pixels: its tab strip and toolbar.
+ * Exported for tear-drag.ts's own use: the floating preview hides there too, so what it shows matches
+ * what letting go there does (nothing). */
+export function inTop (bounds: Rect, point: Point, height: number): boolean {
   return point.x >= bounds.x && point.x < bounds.x + bounds.width && point.y >= bounds.y && point.y < bounds.y + height
+}
+
+/** The other window a dragged tab is over, and where in its strip it would land, or `null` when the point is
+ * over no window's strip but its own. Shared by `dropTab` below (the actual move) and the floating preview's
+ * own cross-window mark (`tear-drag.ts`), so the place the mark is drawn at is always the place a drop right
+ * now would use -- one formula, not two that could drift apart. The index is a share of the strip's own
+ * width, not real tab boundaries: the strip's layout is the chrome's, unknown here, and this only has to
+ * agree with itself. */
+export function crossWindowTargetFor (
+  from: ShellWindow,
+  point: Point,
+  windows: readonly ShellWindow[],
+  topHeight: number
+): { window: ShellWindow, index: number } | null {
+  // Nothing says which of overlapping windows is in front; the newest is the likeliest.
+  const target = windows.filter((candidate) => candidate !== from && !candidate.window.isDestroyed() && inTop(candidate.window.getBounds(), point, topHeight)).at(-1)
+  if (target === undefined) return null
+  const bounds = target.window.getBounds()
+  return { window: target, index: Math.round(((point.x - bounds.x) / bounds.width) * target.tabs.tabCount) }
 }
 
 /** A tab was let go outside its own strip, at `point` (screen coordinates): into another window's
@@ -49,12 +73,9 @@ export function dropTab (
   openWindow: (options: ShellWindowOptions) => void,
   topHeight: number
 ): void {
-  // Nothing says which of overlapping windows is in front; the newest is the likeliest.
-  const target = windows.filter((candidate) => candidate !== from && !candidate.window.isDestroyed() && inTop(candidate.window.getBounds(), point, topHeight)).at(-1)
-  if (target !== undefined) {
-    const bounds = target.window.getBounds()
-    // Where along the strip it landed, as a share of the tabs there: the strip's own layout is the chrome's.
-    moveToWindow(from, id, target, Math.round(((point.x - bounds.x) / bounds.width) * target.tabs.tabCount))
+  const target = crossWindowTargetFor(from, point, windows, topHeight)
+  if (target !== null) {
+    moveToWindow(from, id, target.window, target.index)
     return
   }
   const own = from.window.getBounds()

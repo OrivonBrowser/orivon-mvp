@@ -6,6 +6,7 @@ import type { OrivonShell } from '../preload/shell.js'
 import { createBookmarksView } from './bookmarks-view.js'
 import { closeIcon, faviconElement } from './icons.js'
 import { isDraggingTab, makeTabDraggable } from './tab-drag.js'
+import { makeStripDraggable } from './strip-drag.js'
 import { paintMark, paintShield, shieldLabel, web3Shield } from './web3-shield.js'
 
 // The chrome view's whole job: render ShellState, turn clicks/typing into
@@ -40,8 +41,12 @@ const shell = must(window.orivonShell, 'orivonShell not exposed -- the preload d
 // Electron's native window buttons before the first paint, rather than
 // waiting on a state push.
 document.documentElement.dataset['platform'] = shell.platform
+// See styles/tabstrip.css's [data-drag-mode="manual"] rule -- which strip
+// modes the empty tail after the new-tab button (drag-mode.ts, main-side).
+document.documentElement.dataset['dragMode'] = shell.dragMode
 
 const tabrow = must(document.querySelector<HTMLDivElement>('#tabrow'), '#tabrow missing')
+const stripTail = must(document.querySelector<HTMLDivElement>('#tab-strip-tail'), '#tab-strip-tail missing')
 const backBtn = must(document.querySelector<HTMLButtonElement>('#back'), '#back missing')
 const forwardBtn = must(document.querySelector<HTMLButtonElement>('#forward'), '#forward missing')
 const reloadBtn = must(document.querySelector<HTMLButtonElement>('#reload'), '#reload missing')
@@ -159,10 +164,12 @@ function renderTabs (state: ShellState): void {
       partnerOf: () => tab.splitWith === null ? null : tabrow.querySelector<HTMLElement>(`.tab[data-id="${tab.splitWith}"]`),
       stripHeight: () => tabrow.getBoundingClientRect().height,
       moveTab: (id, index) => { shell.moveTab(id, index) },
+      dragStarted: (id) => { shell.beginTabDrag(id) },
       hover: (id, x, y) => { shell.dragTab(id, x, y) },
       dropTab: (id, x, y, clientX, clientY) => { shell.dropTab(id, x, y, clientX, clientY) },
       // Let go in the strip, the order on screen is already the order main is about to confirm.
-      finished: (tornOut) => { if (tornOut || tabsRenderDeferred) renderTabs(currentState) }
+      finished: (tornOut) => { if (tornOut || tabsRenderDeferred) renderTabs(currentState) },
+      dragEnded: () => { shell.endTabDrag() }
     })
     // Middle-click closes a tab, matching every other browser. Guarded on
     // mousedown too: Windows arms Blink's middle-click autoscroll on
@@ -313,6 +320,54 @@ shell.onState((state) => {
 
 newTabBtn.addEventListener('click', () => shell.newTab())
 
+// The empty strip past the new-tab button: only wired up here in the manual
+// drag mode (drag-mode.ts decides, main-side) -- in the native mode the
+// tail is plain OS-level drag content and none of this runs.
+if (shell.dragMode === 'manual') {
+  makeStripDraggable(stripTail, {
+    newTab: () => { shell.newTab() },
+    toggleMaximize: () => { shell.toggleMaximize() },
+    moveStart: (x, y) => { shell.windowMoveStart(x, y) },
+    moveTo: (x, y) => { shell.windowMoveTo(x, y) },
+    moveEnd: (x, y) => { shell.windowMoveEnd(x, y) },
+    moveCancel: () => { shell.windowMoveCancel() }
+  })
+}
+
+/** The insertion line shown while a tab dragged from another window is over
+ * this one's strip (main.ts's dragMark command, tear-drag.ts main-side):
+ * built lazily, once, and repositioned/hidden from then on. */
+let dropMark: HTMLDivElement | null = null
+
+function showDropMark (index: number): void {
+  dropMark ??= (() => {
+    const el = document.createElement('div')
+    el.className = 'drop-mark'
+    tabrow.append(el)
+    return el
+  })()
+  // An approximate place, not real tab boundaries: the index itself is what
+  // must agree with where a drop would actually land (tab-move.ts's
+  // `crossWindowTargetFor`), which this only has to point at closely enough
+  // to read as "here".
+  const tabs = [...tabrow.querySelectorAll<HTMLElement>('.tab')]
+  const before = tabs[index]
+  const rowLeft = tabrow.getBoundingClientRect().left
+  // #tabrow scrolls horizontally once there are more tabs than fit: a tab's own viewport rect
+  // already accounts for that scroll, so adding it back here (rowLeft is a viewport rect too, with
+  // no scroll of its own to add) would double-count it -- the mark needs `scrollLeft` added on top
+  // of the viewport-relative distance, to land in the row's own scrolled coordinate space instead.
+  const x = (before !== undefined
+    ? before.getBoundingClientRect().left - rowLeft
+    : (tabs.at(-1)?.getBoundingClientRect().right ?? rowLeft) - rowLeft) + tabrow.scrollLeft
+  dropMark.style.left = `${String(x)}px`
+  dropMark.hidden = false
+}
+
+function hideDropMark (): void {
+  if (dropMark !== null) dropMark.hidden = true
+}
+
 backBtn.addEventListener('click', () => {
   if (currentState.activeTabId !== null) shell.back(currentState.activeTabId)
 })
@@ -372,11 +427,18 @@ zoomChip.addEventListener('click', () => { shell.runCommand('zoom.reset') })
 profileChip.addEventListener('click', () => { shell.openInternal(currentState.profile.isPrivate ? 'private' : 'profiles') })
 menuBtn.addEventListener('click', () => { shell.openMenu(anchorFor(menuBtn)) })
 
-// A keyboard shortcut in main asks for the address bar.
+// A keyboard shortcut in main asks for the address bar, or (while a tab
+// dragged from any window is over this one's strip) main asks the strip to
+// mark, or stop marking, where it would land.
 shell.onCommand((command) => {
-  if (command.type !== 'focusAddress') return
-  addressInput.focus()
-  addressInput.select()
+  if (command.type === 'focusAddress') {
+    addressInput.focus()
+    addressInput.select()
+  } else if (command.type === 'dragMark') {
+    showDropMark(command.index)
+  } else if (command.type === 'dragMarkClear') {
+    hideDropMark()
+  }
 })
 
 addressInput.addEventListener('focus', () => { addressFocused = true })

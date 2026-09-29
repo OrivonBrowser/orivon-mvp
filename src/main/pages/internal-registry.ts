@@ -15,11 +15,6 @@ export class InternalPageRegistry {
     contents.once('destroyed', () => { this.open.delete(id) })
   }
 
-  /** For contents that stop being an internal page while they live. */
-  forget (contents: WebContents): void {
-    if (!contents.isDestroyed()) this.open.delete(contents.id)
-  }
-
   pageOf (contents: WebContents): InternalPageId | undefined {
     if (contents.isDestroyed()) return undefined
     const entry = this.open.get(contents.id)

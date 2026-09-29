@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { uptime } from 'node:os'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { DEFAULT_PROFILE_ID, PROFILE_ID } from './launch-context.js'
 import { copyPublicSeed } from './public-seed.js'
 import { bootTimeMs, isPidRecordAlive, processIsAlive } from './pid-liveness.js'
@@ -190,6 +191,6 @@ export class ProfileStore {
   }
 
   private write (dir: string, profile: Profile): void {
-    writeFileSync(join(dir, PROFILE_FILE), JSON.stringify({ version: FILE_VERSION, name: profile.name, color: profile.color, created: profile.created }, null, 2))
+    writeFileAtomic(join(dir, PROFILE_FILE), JSON.stringify({ version: FILE_VERSION, name: profile.name, color: profile.color, created: profile.created }, null, 2))
   }
 }

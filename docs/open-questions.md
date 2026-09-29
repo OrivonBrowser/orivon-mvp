@@ -1436,6 +1436,35 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** the first public release
 
+### A292: A middle click on the empty tab strip does nothing off Linux X11 **[RESEARCH]**
+
+- **Question:** Can a middle click on the strip's empty end open a tab on Windows, macOS and native Wayland?
+- **Why it matters:** there the end stays a native drag region, which gives the page no click at all; on
+  Linux X11 the shell handles it itself (`d-0195`) and loses nothing a person sees.
+- **Options:** Windows' `hookWindowMessage` for a middle click in the caption area (rec., untested); accept it
+  on macOS and Wayland, where the window manager owns the drag.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A293: Moving the window by the strip's end on X11 bypasses the window manager **[OWNER]**
+
+- **Question:** Is a window move done by the shell good enough where the window manager's own was before?
+- **Why it matters:** `d-0195` moves the window itself so the strip's end can take a middle click. It
+  maximizes at a top edge and takes half a screen at a side, but a window manager's own tiling previews,
+  quarter tiles and keyboard moves no longer start from there.
+- **Options:** keep it (rec.); go back to the native drag region and lose the middle click there.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A294: History shows no favicons and cannot be sorted **[AI-REC]**
+
+- **Question:** Should History keep a favicon per site and sort by visits or title as well as by time?
+- **Why it matters:** each row shows a letter or a protocol badge because the store keeps no icon, and its
+  paging runs on (last visit, id), so another order needs an index and a schema step the store does not have.
+- **Options:** add both with the store's first migration, when people ask for them (rec.); add them now.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared
@@ -1508,7 +1537,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A292: Developer mode is switched on by an environment variable **[OWNER]**
+### A295: A `<webview>`'s own `webpreferences` attribute may reach a shown page **[AI-REC]**
+
+- **Question:** If Electron parses a `<webview>`'s `webpreferences` attribute into `webPreferences`
+  before `will-attach-webview`, deleting `params.webpreferences` in `hardenGuest` stops nothing, and
+  a key it does not set itself (`experimentalFeatures`, say) reaches a `web.embed` guest. Does it?
+- **Why it matters:** a shown page is another site's document; every preference it runs with
+  should be the shell's choice, never the embedding app's. No escalation through it is known.
+- **Options:** measure it in an e2e and, if the attribute gets through, build the guest's
+  `webPreferences` from an allowlist rather than overriding named keys (rec.); leave it as it is.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A299: Developer mode is switched on by an environment variable **[OWNER]**
 
 - **Question:** Should developer mode be reachable only from the browser's own UI, or stay an
   environment switch (`ORIVON_DEV_ORIGINS=1`) read at launch?
@@ -1520,7 +1561,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A293: The verifier host has Node and no sandbox **[AI-REC]**
+### A300: The verifier host has Node and no sandbox **[AI-REC]**
 
 - **Question:** Should the untrusted parsers T34 names run in a sandboxed process with no Node?
 - **Why it matters:** T34 keeps a parser bug out of main, but the host is a Node utility process:
@@ -1531,7 +1572,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A294: One `orivon.fs` call has no byte cap **[AI-REC]**
+### A301: One `orivon.fs` call has no byte cap **[AI-REC]**
 
 - **Question:** Should a single `orivon.fs` read, write or whole-file read be capped in bytes?
 - **Why it matters:** a granted app can make main hold a whole file (up to Node's 2 GiB `readFile`
@@ -1539,17 +1580,5 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   what the file holds. A cap is a `src/contracts/` change (`LIMITS`).
 - **Options:** `LIMITS.fsCallBytes` (256 MiB), `'limit'` past it, big files through handles (rec.);
   leave it bounded by the file and the quota.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A295: A `<webview>`'s own `webpreferences` attribute may reach a shown page **[AI-REC]**
-
-- **Question:** If Electron parses a `<webview>`'s `webpreferences` attribute into `webPreferences`
-  before `will-attach-webview`, deleting `params.webpreferences` in `hardenGuest` stops nothing, and
-  a key it does not set itself (`experimentalFeatures`, say) reaches a `web.embed` guest. Does it?
-- **Why it matters:** a shown page is another site's document; every preference it runs with
-  should be the shell's choice, never the embedding app's. No escalation through it is known.
-- **Options:** measure it in an e2e and, if the attribute gets through, build the guest's
-  `webPreferences` from an allowlist rather than overriding named keys (rec.); leave it as it is.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing

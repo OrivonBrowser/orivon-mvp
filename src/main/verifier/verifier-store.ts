@@ -7,7 +7,7 @@ import { mkdir, open, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CID } from 'multiformats/cid'
 import { base36 } from 'multiformats/bases/base36'
-import { writeFileAtomic } from '../../broker/grants/node-ledger-storage.js'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { FUTURE_TOLERANCE_SECONDS, parseCheckpoint } from './checkpoint.js'
 import type { Checkpoint } from './checkpoint.js'
 

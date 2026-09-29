@@ -5,7 +5,7 @@ import { zoneAt } from './split-model.js'
 import type { Zone } from './split-model.js'
 import type { Bounds } from './tab-types.js'
 
-export function splitZoneFor (activeId: string | null, draggedId: string, area: Bounds, point: { x: number, y: number }): Zone | null {
+export function splitZoneFor (activeId: string | null, draggedId: string, area: Bounds, point: { x: number, y: number }, share?: number): Zone | null {
   if (activeId === null || activeId === draggedId) return null
-  return zoneAt(area, point)
+  return share === undefined ? zoneAt(area, point) : zoneAt(area, point, share)
 }

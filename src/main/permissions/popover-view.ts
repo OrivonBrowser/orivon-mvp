@@ -80,6 +80,13 @@ export interface PopoverSpec {
    * (`ipcMain.handle` throws if registered twice).
    */
   readonly registerIpc: (webContents: WebContents, url: string, onContentHeight: (height: number) => void) => () => void
+  /** The largest this popup may grow to before its own content scrolls,
+   * independent of `room` below (which still applies on top of this): a
+   * fixed cap for a popup whose list can run long (permissions, site-info),
+   * or `Number.POSITIVE_INFINITY` for one that should simply show all of its
+   * content -- the menu -- so only the window's own height ever makes it
+   * scroll. Defaults to `MAX_HEIGHT`, the fixed cap a popup that does not set this field gets. */
+  readonly maxHeight?: number
 }
 
 export interface PopoverView {
@@ -89,19 +96,21 @@ export interface PopoverView {
   isOpen: () => boolean
 }
 
-function popoverBounds (win: BaseWindow, anchor: PopoverAnchor, align: PopoverAlign, contentHeight: number): Electron.Rectangle {
+/** Exported for its own unit tests (popover-view.test.ts): pure geometry, no view or IPC involved. */
+export function popoverBounds (win: BaseWindow, anchor: PopoverAnchor, align: PopoverAlign, contentHeight: number, maxHeight: number): Electron.Rectangle {
   const { width: winWidth, height: winHeight } = win.getContentBounds()
 
   const preferredX = align === 'right' ? anchor.x + anchor.width - WIDTH : anchor.x
   const x = Math.round(Math.min(Math.max(preferredX, EDGE), Math.max(EDGE, winWidth - WIDTH - EDGE)))
   const y = Math.round(anchor.y + anchor.height + GAP)
 
-  // Sized to its content, then bounded twice: by MAX_HEIGHT so a long list
-  // does not become a full-height slab, and by the room actually left below
-  // the toolbar so it is never cut off by the window edge. Past either, the
+  // Sized to its content, then bounded twice: by the popup's own maxHeight
+  // (a fixed cap for one whose list can run long, or unbounded for one that
+  // should simply show everything), and by the room actually left below the
+  // toolbar so it is never cut off by the window edge. Past either, the
   // list scrolls inside the popup.
   const room = winHeight - y - EDGE
-  const height = Math.round(Math.max(MIN_HEIGHT, Math.min(contentHeight, MAX_HEIGHT, room)))
+  const height = Math.round(Math.max(MIN_HEIGHT, Math.min(contentHeight, maxHeight, room)))
   return { x, y, width: Math.min(WIDTH, winWidth - EDGE * 2), height }
 }
 
@@ -154,15 +163,17 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // and clicks into the page both blur this webContents, which closes the
     // popup below -- so it can never be left stranded under a view that was
     // attached after it.
+    const maxHeight = spec.maxHeight ?? MAX_HEIGHT
+
     contentView.addChildView(popup)
     popup.setBorderRadius(CORNER_RADIUS)
-    popup.setBounds(popoverBounds(win, anchor, spec.align, INITIAL_HEIGHT))
+    popup.setBounds(popoverBounds(win, anchor, spec.align, INITIAL_HEIGHT, maxHeight))
 
     removeIpc = spec.registerIpc(popup.webContents, url, (contentHeight) => {
       // Guarded on `view === popup`: a height reported by a popup that has
       // already been dismissed must not resize the one that replaced it.
       if (view !== popup || popup.webContents.isDestroyed()) return
-      popup.setBounds(popoverBounds(win, anchor, spec.align, contentHeight))
+      popup.setBounds(popoverBounds(win, anchor, spec.align, contentHeight, maxHeight))
     })
     void popup.webContents.loadURL(url)
 

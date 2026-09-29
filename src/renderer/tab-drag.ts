@@ -11,8 +11,10 @@
 
 /** How far the pointer moves before a press becomes a drag, so a click is still a click. */
 export const DRAG_THRESHOLD_PX = 5
-/** How far below or above the strip the pointer goes before the tab is taken out of it. */
-export const TEAR_DISTANCE_PX = 44
+/** How far below or above the strip the pointer goes before the tab is taken out of it: small enough that a
+ * short, deliberate downward movement tears a tab loose, rather than needing a long drag past most of a
+ * toolbar's height. */
+export const TEAR_DISTANCE_PX = 18
 
 /** The place among the other tabs, whose centres are `centres`, that a tab dragged to `x` takes. */
 export function dropIndex (centres: readonly number[], x: number): number {
@@ -35,11 +37,19 @@ export interface TabDragHost {
   partnerOf: (el: HTMLElement) => HTMLElement | null
   stripHeight: () => number
   moveTab: (id: string, index: number) => void
-  /** The pointer is below the strip, over the page, at this place of the window; no place: it is back in the strip. */
+  /** A genuine drag just started (the press moved past the threshold) -- lets main start capturing the
+   * tab's page early, for the floating preview a tear-off shows if this drag goes that far. */
+  dragStarted: (id: string) => void
+  /** The pointer is outside the strip's own reach (torn out, tab-drag.ts's own `isTornOut`), at this place
+   * of the window; no place: it is back inside the strip. */
   hover: (id: string, x?: number, y?: number) => void
   dropTab: (id: string, screenX: number, screenY: number, clientX: number, clientY: number) => void
   /** The drag is over. `tornOut`: the tab is on its way to another window, so the strip is to go back to what main last said. */
   finished: (tornOut: boolean) => void
+  /** The drag has genuinely ended -- dropped in the strip, torn out, or cancelled -- distinct from
+   * `hover(id)`'s own "back inside the strip" signal, which also fires on every in-strip move of a
+   * drag that is still under way. Releases the capture `dragStarted` began. */
+  dragEnded: () => void
 }
 
 let dragging = false
@@ -100,6 +110,7 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     clear()
     if (wasActive) {
       host.hover(id)
+      host.dragEnded()
       if (redraw) host.finished(tornOut)
     } else {
       // After the click that follows a press: redrawn now, it would have no tab to land on.
@@ -123,6 +134,7 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     dragging = true
     cancelDrag = () => { end(true) }
     for (const member of group) member.classList.add('dragging')
+    host.dragStarted(id)
   }
 
   el.addEventListener('pointerdown', (event) => {
@@ -153,8 +165,10 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
       tab.style.transition = 'transform 120ms ease'
       tab.style.transform = shift === 0 ? '' : `translateX(${String(shift)}px)`
     })
-    // Over the page, main shows where the tab would go if it were let go at an edge.
-    if (event.clientY > host.stripHeight()) host.hover(id, event.clientX, event.clientY)
+    // Once the tab is torn out, main shows where letting go would land it: a split edge on its own
+    // window's page, another window's strip (the cross-window mark), or a window of its own. Matches
+    // `torn` above exactly, so the same movement that dims the tab is what starts showing this.
+    if (torn) host.hover(id, event.clientX, event.clientY)
     else host.hover(id)
   })
 

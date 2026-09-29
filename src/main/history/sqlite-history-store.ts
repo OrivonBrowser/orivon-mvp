@@ -1,14 +1,20 @@
 // History in one SQLite file. A page is a row, and each time it was reached is
 // a row of its own, so a range of time can be forgotten without losing the
 // pages visited outside it. Writes wait a moment and go in one transaction, so
-// a page that redirects three times is one write, not three.
+// a page that redirects three times is one write, not three. Every statement
+// this runs more than once is prepared once, in the constructor or on first
+// use, and reused -- never re-prepared per call. A search of three characters
+// or more probes how many rows a trigram FTS5 index would return for it: a
+// sparse term is read through that index, a dense one (a common substring
+// like "https://") through the LIKE scan instead, which walks the last-visit
+// index and can stop at one page rather than gathering every match first.
 import { DatabaseSync } from 'node:sqlite'
 import type { StatementSync } from 'node:sqlite'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MAX_TITLE_LENGTH, MAX_URL_LENGTH } from './history-store.js'
 import type { HistoryEntry, HistoryQuery, HistoryStore } from './history-store.js'
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 const WRITE_DELAY_MS = 500
 /** The most changes held while waiting to write; past it the oldest is written at once. */
 const MAX_QUEUED = 500
@@ -17,6 +23,17 @@ const MAX_QUEUED = 500
 const MAX_PAGES = 100_000
 /** How many new pages are written between looks at whether there are too many. */
 const TRIM_CHECK_EVERY = 1000
+/** Below this, the trigram index cannot resolve a match, so `list` keeps the plain `LIKE` scan. */
+const FTS_MIN_SEARCH_LENGTH = 3
+/** A term this common or more (probed before every FTS search) reads through `LIKE` instead: MATCH would
+ * gather most of the table before ORDER BY/LIMIT could cut it off, where LIKE walks the last-visit index
+ * and stops at one page. */
+const FTS_DENSITY_LIMIT = 500
+/** Above this many rows to delete per row left afterward, dropping the FTS5 index for the delete and
+ * rebuilding it once from what remains beats deleting through the per-row secure-delete trigger: measured
+ * at roughly 0.33ms/row deleted that way against roughly 0.019ms per row a rebuild has to index, a ~17:1
+ * cost ratio the delete side crosses well before 16:1. */
+const BULK_DELETE_ROW_RATIO = 16
 
 type Change =
   | { readonly type: 'visit', readonly url: string, readonly title: string, readonly at: number }
@@ -28,6 +45,38 @@ const toEntry = (row: Row): HistoryEntry => ({ id: row.id, url: row.url, title: 
 
 /** Escapes what LIKE would read as a pattern. */
 const likePattern = (text: string): string => `%${text.replace(/[\\%_]/g, (character) => `\\${character}`)}%`
+
+/** Escapes what FTS5's query syntax would read as a phrase delimiter, so `search` is matched
+ * as the literal text it is -- never as MATCH syntax (AND, OR, NOT, column filters, `*`). */
+const ftsPhrase = (text: string): string => `"${text.replace(/"/g, '""')}"`
+
+const LIST_COLUMNS = 'id, url, title, last_visit, visit_count'
+const LIST_ORDER = 'ORDER BY last_visit DESC, id DESC LIMIT ?'
+const AFTER_CONDITION = '(last_visit < ? OR (last_visit = ? AND id < ?))'
+const LIKE_CONDITION = "(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')"
+/** Same as `LIKE_CONDITION`, aliased for the FTS join: MATCH only narrows candidates fast (and folds case
+ * for Unicode, where LIKE folds only ASCII), so LIKE stays the one definition of "matches" either way. */
+const LIKE_CONDITION_P = "(p.title LIKE ? ESCAPE '\\' OR p.url LIKE ? ESCAPE '\\')"
+
+/** The trigram FTS5 index over `pages(title, url)` and the triggers that keep it in step with every insert,
+ * update and delete on `pages` -- including a bulk UPDATE/DELETE, since SQLite fires the same row-level
+ * triggers for those. `content=` makes it an external-content table: the text is never duplicated, only
+ * indexed. One definition, used both by the v1-to-v2 migration and by `rebuildFtsIndex` after a bulk
+ * delete has dropped it -- CREATE, not re-CREATE, either way, since both start from it not existing. */
+const FTS_INDEX_DDL = `
+  CREATE VIRTUAL TABLE pages_fts USING fts5(title, url, content='pages', content_rowid='id', tokenize='trigram');
+  INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 1);
+  CREATE TRIGGER pages_fts_ai AFTER INSERT ON pages BEGIN
+    INSERT INTO pages_fts(rowid, title, url) VALUES (new.id, new.title, new.url);
+  END;
+  CREATE TRIGGER pages_fts_ad AFTER DELETE ON pages BEGIN
+    INSERT INTO pages_fts(pages_fts, rowid, title, url) VALUES ('delete', old.id, old.title, old.url);
+  END;
+  CREATE TRIGGER pages_fts_au AFTER UPDATE ON pages WHEN old.title IS NOT new.title OR old.url IS NOT new.url BEGIN
+    INSERT INTO pages_fts(pages_fts, rowid, title, url) VALUES ('delete', old.id, old.title, old.url);
+    INSERT INTO pages_fts(rowid, title, url) VALUES (new.id, new.title, new.url);
+  END;
+`
 
 export class SqliteHistoryStore implements HistoryStore {
   readonly kind = 'sqlite'
@@ -42,10 +91,50 @@ export class SqliteHistoryStore implements HistoryStore {
     touchPage: StatementSync
     insertVisit: StatementSync
     setTitle: StatementSync
+    count: StatementSync
+    trimDelete: StatementSync
+    remove: StatementSync
+    removeRangeDeleteVisits: StatementSync
+    removeRangeUpdatePages: StatementSync
+    removeRangeDeleteEmptyPages: StatementSync
+    /** How many rows (up to `searchDensityLimit`) a trigram search would return: what `list` checks to choose
+     * the FTS path or the LIKE fallback. */
+    searchDensityProbe: StatementSync
+    /** How many pages would end up with no visits left in [from, to] -- what `removeRange` checks against
+     * how many would remain, to choose the bulk or per-row delete path. */
+    removeRangeCountToDelete: StatementSync
+    /** One per WHERE shape `list` can need: with or without `after`, and none/LIKE/FTS for `search`. */
+    list: {
+      plain: StatementSync
+      after: StatementSync
+      like: StatementSync
+      likeAfter: StatementSync
+      fts: StatementSync
+      ftsAfter: StatementSync
+    }
   }
 
-  /** `path` may be `:memory:`. Throws if the file is not a database this can use. `limits` is for tests. */
-  constructor (path: string, private readonly limits: { readonly maxPages: number, readonly checkEvery: number } = { maxPages: MAX_PAGES, checkEvery: TRIM_CHECK_EVERY }) {
+  private readonly limits: {
+    readonly maxPages: number
+    readonly checkEvery: number
+    readonly searchDensityLimit: number
+    readonly bulkDeleteRowRatio: number
+  }
+
+  /** `path` may be `:memory:`. Throws if the file is not a database this can use. `limits` is for tests: any
+   * field left out keeps its production default. */
+  constructor (path: string, limits: {
+    readonly maxPages?: number
+    readonly checkEvery?: number
+    readonly searchDensityLimit?: number
+    readonly bulkDeleteRowRatio?: number
+  } = {}) {
+    this.limits = {
+      maxPages: limits.maxPages ?? MAX_PAGES,
+      checkEvery: limits.checkEvery ?? TRIM_CHECK_EVERY,
+      searchDensityLimit: limits.searchDensityLimit ?? FTS_DENSITY_LIMIT,
+      bulkDeleteRowRatio: limits.bulkDeleteRowRatio ?? BULK_DELETE_ROW_RATIO
+    }
     this.db = new DatabaseSync(path)
     try {
       this.db.exec('PRAGMA journal_mode = WAL')
@@ -58,7 +147,45 @@ export class SqliteHistoryStore implements HistoryStore {
         insertPage: this.db.prepare('INSERT INTO pages (url, title, last_visit, visit_count) VALUES (?, ?, ?, 1)'),
         touchPage: this.db.prepare('UPDATE pages SET last_visit = MAX(last_visit, ?), visit_count = visit_count + 1 WHERE id = ?'),
         insertVisit: this.db.prepare('INSERT INTO visits (page_id, at) VALUES (?, ?)'),
-        setTitle: this.db.prepare('UPDATE pages SET title = ? WHERE url = ? AND title <> ?')
+        setTitle: this.db.prepare('UPDATE pages SET title = ? WHERE url = ? AND title <> ?'),
+        count: this.db.prepare('SELECT COUNT(*) AS n FROM pages'),
+        trimDelete: this.db.prepare('DELETE FROM pages WHERE id IN (SELECT id FROM pages ORDER BY last_visit ASC, id ASC LIMIT ?)'),
+        remove: this.db.prepare('DELETE FROM pages WHERE id = ?'),
+        removeRangeDeleteVisits: this.db.prepare('DELETE FROM visits WHERE at >= ? AND at <= ?'),
+        removeRangeUpdatePages: this.db.prepare(`
+          UPDATE pages SET
+            visit_count = (SELECT COUNT(*) FROM visits WHERE page_id = pages.id),
+            last_visit = COALESCE((SELECT MAX(at) FROM visits WHERE page_id = pages.id), 0)
+        `),
+        removeRangeDeleteEmptyPages: this.db.prepare('DELETE FROM pages WHERE visit_count = 0'),
+        // A page ends up with none of its visits left once [from, to] is removed exactly when it has a
+        // visit inside that range and none outside it. Starting from the pages with a visit in range (the
+        // visits_at index makes that narrow, however many pages exist in total) rather than scanning every
+        // page is what makes this cheap for a range that only ever touches a small slice of a full history.
+        removeRangeCountToDelete: this.db.prepare(`
+          SELECT COUNT(*) AS n FROM (SELECT DISTINCT page_id FROM visits WHERE at >= ? AND at <= ?) AS v
+          WHERE NOT EXISTS (SELECT 1 FROM visits v2 WHERE v2.page_id = v.page_id AND (v2.at < ? OR v2.at > ?))
+        `),
+        searchDensityProbe: this.db.prepare(
+          `SELECT COUNT(*) AS n FROM (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ? LIMIT ${String(this.limits.searchDensityLimit)})`
+        ),
+        list: {
+          plain: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages ${LIST_ORDER}`),
+          after: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages WHERE ${AFTER_CONDITION} ${LIST_ORDER}`),
+          like: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages WHERE ${LIKE_CONDITION} ${LIST_ORDER}`),
+          likeAfter: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages WHERE ${AFTER_CONDITION} AND ${LIKE_CONDITION} ${LIST_ORDER}`),
+          fts: this.db.prepare(`
+            SELECT p.id, p.url, p.title, p.last_visit, p.visit_count FROM pages p
+            JOIN pages_fts f ON f.rowid = p.id WHERE pages_fts MATCH ? AND ${LIKE_CONDITION_P}
+            ORDER BY p.last_visit DESC, p.id DESC LIMIT ?
+          `),
+          ftsAfter: this.db.prepare(`
+            SELECT p.id, p.url, p.title, p.last_visit, p.visit_count FROM pages p
+            JOIN pages_fts f ON f.rowid = p.id
+            WHERE (p.last_visit < ? OR (p.last_visit = ? AND p.id < ?)) AND pages_fts MATCH ? AND ${LIKE_CONDITION_P}
+            ORDER BY p.last_visit DESC, p.id DESC LIMIT ?
+          `)
+        }
       }
     } catch (error) {
       this.db.close()
@@ -68,27 +195,80 @@ export class SqliteHistoryStore implements HistoryStore {
 
   private migrate (): void {
     const row = this.db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined
-    const version = row?.user_version ?? 0
+    let version = row?.user_version ?? 0
     if (version > SCHEMA_VERSION) throw new Error(`the history file is from a newer version (${String(version)})`)
-    if (version === SCHEMA_VERSION) return
-    this.db.exec(`
-      CREATE TABLE pages (
-        id INTEGER PRIMARY KEY,
-        url TEXT NOT NULL UNIQUE,
-        title TEXT NOT NULL DEFAULT '',
-        last_visit INTEGER NOT NULL,
-        visit_count INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE visits (
-        id INTEGER PRIMARY KEY,
-        page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
-        at INTEGER NOT NULL
-      );
-      CREATE INDEX visits_at ON visits (at);
-      CREATE INDEX visits_page ON visits (page_id);
-      CREATE INDEX pages_last_visit ON pages (last_visit DESC);
-      PRAGMA user_version = ${String(SCHEMA_VERSION)};
-    `)
+    if (version < 1) {
+      this.db.exec(`
+        CREATE TABLE pages (
+          id INTEGER PRIMARY KEY,
+          url TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL DEFAULT '',
+          last_visit INTEGER NOT NULL,
+          visit_count INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE visits (
+          id INTEGER PRIMARY KEY,
+          page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+          at INTEGER NOT NULL
+        );
+        CREATE INDEX visits_at ON visits (at);
+        CREATE INDEX visits_page ON visits (page_id);
+        CREATE INDEX pages_last_visit ON pages (last_visit DESC);
+        PRAGMA user_version = 1;
+      `)
+      version = 1
+    }
+    if (version < 2) this.migrateToSearchIndex()
+  }
+
+  /** Adds the trigram FTS5 index (`FTS_INDEX_DDL`) and rebuilds it from every row already in `pages`.
+   * `secure-delete`, part of that DDL, stays set across every later reopen: without it, FTS5's own delete
+   * only tombstones a posting, leaving it in already-allocated pages that `secure_delete`/VACUUM on `pages`
+   * itself cannot reach (see the test file's "what forgetting a page leaves" describe). */
+  private migrateToSearchIndex (): void {
+    this.db.exec('BEGIN')
+    try {
+      this.rebuildFtsIndex()
+      this.db.exec('PRAGMA user_version = 2')
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.rollback()
+      throw error
+    }
+  }
+
+  /** Drops the FTS5 index and the triggers that feed it -- triggers are schema objects of their own, defined
+   * `ON pages`, and are not dropped along with the virtual table they reference. Used only inside `deleteRows`'s
+   * bulk path, always paired with `rebuildFtsIndex` in the same transaction: the store is never left with a
+   * caller able to observe `pages` without a matching index. */
+  private dropFtsIndex (): void {
+    this.db.exec('DROP TRIGGER pages_fts_ai; DROP TRIGGER pages_fts_ad; DROP TRIGGER pages_fts_au; DROP TABLE pages_fts;')
+  }
+
+  /** Recreates the FTS5 index from `FTS_INDEX_DDL` and rebuilds it from every row currently in `pages`. */
+  private rebuildFtsIndex (): void {
+    this.db.exec(FTS_INDEX_DDL)
+    this.db.exec("INSERT INTO pages_fts(pages_fts) VALUES ('rebuild')")
+  }
+
+  /** Deletes rows through `mutate`, inside one transaction, choosing between two paths that leave the same
+   * result: per-row, where `mutate`'s DELETE/UPDATE fires the FTS5 triggers already in place (secure-delete,
+   * ~0.33ms per row deleted); or, when `toDelete` is large enough against `remaining` (`BULK_DELETE_ROW_RATIO`),
+   * bulk -- drop the index for `mutate`, so it runs at plain SQLite speed, then rebuild the index once from
+   * what is left (~0.019ms per remaining row). `PRAGMA secure_delete = ON` zeroes DROP TABLE's freed pages
+   * exactly as it does a per-row DELETE's, so both paths leave nothing of a forgotten row recoverable. */
+  private deleteRows (toDelete: number, remaining: number, mutate: () => void): void {
+    const bulk = toDelete * this.limits.bulkDeleteRowRatio > remaining
+    this.db.exec('BEGIN')
+    try {
+      if (bulk) this.dropFtsIndex()
+      mutate()
+      if (bulk) this.rebuildFtsIndex()
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.rollback()
+      throw error
+    }
   }
 
   record (url: string, title: string, at: number): void {
@@ -148,65 +328,107 @@ export class SqliteHistoryStore implements HistoryStore {
     }
   }
 
-  /** Forgets the pages least recently visited when there are more than are kept. */
+  /** Forgets the pages least recently visited when there are more than are kept. Always the per-row path,
+   * with FTS5 secure-delete switched off for just this delete and back on before the transaction commits
+   * (which a ROLLBACK also restores, since the config change is part of the same transaction): trim() runs
+   * automatically on the navigation path whenever the history is full, not because a person asked to forget
+   * anything, so it is not worth the bulk path's index-drop-and-rebuild cost every few thousand new pages,
+   * nor secure-delete's per-row cost. A trimmed page's index entries are removed the next time FTS5 merges
+   * its segments on its own, not at delete time -- every forgetting a person actually asks for (remove,
+   * removeRange, clear, and the retention prune, itself a removeRange) still erases them at once. */
   private trim (): void {
     this.newPagesSinceCheck = 0
-    const total = (this.db.prepare('SELECT COUNT(*) AS n FROM pages').get() as { n: number }).n
+    const total = (this.statements.count.get() as { n: number }).n
     if (total <= this.limits.maxPages) return
-    this.db.prepare('DELETE FROM pages WHERE id IN (SELECT id FROM pages ORDER BY last_visit ASC, id ASC LIMIT ?)').run(total - Math.floor(this.limits.maxPages * 0.9))
-  }
-
-  list (query: HistoryQuery = {}): HistoryEntry[] {
-    this.drain()
-    const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
-    const conditions: string[] = []
-    const values: Array<string | number> = []
-    if (query.after !== undefined) {
-      conditions.push('(last_visit < ? OR (last_visit = ? AND id < ?))')
-      values.push(query.after.lastVisit, query.after.lastVisit, query.after.id)
-    }
-    const search = query.search?.trim() ?? ''
-    if (search !== '') {
-      conditions.push("(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')")
-      values.push(likePattern(search), likePattern(search))
-    }
-    const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`
-    const rows = this.db.prepare(`SELECT id, url, title, last_visit, visit_count FROM pages ${where} ORDER BY last_visit DESC, id DESC LIMIT ?`).all(...values, limit) as unknown as Row[]
-    return rows.map(toEntry)
-  }
-
-  count (): number {
-    this.drain()
-    return (this.db.prepare('SELECT COUNT(*) AS n FROM pages').get() as { n: number }).n
-  }
-
-  remove (id: number): void {
-    this.drain()
-    this.db.prepare('DELETE FROM pages WHERE id = ?').run(id)
-  }
-
-  removeRange (from: number, to: number): void {
-    this.drain()
+    const toDelete = total - Math.floor(this.limits.maxPages * 0.9)
     this.db.exec('BEGIN')
     try {
-      this.db.prepare('DELETE FROM visits WHERE at >= ? AND at <= ?').run(from, to)
-      this.db.exec(`
-        UPDATE pages SET
-          visit_count = (SELECT COUNT(*) FROM visits WHERE page_id = pages.id),
-          last_visit = COALESCE((SELECT MAX(at) FROM visits WHERE page_id = pages.id), 0);
-        DELETE FROM pages WHERE visit_count = 0;
-      `)
+      this.db.exec("INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 0)")
+      this.statements.trimDelete.run(toDelete)
+      this.db.exec("INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 1)")
       this.db.exec('COMMIT')
     } catch (error) {
       this.rollback()
       throw error
     }
+  }
+
+  list (query: HistoryQuery = {}): HistoryEntry[] {
+    this.drain()
+    const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
+    const after = query.after
+    const search = query.search?.trim() ?? ''
+    let rows: Row[]
+    // The trigram tokenizer needs three actual characters; [...search].length counts those (Unicode code
+    // points), where search.length counts UTF-16 code units and over-counts any character outside the
+    // Basic Multilingual Plane (a surrogate pair, such as most emoji, counts as two).
+    if ([...search].length >= FTS_MIN_SEARCH_LENGTH) {
+      const term = ftsPhrase(search)
+      const pattern = likePattern(search)
+      rows = this.isDense(term) ? this.queryLike(pattern, after, limit) : this.queryFts(term, pattern, after, limit)
+    } else if (search !== '') {
+      rows = this.queryLike(likePattern(search), after, limit)
+    } else {
+      const { list } = this.statements
+      rows = (after === undefined
+        ? list.plain.all(limit)
+        : list.after.all(after.lastVisit, after.lastVisit, after.id, limit)) as unknown as Row[]
+    }
+    return rows.map(toEntry)
+  }
+
+  /** Whether `term` (an already-escaped FTS phrase) would return `searchDensityLimit` rows or more: too many
+   * for MATCH's join to sort and cut off with LIMIT as cheaply as the LIKE scan, which stops at one page.
+   * Ignores `after`: it estimates how common the term is, not how many pages of it remain. */
+  private isDense (term: string): boolean {
+    return (this.statements.searchDensityProbe.get(term) as { n: number }).n >= this.limits.searchDensityLimit
+  }
+
+  private queryLike (pattern: string, after: HistoryQuery['after'], limit: number): Row[] {
+    const { list } = this.statements
+    return (after === undefined
+      ? list.like.all(pattern, pattern, limit)
+      : list.likeAfter.all(after.lastVisit, after.lastVisit, after.id, pattern, pattern, limit)) as unknown as Row[]
+  }
+
+  /** `pattern` is bound after the MATCH term: MATCH narrows fast, LIKE (ASCII-only case fold) is the actual
+   * definition of "matches" it must also satisfy, so a search agrees with `queryLike` however dense it is. */
+  private queryFts (term: string, pattern: string, after: HistoryQuery['after'], limit: number): Row[] {
+    const { list } = this.statements
+    return (after === undefined
+      ? list.fts.all(term, pattern, pattern, limit)
+      : list.ftsAfter.all(after.lastVisit, after.lastVisit, after.id, term, pattern, pattern, limit)) as unknown as Row[]
+  }
+
+  count (): number {
+    this.drain()
+    return (this.statements.count.get() as { n: number }).n
+  }
+
+  remove (id: number): void {
+    this.drain()
+    const total = (this.statements.count.get() as { n: number }).n
+    this.deleteRows(1, Math.max(total - 1, 0), () => { this.statements.remove.run(id) })
+    this.dropLog()
+  }
+
+  removeRange (from: number, to: number): void {
+    this.drain()
+    const toDelete = (this.statements.removeRangeCountToDelete.get(from, to, from, to) as { n: number }).n
+    const total = (this.statements.count.get() as { n: number }).n
+    this.deleteRows(toDelete, total - toDelete, () => {
+      this.statements.removeRangeDeleteVisits.run(from, to)
+      this.statements.removeRangeUpdatePages.run()
+      this.statements.removeRangeDeleteEmptyPages.run()
+    })
     this.dropLog()
   }
 
   clear (): void {
     this.queue.length = 0
-    this.db.exec('DELETE FROM visits; DELETE FROM pages;')
+    const total = (this.statements.count.get() as { n: number }).n
+    // Always the bulk path (remaining is 0), unless there was nothing to delete in the first place.
+    this.deleteRows(total, 0, () => { this.db.exec('DELETE FROM visits; DELETE FROM pages;') })
     this.dropLog()
     // Rewrites the file so the space the addresses were in is not left behind.
     this.db.exec('VACUUM')

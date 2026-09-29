@@ -25,4 +25,9 @@ describe('zoom steps', () => {
     for (const bad of [24, 501, 100.5, Number.NaN, '100', null, undefined]) expect(isZoomPercent(bad), String(bad)).toBe(false)
     for (const good of [25, 100, 500]) expect(isZoomPercent(good)).toBe(true)
   })
+
+  it('bounds the presets themselves, first and last', () => {
+    expect(MIN_ZOOM_PERCENT).toBe(ZOOM_PERCENTS[0]!)
+    expect(MAX_ZOOM_PERCENT).toBe(ZOOM_PERCENTS[ZOOM_PERCENTS.length - 1]!)
+  })
 })

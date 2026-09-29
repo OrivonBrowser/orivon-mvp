@@ -4,7 +4,7 @@
 import { mkdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { writeFileAtomic } from '../../broker/grants/node-ledger-storage.js'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
 import { parseBinding } from './accelerator.js'
 import type { Platform } from './accelerator.js'
