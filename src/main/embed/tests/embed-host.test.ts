@@ -40,14 +40,16 @@ vi.mock('electron', () => ({
 }))
 
 const { installEmbedHost } = await import('../embed-host.js')
+const { embedPartitionFor } = await import('../embed-guard.js')
 
 /** An embedder WebContents: a real EventEmitter (embed-host.ts attaches `will-attach-webview`/`did-attach-webview` to it) with a mutable top-frame URL. */
 function fakeEmbedder (url: string): EventEmitter & { mainFrame: { url: string } } {
   return Object.assign(new EventEmitter(), { mainFrame: { url } })
 }
 
-function fakeGuest (id: number): { id: number, isDestroyed: () => boolean, close: ReturnType<typeof vi.fn>, setWindowOpenHandler: ReturnType<typeof vi.fn>, once: ReturnType<typeof vi.fn> } {
-  return { id, isDestroyed: () => false, close: vi.fn(), setWindowOpenHandler: vi.fn(), once: vi.fn() }
+/** `session` is the guest's OWN Session object, the way Electron hands back whatever `webPreferences.partition` the attach actually used -- did-attach-webview reads origin from it, never from the embedder. */
+function fakeGuest (id: number, session: FakeSession): { id: number, session: FakeSession, isDestroyed: () => boolean, close: ReturnType<typeof vi.fn>, setWindowOpenHandler: ReturnType<typeof vi.fn>, once: ReturnType<typeof vi.fn> } {
+  return { id, session, isDestroyed: () => false, close: vi.fn(), setWindowOpenHandler: vi.fn(), once: vi.fn() }
 }
 
 function fakeBroker (origins: ReadonlySet<string>, attach: ReturnType<typeof vi.fn>): Broker {
@@ -64,7 +66,7 @@ function fakeBroker (origins: ReadonlySet<string>, attach: ReturnType<typeof vi.
 const ORIGIN_A = 'https://a.example'
 const ORIGIN_B = 'https://b.example'
 
-describe('installEmbedHost -- the embedder origin captured at will-attach-webview reaches did-attach-webview', () => {
+describe('installEmbedHost -- a guest is paired with the app origin its OWN session belongs to', () => {
   // fakeApp is one EventEmitter shared by the whole file (vi.mock runs
   // once); each test's own installEmbedHost() call must not leave its
   // 'web-contents-created' listener wired for the NEXT test's embedder.
@@ -73,7 +75,7 @@ describe('installEmbedHost -- the embedder origin captured at will-attach-webvie
     sessionsByPartition.clear()
   })
 
-  it('attaches the guest under the origin admitted at will-attach-webview, even if the embedder navigates before did-attach-webview fires', () => {
+  it('attaches the guest under the origin that configured its session, even if the embedder navigates before did-attach-webview fires', () => {
     const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
     const broker = fakeBroker(new Set([ORIGIN_A, ORIGIN_B]), attach)
     const host = installEmbedHost(broker, '/preload/embed.js')
@@ -81,13 +83,17 @@ describe('installEmbedHost -- the embedder origin captured at will-attach-webvie
 
     fakeApp.emit('web-contents-created', {}, embedder)
     embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const sessionA = sessionsByPartition.get(embedPartitionFor(ORIGIN_A))
+    if (sessionA === undefined) throw new Error('no session was configured for origin A')
 
     // The embedder's own top frame navigates to a DIFFERENT origin's grant
-    // before the guest finishes attaching -- exactly the race the finding
-    // describes. A re-read at did-attach-webview would see this new URL.
+    // before the guest finishes attaching. The guest itself was already
+    // created under the partition will-attach-webview set, carried on its
+    // own session -- re-reading the embedder's URL here would get this
+    // wrong.
     embedder.mainFrame.url = `${ORIGIN_B}/elsewhere`
 
-    const guest = fakeGuest(42)
+    const guest = fakeGuest(42, sessionA)
     embedder.emit('did-attach-webview', {}, guest)
 
     expect(attach).toHaveBeenCalledTimes(1)
@@ -95,14 +101,15 @@ describe('installEmbedHost -- the embedder origin captured at will-attach-webvie
     expect(host.ownerOf(42)).toBe(ORIGIN_A)
   })
 
-  it('closes the guest and attaches nothing when did-attach-webview fires with no matching will-attach-webview', () => {
+  it('closes the guest and attaches nothing when its session was never configured by partitionReady', () => {
     const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
     const broker = fakeBroker(new Set([ORIGIN_A]), attach)
     const host = installEmbedHost(broker, '/preload/embed.js')
     const embedder = fakeEmbedder(`${ORIGIN_A}/tab`)
 
     fakeApp.emit('web-contents-created', {}, embedder)
-    const guest = fakeGuest(7)
+    // No will-attach-webview ran, so no session was ever recorded against an origin.
+    const guest = fakeGuest(7, fakeSession())
     embedder.emit('did-attach-webview', {}, guest)
 
     expect(attach).not.toHaveBeenCalled()
@@ -110,45 +117,59 @@ describe('installEmbedHost -- the embedder origin captured at will-attach-webvie
     expect(host.ownerOf(7)).toBeUndefined()
   })
 
-  it('pairs two overlapping attaches on the same embedder in FIFO order', () => {
+  it('pairs two guests attached to the same origin correctly however their did-attach-webview events are ordered', () => {
     const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
-    const broker = fakeBroker(new Set([ORIGIN_A, ORIGIN_B]), attach)
+    const broker = fakeBroker(new Set([ORIGIN_A]), attach)
     const host = installEmbedHost(broker, '/preload/embed.js')
     const embedder = fakeEmbedder(`${ORIGIN_A}/tab`)
 
     fakeApp.emit('web-contents-created', {}, embedder)
     // Two <webview> elements both start attaching while the embedder is at
-    // origin A, before either finishes.
+    // origin A; partitionReady configures the partition once, so both share
+    // the same session.
     embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
     embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const sessionA = sessionsByPartition.get(embedPartitionFor(ORIGIN_A))
+    if (sessionA === undefined) throw new Error('no session was configured for origin A')
 
-    const guestOne = fakeGuest(1)
-    const guestTwo = fakeGuest(2)
-    embedder.emit('did-attach-webview', {}, guestOne)
+    const guestOne = fakeGuest(1, sessionA)
+    const guestTwo = fakeGuest(2, sessionA)
+    // did-attach-webview fires for the SECOND webview first: with no queue
+    // to keep in step, there is no ordering assumption to violate.
     embedder.emit('did-attach-webview', {}, guestTwo)
+    embedder.emit('did-attach-webview', {}, guestOne)
 
     expect(attach.mock.calls.map((call) => call[0])).toEqual([ORIGIN_A, ORIGIN_A])
     expect(host.ownerOf(1)).toBe(ORIGIN_A)
     expect(host.ownerOf(2)).toBe(ORIGIN_A)
   })
 
-  it('drops an admission whose attach never completed once the embedder admits another origin', () => {
+  it('attributes each guest to the origin that actually configured its own session, when the embedder admits a second origin before the first guest attaches', () => {
     const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
     const broker = fakeBroker(new Set([ORIGIN_A, ORIGIN_B]), attach)
     const host = installEmbedHost(broker, '/preload/embed.js')
     const embedder = fakeEmbedder(`${ORIGIN_A}/tab`)
 
     fakeApp.emit('web-contents-created', {}, embedder)
-    // A <webview> starts attaching at origin A and never finishes.
+    // A <webview> starts attaching at origin A; before its did-attach-webview
+    // fires, the embedder navigates and admits a second <webview> at origin B.
     embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const sessionA = sessionsByPartition.get(embedPartitionFor(ORIGIN_A))
     embedder.mainFrame.url = `${ORIGIN_B}/elsewhere`
     embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const sessionB = sessionsByPartition.get(embedPartitionFor(ORIGIN_B))
+    if (sessionA === undefined || sessionB === undefined) throw new Error('a session was not configured')
 
-    const guest = fakeGuest(9)
-    embedder.emit('did-attach-webview', {}, guest)
+    const guestA = fakeGuest(9, sessionA)
+    const guestB = fakeGuest(10, sessionB)
+    // Both attaches complete -- the one for origin A did not never complete
+    // (unlike the old per-embedder queue, which would have dropped it).
+    embedder.emit('did-attach-webview', {}, guestB)
+    embedder.emit('did-attach-webview', {}, guestA)
 
-    expect(attach.mock.calls.map((call) => call[0])).toEqual([ORIGIN_B])
-    expect(host.ownerOf(9)).toBe(ORIGIN_B)
+    expect(attach.mock.calls.map((call) => call[0]).sort()).toEqual([ORIGIN_A, ORIGIN_B])
+    expect(host.ownerOf(9)).toBe(ORIGIN_A)
+    expect(host.ownerOf(10)).toBe(ORIGIN_B)
   })
 })
 
