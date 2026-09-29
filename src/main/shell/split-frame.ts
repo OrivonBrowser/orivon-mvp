@@ -5,12 +5,12 @@
 // it is also what the pointer grabs to resize -- no overlay over a page needed.
 //
 // A window that never splits never makes it: the view is built when first asked for.
-import { WebContentsView } from 'electron'
+import { app, WebContentsView } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import { SPLIT_FRAME_CHANNEL, SPLIT_STATE_CHANNEL } from '../channels.js'
 import { lockNavigation } from './lock-navigation.js'
-import { rendererEntryUrl } from './renderer-entry.js'
+import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import type { FrameState } from './split-controller.js'
 import type { SplitBackdrop } from './tab-types.js'
 import { SHELL_PARTITION } from './shell-session.js'
@@ -51,7 +51,7 @@ export class SplitFrame implements SplitBackdrop {
   }
 
   private build (): WebContentsView {
-    const url = rendererEntryUrl(this.dirname, process.env['ELECTRON_RENDERER_URL'], '/split-frame/', '../renderer/split-frame/index.html')
+    const url = rendererEntryUrl(this.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/split-frame/', '../renderer/split-frame/index.html')
     const view = new WebContentsView({
       webPreferences: {
         preload: join(this.dirname, '../preload/split-frame.js'),

@@ -3,9 +3,9 @@
 // intro/) has no preload: it reports "Enter Orivon" by moving its own URL hash
 // to #leaving and then #entered, which is all this watches. Whether a launch
 // shows it at all is ./intro-state.ts.
-import { WebContentsView, type BaseWindow } from 'electron'
+import { app, WebContentsView, type BaseWindow } from 'electron'
 import type { IntroPlan } from './intro-state.js'
-import { rendererEntryUrl } from './renderer-entry.js'
+import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import type { TabManager } from './tabs.js'
 import { SHELL_PARTITION } from './shell-session.js'
 
@@ -76,6 +76,6 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   // window any more, and nothing else would close it.
   win.once('closed', dismiss)
   tabs.onStateChange(keepOnTop)
-  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
+  const devServerUrl = validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL'])
   void webContents.loadURL(rendererEntryUrl(import.meta.dirname, devServerUrl, '/intro/', '../renderer/intro/index.html'))
 }

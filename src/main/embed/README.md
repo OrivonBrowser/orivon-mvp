@@ -13,8 +13,11 @@ host, and answers `EMBED_SCRIPT_CHANNEL`, the one thing a shown page's preload
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`broker-contracts.ts`
 types, `policy/embed-origin.ts`'s document gate, `policy/address.ts`'s address classes, `policy/origin.ts`, `grants/origin-hash.ts`);
-[`../dev/dev-mode.ts`](../dev/dev-mode.ts) (DevTools in a guest, developer mode only); the
-top-level `channels.ts` and `registry.ts`.
+[`../dev/dev-mode.ts`](../dev/dev-mode.ts) (DevTools in a guest, developer mode only);
+[`../../protocols/builtin.ts`](../../protocols/builtin.ts) (which hostnames route to the
+verifier) and [`../verifier/partition.ts`](../verifier/partition.ts) (the same partition-stamp
+rule the default session applies, reused rather than copied -- it imports nothing itself, so
+this stays clear of `electron` and `src/loader/`); the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule),
 and nothing under [`../../loader/`](../../loader/): a shown page is another site's document,

@@ -32,6 +32,13 @@ export interface HostConfig {
    * still goes through `net.fetch` alone. Empty turns the fallback off
    * entirely. */
   readonly unproxiedGateways: readonly string[]
+  /** Whether main found NO proxy configured for the default session, as of
+   * this host's start (`main/verifier/proxy-check.ts`) -- a snapshot, like
+   * `unproxiedGateways` above, not re-checked until the host restarts. Only
+   * this makes `guardedCcipRequest` (`egress.ts`) dial the address it
+   * already checked directly; a configured proxy must keep doing the
+   * resolving, never be silently gone around for one kind of request (T20). */
+  readonly ccipDirect: boolean
   /** w3name-style services asked for an IPNS record after the gateways. */
   readonly ipnsNameServices: readonly string[]
   readonly dnsOverHttps: readonly string[]

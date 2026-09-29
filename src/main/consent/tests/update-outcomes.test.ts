@@ -124,6 +124,22 @@ describe('driveLoadResult: needs-reconsent', () => {
     // finishInstall's own ordering.
     expect(consent).not.toHaveBeenCalled()
   })
+
+  // Task 1: a caller that has left by the time the prompt resolves is
+  // treated like a decline -- nothing installs -- however the prompt itself
+  // answered.
+  it('a caller that has left by the time reconsentPrompt resolves never installs, even though it resolved true', async () => {
+    const pending = reconsentResult()
+    const neverReached: LoadResult = { outcome: 'rejected', reason: 'should never be reached' }
+    const loader = fakeLoader({ outcome: 'rejected', reason: 'unused' }, { installFetched: vi.fn(async () => neverReached) })
+    const reconsentPrompt = vi.fn(async () => true)
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    const result = await driveLoadResult({ broker: fakeBroker(), loader, reconsentPrompt }, pending, NO_GRANTS, caller)
+
+    expect(result).toBe(pending)
+    expect(loader.installFetched).not.toHaveBeenCalled()
+  })
 })
 
 describe('driveLoadResult: needs-capability-prompt', () => {

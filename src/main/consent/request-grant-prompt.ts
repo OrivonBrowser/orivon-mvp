@@ -14,7 +14,7 @@
 // manifest once, for decideGrantRequest, before ever calling consent().
 
 import { dialog } from 'electron'
-import type { MessageBoxOptions } from 'electron'
+import type { BaseWindow, MessageBoxOptions } from 'electron'
 import { describeGrantRequest } from './grant-prompt-render.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { ConsentPrompt } from './request-grant.js'
@@ -33,13 +33,19 @@ import type { ScoreLevel } from '../../trust/website-level.js'
  * `./request-grant-subsystem.ts`.
  */
 export function createGrantPrompt (broker: Broker, levelOverrideFor: (origin: string) => ScoreLevel | undefined = () => undefined): ConsentPrompt {
-  return async (origin, capability, patterns) => {
+  return async (origin, capability, patterns, caller) => {
     let manifest
     try {
       manifest = await broker.app.manifest(origin)
     } catch {
       return false
     }
+
+    // The page that asked may have navigated the tab elsewhere, or closed
+    // it, while the manifest above was being read -- never show a dialog
+    // for a page the person is no longer looking at (request-grant.ts's own
+    // `DialogCaller` doc).
+    if (caller !== undefined && !caller.stillOn(origin)) return false
 
     const content = describeGrantRequest(origin, manifest, capability, patterns, levelOverrideFor(origin))
     const options: MessageBoxOptions = {
@@ -51,7 +57,11 @@ export function createGrantPrompt (broker: Broker, levelOverrideFor: (origin: st
       message: content.message,
       detail: content.detail
     }
-    const { response } = await dialog.showMessageBox(options)
+    // Parented to the tab's own window when one can be found, so the dialog
+    // reads as belonging to that tab rather than floating free of every
+    // window on screen.
+    const parent = caller?.window() as BaseWindow | undefined
+    const { response } = parent === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options)
     return response === 0
   }
 }

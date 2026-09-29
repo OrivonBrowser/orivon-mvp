@@ -427,7 +427,7 @@ spellings of one of them are two different identities, permanently.
   Otherwise renaming an identity, or merely changing its case, destroys the npub with nothing to
   restore from.
 
-`window.nostr` semantics: injected in ordinary tabs; first `getPublicKey()` per site triggers
+`window.nostr` semantics, once named identities are built (they are not: A111): injected in ordinary tabs; first `getPublicKey()` per site triggers
 the connect prompt; after connecting, signing is silent for that site (per-event prompts would
 make Nostr unusable). Presence of `window.nostr` is fingerprintable, as it is of every NIP-07
 extension; the *data* is what sits behind consent (`security-model.md` T16).

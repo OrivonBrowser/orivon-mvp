@@ -309,6 +309,33 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
   })
 })
 
+// registerServingFor's early grant hydration (A158) and its request handler
+// share ONE whole-tree re-verification of the pinned bundle, via
+// resolveVerifiedBundle's single result, rather than each running its own.
+describe('registerServingFor -- re-verifies the pinned tree once, not twice', () => {
+  it('reads each pinned asset\'s bytes only once while registering serving for it', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-serving-hash-once-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, 'https://app.example')
+    const readAsset = vi.spyOn(storage, 'readAsset')
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { registerServingFor } = await import('../serve.js')
+
+    await registerServingFor(storage, 'https://app.example')
+
+    // One read per pinned asset (index.html, the manifest) -- a second,
+    // independent whole-tree verification would show up here as each path
+    // being read twice over.
+    const paths = readAsset.mock.calls.map(([, path]) => path)
+    const uniquePaths = new Set(paths)
+    expect(paths.length).toBe(uniquePaths.size)
+
+    vi.doUnmock('electron')
+  })
+})
+
 describe('pinCoverageFor -- the registered handler\'s own pin-coverage tracker', () => {
   it('is undefined for an origin nothing has registered serving for', async () => {
     vi.doMock('electron', () => ({ session: { fromPartition: () => fakeSession() } }))

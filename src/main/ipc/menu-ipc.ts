@@ -19,13 +19,18 @@ export interface MenuHost {
   run: (id: CommandId) => void
 }
 
-function isFromMenu (event: IpcMainInvokeEvent, menuContents: WebContents): boolean {
-  return event.senderFrame !== null && event.senderFrame === menuContents.mainFrame
+/** Identity alone is not enough (open-questions.md A269), the same reason
+ * ../permissions/permissions-ipc.ts's own `isFromPermissionsPanel` checks
+ * the URL too -- see that function's doc. `menuUrl` is the address this
+ * popup was created with, which `lock-navigation.ts` refuses to ever
+ * change. */
+function isFromMenu (event: IpcMainInvokeEvent, menuContents: WebContents, menuUrl: string): boolean {
+  return event.senderFrame !== null && event.senderFrame === menuContents.mainFrame && event.senderFrame.url === menuUrl
 }
 
-export function registerMenuIpc (menuContents: WebContents, host: MenuHost, onContentHeight: (height: number) => void): void {
+export function registerMenuIpc (menuContents: WebContents, menuUrl: string, host: MenuHost, onContentHeight: (height: number) => void): void {
   menuContents.ipc.handle(MENU_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: MenuCommand): MenuItemView[] | undefined => {
-    if (!isFromMenu(event, menuContents)) return undefined
+    if (!isFromMenu(event, menuContents, menuUrl)) return undefined
     switch (command.type) {
       case 'items':
         return host.items()

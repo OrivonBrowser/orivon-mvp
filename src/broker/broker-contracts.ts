@@ -53,14 +53,13 @@ export type { PickedPath } from './grants/picked-path-ledger.js'
  * authorisation, minted fresh the moment it resolves), so nothing can
  * revoke an acquisition that has not happened yet.
  *
- * `appName` is the requesting origin's own declared `manifest.name`
- * (`GrantLedger.manifestFor`, read by `capabilities/user-selected.ts` before
- * calling this), `undefined` only if no manifest was ever registered for
- * the origin. An implementation may use it to name the app in the dialog's
- * own chrome (d-0032) -- `transport/ipc.ts`'s `describePickerDialog` is the
- * real one that does.
+ * `appName` is the origin's declared `manifest.name` (`GrantLedger.
+ * manifestFor`), `undefined` if none was registered; the dialog may show it
+ * (d-0032, `transport/ipc.ts`'s `describePickerDialog`). `origin` is the
+ * canonical origin asking, which the dialog always names, since `appName`
+ * is only the manifest's own claim.
  */
-export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: string | undefined }) => Promise<PickPathResult>
+export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: string | undefined, origin: string }) => Promise<PickPathResult>
 
 /**
  * `canceled: true` for a dismissed dialog -- capability-api.ts is explicit
@@ -201,12 +200,20 @@ export interface ListenedServer {
  */
 export type Listen = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<ListenedServer>
 
+/**
+ * T20: true when a proxy applies to `url`, so a net capability must refuse
+ * rather than go around it with Node's own sockets. Never rejects: an
+ * implementation that cannot tell answers true (./transport/proxy-probe.ts).
+ */
+export type ProxyProbe = (url: string) => Promise<boolean>
+
 export interface CreateBrokerOptions {
   readonly dial: Dial
   readonly dialSecure: DialSecure
   readonly bind: Bind
   readonly listen: Listen
   readonly resolve: Resolver
+  readonly proxyConfigured: ProxyProbe
   /** `orivon.net.lookup`'s real DNS call (d-0030) -- ../adapters/node-adapters.ts's `resolveLookup`. */
   readonly resolveLookup: (hostname: string) => Promise<readonly LookupAddress[]>
   /** Clock, read once per grant -- `Grant.grantedAt`. Injected so a test can freeze it. */
@@ -224,6 +231,11 @@ export interface CreateBrokerOptions {
    */
   readonly ledgerStorage?: LedgerStorage
   readonly webContextHost?: WebContextHost
+  /** The picker guard's real inputs beyond `fs.dataRoot()`: every other profile directory, and where private sessions live and how to recognise one by name. Both called fresh per pick, not once at broker creation, so one created after startup is covered like an existing one (./transport/picker-guard-wiring.ts). */
+  readonly additionalProtectedRoots?: () => readonly string[]
+  readonly privateSessionGuard?: () => { readonly tempDir: string, readonly isPrivateDirName: (name: string) => boolean }
+  /** Tells the person why their pick was refused, injected like `webContextHost` so the picker guard never imports `electron` itself. Omitted, the refusal stays silent to the person; the app-facing outcome (a plain cancellation, never a distinguishable error) is identical either way. */
+  readonly notifyPickRefused?: (info: { readonly origin: string, readonly appName: string | undefined, readonly reason: string }) => void
 }
 
 /**
@@ -479,4 +491,10 @@ export interface Broker {
    * implementation. Resolves to whether anything was actually removed.
    */
   revokeUserSelectedPath(origin: string, pickId: string): Promise<boolean>
+  /**
+   * Session teardown, not revocation (handle-contracts.md): closes every
+   * live handle of `origin` gracefully, `fs.userSelected` ones included.
+   * Idempotent; an origin with no handles is the common case.
+   */
+  dropOrigin(origin: string): Promise<void>
 }

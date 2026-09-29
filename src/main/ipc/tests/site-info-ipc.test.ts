@@ -22,10 +22,11 @@ vi.mock('../../permissions/site-data-runner.js', () => ({
 const { registerSiteInfoIpc } = await import('../site-info-ipc.js')
 const { SITE_INFO_COMMAND_CHANNEL } = await import('../../channels.js')
 
-const SITE_INFO_FRAME = {}
+const POPUP_URL = 'app://orivon/site-info/index.html'
+const SITE_INFO_FRAME = { url: POPUP_URL }
 // The handler is registered on the popup's own webContents.
 const siteInfoWebContents = { mainFrame: SITE_INFO_FRAME, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
-const OTHER_FRAME = {}
+const OTHER_FRAME = { url: POPUP_URL }
 const ORIGIN = 'https://app.example'
 
 const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing' }
@@ -56,7 +57,7 @@ function register (
   const reloadActiveTab = vi.fn()
   const openAllSites = vi.fn()
   registerSiteInfoIpc(
-    siteInfoWebContents, controller, ORIGIN, '/tmp/orivon-test-userdata',
+    siteInfoWebContents, POPUP_URL, controller, ORIGIN, '/tmp/orivon-test-userdata',
     overrides.activeWebContents ?? (() => undefined),
     overrides.reloadActiveTab ?? reloadActiveTab,
     overrides.openAllSites ?? openAllSites
@@ -91,6 +92,23 @@ describe('registerSiteInfoIpc -- get / trust', () => {
     await dispatch({ type: 'get' }, OTHER_FRAME)
 
     expect(controller.siteInfoFor).not.toHaveBeenCalled()
+  })
+
+  // A269: identity alone lets a `senderFrame` reference kept past a
+  // navigation Electron re-points elsewhere still pass -- the SAME frame
+  // object, but committed at a URL that is no longer the popup's own.
+  it('refuses a command from the popup\'s own frame reference once its committed URL is no longer the popup\'s', async () => {
+    const controller = fakeController()
+    register(controller)
+    const originalUrl = SITE_INFO_FRAME.url
+    SITE_INFO_FRAME.url = 'https://attacker.example/'
+
+    try {
+      await dispatch({ type: 'get' })
+      expect(controller.siteInfoFor).not.toHaveBeenCalled()
+    } finally {
+      SITE_INFO_FRAME.url = originalUrl
+    }
   })
 })
 
@@ -214,7 +232,7 @@ describe('registerSiteInfoIpc -- data', () => {
 describe('registerSiteInfoIpc -- contentHeight', () => {
   it('a finite height reaches the injected callback', async () => {
     const onContentHeight = vi.fn()
-    registerSiteInfoIpc(siteInfoWebContents, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), onContentHeight)
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), onContentHeight)
 
     await dispatch({ type: 'contentHeight', height: 240 })
 
@@ -223,7 +241,7 @@ describe('registerSiteInfoIpc -- contentHeight', () => {
 
   it('NaN/Infinity never reach the callback', async () => {
     const onContentHeight = vi.fn()
-    registerSiteInfoIpc(siteInfoWebContents, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), onContentHeight)
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), onContentHeight)
 
     await dispatch({ type: 'contentHeight', height: Number.NaN })
     await dispatch({ type: 'contentHeight', height: Number.POSITIVE_INFINITY })

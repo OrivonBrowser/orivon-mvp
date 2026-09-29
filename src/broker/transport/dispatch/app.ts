@@ -8,18 +8,28 @@ import { fail } from '../../errors.js'
 import type { Broker } from '../../broker-contracts.js'
 import type { CapabilityRequest } from '../../../contracts/index.js'
 import { isAppRequestGrantParams } from '../ipc-validation.js'
-import type { ControlMethod, RequestGrantCtx } from '../ipc-validation.js'
+import type { ControlMethod, RequestGrantCaller, RequestGrantCtx } from '../ipc-validation.js'
 
 /** The `app.*` slice of `ControlMethod` -- derived, not retyped, so a new app method added to ipc-validation.ts's union reaches this switch's exhaustiveness check automatically. */
 export type AppControlMethod = Extract<ControlMethod, `app.${string}`>
 
-/** `app.*`'s dispatch cases, unchanged from ../ipc.ts's own switch. */
+/**
+ * `app.*`'s dispatch cases, unchanged from ../ipc.ts's own switch except for
+ * `caller` (A146, docs/architecture/security-model.md): built by ../ipc.ts
+ * from the real sending frame, before this ever runs, so
+ * `requestGrantCtx.requestGrant`'s own dialog can be parented to the calling
+ * tab and discounted if that tab is gone by the time it resolves. `app.
+ * manifest`/`app.grants` never look at it -- only `app.requestGrant` shows a
+ * dialog.
+ */
 export async function dispatchApp (
   broker: Broker,
   origin: string,
   method: AppControlMethod,
   payload: unknown,
-  requestGrantCtx: RequestGrantCtx | undefined
+  requestGrantCtx: RequestGrantCtx | undefined,
+  caller: RequestGrantCaller,
+  abandoned?: AbortSignal
 ): Promise<unknown> {
   switch (method) {
     case 'app.manifest':
@@ -35,7 +45,7 @@ export async function dispatchApp (
       const request: CapabilityRequest = payload.patterns === undefined
         ? { capability: payload.capability }
         : { capability: payload.capability, patterns: payload.patterns }
-      return await requestGrantCtx.requestGrant(origin, request)
+      return await requestGrantCtx.requestGrant(origin, request, caller, abandoned)
     }
     default: {
       // Exhaustiveness check, same reasoning and shape as ../ipc.ts's own

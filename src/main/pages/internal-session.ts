@@ -6,10 +6,11 @@
 import { realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { protocol, session } from 'electron'
+import { app, protocol, session } from 'electron'
 import type { Session } from 'electron'
 import { INTERNAL_PARTITION, INTERNAL_SCHEME } from './internal-pages.js'
 import { createInternalHandler, isDevServerRequest } from './serve.js'
+import { validatedDevServerUrl } from '../shell/renderer-entry.js'
 
 /** Its real path, so it lines up with what Vite itself reports for a request
  * under it (Vite resolves symlinks in a module's path) -- this project's own
@@ -56,7 +57,7 @@ export function installInternalSession (dirname: string): Session {
   const rendererRoot = join(dirname, '../renderer')
   // out/renderer's parent's parent: out/main -> out -> the project root.
   const projectRoot = join(rendererRoot, '..', '..')
-  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
+  const devServerUrl = validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL'])
   const internal = session.fromPartition(INTERNAL_PARTITION)
   internal.protocol.handle(INTERNAL_SCHEME, createInternalHandler({
     rendererRoot,

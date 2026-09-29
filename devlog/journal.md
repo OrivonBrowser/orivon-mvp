@@ -31,6 +31,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Tabs reorder, tear off and move between windows; two tabs split side by side or stacked, with a divider and edge-drag to make one.
 - Profiles and private windows are separate processes: a second start of a profile hands over; a private session's directory is deleted when it ends.
 - Two hostile reviews of that work found about twenty defects, from a leaked listener to history that could end the browser; all fixed with tests.
+- A whole-repository security audit's findings fixed: a site's grants work only in its own session, and the picker refuses the browser's data.
 - Tearing off a tab now previews where its window opens; Settings and History restyled; eight shell bugs from daily use fixed.
 
 ### In my head

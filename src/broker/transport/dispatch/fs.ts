@@ -156,6 +156,15 @@ export async function dispatchFs (
       if (!isFsOpenParams(payload)) throw fail('invalid', 'fs.open requires { path: string, flags: string }')
       if (transport === undefined) throw fail('internal', 'no fs transport configured for this broker')
       const file = await broker.fs.open(origin, payload.path, payload.flags)
+      // This call's OWN `withTimeout` may already have answered the
+      // caller 'timeout' by the time `broker.fs.open` actually resolves.
+      // `fs.userSelected`'s two cases (below) already close a handle
+      // abandoned this way rather than leave it registered under an id the
+      // caller will never learn -- this case and `fs.dirOpen`'s (further
+      // below) had no such check at all, so LIMITS.concurrentFileHandles
+      // worth of timed-out opens permanently locked this origin out of
+      // every future one.
+      if (abandoned?.aborted === true) { await file.close(); return undefined }
       return registerFileHandle(transport, origin, file)
     }
     case 'fs.userSelected': {
@@ -276,6 +285,8 @@ export async function dispatchFs (
       // through the EXACT SAME registerFileHandle fs.open/fs.userSelected
       // already use. No second file-handle mechanism.
       const file = await dir.open(payload.path, payload.flags)
+      // `fs.open`'s own case above -- same abandoned-signal check, same reason.
+      if (abandoned?.aborted === true) { await file.close(); return undefined }
       return registerFileHandle(transport, origin, file)
     }
     default: {

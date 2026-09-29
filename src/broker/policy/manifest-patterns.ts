@@ -5,7 +5,8 @@
 // never import src/loader/ (../README.md) -- only the reverse.
 // src/loader/index.ts imports this directly.
 
-import type { Capabilities, CapabilityKind, Pattern } from '../../contracts/index.js'
+import { LIMITS } from '../../contracts/index.js'
+import type { Capabilities, CapabilityKind, FsCapability, IdCapability, NetCapability, Pattern } from '../../contracts/index.js'
 import type { PatternSet } from './update.js'
 
 /**
@@ -74,6 +75,59 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   // routing, not a grant) and update.ts's PatternSet has no slot for it.
 
   return set
+}
+
+/**
+ * True when `next` asks for MORE than `previous` on one of the three fields
+ * `patternSetFromCapabilities` above cannot turn into a `Pattern`: `id.curves`
+ * (a list, not a host:port grammar `covers()` understands), `fs.quotaBytes`
+ * and `net.concurrentSockets` (bare numbers). Each is presence-only in the
+ * `PatternSet` it maps to (`set.id = []`, and `fs`/`net.*` carry no row of
+ * their own for a scalar limit at all), so `decideUpdate`'s
+ * `widensAuthority` -- built entirely on `covers()`'s host:port/port-range
+ * grammar -- never sees a widening here and calls it `'reconsent'`: a real
+ * "what it is allowed to do has not changed" the reconsent dialog then
+ * states outright, while `id.ts`'s `requireGrantedCurve` and the fs/net
+ * limit checks all re-read the CURRENT manifest live regardless of what a
+ * grant's own `patterns` say. Called from `loader/index.ts`'s
+ * `decideAndRoute`, alongside `decideUpdate`, never inside it: `update.ts`'s
+ * `covers()` is deliberately narrow to the host:port/port-range/exact-origin
+ * shapes `contracts/manifest.ts` actually declares (that file's own header),
+ * and teaching it a fourth, unrelated grammar is not this fix.
+ *
+ * Absent means each field's own documented default (`manifest.ts`'s own
+ * doc on each): no curves, `LIMITS.defaultConcurrentSockets`, and unlimited
+ * for `quotaBytes` (`fs.ts`'s "undeclared quota means unlimited") -- so a
+ * manifest that DROPS a declared limit back to that default is never read
+ * as widening, and one that raises `quotaBytes` off of "unlimited" cannot
+ * either, since nothing is bigger than unlimited.
+ */
+/**
+ * Only the three fields `widensInvisibleLimits` reads, each allowed an
+ * explicit `undefined` -- a caller comparing against a manifest it only
+ * partly trusts for one of these fields (`grant-without-install.ts`'s own
+ * "restricted to a kind actually held" gating) needs to say "treat this
+ * field as absent" without that failing `Capabilities`' own stricter
+ * optionality under `exactOptionalPropertyTypes`.
+ */
+export interface InvisibleLimitFields {
+  readonly id?: IdCapability | undefined
+  readonly fs?: FsCapability | undefined
+  readonly net?: NetCapability | undefined
+}
+
+export function widensInvisibleLimits (previous: InvisibleLimitFields | undefined, next: Capabilities): boolean {
+  const previousCurves = previous?.id?.curves ?? []
+  const nextCurves = next.id?.curves ?? []
+  if (nextCurves.some((curve) => !previousCurves.includes(curve))) return true
+
+  const previousQuota = previous?.fs?.quotaBytes ?? Number.POSITIVE_INFINITY
+  const nextQuota = next.fs?.quotaBytes ?? Number.POSITIVE_INFINITY
+  if (nextQuota > previousQuota) return true
+
+  const previousSockets = previous?.net?.concurrentSockets ?? LIMITS.defaultConcurrentSockets
+  const nextSockets = next.net?.concurrentSockets ?? LIMITS.defaultConcurrentSockets
+  return nextSockets > previousSockets
 }
 
 /**

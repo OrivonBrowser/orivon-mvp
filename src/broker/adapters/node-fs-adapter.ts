@@ -8,7 +8,7 @@
 // test that exercised them keeps exercising the same code, imported from
 // here instead.
 
-import { createReadStream, createWriteStream, mkdirSync, realpathSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, realpathSync, renameSync } from 'node:fs'
 import type { WriteStream } from 'node:fs'
 import {
   lstat,
@@ -25,7 +25,7 @@ import { Readable, Writable } from 'node:stream'
 import { dirname, join } from 'node:path'
 import type { BrokerFs, OpenedFile } from '../broker-contracts.js'
 import type { CloseReason } from '../handles/handle-contracts.js'
-import { originHash } from '../grants/origin-hash.js'
+import { appDataRoot, originHash } from '../grants/origin-hash.js'
 
 /**
  * `OpenedFile` over a real `fs.promises.FileHandle`. `readable`/`writable`
@@ -53,8 +53,19 @@ function openFile (path: string, flags: string): Promise<OpenedFile> {
 
     return {
       read: async ({ position, length }) => {
-        const buffer = Buffer.alloc(length)
-        const { bytesRead } = await handle.read({ buffer, position, length })
+        // Clamped to what the file can actually return, before allocating:
+        // `FileHandle.read`'s own contract (contracts/handles.ts) already
+        // promises a short read at EOF, so asking for fewer bytes than
+        // `length` here changes nothing about what a caller may rely on --
+        // it only stops a `length` far past the file's own size (a plain
+        // number, no bytes of its own sent over IPC) from making the BROKER
+        // allocate a buffer the file could never fill. A concurrent write
+        // growing the file after this stat is a short read exactly as
+        // permitted; one shrinking it is `handle.read`'s own EOF case.
+        const { size } = await handle.stat()
+        const clamped = Math.max(0, Math.min(length, size - position))
+        const buffer = Buffer.alloc(clamped)
+        const { bytesRead } = await handle.read({ buffer, position, length: clamped })
         // Same copy discipline as readFile above -- see that method's own
         // comment. `subarray` is a view; wrapping it in `new Uint8Array(...)`
         // is what actually copies it into its own backing buffer.
@@ -167,10 +178,45 @@ function openFile (path: string, flags: string): Promise<OpenedFile> {
 }
 
 /**
+ * A one-time move off the ONE-TIME LAYOUT `rootFor` used to build:
+ * `<userData>/apps/<hash>/files`, sibling to the LOADER's own state in that
+ * same `apps/<hash>` directory (`../../loader/cache/node-storage.ts`'s
+ * `code/`, `staging/`, `pin.json`). An app's own data and the loader's
+ * pinned-code bookkeeping sharing one root meant a folder pick landing
+ * inside `apps/<hash>/files` sat right beside `pin.json` -- the separate
+ * root T13b actually asks for. `../grants/origin-hash.js`'s `appDataRoot`
+ * is the new, sibling location.
+ *
+ * Runs at most once per origin, the first time `rootFor` is asked for it
+ * this process -- `nodeFs`'s own `migratedOrigins` set below is what makes
+ * that true, since `rootFor` is reached from `confineForOrigin` on every
+ * `fs` call including the synchronous `readFileSync` path, and re-running
+ * this on each one would mean a stat and, on conflict, a repeated log line
+ * for the lifetime of the process. NEVER LOSES DATA: the old directory
+ * moves only when the new one does not exist yet; if a previous run
+ * already created (or partly created) the new one, the old directory is
+ * left exactly where it is and this logs rather than picks a side -- a
+ * silent merge could shadow a real file with a stale one from either side.
+ */
+function migrateFilesRoot (userDataPath: string, origin: string): void {
+  const oldRoot = join(userDataPath, 'apps', originHash(origin), 'files')
+  const newRoot = join(appDataRoot(userDataPath, origin), 'files')
+  if (!existsSync(oldRoot)) return
+  if (existsSync(newRoot)) {
+    console.error('[broker] app data migration: both the old and new files roots exist for one app; keeping the new root and leaving the old one in place', oldRoot, newRoot)
+    return
+  }
+  mkdirSync(dirname(newRoot), { recursive: true })
+  renameSync(oldRoot, newRoot)
+}
+
+/**
  * `BrokerFs` over the real filesystem. `rootFor` is `../grants/origin-hash.js`'s
- * `originHash(origin)` under `<userData>/apps/`, per ADR-0003 and
- * security-model.md T13b -- directory names must never be the literal
- * origin string, or `https://Example.com` and `https://example.com`
+ * `appDataRoot(origin)`: a root SEPARATE from the loader's own
+ * `apps/<hash>` state -- `migrateFilesRoot` above moves what an earlier
+ * version of this adapter wrote under the old, shared layout. Per
+ * ADR-0003 and security-model.md T13b, directory names must never be the
+ * literal origin string, or `https://Example.com` and `https://example.com`
  * collide on a case-insensitive filesystem. `../grants/origin-hash.js`'s own
  * header explains why this construction is shared with `partitionFor`
  * rather than inlined here.
@@ -181,6 +227,10 @@ function openFile (path: string, flags: string): Promise<OpenedFile> {
  * against a real temp directory without needing Electron either.
  */
 export function nodeFs (userDataPath: string): BrokerFs {
+  // Which origins `migrateFilesRoot` has already run for, this process --
+  // see that function's own doc for why running it again on every call
+  // would be wrong, not just wasteful.
+  const migratedOrigins = new Set<string>()
   return {
     // CREATES the root, it does not merely name it. confinePath's very first
     // act is realpath(root), and its own doc calls a root that will not
@@ -196,10 +246,15 @@ export function nodeFs (userDataPath: string): BrokerFs {
     // hands confinePath a synchronous realpath (A28) -- whoever makes
     // realpath async should take this with it.
     rootFor: (origin) => {
-      const root = join(userDataPath, 'apps', originHash(origin), 'files')
+      if (!migratedOrigins.has(origin)) {
+        migrateFilesRoot(userDataPath, origin)
+        migratedOrigins.add(origin)
+      }
+      const root = join(appDataRoot(userDataPath, origin), 'files')
       mkdirSync(root, { recursive: true })
       return root
     },
+    dataRoot: () => userDataPath,
     realpathSync,
     // NEITHER readFile NOR writeFile CATCHES. capabilities/fs.ts's `mapIoError`
     // is the one place an errno becomes an OrivonError; a catch here that

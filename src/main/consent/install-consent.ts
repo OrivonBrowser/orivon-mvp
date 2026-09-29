@@ -27,6 +27,7 @@ import { patternSetFromCapabilities } from '../../broker/policy/manifest-pattern
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { CapabilityKind, Manifest } from '../../contracts/index.js'
 import { grantChangedCapabilities } from './grant-changed-capabilities.js'
+import type { DialogCaller } from './request-grant.js'
 
 /**
  * Asks a person, ONCE, whether `origin` may hold everything `capabilities`
@@ -47,7 +48,8 @@ export type InstallConsentPrompt = (
   origin: string,
   manifest: Manifest,
   capabilities: readonly CapabilityKind[],
-  held: readonly CapabilityKind[]
+  held: readonly CapabilityKind[],
+  caller?: DialogCaller
 ) => Promise<boolean>
 
 /**
@@ -67,7 +69,8 @@ export type InstallConsentPrompt = (
 export type PerCapabilityConsentPrompt = (
   origin: string,
   manifest: Manifest,
-  capabilities: readonly CapabilityKind[]
+  capabilities: readonly CapabilityKind[],
+  caller?: DialogCaller
 ) => Promise<readonly CapabilityKind[]>
 
 /**
@@ -89,7 +92,8 @@ export async function requestInstallConsent (
   consent: InstallConsentPrompt | undefined,
   origin: string,
   manifest: Manifest,
-  perCapabilityConsent?: PerCapabilityConsentPrompt
+  perCapabilityConsent?: PerCapabilityConsentPrompt,
+  caller?: DialogCaller
 ): Promise<void> {
   const declared = patternSetFromCapabilities(manifest.capabilities)
   // Same idiom update.ts's widensAuthority uses for a PatternSet's own keys
@@ -123,7 +127,7 @@ export async function requestInstallConsent (
   if (outstanding.length === 0) return
 
   if (manifest.consentGranularity === 'per-capability' && perCapabilityConsent !== undefined) {
-    await runPerCapabilityConsent(broker, perCapabilityConsent, origin, manifest, outstanding, declined)
+    await runPerCapabilityConsent(broker, perCapabilityConsent, origin, manifest, outstanding, declined, caller)
     return
   }
 
@@ -138,11 +142,23 @@ export async function requestInstallConsent (
     // The held SUBSET of it goes along too (A170), so the real dialog can
     // mark those rows -- Deny below only ever covers `outstanding`, never
     // a row already held through the other door.
-    accepted = await consent(origin, manifest, capabilities, held.map((grant) => grant.capability))
+    accepted = caller === undefined
+      ? await consent(origin, manifest, capabilities, held.map((grant) => grant.capability))
+      : await consent(origin, manifest, capabilities, held.map((grant) => grant.capability), caller)
   } catch (error) {
     console.error('[install-consent] the consent prompt threw; treating this visit as declined', origin, error)
     return
   }
+
+  // The page that asked may have navigated away, or closed, before the
+  // dialog ever showed or at any point while it was up -- whatever
+  // `accepted` says, nobody who can still see this origin actually answered
+  // it. Neither branch below runs: nothing is granted, and -- just as
+  // important -- nothing is recorded as declined, since a person who was
+  // never actually asked has not said no. A later, genuine visit still
+  // prompts in full.
+  if (caller !== undefined && !caller.stillOn(origin)) return
+
   if (!accepted) {
     // A172(1): record `outstanding`, never the whole `capabilities` --
     // this dialog showed the complete picture, but only outstanding rows
@@ -222,15 +238,25 @@ async function runPerCapabilityConsent (
   origin: string,
   manifest: Manifest,
   outstanding: readonly CapabilityKind[],
-  declined: readonly CapabilityKind[] | undefined
+  declined: readonly CapabilityKind[] | undefined,
+  caller?: DialogCaller
 ): Promise<void> {
   let acceptedRaw: readonly CapabilityKind[]
   try {
-    acceptedRaw = await perCapabilityConsent(origin, manifest, outstanding)
+    acceptedRaw = caller === undefined
+      ? await perCapabilityConsent(origin, manifest, outstanding)
+      : await perCapabilityConsent(origin, manifest, outstanding, caller)
   } catch (error) {
     console.error('[install-consent] the per-capability consent prompt threw; nothing decided this visit', origin, error)
     return
   }
+
+  // The page that asked may have navigated away, or closed, during this
+  // staged sequence of dialogs -- whatever `acceptedRaw` says, skip both
+  // recording and granting: a person who is not there to answer has not
+  // declined anything, and a later, genuine visit still asks in full.
+  if (caller !== undefined && !caller.stillOn(origin)) return
+
   const accepted = outstanding.filter((capability) => acceptedRaw.includes(capability))
   const refused = outstanding.filter((capability) => !accepted.includes(capability))
 

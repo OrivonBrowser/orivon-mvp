@@ -27,7 +27,8 @@ describe('origin derivation (DoD rule 1 -- never the payload)', () => {
 
   it('denies when the frame is opaque (url and claimed origin disagree)', async () => {
     const calls: BrokerCall[] = []
-    const event: ControlEvent = { senderFrame: { url: `${APP}/sandboxed`, origin: 'null', postMessage: vi.fn() } }
+    const opaqueFrame = { url: `${APP}/sandboxed`, origin: 'null', postMessage: vi.fn() }
+    const event: ControlEvent = { senderFrame: opaqueFrame, sender: { mainFrame: opaqueFrame, session: {}, reload: vi.fn(), isDestroyed: () => false } }
     const response = await handleControlRequest(stubBroker(calls), event, envelope('app.manifest', undefined))
     expect(response.ok).toBe(false)
     expect(calls).toEqual([])
@@ -375,12 +376,14 @@ describe('net.connectSecure (a sibling of net.connect, over deliverTcpSocket)', 
     const calls: BrokerCall[] = []
     const { socket, closeSpy } = fakeTcpSocket()
     const transport = fakeTransport(fakePortPair().pair)
+    const disposedSenderFrame = {
+      url: `${APP}/index.html`,
+      origin: APP,
+      postMessage: () => { throw new Error('Render frame was disposed before WebFrameMain could be accessed') }
+    }
     const disposedFrame: ControlEvent = {
-      senderFrame: {
-        url: `${APP}/index.html`,
-        origin: APP,
-        postMessage: () => { throw new Error('Render frame was disposed before WebFrameMain could be accessed') }
-      }
+      senderFrame: disposedSenderFrame,
+      sender: { mainFrame: disposedSenderFrame, session: {}, reload: vi.fn(), isDestroyed: () => false }
     }
 
     const response = await handleControlRequest(
@@ -405,13 +408,12 @@ describe('a socket whose port never reaches its frame is released, not leaked', 
   // and because the descriptor is never returned, the app never learns the id
   // it would need to call net.close with.
   function disposedFrame (origin: string): ControlEvent {
-    return {
-      senderFrame: {
-        url: `${origin}/index.html`,
-        origin,
-        postMessage: () => { throw new Error('Render frame was disposed before WebFrameMain could be accessed') }
-      }
+    const senderFrame = {
+      url: `${origin}/index.html`,
+      origin,
+      postMessage: () => { throw new Error('Render frame was disposed before WebFrameMain could be accessed') }
     }
+    return { senderFrame, sender: { mainFrame: senderFrame, session: {}, reload: vi.fn(), isDestroyed: () => false } }
   }
 
   it('closes the socket and unregisters it when postMessage throws', async () => {
@@ -520,7 +522,7 @@ describe('a socket whose port never reaches its frame is released, not leaked', 
     // the port would otherwise be delivered to a page that never asked for
     // it and holds no grant, as a bearer capability it cannot be asked for.
     const frame = { url: `${APP}/index.html`, origin: APP, postMessage: vi.fn() }
-    const event: ControlEvent = { senderFrame: frame }
+    const event: ControlEvent = { senderFrame: frame, sender: { mainFrame: frame, session: {}, reload: vi.fn(), isDestroyed: () => false } }
 
     const response = await handleControlRequest(
       stubBroker(calls, {

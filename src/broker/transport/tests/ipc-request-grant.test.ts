@@ -121,3 +121,80 @@ describe('app.requestGrant', () => {
     expect(calls).toEqual([{ origin: APP, request: { capability: 'fs' } }])
   })
 })
+
+// Task 1(a): the dialog this dispatch case leads to is parented to the
+// calling tab's window and knows whether that tab is still on the origin
+// that asked -- both built here, from the real sending frame, so
+// main/consent/request-grant.ts's own logic never has to reach into
+// Electron to answer either question.
+describe('app.requestGrant builds a DialogCaller from the real sending frame', () => {
+  function fakeCtxCapturingCaller (): { ctx: RequestGrantCtx, caller: () => { window: () => unknown, stillOn: (origin: string) => boolean } | undefined } {
+    let captured: { window: () => unknown, stillOn: (origin: string) => boolean } | undefined
+    return {
+      caller: () => captured,
+      ctx: {
+        requestGrant: async (_origin: string, _request: unknown, caller: { window: () => unknown, stillOn: (origin: string) => boolean }) => {
+          captured = caller
+          return true
+        }
+      }
+    }
+  }
+
+  it('stillOn(origin) is true while the sender is alive and still on that origin', async () => {
+    const { ctx, caller } = fakeCtxCapturingCaller()
+
+    await handleControlRequest(stubBroker([]), frameFor(APP), envelope('app.requestGrant', { capability: 'fs' }), undefined, undefined, ctx)
+
+    expect(caller()?.stillOn(APP)).toBe(true)
+  })
+
+  it('stillOn(origin) is false once the sender is destroyed', async () => {
+    const { ctx, caller } = fakeCtxCapturingCaller()
+    const event: ControlEvent = frameFor(APP)
+    const destroyedEvent: ControlEvent = { ...event, sender: { ...event.sender, isDestroyed: () => true } }
+
+    await handleControlRequest(stubBroker([]), destroyedEvent, envelope('app.requestGrant', { capability: 'fs' }), undefined, undefined, ctx)
+
+    expect(caller()?.stillOn(APP)).toBe(false)
+  })
+
+  it('stillOn(origin) is false for an origin other than the one the sender\'s top frame is now on -- read LIVE, not captured', async () => {
+    const { ctx, caller } = fakeCtxCapturingCaller()
+    const OTHER = 'https://other.example'
+    const event: ControlEvent = frameFor(APP)
+
+    // The origin for THIS call is derived from the frame as it was when the
+    // request arrived -- APP.
+    await handleControlRequest(stubBroker([]), event, envelope('app.requestGrant', { capability: 'fs' }), undefined, undefined, ctx)
+
+    // The frame navigates AFTER that -- exactly what a page could do while
+    // `app.requestGrant`'s own dialog is still up (A153) -- and `stillOn`
+    // reads it live, never a value captured when the request arrived.
+    Object.assign(event.sender.mainFrame as object, { url: `${OTHER}/`, origin: OTHER })
+
+    expect(caller()?.stillOn(APP)).toBe(false)
+    expect(caller()?.stillOn(OTHER)).toBe(true)
+  })
+
+  it('window() resolves through the injected windowForSender, given the real sender', async () => {
+    const { ctx, caller } = fakeCtxCapturingCaller()
+    const event = frameFor(APP)
+    const fakeWindow = { id: 'the-tabs-window' }
+    const windowForSender = vi.fn((sender: unknown) => sender === event.sender ? fakeWindow : undefined)
+
+    await handleControlRequest(
+      stubBroker([]), event, envelope('app.requestGrant', { capability: 'fs' }), undefined, undefined, ctx, undefined, undefined, windowForSender
+    )
+
+    expect(caller()?.window()).toBe(fakeWindow)
+  })
+
+  it('window() is undefined when no windowForSender is injected', async () => {
+    const { ctx, caller } = fakeCtxCapturingCaller()
+
+    await handleControlRequest(stubBroker([]), frameFor(APP), envelope('app.requestGrant', { capability: 'fs' }), undefined, undefined, ctx)
+
+    expect(caller()?.window()).toBeUndefined()
+  })
+})

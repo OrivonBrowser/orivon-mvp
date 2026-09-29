@@ -33,8 +33,8 @@ export function createMenuPanel (
     // scroll a long one -- so its only real cap is the room below the
     // toolbar's menu button, which popoverBounds applies regardless.
     maxHeight: Number.POSITIVE_INFINITY,
-    registerIpc: (webContents, onContentHeight) => {
-      registerMenuIpc(webContents, {
+    registerIpc: (webContents, url, onContentHeight) => {
+      registerMenuIpc(webContents, url, {
         items: () => menuItems(shortcuts),
         run: (id) => {
           popover.close()

@@ -449,7 +449,7 @@ it('Phase 2: a real grant, issued through the dev-only path rather than test cod
 
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
-        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        const beforeGrant = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
         const grantOutcome = await app.evaluate(async (_electron, request: DevGrantRequest) => {
           const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
@@ -468,6 +468,16 @@ it('Phase 2: a real grant, issued through the dev-only path rather than test cod
           grantOutcome.grant.capability === 'tcp.connect' && JSON.stringify(grantOutcome.grant.patterns) === JSON.stringify(patterns),
           JSON.stringify(grantOutcome.grant)
         )
+
+        // The dev-only grant hook above lands on the broker directly, with
+        // no IPC round trip for anything to react to, so this document never
+        // moves into the app's own partition. It does not need to: it
+        // already committed FIXTURE_ORIGIN, attributed, before the grant
+        // landed (src/main/sessions/session-attribution.ts), and that
+        // attribution survives a grant that changes what session the origin
+        // belongs in NEXT -- so the calls below still run from this same,
+        // unmoved document.
+        const view = beforeGrant
 
         // (a) THE GRANTED PATH, driven from the real page over the real IPC
         // pipe: write, then read back exactly as many bytes as were sent

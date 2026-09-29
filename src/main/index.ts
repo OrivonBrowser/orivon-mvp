@@ -10,7 +10,7 @@ import { startInternalPages } from './pages/start-internal-pages.js'
 import { installShortcuts } from './shortcuts/install-shortcuts.js'
 import { installZoom } from './zoom/install-zoom.js'
 import { installHistory } from './history/install-history.js'
-import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
@@ -144,6 +144,14 @@ function boot (runtime: Runtime): void {
     // (extensionsSubsystem.afterReady already constructed it, above) and
     // hands its icon requests the chrome view's own session.
     attachExtensionShell(ctx, shell, session.fromPartition(SHELL_PARTITION))
+    // Published here, not by a subsystem: every subsystem's afterReady ran
+    // during runAfterReady above, before shell.windows existed to answer
+    // this at all (registry.ts's own doc on ctx.windowForSender). A consent
+    // dialog resolves this LAZILY, well after this line runs, so publishing
+    // it late is safe -- see requestGrantSubsystem.ts and manifest-hint.ts
+    // for the thunks that read ctx.windowForSender only when a real dialog
+    // is about to show one.
+    publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
     await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])

@@ -47,19 +47,41 @@ function newPickId (): string {
 export class PickedPathLedger {
   readonly #origins = new Map<string, Map<string, PersistedPick>>()
   readonly #storage: LedgerStorage | undefined
+  readonly #blockReason: (path: string) => string | null
 
-  constructor (storage?: LedgerStorage) {
+  /**
+   * `blockReason` re-checks a pick as it is hydrated from disk against the
+   * SAME guard a fresh `fs.userSelected` pick answers to
+   * (`../capabilities/user-selected.ts`'s `createPickGuardCheck`, which is
+   * exactly this shape -- a reason string, or `null` to allow) -- "Re-check
+   * persisted picked paths when they are restored", the fix plan's own
+   * picker decision. There is no live handle to close here (a persisted
+   * pick is never reattached without a fresh OS dialog -- see `Broker.app.
+   * pickedPaths`'s own doc), so this is a hygiene fix, not a new access path
+   * being closed: it keeps a pick recorded before this guard existed from
+   * sitting in the settings list, and in every future hydration, looking
+   * like a legitimate one forever. Defaults to "nothing is blocked" so a
+   * caller with no guard concept (every test that predates this) keeps
+   * today's behaviour exactly.
+   */
+  constructor (storage?: LedgerStorage, blockReason: (path: string) => string | null = () => null) {
     this.#storage = storage
+    this.#blockReason = blockReason
   }
 
   #record (origin: string): Map<string, PersistedPick> {
     const existing = this.#origins.get(origin)
     if (existing !== undefined) return existing
     const created = new Map<string, PersistedPick>()
+    let dropped = false
     for (const [id, pick] of Object.entries(this.#storage?.readPickedPaths(origin) ?? {})) {
+      if (this.#blockReason(pick.path) !== null) { dropped = true; continue }
       created.set(id, pick)
     }
     this.#origins.set(origin, created)
+    // Persists the correction immediately, the same as `revoke` -- a
+    // restart must not read the dropped entry back out of storage again.
+    if (dropped) this.#persist(origin)
     return created
   }
 
@@ -99,8 +121,18 @@ export class PickedPathLedger {
    * draws.
    */
   revoke (origin: string, pickId: string): boolean {
-    const removed = this.#record(origin).delete(pickId)
-    if (removed) this.#persist(origin)
+    const record = this.#record(origin)
+    const removed = record.delete(pickId)
+    if (removed) {
+      this.#persist(origin)
+      // Cheap to prune HERE, unlike `GrantLedger`'s own per-origin
+      // record (which still holds a manifest, a version floor, ... even
+      // with no picks left) -- an origin with zero picks left has nothing
+      // else in this map worth keeping a row open for, so the outer map
+      // does not grow one entry per distinct origin ever serviced for the
+      // life of the process.
+      if (record.size === 0) this.#origins.delete(origin)
+    }
     return removed
   }
 

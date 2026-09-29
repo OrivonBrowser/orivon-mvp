@@ -248,10 +248,13 @@ describe('createLoader: refetch against an existing pin', () => {
         [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
       }
       const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
-      // Fresh TOFU install -- both kinds granted at this point, in the real ledger.
-      await loader.load(ORIGIN, { grantedPatterns: { 'tcp.connect': ['api.example.com:443'], fs: [] }, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined })
+      // Fresh TOFU install: nothing is granted yet at the moment this call is
+      // made -- a real first `load()` always sees NO_GRANTS, since consent is
+      // what a caller drives AFTER this returns 'installed', never before.
+      await loader.load(ORIGIN, NO_GRANTS)
 
-      // fs has since been revoked (site-switches.js's turnOff) and declined
+      // Both kinds were then granted, fs has since been revoked (site-
+      // switches.js's turnOff) and declined
       // -- grantedPatterns no longer holds it, but the manifest still
       // declares it, unchanged.
       const context: LoadContext = { grantedPatterns: { 'tcp.connect': ['api.example.com:443'] }, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined, declinedCapabilities: ['fs'] }
@@ -472,6 +475,85 @@ describe('createLoader: refetch against an existing pin', () => {
     // blank-pinnedHash route (isSameBundle treats a blank digest as
     // CHANGED), not fall through to a silent re-install.
     expect(result.outcome).toBe('needs-reconsent')
+  })
+
+  // apps/<hash>/pin.json can go missing (removed, a partial restore) while
+  // the LEDGER -- versionFloor, grants -- survives independently in its own
+  // storage. A missing pin for an origin the ledger already trusted must
+  // still force the version floor (a downgrade to an old, vulnerable
+  // version still needs a rollback choice) and any reconsent for a bundle
+  // that changed, never a silent TOFU install straight through.
+  it('a missing pin for an origin the ledger already knows (a real version floor) forces at least a rollback choice, never silent TOFU', async () => {
+    const storage = memoryStorage() // no pin.json at all for this origin
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '1.0.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>old, below-floor code') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    // What installFromHint builds from the ledger for an origin already
+    // registered at a higher version and already granted tcp.connect --
+    // the ledger's own state, independent of whatever apps/<hash>/ holds.
+    const result = await loader.load(ORIGIN, {
+      grantedPatterns: { 'tcp.connect': ['*:*'] },
+      versionFloor: '5.0.0',
+      acknowledgedRollbackVersion: undefined
+    })
+
+    expect(result.outcome).toBe('needs-rollback-choice')
+  })
+
+  it('a missing pin for an origin registered at 0.0.0, with a grant already held, is not treated as a first visit (T19)', async () => {
+    const storage = memoryStorage() // no pin.json at all for this origin
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.0.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>new code, never approved')}
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    // Every version this origin has ever registered was '0.0.0': `raiseFloor`
+    // never moves the floor off its own default for that version, so
+    // `versionFloor` alone cannot tell this origin apart from one never
+    // registered at all. The grant it already holds is the signal that
+    // survives instead.
+    const result = await loader.load(ORIGIN, {
+      grantedPatterns: { 'tcp.connect': ['*:*'] },
+      versionFloor: '0.0.0',
+      acknowledgedRollbackVersion: undefined
+    })
+
+    // Blank pinnedHash (no real pin to compare against) never resolves
+    // weaker than reconsent, the same rule the corrupted-pin case above
+    // relies on -- this must not fall through to a silent TOFU install just
+    // because the floor itself cannot see this origin's history.
+    expect(result.outcome).toBe('needs-reconsent')
+  })
+
+  it('a missing pin for an origin at 0.0.0 whose grants are only saved on disk is not treated as a first visit (T19)', async () => {
+    const storage = memoryStorage()
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.0.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>new code, never approved')}
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    // No grant is live yet this run: saved grants load only when the origin
+    // registers, which is what a silent first-visit install would do.
+    const result = await loader.load(ORIGIN, { ...NO_GRANTS, hasPersistedGrants: true })
+
+    // Nothing is live to compare against, so the person is asked for the
+    // whole declared set; what matters is that it is asked at all.
+    expect(result.outcome).toBe('needs-capability-prompt')
+  })
+
+  it('a missing pin for an origin the ledger has never registered (versionFloor at its default) is still ordinary TOFU', async () => {
+    const storage = memoryStorage()
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('installed')
   })
 })
 

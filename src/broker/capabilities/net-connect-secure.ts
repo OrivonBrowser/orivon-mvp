@@ -18,6 +18,7 @@ import { assertSocketRoom } from './socket-room.js'
 import { checkConnect, connectStillAuthorised } from '../policy/connect.js'
 import { checkConnectSecure } from '../policy/connect-secure.js'
 import { normalizeHost } from '../policy/canonical-host.js'
+import { proxyProbeUrl } from '../policy/proxy-guard.js'
 
 export interface ConnectSecureOptions {
   readonly deps: CreateBrokerOptions
@@ -72,6 +73,15 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
         const decision = checkConnectSecure(current.patterns, hostArg, port)
         if (!decision.allowed) throw fail('denied', 'the secure connection was not authorised')
         host = decision.host
+        // Before ANY resolution or handshake attempt: an unbound handshake
+        // below still resolves `host` through real Node DNS
+        // (`addressCheckedTarget`'s own `checkConnect` call), and even a
+        // bound one hands `host` straight to `deps.dialSecure`'s own Node
+        // TLS connect, which resolves it internally -- neither call is one a
+        // configured proxy ever sees (T20).
+        if (await deps.proxyConfigured(proxyProbeUrl(host, port))) {
+          throw fail('denied', 'a system proxy is configured; connectSecure refuses to bypass it')
+        }
         bound = bindsGrantedName(host, options)
         const target = bound ? { host, port } : await addressCheckedTarget(current.patterns, host, port)
         // Without this, a grant revoked between the policy check and the

@@ -40,12 +40,19 @@ export interface LightClientSource {
   subscribe: (listener: () => void) => () => void
 }
 
-function isFromPermissionsPanel (event: IpcMainInvokeEvent, permissionsWebContents: WebContents): boolean {
-  return event.senderFrame !== null && event.senderFrame === permissionsWebContents.mainFrame
+/** Identity alone is not enough (open-questions.md A269): a `senderFrame`
+ * reference can survive a navigation Electron re-points it after, so the
+ * URL is checked too, the same defence-in-depth ../ipc.ts's own
+ * `isFromChrome` already applies to COMMAND_CHANNEL. `panelUrl` is the
+ * address this popup was created with, which `lock-navigation.ts` refuses
+ * to ever change. */
+function isFromPermissionsPanel (event: IpcMainInvokeEvent, permissionsWebContents: WebContents, panelUrl: string): boolean {
+  return event.senderFrame !== null && event.senderFrame === permissionsWebContents.mainFrame && event.senderFrame.url === panelUrl
 }
 
 export function registerPermissionsIpc (
   permissionsWebContents: WebContents,
+  panelUrl: string,
   permissions: PermissionsController,
   onContentHeight: (height: number) => void = () => {},
   sites?: SiteNotificationsController,
@@ -57,7 +64,7 @@ export function registerPermissionsIpc (
   // On the panel's own webContents: the handler goes with it, and two windows
   // can each have one open.
   permissionsWebContents.ipc.handle(PERMISSIONS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: PermissionsCommand): void | readonly SiteNotificationRow[] | LightClientView | null | Promise<void | readonly AppPermissions[]> => {
-    if (!isFromPermissionsPanel(event, permissionsWebContents)) return
+    if (!isFromPermissionsPanel(event, permissionsWebContents, panelUrl)) return
 
     switch (command.type) {
       case 'list':

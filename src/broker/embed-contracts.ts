@@ -45,4 +45,17 @@ export interface BrokerEmbedMethods {
    * 'limit' past `LIMITS.embedScriptBytes`. The empty string clears it.
    */
   setScript(origin: string, opts: { source: string }): Promise<void>
+  /**
+   * Drops whatever `setScript` stored for `key`, without touching the
+   * grant -- `../index.ts`'s `revoke`/`revokePersisted` call this once
+   * `web.embed` no longer has ANY live grant for the origin, the same
+   * way they already cascade to `HandleTable.revoke` for the pages the
+   * grant authorised. Without it the script string outlived the grant that
+   * justified storing it, sitting in this process's memory for as long as
+   * the browser runs. `key` is ALREADY CANONICAL (the caller's own `key`,
+   * not a raw `origin`) -- unlike `originsSync`/`scriptSync`, this is never
+   * reached from an untrusted call site, only from the revoke cascade,
+   * which has already done that work.
+   */
+  forgetScript(key: string): void
 }

@@ -181,6 +181,39 @@ describe('fs.open -- positional read/write, no implicit cursor', () => {
 })
 
 describe('fs.open -- the write quota applies to positional write(), exactly like writeFile', () => {
+  // A positional write used to charge only `data.length` -- the bytes
+  // actually sent -- never the apparent-size GROWTH a write far past the
+  // current end of the file creates. A one-byte write at a large offset
+  // charged one byte while making the file's real, on-disk size balloon,
+  // and `writeFile`'s own shrink refund (which trusts `stat().size`, the
+  // real apparent size) then gave back the whole gap, flooring the counter
+  // back toward zero while the sparse-extended file was still sitting
+  // there. Repeat that cycle and total usage grows without bound under a
+  // quota that never once reports being exceeded.
+  it('a sparse positional write is charged its real apparent-size growth, so a later shrink cannot refund more than it charged', async () => {
+    const QUOTA = 8 * 1024
+    const broker = createBroker(baseDeps({ fs: stubFs() }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: QUOTA } }))
+    await broker.grant(APP, 'fs', [])
+
+    await broker.fs.writeFile(APP, 'a.bin', new Uint8Array(6 * 1024))
+    // Over quota, as expected, before anything below runs.
+    await expect(rejection(broker.fs.writeFile(APP, 'c.bin', new Uint8Array(6 * 1024)))).resolves.toMatchObject({ code: 'limit' })
+
+    const handle = await broker.fs.open(APP, 'b.bin', 'w')
+    // A single byte sent, but 64 KiB of real apparent size created --
+    // OVER the whole quota on its own. The fix charges the growth this
+    // creates, not the one byte written, so this reservation must itself
+    // be refused.
+    const error = await rejection(handle.write({ position: 64 * 1024, data: new Uint8Array(1) }))
+    expect(error.code).toBe('limit')
+    await handle.close()
+
+    // Unaffected by the refused write above: room for the second file
+    // this test's own quota accounting always had space for.
+    await broker.fs.writeFile(APP, 'c.bin', new Uint8Array(2 * 1024))
+  })
+
   it('exceeding the declared quota yields limit and reserves nothing', async () => {
     const broker = createBroker(baseDeps({ fs: stubFs() }))
     broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 10 } }))
@@ -211,18 +244,27 @@ describe('fs.open -- the write quota applies to positional write(), exactly like
     // against the quota; the second must fail AND be refunded, leaving
     // room for a THIRD write of the same size the second one was.
     let calls = 0
+    // Tracks what actually landed, the way a real file's size would -- the
+    // fix reads `stat()` before every positional write to charge apparent
+    // GROWTH (position + length - current size), so a stub whose `stat`
+    // never moves would charge every 6-byte write here as if the file were
+    // still empty (18 bytes of growth by the third write, not 6), failing
+    // the quota check itself rather than exercising the raw-call refund
+    // this test is actually about.
+    let size = 0
     const fs: CreateBrokerOptions['fs'] = {
       ...stubFs(),
       open: async () => ({
         read: async () => new Uint8Array(0),
-        write: async ({ data }) => {
+        write: async ({ data, position }) => {
           calls += 1
           if (calls === 2) throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+          size = Math.max(size, position + data.length)
           return data.length
         },
         readable: () => new ReadableStream(),
         writable: () => new WritableStream(),
-        stat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }),
+        stat: async () => ({ size, isFile: true, isDirectory: false, mtimeMs: 0 }),
         truncate: async () => {},
         sync: async () => {},
         destroy: () => {}
@@ -242,9 +284,14 @@ describe('fs.open -- the write quota applies to positional write(), exactly like
     // this test actually checks is the refund below, not this code.
     await rejection(file.write({ position: 6, data: new Uint8Array(6) }))
 
-    // Refunded: a third write of the SAME size the failed one reserved must
-    // still fit under the quota, proving the failed reservation was released.
-    await expect(file.write({ position: 12, data: new Uint8Array(6) })).resolves.toBe(6)
+    // Refunded: a third write retried at the SAME position the failed one
+    // targeted (the file's real size never moved off 6 -- the ENOSPC write
+    // above never landed) must still fit under the quota, proving the
+    // failed reservation was released. Position 12 here, past the file's
+    // actual end, would charge for the sparse gap in between as well --
+    // correct under this apparent-size accounting, but a different claim
+    // than the one this test makes.
+    await expect(file.write({ position: 6, data: new Uint8Array(6) })).resolves.toBe(6)
     await file.close()
   })
 })

@@ -275,6 +275,7 @@ describe('net.listen end to end: a real accepted connection, a real denial, a re
       listen: listenTcp,
       resolve: async () => [],
       resolveLookup: async () => [],
+      proxyConfigured: async () => false,
       now: () => Date.now(),
       fs: nodeFs('/tmp/orivon-listen-e2e-unused'),
       keychain: { getSeed: async () => { throw new Error('not used by this test') } },

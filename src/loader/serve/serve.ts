@@ -261,11 +261,19 @@ export async function fetchThirdParty (
  * place this file's whole-tree verification and manifest read/parse
  * happen, shared by `createAppRequestHandler` and `verifiedManifestFor` so
  * neither re-derives it independently (code-guidelines.md Rule 3). */
-type VerifiedBundleResult =
+export type VerifiedBundleResult =
   | { readonly ok: true, readonly pin: PinRecord, readonly manifest: Manifest }
   | { readonly ok: false, readonly reason: string }
 
-async function resolveVerifiedBundle (storage: LoaderStorage, origin: string): Promise<VerifiedBundleResult> {
+/**
+ * Exported so `electron/serve.ts`'s `registerServingFor` can run this ONE
+ * whole-tree re-verification per origin at startup/install and hand the
+ * SAME result to both `GrantLedger.hydrateFromPinnedManifest` (via
+ * `verifiedManifestFor`, kept for its own direct callers/tests) and
+ * `createAppRequestHandler`'s own `preResolved` parameter below -- see that
+ * parameter's own doc for why one call feeds both.
+ */
+export async function resolveVerifiedBundle (storage: LoaderStorage, origin: string): Promise<VerifiedBundleResult> {
   const rawPin = await storage.readPin(origin)
   const pin = parsePinRecord(rawPin)
   if (pin === null) {
@@ -299,11 +307,13 @@ async function resolveVerifiedBundle (storage: LoaderStorage, origin: string): P
  * BEFORE registering anything that could answer a real request -- never an
  * unverified copy (A137).
  *
- * Re-verifies the tree independently of whatever `createAppRequestHandler`
- * does moments later for the same origin -- a deliberate, bounded doubling
- * of this file's own accepted per-launch cost (`README.md`'s "Re-
- * verification cost" design note), not a second source of truth: both calls
- * run the identical `resolveVerifiedBundle` above.
+ * Re-verifies the tree independently when called on its own -- kept exactly
+ * as every direct caller of THIS function already expects (this file's own
+ * `README.md`'s "Re-verification cost" design note explains that cost).
+ * `electron/serve.ts`'s `registerServingFor` does not call this one at all:
+ * it calls `resolveVerifiedBundle` once and reuses the same result for both
+ * the hydration step this function exists to feed and the request handler
+ * below.
  */
 export async function verifiedManifestFor (storage: LoaderStorage, origin: string): Promise<Manifest | undefined> {
   const resolved = await resolveVerifiedBundle(storage, origin)
@@ -320,9 +330,21 @@ export async function createAppRequestHandler (
   recordCoverage?: RecordPinCoverage,
   reserveReachSlot?: ReserveReachSlot,
   releaseReachSlot?: ReleaseReachSlot,
-  retainedAssets?: ReadonlyMap<string, string>
+  retainedAssets?: ReadonlyMap<string, string>,
+  /**
+   * An already-resolved, already-verified bundle, from a caller
+   * (`registerServingFor`) that already ran `resolveVerifiedBundle` itself
+   * for its OWN reason (early grant hydration, A158) -- passing it here
+   * means this function's own whole-tree hash never runs a second time over
+   * the same bytes. Every other caller -- every test in this directory,
+   * `dev-serve.ts` -- omits it and this resolves the bundle itself; passing
+   * it is an optimisation, never a second, unverified path in: an `ok:
+   * false` result here still denies every request, the same as if this
+   * function had resolved it directly.
+   */
+  preResolved?: VerifiedBundleResult
 ): Promise<AppRequestHandler> {
-  const resolved = await resolveVerifiedBundle(storage, origin)
+  const resolved = preResolved ?? await resolveVerifiedBundle(storage, origin)
   if (!resolved.ok) {
     return async () => denyResponse(resolved.reason)
   }

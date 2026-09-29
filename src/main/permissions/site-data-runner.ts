@@ -15,6 +15,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Session, WebContents } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { appDataRoot } from '../../broker/grants/origin-hash.js'
 import { appRootDirectoryName } from '../../loader/index.js'
 
 /**
@@ -70,11 +71,22 @@ export async function orivonStorageFor (
   codeVersion: string | undefined
 ): Promise<OrivonStorageSnapshot> {
   const appRoot = join(userDataPath, 'apps', appRootDirectoryName(origin))
-  const [filesBytes, codeBytes] = await Promise.all([
+  // An app's own files now live under a root SEPARATE from the loader's
+  // `apps/<hash>` state -- `appDataRoot`'s own header explains why.
+  // Summed with the OLD `apps/<hash>/files` location too: `node-fs-
+  // adapter.ts`'s migration only runs the first time an app's `fs`
+  // capability is actually used this process, so a popover opened before
+  // that (or before this browser build ever ran) must still show what is
+  // really on disk rather than 0 bytes for an app nothing has touched yet.
+  // The two never both hold real data outside the migration's own already-
+  // logged conflict case, so summing them is not a double count in the
+  // ordinary case.
+  const [filesBytes, oldFilesBytes, codeBytes] = await Promise.all([
+    directorySizeBytes(join(appDataRoot(userDataPath, origin), 'files')),
     directorySizeBytes(join(appRoot, 'files')),
     directorySizeBytes(join(appRoot, 'code'))
   ])
-  return { filesBytes, filesQuotaBytes, codeBytes, codeVersion }
+  return { filesBytes: filesBytes + oldFilesBytes, filesQuotaBytes, codeBytes, codeVersion }
 }
 
 /** 0 on any failure -- an unreadable cookie jar reads as "nothing to show", not an error the popover surfaces. */

@@ -37,7 +37,8 @@ import { createWebCapability } from './capabilities/web.js'
 import { createEmbedCapability } from './capabilities/embed.js'
 import { createSecretsCapability } from './capabilities/secrets.js'
 import { createFsCapability } from './capabilities/fs.js'
-import { createUserSelectedCapability } from './capabilities/user-selected.js'
+import { createPickGuardCheck, createUserSelectedCapability } from './capabilities/user-selected.js'
+import { createDeclinedConsentEntryPoints } from './capabilities/declined-consent.js'
 import { PickedPathLedger } from './grants/picked-path-ledger.js'
 import type { PickedPath } from './grants/picked-path-ledger.js'
 import type {
@@ -58,7 +59,10 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // Grant and does not belong inside GrantLedger (which has no line budget
   // left to grow a third concern into, A184's own landing having brought it
   // to exactly 500).
-  const pickedPaths = new PickedPathLedger(deps.ledgerStorage)
+  // The picker guard, built once here and shared (Rule 3) with
+  // `PickedPathLedger` below -- see `createPickGuardCheck`'s own doc.
+  const pickGuardCheck = createPickGuardCheck(deps)
+  const pickedPaths = new PickedPathLedger(deps.ledgerStorage, pickGuardCheck)
   // A restored app's pinned, hash-verified manifest (`hydrateFromPinnedManifest`),
   // standing in until `registerApp` supplies a fresh one. Not written into
   // `ledger`: `GrantLedger.registerApp` would raise the version floor and
@@ -128,7 +132,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // capabilities/fs.ts -- it is authorised by the picker choice, not by the
   // `fs` grant every other method here checks, and that difference is
   // structural (handles.ts's "FileHandle" exception), not cosmetic.
-  const fs = { ...createFsCapability({ deps, handleTable, ledger, canonical }), ...createUserSelectedCapability({ deps, handleTable, ledger, pickedPaths, canonical }) }
+  const fs = { ...createFsCapability({ deps, handleTable, ledger, canonical }), ...createUserSelectedCapability({ deps, handleTable, ledger, pickedPaths, canonical, pickGuardCheck }) }
 
   async function manifest (origin: string): Promise<Manifest> {
     const found = registeredManifest(canonical(origin))
@@ -291,47 +295,11 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     }
   }
 
-  // All three below are GENUINELY never-rejecting, unlike every other method
-  // in this file that calls `canonical()` unguarded: those propagate a
-  // malformed origin as a rejection because a wrong answer there is a real
-  // broker fault worth surfacing. These three cannot make that same trade --
-  // `requestInstallConsent` (src/main/install-consent.ts) documents itself
-  // as never throwing, and A145's value is advisory only, so degrading a bad
-  // origin to "nothing remembered" / "nothing recorded" costs one avoidable
-  // re-prompt at worst, never a security regression, exactly like every
-  // other failure mode this feature already tolerates.
-  async function declinedCapabilitiesFor (origin: string): Promise<readonly CapabilityKind[] | undefined> {
-    let key: string
-    try {
-      key = canonical(origin)
-    } catch (error) {
-      console.error('[broker] declinedCapabilitiesFor called with a string that is not an origin', origin, error)
-      return undefined
-    }
-    return ledger.declinedCapabilitiesFor(key)
-  }
-
-  async function recordDeclinedConsent (origin: string, capabilities: readonly CapabilityKind[]): Promise<void> {
-    let key: string
-    try {
-      key = canonical(origin)
-    } catch (error) {
-      console.error('[broker] recordDeclinedConsent called with a string that is not an origin', origin, error)
-      return
-    }
-    ledger.recordDeclinedConsent(key, capabilities)
-  }
-
-  async function clearDeclinedConsent (origin: string): Promise<void> {
-    let key: string
-    try {
-      key = canonical(origin)
-    } catch (error) {
-      console.error('[broker] clearDeclinedConsent called with a string that is not an origin', origin, error)
-      return
-    }
-    ledger.clearDeclinedConsent(key)
-  }
+  // The advisory decline-tracking surface (A145) -- see
+  // ./capabilities/declined-consent.ts's own header for why these three are
+  // genuinely never-rejecting, unlike every other method in this file that
+  // calls `canonical()` unguarded.
+  const { declinedCapabilitiesFor, recordDeclinedConsent, clearDeclinedConsent } = createDeclinedConsentEntryPoints(ledger, canonical)
 
   /**
    * `GrantLedger.grant` (A23) can throw when persisting the new grant set
@@ -376,6 +344,10 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     // UNCONDITIONAL, exactly as in `revoke`: a disk failure must never be the
     // reason a revoked grant's handles are left running.
     if (live !== undefined) await handleTable.revoke(key, live.id)
+    // web.embed's stored script string is not one of `handleTable`'s
+    // handles, so its own revoke above never reaches it -- without this it
+    // outlives the grant that justified storing it.
+    if (live !== undefined && capability === 'web.embed') embed.forgetScript(key)
     if (persistError !== undefined) {
       throw fail('internal', 'the revocation could not be persisted', undefined, errnoOf(persistError))
     }
@@ -447,6 +419,11 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    */
   async function revoke (origin: string, grantId: GrantId): Promise<void> {
     const key = canonical(origin)
+    // CAPTURED BEFORE THE DELETE, same reason as `revokePersisted`'s own
+    // `live`: once `ledger.revoke` runs, nothing says which capability
+    // `grantId` named, and clearing an embed script below needs to know it
+    // WAS `web.embed`.
+    const embedGrant = ledger.currentGrant(key, 'web.embed')
     let persistError: unknown
     try {
       // Ledger first, synchronously: a grants()/connect() call racing the
@@ -458,7 +435,16 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
       persistError = error
     }
     await handleTable.revoke(key, grantId)
+    // `revokePersisted`'s own comment above -- the script string is not a handle.
+    if (embedGrant?.id === grantId) embed.forgetScript(key)
     if (persistError !== undefined) throw fail('internal', 'the revocation could not be persisted', undefined, errnoOf(persistError))
+  }
+
+  /** See `Broker.dropOrigin`'s own doc. Nothing here touches the ledger:
+   * unlike `revoke`, a session ending withdraws no grant, so what is
+   * persisted on disk is untouched -- only the in-memory handles go. */
+  async function dropOrigin (origin: string): Promise<void> {
+    await handleTable.dropOrigin(canonical(origin))
   }
 
   return {
@@ -479,6 +465,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     grant,
     revoke,
     revokePersisted,
-    revokeUserSelectedPath
+    revokeUserSelectedPath,
+    dropOrigin
   }
 }
