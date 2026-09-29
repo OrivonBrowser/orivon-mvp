@@ -18,16 +18,24 @@ README's "What it must never import".
 
 ## Design notes
 
-**Every `fs` `*Sync` export except `readFileSync`/`existsSync` works only in a Worker of a
+**Every `fs` `*Sync` export, including `realpathSync`, works only in a Worker of a
 cross-origin isolated app** ([`ADR-0016`](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)'s
-amendment), over the Worker's synchronous twin (`../worker/README.md`'s own note) --
-[`core-sync.ts`](core-sync.ts) is the synchronous twin of [`core.ts`](core.ts)'s `do*()` functions,
-sharing confinement ([`paths.ts`](paths.ts)), root special-casing ([`root.ts`](root.ts)) and stats
-conversion ([`stats.ts`](stats.ts)) with them; only the "await or not" itself cannot be shared, so
-each function is written twice, once per execution model. `openSync`/`readSync`/`writeSync`/
-`fstatSync`/`closeSync` keep their own fd table, separate from `fs.open`'s
-([`handle.ts`](handle.ts)'s `openByFdSync` doc comment says why). `realpathSync` stays a permanent
-refusal everywhere: there is no async `realpath` in this shim for it to share a core with.
+amendment), except `readFileSync`/`existsSync`, which work everywhere -- over the Worker's
+synchronous twin (`../worker/README.md`'s own note) -- [`core-sync.ts`](core-sync.ts) is the
+synchronous twin of [`core.ts`](core.ts)'s `do*()` functions, sharing confinement
+([`paths.ts`](paths.ts)), root special-casing ([`root.ts`](root.ts)) and stats conversion
+([`stats.ts`](stats.ts)) with them; only the "await or not" itself cannot be shared, so each
+function is written twice, once per execution model. `realpathSync`/`realpath`/`fs.promises.realpath`
+answer entirely locally, over a `stat` to confirm existence: `orivon.fs` never reports a symlink as
+its own kind (`core-sync.ts`'s `doRealpathSync` doc comment), so the real path of anything this
+shim can stat is just its own normalised absolute path under the virtual root.
+`openSync`/`readSync`/`writeSync`/`fstatSync`/`closeSync` keep their own fd table, separate from
+`fs.open`'s: not because the broker could not address the same handle either way (it can,
+`worker/orivon-server.ts` keeps one generic handle table regardless of which side asked for it),
+but because the two client-side wrappers this shim builds over it never expose a synchronous and
+an asynchronous face of the SAME handle (`handle.ts`'s `openByFdSync` doc comment has the detail).
+An fd real only in the other family fails `EBADF`, naming which family actually holds it, rather
+than reading as though it had never been opened at all.
 Elsewhere -- the page, or a Worker with no `SharedArrayBuffer` -- every one of these calls throws
 the same named refusal it always has ([`unsupported.ts`](unsupported.ts)).
 
