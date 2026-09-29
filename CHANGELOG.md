@@ -13,6 +13,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Tearing a tab off shows where its window will open.** A preview of the page follows the pointer; letting go
+  over the page or outside every window opens the window there, in front and at once. Over another window's
+  strip a line marks where the tab will land. On Linux X11 a middle click on the strip's empty end opens a tab.
+- **Settings and History have a new look**, shared with Profiles and Private: Settings' sections are grouped
+  in a sidebar with icons and its search; History marks each site and heads each day with a rule.
 - **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
   `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
   popups and options pages work on every website; blocking rules and apps holding permissions come next.
@@ -114,6 +119,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   when no address was given.
 - **History search answers at once on a long history**, whether most pages match or almost none do.
 - **A private window keeps the keyboard shortcuts** of the profile that opened it.
+- **Settings, History, Profiles and a private window's first page load under `npm run dev`**; they were blank.
+- **The main menu shows every entry with no scroll bar**, and a new split shows both panes painted at once.
 - **A `.eth` or `ipfs://` site can be framed only by a page of its own origin**, so another site cannot
   lay it under its own page to steer the person's clicks; an app granted `web.embed` for it still shows it.
 - **A native addon built with napi-rs loads**: its WebAssembly build gets Node-API and memory the way

@@ -43,7 +43,23 @@ function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoCon
 
 
 function actions (overrides: Partial<ShellActions> = {}): ShellActions {
-  return { openPermissions: vi.fn(), openSiteInfo: vi.fn(), runCommand: vi.fn(), openMenu: vi.fn(), dragTab: vi.fn(), dropTab: vi.fn(), showTabMenu: vi.fn(), ...overrides }
+  return {
+    openPermissions: vi.fn(),
+    openSiteInfo: vi.fn(),
+    runCommand: vi.fn(),
+    openMenu: vi.fn(),
+    beginTabDrag: vi.fn(),
+    dragTab: vi.fn(),
+    dropTab: vi.fn(),
+    endTabDrag: vi.fn(),
+    showTabMenu: vi.fn(),
+    toggleMaximize: vi.fn(),
+    windowMoveStart: vi.fn(),
+    windowMoveTo: vi.fn(),
+    windowMoveEnd: vi.fn(),
+    windowMoveCancel: vi.fn(),
+    ...overrides
+  }
 }
 
 function dispatch (command: unknown, senderFrame: unknown = CHROME_FRAME): unknown {
@@ -281,5 +297,29 @@ describe('registerShellIpc -- dragging a tab over the page', () => {
     await dispatch({ type: 'dragTab', id: 'tab-1', x: 1, y: 2 }, OTHER_FRAME)
 
     expect(dragTab.mock.calls).toEqual([['tab-1', { x: 300, y: 400 }], ['tab-1', null], ['tab-1', null]])
+  })
+
+  it('releases the drag once it ends, from any frame that names itself the chrome view', async () => {
+    const endTabDrag = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ endTabDrag }))
+
+    await dispatch({ type: 'endTabDrag' })
+    await dispatch({ type: 'endTabDrag' }, OTHER_FRAME)
+
+    expect(endTabDrag).toHaveBeenCalledOnce()
+  })
+})
+
+describe('registerShellIpc -- a manual window move', () => {
+  it('cancels the move without the edge-snap windowMoveEnd carries', async () => {
+    const windowMoveEnd = vi.fn()
+    const windowMoveCancel = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ windowMoveEnd, windowMoveCancel }))
+
+    await dispatch({ type: 'windowMoveCancel' })
+    await dispatch({ type: 'windowMoveCancel' }, OTHER_FRAME)
+
+    expect(windowMoveCancel).toHaveBeenCalledOnce()
+    expect(windowMoveEnd).not.toHaveBeenCalled()
   })
 })

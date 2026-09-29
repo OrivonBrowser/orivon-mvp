@@ -6,11 +6,16 @@ windows: `shell-services.ts` is what they share, and `window-registry.ts` is how
 window holding it. `window-frame.ts` is the native window itself and `window-options.ts` says how a new one
 opens. `tabs.ts` owns the tab collection, with `tab-view.ts`, `tab-types.ts` and `tab-factory.ts` as its
 parts. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
-same page, `tab-menu.ts` is its right-click menu, and `window-actions.ts` is what the chrome's buttons and
-menus ask of their window. Split view: `split-model.ts` is the arithmetic and the groups of joined tabs,
-`split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in that order,
-`split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab would split the
-page. `intro-state.ts` and `intro-view.ts` are the welcome screen.
+same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
+worked out, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
+menu, and `window-actions.ts` is what the chrome's buttons and menus ask of their window. `drag-mode.ts`
+decides whether the empty tail of the strip is native OS drag content or JS-driven (Linux/X11 only);
+`window-move.ts` is the arithmetic a manual window move and its Aero-snap-style edge release use.
+`tear-drag.ts` is the floating preview a tab shows once torn out of its strip, and the mark it leaves on
+whichever window's strip it is dragged over. Split view: `split-model.ts` is the arithmetic and the groups
+of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
+that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
+would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
 and notification questions the permission gate asks, the right-click menu for tabs and the

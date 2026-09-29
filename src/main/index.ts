@@ -178,7 +178,9 @@ function boot (runtime: Runtime): void {
     if (runtime.isPrivate) {
       try {
         // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
-        createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') } })
+        // firstOfLaunch: true -- the ONLY createShellWindow call ORIVON_WINDOW_NO_FOCUS=1 may leave
+        // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
+        createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') }, firstOfLaunch: true })
       } finally {
         markStarted()
       }
@@ -186,7 +188,7 @@ function boot (runtime: Runtime): void {
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
-        createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')) })
+        createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
       } finally {
         markStarted()
       }

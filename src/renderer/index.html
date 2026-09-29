@@ -25,13 +25,22 @@
          clickable element inside it is marked .no-drag explicitly, same
          rule the prior version of this file claimed but never wrote --
          see git history if that claim resurfaces without the class to
-         back it up. -->
+         back it up. The one exception is #tab-strip-tail below, whose
+         no-drag marking is conditional on main's own drag-mode decision
+         (styles/tabstrip.css's [data-drag-mode="manual"] rule), not static
+         here. -->
     <div id="tabrow" class="tabrow drag" role="tablist">
       <button id="new-tab" class="newtabbtn no-drag" type="button" aria-label="New tab">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
           <path d="M5 12h14" /><path d="M12 5v14" />
         </svg>
       </button>
+      <!-- The empty rest of the strip: part of #tabrow's own drag region by
+           default (an untagged descendant of a drag element stays
+           draggable) in the native drag mode, no-drag and JS-driven
+           (strip-drag.ts) in the manual one -- main.ts sets [data-drag-mode]
+           from the preload's own `dragMode` (drag-mode.ts). -->
+      <div id="tab-strip-tail" class="tabstrip-tail" role="presentation"></div>
     </div>
 
     <div id="toolbar" class="toolbar">

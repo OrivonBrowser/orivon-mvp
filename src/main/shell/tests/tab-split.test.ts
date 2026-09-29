@@ -54,6 +54,7 @@ const AREA = { x: 0, y: 100, width: 1000, height: 600 }
 interface Rig {
   manager: InstanceType<typeof TabManager>
   children: unknown[]
+  contentView: { addChildView: ReturnType<typeof vi.fn>, removeChildView: ReturnType<typeof vi.fn> }
   area: { current: typeof AREA }
   backdrop: { view: { name: string, setBounds: ReturnType<typeof vi.fn> }, update: ReturnType<typeof vi.fn> }
   fullscreen: (id: string, entered: boolean) => void
@@ -65,8 +66,16 @@ interface Rig {
 
 function rig (): Rig {
   const children: unknown[] = []
+  // Electron 44's own `View`: re-adding a child already there reorders it to
+  // the top instead of appending a duplicate; a fresh one goes at `index`,
+  // the end by default (see pane-host.test.ts's identical fake).
   const contentView = {
-    addChildView: vi.fn((view: unknown) => { children.push(view) }),
+    addChildView: vi.fn((view: unknown, index?: number) => {
+      const at = children.indexOf(view)
+      if (at !== -1) children.splice(at, 1)
+      if (at !== -1 || index === undefined) children.push(view)
+      else children.splice(Math.min(index, children.length), 0, view)
+    }),
     removeChildView: vi.fn((view: unknown) => { const at = children.indexOf(view); if (at !== -1) children.splice(at, 1) })
   }
   const area = { current: AREA }
@@ -92,6 +101,7 @@ function rig (): Rig {
   return {
     manager,
     children,
+    contentView,
     area,
     backdrop,
     onEmpty,
@@ -120,6 +130,22 @@ describe('two tabs in a split', () => {
     expect(backdrop.view.setBounds).toHaveBeenLastCalledWith(AREA)
     expect(backdrop.update).toHaveBeenLastCalledWith(expect.objectContaining({ orientation: 'row', active: 'b' }))
     expect(manager.getState().activeTabId).toBe(b)
+  })
+
+  it('never detaches the pane already on screen just because the backdrop is appearing beside it', () => {
+    // The first split: `b` is already shown alone (createTab activated it)
+    // when the split adds the backdrop and `a` beside it. A stray
+    // removeChildView on `b` here would be the exact bug that left a first
+    // split's surviving pane briefly unpainted.
+    const { manager, contentView } = rig()
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    const viewB = createdViews[1] as RecordedView
+    contentView.removeChildView.mockClear()
+
+    manager.splits.split(a, b, 'right')
+
+    expect(contentView.removeChildView).not.toHaveBeenCalledWith(viewB)
   })
 
   it('sit side by side in the strip, and each knows the other', () => {

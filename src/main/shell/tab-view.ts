@@ -3,7 +3,7 @@
 // `## Design notes`, for why). Pure with respect to TabManager: neither
 // function here reads or writes any tab-collection state.
 import { WebContentsView } from 'electron'
-import type { WebContents, WebPreferences } from 'electron'
+import type { NativeImage, WebContents, WebPreferences } from 'electron'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { shouldClearFavicon } from '../browsing/favicon.js'
@@ -453,4 +453,16 @@ function keepOnlyOwnEntriesOnReturn (record: TabRecord, view: WebContentsView, t
 export function closeParkedViews (record: TabRecord): void {
   for (const view of record.parkedViews.values()) closeView(view)
   record.parkedViews.clear()
+}
+
+/** A snapshot of a page, for the floating preview a tear-off drag shows (tear-drag.ts). `null` for a gone or
+ * already-destroyed webContents, or when the capture itself throws -- none of which are worth failing a drag
+ * over; the caller (`TabManager.capturePage`) falls back to showing no thumbnail at all. */
+export async function captureTabPage (wc: WebContents | undefined): Promise<NativeImage | null> {
+  if (wc === undefined) return null
+  try {
+    return await wc.capturePage()
+  } catch {
+    return null
+  }
 }

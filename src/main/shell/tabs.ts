@@ -155,8 +155,10 @@ export class TabManager {
 
     const { id, record, target } = this.factory.content(url)
     this.add(id, record)
-    void record.view.webContents.loadURL(target)
+    // Attached before it navigates: a detached view's first paint has
+    // nowhere live to land (pane-host.ts's own fix is the other half).
     this.activateTab(id)
+    void record.view.webContents.loadURL(target)
     return id
   }
 
@@ -357,14 +359,9 @@ export class TabManager {
     this.syncViews()
   }
 
-  /** THE PRIMARY WAY A TAB EVER REACHES A REAL ORIGIN: the omnibox and the
-   * dashboard's own navigate command both funnel here (ipc.ts, newtab-
-   * ipc.ts) -- a person's very first act in a fresh tab is typing a URL,
-   * not calling createTab(url) directly. Repartitions via repartitionView()
-   * when the target's session differs, or -- same session -- its app-tab
-   * flag would (appTabFlagChanged's own doc). BLANK_URL has no derivable
-   * origin, so a rejected navigation never swaps (BLANK_URL's own doc: "an
-   * EXISTING tab keeps whatever preload it was created with"). */
+  /** Where the omnibox and the dashboard's navigate command both land (ipc.ts, newtab-ipc.ts). Repartitions
+   * via repartitionView() when the target's session, or its app-tab flag, differs (appTabFlagChanged).
+   * BLANK_URL has no origin, so a rejected navigation never swaps: the tab keeps its preload. */
   navigate (id: string, rawInput: string): void {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return
@@ -453,10 +450,10 @@ export class TabManager {
     return this.tabs.get(id)?.partition
   }
 
-  /** A tab's webContents, or undefined if the tab is gone or its
-   * webContents has already been destroyed -- the common guard every
-   * read-only accessor below needs. */
-  private liveWebContents (id: string): Electron.WebContents | undefined {
+  /** A tab's webContents, or undefined if the tab is gone or its webContents has already been destroyed --
+   * the common guard every read-only accessor below needs, and what tear-drag.ts captures a thumbnail from
+   * (via tab-view.ts's `captureTabPage`, which turns this into a snapshot or `null`, never a throw). */
+  liveWebContents (id: string): Electron.WebContents | undefined {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return undefined
     return record.view.webContents
