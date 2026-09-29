@@ -611,6 +611,17 @@
     real session's manifest declares. A residual, not fixed by this patch: `chrome.tabs.query`
     still answers real data for the doubled-leading-slash URL despite every check in this fork
     correctly refusing it (`docs/open-questions.md` A300) -- filed open, not asserted away.
+42. **`router.ts`: a `crx-remove-listener` arriving while its own `crx-add-listener` is still
+    deferred (patch 38's registration-race wait) now cancels the deferred add, instead of the
+    listener coming back once the wait resolves.** `onAddListener` used to call
+    `observer.addListener(...)` unconditionally once its wait settled; a `crx-remove-listener`
+    for the identical subscription that arrived DURING that wait found nothing yet added (a
+    silent no-op) and the deferred add then ran anyway, re-adding a subscription the caller had
+    already asked removed. `pendingListenerAdds` (a `WeakMap<extensions, Map<listenerKey,
+    symbol>>`, keyed the same way `pendingRegistrations` is) tracks one token per still-deferred
+    add; `onRemoveListener` deletes the matching token before falling through to the real
+    `removeListener` call, and the deferred add checks its own token is still current before
+    calling `addListener` at all.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

@@ -289,6 +289,11 @@ class RoutingDelegate {
 
   private sessionMap: WeakMap<Session, RoutingDelegateObserver> = new WeakMap()
   private workers: WeakSet<any> = new WeakSet()
+  // Orivon patch (UPSTREAM.md patch 42): onAddListener's own deferred-add
+  // token per (extensions, listener key) -- listenerKey's own doc says why
+  // this is keyed the same way pendingRegistrations is (never across
+  // sessions).
+  private pendingListenerAdds: WeakMap<ExtensionRegistryEvents, Map<string, symbol>> = new WeakMap()
 
   private constructor() {
     ipcMain.handle('crx-msg', this.onRouterMessage)
@@ -405,10 +410,26 @@ class RoutingDelegate {
     // case): only an actual race defers to the shared wait.
     const eventSession = getSessionFromEvent(event)
     const eventSessionExtensions = eventSession.extensions || eventSession
+    // Orivon patch (UPSTREAM.md patch 42): a crx-remove-listener for this
+    // SAME subscription can arrive while the wait below is still running
+    // -- onRemoveListener cancels this token by deleting it, so the
+    // deferred add below is skipped instead of re-adding a subscription
+    // the caller already asked removed (`listenerKey`'s own doc).
+    let pending = this.pendingListenerAdds.get(eventSessionExtensions)
+    if (pending === undefined) {
+      pending = new Map()
+      this.pendingListenerAdds.set(eventSessionExtensions, pending)
+    }
+    const key = listenerKey(eventName, extensionId, listener)
+    const token = Symbol('crx-add-listener')
+    pending.set(key, token)
+    const pendingTable = pending
     void (async () => {
       if (eventSessionExtensions.getExtension(extensionId) == null) {
         await waitForRegisteredExtension(eventSessionExtensions, extensionId)
       }
+      if (pendingTable.get(key) !== token) return // cancelled by a same-subscription crx-remove-listener
+      pendingTable.delete(key)
       try {
         observer?.addListener(listener, extensionId, eventName)
       } catch (error) {
@@ -427,7 +448,8 @@ class RoutingDelegate {
       d(`crx-remove-listener refused: sender is not extension ${extensionId}`)
       return
     }
-    const observer = this.sessionMap.get(getSessionFromEvent(event))
+    const eventSession = getSessionFromEvent(event)
+    const observer = this.sessionMap.get(eventSession)
     const listener: EventListener =
       event.type === 'frame'
         ? {
@@ -439,6 +461,17 @@ class RoutingDelegate {
             type: event.type,
             extensionId,
           }
+    // Orivon patch (UPSTREAM.md patch 42): if a crx-add-listener for this
+    // exact subscription is still deferred (waiting out the registration
+    // race, patch 38), cancel it instead of falling through to
+    // removeListener below -- nothing was ever actually added yet, so
+    // there is nothing to remove, and letting the deferred add run anyway
+    // once it resolves would re-add the subscription this call asked
+    // removed.
+    const eventSessionExtensions = eventSession.extensions || eventSession
+    const key = listenerKey(eventName, extensionId, listener)
+    const pending = this.pendingListenerAdds.get(eventSessionExtensions)
+    if (pending?.delete(key) === true) return
     // Orivon patch: same reason as onAddListener above -- removeListener
     // itself never throws today, but this is the same untrusted, unawaited
     // call site, so it is guarded the same way rather than relying on that
@@ -501,6 +534,20 @@ const eventListenerEquals = (a: EventListener) => (b: EventListener) => {
     return a.host === b.host
   }
   return true
+}
+
+/**
+ * Orivon patch (UPSTREAM.md patch 42): a string key for
+ * `RoutingDelegate.pendingListenerAdds`, identifying a subscription the
+ * SAME way `eventListenerEquals` above already does (extensionId + type +
+ * host, scoped to one `eventName`) -- so a `crx-remove-listener` call can
+ * find and cancel a still-deferred `crx-add-listener` call for the exact
+ * subscription it names, never a different one that happens to share an
+ * extensionId or eventName.
+ */
+function listenerKey (eventName: string, extensionId: string, listener: EventListener): string {
+  const hostPart = listener.type === 'frame' ? String(getHostId(listener.host)) : ''
+  return `${eventName}\u0000${extensionId}\u0000${listener.type}\u0000${hostPart}`
 }
 
 export class ExtensionRouter {
