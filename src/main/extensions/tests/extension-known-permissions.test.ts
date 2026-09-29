@@ -8,7 +8,7 @@ describe('filterExtensionLoadWarning', () => {
   })
 
   it('keeps a permission line naming a permission this app does not implement', () => {
-    const message = "Warnings loading extension at /path:\n  Permission 'tabCapture' is unknown."
+    const message = "Warnings loading extension at /path:\n  Permission 'fontSettings' is unknown."
     expect(filterExtensionLoadWarning(message)).toBe(message)
   })
 
