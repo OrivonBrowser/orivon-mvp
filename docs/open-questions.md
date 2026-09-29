@@ -1389,17 +1389,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A284: Served `.eth`/`ipfs://` content sends no `frame-ancestors` **[OWNER]**
-
-- **Question:** Served content can be framed by any page (clickjacking a dApp), and static
-  content cannot set its own header.
-- **Why it matters:** a page under an origin the user trusts (a `.eth` name, an IPFS gateway
-  response) can be embedded and manipulated by any other page that frames it.
-- **Options:** `frame-ancestors 'self'` by default (rec.; breaks embedding by other origins);
-  `'none'`; leave it as the web does today and document the gap.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A285: CCIP-Read egress validates a resolved hostname, then fetches the hostname again **[OWNER]**
 
 - **Question:** `urlRefusal` resolves a CCIP gateway hostname and checks every address against
@@ -1410,19 +1399,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** reuse `pinnedLookup` for CCIP's POST/redirect-following path (rec.; a real change,
   since CCIP needs a body and its own redirect loop, unlike `createDirectFetch`'s GET/HEAD-only
   shape); accept the residual, narrowed by the existing `https`-only rule.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A286: A TTL-0 name can still rebind between the embed check and the connection **[OWNER]**
-
-- **Question:** A `"*"`-admitted document whose host is a name is resolved through the guest
-  session's own `resolveHost`, refused unless every address is public unicast. A name that
-  answers differently once Chromium actually connects still reaches it.
-- **Why it matters:** the same class of residual A196 accepts for `connectSecure`'s own wildcard
-  -- sharing the guest session's host cache narrows the window, it does not close it, since no
-  cancellable webRequest event carries the connected address.
-- **Options:** accept the residual, narrowed as it is (rec.); close it fully only if Electron
-  exposes a cancellable event carrying the connected address.
 - **Who decides:** owner
 - **Blocks:** nothing
 
@@ -1477,7 +1453,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 - **Question:** Can a middle click on the strip's empty end open a tab on Windows, macOS and native Wayland?
 - **Why it matters:** there the end stays a native drag region, which gives the page no click at all; on
-  Linux X11 the shell handles it itself (`d-0189`) and loses nothing a person sees.
+  Linux X11 the shell handles it itself (`d-0195`) and loses nothing a person sees.
 - **Options:** Windows' `hookWindowMessage` for a middle click in the caption area (rec., untested); accept it
   on macOS and Wayland, where the window manager owns the drag.
 - **Who decides:** research first
@@ -1486,7 +1462,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 ### A293: Moving the window by the strip's end on X11 bypasses the window manager **[OWNER]**
 
 - **Question:** Is a window move done by the shell good enough where the window manager's own was before?
-- **Why it matters:** `d-0189` moves the window itself so the strip's end can take a middle click. It
+- **Why it matters:** `d-0195` moves the window itself so the strip's end can take a middle click. It
   maximizes at a top edge and takes half a screen at a side, but a window manager's own tiling previews,
   quarter tiles and keyboard moves no longer start from there.
 - **Options:** keep it (rec.); go back to the native drag region and lose the middle click there.
@@ -1571,5 +1547,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   address-bar click flake has a bounded retry.
 - **Options:** close as not worth pursuing (rec.); probe the untried causes (the `<video>`
   element, a raw CDP client).
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A295: A `<webview>`'s own `webpreferences` attribute may reach a shown page **[AI-REC]**
+
+- **Question:** If Electron parses a `<webview>`'s `webpreferences` attribute into `webPreferences`
+  before `will-attach-webview`, deleting `params.webpreferences` in `hardenGuest` stops nothing, and
+  a key it does not set itself (`experimentalFeatures`, say) reaches a `web.embed` guest. Does it?
+- **Why it matters:** a shown page is another site's document; every preference it runs with
+  should be the shell's choice, never the embedding app's. No escalation through it is known.
+- **Options:** measure it in an e2e and, if the attribute gets through, build the guest's
+  `webPreferences` from an allowlist rather than overriding named keys (rec.); leave it as it is.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
