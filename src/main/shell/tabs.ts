@@ -86,8 +86,9 @@ export class TabManager {
       emitState: () => { this.emitState() },
       captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },
       forgetTab: (id) => { this.forgetTab(id, false) },
-      openTab: (url) => { this.createTab(url) },
-      adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
+      openTab: (url, active) => { this.createTab(url, active) },
+      adoptPopup: (view, partition, active) => { this.adoptPopup(view, partition, active) },
+      openWindow: (url) => shell?.openWindow?.(url),
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       isClosing: () => this.disposed,
@@ -147,7 +148,10 @@ export class TabManager {
     }
   }
 
-  createTab (url?: string): string {
+  /** `active` false leaves the new tab's view detached, behind the current
+   * tab, until a later `activateTab` -- popups.ts's `windowOpenHandler` on a
+   * middle click or a plain ctrl+click. */
+  createTab (url?: string, active = true): string {
     if (this.atCapacity()) {
       // Refuse rather than crash -- see MAX_TABS above. A caller that uses
       // the id (a split's partner) checks atCapacity() first.
@@ -158,13 +162,13 @@ export class TabManager {
     this.add(id, record)
     // Attached before it navigates: a detached view's first paint has
     // nowhere live to land (pane-host.ts's own fix is the other half).
-    this.activateTab(id)
+    if (active) this.activateTab(id)
+    else this.emitState()
     void record.view.webContents.loadURL(target)
     return id
   }
 
-  /** createTab() for a trusted caller (the extension host) whose own policy
-   * already checked `target`, skipping the sanitizeDirectUrl gate that refuses chrome-extension: outright. */
+  /** createTab() for a trusted caller (the extension host): skips the sanitizeDirectUrl gate that refuses chrome-extension: outright, since its own policy already checked `target`. */
   openTrusted (target?: string): [string, Electron.WebContents] | undefined {
     if (this.atCapacity()) return undefined
     const built = target === undefined ? this.factory.content() : this.factory.trusted(target)
@@ -199,12 +203,13 @@ export class TabManager {
     return this.disposed || this.order.length >= MAX_TABS
   }
 
-  /** A popup Chromium already created, with its opener, in the opener's
-   * session (./popups.ts). It navigates itself; nothing is loaded here. */
-  private adoptPopup (view: WebContentsView, partition: string | undefined): void {
+  /** A popup Chromium already created, with its opener, in the opener's session (./popups.ts).
+   * It navigates itself; nothing is loaded here. `active` -- see `createTab`'s own doc. */
+  private adoptPopup (view: WebContentsView, partition: string | undefined, active = true): void {
     const { id, record } = this.factory.popup(view, partition)
     this.add(id, record)
-    this.activateTab(id)
+    if (active) this.activateTab(id)
+    else this.emitState()
   }
 
   /** Asks a tab's page to leave HTML fullscreen. In an isolated world, where

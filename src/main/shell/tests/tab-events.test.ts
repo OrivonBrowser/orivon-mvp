@@ -75,6 +75,7 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
     forgetTab: vi.fn(),
     openTab: vi.fn(),
     adoptPopup: vi.fn(),
+    openWindow: vi.fn(),
     atCapacity: () => false,
     isClosing: () => false,
     htmlFullscreenChanged: vi.fn(),
@@ -163,7 +164,7 @@ describe('wireView -- window.open', () => {
 
     expect(returned).toBe(guest)
     expect(adoptedViews[0]?.options).toEqual({ webContents: guest, webPreferences })
-    expect(host.adoptPopup).toHaveBeenCalledWith(adoptedViews[0], undefined)
+    expect(host.adoptPopup).toHaveBeenCalledWith(adoptedViews[0], undefined, true)
     expect(host.openTab).not.toHaveBeenCalled()
   })
 
@@ -193,7 +194,37 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://accounts.example/auth', disposition: 'new-window', features: 'width=500' })
     response.createWindow?.({ webContents: fakeContents(), webPreferences: {} } as never)
 
-    expect(host.adoptPopup).toHaveBeenCalledWith(expect.anything(), 'persist:app')
+    expect(host.adoptPopup).toHaveBeenCalledWith(expect.anything(), 'persist:app', true)
+    expect(host.openWindow).not.toHaveBeenCalled()
+  })
+
+  it('builds and loads its own view for a modifier-click open, which carries no guest webContents', () => {
+    const wc = fakeContents()
+    const host = fakeHost()
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'background-tab' })
+    const returned = response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(adoptedViews[0]?.options).not.toHaveProperty('webContents')
+    expect((returned as unknown as FakeContents).loadURL).toHaveBeenCalledWith('https://other.example/')
+    expect(host.adoptPopup).toHaveBeenCalledWith(adoptedViews[0], undefined, false)
+  })
+
+  it('opens a shift-click (new-window, no guest) in a new window rather than adopting a tab here', () => {
+    const wc = fakeContents()
+    const openedContents = fakeContents('https://other.example/')
+    const openWindow = vi.fn((): never => openedContents as never)
+    const host = fakeHost({ openWindow })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' })
+    const returned = response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(openWindow).toHaveBeenCalledWith('https://other.example/')
+    expect(returned).toBe(openedContents)
+    expect(adoptedViews).toHaveLength(0)
+    expect(host.adoptPopup).not.toHaveBeenCalled()
   })
 
   it('opens noopener as today\'s disconnected tab', () => {
@@ -204,7 +235,7 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
 
     expect(response.action).toBe('deny')
-    expect(host.openTab).toHaveBeenCalledWith('https://other.example/')
+    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true)
   })
 
   it('refuses outright at the tab ceiling', () => {
@@ -390,7 +421,7 @@ describe('wireView -- a tab that changes host', () => {
 
     openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
 
-    expect(after.openTab).toHaveBeenCalledWith('https://other.example/')
+    expect(after.openTab).toHaveBeenCalledWith('https://other.example/', true)
     expect(before.openTab).not.toHaveBeenCalled()
   })
 
