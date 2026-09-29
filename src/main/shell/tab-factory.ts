@@ -90,7 +90,7 @@ export class TabFactory {
     // cannot tell that apart from a real app on scheme alone, but the
     // dashboard is shell UI (ADR-0003's "browser state" tier), never app
     // content, and must never be isolated as if it were an app's own origin.
-    const partition = isDashboard ? undefined : partitionForTarget(target, this.broker())
+    const partition = isDashboard ? undefined : partitionForTarget(target)
 
     const view = makeTabView(
       isDashboard ? this.newTabPreload : this.appPreload,
@@ -103,12 +103,15 @@ export class TabFactory {
       // tab instead gets appTabArgsFor's ADR-0017 flag, if this origin is
       // already a registered app.
       isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : appTabArgsFor(target, this.broker()),
-      // Only the dashboard and internal pages (below) get a pre-paint
-      // background -- an ordinary website tab is left at Electron's default
-      // (see makeTabView's own doc): a site with no CSS background of its
-      // own renders white, as the web expects, and painting it dark first
-      // would make a transparent-background site look wrong in dark mode.
-      isDashboard ? APP_DARK_WASH : undefined
+      {
+        // Only the dashboard and internal pages (below) get a pre-paint
+        // background -- an ordinary website tab is left at Electron's default
+        // (see makeTabView's own doc): a site with no CSS background of its
+        // own renders white, as the web expects, and painting it dark first
+        // would make a transparent-background site look wrong in dark mode.
+        backgroundColor: isDashboard ? APP_DARK_WASH : undefined,
+        target
+      }
     )
     const id = makeTabId()
     const record = this.recordFor(view, partition, { isDashboardTab: isDashboard })
@@ -122,7 +125,7 @@ export class TabFactory {
    * session/app-tab handling as content(), without its sanitizeDirectUrl
    * gate, which refuses chrome-extension: outright. */
   trusted (target: string): BuiltTab & { readonly target: string } {
-    const partition = partitionForTarget(target, this.broker())
+    const partition = partitionForTarget(target)
     const view = makeTabView(this.appPreload, partition, appTabArgsFor(target, this.broker()))
     const id = makeTabId()
     const record = this.recordFor(view, partition)
@@ -138,7 +141,7 @@ export class TabFactory {
       this.internalPreload,
       INTERNAL_PARTITION,
       [`--orivon-internal-page=${page}`],
-      resolveThemeColor(INTERNAL_PAGE_BACKGROUND)
+      { backgroundColor: resolveThemeColor(INTERNAL_PAGE_BACKGROUND) }
     )
     const id = makeTabId()
     const record = this.recordFor(view, INTERNAL_PARTITION, { internalPage: page })

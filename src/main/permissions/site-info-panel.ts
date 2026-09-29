@@ -40,6 +40,7 @@ export function createSiteInfoPanel (
   activeWebContents: () => WebContents | undefined,
   reloadActiveTab: () => void,
   openAllSites: () => void,
+  openExtensions: () => void,
   dirname: string
 ): SiteInfoPanel {
   // Read by the IPC registration closure below, set on every open BEFORE
@@ -57,7 +58,7 @@ export function createSiteInfoPanel (
     align: 'left',
     background: PANEL_POPOVER_BACKGROUND,
     registerIpc: (webContents, onContentHeight) => {
-      registerSiteInfoIpc(webContents, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openAllSites, onContentHeight)
+      registerSiteInfoIpc(webContents, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openAllSites, openExtensions, onContentHeight)
       return () => {}
     }
   })

@@ -30,6 +30,58 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
+// window.orivon calls must run as a script the page itself loaded, not
+// through Playwright's page.evaluate() (ADR-0045; main-world-socket.ts's
+// README.md Design notes). An INSTALLED app's origin is served from a
+// hash-verified pin, so -- unlike a live origin's plain static server
+// (freetube-fixture.ts's own asPage route) -- the script has to be part of
+// the pin from the start: pinRealApp's own `extra` parameter, below. Each
+// reports through a page-global `runPinnedCheck` polls for, never a
+// Playwright return value.
+const DETECTED_SCRIPT = `(async () => {
+  try {
+    const grants = await window.orivon.app.grants()
+    window.__detected = {
+      hasOrivon: typeof window.orivon === 'object',
+      notNativeFetch: !/\\[native code\\]/.test(String(window.fetch)),
+      grantKinds: grants.map((g) => g.capability),
+      csp: document.querySelector('meta[http-equiv]')?.getAttribute('content') ?? '(header only)'
+    }
+  } catch (error) {
+    window.__detected = { error: String(error) }
+  }
+})()`
+
+const DIAL_PROBE_SCRIPT = `(async () => {
+  const describe = (error) => JSON.stringify({ code: error && error.code, platformCode: error && error.platformCode, message: error && error.message })
+  let lookup
+  try {
+    lookup = JSON.stringify(await window.orivon.net.lookup({ hostname: 'www.youtube.com' }))
+  } catch (error) {
+    lookup = 'threw ' + describe(error)
+  }
+  let dial
+  try {
+    const socket = await window.orivon.net.connectSecure({ host: 'www.youtube.com', port: 443 })
+    await socket.close()
+    dial = 'connected'
+  } catch (error) {
+    dial = 'threw ' + describe(error)
+  }
+  window.__dialProbe = { lookup, dial }
+})()`
+
+/** Injects `scriptPath` as a real `<script src>` (never an inline one -- the granted CSP has no 'unsafe-inline' either, and a dynamically-appended inline script is attributed `<anonymous>` regardless: smoke-helpers.mjs's own evaluateRetrying doc comment) and polls for the page-global it reports to. Neither step calls window.orivon -- creating a DOM element and reading a plain global are not that -- so plain view.evaluate() is fine here. */
+async function runPinnedCheck<T> (view: ReturnType<typeof findChrome>, scriptPath: string, globalName: string, timeoutMs = 30_000): Promise<T> {
+  await view.evaluate((path: string) => {
+    const script = document.createElement('script')
+    script.src = path
+    document.head.appendChild(script)
+  }, scriptPath)
+  await view.waitForFunction((name: string) => (window as unknown as Record<string, unknown>)[name] !== undefined, globalName, { timeout: timeoutMs })
+  return await view.evaluate((name: string) => (window as unknown as Record<string, unknown>)[name], globalName) as T
+}
+
 const TEST_TIMEOUT_MS =
   ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 +
   8_000 * 8 + 60_000 + APP_CLOSE_RACE_MS + 30_000
@@ -44,7 +96,10 @@ it(
         app = await launchElectron({ appPath: '.' })
 
         const userDataDir = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
-        const { manifest, fileCount } = await pinRealApp(userDataDir)
+        const { manifest, fileCount } = await pinRealApp(userDataDir, [
+          { path: '/__check-detected.js', content: new TextEncoder().encode(DETECTED_SCRIPT) },
+          { path: '/__check-dial-probe.js', content: new TextEncoder().encode(DIAL_PROBE_SCRIPT) }
+        ])
         check(`the real app bundle pins (${fileCount} files from test/apps/freetube/)`, fileCount > 10)
 
         const wired = await grantAndServe(app.evaluate.bind(app), manifest)
@@ -66,18 +121,9 @@ it(
         if (view === undefined) throw new Error('no view found showing the app origin')
 
         // ---- What the app itself concluded about its tab -----------------
-        const detected = await evaluateRetrying(view, async () => {
-          const grants = await (globalThis as unknown as { orivon: { app: { grants: () => Promise<unknown[]> } } }).orivon.app.grants()
-          return {
-            hasOrivon: typeof (globalThis as { orivon?: unknown }).orivon === 'object',
-            // The tell: the routed fetch is an ordinary JS function, while
-            // a native one reports [native code]. That is all it claims --
-            // the routed binding carries the platform's own descriptor.
-            notNativeFetch: !/\[native code\]/.test(String(globalThis.fetch)),
-            grantKinds: (grants as Array<{ capability: string }>).map((g) => g.capability),
-            csp: document.querySelector('meta[http-equiv]')?.getAttribute('content') ?? '(header only)'
-          }
-        })
+        const detected = await runPinnedCheck<{ hasOrivon: boolean, notNativeFetch: boolean, grantKinds: string[], csp: string, error?: string }>(
+          view, `${ORIGIN}/__check-detected.js`, '__detected'
+        )
         check('this is a REGISTERED APP TAB: window.fetch is not the platform\'s own function, so the routed fetch is installed', detected.notNativeFetch, JSON.stringify(detected))
         check('the app holds the two grants it declared', detected.grantKinds.includes('https.connect') && detected.grantKinds.includes('fs'), JSON.stringify(detected.grantKinds))
 
@@ -87,30 +133,7 @@ it(
         // answers with a certificate for nobody; verification refuses it. No
         // local test server can catch this -- one certificate is served
         // whether SNI arrives or not -- so it needs a real multi-tenant host.
-        const dialProbe = await evaluateRetrying(view, async () => {
-          const orivon = (globalThis as unknown as {
-            orivon: { net: { connectSecure: (o: { host: string, port: number }) => Promise<{ close: () => Promise<void> }>, lookup: (o: { hostname: string }) => Promise<unknown> } }
-          }).orivon
-          const describe = (error: unknown): string => {
-            const err = error as { code?: string, platformCode?: string, message?: string }
-            return JSON.stringify({ code: err.code, platformCode: err.platformCode, message: err.message })
-          }
-          let lookup: string
-          try {
-            lookup = JSON.stringify(await orivon.net.lookup({ hostname: 'www.youtube.com' }))
-          } catch (error) {
-            lookup = `threw ${describe(error)}`
-          }
-          let dial: string
-          try {
-            const socket = await orivon.net.connectSecure({ host: 'www.youtube.com', port: 443 })
-            await socket.close()
-            dial = 'connected'
-          } catch (error) {
-            dial = `threw ${describe(error)}`
-          }
-          return { lookup, dial }
-        }, 30_000)
+        const dialProbe = await runPinnedCheck<{ lookup: string, dial: string }>(view, `${ORIGIN}/__check-dial-probe.js`, '__dialProbe', 30_000)
 
         check(
           `the broker's TLS dial completes against a real name-based virtual host (net.lookup, a separate open finding: ${dialProbe.lookup})`,

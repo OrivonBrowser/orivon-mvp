@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import type { MainWorldDatagram } from '../main-world-socket.js'
 import type { SendRefusal } from '../../../contracts/handles.js'
-import { LIMITS, fakeBridge, fakeSocketBridgeResult, fakeUdpBridgeResult, tick } from './main-world-socket.test-helpers.js'
+import { LIMITS, asPage, fakeBridge, fakeSocketBridgeResult, fakeUdpBridgeResult, tick } from './main-world-socket.test-helpers.js'
 
 describe('installOrivon -- net.udpBind', () => {
   function bindTarget (udp = fakeUdpBridgeResult()): {
@@ -17,7 +17,7 @@ describe('installOrivon -- net.udpBind', () => {
   } {
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(fakeSocketBridgeResult(), udp), LIMITS, target)
-    return { orivon: target.orivon as never, udp }
+    return { orivon: asPage(target.orivon) as never, udp }
   }
 
   it('resolves to a UdpSocket-shaped object with real WHATWG streams', async () => {

@@ -9,7 +9,7 @@
 // `installWebSocketRoute` is SERIALISED into the main world (see
 // ./wire.ts's header); README.md's Design notes have its numbers and
 // its divergences from a browser.
-import type { RoutedSocket } from './types.js'
+import type { InternalNet, RoutedSocket } from './types.js'
 import type { WebSocketInbound, WebSocketRouteTarget, WebSocketSlot } from './websocket-types.js'
 
 type PlatformWebSocket = WebSocket
@@ -26,8 +26,10 @@ export function installWebSocketRoute (
   if (!isAppTab) return
   const slot = (target as Record<symbol, WebSocketSlot | undefined>)[Symbol.for('orivon.routed-network')]
   const NativeOrNot = target.WebSocket as (new (url: string, protocols?: string | string[]) => PlatformWebSocket) | undefined
+  // Attribution, not just routing -- ./fetch.ts's own header has the reasoning; ../surface/README.md's Design notes for the shared check itself.
+  const callerIsPage = (target as Record<symbol, InternalNet | undefined>)[Symbol.for('orivon.internal-net')]?.callerIsPage
   if (slot?.wire === undefined || slot.dial === undefined || slot.core === undefined || slot.events === undefined ||
-    slot.webSocketFrames === undefined || typeof NativeOrNot !== 'function') return
+    slot.webSocketFrames === undefined || callerIsPage === undefined || typeof NativeOrNot !== 'function') return
   // Fresh bindings, so the narrowing above holds inside every nested function.
   const wire = slot.wire
   const dial = slot.dial
@@ -331,7 +333,10 @@ export function installWebSocketRoute (
         closeSent: false, closeReceived: undefined, failed: false, timer: undefined
       }
       states.set(this, s)
-      if (!core.routes(httpUrl)) {
+      // Attribution runs SYNCHRONOUSLY, in the constructor -- the point this
+      // class itself decides routed vs. native -- exactly like ../surface/
+      // main-world-socket.ts's `guarded`.
+      if (!core.routes(httpUrl) || !callerIsPage!(WebSocket as unknown as (...args: never[]) => unknown)) {
         attachNative(this, s, new NativeWebSocket(parsed.href, list))
         return
       }

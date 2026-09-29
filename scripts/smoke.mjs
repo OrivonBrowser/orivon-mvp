@@ -94,7 +94,22 @@ async function startFixtureServer () {
     '/b': '<title>fixture-b</title><body>fixture B</body>',
     '/c': '<title>fixture-c</title><body>fixture C</body>',
     '/d': '<title>fixture-d</title><body>fixture D</body>',
-    '/icon-page': '<title>fixture-icon</title><link rel="icon" href="/icon.png"><body>fixture icon page</body>'
+    '/icon-page': '<title>fixture-icon</title><link rel="icon" href="/icon.png"><body>fixture icon page</body>',
+    // A literal, parser-inserted <script> -- main-world-socket.ts's own
+    // extension-code check attributes a window.orivon.* call to this
+    // document's own URL only when the calling code is real page script,
+    // never code Playwright's own evaluate() injects (measured live: such
+    // code carries no fileName at any frame, not even a dynamically
+    // createElement()'d <script>, which Chromium also attributes as
+    // `<anonymous>`). The result crosses back out through a plain global
+    // a plain evaluateRetrying() read can see, which needs no attribution.
+    '/orivon-probe': '<title>fixture-orivon-probe</title><script>window.__orivonProbe = (async () => {' +
+      'const out = {}\n' +
+      'try { out.grants = await window.orivon.app.grants() } catch (e) { out.grantsCode = e?.code ?? String(e) }\n' +
+      'try { await window.orivon.app.manifest(); out.manifest = "resolved" } catch (e) { out.manifestCode = e?.code ?? String(e); out.manifestName = e?.name }\n' +
+      'try { await window.orivon.fs.readFile("x.txt"); out.fs = "resolved" } catch (e) { out.fsCode = e?.code ?? String(e) }\n' +
+      'window.__orivonProbeResult = out\n' +
+      '})()</script><body>fixture orivon probe</body>'
   }
   const server = createServer((req, res) => {
     if (req.url === '/icon.png') {
@@ -264,28 +279,18 @@ async function main () {
         // contextBridge intact, which src/contracts/errors.ts's closed enum
         // depends on absolutely and which nothing in this repository
         // establishes anywhere else.
-        const control = await evaluateRetrying(afterNavigateView, async () => {
-          const out = {}
-          try {
-            out.grants = await window.orivon.app.grants()
-          } catch (e) {
-            out.grantsCode = e?.code ?? String(e)
-          }
-          try {
-            await window.orivon.app.manifest()
-            out.manifest = 'resolved'
-          } catch (e) {
-            out.manifestCode = e?.code ?? String(e)
-            out.manifestName = e?.name
-          }
-          try {
-            await window.orivon.fs.readFile('x.txt')
-            out.fs = 'resolved'
-          } catch (e) {
-            out.fsCode = e?.code ?? String(e)
-          }
-          return out
-        })
+        // Navigates to a fixture page whose OWN literal <script> makes these
+        // calls (scripts/smoke.mjs's own startFixtureServer, '/orivon-probe'):
+        // a window.orivon.* call made from code Playwright's evaluate()
+        // itself injects has no page frame at all (measured live -- not
+        // even a dynamically created <script> element gets one, Chromium
+        // attributes it `<anonymous>`), so main-world-socket.ts's
+        // extension-code check refuses it the same way it refuses any
+        // other caller it cannot attribute, correctly. Reading the result
+        // back out is a plain property read, which needs no attribution.
+        await afterNavigateView.goto(urlFor('/orivon-probe'))
+        await waitFor(async () => await evaluateRetrying(afterNavigateView, () => window.__orivonProbeResult !== undefined))
+        const control = await evaluateRetrying(afterNavigateView, () => window.__orivonProbeResult)
         check(
           'orivon.app.grants round-trips ok with no grants registered for this origin',
           Array.isArray(control.grants) && control.grants.length === 0,

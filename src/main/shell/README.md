@@ -137,6 +137,25 @@ app from any other session opens as an ordinary tab in the app's own session, th
 pinned bundle is served (`ADR-0007`). A popup's app-tab flag follows its own URL, not its
 opener's.
 
+**`routePopup`'s `isApp` catches a gap `targetPartition === opener.partition` alone cannot see.**
+A held grant alone puts no origin in its own partition (`ADR-0044`), so a granted,
+network-served app and an ordinary site both commonly carry `partition: undefined` -- the two
+would otherwise look identical to the partition comparison above, adopting a popup from any site
+straight into a granted app's own window with `window.opener` intact. `isApp` (`routePopup`'s own
+arg, `popupTargetIsApp` in `tab-view.ts`) checks the thing the partition check cannot: a held
+grant or cache-served status, regardless of what partition either side happens to be on. It only
+fires across a real origin change -- an app opening a popup to itself is unaffected.
+
+**The same `isApp` question is asked again on did-navigate, not only at `routePopup` time.**
+`routePopup` only ever sees the URL window.open() was given; a same-origin popup that later moves
+ITSELF (`w.location = ...`) into a different, granted or cache-served app never goes through
+`routePopup` again. `tab-view.ts`'s did-navigate handler re-asks `popupTargetIsApp` of the
+committed URL (`openerCutNeeded`), and rebuilds the view when it answers yes and the opener's own
+origin differs -- even when the partition string is not actually changing (two granted,
+network-served apps both carry `partition: undefined`), since a freshly built WebContents is the
+only thing that drops `window.opener` at all. This is also the one case `keepsOpenerSession`
+exempts: the opener link is exactly what must not survive here.
+
 **[`leave-page-prompt.ts`](leave-page-prompt.ts): closing a tab never asks.** `closeTab()`
 closes the webContents without running `beforeunload` (A231).
 

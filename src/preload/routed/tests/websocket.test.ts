@@ -264,6 +264,25 @@ describe('routed WebSocket -- the native path', () => {
     expect(seen).toEqual(['error', { close: 1006, reason: '', wasClean: false }])
     expect(FakeNativeWebSocket.last?.url).not.toBe('wss://down.example/')
   })
+
+  // A MAIN-world extension script constructing WebSocket must reach only
+  // what the page's own native one would -- never the app's granted dial.
+  // ./fetch.ts's own header has the fuller reasoning.
+  it('opens natively for a caller installOrivon\'s own check would refuse, even to a granted host', () => {
+    let dials = 0
+    const target = wsTarget({ dial: async () => { dials++; throw refusal('denied') }, callerIsPage: () => false })
+    const ws = new target.WebSocket('wss://granted.example/feed')
+    expect(FakeNativeWebSocket.last!.url).toBe('wss://granted.example/feed')
+    expect([ws.url, dials]).toEqual(['wss://granted.example/feed', 0])
+  })
+
+  it('still routes normally for a caller installOrivon\'s own check would accept', async () => {
+    let dials = 0
+    const target = wsTarget({ dial: async () => { dials++; return fakeWsPeer().socket }, callerIsPage: () => true })
+    new target.WebSocket('wss://granted.example/feed') // eslint-disable-line no-new
+    await settle()
+    expect(dials).toBe(1)
+  })
 })
 
 describe('routed WebSocket -- a whole routed session', () => {
