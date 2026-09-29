@@ -272,7 +272,8 @@ orivon.fs.writeFile(path, data)      // => Promise<void>
 orivon.fs.readFileSync(path)         // => Uint8Array  the one synchronous call (ADR-0016); genuinely blocks
 orivon.fs.open(path, flags)          // => Promise<FileHandle>
 orivon.fs.mkdir / readdir / stat / rm / rename
-orivon.fs.userSelected(opts)         // => OS file picker; user's choice IS the consent
+orivon.fs.userSelected(opts)         // => OS file picker; user's choice IS the consent; needs a
+                                      //   user activation, and some folders are refused
 
 // --- identity: app keys (silent, per-origin) ---
 orivon.id.publicKey({ curve })       // => Promise<Uint8Array>   derived per origin, no prompt
@@ -480,6 +481,11 @@ justification, first becomes possible.
 ### Rules that apply to every app, signed included
 - `fs` is confined to the app's files directory. `..` traversal is rejected. Outside access
   exists only via `fs.userSelected`.
+- `fs.userSelected` opens a picker only during a user activation in the calling page (a click or
+  key press a moment before, as the web's own pickers require); called without one, it rejects
+  `denied` and shows nothing. The picker refuses a folder that is the browser's own data
+  directory, lies inside it or contains it, a filesystem root, or the home folder itself: it says
+  why, and the call resolves as a cancellation.
 - `net` requires manifest-declared patterns, surfaced verbatim in the grant prompt.
 - `id` app keys derive per origin silently; **named identities** are cross-origin only through
   the explicit connect prompt. In both modes the seed is never exposed and raw key export is
