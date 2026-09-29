@@ -446,6 +446,7 @@ export function wireView (id: string, record: TabRecord): void {
       watchAppTab(view, appTabArgsFor(url, record.host.broker), url)
       record.host.adoptPopup(view, partition, active)
     },
+    openBlobTab: (url, partition, active, loadOptions) => record.host.openBlobTab(url, partition, active, loadOptions),
     openWindow: (url, loadOptions) => record.host.openWindow(url, loadOptions),
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),

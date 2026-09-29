@@ -32,6 +32,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' }))
 
 const { wireView, makeTabView } = await import('../tab-view.js')
+const { MAX_NEW_WINDOWS_PER_MINUTE_PROCESS, processWindowBudget } = await import('../popups.js')
 type Record_ = Parameters<typeof wireView>[1]
 type Host = Record_['host']
 
@@ -75,6 +76,7 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
     forgetTab: vi.fn(),
     openTab: vi.fn(),
     adoptPopup: vi.fn(),
+    openBlobTab: vi.fn(),
     openWindow: vi.fn(),
     atCapacity: () => false,
     isClosing: () => false,
@@ -214,6 +216,40 @@ describe('wireView -- window.open', () => {
     expect(host.adoptPopup).not.toHaveBeenCalled()
   })
 
+  it('opens a same-origin blob: URL as a tab in the opener\'s own partition, never about:blank', () => {
+    // The bug this guards: routePopup returns 'adopt' here (the blob's own minter origin equals
+    // the opener's), but a modifier-click never carries a guest to adopt, and the ordinary tab
+    // pipeline (openTab/createTab) refuses a blob: URL outright (sanitizeDirectUrl) -- silently
+    // landing it on about:blank instead of the same-origin content it can safely show.
+    const wc = fakeContents('https://other.example/')
+    const opened = fakeContents('blob:https://other.example/1b4e28ba-2fa1')
+    const openBlobTab = vi.fn((): never => opened as never)
+    const host = fakeHost({ openBlobTab })
+    wireView('tab-1', record(wc, 'persist:other', host))
+
+    const response = openHandler(wc)({ url: 'blob:https://other.example/1b4e28ba-2fa1', disposition: 'background-tab' })
+    const returned = response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(openBlobTab).toHaveBeenCalledWith('blob:https://other.example/1b4e28ba-2fa1', 'persist:other', false, undefined)
+    expect(returned).toBe(opened)
+    expect(host.openTab).not.toHaveBeenCalled()
+    expect(adoptedViews).toHaveLength(0)
+  })
+
+  it('never opens a cross-origin blob: URL at all -- its bytes are not in this session, whatever the opener', () => {
+    const wc = fakeContents('https://opener.example/')
+    const openTab = vi.fn((): never => fakeContents('about:blank') as never)
+    const openBlobTab = vi.fn()
+    const host = fakeHost({ openTab, openBlobTab })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'blob:https://minter.example/1b4e28ba-2fa1', disposition: 'background-tab' })
+
+    expect(response.action).toBe('deny')
+    expect(openTab).toHaveBeenCalledWith('blob:https://minter.example/1b4e28ba-2fa1', false, undefined)
+    expect(openBlobTab).not.toHaveBeenCalled()
+  })
+
   it('routes a same-origin middle-click inside a cache-served app through the ordinary tab pipeline, never an unpartitioned view of its own', () => {
     // The bug this guards: routePopup returns 'adopt' here (the target's own
     // partition -- cache-served, ADR-0044 -- equals the opener's), but a
@@ -258,6 +294,7 @@ describe('wireView -- window.open', () => {
     // type), and a page's own synthetic, untrusted dispatchEvent click still reaches here with a
     // real 'new-window' disposition (measured against a real launch) -- so a script could open
     // windows without bound if nothing here budgeted them.
+    processWindowBudget.reset()
     const wc = fakeContents()
     const openWindow = vi.fn((): never => fakeContents('https://other.example/') as never)
     const host = fakeHost({ openWindow })
@@ -292,6 +329,35 @@ describe('wireView -- window.open', () => {
       vi.setSystemTime(61_000)
       openOnce()
       expect(openWindow).toHaveBeenCalledTimes(6)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('also rate-limits new-window opens process-wide: a page that opens itself gets a fresh per-tab budget in every window, but not a fresh process one', () => {
+    // Each open below simulates a page shift-clicking itself: a BRAND NEW opener tab every time
+    // (wireView called fresh, its own windowOpenHandler and so its own per-tab budget), spaced a
+    // full second apart so the per-tab throttle alone would wave every one of them through, the
+    // same way each new window's own copy of the page would if only a per-tab budget existed --
+    // 5, 25, 125 windows. Only the shared process budget can catch this.
+    processWindowBudget.reset()
+    const openWindow = vi.fn((): never => fakeContents('https://other.example/') as never)
+    const openAsNewOpener = (): void => {
+      const wc = fakeContents()
+      const host = fakeHost({ openWindow })
+      wireView('tab-1', record(wc, undefined, host))
+      openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' }).createWindow?.({ webPreferences: {} } as never)
+    }
+
+    vi.useFakeTimers()
+    try {
+      const attempts = MAX_NEW_WINDOWS_PER_MINUTE_PROCESS + 10
+      for (let seconds = 0; seconds < attempts; seconds++) {
+        vi.setSystemTime(seconds * 1000)
+        openAsNewOpener()
+      }
+      expect(openWindow.mock.calls.length).toBeLessThan(attempts)
+      expect(openWindow.mock.calls.length).toBeLessThanOrEqual(MAX_NEW_WINDOWS_PER_MINUTE_PROCESS)
     } finally {
       vi.useRealTimers()
     }

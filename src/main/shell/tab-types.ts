@@ -150,6 +150,9 @@ export interface TabViewHost {
   /** Makes Chromium's own popup webContents, already in `partition`, a tab.
    * `active` -- see `openTab`'s own doc. */
   adoptPopup: (view: WebContentsView, partition: string | undefined, active?: boolean) => void
+  /** A same-origin blob: URL in `partition` (the opener's own) -- popups.ts's own doc.
+   * `active`/`loadOptions` -- see `openTab`'s own doc. */
+  openBlobTab: (url: string, partition: string | undefined, active?: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
   /** `url` in a new window instead of this one -- a shift-click (popups.ts's `windowOpenHandler`).
    * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. Undefined when the shell has none
    * (tests): the caller opens an ordinary tab here instead. */

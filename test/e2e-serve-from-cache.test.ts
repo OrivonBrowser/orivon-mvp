@@ -72,14 +72,21 @@ const ORDINARY_PAGE = `<!doctype html><meta charset="utf-8"><title>ordinary page
 let ordinaryServer: Server
 
 const APP_JS_BODY = 'window.__fixtureAppRan = true;\n'.padEnd(600, '/* padding for a real Range assertion */ ')
-// A same-origin link and a data: link, for the middle-click regression below:
-// a middle click inside this pinned app must land the new tab in the SAME
-// pinned partition (never session.defaultSession), and a middle click on a
-// dangerous scheme must never render it.
+// A separate asset, not an inline <script>: the pinned app's own served CSP (ADR-0007) has no
+// 'unsafe-inline', same as any real app's.
+const BLOB_JS_BODY = "const blob = new Blob(['<title>serve-from-cache blob</title>blob content'], { type: 'text/html' });\n" +
+  "document.getElementById('blob-link').href = URL.createObjectURL(blob)\n"
+// A same-origin link, a data: link and a blob: link (minted at load, its own origin the same as
+// this page's), for the middle-click regressions below: a middle click inside this pinned app
+// must land the new tab in the SAME pinned partition (never session.defaultSession), a middle
+// click on a dangerous scheme must never render it, and a middle click on the app's own blob:
+// must still show the blob's content, in that same pinned partition -- never about:blank.
 const INDEX_HTML = '<!doctype html><html><head><title>serve-from-cache fixture</title></head>' +
   '<body><h1>serve-from-cache fixture</h1><script src="app.js"></script>' +
   '<a id="same-origin" href="/other.html">other</a>' +
   '<a id="data-link" href="data:text/html,should-not-render">data</a>' +
+  '<a id="blob-link">blob</a>' +
+  '<script src="blob.js"></script>' + // after the anchor it fills in: a page's own script order
   '</body></html>'
 const OTHER_HTML = '<!doctype html><html><head><title>serve-from-cache other</title></head><body>other</body></html>'
 const MANIFEST_JSON = JSON.stringify({
@@ -88,7 +95,7 @@ const MANIFEST_JSON = JSON.stringify({
   name: 'Serve-from-cache e2e fixture',
   version: '1.0.0',
   entry: 'index.html',
-  assets: ['app.js', 'other.html'],
+  assets: ['app.js', 'other.html', 'blob.js'],
   capabilities: {}
 })
 
@@ -104,7 +111,8 @@ async function pinFixture (userDataDir: string): Promise<void> {
     { path: '/.well-known/orivon.json', content: new TextEncoder().encode(MANIFEST_JSON) },
     { path: '/index.html', content: new TextEncoder().encode(INDEX_HTML) },
     { path: '/app.js', content: new TextEncoder().encode(APP_JS_BODY) },
-    { path: '/other.html', content: new TextEncoder().encode(OTHER_HTML) }
+    { path: '/other.html', content: new TextEncoder().encode(OTHER_HTML) },
+    { path: '/blob.js', content: new TextEncoder().encode(BLOB_JS_BODY) }
   ]
   const tree = await bundleTree(entries)
   for (const entry of entries) await storage.writeAsset(ORIGIN, entry.path, entry.content)
@@ -297,7 +305,8 @@ it(
 
 it(
   'a middle click on a same-origin link inside this pinned app opens its new tab in the SAME app ' +
-  'partition, never session.defaultSession, and a middle click on a data: link never renders it',
+  'partition, never session.defaultSession; a middle click on a data: link never renders it; and a ' +
+  'middle click on the app\'s own blob: link still shows its content, in that same partition',
   async () => {
     await runPhase('serve-from-cache-middle-click', async (check) => {
       let app: Awaited<ReturnType<typeof launchElectron>> | undefined
@@ -367,6 +376,27 @@ it(
           return webContents.getAllWebContents().some((c) => c.getURL().startsWith('data:'))
         })
         check('a middle click on a data: link never renders it, whatever Chromium or sanitizeDirectUrl does with the attempt', !dataRendered)
+
+        // ---- LOW: a same-origin blob: still opens, in the app's own partition ------------------
+        // The ordinary tab pipeline (sanitizeDirectUrl) refuses blob: outright, landing it on
+        // about:blank -- this app's own blob is the one URL a no-guest open can safely show
+        // instead, in the OPENER's partition (blobMintedByOpener's own doc): a blob: registration
+        // lives in a session's own store, resolvable there and nowhere else.
+        const blobUrl = await evaluateRetrying(view, () => (document.getElementById('blob-link') as HTMLAnchorElement).href)
+        check('the app minted a real blob: URL of its own', blobUrl.startsWith('blob:'))
+        const beforeBlob = await tabIds(chrome)
+        await view.click('#blob-link', { button: 'middle' })
+        check('the middle click on the blob: link opened a new tab', await waitFor(async () => (await tabIds(chrome)).length > beforeBlob.length))
+        const blobFound = await waitFor(async () => await (app as NonNullable<typeof app>).evaluate(({ webContents }, url: string) => {
+          return webContents.getAllWebContents().some((c) => c.getURL() === url)
+        }, blobUrl))
+        check('the blob: tab was found by its committed URL', blobFound)
+        const blobCheck = await app.evaluate(({ webContents, session }, args: { url: string, partition: string }) => {
+          const wc = webContents.getAllWebContents().find((c) => c.getURL() === args.url)
+          return { found: wc !== undefined, title: wc?.getTitle(), samePartition: wc?.session === session.fromPartition(args.partition) }
+        }, { url: blobUrl, partition: partitionFor(ORIGIN) })
+        check('the blob: tab shows the blob\'s own content, not about:blank', blobCheck.title === 'serve-from-cache blob', JSON.stringify(blobCheck))
+        check('the blob: tab runs in the app\'s own partition', blobCheck.samePartition, JSON.stringify(blobCheck))
       } finally {
         if (app !== undefined) await closeElectronApp(app)
       }

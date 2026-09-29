@@ -16,6 +16,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying } from './e2e-helpers.js'
 import { activeTabInfo, evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab, tabIds } from './smoke-helpers.mjs'
+import { MAX_NEW_WINDOWS_PER_MINUTE_PROCESS } from '../src/main/shell/popups.js'
 
 const NO_SOUND_ARGS = [HERMETIC_RESOLVER, '--alsa-output-device=null']
 const NO_SOUND_ENV = { PULSE_SERVER: 'unix:/nonexistent' }
@@ -54,13 +55,29 @@ const PAGE_A = `<!doctype html><meta charset="utf-8"><title>link-open fixture</t
 const OTHER_A = '<!doctype html><meta charset="utf-8"><title>link-open fixture other</title><body>other</body>'
 const PAGE_B = '<!doctype html><meta charset="utf-8"><title>link-open fixture B</title><body>B</body>'
 
+// A page that keeps trying to shift-click a link to ITSELF: every window it opens loads this same
+// script, so a per-opener-tab budget alone lets it grow geometrically (each new window is a brand
+// new opener, with its own fresh budget) -- only a process-wide budget bounds the total.
+const SELF_REPLICATE_PATH = '/self-replicate'
+const SELF_REPLICATE_PAGE = `<!doctype html><meta charset="utf-8"><title>self-replicate fixture</title><body>
+<a id="self-link" href="${ORIGIN_A}${SELF_REPLICATE_PATH}">self</a>
+<script>
+  let attempts = 0
+  const id = setInterval(() => {
+    attempts += 1
+    if (attempts > 8) { clearInterval(id); return }
+    document.getElementById('self-link').dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true, cancelable: true }))
+  }, 1100)
+</script>
+</body>`
+
 interface ReceivedRequest { method: string, url: string, body: string, contentType: string | undefined, referer: string | undefined }
 let receivedByB: ReceivedRequest[] = []
 
 beforeAll(async () => {
   serverA = createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' })
-    res.end(req.url === '/other' ? OTHER_A : PAGE_A)
+    res.end(req.url === '/other' ? OTHER_A : req.url === SELF_REPLICATE_PATH ? SELF_REPLICATE_PAGE : PAGE_A)
   })
   serverB = createServer((req, res) => {
     const chunks: Buffer[] = []
@@ -298,3 +315,24 @@ for (const { label, modifiers } of POST_MODIFIERS) {
     }
   }, 60_000)
 }
+
+it('a page that shift-clicks itself in every new window is bounded process-wide, not geometrically (5, 25, ...)', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await clickAddressBarRetrying(chrome, `${ORIGIN_A}${SELF_REPLICATE_PATH}`)
+    expect((await waitForTab(chrome, { address: `${ORIGIN_A}${SELF_REPLICATE_PATH}` })).ok).toBe(true)
+
+    // Long enough for several generations to attempt replication (each window's own copy of the
+    // page retries every 1.1s, up to 8 times) -- a per-opener-only budget would already be well
+    // past it (each new window is a fresh opener with 5 of its own, every 60s: 1 -> 5 -> 25 in two
+    // generations alone). Settle, then read once: window count never grows past the process budget.
+    await new Promise((resolve) => setTimeout(resolve, 12_000))
+
+    const windowCount = chromePages(app).length
+    expect(windowCount).toBeGreaterThan(2) // some replication genuinely happened
+    expect(windowCount).toBeLessThanOrEqual(MAX_NEW_WINDOWS_PER_MINUTE_PROCESS + 1) // never past the shared budget (+1: the original window)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, 30_000)
