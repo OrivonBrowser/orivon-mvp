@@ -201,6 +201,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0206` | 2026-09-29 | The broker wraps a TCP socket in streams of its own rather than Node's `Duplex.toWeb`, whose adapter can throw from a socket's teardown (nodejs/node#63761) and would take the main process down; each direction settles once. AI | `../../src/broker/adapters/socket-streams.ts` |
 | `d-0207` | 2026-09-29 | Orivon adds no thread or socket ABI of its own for spawned programs: a program that starts threads runs once its port makes it single-threaded (a current-thread runtime, blocking work run inline), and Orivon takes up WASI threads when they are standard. A native addon that runs a network node reaches the network as a WASI 0.2 component the app spawns, never through `process.dlopen`. Owner | [`ADR-0040`](ADR-0040-native-shaped-node-features-run-as-webassembly.md), `../planning/compatibility-matrix.md` Table 4 |
 | `d-0208` | 2026-09-29 | Links and file times in `orivon.fs`, a Go program's own networking (Go's WASI target cannot dial), and a WASI 0.2 host for addons are not built in this build: no app needs them yet. AI | `../scope.md` |
+| `d-0209` | 2026-09-29 | Closing an app's last visible window ends the process, and every child host with it, exactly as it did before hosts existed; a host is never itself what keeps the process alive with none open. AI | `../../src/main/children/README.md` |
 
 ## Directives
 

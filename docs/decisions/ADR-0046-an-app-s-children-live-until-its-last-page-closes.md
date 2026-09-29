@@ -90,7 +90,15 @@ changes.
   host script and the routing in the shim (`src/shim/worker/`, `src/shim/child-process/`).
 - A child's web storage (IndexedDB, Cache Storage) is the host session's, not the app pages'.
   Node-shaped code keeps its state through `orivon.fs`, which is the app's; a child that reaches for
-  web storage sees a store of its own.
+  web storage sees a store of its own, cleared when its host closes -- the partition name is
+  stable per origin, and nothing here promises a child's web storage outlives its own host.
+- A child's WebSocket uses the host session's own network stack directly, gated by whatever CSP
+  and grants the host was built with -- unlike `fetch`, it is never seen by a page's own service
+  worker either way, since the delegation underneath it is a main-process dial, not a request any
+  registration can intercept. A host has no `RTCPeerConnection` to give a child at all.
+- A host is rebuilt, never merely reused, once the origin's live grants move past what it was
+  built with -- checked on the next child a page starts, so an already-running child keeps its old
+  session and CSP until then or until the app's last page closes, whichever comes first.
 - Program loading moves from the page to the host for a spawn, a fork or a thread alike. Loading a
   spawned program pulls in a dependency a real preload script cannot bundle on its own (measured:
   an unresolved `path` import throws, taking the whole preload down, not only spawn); the preload
