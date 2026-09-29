@@ -74,9 +74,9 @@ export function socketReadable (socket: Socket): ReadableStream<Uint8Array> {
       // always resolves. Reporting THIS side as a clean end matches that:
       // ../transport/relay/socket.ts's pump would otherwise turn an
       // already-successful close into a spurious 'internal' read failure
-      // (Node's own old `Duplex.toWeb` errored the readable with an
-      // AbortError here instead; this adapter deliberately does not copy
-      // that -- see socket-streams.test.ts's own case for this).
+      // (Node's own `Duplex.toWeb` adapter errors the readable with an
+      // AbortError here; this one deliberately does not -- see
+      // socket-streams.test.ts's own case for this).
       const onClose = (): void => {
         if (settled) return
         settled = true

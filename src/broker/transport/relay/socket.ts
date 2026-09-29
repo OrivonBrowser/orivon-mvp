@@ -199,8 +199,8 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
   // THE BRANCH IS LOAD-BEARING, and it is here because the version without it
   // was measured and found to lose data. `stop()` calls `pump.stop()`, which
   // cancels the reader -- and cancelling ../../adapters/socket-streams.ts's
-  // readable half (matching Duplex.toWeb's own old cancel() behaviour, which
-  // it was written to preserve) DESTROYS the whole socket, discarding
+  // readable half (as Node's own `Duplex.toWeb` adapter's cancel does)
+  // DESTROYS the whole socket, discarding
   // anything still in its write queue.
   // On a flushing reason ('closed'/'sessionEnded', where destroy calls
   // `socket.end()`) that truncates the app's own final bytes: 8 MiB queued,
