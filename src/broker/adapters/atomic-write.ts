@@ -67,9 +67,13 @@ export async function writeFileAtomicAsync (path: string, text: string): Promise
     try {
       await handle.writeFile(text, 'utf8')
       await handle.sync()
-    } finally {
-      await handle.close()
+    } catch (error) {
+      // A close failure here would otherwise replace the error that actually matters -- the one from
+      // writeFile/sync -- since a throw inside a finally block overrides one already in flight.
+      await handle.close().catch(() => {})
+      throw error
     }
+    await handle.close()
     await rename(tmp, path)
   } catch (error) {
     try {

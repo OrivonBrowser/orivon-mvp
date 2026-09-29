@@ -17,6 +17,7 @@ const syncGate = vi.hoisted(() => ({
 const asyncGate = vi.hoisted(() => ({
   failWriteWith: null as Error | null,
   failRenameWith: null as Error | null,
+  failCloseWith: null as Error | null,
   opensByPath: new Map<string, number>()
 }))
 
@@ -67,7 +68,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
           return handle.writeFile(...writeArgs)
         },
         sync: () => handle.sync(),
-        close: () => handle.close()
+        close: async () => {
+          await handle.close()
+          if (asyncGate.failCloseWith !== null) {
+            const failure = asyncGate.failCloseWith
+            asyncGate.failCloseWith = null
+            throw failure
+          }
+        }
       }
     },
     rename: async (...args: Parameters<typeof actual.rename>) => {
@@ -154,11 +162,13 @@ describe('writeFileAtomicAsync', () => {
     path = join(dir, 'value.json')
     asyncGate.failWriteWith = null
     asyncGate.failRenameWith = null
+    asyncGate.failCloseWith = null
   })
 
   afterEach(() => {
     asyncGate.failWriteWith = null
     asyncGate.failRenameWith = null
+    asyncGate.failCloseWith = null
   })
 
   it('round-trips the text written', async () => {
@@ -217,5 +227,18 @@ describe('writeFileAtomicAsync', () => {
     await expect(writeFileAtomicAsync(path, 'hello')).rejects.toThrow('EACCES')
 
     expect(await readdir(dir)).toEqual([])
+  })
+
+  it('keeps the write failure, not a close failure that follows it, as the error it rejects with', async () => {
+    asyncGate.failWriteWith = new Error('ENOSPC: no space left on device')
+    asyncGate.failCloseWith = new Error('EBADF: bad file descriptor, from closing the same handle')
+
+    await expect(writeFileAtomicAsync(path, 'hello')).rejects.toThrow('ENOSPC')
+  })
+
+  it('still rejects with a close failure when the write and sync before it succeeded', async () => {
+    asyncGate.failCloseWith = new Error('EBADF: bad file descriptor, on its own this time')
+
+    await expect(writeFileAtomicAsync(path, 'hello')).rejects.toThrow('EBADF')
   })
 })
