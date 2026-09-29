@@ -50,7 +50,7 @@ beforeEach(() => {
 
 describe('exposeOrivon -- fs.userSelected needs a fresh user gesture', () => {
   it('with no user activation, rejects "denied" and never reaches the OS picker at all', async () => {
-    Object.defineProperty(globalThis.navigator, 'userActivation', { configurable: true, value: { isActive: false } })
+    Object.defineProperty(navigator, 'userActivation', { configurable: true, value: { isActive: false } })
     const target = installViaFakeMainWorld()
     invoke.mockResolvedValue(okEnvelope([]))
 
@@ -65,7 +65,7 @@ describe('exposeOrivon -- fs.userSelected needs a fresh user gesture', () => {
   })
 
   it('a browser with no navigator.userActivation at all (an older embedder) still fails closed, not open', async () => {
-    Object.defineProperty(globalThis.navigator, 'userActivation', { configurable: true, value: undefined })
+    Object.defineProperty(navigator, 'userActivation', { configurable: true, value: undefined })
     const target = installViaFakeMainWorld()
 
     exposeOrivon()
@@ -76,7 +76,7 @@ describe('exposeOrivon -- fs.userSelected needs a fresh user gesture', () => {
   })
 
   it('with a fresh user activation, the call proceeds exactly as before', async () => {
-    Object.defineProperty(globalThis.navigator, 'userActivation', { configurable: true, value: { isActive: true } })
+    Object.defineProperty(navigator, 'userActivation', { configurable: true, value: { isActive: true } })
     const target = installViaFakeMainWorld()
     invoke.mockResolvedValue(okEnvelope([]))
 
