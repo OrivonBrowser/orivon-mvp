@@ -1,9 +1,11 @@
 @import '../shared/tokens.css';
 @import '../shared/controls.css';
 
-.page { max-width: 640px; margin: 0 auto; padding: 36px 24px 64px; display: grid; gap: 14px; }
+.page { max-width: 700px; margin: 0 auto; padding: 36px 24px 64px; display: grid; gap: 14px; }
+.top-title { display: flex; align-items: center; gap: 10px; }
+.top-title .icon { width: 24px; height: 24px; color: var(--waccent); flex: none; }
 h1 { font-size: 24px; font-weight: 600; }
-.lead { color: var(--wink-dim); font-size: 15px; }
+.lead { color: var(--wink-dim); font-size: 15px; margin-left: 34px; }
 .card { padding: 16px 20px; background: var(--wpanel); border: 1px solid var(--wborder); border-radius: var(--wradius); }
 .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
 .points { margin: 0; padding-left: 20px; color: var(--wink); }
