@@ -193,7 +193,7 @@ export type { NodeStats }
 
 const POSIX_PERMISSION_MEMBERS = new Set(['chmod', 'chmodSync', 'chown', 'chownSync'])
 
-function otherFsMember (prop: string) {
+export function otherFsMember (prop: string) {
   if (POSIX_PERMISSION_MEMBERS.has(prop)) {
     return refuseShim(
       `fs.${prop}`, 'not-applicable',
@@ -208,6 +208,9 @@ function otherFsMember (prop: string) {
     'refusal (ADR-0016). See docs/planning/compatibility-matrix.md Table 3.'
   )
 }
+
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/fs.js'
 
 export default refusingProxy({
   readFile, readFileSync, writeFile, writeFileSync, appendFile, unlink, access,
