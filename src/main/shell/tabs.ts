@@ -49,8 +49,6 @@ export class TabManager {
   /** The tabs shown two at a time. Public: split commands and the tab menu work it directly. */
   readonly splits: SplitController
   private readonly backdrop: TabShell['backdrop']
-  /** A page holding the whole area (HTML fullscreen): nothing else is shown. */
-  private fullscreenId: string | null = null
   private readonly searchUrl: ((query: string) => string) | undefined
 
   constructor (
@@ -90,12 +88,7 @@ export class TabManager {
       openTab: (url) => { this.createTab(url) },
       adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
       atCapacity: () => this.atCapacity(),
-      htmlFullscreenChanged: (id, entered) => {
-        // Only the tab in front is given the window: the shell refuses any other, and a refusal must leave nothing shown.
-        if (entered && id === this.activeId) this.fullscreenId = id
-        else if (!entered && this.fullscreenId === id) this.fullscreenId = null
-        shell?.htmlFullscreenChanged(id, entered)
-      },
+      htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       isClosing: () => this.disposed,
       devtools: shell?.devtools
     }
@@ -116,6 +109,13 @@ export class TabManager {
   private add (id: string, record: TabRecord): void {
     this.tabs.set(id, record)
     this.order.push(id)
+  }
+
+  /** The tab holding the whole window: `HtmlFullscreen`'s answer (../fullscreen.ts), the one
+   * place that state lives, and only while that tab is still the one in front. */
+  private get fullscreenId (): string | null {
+    const id = this.shell?.fullscreenTabId?.() ?? null
+    return id === this.activeId ? id : null
   }
 
   onStateChange (cb: (state: TabsSnapshot) => void): void {
@@ -155,8 +155,10 @@ export class TabManager {
 
     const { id, record, target } = this.factory.content(url)
     this.add(id, record)
-    void record.view.webContents.loadURL(target)
+    // Attached before it navigates: a detached view's first paint has
+    // nowhere live to land (pane-host.ts's own fix is the other half).
     this.activateTab(id)
+    void record.view.webContents.loadURL(target)
     return id
   }
 
@@ -321,8 +323,6 @@ export class TabManager {
   /** Puts the views on screen as the plan says: the tab in front, or the two panes of a split, sized. */
   private syncViews (): void {
     if (this.disposed) return
-    // A page holds the window only while it is the tab in front: a tab that closed or was left has no claim.
-    if (this.fullscreenId !== this.activeId) this.fullscreenId = null
     const plan = this.splits.plan(this.activeId, this.getTabBounds(), this.fullscreenId)
     const panes = plan.panes.flatMap(({ id, bounds }) => {
       const view = this.tabs.get(id)?.view
@@ -359,14 +359,9 @@ export class TabManager {
     this.syncViews()
   }
 
-  /** THE PRIMARY WAY A TAB EVER REACHES A REAL ORIGIN: the omnibox and the
-   * dashboard's own navigate command both funnel here (ipc.ts, newtab-
-   * ipc.ts) -- a person's very first act in a fresh tab is typing a URL,
-   * not calling createTab(url) directly. Repartitions via repartitionView()
-   * when the target's session differs, or -- same session -- its app-tab
-   * flag would (appTabFlagChanged's own doc). BLANK_URL has no derivable
-   * origin, so a rejected navigation never swaps (BLANK_URL's own doc: "an
-   * EXISTING tab keeps whatever preload it was created with"). */
+  /** Where the omnibox and the dashboard's navigate command both land (ipc.ts, newtab-ipc.ts). Repartitions
+   * via repartitionView() when the target's session, or its app-tab flag, differs (appTabFlagChanged).
+   * BLANK_URL has no origin, so a rejected navigation never swaps: the tab keeps its preload. */
   navigate (id: string, rawInput: string): void {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return
@@ -455,10 +450,10 @@ export class TabManager {
     return this.tabs.get(id)?.partition
   }
 
-  /** A tab's webContents, or undefined if the tab is gone or its
-   * webContents has already been destroyed -- the common guard every
-   * read-only accessor below needs. */
-  private liveWebContents (id: string): Electron.WebContents | undefined {
+  /** A tab's webContents, or undefined if the tab is gone or its webContents has already been destroyed --
+   * the common guard every read-only accessor below needs, and what tear-drag.ts captures a thumbnail from
+   * (via tab-view.ts's `captureTabPage`, which turns this into a snapshot or `null`, never a throw). */
+  liveWebContents (id: string): Electron.WebContents | undefined {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return undefined
     return record.view.webContents

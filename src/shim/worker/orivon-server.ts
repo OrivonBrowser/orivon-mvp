@@ -88,6 +88,16 @@ function wireErrorOf (error: unknown): WireError & { platformCode?: string } {
   return { ...toWireError(error), ...(typeof platformCode === 'string' ? { platformCode } : {}) }
 }
 
+/**
+ * What a Worker sees when its reply could not be written at all: fixed and
+ * short, never the failed write's own error text, which may be exactly what
+ * made it too large to write in the first place. `'limit'`, not
+ * `'unavailable'`: errors.ts documents `'unavailable'` as a call the SAME
+ * grant may still succeed on later, but a reply this large crosses
+ * ReplyWriter's fixed MAX_REPLY_LENGTH header on every retry, not just this one.
+ */
+const FALLBACK_REPLY_ERROR: WireError = { name: 'OrivonShimError', message: 'the reply to this call was too large to deliver', code: 'limit' }
+
 function notSynchronous (): Error {
   return Object.assign(new Error('a stream cannot be returned by a synchronous call'), { name: 'OrivonShimError', reason: 'not-applicable' })
 }
@@ -197,11 +207,20 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
     return { fn, self }
   }
 
-  /** A synchronous reply that fails to encode becomes an error reply, never silence: the Worker is waiting on it. */
-  const encodeSync = (reply: ServerMessage): Uint8Array => {
+  /**
+   * A synchronous reply that fails to encode becomes an error reply, never
+   * silence: the Worker is waiting on it. `onEncodeFailure`, when given,
+   * runs before that substitution -- the only place a SUCCESSFUL reply's own
+   * encode failure (a BigInt property, say: crossesSynchronously accepts it,
+   * encodeReply's JSON.stringify does not) is ever visible, since this
+   * function recovers from it internally and the bytes it returns instead
+   * normally reach `replies.send` and succeed.
+   */
+  const encodeSync = (reply: ServerMessage, onEncodeFailure?: () => void): Uint8Array => {
     try {
       return encodeReply(reply)
     } catch (error) {
+      onEncodeFailure?.()
       return encodeReply({ id: 'id' in reply ? reply.id : 0, ok: false, error: wireErrorOf(error) })
     }
   }
@@ -210,6 +229,10 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
     const sync = request.sync === true
     const transfer: Transferable[] = []
     let reply: ServerMessage
+    // What a SUCCESSFUL reply's `value` encodes, kept so a refused reply can release it --
+    // encode() has already run by then (describe() registers a handle the moment it is seen,
+    // never when the Worker actually receives its number), so this is the only reference left.
+    let carried: unknown
     try {
       let value: unknown
       if ('spawnSync' in request) {
@@ -224,17 +247,37 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
         release(value)
         throw notSynchronous()
       }
+      carried = value
       reply = { id: request.id, ok: true, value: encode(value, transfer) }
     } catch (error) {
       reply = { id: request.id, ok: false, error: wireErrorOf(error) }
     }
     if (sync) {
+      // Released at most once, and only for a SUCCESSFUL reply: whichever of encodeSync's own
+      // catch (an encode failure of this reply, invisible to everything below it) or the send
+      // catch just below (a write ReplyWriter refused) finds this reply cannot reach the Worker
+      // as built releases what it carried, the same way notSynchronous's own refusal already
+      // does for a value that never got this far -- the Worker never receives the handle
+      // numbers this reply's encode() already registered, so nothing else will ever close them.
+      let released = false
+      const releaseCarriedOnce = (): void => {
+        if (reply.ok && !released) { released = true; release(carried) }
+      }
       try {
-        replies?.send(encodeSync(reply))
-      } catch (error) {
-        // The writer refused this reply (too large for the length header): answer with an
-        // error reply instead, same as one that failed to encode -- never leave the Worker waiting.
-        replies?.send(encodeSync({ id: request.id, ok: false, error: wireErrorOf(error) }))
+        replies?.send(encodeSync(reply, releaseCarriedOnce))
+      } catch {
+        // The writer refused this reply (too large for the length header, most often): a fixed,
+        // short fallback replaces it -- never one built from the refusal's own error, which may
+        // be exactly as large as what was refused.
+        releaseCarriedOnce()
+        try {
+          replies?.send(encodeSync({ id: request.id, ok: false, error: FALLBACK_REPLY_ERROR }))
+        } catch (error) {
+          // ReplyWriter exposes no way to release a waiting Worker without writing it a reply,
+          // so if even this cannot be written, the Worker stays blocked in Atomics.wait -- this
+          // is the last thing that can be done.
+          console.error('[orivon] a synchronous reply could not be delivered to its Worker:', error)
+        }
       }
     } else post(reply, transfer)
   }

@@ -13,12 +13,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Tearing a tab off shows where its window will open.** A preview of the page follows the pointer; letting go
+  over the page or outside every window opens the window there, in front and at once. Over another window's
+  strip a line marks where the tab will land. On Linux X11 a middle click on the strip's empty end opens a tab.
+- **Settings and History have a new look**, shared with Profiles and Private: Settings' sections are grouped
+  in a sidebar with icons and its search; History marks each site and heads each day with a rule.
 - **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
   `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
   popups and options pages work on every website; blocking rules and apps holding permissions come next.
 - **`worker_threads` and `vm` import**: `worker_threads` answers as Node's main thread does, and
   `vm` runs code in the page's own context; starting a thread, or a context of its own, refuses
   by name.
+- **A `.eth` name is shown as `ipfs://<name>`** wherever an address or origin is shown; typing or
+  linking either `ipfs://<name>` or `ipns://<name>` opens the name's own, unchanged origin
+  (ADR-0038).
 - **A spawned program can open sockets**: `spawn` runs a WASI 0.2 component from the jco output
   shipped beside it, its files and sockets reaching `orivon.fs` and `orivon.net` under the app's
   grants (ADR-0040). A Rust program built for `wasm32-wasip2` runs, whether it blocks on `std::net`
@@ -106,6 +114,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A crash while bookmarks or a profile are being saved leaves the previous file whole.**
+- **A second start with no window open shows a window only once it is drawn**, on its new-tab page
+  when no address was given.
+- **History search answers at once on a long history**, whether most pages match or almost none do.
+- **A private window keeps the keyboard shortcuts** of the profile that opened it.
+- **Settings, History, Profiles and a private window's first page load under `npm run dev`**; they were blank.
+- **The main menu shows every entry with no scroll bar**, and a new split shows both panes painted at once.
+- **A `.eth` or `ipfs://` site can be framed only by a page of its own origin**, so another site cannot
+  lay it under its own page to steer the person's clicks; an app granted `web.embed` for it still shows it.
 - **A native addon built with napi-rs loads**: its WebAssembly build gets Node-API and memory the way
   napi-rs's own loaders provide them, which a real napi-rs 3 addon needs.
 - **An app that listens for TCP connections receives them**: the broker now hands each accepted

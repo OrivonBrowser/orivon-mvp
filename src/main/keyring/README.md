@@ -13,7 +13,7 @@ is tested against a real temp directory.
 
 **What it depends on.** [`../../contracts/`](../../contracts/) (types),
 [`../../broker/secrets-contracts.ts`](../../broker/secrets-contracts.ts),
-[`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
+[`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts)'s
 `writeFileAtomic`, and `electron`'s `safeStorage` in `electron-keychain.ts` only.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code. `seed-store.ts` must

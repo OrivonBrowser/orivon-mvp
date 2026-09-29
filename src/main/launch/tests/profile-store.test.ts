@@ -2,12 +2,41 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MAX_NAME_LENGTH, PROFILE_COLORS, ProfileStore, cleanName } from '../profile-store.js'
+
+// Lets one test make the next writeFileSync call land a partial, garbled
+// write and then throw, simulating a process that dies mid-write. `fsGate`
+// is declared through vi.hoisted because vi.mock's factory runs before the
+// rest of this file. writeFileAtomic (atomic-write.ts, which profile-store.ts
+// writes through) calls writeFileSync(fd, text) on its own already-open temp
+// file, so the garbage lands there, never on the real profile.json -- this is
+// what proves a failed write leaves the previous file intact rather than
+// truncated.
+const fsGate = vi.hoisted(() => ({ failNextWith: null as Error | null }))
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
+      const failure = fsGate.failNextWith
+      if (failure !== null) {
+        fsGate.failNextWith = null
+        actual.writeFileSync(args[0], 'CORRUPTED-PARTIAL-WRITE')
+        throw failure
+      }
+      return actual.writeFileSync(...args)
+    }
+  }
+})
 
 let home: string
 beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'orivon-profiles-')) })
-afterEach(async () => { await rm(home, { recursive: true, force: true }) })
+afterEach(async () => {
+  await rm(home, { recursive: true, force: true })
+  fsGate.failNextWith = null
+})
 
 const store = (alive: (pid: number) => boolean = () => false): ProfileStore => new ProfileStore(home, () => 1_000, alive)
 
@@ -99,6 +128,17 @@ describe('changing a profile', () => {
     expect(s.rename('../../etc', 'x')).toEqual({ ok: false, reason: 'unknown-profile' })
     expect(s.rename('0123456789ab', 'x')).toEqual({ ok: false, reason: 'unknown-profile' })
     expect(s.list()[0]?.name).toBe('Default')
+  })
+
+  it('a write that fails leaves the previously persisted profile intact, not truncated', () => {
+    const s = store()
+    const made = s.create('Work', 'green')
+    if (!made.ok) throw new Error('not created')
+
+    fsGate.failNextWith = new Error('ENOSPC: no space left on device')
+    expect(s.rename(made.profile.id, 'Renamed')).toEqual({ ok: false, reason: 'failed' })
+
+    expect(s.read(made.profile.id)).toMatchObject({ name: 'Work', color: 'green' })
   })
 })
 

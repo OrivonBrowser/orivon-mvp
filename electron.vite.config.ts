@@ -66,6 +66,22 @@ export function shimNodeSpecifiers (): Plugin {
   }
 }
 
+/** The renderer's dev-only settings a standalone Vite server (an e2e test
+ * driving `ELECTRON_RENDERER_URL` itself) shares with electron-vite, so the
+ * two never drift. A concrete `server.hmr.host` matters for a page whose
+ * origin is `orivon://<page>`, not the dev server's: without one, Vite's
+ * client infers the wrong socket host from that origin. `127.0.0.1`, not
+ * Vite's own `localhost` default: `HERMETIC_RESOLVER` (test/smoke-helpers.mjs)
+ * blackholes every other hostname, and `internalCsp` (serve.ts) must allow
+ * the exact host named here. */
+export const rendererHost = '127.0.0.1'
+export const rendererRoot = resolve(root, 'src/renderer')
+export const rendererAlias = buildAliasEntries().map(({ specifier, kind, implementation }) => ({
+  find: aliasPattern(specifier),
+  replacement: kind === 'package' ? implementation : resolve(root, 'src/shim', implementation)
+}))
+export const rendererHmr = { host: rendererHost } as const
+
 /** The name src/preload/page-buffer.ts's installer reads the `buffer` package through. */
 export const BUFFER_PACKAGE_PLACEHOLDER = '__ORIVON_BUFFER_PACKAGE__'
 const PAGE_BUFFER_SOURCE = normalizePath(resolve(root, 'src/preload/page-buffer.ts'))
@@ -249,7 +265,8 @@ export default defineConfig({
     }
   },
   renderer: {
-    root: resolve(root, 'src/renderer'),
+    root: rendererRoot,
+    server: { host: rendererHost, hmr: rendererHmr },
     build: {
       // `index` is the privileged chrome view; `newtab` is the dashboard,
       // ordinary tab content loaded into a tab's own WebContentsView with
@@ -286,10 +303,7 @@ export default defineConfig({
       // the renderer WebRTC-only (ADR-0001 reason 3). Never alias
       // `@thaunknown/simple-peer` or `webrtc-polyfill`: they keep Chromium's
       // WebRTC, so node-datachannel never enters the tree.
-      alias: buildAliasEntries().map(({ specifier, kind, implementation }) => ({
-        find: aliasPattern(specifier),
-        replacement: kind === 'package' ? implementation : resolve(root, 'src/shim', implementation)
-      }))
+      alias: rendererAlias
     }
   }
 })

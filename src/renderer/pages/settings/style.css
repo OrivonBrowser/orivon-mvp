@@ -1,47 +1,73 @@
 @import '../shared/tokens.css';
 @import '../shared/controls.css';
 
-.layout {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  height: 100vh;
-}
+.layout { display: flex; height: 100vh; }
 
-.top {
-  grid-column: 1 / -1;
+.sidebar {
+  width: 272px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--wborder);
+  background: color-mix(in srgb, var(--wpanel) 82%, transparent);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+.sidebar-head { display: flex; align-items: center; gap: 10px; padding: 22px 20px 16px; flex: none; }
+.sidebar-head h1 { font-size: 17px; font-weight: 700; color: var(--waccent-text); }
+.sidebar-head .icon { width: 20px; height: 20px; color: var(--waccent-text); }
+.sidebar .search { display: block; width: auto; max-width: none; margin: 0 20px 14px; flex: none; }
+
+.nav-scroll { flex: 1 1 auto; overflow-y: auto; padding: 2px 12px 16px; }
+.nav-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.nav-group {
+  margin-top: 16px;
+  padding: 0 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--wink-off);
+}
+.nav-list > .nav-group:first-child { margin-top: 4px; }
+.nav-item {
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 14px 28px;
-  border-bottom: 1px solid var(--wborder);
-  background: var(--wpanel);
-}
-.top h1 { font-size: 18px; font-weight: 600; flex: none; }
-.search { max-width: 360px; }
-
-.nav {
-  padding: 16px 12px;
-  border-right: 1px solid var(--wborder);
-  overflow-y: auto;
-}
-.nav-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.nav-item {
-  display: block;
+  gap: 10px;
   padding: 8px 12px;
   border-radius: 8px;
   color: var(--wink-dim);
   text-decoration: none;
+  transition: background-color 0.12s, color 0.12s;
 }
+.nav-item .icon { width: 16px; height: 16px; flex: none; }
+.nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-item:hover { background: var(--whover); color: var(--wink); }
-.nav-item.current { background: var(--wsurface); color: var(--wink); font-weight: 600; }
+.nav-item.current { background: var(--waccent-wash); color: var(--waccent-text); font-weight: 600; }
 
-.content { padding: 28px 32px 64px; overflow-y: auto; outline: none; }
-.section { max-width: 780px; }
+.content { flex: 1 1 auto; padding: 40px 48px 80px; overflow-y: auto; outline: none; }
+.section { max-width: 820px; }
 .section h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
 .intro { color: var(--wink-dim); margin-bottom: 14px; }
 .section > .card { margin-top: 14px; }
 .section > .intro + .card { margin-top: 0; }
+
+/* A group's own name, above its own card -- the same small muted-uppercase
+   treatment as the sidebar's nav-group labels, so a section split into
+   groups (Keyboard shortcuts' Tabs/Pages/Windows) reads the same way the
+   sidebar itself is grouped, rather than as a banner glued to its card. */
+.group-label {
+  margin: 22px 0 6px;
+  padding: 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--wink-dim);
+}
+.section > .intro + .group-label,
+.section > h2 + .group-label { margin-top: 14px; }
+.group-label + .card { margin-top: 0; }
 
 .card {
   border: 1px solid var(--wborder);
@@ -73,8 +99,8 @@
   padding: 1px 7px;
   border-radius: 999px;
   font-size: 11px;
-  background: color-mix(in srgb, var(--waccent) 16%, transparent);
-  color: var(--waccent);
+  background: var(--waccent-wash);
+  color: var(--waccent-text);
   vertical-align: 1px;
 }
 .link-btn {
@@ -82,14 +108,16 @@
   border: none;
   border-radius: 6px;
   background: none;
-  color: var(--waccent);
+  color: var(--waccent-text);
   cursor: pointer;
 }
 .link-btn:hover { text-decoration: underline; }
 
 .hit {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   width: 100%;
   padding: 12px 18px;
   border: none;
@@ -100,7 +128,8 @@
 }
 .hit:first-child { border-top: none; }
 .hit:hover { background: var(--whover); }
-.hit-section { font-size: 12px; color: var(--wink-dim); }
+.hit-body { display: grid; gap: 2px; min-width: 0; }
+.hit-section { flex: none; padding-top: 1px; font-size: 12px; color: var(--wink-dim); }
 .hit-label { font-weight: 500; }
 .hit-help { color: var(--wink-dim); font-size: 13px; }
 
@@ -108,30 +137,20 @@
 
 .flash { animation: flash 1.6s ease-out; }
 @keyframes flash {
-  from { background: color-mix(in srgb, var(--waccent) 22%, transparent); }
-  to { background: transparent; }
+  from { background: var(--waccent-wash); box-shadow: inset 3px 0 0 var(--waccent-text); }
+  to { background: transparent; box-shadow: inset 3px 0 0 transparent; }
 }
 
 @media (max-width: 760px) {
-  .layout { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(0, 1fr); }
-  .nav { border-right: none; border-bottom: 1px solid var(--wborder); padding: 8px 12px; }
-  .nav-list { display: flex; overflow-x: auto; }
+  .layout { flex-direction: column; height: auto; min-height: 100vh; }
+  .sidebar { width: auto; border-right: none; border-bottom: 1px solid var(--wborder); }
+  .nav-scroll { padding: 2px 12px 10px; }
+  .nav-list { display: flex; overflow-x: auto; gap: 4px; }
+  .nav-group { display: none; }
   .row { flex-direction: column; align-items: stretch; }
   .row-control { max-width: none; }
   .content { padding: 20px 16px 48px; }
 }
-
-.group {
-  padding: 14px 18px 6px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--wink-dim);
-  border-top: 1px solid var(--wborder);
-  background: color-mix(in srgb, var(--wsurface) 45%, transparent);
-}
-.card > .group:first-child { border-top: none; }
 
 .usage { display: grid; gap: 10px; width: 100%; }
 .usage-buttons { display: flex; gap: 10px; }
@@ -152,13 +171,12 @@ details > summary { cursor: pointer; }
 .btn.small { padding: 3px 10px; font-size: 12.5px; flex: none; }
 .app-stored { margin: 6px 0 0; font-size: 12.5px; }
 
-.clear-data { display: grid; gap: 10px; width: 420px; max-width: 100%; }
+.clear-data { display: grid; gap: 10px; width: 100%; max-width: 480px; }
 .clear-history { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.clear-history .select { min-width: 0; }
 .clear-option { display: flex; align-items: flex-start; gap: 10px; }
 .clear-option input { margin-top: 3px; flex: none; }
 .clear-option .block { display: block; font-size: 12.5px; }
-.danger-option { padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--wdanger) 8%, transparent); }
+.danger-option { padding: 8px 10px; border-radius: 8px; background: var(--wdanger-wash); }
 .clear-actions { display: flex; align-items: center; gap: 12px; }
 
 .shortcut { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
@@ -175,4 +193,4 @@ kbd {
 }
 .muted { color: var(--wink-dim); font-size: 13px; }
 .also { display: inline-flex; align-items: center; gap: 6px; }
-.listening { color: var(--waccent); font-weight: 500; }
+.listening { color: var(--waccent-text); font-weight: 500; }

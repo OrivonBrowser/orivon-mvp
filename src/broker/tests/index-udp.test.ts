@@ -210,15 +210,15 @@ describe('udpBind -- every datagram is authorised on the way out', () => {
     expect(send).toHaveBeenCalledTimes(2)
   })
 
-  // A292: authorisedSend reuses checkConnect, so A82's reserved-port
+  // A296: authorisedSend reuses checkConnect, so A82's reserved-port
   // carve-out (reserved-ports.ts) applies to udp.send exactly as it does to
   // tcp.connect. A wildcard grant is not itself a naming of a reserved
   // port, so it does not survive that carve-out even though it would
   // otherwise authorise every host and port -- capability-api.md's own P2P
   // example (`udp.send: ["*:*"]`) cannot reach port 53, and a component
   // doing its own DNS-over-UDP times out with no error anywhere (A87). Not
-  // a defect: A292 asks the owner whether that is the intended shape.
-  it('a wildcard grant still cannot reach a reserved port (A292): port named, not just host', async () => {
+  // a defect: A296 asks the owner whether that is the intended shape.
+  it('a wildcard grant still cannot reach a reserved port (A296): port named, not just host', async () => {
     const send = vi.fn(async () => ({ sent: true as const }))
     const broker = await boundBroker(baseDeps({ bind: async () => okUdpSocket({ send }) }))
     await broker.grant(APP, 'udp.send', ['*:*'])

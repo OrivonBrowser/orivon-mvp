@@ -4,10 +4,13 @@
 TLS socket, binding a UDP one, resolving a host, reading and writing files, and tearing a socket
 down. This is the only place in the broker a real address is dialled or a real path opened
 ([`ADR-0015`](../../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md)), so an
-auditor asking what the program can reach starts here.
+auditor asking what the program can reach starts here. `atomic-write.ts` is the plain-Node I/O
+helper every store under `src/main/` and `src/broker/grants/` writes its small JSON files
+through: a sync `writeFileAtomic` and an async `writeFileAtomicAsync`, both temp-file-then-rename.
 
-**What it depends on.** `node:net`, `node:tls`, `node:dgram`, `node:dns/promises`, `node:fs`, `node:stream`,
-[`../broker-contracts.ts`](../broker-contracts.ts) and [`../policy/connect.ts`](../policy/connect.ts).
+**What it depends on.** `node:net`, `node:tls`, `node:dgram`, `node:dns/promises`, `node:fs`,
+`node:fs/promises`, `node:stream`, [`../broker-contracts.ts`](../broker-contracts.ts) and
+[`../policy/connect.ts`](../policy/connect.ts).
 
 **What it must never import.** `electron`; this layer is the *Node* seam, not the Electron one
 ([`../transport/`](../transport/) is where Electron lives). Nothing here may make a policy

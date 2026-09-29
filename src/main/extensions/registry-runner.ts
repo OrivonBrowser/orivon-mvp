@@ -1,7 +1,7 @@
 // Reads and writes everything Orivon itself persists under
 // `<userData>/extensions/` -- I/O (`-runner.ts`, src/main/README.md's
 // suffix rule): `registry.json` around registry.ts's pure parse/serialise
-// (using `writeFileAtomic`, `src/broker/grants/node-ledger-storage.ts`, the
+// (using `writeFileAtomic`, `src/broker/adapters/atomic-write.ts`, the
 // same way every other `src/main/` module that persists its own JSON file
 // does), and each slot's own `key.pub` and the manifest-key canonicalization
 // that install-runner.ts's `finishInstall` resolves a `key` through.
@@ -9,7 +9,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { createPublicKey, generateKeyPairSync } from 'node:crypto'
-import { writeFileAtomic } from '../../broker/grants/node-ledger-storage.js'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { parseRegistry, serializeRegistry, type InstalledExtension } from './registry.js'
 
 function extensionsDir (userDataPath: string): string {

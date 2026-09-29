@@ -3,7 +3,8 @@
 **What lives here.** The per-origin ledger of manifests and grants, its persistence across
 restarts, and the origin hash that names an origin's storage on disk.
 
-**What it depends on.** [`src/contracts/`](../../contracts/), [`../policy/`](../policy/), and
+**What it depends on.** [`src/contracts/`](../../contracts/), [`../policy/`](../policy/),
+[`../adapters/atomic-write.ts`](../adapters/atomic-write.ts), and
 `node:fs`/`node:path`/`node:crypto`.
 
 **What it must never import.** `electron`, [`../handles/`](../handles/) or

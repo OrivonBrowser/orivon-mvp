@@ -4,7 +4,7 @@
 
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { writeFileAtomic } from '../../broker/grants/node-ledger-storage.js'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { FUTURE_TOLERANCE_SECONDS, parseCheckpoint } from './checkpoint.js'
 import type { Checkpoint } from './checkpoint.js'
 

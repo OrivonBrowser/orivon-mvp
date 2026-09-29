@@ -84,6 +84,12 @@ describe('zoneAt', () => {
     expect(zoneAt(AREA, { x: 10, y: 300 })).toBe('left')
     expect(zoneAt(AREA, { x: 100, y: 105 })).toBe('top')
   })
+
+  it('takes a narrower share -- window-actions.ts\'s own TAB_DRAG_SPLIT_SHARE, so a tab is easy to tear off', () => {
+    const point = { x: 200, y: 400 } // fx = 0.2: inside the default 0.28 left band, outside a 0.12 one
+    expect(zoneAt(AREA, point)).toBe('left')
+    expect(zoneAt(AREA, point, 0.12)).toBeNull()
+  })
 })
 
 describe('zones', () => {

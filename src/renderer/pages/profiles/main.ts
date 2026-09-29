@@ -4,6 +4,7 @@
 // apps, so this is also where a new one is made. A private window is started here too.
 import { internalBridge } from '../shared/bridge.js'
 import { h, replaceChildren } from '../shared/dom.js'
+import { profilesIcon } from '../shared/icons.js'
 
 const bridge = internalBridge()
 
@@ -56,7 +57,7 @@ async function act (command: object): Promise<void> {
 
 function swatches (selected: string, choose: (color: string) => void): HTMLElement {
   const buttons = reply.colors.map((color) => {
-    const button = h('button', { className: color === selected ? 'swatch selected' : 'swatch', type: 'button', title: color, onclick: () => { choose(color) } }, h('span', { className: 'dot' }))
+    const button = h('button', { className: color === selected ? 'swatch selected' : 'swatch', type: 'button', title: color, onclick: () => { choose(color) } }, h('span', { className: 'dot mark' }))
     button.dataset['color'] = color
     button.setAttribute('role', 'radio')
     button.setAttribute('aria-checked', String(color === selected))
@@ -83,7 +84,7 @@ function card (row: Row): HTMLElement {
     void act({ type: 'remove', id: row.id })
   })
   const status = row.current ? 'This window' : row.running ? 'Open' : ''
-  const chip = h('span', { className: 'chip', textContent: row.name.slice(0, 1).toUpperCase() })
+  const chip = h('span', { className: 'chip mark', textContent: row.name.slice(0, 1).toUpperCase() })
   chip.dataset['color'] = row.color
   return h('article', { className: 'card profile', id: `profile-${row.id}` },
     h('div', { className: 'head' }, chip, name, status === '' ? null : h('span', { className: 'status', textContent: status })),
@@ -116,7 +117,7 @@ function render (): void {
 document.getElementById('app')?.append(
   h('main', { className: 'page' },
     h('header', { className: 'top' },
-      h('h1', { textContent: 'Profiles' }),
+      h('div', { className: 'top-title' }, profilesIcon(), h('h1', { textContent: 'Profiles' })),
       h('button', { className: 'btn', type: 'button', textContent: 'New private window', onclick: () => { void request({ type: 'newPrivate' }) } })),
     problem,
     list,

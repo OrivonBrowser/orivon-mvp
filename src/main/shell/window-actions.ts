@@ -1,6 +1,7 @@
 // What the chrome's buttons and menus ask of their window beyond the tab
 // collection: opening one popover closes the others, and a tab can be sent to
 // another window. Assembled per window from the pieces window.ts made.
+import { screen } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellActions } from '../ipc/ipc.js'
 import type { PermissionsPanel } from '../permissions/permissions-panel.js'
@@ -15,6 +16,13 @@ import { cascadeFrom } from './window-options.js'
 import type { ShellWindowOptions } from './window-options.js'
 import type { Bounds } from './tab-types.js'
 import type { ShellWindow } from './window-registry.js'
+import { edgeZoneFor, grabFor, halfOfWorkArea, positionFor, restorePositionFor } from './window-move.js'
+import type { DragGrab } from './window-move.js'
+
+/** How close to a page's edge a dragged tab has to be for it to split, WHILE a drag is under way -- narrower
+ * than `zoneAt`'s own default share (split-model.ts), used for a plain drop, so a tab is easy to tear off
+ * rather than getting caught by a wide edge band on the way to open space. */
+const TAB_DRAG_SPLIT_SHARE = 0.12
 
 /** What the site-info popover last opened on, so its "Site settings" row can open the all-sites list beside it. */
 export interface SiteInfoMemory {
@@ -43,6 +51,9 @@ function windowLabel (other: ShellWindow, position: number): string {
 export function shellActions (parts: WindowParts): ShellActions {
   const { entry, services, panels, memory, openWindow, topHeight, area } = parts
   const { tabs, window } = entry
+
+  /** Captured once at the start of a manual window move (drag-mode.ts), null between drags. */
+  let moveGrab: DragGrab | null = null
 
   const showTabMenuFor = (id: string): void => {
     const { tabs: all } = tabs.getState()
@@ -93,23 +104,64 @@ export function shellActions (parts: WindowParts): ShellActions {
       panels.menu.toggle(anchor)
     },
     dragTab: (id, point) => {
-      const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point)
+      const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)
       tabs.splits.setPreview(zone)
+      // point === null: the pointer is back inside the strip, which happens on every in-strip
+      // pointermove of a drag that has not (or not yet) torn out -- never a reason to tear down the
+      // floating preview or throw away the capture `beginTabDrag` started; `endTabDrag` is the only
+      // thing that does that, once the drag genuinely ends. tick()'s own poll already hides the
+      // preview when the real cursor is back over this window's own strip.
+      if (point !== null) services.tearDrag.update(entry, id, zone !== null, topHeight)
     },
-    dropTab: (id, screen, client) => {
+    // The dragged tab stays where it is in the stack: dragging a background tab onto the page in
+    // front is how a split is made. A background tab's view is detached, so its capture comes back
+    // empty and the floating preview shows the tab's title instead.
+    beginTabDrag: (id) => { services.tearDrag.prewarm(entry, id) },
+    endTabDrag: () => { services.tearDrag.clear() },
+    dropTab: (id, screenPoint, client) => {
       tabs.splits.setPreview(null)
+      services.tearDrag.clear()
       const active = tabs.getState().activeTabId
-      const zone = splitZoneFor(active, id, area(), client)
+      const zone = splitZoneFor(active, id, area(), client, TAB_DRAG_SPLIT_SHARE)
       if (zone !== null && active !== null) {
         tabs.splits.split(active, id, zone)
         return
       }
-      // Let go over the page but not at an edge, or over the window's own top: it stays where it was.
-      const { width, height } = window.getContentBounds()
-      const inWindow = client.x >= 0 && client.x < width && client.y >= 0 && client.y < height
-      if (inWindow) return
-      dropTab(entry, id, screen, services.windows.all(), openWindow, topHeight)
+      // Not a split: over another window's strip, moves there; over this window's own top rows (strip and
+      // toolbar), stays where it was, matching the floating preview parking there instead of following the
+      // pointer (tear-drag.ts's own tick()); anywhere else -- this window's own page, or outside every
+      // window -- opens a window of its own, the floating preview's own promise. `dropTab` (tab-move.ts)
+      // decides which, from `screenPoint` alone.
+      dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
     },
-    showTabMenu: showTabMenuFor
+    showTabMenu: showTabMenuFor,
+    toggleMaximize: () => { if (window.isMaximized()) window.unmaximize(); else window.maximize() },
+    windowMoveStart: (point) => { moveGrab = grabFor(point, window.getBounds()) },
+    windowMoveTo: (point) => {
+      if (moveGrab === null) return
+      if (window.isMaximized()) {
+        // getBounds() read right after unmaximize() still reports the maximized size on X11 (the
+        // request is asynchronous) -- getNormalBounds(), read before asking to unmaximize, is what
+        // the restored width, and the grab this recomputes for the moves after it, actually need.
+        const restored = window.getNormalBounds()
+        window.unmaximize()
+        const to = restorePositionFor(point, restored.width, moveGrab)
+        window.setPosition(to.x, to.y)
+        moveGrab = grabFor(point, { ...restored, x: to.x, y: to.y })
+      } else {
+        const to = positionFor(point, moveGrab)
+        window.setPosition(to.x, to.y)
+      }
+    },
+    windowMoveEnd: (point) => {
+      moveGrab = null
+      const workArea = screen.getDisplayNearestPoint(point).workArea
+      const zone = edgeZoneFor(point, workArea)
+      if (zone === 'maximize') window.maximize()
+      else if (zone !== null) window.setBounds(halfOfWorkArea(workArea, zone))
+    },
+    // A pointercancel's own coordinates are not where the pointer actually was: just stop tracking
+    // the move, with no edge-snap action (unlike windowMoveEnd).
+    windowMoveCancel: () => { moveGrab = null }
   }
 }

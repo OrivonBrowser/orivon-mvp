@@ -1,5 +1,6 @@
 import { app, BaseWindow, dialog, nativeTheme, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
+import { openUrlsOnSecondLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
@@ -165,22 +166,32 @@ function boot (runtime: Runtime): void {
       setTimeout(() => { sweepPrivateDirs(); runtime.profiles.sweepDeleted() }, SWEEP_DELAY_MS).unref()
     }
     opener = (urls) => {
-      if (shell.windows.focused() === undefined) createShellWindow(ctx, shell)
-      const target = shell.windows.focused()
-      if (target === undefined) return
-      if (target.window.isMinimized()) target.window.restore()
-      target.window.show()
-      target.window.focus()
-      for (const url of urls) target.tabs.createTab(url)
+      openUrlsOnSecondLaunch(shell.windows.focused(), urls, (options) => { createShellWindow(ctx, shell, options) })
     }
-    markStarted()
+    // Marked started only once the first window exists, never before: a
+    // second launch arriving in the gap while this one is still choosing its
+    // first window's options (planIntro's await, below) would otherwise run
+    // the opener with no window open, creating one of its own -- two windows
+    // for one launch. The `finally` marks it started even if that throws,
+    // so a startup failure (already fatal via the unhandledRejection handler
+    // above) does not also strand every second launch queued behind it.
     if (runtime.isPrivate) {
-      // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
-      createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') } })
+      try {
+        // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
+        // firstOfLaunch: true -- the ONLY createShellWindow call ORIVON_WINDOW_NO_FOCUS=1 may leave
+        // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
+        createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') }, firstOfLaunch: true })
+      } finally {
+        markStarted()
+      }
     } else {
-      // Only this first window can open on the welcome screen: the macOS
-      // 'activate' below recreates a window in a process that has already shown it.
-      createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')) })
+      try {
+        // Only this first window can open on the welcome screen: the macOS
+        // 'activate' below recreates a window in a process that has already shown it.
+        createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
+      } finally {
+        markStarted()
+      }
       app.on('activate', () => {
         if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
       })
