@@ -80,9 +80,9 @@ member throws a named `OrivonShimError` when **called**, never when read, so fea
 (`typeof`, `?.`, destructuring) cannot crash. The cost: `typeof` says `'function'`, which is true
 of real Node for almost all of this surface. A member Node exposes as **data** (`fs.constants`,
 `dns.promises`) must be listed in `refusingProxy`'s `known` with a real value; a throwing stand-in
-would lie about its type. The refusal reaches a caller through the default export: an ESM default import, or
-a bundler's interop that hands `require()` the default. esbuild hands `require()` the module's
-namespace instead, where an unbuilt member is `undefined` (A287).
+would lie about its type. The refusal reaches a caller through the default export: an ESM
+default import, or a bundler's interop that hands `require()` the default. esbuild hands
+`require()` the module's namespace instead, where an unbuilt member is `undefined` (A287).
 
 **Why a second error class.** A Node-stdlib gap and an Electron desktop-shell gap are different
 situations for a porting developer (code-guidelines Rule 3), so this package has its own
