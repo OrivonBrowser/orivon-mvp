@@ -25,6 +25,9 @@ const { request, get } = createHttpModule({
 
 export { request, get }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/http.js'
+
 // A135: anything else read off this default export (Server, validateHeaderName,
 // ...) names the gap instead of reading `undefined` -- see http/unsupported.ts.
 export default refusingProxy({ request, get, createServer, STATUS_CODES, METHODS, Agent, globalAgent }, otherHttpMember('http'))

@@ -34,4 +34,7 @@ export const Blob = globalThis.Blob
 export const atob = globalThis.atob
 export const btoa = globalThis.btoa
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/buffer.js'
+
 export default nodeModule('buffer', { Buffer, SlowBuffer, INSPECT_MAX_BYTES, kMaxLength, Blob, atob, btoa })

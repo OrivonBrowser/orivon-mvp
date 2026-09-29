@@ -142,5 +142,8 @@ const strict = Object.assign((value: unknown, message?: Message) => { ok(value, 
 const assert = Object.assign((value: unknown, message?: Message) => { ok(value, message) }, members, { strict })
 Object.assign(strict, { strict })
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/assert.js'
+
 export default nodeModule('assert', assert)
 export { strict }

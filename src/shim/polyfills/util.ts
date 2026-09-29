@@ -73,6 +73,9 @@ export const format = utilPackage.format
 export const inspect = utilPackage.inspect
 export const types = nodeModule('util.types', utilPackage.types)
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/util.js'
+
 export default nodeModule('util', {
   ...utilPackage,
   types,

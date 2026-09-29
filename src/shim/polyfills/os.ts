@@ -33,6 +33,9 @@ export function cpus (): Array<{ model: string, speed: number, times: { user: nu
   return Array.from({ length: availableParallelism() }, () => ({ model: '', speed: 0, times: { user: 0, nice: 0, sys: 0, idle: 0, irq: 0 } }))
 }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/os.js'
+
 export default nodeModule('os', {
   EOL, arch, availableParallelism, cpus, endianness, freemem, homedir, hostname, loadavg,
   networkInterfaces, platform, release, tmpdir, totalmem, type, uptime
