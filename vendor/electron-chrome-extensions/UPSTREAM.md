@@ -402,6 +402,22 @@
     going through the preload's own gate is refused the same way. Measured after: `chrome.tabs`
     is `undefined` in the sandboxed page, and a direct `chrome.tabs.query` attempt never reaches
     a real call.
+38. **`router.ts`: the registration-race wait (patch 36) also covers `crx-add-listener`, and is
+    shared per extension id instead of one wait per call.** `onAddListener` used to call
+    `observer.addListener(...)` synchronously and directly; a page whose extension was still
+    registering hit the exact same race `onRouterMessage`'s own crx-msg path does (a popup's own
+    top-level `chrome.runtime.onMessage.addListener()` call, before `session.extensions`
+    reflects the load already in flight) and lost the subscription for good, since
+    `addListener` throws synchronously for an unregistered id and the surrounding `ipcMain.on`
+    handler is fire-and-forget. Now resolved in the same tick when the extension is already
+    registered (the common case), and deferred to `waitForRegisteredExtension` only on an actual
+    race. `waitForRegisteredExtension` itself now shares ONE pending wait, one
+    `'extension-loaded'` listener and one timer, per `(extensions, extensionId)`
+    (`pendingRegistrations`, a `WeakMap<extensions, Map<extensionId, Promise>>`) -- a stale page
+    of a disabled or reloading extension previously paid the full 2s wait, and added a new
+    listener, on every call it ever made; concurrent callers racing the same extension id (a
+    crx-msg and one or more crx-add-listener calls, all from the same still-loading extension)
+    now await the identical promise instead.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

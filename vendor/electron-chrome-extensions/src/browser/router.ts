@@ -38,13 +38,36 @@ interface ExtensionRegistryEvents {
   removeListener: (event: 'extension-loaded', listener: (event: Electron.Event, extension: Electron.Extension) => void) => unknown
 }
 
+// Orivon patch (UPSTREAM.md patch 38): one pending wait per (extensions,
+// extensionId), shared by every caller -- onRouterMessage's own crx-msg
+// path AND onAddListener below both race the same registration, and a
+// stale page of a disabled/reloading extension can call either one
+// repeatedly; before this, EACH call created its own 'extension-loaded'
+// listener and its own EXTENSION_REGISTRATION_WAIT_MS timer, so a page
+// that never stops calling never stopped paying the full wait, and never
+// stopped accumulating listeners, either. A WeakMap keyed on the real
+// `extensions` object (one per session) so two sessions' pending waits
+// never collide.
+const pendingRegistrations = new WeakMap<ExtensionRegistryEvents, Map<string, Promise<Electron.Extension | undefined>>>()
+
 async function waitForRegisteredExtension (
   extensions: ExtensionRegistryEvents,
   extensionId: string,
 ): Promise<Electron.Extension | undefined> {
   const already = extensions.getExtension(extensionId)
   if (already) return already
-  return await new Promise((resolve) => {
+
+  let pending = pendingRegistrations.get(extensions)
+  if (pending === undefined) {
+    pending = new Map()
+    pendingRegistrations.set(extensions, pending)
+  }
+
+  const existing = pending.get(extensionId)
+  if (existing !== undefined) return existing
+
+  const table = pending
+  const promise = new Promise<Electron.Extension | undefined>((resolve) => {
     let settled = false
     const onLoaded = (_event: Electron.Event, extension: Electron.Extension): void => {
       if (settled || extension.id !== extensionId) return
@@ -61,6 +84,10 @@ async function waitForRegisteredExtension (
     }, EXTENSION_REGISTRATION_WAIT_MS)
     extensions.on('extension-loaded', onLoaded)
   })
+  void promise.finally(() => { table.delete(extensionId) })
+
+  pending.set(extensionId, promise)
+  return await promise
 }
 
 /** Escapes every regex-special character in `str`, for use inside a larger
@@ -297,11 +324,27 @@ class RoutingDelegate {
     // plain ipcMain.on listener, never awaited by anything: an uncaught
     // throw here becomes an uncaughtException in main/index.ts, which exits
     // the whole process for one page's stale subscription.
-    try {
-      return observer?.addListener(listener, extensionId, eventName)
-    } catch (error) {
-      d(`crx-add-listener failed for ${extensionId}: %s`, error)
-    }
+    //
+    // Orivon patch (UPSTREAM.md patch 38): the SAME registration race
+    // onRouterMessage's own crx-msg path already waits out (patch 36) --
+    // a popup's own top-level chrome.runtime.onMessage.addListener() call
+    // can reach here before session.extensions reflects the load already
+    // in flight, and without this the listener is refused outright and
+    // lost for good, not merely delayed. Resolved synchronously, in the
+    // same tick, when the extension is already registered (the common
+    // case): only an actual race defers to the shared wait.
+    const eventSession = getSessionFromEvent(event)
+    const eventSessionExtensions = eventSession.extensions || eventSession
+    void (async () => {
+      if (eventSessionExtensions.getExtension(extensionId) == null) {
+        await waitForRegisteredExtension(eventSessionExtensions, extensionId)
+      }
+      try {
+        observer?.addListener(listener, extensionId, eventName)
+      } catch (error) {
+        d(`crx-add-listener failed for ${extensionId}: %s`, error)
+      }
+    })()
   }
 
   private onRemoveListener = (
