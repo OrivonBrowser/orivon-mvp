@@ -72,6 +72,10 @@ export const deprecate = utilPackage.deprecate
 export const format = utilPackage.format
 export const inspect = utilPackage.inspect
 export const types = nodeModule('util.types', utilPackage.types)
+// Real on the package's default export only: named here too, so a bundled
+// CommonJS require()'s namespace (which never sees the default) carries them.
+export const isArray = utilPackage.isArray
+export const _extend = utilPackage._extend
 
 // A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
 export * from './generated/util.js'

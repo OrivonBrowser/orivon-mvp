@@ -4,7 +4,7 @@
 
 import { format as nodeFormat } from 'node:util'
 import { describe, expect, it, vi } from 'vitest'
-import util, { callbackify, format, inspect, isDeepStrictEqual, promisify, TextDecoder, TextEncoder, types } from '../util.js'
+import util, { _extend, callbackify, format, inspect, isArray, isDeepStrictEqual, promisify, TextDecoder, TextEncoder, types } from '../util.js'
 
 describe('promisify', () => {
   it('resolves with the callback\'s value and rejects with its error', async () => {
@@ -64,6 +64,20 @@ describe('members the package predates', () => {
   it('isDeepStrictEqual compares deeply and strictly', () => {
     expect(isDeepStrictEqual({ a: [1] }, { a: [1] })).toBe(true)
     expect(isDeepStrictEqual({ a: 1 }, { a: '1' })).toBe(false)
+  })
+})
+
+// A287: real only on the package's default export, so named here too --
+// otherwise a bundled CommonJS require('util')'s namespace (which never
+// sees the default) hands out `undefined` for both.
+describe('members real only on the util package\'s default export', () => {
+  it('isArray is a real named export', () => {
+    expect(isArray([1, 2, 3])).toBe(true)
+    expect(isArray('not an array')).toBe(false)
+  })
+
+  it('_extend is a real named export', () => {
+    expect(_extend({ a: 1 }, { b: 2 })).toEqual({ a: 1, b: 2 })
   })
 })
 

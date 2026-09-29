@@ -15,6 +15,8 @@ import { refuseShim } from '../errors.js'
 export { Socket } from './socket.js'
 export { Server } from './server.js'
 export { isIP, isIPv4, isIPv6 } from './isip.js'
+// Node's net.Stream is a legacy alias for net.Socket, not a separate class.
+export { Socket as Stream } from './socket.js'
 
 const connect = createConnectFactory((opts) => getOrivon().net.connect(opts))
 const createServer = createServerFactory((opts) => getOrivon().net.listen(opts))
@@ -38,6 +40,6 @@ export * from './generated/net.js'
 // A135: anything else read off this default export (a bundled CJS
 // `require('net')`'s own shape) names the gap instead of reading `undefined`.
 export default refusingProxy(
-  { connect, createConnection: connect, Socket, createServer, Server, isIP, isIPv4, isIPv6 },
+  { connect, createConnection: connect, Socket, Stream: Socket, createServer, Server, isIP, isIPv4, isIPv6 },
   otherNetMember
 )

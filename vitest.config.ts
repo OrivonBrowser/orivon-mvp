@@ -3,15 +3,16 @@ import { fileURLToPath } from 'node:url'
 import type { Alias } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
+import { isShimSource } from './src/shim/is-shim-source.js'
 
-const root = dirname(fileURLToPath(import.meta.url)).replace(/\\/g, '/')
-const SHIM_SOURCE_DIRS = [`${root}/src/shim/`, `${root}/src/shim-electron/`]
+const root = dirname(fileURLToPath(import.meta.url))
+const SHIM_SOURCE_DIRS = ['src/shim/', 'src/shim-electron/']
 
-/** A shim module itself, never a test or its support files: those drive real `node:*` servers and disks. */
-function isShimSource (importer: string | undefined): boolean {
-  if (importer === undefined) return false
-  const path = importer.replace(/\\/g, '/')
-  return SHIM_SOURCE_DIRS.some((dir) => path.startsWith(dir)) && !path.includes('/tests/')
+/** A shim module itself, never a test or its support files: those drive real `node:*` servers
+ * and disks. electron.vite.config.ts's `isShimImporter` applies the identical rule for the
+ * preload build; both share `isShimSource`'s implementation. */
+function isShimImporter (importer: string | undefined): boolean {
+  return isShimSource(root, importer, SHIM_SOURCE_DIRS)
 }
 
 /**
@@ -31,7 +32,7 @@ function shimModuleAliases (): Alias[] {
       find: aliasPattern(specifier),
       replacement: '$&',
       async customResolver (_source, importer, options) {
-        if (!isShimSource(importer)) return null
+        if (!isShimImporter(importer)) return null
         return await this.resolve(target, importer, { ...options, skipSelf: true })
       }
     }

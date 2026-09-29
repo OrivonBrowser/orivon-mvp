@@ -13,7 +13,10 @@ declare module 'os-browserify/browser.js' {
 declare module 'util/util.js' {
   import type * as util from 'node:util'
   const utilPackage: Pick<typeof util,
-    'callbackify' | 'debuglog' | 'deprecate' | 'format' | 'inherits' | 'inspect' | 'promisify' | 'types'>
+    'callbackify' | 'debuglog' | 'deprecate' | 'format' | 'inherits' | 'inspect' | 'promisify' | 'types' | 'isArray'> & {
+    /** Node's real `util._extend`, predating `Object.assign`; `@types/node` does not declare it. */
+    _extend: (target: object, source: object) => object
+  }
   export default utilPackage
 }
 

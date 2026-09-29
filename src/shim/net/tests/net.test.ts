@@ -66,6 +66,17 @@ describe('net/net.ts', () => {
     expect(net.default.isIP('67.215.246.10')).toBe(4)
   })
 
+  // Node's net.Stream is a legacy alias for net.Socket, not a distinct class
+  // this shim leaves unbuilt -- it must resolve to the same class, both
+  // named (a bundled CommonJS require()'s namespace, A287) and on the
+  // default export, never the generic "unimplemented" refusal.
+  it('net.Stream is net.Socket, both named and on the default export', async () => {
+    installFakeOrivon()
+    const net = await import('../net.js')
+    expect(net.Stream).toBe(net.Socket)
+    expect(net.default.Stream).toBe(net.Socket)
+  })
+
   it('createServer() routes through orivon.net.listen -- Server\'s own behaviour is net/tests/server.test.ts\'s job', async () => {
     const { listenCalls } = installFakeOrivon()
     const net = await import('../net.js')

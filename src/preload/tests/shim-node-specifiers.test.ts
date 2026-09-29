@@ -1,21 +1,24 @@
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { isShimImporter, shimNodeSpecifiers } from '../../../electron.vite.config.js'
+import { isShimImporter, root, shimNodeSpecifiers } from '../../../electron.vite.config.js'
 
-const SHIM_IMPORTER = '/repo/src/shim/wasi/fds.ts'
-const SHIM_TEST_IMPORTER = '/repo/src/shim/wasi/tests/fds.test.ts'
-const PRELOAD_IMPORTER = '/repo/src/preload/child-host.ts'
-const PACKAGE_IMPORTER = '/repo/node_modules/readable-stream/lib/internal/streams/buffer_list.js'
+const SHIM_IMPORTER = resolve(root, 'src/shim/wasi/fds.ts')
+const SHIM_TEST_IMPORTER = resolve(root, 'src/shim/wasi/tests/fds.test.ts')
+const PRELOAD_IMPORTER = resolve(root, 'src/preload/child-host.ts')
+const PACKAGE_IMPORTER = resolve(root, 'node_modules/readable-stream/lib/internal/streams/buffer_list.js')
 
+// isShimImporter is a thin wrapper around is-shim-source.ts's isShimSource,
+// bound to this repository's real root; is-shim-source.test.ts exercises
+// that function's own edge cases (a checkout root under a `tests` or
+// `src/shim` directory, Windows-style paths) directly, with a root the test
+// controls -- this just proves the wrapper is wired to the real one.
 describe('isShimImporter', () => {
   it('is true only for a file under src/shim/, never its own tests', () => {
     expect(isShimImporter(SHIM_IMPORTER)).toBe(true)
     expect(isShimImporter(SHIM_TEST_IMPORTER)).toBe(false)
     expect(isShimImporter(PRELOAD_IMPORTER)).toBe(false)
+    expect(isShimImporter(PACKAGE_IMPORTER)).toBe(false)
     expect(isShimImporter(undefined)).toBe(false)
-  })
-
-  it('normalises a Windows-style backslash path the same way vitest.config.ts\'s isShimSource does', () => {
-    expect(isShimImporter('C:\\repo\\src\\shim\\wasi\\fds.ts')).toBe(true)
   })
 })
 
