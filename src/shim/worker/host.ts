@@ -6,24 +6,24 @@
 // contract ../child-process/spawn.ts's own `launchChild()` already keeps for a
 // same-process child.
 //
-// SPAWN DOES NOT ROUTE THROUGH THE HOST YET. `../child-process/program.ts`'s
-// loading pulls in ../wasi-p2/filesystem.ts, which needs ../fs/paths.ts and
-// ../wasi/fds.ts -- both `import ... from 'path'`, aliased away only when an
-// APP's own code is bundled (module-map.ts's app-bundler substitution). This
-// file is bundled directly by electron-vite as part of a real preload
-// script, which has no such aliasing and cannot `require('path')` at all in
-// a sandboxed preload -- measured: the whole preload script then fails to
-// load, taking fork and thread down with it, not just spawn. Until that
-// dependency is removed or the alias is reproduced for this bundle,
-// `spawn.ts` never asks a host for a connection at all (its own header
-// says where), and this file refuses a `'spawn'` start by name rather than
-// silently mis-starting one, should anything ever reach it regardless.
+// Spawn routes through the host exactly like fork and thread: a spawn's own
+// program (../child-process/program.ts's `loadProgram`) is loaded HERE,
+// never carried across the page -> host hop, since a compiled
+// `WebAssembly.Module` does not survive it (ADR-0046's Context). That
+// loading's own graph reaches a bare `import ... from 'path'`
+// (../wasi-p2/filesystem.ts -> ../fs/paths.ts and ../wasi/fds.ts), which this
+// file -- bundled directly into a real, sandboxed preload script, not
+// through the app bundler's own shim aliasing -- could not resolve on its
+// own; the preload build's own resolve plugin (electron.vite.config.ts's
+// `shimNodeSpecifiers`) now resolves it through the same table the app
+// bundler uses (module-map.ts), for any importer under src/shim/.
 
 import type { Orivon } from '../../contracts/capability-api.js'
+import { loadProgram } from '../child-process/program.js'
 import { createChildWorker } from './launch.js'
 import { serveOrivon } from './orivon-server.js'
 import { toWireError } from './protocol.js'
-import type { FromWorker, ToWorker } from './protocol.js'
+import type { FromWorker, SpawnStart, StreamName, ToWorker } from './protocol.js'
 import type { HostForkStart, HostStart, HostThreadStart, StartChildMessage, ToHostChild } from './host-protocol.js'
 
 export interface ChildHost {
@@ -44,8 +44,10 @@ function isSameOrigin (url: string): boolean {
   }
 }
 
-function workerNameFor (start: HostForkStart | HostThreadStart): string {
-  return start.type === 'fork' ? `child_process fork ${new URL(start.url).pathname}` : start.name
+function workerNameFor (start: HostStart): string {
+  if (start.type === 'fork') return `child_process fork ${new URL(start.url).pathname}`
+  if (start.type === 'thread') return start.name
+  return `child_process ${start.command}`
 }
 
 /**
@@ -55,19 +57,48 @@ function workerNameFor (start: HostForkStart | HostThreadStart): string {
 async function startChild (port: MessagePort, start: HostStart, extra: readonly Transferable[], orivon: Orivon): Promise<void> {
   port.start()
 
-  // See this file's own header: spawn does not route through the host yet.
-  if (start.type === 'spawn') {
-    port.postMessage(failedMessage(new Error('spawn does not run in a child host yet -- child_process.spawn always runs in the page (see src/shim/worker/host.ts)')))
-    return
-  }
+  // A spawn's own program load below is asynchronous (unlike fork/thread's),
+  // so the page may write stdin, or even close its own connection, before
+  // the real Worker exists to receive any of it. A `MessagePort` already
+  // `.start()`ed dispatches to whatever `.onmessage` is set to AT THE
+  // MOMENT a message arrives -- with nothing yet listening, that message is
+  // LOST, not merely delayed (measured: an early `stdin-end` this way never
+  // reached a spawned program, which then hung forever on stdin, exactly
+  // the deadlock ADR-0046's own "closed page port" design exists to avoid).
+  // Buffer here; replayed once the real handler below is installed.
+  const pendingMessages: ToHostChild[] = []
+  let pendingClosed = false
+  port.onmessage = (event: MessageEvent<ToHostChild>) => { pendingMessages.push(event.data) }
+  port.addEventListener('close', () => { pendingClosed = true })
 
-  // A forked or threaded module must be on the host's own origin -- the page
-  // already refuses this before ever reaching here (fork.ts's own
-  // moduleUrl()), but the host re-checks rather than trusting a page that
-  // could, in principle, send anything over its own port.
-  if (!isSameOrigin(start.url)) {
-    port.postMessage(failedMessage(new Error(`${start.type === 'fork' ? 'a forked' : 'a threaded'} module must be on the app's own origin`)))
-    return
+  // Not `Omit<ToWorker, 'orivon'>`: `Omit` does not distribute over a
+  // discriminated union, so that would collapse to only the fields every
+  // member shares. This union, built from each member's own already-correct
+  // omission, keeps `program`/`args`/`env`/`preopens` on the spawn branch and
+  // `url`/`argv`/... on the other two.
+  let base: Omit<SpawnStart, 'orivon'> | HostForkStart | HostThreadStart
+  if (start.type === 'spawn') {
+    // The program itself, loaded here rather than on the page: this file's
+    // own header says why. `command`/`args` name the same values spawn.ts's
+    // local (non-host) path already passes to the identical `loadProgram`.
+    let program: Awaited<ReturnType<typeof loadProgram>>
+    try {
+      program = await loadProgram(start.command, start.args)
+    } catch (error) {
+      port.postMessage(failedMessage(error))
+      return
+    }
+    base = { type: 'spawn', program, args: start.args, env: start.env, preopens: start.preopens }
+  } else {
+    // A forked or threaded module must be on the host's own origin -- the
+    // page already refuses this before ever reaching here (fork.ts's own
+    // moduleUrl()), but the host re-checks rather than trusting a page that
+    // could, in principle, send anything over its own port.
+    if (!isSameOrigin(start.url)) {
+      port.postMessage(failedMessage(new Error(`${start.type === 'fork' ? 'a forked' : 'a threaded'} module must be on the app's own origin`)))
+      return
+    }
+    base = start
   }
 
   const orivonChannel = new MessageChannel()
@@ -88,9 +119,21 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
   let disposed = false
   const disposeOnce = (): void => { if (disposed) return; disposed = true; void server.dispose() }
 
+  // A child sends its next chunk of a stream only once it is acked
+  // (../worker/parent.ts's OutputAcks) -- the page's own OutputStream is what
+  // acks a chunk it read. Once the page is gone nothing ever will, so an
+  // orphaned child that still writes (any daemon logs) would otherwise block
+  // at its very next write, forever. Acking on the host's behalf instead
+  // keeps the child running exactly as ADR-0046 promises, output and all,
+  // with the output itself simply going nowhere.
+  const ackOutput = (stream: StreamName): void => { worker.postMessage({ type: 'ack', stream }) }
+
   worker.onmessage = (event: MessageEvent<FromWorker>) => {
     if (event.data.type === 'exit' || event.data.type === 'crash') disposeOnce()
-    if (orphaned) return
+    if (orphaned) {
+      if (event.data.type === 'output') ackOutput(event.data.stream)
+      return
+    }
     try {
       port.postMessage(event.data)
     } catch { /* the page's own port is already gone */ }
@@ -101,8 +144,7 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
     if (!orphaned) { try { port.postMessage(failedMessage(new Error(event.message))) } catch { /* gone */ } }
   }
 
-  port.onmessage = (event: MessageEvent<ToHostChild>) => {
-    const message = event.data
+  const dispatch = (message: ToHostChild): void => {
     if (message.type === 'terminate') {
       worker.terminate()
       disposeOnce()
@@ -110,21 +152,33 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
     }
     worker.postMessage(message)
   }
+  const disconnect = (): void => {
+    orphaned = true
+    worker.postMessage({ type: 'stdin-end' })
+    if (start.type === 'fork') worker.postMessage({ type: 'disconnect' })
+    // Unblocks a write already waiting on an ack the page can no longer send.
+    ackOutput('stdout')
+    ackOutput('stderr')
+  }
+
+  port.onmessage = (event: MessageEvent<ToHostChild>) => { dispatch(event.data) }
   // Only fires once `.start()` or `.onmessage` was set on this port
-  // (measured, w1-probe/results.md Q6) -- `port.start()` above and the
-  // assignment just before this both already satisfy that. `addEventListener`,
+  // (measured, w1-probe/results.md Q6) -- `port.start()`, and the buffering
+  // `.onmessage` this file's own header explains, both already satisfy that,
+  // from before this async function's very first `await`. `addEventListener`,
   // never the `.onclose` property: measured here (Node's own `MessagePort`
   // dispatches 'close' to a listener added either way in a real Chromium
   // renderer, but only to `addEventListener` under plain Node, which is what
   // this file's own unit tests run under -- `addEventListener` is what both
   // agree on.
-  port.addEventListener('close', () => {
-    orphaned = true
-    worker.postMessage({ type: 'stdin-end' })
-    if (start.type === 'fork') worker.postMessage({ type: 'disconnect' })
-  })
+  port.addEventListener('close', disconnect)
 
-  worker.postMessage({ ...start, orivon: orivonChannel.port2 } as ToWorker, [orivonChannel.port2, ...extra])
+  worker.postMessage({ ...base, orivon: orivonChannel.port2 } as ToWorker, [orivonChannel.port2, ...extra])
+
+  // Replays whatever the page sent (or the close it sent no message for)
+  // while the Worker above did not exist yet -- this file's own header.
+  for (const message of pendingMessages) dispatch(message)
+  if (pendingClosed) disconnect()
 }
 
 export function createChildHost (orivon: Orivon): ChildHost {

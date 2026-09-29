@@ -91,11 +91,12 @@ changes.
 - A child's web storage (IndexedDB, Cache Storage) is the host session's, not the app pages'.
   Node-shaped code keeps its state through `orivon.fs`, which is the app's; a child that reaches for
   web storage sees a store of its own.
-- Program loading moves from the page to the host for a fork or a thread. A spawned program does
-  not yet: loading one pulls in a dependency a real preload script cannot bundle at all (measured:
-  it throws over an unresolved `path` import a sandboxed preload has no access to, taking the whole
-  preload down, not only spawn), so `spawn` still ends with the page that started it until that
-  dependency is removed from the path a host's own bundle needs, or reproduced for it another way.
+- Program loading moves from the page to the host for a spawn, a fork or a thread alike. Loading a
+  spawned program pulls in a dependency a real preload script cannot bundle on its own (measured:
+  an unresolved `path` import throws, taking the whole preload down, not only spawn); the preload
+  build resolves it the same way the app bundler already does for the app's own code, through a
+  resolve plugin scoped to an importer under `src/shim/` (`electron.vite.config.ts`'s
+  `shimNodeSpecifiers`, reproducing `src/shim/module-map.ts`'s table rather than a second one).
 - A page that goes away leaves its children to the app. Nothing reattaches a new page to them, as
   nothing in Node reattaches a restarted parent; an app finds its daemon again the way its own code
   does, by its port.

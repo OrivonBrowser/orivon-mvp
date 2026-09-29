@@ -35,6 +35,18 @@ vi.mock('../orivon-server.js', () => ({
   serveOrivon: vi.fn(() => ({ dispose: vi.fn(async () => { disposedServers.push(() => {}) }) }))
 }))
 
+/** A spawn's program-loading result for the next call, set per test: a program to resolve with,
+ * or an error to reject with (../child-process/program.js's own SpawnError shape). `gate`, when
+ * set, is awaited first -- a test's way of holding `loadProgram` pending, to drive a message or a
+ * close through the page's per-child port before the real Worker exists. */
+const nextProgram: { value?: unknown, error?: Error | undefined, gate?: Promise<void> | undefined } = {}
+const loadProgram = vi.fn(async (_command: string, _args: readonly string[]) => {
+  if (nextProgram.gate !== undefined) await nextProgram.gate
+  if (nextProgram.error !== undefined) throw nextProgram.error
+  return nextProgram.value
+})
+vi.mock('../../child-process/program.js', () => ({ loadProgram }))
+
 const { createChildHost } = await import('../host.js')
 
 const HOST_ORIGIN = 'https://app.example'
@@ -42,6 +54,10 @@ const HOST_ORIGIN = 'https://app.example'
 beforeEach(() => {
   createdWorkers.length = 0
   disposedServers.length = 0
+  nextProgram.value = undefined
+  nextProgram.error = undefined
+  nextProgram.gate = undefined
+  loadProgram.mockClear()
   vi.stubGlobal('location', { origin: HOST_ORIGIN })
 })
 
@@ -108,7 +124,37 @@ describe('createChildHost', () => {
     expect(worker.posted.at(-1)?.message).toEqual({ type: 'ipc', message: { hello: 1 } })
   })
 
-  it('a spawn is refused by name -- it does not route through a host yet (this file\'s own header says why)', async () => {
+  it('loads a spawned program itself, then starts a Worker with it', async () => {
+    const program = { kind: 'component', glue: `${HOST_ORIGIN}/prog.p2/prog.js`, base: `${HOST_ORIGIN}/prog.p2/` }
+    nextProgram.value = program
+    const host = createChildHost({} as never)
+    const { page, hostSide } = pagePortPair()
+    host.addPage(hostSide)
+
+    const { message, childPage } = startChildMessage({
+      type: 'spawn', command: '/prog', args: ['/prog', 'a'], env: { FOO: 'bar' }, preopens: { '/': '/' }
+    })
+    page.postMessage(message, [message.port])
+
+    await waitFor(() => createdWorkers.length === 1, 'the Worker to be created')
+    expect(loadProgram).toHaveBeenCalledWith('/prog', ['/prog', 'a'])
+    const worker = createdWorkers[0] as FakeWorker
+    expect(worker.posted[0]?.message).toMatchObject({
+      type: 'spawn', program, args: ['/prog', 'a'], env: { FOO: 'bar' }, preopens: { '/': '/' }
+    })
+
+    worker.emit({ type: 'started' })
+    const received: FromWorker[] = []
+    childPage.onmessage = (event) => { received.push(event.data as FromWorker) }
+    await waitFor(() => received.length === 1, 'the started message to reach the page')
+    expect(received[0]).toEqual({ type: 'started' })
+  })
+
+  it('buffers a message sent while a spawn\'s own program is still loading, and delivers it once the Worker exists', async () => {
+    let release: () => void = () => {}
+    nextProgram.gate = new Promise((resolve) => { release = resolve })
+    nextProgram.value = { kind: 'component', glue: `${HOST_ORIGIN}/prog.p2/prog.js`, base: `${HOST_ORIGIN}/prog.p2/` }
+
     const host = createChildHost({} as never)
     const { page, hostSide } = pagePortPair()
     host.addPage(hostSide)
@@ -116,11 +162,71 @@ describe('createChildHost', () => {
     const { message, childPage } = startChildMessage({ type: 'spawn', command: '/prog', args: [], env: {}, preopens: {} })
     page.postMessage(message, [message.port])
 
+    // Sent while loadProgram is still gated -- before this file's own
+    // `port.onmessage` has ever been assigned to anything but a buffer.
+    childPage.postMessage({ type: 'stdin-end' } satisfies ToWorker)
+    expect(createdWorkers).toHaveLength(0) // still loading; nothing to have lost the message to yet
+
+    release()
+    await waitFor(() => createdWorkers.length === 1, 'the Worker to be created once loading finishes')
+    const worker = createdWorkers[0] as FakeWorker
+    await waitFor(
+      () => worker.posted.some((p) => (p.message as ToWorker).type === 'stdin-end'),
+      'the buffered stdin-end to reach the Worker, not be lost'
+    )
+  })
+
+  it('a page port closed while a spawn\'s own program is still loading orphans the child once it starts, rather than losing the close', async () => {
+    let release: () => void = () => {}
+    nextProgram.gate = new Promise((resolve) => { release = resolve })
+    nextProgram.value = { kind: 'component', glue: `${HOST_ORIGIN}/prog.p2/prog.js`, base: `${HOST_ORIGIN}/prog.p2/` }
+
+    const host = createChildHost({} as never)
+    const { page, hostSide } = pagePortPair()
+    host.addPage(hostSide)
+
+    const { message, childPage } = startChildMessage({ type: 'spawn', command: '/prog', args: [], env: {}, preopens: {} })
+    page.postMessage(message, [message.port])
+
+    childPage.close() // the page goes away before the Worker even exists
+    expect(createdWorkers).toHaveLength(0)
+
+    release()
+    await waitFor(() => createdWorkers.length === 1, 'the Worker to be created despite the page already being gone')
+    const worker = createdWorkers[0] as FakeWorker
+    await waitFor(() => worker.posted.some((p) => (p.message as ToWorker).type === 'stdin-end'), 'stdin-end for the already-orphaned child')
+    expect(worker.terminated).toBe(false) // the child still starts and keeps running (ADR-0046)
+  })
+
+  it('a spawn whose program cannot be loaded replies failed, with no Worker started', async () => {
+    nextProgram.error = Object.assign(new Error('spawn /missing ENOENT'), { code: 'ENOENT' })
+    const host = createChildHost({} as never)
+    const { page, hostSide } = pagePortPair()
+    host.addPage(hostSide)
+
+    const { message, childPage } = startChildMessage({ type: 'spawn', command: '/missing', args: [], env: {}, preopens: {} })
+    page.postMessage(message, [message.port])
+
     const received: FromWorker[] = []
     childPage.onmessage = (event) => { received.push(event.data as FromWorker) }
     await waitFor(() => received.length === 1, 'a failed reply')
-    expect(received[0]).toMatchObject({ type: 'failed' })
+    expect(received[0]).toMatchObject({ type: 'failed', error: { code: 'ENOENT' } })
     expect(createdWorkers).toHaveLength(0)
+  })
+
+  it('carries a native program\'s "excluded" reason across the wire, not only its code', async () => {
+    nextProgram.error = Object.assign(new Error('spawn /bin/native ENOEXEC: a native program'), { code: 'ENOEXEC', reason: 'excluded' })
+    const host = createChildHost({} as never)
+    const { page, hostSide } = pagePortPair()
+    host.addPage(hostSide)
+
+    const { message, childPage } = startChildMessage({ type: 'spawn', command: '/bin/native', args: [], env: {}, preopens: {} })
+    page.postMessage(message, [message.port])
+
+    const received: FromWorker[] = []
+    childPage.onmessage = (event) => { received.push(event.data as FromWorker) }
+    await waitFor(() => received.length === 1, 'a failed reply')
+    expect(received[0]).toMatchObject({ type: 'failed', error: { code: 'ENOEXEC', reason: 'excluded' } })
   })
 
   it('refuses a forked module whose URL is off the host\'s own origin', async () => {
@@ -156,7 +262,7 @@ describe('createChildHost', () => {
     await waitFor(() => worker.terminated, 'the Worker to be terminated')
   })
 
-  it('a closed page port leaves the child running: output is dropped, stdin ends, and a fork is told to disconnect', async () => {
+  it('a closed page port leaves the child running: relaying stops, stdin ends, and a fork is told to disconnect', async () => {
     const host = createChildHost({} as never)
     const { page, hostSide } = pagePortPair()
     host.addPage(hostSide)
@@ -177,7 +283,33 @@ describe('createChildHost', () => {
     )
     expect(worker.terminated).toBe(false) // the child keeps running
 
-    // Output the Worker sends afterwards is dropped, never thrown at a closed port.
+    // Output the Worker sends afterwards is never thrown at a closed port.
     expect(() => { worker.emit({ type: 'output', stream: 'stdout', data: new Uint8Array([1]) }) }).not.toThrow()
+  })
+
+  it('an orphaned child\'s output is acknowledged rather than left to block its next write', async () => {
+    const host = createChildHost({} as never)
+    const { page, hostSide } = pagePortPair()
+    host.addPage(hostSide)
+
+    const { message, childPage } = startChildMessage({
+      type: 'fork', url: `${HOST_ORIGIN}/app.js`, argv: [], env: {}, cwd: '/', serialization: 'json'
+    })
+    page.postMessage(message, [message.port])
+    await waitFor(() => createdWorkers.length === 1, 'the Worker to be created')
+    const worker = createdWorkers[0] as FakeWorker
+
+    childPage.close() // the page went away while a write may already be waiting on an ack that will now never arrive from it
+
+    const acksOf = (stream: string): number => worker.posted.filter((p) => {
+      const m = p.message as ToWorker
+      return m.type === 'ack' && m.stream === stream
+    }).length
+    // Closing the port itself flushes one ack per stream, unblocking any write already waiting.
+    await waitFor(() => acksOf('stdout') >= 1 && acksOf('stderr') >= 1, 'an immediate ack for each stream on close')
+
+    // Every output message the child sends afterwards gets its own ack, not a relay to the dead port.
+    worker.emit({ type: 'output', stream: 'stdout', data: new Uint8Array([1]) })
+    await waitFor(() => acksOf('stdout') >= 2, 'a second ack for a second output message')
   })
 })

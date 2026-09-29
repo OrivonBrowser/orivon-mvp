@@ -145,19 +145,11 @@ async function start (child: ChildProcess, command: string, args: readonly strin
     return
   }
   const env = environmentOf(options.env)
-  // NEVER asks a host for a connection (the fourth, `getHostConnection`,
-  // argument below): ../worker/host.ts's own header records why -- loading
-  // a program pulls in a dependency chain the host's own preload bundle
-  // cannot load at all, which would take fork and thread down with it, not
-  // only spawn. A spawned child still ends with its own page until that is
-  // fixed, exactly as it always has.
   await launchChild(
     child,
     `child_process ${command}`,
     { type: 'spawn', command, args: child.spawnargs, env, preopens },
-    async () => ({ type: 'spawn', program: await loadProgram(command, args), args: child.spawnargs, env, preopens }),
-    [],
-    async () => undefined
+    async () => ({ type: 'spawn', program: await loadProgram(command, args), args: child.spawnargs, env, preopens })
   )
 }
 

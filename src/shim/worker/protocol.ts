@@ -68,6 +68,10 @@ export interface WireError {
   readonly name: string
   readonly message: string
   readonly code?: string
+  /** `SpawnError`'s own `reason` (../child-process/program.ts): the one other field a caller
+   * reads off a spawn failure (`ENOEXEC` for a native program names `'excluded'`) -- carried
+   * across the wire so a host-routed spawn's refusal reads the same as a local one's. */
+  readonly reason?: string
 }
 
 export type FromWorker =
@@ -99,10 +103,11 @@ export interface WorkerLike {
 
 export function toWireError (error: unknown): WireError {
   if (typeof error !== 'object' || error === null) return { name: 'Error', message: String(error) }
-  const { name, message, code } = error as { name?: unknown, message?: unknown, code?: unknown }
+  const { name, message, code, reason } = error as { name?: unknown, message?: unknown, code?: unknown, reason?: unknown }
   return {
     name: typeof name === 'string' ? name : 'Error',
     message: typeof message === 'string' ? message : String(error),
-    ...(typeof code === 'string' ? { code } : {})
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(typeof reason === 'string' ? { reason } : {})
   }
 }
