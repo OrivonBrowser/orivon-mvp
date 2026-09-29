@@ -89,7 +89,7 @@ import {
 } from './smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput,
-  killChild, moveIntoAttributedSession, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
+  killChild, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, ECHO_PORT, STATIC_PORT } from './apps/fixture/config.mjs'
 import { parseManifest } from '../src/loader/manifest/manifest.js'
@@ -469,12 +469,15 @@ it('Phase 2: a real grant, issued through the dev-only path rather than test cod
           JSON.stringify(grantOutcome.grant)
         )
 
-        // The dev-only grant hook above lands on the broker directly, so
-        // nothing has reloaded this page into the session its now-granted
-        // origin belongs in -- a real app.requestGrant call would have
-        // (transport/ipc.ts). Move it there the same way, so the calls
-        // below run from a document actually attributed to FIXTURE_ORIGIN.
-        const view = await moveIntoAttributedSession(app, beforeGrant, FIXTURE_URL)
+        // The dev-only grant hook above lands on the broker directly, with
+        // no IPC round trip for anything to react to, so this document never
+        // moves into the app's own partition. It does not need to: it
+        // already committed FIXTURE_ORIGIN, attributed, before the grant
+        // landed (src/main/sessions/session-attribution.ts), and that
+        // attribution survives a grant that changes what session the origin
+        // belongs in NEXT -- so the calls below still run from this same,
+        // unmoved document.
+        const view = beforeGrant
 
         // (a) THE GRANTED PATH, driven from the real page over the real IPC
         // pipe: write, then read back exactly as many bytes as were sent
