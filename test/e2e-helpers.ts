@@ -207,6 +207,58 @@ export async function waitForPageGlobal (view: ReturnType<typeof findChrome>, na
   await view.waitForFunction((global: string) => (globalThis as Record<string, unknown>)[global] !== undefined, name, { timeout: timeoutMs })
 }
 
+/**
+ * Moves the tab currently showing `url` into whatever Electron session its
+ * origin is attributed to right now (src/broker/policy/origin.ts's
+ * isAttributedSession) -- the choreography a grant made through the real
+ * `app.requestGrant` IPC call gets for free (transport/ipc.ts reloads the
+ * calling document itself once the answer changes which session it
+ * belongs in), and a grant made through the dev-only `__orivonDevGrant`
+ * hook (src/main/dev/dev-grant.ts) does not: that hook lands straight on
+ * the broker, in the main process, with no IPC round trip for anything to
+ * react to, so the page stays exactly where it was. A revoke that leaves
+ * an origin holding no grants at all moves its attribution the OTHER way,
+ * back to the default session, with just as little ceremony -- this
+ * helper reloads either direction the same way, since both are "this
+ * document is not in the session its origin belongs to any more" until
+ * something reloads it.
+ *
+ * `view.reload()` is fired and deliberately NOT awaited: a real
+ * repartition (tab-view.ts's did-navigate -> partitionChanged ->
+ * repartitionView) tears down the very WebContents Playwright's reload()
+ * would be waiting on and builds a fresh WebContentsView in the new
+ * partition, so the old call's own promise -- if it settles at all --
+ * rejects with a "Target ... closed"-shaped error that says nothing about
+ * whether the move worked. That is the same driver artifact
+ * navigateThroughSelfDestroyingView (smoke-helpers.mjs) already documents
+ * for a different trigger. Only polling for a NEW view object showing
+ * `url` -- one an ordinary call already succeeds against -- proves the
+ * move landed; `findViewShowing` alone cannot tell a freshly-swapped view
+ * from one still mid-navigation.
+ */
+export async function moveIntoAttributedSession (
+  app: ElectronApplication,
+  view: ReturnType<typeof findChrome>,
+  url: string,
+  timeoutMs = ADDRESS_BAR_STABLE_TIMEOUT_MS
+): Promise<ReturnType<typeof findChrome>> {
+  const chrome = findChrome(app)
+  view.reload().catch(() => {})
+  const moved = await waitFor(async () => {
+    const candidate = findViewShowing(app, chrome, url)
+    if (candidate === undefined || candidate === view) return false
+    try {
+      return await evaluateRetrying(candidate, () => true, 1_000)
+    } catch {
+      return false
+    }
+  }, timeoutMs)
+  if (!moved) throw new Error(`tab showing ${url} never settled into its attributed session`)
+  const next = findViewShowing(app, chrome, url)
+  if (next === undefined) throw new Error(`no view found showing ${url} after the move`)
+  return next
+}
+
 export async function navigateToFixture (
   app: ElectronApplication,
   url: string,

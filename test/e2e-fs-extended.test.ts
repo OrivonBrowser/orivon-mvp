@@ -46,7 +46,7 @@ import { launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, closeElectronApp, forwardOutput, killChild,
-  navigateToFixture, runPhase, waitForTcpReady
+  moveIntoAttributedSession, navigateToFixture, runPhase, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -154,7 +154,7 @@ it('Phase 2: a real fs grant lets a real page build, list, stat, rename and dele
     try {
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
-        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        const beforeGrant = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
         // The grant, through the production dev-only route (queue item 0.3),
         // exercised inside THIS launched app's own main process -- see
@@ -171,6 +171,12 @@ it('Phase 2: a real fs grant lets a real page build, list, stat, rename and dele
           grantOutcome.installed ? undefined : 'globalThis.__orivonDevGrant was not a function in the main process'
         )
         if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
+
+        // The dev-only hook lands on the broker directly, with no IPC round
+        // trip to reload this page into its now-granted session the way a
+        // real app.requestGrant call would (transport/ipc.ts) -- move it
+        // there the same way before making any granted call from it.
+        const view = await moveIntoAttributedSession(app, beforeGrant, FIXTURE_URL)
 
         // (a) BUILD A REAL NESTED TREE ON REAL DISK, then list, stat, rename
         // and delete it -- one evaluate() so every step runs against the

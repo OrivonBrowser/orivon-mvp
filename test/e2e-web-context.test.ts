@@ -186,7 +186,34 @@ it(
           JSON.stringify(afterGc)
         )
 
-        // ---- (4) revoking the grant rejects a PENDING closed with 'revoked'.
+        // ---- (4) pins the contract's own positional-origin shape (capability-api.ts's
+        // `openContext(origin: string, options?: WebContextOptions)`): the OLD, WRONG
+        // single-object call this file itself used to make must be refused, not silently
+        // accepted as `{ origin: undefined }` (0faed54's own bug). Run BEFORE the revoke
+        // below (5): once that drops this origin's only grant, this page's own document
+        // stops being attributed to its own session at all (isAttributedSession,
+        // policy/origin.ts -- an origin holding no grants belongs in the default
+        // session, and nothing here reloads this still-privileged document back down
+        // into it), so ANY further call from it, wrong shape or not, reads 'denied'
+        // rather than the 'invalid' this check is actually about.
+        const wrongShape = await evaluateRetrying(view, async () => {
+          const orivon = (window as unknown as {
+            orivon: { web: { openContext: (origin: unknown, options?: { width?: number, height?: number }) => Promise<unknown> } }
+          }).orivon
+          try {
+            await orivon.web.openContext({ origin: 'https://example.com' })
+            return { rejected: false, code: undefined as string | undefined }
+          } catch (e) {
+            return { rejected: true, code: (e as { code?: string } | null)?.code }
+          }
+        }, OPEN_TIMEOUT_MS)
+        check(
+          'openContext called with the old, wrong { origin } object shape is refused with \'invalid\', not silently accepted',
+          wrongShape.rejected && wrongShape.code === 'invalid',
+          JSON.stringify(wrongShape)
+        )
+
+        // ---- (5) revoking the grant rejects a PENDING closed with 'revoked'.
         await evaluateRetrying(view, async () => {
           const orivon = (window as unknown as {
             orivon: { web: { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
@@ -219,27 +246,6 @@ it(
           'the pending closed promise rejects with \'revoked\' once the grant is withdrawn',
           closedOutcome.rejected && closedOutcome.code === 'revoked',
           JSON.stringify(closedOutcome)
-        )
-
-        // ---- (5) pins the contract's own positional-origin shape (capability-api.ts's
-        // `openContext(origin: string, options?: WebContextOptions)`): the OLD, WRONG
-        // single-object call this file itself used to make must be refused, not silently
-        // accepted as `{ origin: undefined }` (0faed54's own bug).
-        const wrongShape = await evaluateRetrying(view, async () => {
-          const orivon = (window as unknown as {
-            orivon: { web: { openContext: (origin: unknown, options?: { width?: number, height?: number }) => Promise<unknown> } }
-          }).orivon
-          try {
-            await orivon.web.openContext({ origin: 'https://example.com' })
-            return { rejected: false, code: undefined as string | undefined }
-          } catch (e) {
-            return { rejected: true, code: (e as { code?: string } | null)?.code }
-          }
-        }, OPEN_TIMEOUT_MS)
-        check(
-          'openContext called with the old, wrong { origin } object shape is refused with \'invalid\', not silently accepted',
-          wrongShape.rejected && wrongShape.code === 'invalid',
-          JSON.stringify(wrongShape)
         )
       } finally {
         await closeElectronApp(app)
