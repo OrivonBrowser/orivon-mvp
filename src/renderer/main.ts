@@ -353,9 +353,13 @@ function showDropMark (index: number): void {
   const tabs = [...tabrow.querySelectorAll<HTMLElement>('.tab')]
   const before = tabs[index]
   const rowLeft = tabrow.getBoundingClientRect().left
-  const x = before !== undefined
+  // #tabrow scrolls horizontally once there are more tabs than fit: a tab's own viewport rect
+  // already accounts for that scroll, so adding it back here (rowLeft is a viewport rect too, with
+  // no scroll of its own to add) would double-count it -- the mark needs `scrollLeft` added on top
+  // of the viewport-relative distance, to land in the row's own scrolled coordinate space instead.
+  const x = (before !== undefined
     ? before.getBoundingClientRect().left - rowLeft
-    : (tabs.at(-1)?.getBoundingClientRect().right ?? rowLeft) - rowLeft
+    : (tabs.at(-1)?.getBoundingClientRect().right ?? rowLeft) - rowLeft) + tabrow.scrollLeft
   dropMark.style.left = `${String(x)}px`
   dropMark.hidden = false
 }
