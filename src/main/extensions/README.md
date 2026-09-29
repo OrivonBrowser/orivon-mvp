@@ -22,7 +22,10 @@ which `extensions-subsystem.ts` uses before its first `loadExtension()` to filte
 (`extension-known-permissions.ts`); and, for the same reason a person deciding about a site's
 permissions should see who else can act on it, `site-reach.ts` (which enabled extensions' host
 access covers a given origin) and `site-reach-runner.ts` (the real manifest reads behind it),
-reused by `../consent/` and `../permissions/`.
+reused by `../consent/` and `../permissions/`. `extension-host.ts` also answers the vendored
+preload's own synchronous "is this frame a declared sandbox page" query
+(`EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL`, `../channels.ts`) from the sender's real URL and its
+extension's real loaded manifest -- UPSTREAM.md patch 37's own doc.
 
 **What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`,
 `electron-chrome-extensions-lib.d.ts`, `extension-host-access.ts`, `extension-known-permissions.ts`,
@@ -42,6 +45,7 @@ and chrome.tabs' own host-access checks, and `site-reach.ts` uses for a person's
 app-refusal check both key on it),
 [`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`,
+[`../channels.ts`](../channels.ts)'s `EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL`,
 [`../sessions/tab-capture-grants.ts`](../sessions/tab-capture-grants.ts)'s `mintTabCaptureGrant`
 (durable; `permission-gate.ts`'s own `'media'` carve-out reads the same ledger),
 [`../settings/`](../settings/) (Developer mode is a setting there),

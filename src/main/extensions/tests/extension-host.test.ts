@@ -17,6 +17,7 @@ const getExtension = vi.fn<(id: string) => unknown>()
 
 vi.mock('electron', () => ({
   app: { on: vi.fn() },
+  ipcMain: { on: vi.fn() },
   session: {
     defaultSession: {
       extensions: { getExtension },
@@ -41,7 +42,8 @@ vi.mock('orivon:crx-extensions-partition', () => ({
 vi.mock('orivon:crx-extensions-router', () => ({
   setRemoteMessageSenderCheck: vi.fn(),
   setMessageSenderIdCheck: vi.fn(),
-  setEventListenerFilter: vi.fn()
+  setEventListenerFilter: vi.fn(),
+  isSandboxPageUrl: vi.fn()
 }))
 
 vi.mock('orivon:crx-extensions-cookies', () => ({

@@ -18,6 +18,7 @@ const appOn = vi.fn()
 
 vi.mock('electron', () => ({
   app: { on: appOn },
+  ipcMain: { on: vi.fn() },
   session: {
     defaultSession: {
       extensions: { getExtension },
@@ -46,7 +47,8 @@ vi.mock('orivon:crx-extensions-partition', () => ({ setSessionPartitionResolver:
 vi.mock('orivon:crx-extensions-router', () => ({
   setRemoteMessageSenderCheck: vi.fn(),
   setMessageSenderIdCheck: vi.fn(),
-  setEventListenerFilter: vi.fn()
+  setEventListenerFilter: vi.fn(),
+  isSandboxPageUrl: vi.fn()
 }))
 vi.mock('orivon:crx-extensions-cookies', () => ({ setCookieHostAccessCheck: vi.fn() }))
 vi.mock('orivon:crx-extensions-tabs', () => ({ setTabUrlAccessCheck: vi.fn(), setTabHostAccessCheck: vi.fn() }))
