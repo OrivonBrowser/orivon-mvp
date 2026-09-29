@@ -486,9 +486,12 @@
     gave such a popup a second way to become visible; it would stay `show: false` --
     fully loaded and interactive over CDP, but invisible and unfocusable to a real person -- for
     its entire life. A 500ms timer now shows it anyway, at a fixed reasonable size
-    (`FALLBACK_BOUNDS`, 320x400), if `'preferred-size-changed'` has not arrived yet; a later
-    `'preferred-size-changed'` still resizes and repositions it correctly on arrival regardless
-    (`updatePreferredSize` does not check `hidden` first). Second, the `backgroundColor` passed to
+    (`FALLBACK_BOUNDS`, 320x400) positioned against the same anchor rect `updatePosition()`
+    always uses, if `'preferred-size-changed'` has not arrived yet -- `updatePosition()` runs
+    before `show()`, since showing first would flash the popup at the wrong spot for one frame
+    before it jumped to the right one; a later `'preferred-size-changed'` still resizes and
+    repositions it correctly on arrival regardless (`updatePreferredSize` does not check `hidden`
+    first). Second, the `backgroundColor` passed to
     `new BrowserWindow(...)` -- paints before the extension's own popup page has a pixel to show --
     now follows `nativeTheme.shouldUseDarkColors` instead of always being `'#ffffff'`. Reason: a
     fixed light background flashed white for a moment on every popup open in dark mode.
@@ -516,17 +519,74 @@
     `EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL` doc says why the literal is duplicated rather than
     imported) whether THIS frame is one of its own extension's declared `sandbox.pages`; main
     answers from `event.senderFrame`'s own URL and the extension's REAL loaded manifest, never
-    from anything the query itself could pass. Also checks `location.origin === 'null'`
-    (opaque) first, cheaper and needing no round trip -- forward-compatible only: measured, this
-    Electron build does NOT give a sandboxed page an opaque origin the way real Chrome does, so
-    the main-process query is what actually catches today's case. `router.ts`'s
-    `onExtensionMessage` refuses independently, on every message, from the SAME two signals read
-    off `event.senderFrame` and the extension's own resolved manifest (`isSandboxPageUrl`, a new
-    exported matcher using Chrome's own `sandbox.pages` glob grammar, `*` matching any run of
-    characters) -- defense in depth: even a `crx-msg` that somehow reached the router without
-    going through the preload's own gate is refused the same way. Measured after: `chrome.tabs`
-    is `undefined` in the sandboxed page, and a direct `chrome.tabs.query` attempt never reaches
-    a real call.
+    from anything the query itself could pass. Also checks `self.origin === 'null'` (opaque)
+    first, cheaper and needing no round trip -- `self.origin`, not `location.origin`, which
+    stays the ordinary `chrome-extension://<id>` string on this Electron build even for a
+    genuinely CSP-sandboxed document (measured). `router.ts`'s `onExtensionMessage` refuses
+    independently, on every message, from the SAME two signals read off `event.senderFrame` and
+    the extension's own resolved manifest (`isSandboxPageUrl`, a new exported matcher using
+    Chrome's own `sandbox.pages` glob grammar, `*` matching any run of characters) -- defense in
+    depth: even a `crx-msg` that somehow reached the router without going through the preload's
+    own gate is refused the same way. Measured after: `chrome.tabs` is `undefined` in the
+    sandboxed page, and a direct `chrome.tabs.query` attempt never reaches a real call. Neither
+    check's own opaque-origin branch actually had anything to fire from until patch 40 below
+    served these pages the CSP that makes an origin opaque at all on this Electron build; each
+    still refuses on the manifest's own `sandbox.pages` list alone in the meantime, which needs
+    no origin support.
+38. **`router.ts`: the registration-race wait (patch 36) also covers `crx-add-listener`, and is
+    shared per extension id instead of one wait per call.** `onAddListener` used to call
+    `observer.addListener(...)` synchronously and directly; a page whose extension was still
+    registering hit the exact same race `onRouterMessage`'s own crx-msg path does (a popup's own
+    top-level `chrome.runtime.onMessage.addListener()` call, before `session.extensions`
+    reflects the load already in flight) and lost the subscription for good, since
+    `addListener` throws synchronously for an unregistered id and the surrounding `ipcMain.on`
+    handler is fire-and-forget. Now resolved in the same tick when the extension is already
+    registered (the common case), and deferred to `waitForRegisteredExtension` only on an actual
+    race. `waitForRegisteredExtension` itself now shares ONE pending wait, one
+    `'extension-loaded'` listener and one timer, per `(extensions, extensionId)`
+    (`pendingRegistrations`, a `WeakMap<extensions, Map<extensionId, Promise>>`) -- a stale page
+    of a disabled or reloading extension previously paid the full 2s wait, and added a new
+    listener, on every call it ever made; concurrent callers racing the same extension id (a
+    crx-msg and one or more crx-add-listener calls, all from the same still-loading extension)
+    now await the identical promise instead.
+39. **`isSandboxPageUrl`: a linear-time glob match, replacing a backtracking regex built from
+    the extension's own manifest; normalised the way Chromium normalises before comparing.**
+    The regex this replaced (`pattern.split('*').map(escapeRegExp).join('.*')`, anchored)
+    is correct but a pattern with several `*`s is the textbook catastrophic-backtracking shape,
+    and this runs synchronously on the main thread, on every page load and every `crx-msg` --
+    measured: `'a*'.repeat(8) + 'b'` against a 40-character near-miss string already took over a
+    second with the old regex; the new matcher (`matchesGlob`: split on `*`, `indexOf` each
+    literal piece in order, anchored ends) resolves a 5000-character version in under a
+    millisecond. `MAX_SANDBOX_PAGES` (200) and `MAX_STARS_PER_PATTERN` (8) additionally cap the
+    work any one manifest can demand, on top of the matcher's own linear bound. Also normalises
+    both sides the way Chromium does: a manifest `sandbox.pages` entry's own leading `/` is
+    stripped (Chrome accepts `"/sandbox.html"` and `"sandbox.html"` as the same declaration),
+    and the URL's pathname is percent-decoded (`%2E` and `.` name the same file) before
+    comparison; a pathname that fails to decode matches nothing, rather than being compared
+    still encoded.
+40. **A manifest `sandbox.pages` document is now actually served with Chrome's own CSP
+    `sandbox` directive, giving it a genuinely opaque origin -- the real fix behind patch 37's
+    own opaque-origin checks.** New `src/main/extensions/extension-sandbox-csp.ts`, registered
+    through `../sessions/web-request-owner.ts` (never `session.webRequest` directly). Reason
+    (`docs/decisions/resolved-questions.md` A299): patch 37 alone stops a `chrome.*` binding from being
+    injected into the sandboxed page itself, but Electron still serves it at its extension's own
+    `chrome-extension://<id>` origin -- measured, this let a sandboxed iframe framed by an
+    ordinary extension page reach `parent.chrome` and `parent.document` directly (same-origin,
+    no restriction at all), a complete bypass. `webRequestOwnerFor(session.defaultSession)
+    .onHeadersReceived` DOES fire for a `chrome-extension:` response in the default session --
+    measured directly, not assumed. The handler appends Chrome's own default sandbox CSP
+    (`sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self'
+    'unsafe-inline' 'unsafe-eval'; child-src 'self';`, no `allow-same-origin`) to a document
+    response (`mainFrame`/`subFrame` only -- CSP `sandbox` is meaningless on a subresource
+    fetch) whose URL matches the extension's own `isSandboxPageUrl`, or the manifest's own
+    `content_security_policy.sandbox` string when the manifest sets one. Measured after: the
+    sandboxed page's `self.origin` reads the literal string `"null"` (real Chrome's own
+    behaviour) -- `location.origin` still does not, on this Electron build, which is why
+    patch 37's own checks read `self.origin`; a framed sandboxed iframe's `parent.chrome` and
+    `parent.document` both throw `Blocked a frame with origin "null" from accessing a
+    cross-origin frame`, closing the bypass; and `chrome.storage`/`chrome.runtime.connect`
+    (Electron's own native bindings, unaffected by patch 37's JS-injection-only fix) are also
+    unusable there now.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

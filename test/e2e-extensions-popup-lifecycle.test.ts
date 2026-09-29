@@ -27,7 +27,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { focusWebContents } from './focus-helpers.js'
 import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
@@ -74,9 +74,17 @@ function seedActionPopup (userDataDir: string): string {
 }
 
 async function startFixtureServer (): Promise<{ server: Server, origin: string }> {
-  const server = createServer((_req, res) => {
+  const server = createServer((req, res) => {
+    if (req.url === '/frame') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end('<!doctype html><title>popup-lifecycle-frame</title><body>frame</body>')
+      return
+    }
     res.writeHead(200, { 'content-type': 'text/html' })
-    res.end('<!doctype html><title>popup-lifecycle-fixture</title><body>fixture page</body>')
+    // A same-origin iframe -- reloading it fires 'did-start-navigation'
+    // with isMainFrame: false, the subframe case popup.ts's close-on-
+    // navigation must not react to.
+    res.end('<!doctype html><title>popup-lifecycle-fixture</title><body>fixture page<iframe id="f" src="/frame"></iframe></body>')
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const address = server.address()
@@ -210,6 +218,27 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
       await waitForAddressBarStable(chrome)
       await clickAddressBarRetrying(chrome, fixtureUrl)
       check('the active tab navigating closes the popup', await popupClosed())
+
+      // ---- a same-document navigation or a subframe's own navigation does
+      // NOT close it -- any web page holding an ad iframe, or merely
+      // calling history.pushState, must not be able to close a person's
+      // still-open password-manager popup out from under them. An absence
+      // is settled once, never polled for (testing.md's own rule 3: a
+      // waitFor pointed at a condition already true reports a green no-op).
+      await openPopup()
+      const fixtureTab = liveApp.windows().find((w) => w.url() === fixtureUrl)
+      if (fixtureTab !== undefined) {
+        await fixtureTab.evaluate(() => {
+          history.pushState({}, '', '#pushed')
+          const frame = document.getElementById('f') as HTMLIFrameElement | null
+          frame?.contentWindow?.location.reload()
+        })
+      }
+      await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+      check(
+        'a same-document navigation or a subframe reload does not close the popup',
+        findPopup(liveApp.windows(), extensionId) !== undefined
+      )
 
       // Moving/resizing/minimising the shell window also closes the popup
       // (popup.ts's own parent 'move'/'resize'/'minimize' handlers) --

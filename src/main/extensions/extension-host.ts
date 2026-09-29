@@ -11,14 +11,14 @@
 //      are created after every subsystem runs, so the impl callbacks below
 //      (createTab, createWindow, ...) reject cleanly if an extension somehow
 //      calls one before this runs.
-import { app, ipcMain, session } from 'electron'
+import { app, session } from 'electron'
 import type { BaseWindow, Session, WebContents } from 'electron'
 // Virtual specifiers (electron-chrome-extensions-lib.d.ts's own header says
 // why): electron.vite.config.ts's alias resolves each to the real vendor
 // file for bundling; tsc uses that .d.ts's ambient declaration instead.
 import { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setSessionPartitionResolver } from 'orivon:crx-extensions-partition'
-import { isSandboxPageUrl, setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
+import { setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
 import { setCookieHostAccessCheck } from 'orivon:crx-extensions-cookies'
 import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensions-tabs'
 import { setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
@@ -29,12 +29,14 @@ import type { SubsystemContext } from '../registry.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { mintTabCaptureGrant, wasTabCaptureGrantConsumed } from '../sessions/tab-capture-grants.js'
 import { setTabCaptureMediaAppRefusalCheck } from '../sessions/permission-gate.js'
+import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { EXTENSION_SANDBOX_CSP_FILTER, extensionSandboxCsp } from './extension-sandbox-csp.js'
 import { appOrigin } from '../shell/devtools-app-origin.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
-import { extensionIdFromScope, watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
+import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
-import { EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL } from '../channels.js'
+import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
 import { hasApiOrHostAccess, hasApiPermission, hasHostAccess } from './extension-host-access.js'
 import { clearInvocation, clearInvocationsForExtension, hasRecentInvocation, recordInvocation } from './extension-tab-invocation.js'
 
@@ -216,19 +218,6 @@ function recordTabCaptureInvocation (extensionId: string, tab: WebContents): voi
   tab.on('did-navigate', onNavigate)
 }
 
-/** Answers EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL (channels.ts's own doc)
- * entirely from `frame`'s own URL -- an id parsed the same way
- * extension-sw-preload-recovery.ts's own worker-scope check does, and the
- * REAL loaded manifest read back from the session, never anything the
- * calling preload's query itself could pass. */
-function isSenderDeclaredSandboxPage (frame: Electron.WebFrameMain | null): boolean {
-  if (frame === null) return false
-  const id = extensionIdFromScope(frame.url)
-  if (id === undefined) return false
-  const manifest = session.defaultSession.extensions.getExtension(id)?.manifest as { sandbox?: { pages?: string[] } } | undefined
-  return isSandboxPageUrl(manifest?.sandbox?.pages, frame.url)
-}
-
 /** Constructs the library, once, before any extension loads. `preloadPath`
  * is `extensions-subsystem.ts`'s bundle of `vendor/.../src/preload.ts` PLUS
  * Orivon's own service-worker-preload health check
@@ -265,10 +254,18 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   })
   // Orivon patch (UPSTREAM.md patch 37): the vendored preload's own
   // synchronous query, before it ever calls injectExtensionAPIs() --
-  // isSenderDeclaredSandboxPage's own doc.
-  ipcMain.on(EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL, (event) => {
-    event.returnValue = isSenderDeclaredSandboxPage(event.senderFrame)
-  })
+  // extension-sandbox-page-query.ts's own doc.
+  registerSandboxPageQuery()
+  // Orivon patch (UPSTREAM.md patch 40): the real A299 fix -- gives a
+  // manifest sandbox.pages document Chrome's own CSP `sandbox`, so it
+  // actually gets an opaque origin, rather than only withholding chrome.*
+  // (patch 37) from a page that still runs at the extension's own origin.
+  webRequestOwnerFor(session.defaultSession).onHeadersReceived(
+    RUN_LAST,
+    EXTENSION_SANDBOX_CSP_FILTER,
+    (url) => url.startsWith('chrome-extension://'),
+    extensionSandboxCsp()
+  )
 
   hostExtensions = new ElectronChromeExtensions({
     license: 'GPL-3.0',
@@ -371,8 +368,20 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
       ? undefined
       : bridge.services.windows.all().find((w) => w.window === popup.parent)
     const activeTabWc = shellWindow?.tabs.activeWebContents()
-    const closePopup = (): void => { if (!popup.isDestroyed()) popup.destroy() }
-    activeTabWc?.once('did-start-navigation', closePopup)
+    // Only a real navigation of the tab's OWN top document: an ad iframe
+    // reloading, or the page's own history.pushState/replaceState (a
+    // same-document navigation, changing nothing the popup was anchored
+    // to), must not close it -- Chrome doesn't, and any web page holding
+    // an ad iframe or calling pushState could otherwise close a person's
+    // still-open password-manager popup out from under them. `.on`, not
+    // `.once`: a one-shot listener would already be consumed by the first
+    // (filtered-out) subframe/same-document event, silently going deaf to
+    // the real navigation that should have closed the popup.
+    const closePopup = (details: { isMainFrame: boolean, isSameDocument: boolean }): void => {
+      if (!details.isMainFrame || details.isSameDocument) return
+      if (!popup.isDestroyed()) popup.destroy()
+    }
+    activeTabWc?.on('did-start-navigation', closePopup)
     popup.browserWindow?.webContents.once('destroyed', () => {
       if (currentPopup === popup) currentPopup = undefined
       activeTabWc?.removeListener('did-start-navigation', closePopup)
