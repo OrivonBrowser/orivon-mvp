@@ -1561,3 +1561,23 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   predicate main injects (rec.); repartition on will-navigate/will-redirect before the commit.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing in this build; the granted-origin CSP and window.orivon filter apply meanwhile.
+
+### A297: Google refuses sign-in from Orivon **[OWNER]**
+
+- **Question:** How does Orivon get past Google's "This browser or app may not be secure" at sign-in?
+- **Why it matters:** nobody can sign in to a Google account in Orivon; the user-agent string is already plain
+  Chrome, but the client hints still describe an unbranded Chromium.
+- **Options:** a Firefox identity on Google's sign-in hosts, header and page agreeing (rec.; the page half is on
+  branch `stream/sef-google`, the header rewrite and the `navigator.userAgentData` removal are not written);
+  a Chrome identity with a "Google Chrome" brand in the client hints; leave it.
+- **Who decides:** owner
+- **Blocks:** Google sign-in
+
+### A298: A keyboard command or context-menu click does not count as invoking an extension **[AI-REC]**
+
+- **Question:** Chrome grants activeTab, and so `chrome.tabCapture`, on a command or context-menu click as well as
+  the toolbar button; this build records only the toolbar button (`d-0203`). Record the other two?
+- **Why it matters:** an extension started by its keyboard shortcut is refused a capture Chrome would allow.
+- **Options:** record the invocation from `chrome.commands` and `contextMenus.onClicked` too (rec.); leave it.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
