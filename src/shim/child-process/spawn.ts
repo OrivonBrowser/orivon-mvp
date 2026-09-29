@@ -38,6 +38,20 @@ function invalidArg (name: string, expected: string, value: unknown): TypeError 
   return codedError(TypeError, 'ERR_INVALID_ARG_TYPE', `The "${name}" argument must be ${expected}. Received ${typeof value}`)
 }
 
+/**
+ * `command`'s own two argument errors, real Node's own (measured) for
+ * `spawn`, `spawnSync` and `execFileSync` alike. Exported so
+ * child-process/index.ts's `spawnSyncCore` can throw these synchronously,
+ * on the calling thread, before ever building the sync-channel request --
+ * a bad argument caught only inside `spawn-sync.ts`'s `runSpawnSync` (over
+ * on the OTHER side of that channel) would come back as `result.error`
+ * instead, since nothing there can throw back onto this thread's own stack.
+ */
+export function validateCommand (command: unknown): asserts command is string {
+  if (typeof command !== 'string') throw invalidArg('file', 'of type string', command)
+  if (command.length === 0) throw codedError(TypeError, 'ERR_INVALID_ARG_VALUE', "The argument 'file' cannot be empty. Received ''")
+}
+
 /** Node's stdio forms, to three modes plus whether an IPC channel was asked for. */
 export function normalizeStdio (stdio: SpawnOptions['stdio'], api: string): { modes: [StdioMode, StdioMode, StdioMode], ipc: boolean } {
   const list: readonly StdioOption[] = stdio === undefined ? [] : typeof stdio === 'string' ? [stdio, stdio, stdio] : stdio
@@ -126,7 +140,10 @@ export async function launchChild (
     // every other child goes through -- never a synchronous call from the
     // thread that serves it (worker/README.md's rule; only the Worker that
     // asked blocks, over the sync channel).
-    server = serveOrivon(channel.port1, getOrivon(), async (payload) => await runSpawnSync(spawn, payload as SpawnSyncRequest))
+    server = serveOrivon(
+      channel.port1, getOrivon(),
+      async (payload, registerChild) => await runSpawnSync(spawn, payload as SpawnSyncRequest, registerChild)
+    )
   } catch (error) {
     // A page whose CSP refuses the Worker, or that has no orivon: a spawn failure, reported as one.
     child.fail(Object.assign(new Error(`the child cannot start: ${String((error as Error)?.message ?? error)}`), { code: 'ENOEXEC', errno: -8 }))
@@ -160,8 +177,7 @@ async function start (child: ChildProcess, command: string, args: readonly strin
 }
 
 export function spawn (command: string, argsOrOptions?: readonly string[] | SpawnOptions, maybeOptions?: SpawnOptions): ChildProcess {
-  if (typeof command !== 'string') throw invalidArg('file', 'of type string', command)
-  if (command.length === 0) throw codedError(TypeError, 'ERR_INVALID_ARG_VALUE', "The argument 'file' cannot be empty. Received ''")
+  validateCommand(command)
   const args = Array.isArray(argsOrOptions) ? argsOrOptions as readonly string[] : []
   const options: SpawnOptions = (Array.isArray(argsOrOptions) || argsOrOptions === undefined || argsOrOptions === null ? maybeOptions : argsOrOptions as SpawnOptions) ?? {}
   if (options.shell !== undefined && options.shell !== false) {

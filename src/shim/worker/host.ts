@@ -107,7 +107,10 @@ async function startChild (port: MessagePort, start: HostStart, extra: readonly 
 
   const orivonChannel = new MessageChannel()
   // A child's spawnSync/execSync/execFileSync is served here, where its orivon.* is (spawn.ts's own launch does the same on the page).
-  const server = serveOrivon(orivonChannel.port1, orivon, async (payload) => await runSpawnSync(spawn, payload as SpawnSyncRequest))
+  const server = serveOrivon(
+    orivonChannel.port1, orivon,
+    async (payload, registerChild) => await runSpawnSync(spawn, payload as SpawnSyncRequest, registerChild)
+  )
 
   let worker: ReturnType<typeof createChildWorker>
   try {
