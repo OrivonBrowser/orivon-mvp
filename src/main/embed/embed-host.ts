@@ -9,12 +9,19 @@
 // covered without remembering to wire it.
 
 import { app, session as electronSession } from 'electron'
-import type { Session, WebContents } from 'electron'
+import type { Session, WebContents, WebFrameMain } from 'electron'
 import { join } from 'node:path'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { requestPartition, withPartition } from '../verifier/partition.js'
 import { embedPartitionFor, guestRequestAllowed, hardenGuest } from './embed-guard.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
+
+/** Spelled again, not imported: `content-root.ts` lives under `src/loader/`,
+ * which this directory's README forbids depending on -- a shown page is
+ * another site's document, never a pinned bundle. */
+const PARTITION_HEADER = 'x-orivon-partition'
 
 export interface EmbedHost {
   /** The app origin that shows guest `webContentsId`, or undefined for anything that is not a live guest. */
@@ -69,6 +76,25 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       // refuses, the way every refusal here fails closed.
       .then((allowed) => !allowed, () => true)
       .then((cancel) => { callback({ cancel }) })
+  })
+  // A shown page reaches the verifier (a `.eth` name, an `ipfs://` address)
+  // the same ordinary way any tab does -- unlike an installed app's own
+  // partition, nothing here intercepts `https` with a `protocol.handle`,
+  // so no redirect-status quirk rules this out (main/verifier/README.md).
+  // Stamped with the SAME rule `installPartitionStamp` applies to the
+  // default session (main/verifier/verifier-subsystem.ts): whatever a page
+  // set on its own request is stripped, then replaced with its top-level
+  // page's own origin, never trusted from the request itself.
+  const routedUrls = BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `https://*.${suffix}/*`)
+  embedSession.webRequest.onBeforeSendHeaders({ urls: routedUrls }, (details, callback) => {
+    let frame: WebFrameMain | null | undefined
+    try {
+      frame = details.frame
+    } catch {
+      frame = undefined
+    }
+    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
+    callback({ requestHeaders: withPartition(details.requestHeaders, PARTITION_HEADER, partition) })
   })
 }
 

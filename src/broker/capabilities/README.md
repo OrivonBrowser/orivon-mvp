@@ -3,6 +3,10 @@
 **What lives here.** The entry points `createBroker` ([`../index.ts`](../index.ts)) returns, one
 file per capability (`net`, `fs`, `user-selected`, `id`, `secrets`, `web`, and `embed` for
 `web.embed`'s broker half, `ADR-0039`), plus the helpers they share.
+[`declined-consent.ts`](declined-consent.ts) is not an `orivon.*` capability: it is the advisory
+decline-tracking surface (A145) `createBroker` returns directly, split out here for the same
+"no state of its own, only `GrantLedger` and `canonical` taken as constructed dependencies" shape
+as `id.ts`.
 
 **What it depends on.** [`../broker-contracts.ts`](../broker-contracts.ts),
 [`../errors.ts`](../errors.ts), [`../io-errors.ts`](../io-errors.ts), [`../grants/`](../grants/),

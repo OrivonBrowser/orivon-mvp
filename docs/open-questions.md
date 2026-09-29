@@ -1158,13 +1158,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing until a real app reaches either limit
 
-### A262: The direct gateway route trusts a proxy check made at the verifier host's start **[OWNER]**
+### A262: The verifier host's direct routes trust a proxy check made at its start **[OWNER]**
 
-- **Question:** Should the direct route check for a proxy when it is taken, not only when the
-  verifier host starts?
+- **Question:** Should the direct gateway route and CCIP-Read's pinned dial check for a proxy when
+  taken, not only when the verifier host starts?
 - **Why it matters:** a proxy turned on mid-run (a VPN, a corporate network, Tor through a proxy)
   is not seen until the host restarts; until then a failing gateway whose system address disagrees
-  with DNS-over-HTTPS is reached directly, from the person's real address (T40).
+  with DNS-over-HTTPS (T40), and every CCIP-Read query (T31), is reached from the real address.
 - **Options:** the host asks main (`app.resolveProxy`) at decision time, one round trip on a rare
   path (rec.); main pushes proxy changes into the host; keep the snapshot and say so.
 - **Who decides:** owner
@@ -1389,18 +1389,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A285: CCIP-Read egress validates a resolved hostname, then fetches the hostname again **[OWNER]**
-
-- **Question:** `urlRefusal` resolves a CCIP gateway hostname and checks every address against
-  T12, but `requestOne` then fetches the ORIGINAL url string, which resolves again -- a
-  DNS-rebinding TOCTOU `direct-fetch.ts`'s `pinnedLookup` already avoids on the sibling path.
-- **Why it matters:** a `.eth` name's own resolver contract controls the CCIP gateway url, so a
-  short-TTL rebind could point the verifier-host process at an internal address.
-- **Options:** reuse `pinnedLookup` for CCIP's POST/redirect-following path (rec.; a real change,
-  since CCIP needs a body and its own redirect loop, unlike `createDirectFetch`'s GET/HEAD-only
-  shape); accept the residual, narrowed by the existing `https`-only rule.
-- **Who decides:** owner
-- **Blocks:** nothing
 
 ### A288: One extension instance everywhere undoes per-app sessions **[OWNER]**
 
@@ -1466,7 +1454,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A296: A82's reserved-port carve-out blocks a P2P app's own DNS-over-UDP **[OWNER]**
+### A302: A82's reserved-port carve-out blocks a P2P app's own DNS-over-UDP **[OWNER]**
 
 - **Question:** `udp.send` reuses `checkConnect`, so a wildcard never reaches port 53 (A82), and a
   manifest declares a wildcard host only as `*:*`. A program's own resolver works only when the
@@ -1559,5 +1547,39 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   should be the shell's choice, never the embedding app's. No escalation through it is known.
 - **Options:** measure it in an e2e and, if the attribute gets through, build the guest's
   `webPreferences` from an allowlist rather than overriding named keys (rec.); leave it as it is.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A299: Developer mode is switched on by an environment variable **[OWNER]**
+
+- **Question:** Should developer mode be reachable only from the browser's own UI, or stay an
+  environment switch (`ORIVON_DEV_ORIGINS=1`) read at launch?
+- **Why it matters:** it routes loopback and developer `.eth` names, grants without install for
+  them, enables the Level 4 override (T39) and DevTools in shown pages; anything that sets a
+  launch's environment (a desktop shortcut, a same-user process) can turn it on. No page can.
+- **Options:** a Settings switch read at launch, with the variable honoured only in an unpackaged
+  build (rec.); keep the variable and say so (today, T13c).
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A300: The verifier host has Node and no sandbox **[AI-REC]**
+
+- **Question:** Should the untrusted parsers T34 names run in a sandboxed process with no Node?
+- **Why it matters:** T34 keeps a parser bug out of main, but the host is a Node utility process:
+  a bug exploited there reads and writes the person's files and reaches the network as they can.
+- **Options:** move UnixFS, dag-pb, IPNS, CCIP answers and the light client's WebAssembly into a
+  sandboxed process that only computes, keeping I/O in a thin host (rec.); keep one host and say so
+  (today).
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A301: One `orivon.fs` call has no byte cap **[AI-REC]**
+
+- **Question:** Should a single `orivon.fs` read, write or whole-file read be capped in bytes?
+- **Why it matters:** a granted app can make main hold a whole file (up to Node's 2 GiB `readFile`
+  limit) or a large write at once, stalling every tab; a read's allocation is already clamped to
+  what the file holds. A cap is a `src/contracts/` change (`LIMITS`).
+- **Options:** `LIMITS.fsCallBytes` (256 MiB), `'limit'` past it, big files through handles (rec.);
+  leave it bounded by the file and the quota.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing

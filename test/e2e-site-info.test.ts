@@ -152,6 +152,14 @@ it(
         // reached -- not the popup's own re-render of itself.
         const view = (app as ElectronApplication).windows().find((w) => w.url() === url)
         if (view === undefined) throw new Error('fixture tab view not found')
+        // fs was this origin's only grant. Turning it off leaves the origin
+        // attributed to the default session again for the NEXT document, but
+        // this tab is still sitting, unmoved, in the app partition the
+        // earlier grant's reload moved it into -- and stays attributed
+        // regardless: it already committed there, and a revoke that changes
+        // what session the origin belongs in NEXT never re-decides an
+        // already-committed document's own attribution
+        // (src/main/sessions/session-attribution.ts).
         const grantsAfterOff = await view.evaluate(async () => {
           const orivon = (globalThis as unknown as { orivon: { app: { grants: () => Promise<Array<{ capability: string }>> } } }).orivon
           return (await orivon.app.grants()).map((g) => g.capability)

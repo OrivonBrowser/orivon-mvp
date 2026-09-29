@@ -91,6 +91,17 @@ export interface BrokerFs {
    * nothing, which only ever over-counts.
    */
   diskUsage?(path: string): Promise<number>
+  /**
+   * The top-level directory every origin's `rootFor` is computed under --
+   * `node-fs-adapter.ts`'s `nodeFs` builds it from the real app data
+   * directory. `./capabilities/user-selected.ts`'s picker guard refuses a
+   * pick that overlaps it, the same way it refuses every OTHER profile and
+   * private-session directory: a folder pick must never reach into
+   * Orivon's own state. Optional so a test double that never exercises the
+   * picker is not forced to invent one -- an origin lookup with none
+   * configured just skips that one check.
+   */
+  dataRoot?(): string
 }
 
 /**

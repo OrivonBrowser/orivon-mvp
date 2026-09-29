@@ -52,6 +52,31 @@ describe('askableScheme', () => {
   it('offers nothing for a string that is not a URL', () => {
     for (const url of ['', 'not a url', '://x', '1abc:x']) expect(askableScheme(url), url).toBeNull()
   })
+
+  it('offers a magnet link only when its grammar is a BitTorrent one', () => {
+    const HEX = '0123456789abcdef0123456789abcdef01234567'
+    const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+    for (const url of [
+      `magnet:?xt=urn:btih:${HEX}`,
+      `magnet:?xt=urn:btih:${HEX.toUpperCase()}`,
+      `magnet:?xt=urn:btih:${BASE32}`,
+      `magnet:?xt=urn:btih:${BASE32.toLowerCase()}`,
+      `magnet:?xt=urn:btih:${HEX}&dn=Movie&tr=https://tracker.example/announce&tr=udp://tracker2.example:80`,
+      `magnet:?xt=urn:btmh:1220${HEX}${HEX.slice(0, 24)}`,
+      `magnet:?xt=urn:btih:${HEX}&xt=urn:btmh:1220${HEX}${HEX.slice(0, 24)}&x.pe=192.0.2.1:6881`
+    ]) expect(askableScheme(url), url).toBe('magnet')
+
+    for (const url of [
+      'magnet:?xt=urn:btih:00', // too short
+      `magnet:?xt=urn:btih:${'g'.repeat(40)}`, // not hex, not base32
+      'magnet:?dn=Movie', // no xt at all
+      `magnet:?xt=urn:btih:${HEX}&xt=urn:btih:${HEX}`, // two v1 topics
+      `magnet:?xt=urn:btmh:1220${HEX}`, // a v2 hash too short
+      `magnet:?xt=urn:sha1:${HEX}`, // not btih
+      `magnet:foo?xt=urn:btih:${HEX}`, // a path before the query
+      `magnet:?xt=urn:btih:${HEX}&exec=rm+-rf+/` // a parameter outside the known set
+    ]) expect(askableScheme(url), url).toBeNull()
+  })
 })
 
 function setup (confirm = vi.fn(async (_window: unknown, _question: ExternalLinkQuestion) => true)): {
@@ -74,7 +99,7 @@ describe('createExternalLinks', () => {
 
   it('opens nothing the person cancels', async () => {
     const { request } = setup(vi.fn(async () => false))
-    expect(await request(fakeTab(), { externalURL: 'magnet:?xt=urn:btih:00', requestingUrl: PAGE })).toBe(false)
+    expect(await request(fakeTab(), { externalURL: 'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567', requestingUrl: PAGE })).toBe(false)
   })
 
   it('refuses without asking for a scheme it never offers, or a request with nothing to open', async () => {

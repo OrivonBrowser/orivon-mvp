@@ -23,6 +23,7 @@
 // Which stream owns which entry: docs/development/parallel-work.md.
 import type { Subsystem } from './registry.js'
 import { permissionGateSubsystem } from './sessions/permission-gate.js'
+import { sessionAttributionSubsystem } from './sessions/session-attribution.js'
 import { verifierSubsystem } from './verifier/verifier-subsystem.js'
 import { extensionsSubsystem } from './extensions/extensions-subsystem.js'
 import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
@@ -43,12 +44,17 @@ export const subsystems: Subsystem[] = [
   // neither ctx.broker nor ctx.loader, so it has no ordering constraint
   // from either of those -- only this one, self-imposed.
   permissionGateSubsystem, // security -> src/main/permission-gate.ts
+  // Publishes ctx.senderAttributed -> src/main/sessions/session-attribution.ts.
+  // Reads neither ctx.broker nor ctx.loader (its closure reads ctx.broker
+  // lazily, once a real request needs it), but must stay ABOVE
+  // brokerIpcSubsystem: that subsystem reads ctx.senderAttributed itself.
+  sessionAttributionSubsystem,
   verifierSubsystem, // .eth names: resolver rules, certificate check, verifier host -> src/main/verifier/. Reads neither ctx.broker nor ctx.loader.
   // extensions -> src/main/extensions/. Listed here, before anything else
   // touches session.defaultSession (extensions/README.md's Design notes).
   // Reads neither ctx.broker nor ctx.loader.
   extensionsSubsystem,
-  brokerIpcSubsystem, // build step 2: broker -> src/broker/. Writes ctx.broker -- anything reading it must be listed below this line.
+  brokerIpcSubsystem, // build step 2: broker -> src/broker/. Writes ctx.broker -- anything reading it must be listed below this line. Reads ctx.senderAttributed -- must stay below sessionAttributionSubsystem.
   devGrantSubsystem, // queue item 0.3: dev-only grant hook -> src/main/dev-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   requestGrantSubsystem, // queue item 4.1: app.requestGrant's mechanism -> src/main/request-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   embedSubsystem, // ADR-0039: pages an app shows inside itself -> src/main/embed/. Reads ctx.broker -- must stay below brokerIpcSubsystem.

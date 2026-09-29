@@ -154,7 +154,7 @@ it('Phase 2: a real fs grant lets a real page build, list, stat, rename and dele
     try {
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
-        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        const beforeGrant = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
         // The grant, through the production dev-only route (queue item 0.3),
         // exercised inside THIS launched app's own main process -- see
@@ -171,6 +171,15 @@ it('Phase 2: a real fs grant lets a real page build, list, stat, rename and dele
           grantOutcome.installed ? undefined : 'globalThis.__orivonDevGrant was not a function in the main process'
         )
         if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
+
+        // The dev-only hook lands on the broker directly, with no IPC round
+        // trip for anything to react to, so this document never moves into
+        // the app's own partition -- it does not need to: it already
+        // committed FIXTURE_ORIGIN, attributed, before the grant landed
+        // (src/main/sessions/session-attribution.ts), and that attribution
+        // survives a grant that changes what session the origin belongs in
+        // NEXT.
+        const view = beforeGrant
 
         // (a) BUILD A REAL NESTED TREE ON REAL DISK, then list, stat, rename
         // and delete it -- one evaluate() so every step runs against the

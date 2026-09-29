@@ -278,6 +278,29 @@ describe('DirectoryHandle -- each of the nine members reaches a page', () => {
     expect(readResponse).toEqual({ id: 'req-1', ok: true, result: new Uint8Array([42]) })
   })
 
+  it('fs.dirOpen discards a handle abandoned by its own timeout, instead of leaking it', async () => {
+    const openedFile = fakeFile({ id: 'abandoned-from-dir' })
+    const dir = fakeDir({
+      open: vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        return openedFile
+      })
+    })
+    const transport = fsTransport()
+    transport.dirRegistry?.register(APP, 'dir-1', dir)
+
+    const response = await handleControlRequest(
+      dummyBroker(), frameFor(APP), envelope('fs.dirOpen', { id: 'dir-1', path: 'piece.bin', flags: 'w+' }, 1),
+      undefined, undefined, undefined, transport
+    )
+    expect(response).toMatchObject({ ok: false, code: 'timeout' })
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(openedFile.close).toHaveBeenCalledOnce()
+    expect(transport.registry.get(APP, 'abandoned-from-dir')).toBeUndefined()
+  })
+
   it('fs.close closes a directory id -- one method for either kind, since a page never knows which it is holding', async () => {
     const dir = fakeDir()
     const transport = fsTransport()

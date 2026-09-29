@@ -50,7 +50,8 @@ describe('installFromHint', () => {
     expect(loader.load).toHaveBeenCalledWith(APP, {
       grantedPatterns: { 'tcp.connect': ['api.example.com:443'] },
       versionFloor: '2.0.0',
-      acknowledgedRollbackVersion: undefined
+      acknowledgedRollbackVersion: undefined,
+      hasPersistedGrants: false
     })
   })
 

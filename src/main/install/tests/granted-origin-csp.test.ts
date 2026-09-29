@@ -62,19 +62,55 @@ describe('grantedOriginCspListener', () => {
     expect(second.responseHeaders?.['Content-Security-Policy']).toEqual(["default-src 'none'"])
   })
 
-  it('leaves every non-document response untouched', async () => {
+  it('leaves a response type that could never be a worker script untouched', async () => {
     const cspFor = vi.fn(async () => CSP)
     const listener = grantedOriginCspListener(ORIGIN, cspFor)
-    for (const resourceType of ['script', 'xhr', 'image', 'stylesheet', 'other'] as const) {
+    for (const resourceType of ['xhr', 'image', 'stylesheet'] as const) {
       expect(await run(listener, details({ resourceType, url: `${ORIGIN}/app.js` }))).toEqual({})
     }
     expect(cspFor).not.toHaveBeenCalled()
+  })
+
+  // A dedicated/shared worker's top-level script has no resourceType of its
+  // own in Electron's webRequest API -- it arrives classified as 'script'
+  // or, on some platform/version combinations, 'other' -- so EITHER, from
+  // the granted origin, still needs the document's own CSP: that policy is
+  // the only thing standing between the worker and running code the
+  // manifest's `script-src`/`connect-src` never allowed.
+  it('gives a same-origin worker script (classified as script or other) the same policy a document gets', async () => {
+    const listener = grantedOriginCspListener(ORIGIN, async () => CSP)
+    for (const resourceType of ['script', 'other'] as const) {
+      const result = await run(listener, details({ resourceType, url: `${ORIGIN}/worker.js` }))
+      expect(result.responseHeaders?.['Content-Security-Policy']).toEqual([CSP])
+    }
+  })
+
+  // The two isolation headers stay mainFrame/subFrame only -- see
+  // grantedOriginCspListener's own doc for why widening THEIR reach to a
+  // worker script is a separate decision from this fix.
+  it('never adds the isolation headers to a worker script response, even when the manifest asks for isolation', async () => {
+    const listener = grantedOriginCspListener(ORIGIN, async () => CSP, async () => true)
+    const result = await run(listener, details({ resourceType: 'script', url: `${ORIGIN}/worker.js` }))
+    expect(result.responseHeaders?.['cross-origin-opener-policy']).toBeUndefined()
+    expect(result.responseHeaders?.['cross-origin-embedder-policy']).toBeUndefined()
   })
 
   it('leaves a document from any other origin untouched', async () => {
     const listener = grantedOriginCspListener(ORIGIN, async () => CSP)
     expect(await run(listener, details({ url: 'http://127.0.0.1:9999/' }))).toEqual({})
     expect(await run(listener, details({ resourceType: 'subFrame', url: 'https://example.com/' }))).toEqual({})
+  })
+
+  // `http://localhost.` (a trailing dot) and `http://localhost` parse to two
+  // DIFFERENT `new URL(...).origin` strings but the SAME `originFromUrl` --
+  // and it is `originFromUrl` the broker and `tab-view.ts`'s
+  // `partitionForTarget` both use to key this origin's grants and partition,
+  // so the dotted spelling must get the same CSP as the canonical one.
+  it('gives the trailing-dot spelling of the origin the same CSP as the canonical one', async () => {
+    const canonical = 'http://localhost:8874'
+    const listener = grantedOriginCspListener(canonical, async () => CSP)
+    const result = await run(listener, details({ url: 'http://localhost.:8874/' }))
+    expect(result.responseHeaders?.['Content-Security-Policy']).toEqual([CSP])
   })
 
   it('answers without a policy rather than hanging the response when the grant read fails', async () => {

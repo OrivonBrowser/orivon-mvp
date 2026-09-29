@@ -15,6 +15,7 @@ import type { LoadContext, LoadResult } from '../../loader/index.js'
 import { withOriginQueue } from './origin-queue.js'
 import { driveLoadResult } from '../consent/update-outcomes.js'
 import type { UpdateOutcomeDeps } from '../consent/update-outcomes.js'
+import type { DialogCaller } from '../consent/request-grant.js'
 
 /** Everything installFromHint needs, S4-5's three prompts included -- see
  * ./update-outcomes.ts's own doc on why each one is optional and fails
@@ -55,7 +56,7 @@ export type AppInstallDeps = UpdateOutcomeDeps
  * two tabs hitting the same manifest hint near-simultaneously -- never
  * interleave their `Loader.load()` calls into a corrupted on-disk state.
  */
-export async function installFromHint (deps: AppInstallDeps, hintingOrigin: string, hintedUrl: string): Promise<LoadResult> {
+export async function installFromHint (deps: AppInstallDeps, hintingOrigin: string, hintedUrl: string, caller?: DialogCaller): Promise<LoadResult> {
   const origin = originFromUrl(hintedUrl)
   if (origin === null) return { outcome: 'rejected', reason: `hintedUrl is not a valid app origin: ${hintedUrl}` }
   if (hintingOrigin !== origin) {
@@ -78,12 +79,13 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
       deps.broker.declinedCapabilitiesFor(origin)
     ])
 
-    const context: LoadContext = { grantedPatterns: patternSetFromGrants(grants), versionFloor, acknowledgedRollbackVersion, declinedCapabilities }
+    const hasPersistedGrants = deps.broker.app.persistedAppsSync().some((app) => app.origin === origin && Object.keys(app.grants).length > 0)
+    const context: LoadContext = { grantedPatterns: patternSetFromGrants(grants), versionFloor, acknowledgedRollbackVersion, declinedCapabilities, hasPersistedGrants }
     const result = await deps.loader.load(hintedUrl, context)
     // S4-5: registerApp/consent for an accepted install, and driving each
     // of the other four outcomes to a decision, all live in
     // driveLoadResult -- see ./update-outcomes.ts's own header.
-    const driven = await driveLoadResult(deps, result, context)
+    const driven = await driveLoadResult(deps, result, context, caller)
     if (driven.outcome !== 'installed' || wasRegistered || !deps.broker.app.isRegisteredSync(origin)) return driven
     return { ...driven, newlyRegistered: true }
   })

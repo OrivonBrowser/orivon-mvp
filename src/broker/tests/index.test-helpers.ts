@@ -271,6 +271,10 @@ export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateB
     listen: async () => okListenedServer(),
     resolve: async () => [],
     resolveLookup: async () => [],
+    // 'DIRECT': no proxy configured, matching every existing test's
+    // expectations from before T20's check existed. A test exercising the
+    // check itself overrides this with `async () => true`.
+    proxyConfigured: async () => false,
     now: () => 0,
     fs: stubFs(),
     keychain: { getSeed: async () => new Uint8Array(32) },

@@ -16,9 +16,13 @@
 // it exists to make impossible; this file does not repeat that mistake for
 // a different root.
 
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { fail } from '../errors.js'
 import { mapIoError } from '../io-errors.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from '../policy/paths.js'
+import { pickerBlockReason } from '../policy/picker-blocklist.js'
+import type { PickerGuardRoots } from '../policy/picker-blocklist.js'
 import { createFileHandleWrapper, VALID_OPEN_FLAGS } from './fs-handle-wrapper.js'
 import type { HandleTable } from '../handles/handles.js'
 import type { Authorisation, FailableDirectoryHandle, FailableFileHandle, HandleEntry } from '../handles/handle-contracts.js'
@@ -27,19 +31,74 @@ import type { PickedPathLedger } from '../grants/picked-path-ledger.js'
 import type { BrokerFsMethods, OpenedFile } from '../fs-contracts.js'
 import type { CreateBrokerOptions } from '../broker-contracts.js'
 
+/**
+ * Builds the one predicate both this capability and `PickedPathLedger`'s own
+ * hydration re-check answer to (Rule 3: a single guard, never two that could
+ * drift apart) -- `../index.ts` calls this once and hands the result to
+ * both. `home` and `systemDirectories` are fixed for the process's lifetime,
+ * but `dataRoots` and `privateSessions` are recomputed on EVERY call the
+ * returned function receives, not once here: a profile or private session
+ * created after the broker started must be refused exactly like one that
+ * already existed when this was built, and the only way to guarantee that is
+ * to never cache the answer (the picker decision's "every profile and
+ * private-session directory, not only the current userData").
+ *
+ * `deps.fs.dataRoot()` covers THIS session's own data root; real wiring
+ * (`../transport/ipc.ts`) supplies the default profile's own directory
+ * through `deps.additionalProtectedRoots` and the private-session naming
+ * rule through `deps.privateSessionGuard`. `homedir()` and the fixed system
+ * list are plain `node:os`/`node:path` facts, not Electron, so this
+ * capability stays "Tied to Electron? No" (README.md) exactly as it was
+ * before this guard existed.
+ */
+export function createPickGuardCheck (deps: CreateBrokerOptions): (path: string) => string | null {
+  let home: string | undefined
+  try {
+    home = homedir()
+  } catch {
+    // No HOME in the environment (a stripped-down container, a sandboxed
+    // test runner) -- the home-folder check below simply does not apply.
+    home = undefined
+  }
+  const systemDirectories = [
+    '/etc', '/usr', '/System', '/proc', '/sys', '/dev', '/boot', '/run',
+    '/bin', '/sbin', '/lib', '/lib32', '/lib64', '/var', '/private', '/Library',
+    'C:\\Windows', 'C:\\Program Files', 'C:\\ProgramData', 'C:\\Program Files (x86)',
+    ...(home === undefined ? [] : [join(home, '.ssh'), join(home, '.gnupg')])
+  ]
+  return (path) => {
+    const dataRoots = [deps.fs.dataRoot?.(), ...(deps.additionalProtectedRoots?.() ?? [])]
+      .filter((root): root is string => root !== undefined)
+    const privateSessions = deps.privateSessionGuard?.()
+    const guard: PickerGuardRoots = privateSessions === undefined
+      ? { dataRoots, home, systemDirectories }
+      : { dataRoots, home, systemDirectories, privateSessions }
+    return pickerBlockReason(path, guard, deps.fs.realpathSync)
+  }
+}
+
 export interface UserSelectedCapabilityOptions {
   readonly deps: CreateBrokerOptions
   readonly handleTable: HandleTable
   readonly ledger: GrantLedger
   readonly pickedPaths: PickedPathLedger
   readonly canonical: (origin: string) => string
+  /** `createPickGuardCheck(deps)` -- `../index.ts`'s own instance, shared rather than rebuilt here. */
+  readonly pickGuardCheck: (path: string) => string | null
 }
 
 /** Builds the `userSelected` member of `Broker['fs']` -- see this file's header for why it is its own capability rather than a branch inside capabilities/fs.ts. */
 export function createUserSelectedCapability (
-  { deps, handleTable, ledger, pickedPaths, canonical }: UserSelectedCapabilityOptions
+  { deps, handleTable, ledger, pickedPaths, canonical, pickGuardCheck }: UserSelectedCapabilityOptions
 ): Pick<BrokerFsMethods, 'userSelected'> {
   const { toFailableFileHandle } = createFileHandleWrapper({ handleTable, ledger })
+  // One open picker per origin. A page cannot pop a second OS dialog while
+  // its first is still pending -- unbounded concurrent pickers is a real
+  // flood (hundreds from one origin, each racing the real dialog).
+  // Deleted in EVERY exit path below (`finally`), so this never grows into
+  // an unbounded map of its own: an origin with no picker open right now
+  // has no entry here at all.
+  const pending = new Set<string>()
 
   /** `confineForOrigin`'s own root-parametrised twin -- same `confinePath` call, a picked folder in place of `deps.fs.rootFor(origin)`. */
   function confineToRoot (root: string, path: string): string {
@@ -150,7 +209,7 @@ export function createUserSelectedCapability (
   async function pickDirectory (key: string, appName: string | undefined): Promise<FailableDirectoryHandle | null> {
     let result: Awaited<ReturnType<CreateBrokerOptions['pickPath']>>
     try {
-      result = await deps.pickPath({ directory: true, multiple: false, appName })
+      result = await deps.pickPath({ directory: true, multiple: false, appName, origin: key })
     } catch (error) {
       throw fail('internal', 'the OS picker could not be shown', undefined, error instanceof Error ? error.message : undefined)
     }
@@ -166,6 +225,17 @@ export function createUserSelectedCapability (
       throw mapIoError(error, 'fs')
     }
 
+    // A folder that IS, contains, or lies inside Orivon's own data, a
+    // filesystem root, the home folder, or a system directory is refused
+    // -- the picker says why (to the person, via the optional notification
+    // below; never to the app, which sees only a plain cancellation,
+    // exactly as if the person had clicked Cancel).
+    const reason = pickGuardCheck(root)
+    if (reason !== null) {
+      deps.notifyPickRefused?.({ origin: key, appName, reason })
+      return null
+    }
+
     const pick = pickedPaths.record(key, 'directory', root, deps.now(), appName)
     const authorisedBy: Authorisation = { by: 'userSelected', pickId: pick.id }
     const entry = handleTable.acquire({ origin: key, kind: 'file', authorisedBy, destroy: () => {} })
@@ -175,7 +245,7 @@ export function createUserSelectedCapability (
   async function pickFiles (key: string, multiple: boolean, appName: string | undefined): Promise<readonly FailableFileHandle[]> {
     let result: Awaited<ReturnType<CreateBrokerOptions['pickPath']>>
     try {
-      result = await deps.pickPath({ directory: false, multiple, appName })
+      result = await deps.pickPath({ directory: false, multiple, appName, origin: key })
     } catch (error) {
       throw fail('internal', 'the OS picker could not be shown', undefined, error instanceof Error ? error.message : undefined)
     }
@@ -183,15 +253,29 @@ export function createUserSelectedCapability (
     // -- the file shape's own cancel convention (capability-api.ts).
     if (result.canceled) return []
 
+    // Realpath'd and guard-checked BEFORE anything opens -- one refused
+    // file (say `~/.ssh/id_rsa` among a multi-select) refuses the WHOLE
+    // pick, resolving as a plain cancellation, rather than silently
+    // handing back a partial array missing only the dangerous entry.
+    const realPaths: string[] = []
+    for (const path of result.paths) {
+      try {
+        realPaths.push(deps.fs.realpathSync(path))
+      } catch (error) {
+        throw mapIoError(error, 'fs')
+      }
+    }
+    for (const realPath of realPaths) {
+      const reason = pickGuardCheck(realPath)
+      if (reason !== null) {
+        deps.notifyPickRefused?.({ origin: key, appName, reason })
+        return []
+      }
+    }
+
     const handles: FailableFileHandle[] = []
     try {
-      for (const path of result.paths) {
-        let realPath: string
-        try {
-          realPath = deps.fs.realpathSync(path)
-        } catch (error) {
-          throw mapIoError(error, 'fs')
-        }
+      for (const realPath of realPaths) {
         const pick = pickedPaths.record(key, 'file', realPath, deps.now(), appName)
         let opened: OpenedFile
         try {
@@ -227,9 +311,17 @@ export function createUserSelectedCapability (
   async function userSelected (origin: string, opts?: { directory?: false, multiple?: boolean }): Promise<readonly FailableFileHandle[]>
   async function userSelected (origin: string, opts?: { directory?: boolean, multiple?: boolean }): Promise<FailableDirectoryHandle | null | readonly FailableFileHandle[]> {
     const key = canonical(origin)
-    const appName = ledger.manifestFor(key)?.name
-    if (opts?.directory === true) return await pickDirectory(key, appName)
-    return await pickFiles(key, opts?.multiple === true, appName)
+    // A page already mid-picker gets 'denied' for a second call, never a
+    // second OS dialog -- see `pending`'s own doc above.
+    if (pending.has(key)) throw fail('denied', 'a picker is already open for this origin')
+    pending.add(key)
+    try {
+      const appName = ledger.manifestFor(key)?.name
+      if (opts?.directory === true) return await pickDirectory(key, appName)
+      return await pickFiles(key, opts?.multiple === true, appName)
+    } finally {
+      pending.delete(key)
+    }
   }
 
   return { userSelected }

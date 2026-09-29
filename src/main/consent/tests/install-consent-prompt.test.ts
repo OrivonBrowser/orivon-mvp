@@ -90,4 +90,23 @@ describe('createInstallConsentPrompt', () => {
 
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning' }))
   })
+
+  it('never shows a dialog when the caller has already left the origin', async () => {
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    const result = await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [], caller)
+
+    expect(result).toBe(false)
+    expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('parents the dialog to the window the caller resolves, when one is given', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const fakeWindow = { id: 'the-tabs-window' }
+    const caller = { window: () => fakeWindow, stillOn: () => true }
+
+    await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [], caller)
+
+    expect(showMessageBox).toHaveBeenCalledWith(fakeWindow, expect.objectContaining({ title: ORIGIN }))
+  })
 })

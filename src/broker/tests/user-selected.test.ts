@@ -1,5 +1,9 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createBroker } from '../index.js'
+import { nodeFs } from '../adapters/node-fs-adapter.js'
 import { APP, baseDeps, manifestWith, memoryLedgerStorage, stubFs } from './index.test-helpers.js'
 import { rejection } from '../handles/tests/handles.test-helpers.js'
 import type { PickPathResult } from '../broker-contracts.js'
@@ -198,6 +202,134 @@ describe('persistence (D-0007: survives a restart)', () => {
     afterRestart.registerApp(APP, manifestWith({}))
 
     expect(await afterRestart.app.pickedPaths(APP)).toEqual([])
+  })
+})
+
+describe('the picker guard refuses Orivon\'s own data', () => {
+  it('refuses a folder pick that IS the app data root, before it can seed another origin\'s grants', async () => {
+    const userData = mkdtempSync(join(tmpdir(), 'orivon-picker-guard-'))
+    try {
+      const broker = createBroker(baseDeps({
+        fs: nodeFs(userData),
+        pickPath: async () => ({ canceled: false, paths: [userData] })
+      }))
+      await broker.registerApp(APP, manifestWith({}))
+
+      const dir = await broker.fs.userSelected(APP, { directory: true })
+
+      expect(dir).toBeNull()
+      // Refused before it ever reaches the picked-path ledger -- nothing
+      // to revoke, nothing shown in settings for a pick that never landed.
+      expect(await broker.app.pickedPaths(APP)).toEqual([])
+    } finally {
+      rmSync(userData, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a folder pick that is an ANCESTOR of the app data root too, not just an exact match', async () => {
+    const userData = mkdtempSync(join(tmpdir(), 'orivon-picker-guard-'))
+    try {
+      const broker = createBroker(baseDeps({
+        fs: nodeFs(userData),
+        pickPath: async () => ({ canceled: false, paths: [dirname(userData)] })
+      }))
+      await broker.registerApp(APP, manifestWith({}))
+
+      const dir = await broker.fs.userSelected(APP, { directory: true })
+
+      expect(dir).toBeNull()
+    } finally {
+      rmSync(userData, { recursive: true, force: true })
+    }
+  })
+
+  it('tells the person why, through the injected notification -- the APP still sees only a plain cancellation', async () => {
+    const userData = mkdtempSync(join(tmpdir(), 'orivon-picker-guard-'))
+    try {
+      const notifications: Array<{ origin: string, appName: string | undefined, reason: string }> = []
+      const broker = createBroker(baseDeps({
+        fs: nodeFs(userData),
+        pickPath: async () => ({ canceled: false, paths: [userData] }),
+        notifyPickRefused: (info) => { notifications.push(info) }
+      }))
+      await broker.registerApp(APP, manifestWith({}))
+
+      const dir = await broker.fs.userSelected(APP, { directory: true })
+
+      expect(dir).toBeNull() // indistinguishable from a person clicking Cancel
+      // `manifestWith({})` names the app "Test app" -- an UNREGISTERED
+      // origin would show `appName: undefined` here instead; either way
+      // the app itself never sees this notification at all.
+      expect(notifications).toEqual([{ origin: APP, appName: 'Test app', reason: "this folder holds Orivon's own data" }])
+    } finally {
+      rmSync(userData, { recursive: true, force: true })
+    }
+  })
+
+  it('the same guard applies to a picked FILE, not only a folder -- an app cannot pick a single file inside userData either', async () => {
+    const userData = mkdtempSync(join(tmpdir(), 'orivon-picker-guard-'))
+    try {
+      const planted = join(userData, 'inside.txt')
+      writeFileSync(planted, 'x') // realpathSync needs it to actually exist
+      const broker = createBroker(baseDeps({
+        fs: nodeFs(userData),
+        pickPath: async () => ({ canceled: false, paths: [planted] })
+      }))
+      await broker.registerApp(APP, manifestWith({}))
+
+      const files = await broker.fs.userSelected(APP)
+
+      expect(files).toEqual([])
+    } finally {
+      rmSync(userData, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('one pending picker per origin', () => {
+  it('a second fs.userSelected call for the SAME origin while one is still open is denied, not a second OS dialog', async () => {
+    let releaseFirst: (() => void) | undefined
+    const broker = createBroker(baseDeps({
+      pickPath: async () => await new Promise((resolve) => { releaseFirst = () => { resolve({ canceled: true }) } })
+    }))
+    broker.registerApp(APP, manifestWith({}))
+
+    const first = broker.fs.userSelected(APP, { directory: true })
+    const second = await rejection(broker.fs.userSelected(APP, { directory: true }))
+
+    expect(second.code).toBe('denied')
+    releaseFirst?.()
+    await expect(first).resolves.toBeNull()
+  })
+
+  it('a pending picker is cleared once it settles, so the SAME origin can pick again right after', async () => {
+    const broker = createBroker(baseDeps({ pickPath: cancelled }))
+    broker.registerApp(APP, manifestWith({}))
+
+    await broker.fs.userSelected(APP, { directory: true })
+
+    await expect(broker.fs.userSelected(APP, { directory: true })).resolves.toBeNull()
+  })
+
+  it('a DIFFERENT origin\'s picker is never blocked by another origin\'s pending one', async () => {
+    // A resolver PER CALL, not one shared variable -- `pickPath` here is
+    // one function serving both origins, so a single captured `resolve`
+    // would be overwritten by the second call before the first is ever
+    // released, hanging this test rather than testing anything.
+    const releases: Array<() => void> = []
+    const OTHER = 'https://other.example'
+    const broker = createBroker(baseDeps({
+      pickPath: async () => await new Promise((resolve) => { releases.push(() => { resolve({ canceled: true }) }) })
+    }))
+    broker.registerApp(APP, manifestWith({}))
+    broker.registerApp(OTHER, manifestWith({}))
+
+    const first = broker.fs.userSelected(APP, { directory: true })
+    const otherCall = broker.fs.userSelected(OTHER, { directory: true })
+    for (const release of releases) release()
+
+    await expect(first).resolves.toBeNull()
+    await expect(otherCall).resolves.toBeNull()
   })
 })
 
