@@ -68,4 +68,40 @@ describe('cachingProxyProbe', () => {
     expect(await probe(URL_B)).toBe(true)
     expect(resolveProxy).toHaveBeenCalledTimes(2)
   })
+
+  it('caps the cache so a DHT app probing one new peer URL per packet cannot grow it without bound', async () => {
+    const resolveProxy = vi.fn(async () => 'DIRECT')
+    const probe = cachingProxyProbe(resolveProxy)
+
+    for (let i = 0; i < 1024; i++) await probe(`https://10.0.0.1:${1000 + i}/`)
+    expect(resolveProxy).toHaveBeenCalledTimes(1024)
+
+    // One more distinct URL pushes the cache past its cap.
+    await probe('https://10.0.0.1:9999/')
+    expect(resolveProxy).toHaveBeenCalledTimes(1025)
+
+    // The very first URL was the least recently used at that point, so it
+    // is what the cap evicted -- asking again is a fresh miss, not a hit.
+    await probe('https://10.0.0.1:1000/')
+    expect(resolveProxy).toHaveBeenCalledTimes(1026)
+  })
+
+  it('touching a cached URL keeps it out of eviction, ahead of URLs asked more recently', async () => {
+    const resolveProxy = vi.fn(async () => 'DIRECT')
+    const probe = cachingProxyProbe(resolveProxy)
+
+    for (let i = 0; i < 1024; i++) await probe(`https://10.0.0.1:${1000 + i}/`)
+    await probe('https://10.0.0.1:1000/') // re-asked: now the most recently used, not the oldest
+
+    // One more distinct URL pushes the cache past its cap -- the least
+    // recently used entry is now :1001, since :1000 was just touched.
+    await probe('https://10.0.0.1:9999/')
+    expect(resolveProxy).toHaveBeenCalledTimes(1025)
+
+    await probe('https://10.0.0.1:1000/')
+    expect(resolveProxy).toHaveBeenCalledTimes(1025) // still cached
+
+    await probe('https://10.0.0.1:1001/')
+    expect(resolveProxy).toHaveBeenCalledTimes(1026) // evicted
+  })
 })
