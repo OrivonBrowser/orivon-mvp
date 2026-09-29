@@ -95,6 +95,12 @@ class BufferBudget {
  */
 const PUBLIC_ADDRESS_CSP = 'treat-as-public-address'
 
+/** Served content, and the error page shown in its place, may be framed only by their own origin: nothing else has a reason to embed either. Chromium ignores frame-ancestors on a redirect with no body, so redirectTo does not send it. */
+const FRAME_ANCESTORS_SELF_CSP = "frame-ancestors 'self'"
+
+/** Every served-content response's CSP, whether it carries a body or answers a 304: a cached copy from before this existed must not keep revalidating under its old headers. */
+const SERVED_CONTENT_CSP = `${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`
+
 /** A host with no port or the default one: every other port would be another origin for the same name. */
 const HOST = /^([\x21-\x39\x3b-\x7e]+)(?::443)?$/
 
@@ -142,7 +148,7 @@ function sendError (res: ServerResponse, shown: string, error: unknown): void {
   const { status, html } = renderErrorPage(failure, shown, detail)
   const headers: Record<string, string> = {
     'content-type': 'text/html; charset=utf-8',
-    'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}`,
+    'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`,
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff'
   }
@@ -303,7 +309,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
     }
     // Before any file is opened: an unchanged root answers with no gateway asked.
     if (req.headers['if-none-match'] === etag) {
-      res.writeHead(304, { etag, 'cache-control': 'no-cache' }).end()
+      res.writeHead(304, { etag, 'cache-control': 'no-cache', 'content-security-policy': SERVED_CONTENT_CSP }).end()
       return
     }
     file = await site.open(url.pathname, undefined, left.signal)
@@ -317,7 +323,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       'accept-ranges': 'bytes',
       // Revalidated every time: a name can point elsewhere tomorrow, and the root CID says whether it has.
       'cache-control': 'no-cache',
-      'content-security-policy': PUBLIC_ADDRESS_CSP,
+      'content-security-policy': SERVED_CONTENT_CSP,
       etag
     }
     const range = parseRange(req.headers.range ?? null, file.size)

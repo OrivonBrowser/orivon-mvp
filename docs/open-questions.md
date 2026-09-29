@@ -1389,30 +1389,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A284: Served `.eth`/`ipfs://` content sends no `frame-ancestors` **[OWNER]**
-
-- **Question:** Served content can be framed by any page (clickjacking a dApp), and static
-  content cannot set its own header.
-- **Why it matters:** a page under an origin the user trusts (a `.eth` name, an IPFS gateway
-  response) can be embedded and manipulated by any other page that frames it.
-- **Options:** `frame-ancestors 'self'` by default (rec.; breaks embedding by other origins);
-  `'none'`; leave it as the web does today and document the gap.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A286: A TTL-0 name can still rebind between the embed check and the connection **[OWNER]**
-
-- **Question:** A `"*"`-admitted document whose host is a name is resolved through the guest
-  session's own `resolveHost`, refused unless every address is public unicast. A name that
-  answers differently once Chromium actually connects still reaches it.
-- **Why it matters:** the same class of residual A196 accepts for `connectSecure`'s own wildcard
-  -- sharing the guest session's host cache narrows the window, it does not close it, since no
-  cancellable webRequest event carries the connected address.
-- **Options:** accept the residual, narrowed as it is (rec.); close it fully only if Electron
-  exposes a cancellable event carrying the connected address.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A287: A CommonJS `require()` of a shim module gets no named refusal **[AI-REC]**
 
 - **Question:** Refusal by name lives on each module's default export. A CommonJS dependency
@@ -1563,5 +1539,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   what the file holds. A cap is a `src/contracts/` change (`LIMITS`).
 - **Options:** `LIMITS.fsCallBytes` (256 MiB), `'limit'` past it, big files through handles (rec.);
   leave it bounded by the file and the quota.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A295: A `<webview>`'s own `webpreferences` attribute may reach a shown page **[AI-REC]**
+
+- **Question:** If Electron parses a `<webview>`'s `webpreferences` attribute into `webPreferences`
+  before `will-attach-webview`, deleting `params.webpreferences` in `hardenGuest` stops nothing, and
+  a key it does not set itself (`experimentalFeatures`, say) reaches a `web.embed` guest. Does it?
+- **Why it matters:** a shown page is another site's document; every preference it runs with
+  should be the shell's choice, never the embedding app's. No escalation through it is known.
+- **Options:** measure it in an e2e and, if the attribute gets through, build the guest's
+  `webPreferences` from an allowlist rather than overriding named keys (rec.); leave it as it is.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
