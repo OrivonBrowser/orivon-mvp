@@ -170,3 +170,35 @@ it('arms, then confirms, Clear data while a tab is retitling itself every 200ms'
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+it('holds a redraw while a <select> has focus, and catches up once it loses it', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const page = await openInternal(app, chrome, 'settings', '/privacy')
+    await page.waitForSelector('#row-history-retention')
+    const retention = page.locator('#row-history-retention select')
+    await retention.focus()
+    // A marker on THIS node -- a redraw replaces the whole section with a
+    // freshly built one, which would never carry it, unlike a `<select>` a
+    // person merely clicked into and left alone.
+    await retention.evaluate((el) => { el.dataset['marker'] = 'kept' })
+
+    // Any push redraws whatever section is showing, not just its own --
+    // apps.changed here is otherwise unrelated to Privacy.
+    const fixtureOrigin = 'http://127.0.0.1:47502'
+    await devGrant(app, { origin: fixtureOrigin, manifest: fixtureManifest(), capability: 'tcp.connect', patterns: ['127.0.0.1:9'] })
+    await page.waitForTimeout(1500)
+
+    expect(await retention.getAttribute('data-marker')).toBe('kept')
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('SELECT')
+
+    // Moves focus to the search box: the held-back redraw catches up on
+    // the resulting focusout, without needing another push.
+    await page.locator('input.search').focus()
+
+    expect(await waitFor(async () => await retention.getAttribute('data-marker') === null)).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)

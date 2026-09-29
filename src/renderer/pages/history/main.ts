@@ -65,12 +65,22 @@ async function load (append: boolean, limit = PAGE_SIZE): Promise<void> {
  * collapsed back to page one, and restores the scroll position `load`'s own
  * `replaceChildren` would otherwise leave to chance once the page's height
  * changes underneath it.
+ *
+ * IN PAGES OF `PAGE_SIZE`, NEVER ONE REQUEST FOR THE WHOLE DEPTH: asking
+ * main for `depth` entries directly hits its own MAX_PAGE_SIZE clamp once
+ * `depth` passes 500, and a reply shorter than what was asked reads as
+ * "there is nothing more" -- collapsing "Show more" for good the first time
+ * anyone has scrolled that deep. Fetching one ordinary page at a time keeps
+ * every single request (and the `more` it reports) exactly as `load` already
+ * handles it, however deep `depth` itself grows.
  */
-function reloadKeepingDepth (): void {
+async function reloadKeepingDepth (): Promise<void> {
   if (document.visibilityState !== 'visible') { pendingWhileHidden = true; return }
   const depth = Math.max(entries.length, PAGE_SIZE)
   const scrollY = window.scrollY
-  void load(false, depth).then(() => { window.scrollTo(0, scrollY) })
+  await load(false, PAGE_SIZE)
+  while (entries.length < depth && more) await load(true, PAGE_SIZE)
+  window.scrollTo(0, scrollY)
 }
 
 function openSettings (): void {
@@ -168,7 +178,7 @@ clearAll.addEventListener('click', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !pendingWhileHidden) return
   pendingWhileHidden = false
-  reloadKeepingDepth()
+  void reloadKeepingDepth()
 })
 
 // A visit, a removal or a clear -- from this tab or another one open on the
