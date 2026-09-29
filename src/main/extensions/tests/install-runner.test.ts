@@ -467,6 +467,43 @@ describe('uninstall / setEnabled', () => {
     })
   })
 
+  it('uninstall clears the slot\'s persisted dNR dynamic rules and enabled-ruleset choice, but keeps key.pub', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session } = fakeSession()
+      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(outcome.installed).toBe(true)
+      if (!outcome.installed) return
+
+      const slotDir = dirname(outcome.entry.path)
+      const dynamicRulesPath = join(slotDir, 'dnr-dynamic.json')
+      const enabledRulesetsPath = join(slotDir, 'dnr-enabled-rulesets.json')
+      const keyPath = join(slotDir, 'key.pub')
+      writeFileSync(dynamicRulesPath, '[]')
+      writeFileSync(enabledRulesetsPath, '[]')
+      expect(existsSync(keyPath)).toBe(true) // finishInstall already wrote this slot's key
+
+      await uninstall({ userDataPath, session, prompt: ALWAYS_ALLOW }, outcome.entry.id)
+      expect(existsSync(dynamicRulesPath)).toBe(false)
+      expect(existsSync(enabledRulesetsPath)).toBe(false)
+      expect(existsSync(keyPath)).toBe(true)
+    })
+  })
+
+  it('uninstall does not throw when the slot never had any persisted dNR state', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session } = fakeSession()
+      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(outcome.installed).toBe(true)
+      if (!outcome.installed) return
+
+      await expect(uninstall({ userDataPath, session, prompt: ALWAYS_ALLOW }, outcome.entry.id)).resolves.toBeUndefined()
+    })
+  })
+
   it('setEnabled(false) unloads from the session and flips the registry flag; setEnabled(true) reloads it', async () => {
     await withTempDir(async (root) => {
       const userDataPath = join(root, 'userData')

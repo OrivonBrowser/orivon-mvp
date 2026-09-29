@@ -73,7 +73,7 @@
     Reason: entirely absent otherwise, so an extension whose startup code calls or feature-
     detects any of them throws before it does anything else. `sidePanel` and `userScripts`
     resolve as no-ops: no real side panel, no real user script world.
-    `declarativeNetRequest` is real, wired by patch 15 below to Orivon's own engine
+    `declarativeNetRequest` is real, wired by patch 21 below to Orivon's own engine
     (`src/main/extensions/dnr/`, `src/main/extensions/extensions-dnr.ts`).
 11. **Non-enumerable API properties.** `src/renderer/index.ts`'s per-API `Object.defineProperty
     (chrome, apiName, ...)`: `enumerable: false`, was `true`. Kept as a harmless extra guard;
@@ -161,7 +161,7 @@
     imports `WindowsAPI` from this file as a value, which puts this file on the same root-tsconfig
     import path; no behaviour change.
 
-15. **`getRouter()` on `ElectronChromeExtensions`, and a permission-check override on the
+21. **`getRouter()` on `ElectronChromeExtensions`, and a permission-check override on the
     router.** `src/browser/index.ts`: added a public `getRouter(): ExtensionRouter` returning the
     private `ctx.router` this library's own API classes (`src/browser/api/*.ts`) already register
     their handlers on. `src/browser/router.ts`: added `setPermissionCheck` (same module-level-
@@ -175,6 +175,17 @@
     loads (`src/main/extensions/README.md`), so gating those handlers on the loaded manifest's own
     permissions would always refuse -- `setPermissionCheck`'s override answers from the ORIGINAL
     permission record Orivon kept instead (`registry.ts`'s `StrippedRecord`).
+22. **`setBadgeText()` on `ElectronChromeExtensions`, set from main.** `src/browser/api/
+    browser-action.ts`: added a public `BrowserActionAPI.setBadgeTextFromMain(extensionId, tabId,
+    text)`, the same tab-scoped `action.tabs[tabId].text` write and `onUpdate()` broadcast
+    `setDetails`'s `browserAction.setBadgeText` IPC handler already does for an extension calling
+    the API on itself, minus the `ExtensionEvent`/default-value lookup that path needs and this
+    caller does not (it always passes an explicit string). `src/browser/index.ts`: added a public
+    `setBadgeText(extensionId, tabId, text)` delegating to it. Reason: Orivon's own
+    `declarativeNetRequest.setExtensionActionOptions({ displayActionCountAsBadgeText: true })`
+    wiring (`src/main/extensions/dnr-api.ts`) renders a per-tab matched-rule count driven by
+    `webRequest`, from main, never from the extension's own script -- there was no public way in
+    for a caller outside this library's own IPC handlers to set one tab's badge text.
 
 `src/browser/index.ts` and `partition.ts` are reached only through the virtual specifiers
 `src/main/extensions/electron-chrome-extensions-lib.d.ts` declares, never their real path -- that

@@ -20,6 +20,7 @@ import { verifyCrx3 } from './crx.js'
 import { unpackZip } from './unpack-runner.js'
 import { patchStoreUpdater, readRegistry, writeRegistry } from './registry-runner.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
+import { clearPersistedRuleState } from './dnr/dnr-runner.js'
 import { generateId } from '../../../vendor/electron-chrome-web-store/src/browser/id.js'
 import { downloadCrxBytes } from '../../../vendor/electron-chrome-web-store/src/browser/installer.js'
 import { storeCrxDownloadUrl, storeTestPublisherKeyHash } from './store-download-seam.js'
@@ -462,12 +463,21 @@ export async function updateFromStore (ctx: InstallContext, id: string): Promise
   return await installFromStoreCrx(ctx, bytes, id)
 }
 
+/**
+ * Removes the loaded extension and its versioned folder, plus its
+ * persisted `declarativeNetRequest` dynamic rules and enabled-ruleset
+ * choice (`dnr/dnr-runner.ts`'s `clearPersistedRuleState` -- Chrome clears
+ * both on uninstall too). Leaves the slot's `key.pub` in place: a
+ * reinstall into the same slot should still resolve to the same extension
+ * id (`resolveInstallKey`'s own doc, above).
+ */
 export async function uninstall (ctx: InstallContext, id: string): Promise<void> {
   const registry = readRegistry(ctx.userDataPath)
   const entry = registry.find((candidate) => candidate.id === id)
   if (entry === undefined) return
   ctx.session.extensions.removeExtension(id)
   rmSync(entry.path, { recursive: true, force: true })
+  clearPersistedRuleState(dirname(entry.path))
   writeRegistry(ctx.userDataPath, registry.filter((candidate) => candidate.id !== id))
 }
 

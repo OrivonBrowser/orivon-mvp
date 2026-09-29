@@ -61,10 +61,14 @@ declare module 'orivon:crx-extensions' {
     addTab (tab: Electron.WebContents, window: Electron.BaseWindow): void
     removeTab (tab: Electron.WebContents): void
     selectTab (tab: Electron.WebContents): void
-    /** UPSTREAM.md patch 15: this session's ExtensionRouter, for registering
+    /** UPSTREAM.md patch 21: this session's ExtensionRouter, for registering
      * an additional main-side API handler the same way this library's own
      * API classes do. */
     getRouter (): ExtensionRouterHandle
+    /** UPSTREAM.md patch 22: sets `extensionId`'s badge text for `tabId`
+     * directly from main, bypassing the `crx-msg` path a real
+     * `chrome.action.setBadgeText` call takes. */
+    setBadgeText (extensionId: string, tabId: number, text: string): void
   }
 
   /** The subset of `src/browser/router.ts`'s `ExtensionRouter` a caller

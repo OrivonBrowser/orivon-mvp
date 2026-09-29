@@ -1,33 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildActionAccess, createHostAccessChecker, hostPatternMatchesUrl } from '../host-permissions.js'
+import { buildActionAccess, createHostAccessChecker } from '../host-permissions.js'
 
-describe('hostPatternMatchesUrl', () => {
-  it('matches <all_urls> against anything http(s)', () => {
-    expect(hostPatternMatchesUrl('<all_urls>', new URL('https://example.com/x'))).toBe(true)
-    expect(hostPatternMatchesUrl('<all_urls>', new URL('http://example.com/x'))).toBe(true)
-  })
-
-  it('matches a subdomain wildcard host', () => {
-    expect(hostPatternMatchesUrl('*://*.example.com/*', new URL('https://a.example.com/x'))).toBe(true)
-    expect(hostPatternMatchesUrl('*://*.example.com/*', new URL('https://example.com/x'))).toBe(true)
-    expect(hostPatternMatchesUrl('*://*.example.com/*', new URL('https://other.com/x'))).toBe(false)
-  })
-
-  it('scheme "*" matches only http/https', () => {
-    expect(hostPatternMatchesUrl('*://example.com/*', new URL('https://example.com/'))).toBe(true)
-    expect(hostPatternMatchesUrl('*://example.com/*', new URL('ftp://example.com/'))).toBe(false)
-  })
-
-  it('rejects a non-matching path', () => {
-    expect(hostPatternMatchesUrl('https://example.com/admin/*', new URL('https://example.com/other'))).toBe(false)
-    expect(hostPatternMatchesUrl('https://example.com/admin/*', new URL('https://example.com/admin/x'))).toBe(true)
-  })
-
-  it('rejects an exact host that does not match', () => {
-    expect(hostPatternMatchesUrl('https://example.com/*', new URL('https://sub.example.com/'))).toBe(false)
-  })
-})
-
+// The match-pattern grammar itself (<all_urls>, scheme/host/path matching)
+// is `../../../broker/policy/extension-host-patterns.ts`'s own
+// `matchesHostPattern`/`matchesAnyHostPattern` -- see that file's tests.
+// This file tests only what is DNR-specific: request+initiator, and the
+// permission-name-to-DnrActionAccess mapping.
 describe('createHostAccessChecker', () => {
   it('requires the request URL to match, and the initiator when one is given', () => {
     const check = createHostAccessChecker(['*://*.example.com/*'])

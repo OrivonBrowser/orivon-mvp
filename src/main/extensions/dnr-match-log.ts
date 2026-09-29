@@ -48,12 +48,12 @@ export function getLoggedMatches(extensionId: string, tabId: number | undefined)
 }
 
 /** `declarativeNetRequest.setExtensionActionOptions`'s persistent toggle,
- * per extension, and the per-(extension,tab) count it drives. Chrome
- * displays this count as the toolbar action's badge text once the toggle is
- * on; nothing in this repository renders it there yet (see
- * `dnr-api.ts`'s own doc on `setExtensionActionOptions`) -- the count itself
- * is tracked correctly so a later toolbar-rendering change has real data to
- * read.
+ * per extension, and the per-(extension,tab) count it drives. `dnr-api.ts`
+ * renders this count as the extension's toolbar badge (through
+ * `ElectronChromeExtensions.setBadgeText`, UPSTREAM.md patch 22) whenever it
+ * changes -- on a rule match (`incrementActionCount`, below) and on a fresh
+ * navigation (`resetActionCountForTab`, below, Chrome's own "a new page
+ * starts a new count").
  */
 const badgeTextEnabled = new Map<string, boolean>()
 const actionCounts = new Map<string, number>()
@@ -70,6 +70,14 @@ export function isDisplayActionCountAsBadgeTextEnabled(extensionId: string): boo
   return badgeTextEnabled.get(extensionId) ?? false
 }
 
+/** Every extension currently in badge-count mode -- `dnr-api.ts`'s
+ * navigation handler uses this to know which badges to blank out
+ * alongside `resetActionCountForTab`, without walking every loaded
+ * extension itself. */
+export function extensionIdsWithBadgeTextEnabled(): string[] {
+  return [...badgeTextEnabled.entries()].filter(([, enabled]) => enabled).map(([extensionId]) => extensionId)
+}
+
 export function incrementActionCount(extensionId: string, tabId: number, delta: number): void {
   const key = actionCountKey(extensionId, tabId)
   actionCounts.set(key, (actionCounts.get(key) ?? 0) + delta)
@@ -77,6 +85,22 @@ export function incrementActionCount(extensionId: string, tabId: number, delta: 
 
 export function getActionCount(extensionId: string, tabId: number): number {
   return actionCounts.get(actionCountKey(extensionId, tabId)) ?? 0
+}
+
+/** Zeroes `tabId`'s count for every extension -- called on a `main_frame`
+ * request (`dnr-webrequest.ts`'s own doc on `OnTabNavigated`), the same
+ * "a fresh page load starts a fresh count" rule Chrome's own per-tab
+ * action count follows. Every extension's count for that tab is cleared
+ * regardless of which one is in badge-count mode: the count itself is
+ * still real state (`getActionCount`, `declarativeNetRequest.
+ * getMatchedRules`'s own window), not only a badge's input. */
+export function resetActionCountForTab(tabId: number): void {
+  const suffix = `:${String(tabId)}`
+  for (const key of [...actionCounts.keys()]) {
+    if (key.endsWith(suffix)) {
+      actionCounts.delete(key)
+    }
+  }
 }
 
 /** `removeExtension` on disable/uninstall clears this extension's own

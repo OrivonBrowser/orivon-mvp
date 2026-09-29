@@ -2,10 +2,12 @@
 // ruleset's rules from an extension's own loaded folder, and persists
 // dynamic rules and the extension's last-chosen enabled-ruleset set to disk.
 // Node-only (fs/path); no `electron` import (this directory's README).
-// `../extensions-dnr-subsystem.ts` is the Electron-tied caller that wires
-// this into the session's extension lifecycle and `session.defaultSession`.
+// `../extensions-dnr.ts` is the Electron-tied caller that wires this into
+// the session's extension lifecycle and `session.defaultSession`;
+// `../install-runner.ts`'s `uninstall` calls `clearPersistedRuleState`
+// directly, below.
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { writeFileAtomic } from '../../../broker/grants/node-ledger-storage.js'
 import type { DnrRule, DnrStaticRuleset } from './types.js'
@@ -89,6 +91,20 @@ export function readEnabledRulesetOverride(slotDir: string): string[] | null {
 
 export function writeEnabledRulesetOverride(slotDir: string, enabledIds: readonly string[]): void {
   writeFileAtomic(enabledRulesetsPath(slotDir), JSON.stringify(enabledIds))
+}
+
+/**
+ * Deletes `slotDir`'s persisted dynamic rules and enabled-ruleset choice --
+ * `install-runner.ts`'s `uninstall` calls this, matching Chrome's own
+ * behavior of clearing an extension's dynamic rules on uninstall (`README.md`'s
+ * Design notes on where these two files live and why they used to
+ * outlive one). Never touches `key.pub`, one level up in the same
+ * directory: that file's own job is to survive an uninstall, so a
+ * reinstall into the same slot still resolves to the same extension id.
+ */
+export function clearPersistedRuleState(slotDir: string): void {
+  rmSync(dynamicRulesPath(slotDir), { force: true })
+  rmSync(enabledRulesetsPath(slotDir), { force: true })
 }
 
 /**

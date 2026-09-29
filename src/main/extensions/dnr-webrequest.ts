@@ -221,6 +221,18 @@ export type OnRuleMatched = (tabId: number, info: DnrDecision['matchedRules'][nu
 
 const noopOnRuleMatched: OnRuleMatched = () => {}
 
+/** Called once per `main_frame` request seen by `onBeforeRequest` -- a
+ * fresh top-level navigation, the same signal Chrome's own per-tab
+ * matched-action count resets on. `resourceType === 'main_frame'` is
+ * exactly that: Chrome's `webRequest` names a tab's own top-level document
+ * load this way, never a subresource or an iframe (`sub_frame`), so no
+ * separate frameId check is needed. Same cross-into-extension-permission-
+ * territory reasoning as `OnRuleMatched` above -- `dnr-api.ts` supplies the
+ * real implementation (its own `onTabNavigated`). */
+export type OnTabNavigated = (tabId: number) => void
+
+const noopOnTabNavigated: OnTabNavigated = () => {}
+
 /** Installs all three handlers this package owns on `defaultSession`'s
  * webRequest owner -- but only while at least one loaded extension holds a
  * `declarativeNetRequest*` permission (`extensions-dnr.ts`'s
@@ -237,7 +249,8 @@ const noopOnRuleMatched: OnRuleMatched = () => {}
 export function installDnrWebRequestHandlers(
   defaultSession: Session,
   getEngine: () => DnrEngine | undefined,
-  onRuleMatched: OnRuleMatched = noopOnRuleMatched
+  onRuleMatched: OnRuleMatched = noopOnRuleMatched,
+  onTabNavigated: OnTabNavigated = noopOnTabNavigated
 ): void {
   const owner = webRequestOwnerFor(defaultSession)
   let handles: readonly WebRequestHandlerHandle[] = []
@@ -256,6 +269,9 @@ export function installDnrWebRequestHandlers(
           const scoped = engine === undefined ? null : toScopedRequest(details)
           if (engine === undefined || scoped === null) {
             return soFar
+          }
+          if (scoped.dnrRequest.resourceType === 'main_frame') {
+            onTabNavigated(scoped.tabId)
           }
           const decision = engine.evaluate(scoped.dnrRequest)
           recordMatches(scoped.tabId, decision.matchedRules)

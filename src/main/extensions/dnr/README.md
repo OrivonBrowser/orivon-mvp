@@ -9,18 +9,22 @@ shape. `resource-types.ts` maps Electron's `webRequest` resource-type spelling t
 from `frameId`/`parentFrameId` observed across calls, since this package has no live frame tree
 to read one from. `host-permissions.ts` builds the `redirect`/`modifyHeaders` host-permission
 gate (`DnrActionAccess`, see this file's Design notes) from an extension's permission names and
-host match patterns. `dnr-runner.ts` is the thin, Node-only I/O layer `../extensions-dnr-subsystem.ts`
+host match patterns, matched by `../../../broker/policy/extension-host-patterns.ts`'s
+`matchesAnyHostPattern` -- the one Chrome match-pattern matcher, not a second implementation of
+that grammar either. `dnr-runner.ts` is the thin, Node-only I/O layer `../extensions-dnr.ts`
 (Electron-tied, one level up) calls to read a static ruleset's rules from an extension's loaded
-folder and to persist dynamic rules and enabled-ruleset choices. The actual matching algorithm is
+folder and to persist dynamic rules and enabled-ruleset choices, and `../install-runner.ts` calls
+(`clearPersistedRuleState`) to delete both on uninstall. The actual matching algorithm is
 [`vendor/firefox-dnr`](../../../../vendor/firefox-dnr) (MPL-2.0, ported from Firefox's
 `ExtensionDNR.sys.mjs`; `UPSTREAM.md` has the revision and the full patch list) --
 `dnr-engine.ts` is a thin, typed orchestration layer over it, not a second implementation.
 
 **What it depends on.** `vendor/firefox-dnr/` (the engine); `node:fs`, `node:path` and
 `../../../broker/grants/node-ledger-storage.js`'s `writeFileAtomic` (`dnr-runner.ts` only, for
-its own disk I/O). Otherwise pure TypeScript (`URL`, `Map`, `Set` -- no third-party package).
-`node:*` is a runtime dependency, not an Electron one: nothing here calls into `electron` itself,
-so the whole directory stays durable (see below).
+its own disk I/O); `../../../broker/policy/extension-host-patterns.ts`'s `matchesAnyHostPattern`
+(`host-permissions.ts` only, pure and Electron-free itself). Otherwise pure TypeScript (`URL`,
+`Map`, `Set` -- no third-party package). `node:*` is a runtime dependency, not an Electron one:
+nothing here calls into `electron` itself, so the whole directory stays durable (see below).
 
 **What it must never import.** `electron`, from any file in this directory including
 `dnr-runner.ts` (it does disk I/O with plain `node:fs`, never a `session`, and does not know it
@@ -48,10 +52,10 @@ first call, per-ruleset `enabled` from the manifest until then). Both live at th
 (`<userData>/extensions/<slot>/<version>/`) `install-runner.ts` deletes on uninstall -- the same
 level `<slot>/key.pub` already persists at across an uninstall, for the same reason
 (`../README.md`'s slot design: an id installed again into the same slot should stay recognizable).
-Consequently neither file is deleted on uninstall today, consistent with that existing precedent;
-a reinstall into the same slot inherits its previous dynamic rules and enabled-ruleset choice
-rather than starting empty, a provisional call the owner may want revisited once storage cleanup
-on uninstall is itself a feature (it is not one yet anywhere in `src/main/extensions/`).
+Unlike `key.pub`, `install-runner.ts`'s `uninstall` deletes both of these two files
+(`clearPersistedRuleState`, below), matching Chrome's own behavior of clearing an extension's
+dynamic rules and enabled-ruleset choice on uninstall: a reinstall into the same slot starts with
+neither, the same as a fresh install into a slot that never held one.
 
 **`evaluate()` gates `redirect`/`modifyHeaders` on host permission through a predicate the
 caller supplies, not through any notion of "permissions" of its own.** Chrome's

@@ -1,8 +1,8 @@
 // Main-side handlers for chrome.declarativeNetRequest, registered on the
-// same ExtensionRouter the library's own APIs use (UPSTREAM.md patch 15's
+// same ExtensionRouter the library's own APIs use (UPSTREAM.md patch 21's
 // `getRouter()`), reached from the renderer's real `invokeExtension`
 // calls (`vendor/electron-chrome-extensions/src/renderer/index.ts`, same
-// patch's `declarativeNetRequest` factory). `setPermissionCheck` (patch 15)
+// patch's `declarativeNetRequest` factory). `setPermissionCheck` (patch 21)
 // is what lets `{ permission: 'declarativeNetRequest' }` below gate on the
 // ORIGINAL permission Orivon recorded in `registry.ts`'s `StrippedRecord`,
 // since the loaded manifest no longer has it.
@@ -14,19 +14,29 @@ import { getDnrEngine, slotDirForLoadedExtension } from './extensions-dnr.js'
 import { writeDynamicRules, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
 import { readRegistry } from './registry-runner.js'
 import {
+  extensionIdsWithBadgeTextEnabled,
   getActionCount,
   getLoggedMatches,
   incrementActionCount,
   isDisplayActionCountAsBadgeTextEnabled,
+  resetActionCountForTab,
   setDisplayActionCountAsBadgeText,
 } from './dnr-match-log.js'
-import type { OnRuleMatched } from './dnr-webrequest.js'
+import type { OnRuleMatched, OnTabNavigated } from './dnr-webrequest.js'
 import type {
   DnrEngine,
 } from './dnr/dnr-engine.js'
 import type { DnrRequest, DnrResourceType, DnrRule, DnrUpdateRuleOptions, DnrUpdateRulesetOptions } from './dnr/types.js'
 
 const DNR_PERMISSION = 'declarativeNetRequest'
+
+/** The one method `registerDnrApiHandlers`'s badge wiring needs from
+ * `ElectronChromeExtensions` (`setBadgeText`, UPSTREAM.md patch 22) --
+ * narrowed to this rather than importing the whole ambient class type, so
+ * a test can fake it with a plain object instead of a real extension host. */
+export interface BadgeHost {
+  readonly setBadgeText: (extensionId: string, tabId: number, text: string) => void
+}
 
 /** A permission `loadableManifest` strips from the loaded copy (native
  * messaging and every `webRequest*`/`declarativeNetRequest*` name,
@@ -113,12 +123,18 @@ function engineOrThrow(): DnrEngine {
 /**
  * Registers every `declarativeNetRequest.*` main-side handler on `router`
  * (the session's own, via `ElectronChromeExtensions.getRouter()`). Returns
- * the `OnRuleMatched` callback `dnr-webrequest.ts`'s handlers should call
- * per matched rule, for the action-count badge and `onRuleMatchedDebug`
- * (kept separate from registration so a caller that only wants one of the
- * two -- e.g. a unit test -- does not have to fake a whole router).
+ * the two callbacks `dnr-webrequest.ts`'s handlers should call: `onRuleMatched`
+ * per matched rule (the action-count badge and `onRuleMatchedDebug`) and
+ * `onTabNavigated` per `main_frame` request (zeroes the count a fresh page
+ * starts, and blanks the badge of every extension in badge-count mode) --
+ * kept separate from registration so a caller that only wants one of the
+ * two -- e.g. a unit test -- does not have to fake a whole router.
  */
-export function registerDnrApiHandlers(router: ExtensionRouterHandle, userDataPath: string): OnRuleMatched {
+export function registerDnrApiHandlers(
+  router: ExtensionRouterHandle,
+  badgeHost: BadgeHost,
+  userDataPath: string
+): { readonly onRuleMatched: OnRuleMatched, readonly onTabNavigated: OnTabNavigated } {
   const handle = router.apiHandler()
   const gated = { permission: DNR_PERMISSION }
 
@@ -245,6 +261,7 @@ export function registerDnrApiHandlers(router: ExtensionRouterHandle, userDataPa
     const permissions = strippedPermissionsFor(userDataPath, info.extensionId)
     if (isDisplayActionCountAsBadgeTextEnabled(info.extensionId)) {
       incrementActionCount(info.extensionId, tabId, 1)
+      badgeHost.setBadgeText(info.extensionId, tabId, String(getActionCount(info.extensionId, tabId)))
     }
     // Chrome fires onRuleMatchedDebug only for an unpacked (development)
     // extension holding declarativeNetRequestFeedback; this checks the
@@ -257,7 +274,20 @@ export function registerDnrApiHandlers(router: ExtensionRouterHandle, userDataPa
     }
   }
 
-  return onRuleMatched
+  // Chrome starts a tab's matched-action count over on each new page load
+  // (dnr-webrequest.ts's own doc on OnTabNavigated says how a "main_frame
+  // request" is detected). Every extension's count for the tab is zeroed
+  // regardless of badge-count mode (getActionCount is still real state,
+  // declarativeNetRequest.getMatchedRules's own window included); only the
+  // ones actually showing it get their badge blanked.
+  const onTabNavigated: OnTabNavigated = (tabId) => {
+    resetActionCountForTab(tabId)
+    for (const extensionId of extensionIdsWithBadgeTextEnabled()) {
+      badgeHost.setBadgeText(extensionId, tabId, '')
+    }
+  }
+
+  return { onRuleMatched, onTabNavigated }
 }
 
 /** Exported for tests. */

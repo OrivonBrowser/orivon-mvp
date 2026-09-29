@@ -82,8 +82,8 @@ export const extensionsSubsystem: Subsystem = {
     // reaches either before the first extension loads regardless.
     attachExtensionsDnr(session.defaultSession, userDataPath)
     installDnrPermissionCheck(session.defaultSession, userDataPath)
-    const onRuleMatched = registerDnrApiHandlers(hostExtensions.getRouter(), userDataPath)
-    installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched)
+    const { onRuleMatched, onTabNavigated } = registerDnrApiHandlers(hostExtensions.getRouter(), hostExtensions, userDataPath)
+    installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
 
     await loadEnabledExtensions(userDataPath)
 
