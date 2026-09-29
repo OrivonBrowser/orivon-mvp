@@ -109,6 +109,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A crash while bookmarks or a profile are being saved leaves the previous file whole.**
+- **A second start with no window open shows a window only once it is drawn**, on its new-tab page
+  when no address was given.
+- **History search answers at once on a long history**, whether most pages match or almost none do.
+- **A private window keeps the keyboard shortcuts** of the profile that opened it.
 - **A native addon built with napi-rs loads**: its WebAssembly build gets Node-API and memory the way
   napi-rs's own loaders provide them, which a real napi-rs 3 addon needs.
 - **An app that listens for TCP connections receives them**: the broker now hands each accepted
