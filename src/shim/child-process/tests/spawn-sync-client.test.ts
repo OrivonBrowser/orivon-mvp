@@ -64,15 +64,46 @@ describe('over the synchronous channel', () => {
   it('execFileSync returns stdout alone', async () => {
     installFakeSpawnSync(() => ({ pid: 1, stdout: new TextEncoder().encode('ok'), stderr: new Uint8Array(0), status: 0, signal: null }))
     const cp = await import('../index.js')
-    expect(cp.execFileSync('/bin/echo').toString()).toBe('ok')
+    expect(cp.execFileSync('/bin/echo')?.toString()).toBe('ok')
   })
 
-  it('execFileSync throws on a non-zero status, with status/signal/stdout/stderr on the error', async () => {
-    installFakeSpawnSync(() => ({ pid: 1, stdout: new Uint8Array(0), stderr: new TextEncoder().encode('bad'), status: 3, signal: null }))
+  it('execFileSync throws on a non-zero status, with status/signal/pid/output/stdout/stderr on the error', async () => {
+    installFakeSpawnSync(() => ({ pid: 42, stdout: new Uint8Array(0), stderr: new TextEncoder().encode('bad'), status: 3, signal: null }))
     const cp = await import('../index.js')
     let caught: unknown
     try { cp.execFileSync('/bin/fail') } catch (error) { caught = error }
-    expect(caught).toMatchObject({ status: 3, signal: null, message: expect.stringContaining('Command failed') })
+    expect(caught).toMatchObject({
+      pid: 42, status: 3, signal: null, stdout: expect.anything(), stderr: expect.anything(),
+      output: [null, expect.anything(), expect.anything()], message: 'Command failed: /bin/fail\nbad'
+    })
+  })
+
+  // Finding 12: Node appends '\n<stderr>' to the "Command failed" message
+  // only when stderr is non-empty -- this used to append it (an empty line)
+  // unconditionally.
+  it('"Command failed" omits the trailing "\\n<stderr>" when stderr is empty', async () => {
+    installFakeSpawnSync(() => ({ pid: 1, stdout: new Uint8Array(0), stderr: new Uint8Array(0), status: 1, signal: null }))
+    const cp = await import('../index.js')
+    let caught: unknown
+    try { cp.execFileSync('/bin/fail') } catch (error) { caught = error }
+    expect((caught as Error).message).toBe('Command failed: /bin/fail')
+  })
+
+  // Finding 12: on a real spawn failure (result.error), Node still puts
+  // pid/output/stdout/stderr/status/signal onto the thrown error -- not just
+  // the bare wire error, so `catch (e) { e.stdout.toString() }` works.
+  it('execFileSync on a real spawn failure (result.error) also carries pid/output/stdout/stderr/status/signal', async () => {
+    installFakeSpawnSync(() => ({
+      pid: undefined, stdout: new Uint8Array(0), stderr: new Uint8Array(0), status: null, signal: null,
+      error: { name: 'Error', message: 'spawnSync /bin/missing ENOENT', code: 'ENOENT' }
+    }))
+    const cp = await import('../index.js')
+    let caught: unknown
+    try { cp.execFileSync('/bin/missing') } catch (error) { caught = error }
+    expect(caught).toMatchObject({
+      code: 'ENOENT', pid: undefined, status: null, signal: null, stdout: expect.anything(), stderr: expect.anything(),
+      output: [null, expect.anything(), expect.anything()]
+    })
   })
 
   it('execSync splits the command into a program and arguments, and refuses one that needs a shell', async () => {
@@ -97,5 +128,76 @@ describe('over the synchronous channel', () => {
     const cp = await import('../index.js')
     const result = cp.spawnSync('git', ['--version'])
     expect(result.error).toMatchObject({ code: 'ENOENT', message: 'spawn git ENOENT' })
+  })
+
+  // Finding 12: errno/syscall/path/spawnargs used to be dropped between the
+  // wire and the Error the caller sees -- only name/message/code survived.
+  it('spawnSync carries errno/syscall/path/spawnargs from the wire error onto the real Error', async () => {
+    installFakeSpawnSync(() => ({
+      pid: undefined, stdout: new Uint8Array(0), stderr: new Uint8Array(0), status: null, signal: null,
+      error: {
+        name: 'Error', message: 'spawnSync git ENOENT', code: 'ENOENT',
+        errno: -2, syscall: 'spawnSync git', path: 'git', spawnargs: ['git', '--version']
+      }
+    }))
+    const cp = await import('../index.js')
+    const result = cp.spawnSync('git', ['--version'])
+    expect(result.error).toMatchObject({
+      code: 'ENOENT', errno: -2, syscall: 'spawnSync git', path: 'git', spawnargs: ['git', '--version']
+    })
+  })
+})
+
+// Finding 6/12: an argument spawn() itself would reject synchronously (a
+// non-string or empty command) used to reach the fake sync channel anyway
+// and come back as `result.error`, since nothing validated it on this side
+// first -- Node throws these before ever blocking.
+describe('argument errors throw synchronously, never reaching the sync channel', () => {
+  it('an empty command', async () => {
+    const calls = installFakeSpawnSync(() => { throw new Error('must not be called') })
+    const cp = await import('../index.js')
+    expect(() => cp.spawnSync('')).toThrow(expect.objectContaining({ code: 'ERR_INVALID_ARG_VALUE' }))
+    expect(() => cp.execFileSync('')).toThrow(expect.objectContaining({ code: 'ERR_INVALID_ARG_VALUE' }))
+    expect(calls).toEqual([])
+  })
+
+  it('a non-string command', async () => {
+    const calls = installFakeSpawnSync(() => { throw new Error('must not be called') })
+    const cp = await import('../index.js')
+    expect(() => cp.spawnSync(123 as unknown as string)).toThrow(expect.objectContaining({ code: 'ERR_INVALID_ARG_TYPE' }))
+    expect(calls).toEqual([])
+  })
+})
+
+describe('stdio: pipe/ignore/inherit are honoured; anything else refuses by name', () => {
+  it('the default and \'pipe\' both request pipe on the wire', async () => {
+    const calls = installFakeSpawnSync(() => ({ pid: 1, stdout: new Uint8Array(0), stderr: new Uint8Array(0), status: 0, signal: null }))
+    const cp = await import('../index.js')
+    cp.spawnSync('/bin/echo')
+    cp.spawnSync('/bin/echo', [], { stdio: 'pipe' })
+    expect(calls.map((c) => c.stdio)).toEqual(['pipe', 'pipe'])
+  })
+
+  it('\'ignore\' and \'inherit\' both reach the wire, and the result carries null output, not empty bytes', async () => {
+    const calls = installFakeSpawnSync(() => ({ pid: 1, stdout: null, stderr: null, status: 0, signal: null }))
+    const cp = await import('../index.js')
+    const ignored = cp.spawnSync('/bin/echo', [], { stdio: 'ignore' })
+    const inherited = cp.spawnSync('/bin/echo', [], { stdio: 'inherit' })
+    expect(calls.map((c) => c.stdio)).toEqual(['ignore', 'inherit'])
+    expect(ignored).toMatchObject({ stdout: null, stderr: null, output: [null, null, null] })
+    expect(inherited).toMatchObject({ stdout: null, stderr: null, output: [null, null, null] })
+  })
+
+  it('execFileSync/execSync return null, not a buffer, when stdio is not \'pipe\'', async () => {
+    installFakeSpawnSync(() => ({ pid: 1, stdout: null, stderr: null, status: 0, signal: null }))
+    const cp = await import('../index.js')
+    expect(cp.execFileSync('/bin/echo', [], { stdio: 'inherit' })).toBeNull()
+  })
+
+  it('a per-stream array, a stream or a bare fd refuses by name, never reaching the wire', async () => {
+    const calls = installFakeSpawnSync(() => { throw new Error('must not be called') })
+    const cp = await import('../index.js')
+    expect(() => cp.spawnSync('/bin/echo', [], { stdio: ['pipe', 'pipe', 'pipe'] })).toThrow(/pipe.*ignore.*inherit/)
+    expect(calls).toEqual([])
   })
 })

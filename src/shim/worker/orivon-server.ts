@@ -34,8 +34,16 @@ export type CallRequest = CallBody & { readonly id: number, readonly sync?: true
 /** Everything call() dispatches through target() -- CallRequest minus the spawnSync variant, which call() answers through runSpawnSync instead. */
 type OrivonCallRequest = Exclude<CallRequest, { readonly spawnSync: unknown }>
 
-/** child_process's spawnSync/execSync/execFileSync, served where a Worker's orivon.* already is (child-process/spawn.ts's launch()). Payload and result are opaque -- see CallBody's own spawnSync doc comment. */
-export type RunSpawnSync = (payload: unknown) => Promise<unknown>
+/**
+ * child_process's spawnSync/execSync/execFileSync, served where a Worker's
+ * orivon.* already is (child-process/spawn.ts's launch()). Payload and
+ * result are opaque -- see CallBody's own spawnSync doc comment.
+ * `registerChild`, called synchronously once the grandchild itself exists,
+ * hands this server a way to kill it -- a Worker killed (or a page tab
+ * closed) while blocked in spawnSync must not leave its own grandchild
+ * running forever on the serving side (dispose()'s own doc comment).
+ */
+export type RunSpawnSync = (payload: unknown, registerChild: (kill: () => void) => void) => Promise<unknown>
 
 export type Request =
   | CallRequest
@@ -138,6 +146,8 @@ function channelOf (buffer: unknown): ReplyWriter | undefined {
 export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: RunSpawnSync): OrivonServer {
   const handles = new Map<number, LiveHandle>()
   const readers = new Map<number, ReadableStreamDefaultReader<unknown>>()
+  /** Every spawnSync grandchild currently running on this server's behalf -- killed by dispose(), never otherwise (each entry removes itself once its own call finishes, win or lose). */
+  const liveSpawnSync = new Set<() => void>()
   let replies: ReplyWriter | undefined
   let nextId = 1
 
@@ -237,7 +247,12 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
       let value: unknown
       if ('spawnSync' in request) {
         if (runSpawnSync === undefined) throw new Error('orivon has no method child_process.spawnSync')
-        value = await runSpawnSync(request.spawnSync)
+        let kill: (() => void) | undefined
+        try {
+          value = await runSpawnSync(request.spawnSync, (childKill) => { kill = childKill; liveSpawnSync.add(childKill) })
+        } finally {
+          if (kill !== undefined) liveSpawnSync.delete(kill)
+        }
       } else {
         const { fn, self } = target(request)
         if (typeof fn !== 'function') throw new TypeError(`orivon has no method ${'path' in request ? request.path.join('.') : request.method}`)
@@ -297,6 +312,12 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
       port.close()
       for (const reader of readers.values()) void reader.cancel().catch(() => {})
       readers.clear()
+      // A spawnSync grandchild does not belong to any handle above (its own
+      // ChildProcess is never exposed to the Worker that asked -- only the
+      // wire result is): without this, a Worker killed mid-spawnSync leaves
+      // it running forever on this side (finding 20).
+      for (const kill of liveSpawnSync) kill()
+      liveSpawnSync.clear()
       const open = [...handles.values()]
       handles.clear()
       await Promise.allSettled(open.map(async ({ handle }) => { await (handle.close as () => Promise<void>)() }))
