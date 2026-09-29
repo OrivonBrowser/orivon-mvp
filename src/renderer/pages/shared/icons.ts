@@ -1,9 +1,10 @@
 // Small outline icons for the shell's own pages: one per Settings nav entry,
 // Settings' own sidebar mark, and History's header/empty-state/remove marks.
-// Built on the chrome's own primitives (../../icons.js) so every hand-drawn
-// icon in Orivon is assembled the same way (code-guidelines.md Rule 3) --
-// never a copy of another application's icon set, and never an icon font.
-import { circle, line, path, rect, svg } from '../../icons.js'
+// Built on the shared primitives (./svg-primitives.js, also used by the
+// chrome's own icons.ts) so every hand-drawn icon in Orivon is assembled the
+// same way (code-guidelines.md Rule 3) -- never a copy of another
+// application's icon set, and never an icon font.
+import { circle, line, path, rect, svg } from './svg-primitives.js'
 
 /** A 24x24 outline icon, sized by CSS (`.icon`) rather than an attribute, so a
  * caller can make one bigger (a page header) or smaller (a nav row) with one class. */
