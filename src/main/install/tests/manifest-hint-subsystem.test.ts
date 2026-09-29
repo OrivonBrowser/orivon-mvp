@@ -65,7 +65,10 @@ describe('manifestHintSubsystem', () => {
     handler({ senderFrame: { url: 'https://app.example/page', origin: 'https://app.example' } }, 'https://app.example/manifest.json')
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(installApp).toHaveBeenCalledWith('https://app.example', 'https://app.example/manifest.json')
+    expect(installApp).toHaveBeenCalledWith(
+      'https://app.example', 'https://app.example/manifest.json',
+      expect.objectContaining({ window: expect.any(Function), stillOn: expect.any(Function) })
+    )
   })
 
   it('is not marked critical -- an unwired discovery trigger must never take the real browser down', () => {
