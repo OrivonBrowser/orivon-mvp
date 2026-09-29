@@ -43,14 +43,27 @@ export class PaneHost {
       this.backdrop = nextBackdrop
     }
     if (backdrop !== null) backdrop.view.setBounds(backdrop.bounds)
+    // A lone pane (the ordinary, undivided case) is appended with no index, exactly as before --
+    // where it lands relative to whatever else is on `contentView` has never mattered, since
+    // nothing else occupies its bounds. Only once there is a backdrop, or more than one pane, does
+    // the order among them matter (a split's two panes side by side): a genuinely new pane there
+    // goes right after the backdrop (if any) and every pane before it in `panes` -- an index
+    // counted purely among this host's own views, never the popovers/notice sharing `contentView`,
+    // which only ever append themselves with no index of their own (an insert at a low index never
+    // changes any of their relative order to one another, only shifts their numeric position).
+    // Keeps a split's two panes in the order `panes` gives them even when only one of the two is
+    // new -- Electron would otherwise put it above its partner, which an unconditional re-add of
+    // every pane used to fix as a side effect of raising both.
+    const ordered = panes.length > 1 || nextBackdrop !== null
+    let index = nextBackdrop !== null ? 1 : 0
     for (const pane of panes) {
       if (this.shown.get(pane.id) !== pane.view) {
-        // Genuinely new to the screen (or a different view under this id): the only case that
-        // gets an actual attach, which is also the one Electron may need to reorder.
-        this.contentView.addChildView(pane.view)
+        if (ordered) this.contentView.addChildView(pane.view, index)
+        else this.contentView.addChildView(pane.view)
         this.shown.set(pane.id, pane.view)
       }
       pane.view.setBounds(pane.bounds)
+      index += 1
     }
   }
 
