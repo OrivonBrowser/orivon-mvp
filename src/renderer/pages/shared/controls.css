@@ -20,11 +20,24 @@
 .btn.danger.armed:hover { filter: brightness(1.08); }
 
 .select, .text {
-  min-width: 220px;
   padding: 6px 10px;
   border: 1px solid var(--wborder);
   border-radius: 8px;
   background: var(--wsurface);
+}
+/* One width for every select in a card, so a short choice ("100%") and a
+   long one ("Only when I have bookmarks") don't leave a ragged right edge
+   down a column of rows; its own arrow replaces the platform's, coloured
+   per theme (--select-chevron) since `appearance: none` drops it. */
+.select {
+  width: 240px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  padding-right: 32px;
 }
 .text { width: 100%; max-width: 420px; }
 .text[aria-invalid="true"] { border-color: var(--wdanger); }
@@ -59,7 +72,7 @@
 }
 .switch input:checked + .track { background: var(--waccent); border-color: var(--waccent); }
 .switch input:checked + .track::after { background: #fff; transform: translateX(16px); }
-.switch input:focus-visible + .track { outline: 2px solid var(--waccent); outline-offset: 2px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--waccent-text); outline-offset: 2px; }
 
 /* A named colour for a mark someone chose (a profile) or one a page picked for
    them (a History row's site letter, or the protocol a dweb address needs

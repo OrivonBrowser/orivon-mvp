@@ -16,13 +16,22 @@
   --wink-off: rgba(0, 0, 0, 0.38);
   --whover: rgba(0, 0, 0, 0.06);
   --waccent: #4f46e5;
+  /* The accent AS TEXT OR AN ICON, apart from the accent as a fill (a solid
+     button, a toggle's "on" track): the same indigo reads fine as a small
+     fill with white on top, but as text or a stroke on the page's own
+     background it needs to be lighter in the dark theme to clear 4.5:1 -- a
+     fill's contrast is against the white it carries, not against the page,
+     so it does not need the same swap. */
+  --waccent-text: var(--waccent);
   --waccent-ink: #ffffff;
-  --waccent-wash: color-mix(in srgb, var(--waccent) 14%, transparent);
+  --waccent-wash: color-mix(in srgb, var(--waccent-text) 14%, transparent);
   --wdanger: #dc2626;
   --wdanger-wash: color-mix(in srgb, var(--wdanger) 10%, transparent);
   --wok: #00a848;
   --wwarn: #f97316;
   --wradius: 10px;
+  /* A `<select>`'s own chevron, re-coloured per theme below. */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23767680' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   color-scheme: light dark;
 }
 
@@ -38,7 +47,9 @@
     --wink-dim: #a4a5af;
     --wink-off: #6b7280;
     --whover: rgba(255, 255, 255, 0.07);
+    --waccent-text: #8b93f8;
     --wok: #00c950;
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a4a5af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 }
 
@@ -52,13 +63,18 @@ html, body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.45;
+  /* Inherited, so every scrolling box on a page (the sidebar's own scroll,
+     the content column, the page itself) gets the same thin, themed bar
+     rather than the platform's default arrows-and-track one. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--wborder) transparent;
 }
 
 h1, h2, h3, p { margin: 0; }
 
 button, input, select { font: inherit; color: inherit; }
 
-:focus-visible { outline: 2px solid var(--waccent); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: 2px; }
 
 .visually-hidden {
   position: absolute;
