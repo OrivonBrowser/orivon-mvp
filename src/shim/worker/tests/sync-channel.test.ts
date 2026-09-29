@@ -5,7 +5,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import esbuild from 'esbuild'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { serveOrivon } from '../orivon-server.js'
 import { MAX_REPLY_LENGTH, ReplyWriter, awaitReply, createChannelBuffer, decodeReply, encodeReply } from '../sync-channel.js'
@@ -92,5 +92,65 @@ describe('a Worker\'s synchronous orivon', () => {
       await server.dispose()
       await disk.cleanup()
     }
+  })
+})
+
+/** Lets serveOrivon's port.onmessage handler (and the async `call` it starts) run to completion, without a real Worker thread on the other end. */
+async function settle (): Promise<void> {
+  await new Promise((resolve) => { setImmediate(resolve) })
+  await new Promise((resolve) => { setImmediate(resolve) })
+}
+
+describe('serveOrivon\'s synchronous fallback reply, when the writer refuses what it is given', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('delivers a short, fixed error when the writer\'s own refusal carries a large message, never that message\'s text', async () => {
+    const bigMessage = 'x'.repeat(2_000)
+    const { port1, port2 } = new MessageChannel()
+    serveOrivon(port1 as unknown as globalThis.MessagePort, { test: { ok: () => 'fine' } })
+    const sent: Uint8Array[] = []
+    let calls = 0
+    // The FIRST send always refuses, with an exception whose own message is as large as the
+    // reply it was refusing would have been -- a fallback built from that exception's text,
+    // rather than a fixed one, would be just as large. The SECOND send stands in for
+    // ReplyWriter's real MAX_REPLY_LENGTH check at a size this test can reach without
+    // allocating gigabytes: past 200 bytes is "too large for this channel".
+    vi.spyOn(ReplyWriter.prototype, 'send').mockImplementation(function (bytes: Uint8Array) {
+      sent.push(bytes)
+      calls++
+      if (calls === 1) throw new Error(bigMessage)
+      if (bytes.length > 200) throw new RangeError('too large for this channel')
+    })
+
+    ;(port2 as unknown as globalThis.MessagePort).postMessage({ syncBuffer: createChannelBuffer() })
+    ;(port2 as unknown as globalThis.MessagePort).postMessage({ id: 1, path: ['test', 'ok'], args: [], sync: true })
+    await settle()
+
+    expect(sent).toHaveLength(2)
+    const fallback = decodeReply(sent[1] as Uint8Array) as { id: number, ok: boolean, error: { message: string } }
+    expect(fallback).toMatchObject({ id: 1, ok: false })
+    expect(fallback.error.message).not.toContain(bigMessage)
+    expect(fallback.error.message.length).toBeLessThan(200)
+  })
+
+  it('logs rather than leaving an unhandled rejection when even the fallback reply cannot be written', async () => {
+    const { port1, port2 } = new MessageChannel()
+    serveOrivon(port1 as unknown as globalThis.MessagePort, { test: { fail: () => { throw new Error('boom') } } })
+    vi.spyOn(ReplyWriter.prototype, 'send').mockImplementation(() => { throw new Error('the channel is gone') })
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const rejections: unknown[] = []
+    const onRejection = (reason: unknown): void => { rejections.push(reason) }
+    process.on('unhandledRejection', onRejection)
+
+    try {
+      ;(port2 as unknown as globalThis.MessagePort).postMessage({ syncBuffer: createChannelBuffer() })
+      ;(port2 as unknown as globalThis.MessagePort).postMessage({ id: 1, path: ['test', 'fail'], args: [], sync: true })
+      await settle()
+    } finally {
+      process.off('unhandledRejection', onRejection)
+    }
+
+    expect(rejections).toEqual([])
+    expect(errorLog).toHaveBeenCalled()
   })
 })

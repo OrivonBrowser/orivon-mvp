@@ -72,6 +72,9 @@ function wireErrorOf (error: unknown): WireError & { platformCode?: string } {
   return { ...toWireError(error), ...(typeof platformCode === 'string' ? { platformCode } : {}) }
 }
 
+/** What a Worker sees when its reply could not be written at all: fixed and short, never the failed write's own error text, which may be exactly what made it too large to write in the first place. */
+const FALLBACK_REPLY_ERROR: WireError = { name: 'OrivonShimError', message: 'the reply to this call could not be delivered', code: 'unavailable' }
+
 function notSynchronous (): Error {
   return Object.assign(new Error('a stream cannot be returned by a synchronous call'), { name: 'OrivonShimError', reason: 'not-applicable' })
 }
@@ -209,10 +212,17 @@ export function serveOrivon (port: MessagePort, orivon: object): OrivonServer {
     if (sync) {
       try {
         replies?.send(encodeSync(reply))
-      } catch (error) {
-        // The writer refused this reply (too large for the length header): answer with an
-        // error reply instead, same as one that failed to encode -- never leave the Worker waiting.
-        replies?.send(encodeSync({ id: request.id, ok: false, error: wireErrorOf(error) }))
+      } catch {
+        // The writer refused this reply (too large for the length header, most often): a fixed,
+        // short fallback replaces it -- never one built from the refusal's own error, which may
+        // be exactly as large as what was refused. Guarded again: ReplyWriter exposes no way to
+        // release a waiting Worker without writing a reply, so if even this cannot be written,
+        // the Worker stays blocked in Atomics.wait and this is the last thing that can be done.
+        try {
+          replies?.send(encodeSync({ id: request.id, ok: false, error: FALLBACK_REPLY_ERROR }))
+        } catch (error) {
+          console.error('[orivon] a synchronous reply could not be delivered to its Worker:', error)
+        }
       }
     } else post(reply, transfer)
   }
