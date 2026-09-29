@@ -36,8 +36,10 @@ export function restorePositionFor (pointer: Point, restoredWidth: number, grab:
 export type EdgeZone = 'maximize' | 'left' | 'right' | null
 
 /** Which edge of `workArea` a released pointer is close enough to for an Aero-snap-style tile: the top edge
- * maximizes, the left or right edge takes that half. `edge`, in pixels, is how close counts. */
-export function edgeZoneFor (pointer: Point, workArea: Rect, edge = 24): EdgeZone {
+ * maximizes, the left or right edge takes that half. `edge`, in pixels, is how close counts -- narrow enough
+ * that a window already flush with an edge (the common case just after a tile) can still be dragged away
+ * from it without the release re-triggering the same edge action. */
+export function edgeZoneFor (pointer: Point, workArea: Rect, edge = 2): EdgeZone {
   if (pointer.y < workArea.y + edge) return 'maximize'
   if (pointer.x < workArea.x + edge) return 'left'
   if (pointer.x >= workArea.x + workArea.width - edge) return 'right'

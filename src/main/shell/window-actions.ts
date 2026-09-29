@@ -132,11 +132,14 @@ export function shellActions (parts: WindowParts): ShellActions {
     windowMoveTo: (point) => {
       if (moveGrab === null) return
       if (window.isMaximized()) {
+        // getBounds() read right after unmaximize() still reports the maximized size on X11 (the
+        // request is asynchronous) -- getNormalBounds(), read before asking to unmaximize, is what
+        // the restored width, and the grab this recomputes for the moves after it, actually need.
+        const restored = window.getNormalBounds()
         window.unmaximize()
-        const restored = window.getBounds()
         const to = restorePositionFor(point, restored.width, moveGrab)
         window.setPosition(to.x, to.y)
-        moveGrab = grabFor(point, window.getBounds())
+        moveGrab = grabFor(point, { ...restored, x: to.x, y: to.y })
       } else {
         const to = positionFor(point, moveGrab)
         window.setPosition(to.x, to.y)

@@ -32,13 +32,18 @@ describe('restorePositionFor', () => {
 describe('edgeZoneFor', () => {
   const workArea = { x: 0, y: 0, width: 1920, height: 1080 }
 
-  it('maximizes when released near the top edge', () => {
-    expect(edgeZoneFor({ x: 900, y: 5 }, workArea)).toBe('maximize')
+  it('maximizes only right at the top edge', () => {
+    expect(edgeZoneFor({ x: 900, y: 1 }, workArea)).toBe('maximize')
+    // A top-aligned window (already flush with the edge, the common case just after a tile) can
+    // still be dragged sideways: a release a few pixels down is no longer "the top edge".
+    expect(edgeZoneFor({ x: 900, y: 5 }, workArea)).toBeNull()
   })
 
-  it('tiles left or right near those edges', () => {
-    expect(edgeZoneFor({ x: 2, y: 500 }, workArea)).toBe('left')
-    expect(edgeZoneFor({ x: 1918, y: 500 }, workArea)).toBe('right')
+  it('tiles left or right only right at those edges', () => {
+    expect(edgeZoneFor({ x: 1, y: 500 }, workArea)).toBe('left')
+    expect(edgeZoneFor({ x: 1919, y: 500 }, workArea)).toBe('right')
+    expect(edgeZoneFor({ x: 2, y: 500 }, workArea)).toBeNull()
+    expect(edgeZoneFor({ x: 1917, y: 500 }, workArea)).toBeNull()
   })
 
   it('is nothing away from every edge', () => {
@@ -46,7 +51,7 @@ describe('edgeZoneFor', () => {
   })
 
   it('the top edge wins a corner', () => {
-    expect(edgeZoneFor({ x: 2, y: 2 }, workArea)).toBe('maximize')
+    expect(edgeZoneFor({ x: 1, y: 1 }, workArea)).toBe('maximize')
   })
 })
 
