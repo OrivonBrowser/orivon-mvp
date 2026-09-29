@@ -61,10 +61,16 @@ v1-to-v2 migration, which `rebuild`s it from every row already in `pages` -- mea
 
 **FTS5's own `secure-delete` is on**, set once in that same migration and persisting across every later reopen:
 without it, forgetting a page's ordinary FTS5 delete only tombstones its posting, leaving the trigrams it once
-held in already-allocated index pages that `secure_delete`/VACUUM on `pages` itself cannot reach. With it,
-`remove`, `removeRange`, `trim` and `clear` all erase the posting at delete time, at a real cost:
-`removeRange` of 10,000 of 100,000 rows measured at roughly 3.2-3.5s with it on, against about 0.26s without --
-paid on an explicit "forget" action, never on the read or write path a person waits on.
+held in already-allocated index pages that `secure_delete`/VACUUM on `pages` itself cannot reach. With it, the
+per-row path costs roughly 0.33ms per row deleted, fine for `remove` but not for forgetting many at once.
+
+**`remove`, `removeRange`, `trim` and `clear` share one bulk-delete path** for that case: when the rows to
+delete are large enough against what remains (`BULK_DELETE_ROW_RATIO`; `clear` always qualifies), one
+transaction drops the FTS5 index and its triggers, deletes at plain SQLite speed, then rebuilds the index
+(`FTS_INDEX_DDL`, the same DDL the v1-to-v2 migration uses) from what is left, at roughly 0.019ms per remaining
+row -- `secure_delete` zeroes the dropped table's freed pages exactly as it does a per-row `DELETE`'s. Measured
+on 100,000 rows: `clear` in ~0.3s (35-47s per-row); `removeRange` of 10,000 in ~0.6-1.6s (3.5-6s per-row); a
+90-day-retention `prune` of 50,000 in ~0.6-1.2s (~20s per-row).
 
 **A file that cannot be used is left alone.** If the database is damaged or from a newer version, history is off
 for that run and Settings says why; the file is neither deleted nor replaced, so nothing a person could recover is

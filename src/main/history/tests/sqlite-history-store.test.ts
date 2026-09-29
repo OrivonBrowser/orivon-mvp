@@ -12,6 +12,19 @@ const B = 'https://b.example/page'
 
 const store = (): SqliteHistoryStore => new SqliteHistoryStore(':memory:')
 
+/** pages_fts_data's own footprint: a trigram tokenizer never stores more than three original characters
+ * contiguously, so there is no literal substring to grep for, but a forgotten row's postings that are not
+ * actually erased (no secure-delete, or a bulk path that does not truly drop and rebuild) leave bytes here
+ * that a row erased cleanly does not. */
+function ftsDataFootprint (path: string): number {
+  const db = new DatabaseSync(path)
+  try {
+    return (db.prepare('SELECT SUM(LENGTH(block)) AS n FROM pages_fts_data').get() as { n: number | null }).n ?? 0
+  } finally {
+    db.close()
+  }
+}
+
 describe('the SQLite history store', () => {
   it('keeps a page once, with how many times and when it was last reached', () => {
     const history = store()
@@ -408,15 +421,6 @@ describe('what forgetting a page leaves in the FTS5 index', () => {
   // it nothing, so the shadow table stays near its empty, structural size however many rows were forgotten.
   const NEAR_EMPTY_FOOTPRINT = 2000
 
-  function ftsDataFootprint (path: string): number {
-    const db = new DatabaseSync(path)
-    try {
-      return (db.prepare('SELECT SUM(LENGTH(block)) AS n FROM pages_fts_data').get() as { n: number | null }).n ?? 0
-    } finally {
-      db.close()
-    }
-  }
-
   async function forgetsCleanly (name: string, forget: (history: SqliteHistoryStore) => void): Promise<void> {
     const dir = await mkdtemp(join(tmpdir(), `orivon-history-fts-privacy-${name}-`))
     try {
@@ -444,5 +448,109 @@ describe('what forgetting a page leaves in the FTS5 index', () => {
 
   it('clear() does not accumulate stale postings', async () => {
     await forgetsCleanly('clear', (history) => { history.clear() })
+  })
+})
+
+describe('the bulk delete path (dropping and rebuilding the FTS5 index, instead of the per-row trigger)', () => {
+  const NEAR_EMPTY_FOOTPRINT = 2000
+
+  function rawLike (db: DatabaseSync, term: string): number[] {
+    const pattern = `%${term.replace(/[\\%_]/g, (character) => `\\${character}`)}%`
+    return (db.prepare("SELECT id FROM pages WHERE title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\'")
+      .all(pattern, pattern) as Array<{ id: number }>).map((row) => row.id).sort()
+  }
+
+  it('a bulk delete (forced, with plenty of rows left over) leaves no more behind than starting fresh with just the survivors', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'orivon-history-bulk-privacy-'))
+    try {
+      const path = join(dir, 'history.db')
+      // Ratio 1: bulk as soon as toDelete alone exceeds what remains, not just when nothing remains --
+      // deleting 200 of 300 (100 left) clears that bar and still leaves most of the table in place, so the
+      // 100 rows that survive still cost real index bytes; what this checks is that the 200 forgotten ones
+      // do not cost anything on top of that.
+      const history = new SqliteHistoryStore(path, { bulkDeleteRowRatio: 1 })
+      for (let n = 0; n < 300; n += 1) history.record(`https://churn${String(n)}.example/marker${String(n)}`, `Churn Title ${String(n)}`, n)
+      history.flush()
+      history.removeRange(0, 199) // deletes the earliest 200 of 300 -- 100 remain, comfortably bulk at ratio 1
+      expect(history.count()).toBe(100)
+      history.close()
+
+      const freshDir = await mkdtemp(join(tmpdir(), 'orivon-history-bulk-privacy-fresh-'))
+      try {
+        const freshPath = join(freshDir, 'history.db')
+        const fresh = new SqliteHistoryStore(freshPath)
+        for (let n = 200; n < 300; n += 1) fresh.record(`https://churn${String(n)}.example/marker${String(n)}`, `Churn Title ${String(n)}`, n)
+        fresh.flush()
+        fresh.close()
+        // Some slack for structural/segment-count differences unrelated to the 200 forgotten rows; the
+        // stale-tombstone leak this guards against is one order of magnitude, not a few hundred bytes.
+        expect(ftsDataFootprint(path)).toBeLessThan(ftsDataFootprint(freshPath) * 2)
+      } finally {
+        await rm(freshDir, { recursive: true, force: true })
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('a clear of many pages leaves pages_fts empty, and a page recorded afterward is still searchable', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'orivon-history-bulk-clear-'))
+    try {
+      const path = join(dir, 'history.db')
+      const history = new SqliteHistoryStore(path)
+      for (let n = 0; n < 1000; n += 1) history.record(`https://churn${String(n)}.example/marker${String(n)}`, `Churn Title ${String(n)}`, n)
+      history.flush()
+      history.clear()
+      expect(history.count()).toBe(0)
+      expect(history.list({ search: 'churn' })).toEqual([])
+
+      history.record('https://after.example/', 'Recorded After Clearing', 5000)
+      history.flush()
+      expect(history.list({ search: 'recorded' }).map((entry) => entry.url)).toEqual(['https://after.example/'])
+
+      history.close()
+      expect(ftsDataFootprint(path)).toBeLessThan(NEAR_EMPTY_FOOTPRINT)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('a bulk removeRange and a per-row removeRange give the same search results as a raw LIKE query', () => {
+    const build = (bulkDeleteRowRatio: number): SqliteHistoryStore => {
+      const history = new SqliteHistoryStore(':memory:', { bulkDeleteRowRatio })
+      for (let n = 0; n < 300; n += 1) history.record(`https://site${String(n)}.example/`, `Common Marker ${String(n)}`, n)
+      history.flush()
+      return history
+    }
+    // Ratio 1 makes any nonzero delete against fewer remaining rows bulk; ratio 1,000,000 makes the same
+    // delete stay per-row (no realistic toDelete clears that bar).
+    const bulk = build(1)
+    const perRow = build(1_000_000)
+    for (const history of [bulk, perRow]) history.removeRange(0, 199) // both remove the same 200 of 300
+
+    const db = (bulk as unknown as { db: DatabaseSync }).db
+    const expected = rawLike(db, 'marker')
+    expect(bulk.list({ search: 'marker', limit: 500 }).map((entry) => entry.id).sort()).toEqual(expected)
+    expect(perRow.list({ search: 'marker', limit: 500 }).map((entry) => entry.id).sort()).toEqual(expected)
+  })
+
+  it('the FTS index never disagrees with pages, through either delete path, including trim()', () => {
+    // maxPages/checkEvery small enough that recording past 150 pages makes trim() fire for real (private,
+    // reached only through record()/flush() -- not called directly); bulkDeleteRowRatio 1 forces its
+    // delete, and remove()'s and removeRange()'s below, onto the bulk path whenever there is anything to
+    // delete at all.
+    const history = new SqliteHistoryStore(':memory:', { maxPages: 150, checkEvery: 10, bulkDeleteRowRatio: 1 })
+    for (let n = 0; n < 200; n += 1) history.record(`https://site${String(n)}.example/`, `Word${String(n % 7)} Title ${String(n)}`, n)
+    history.flush()
+    expect(history.count()).toBeLessThanOrEqual(150) // trim() already ran during the recording above
+
+    history.remove(history.list()[0]?.id ?? -1) // a single id, not through removeRange/trim/clear
+    history.removeRange(120, 160)
+
+    const db = (history as unknown as { db: DatabaseSync }).db
+    for (const term of ['word0', 'word3', 'word6', 'title']) {
+      expect(history.list({ search: term, limit: 500 }).map((entry) => entry.id).sort(), term)
+        .toEqual(rawLike(db, term))
+    }
   })
 })

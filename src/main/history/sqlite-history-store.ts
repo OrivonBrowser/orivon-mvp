@@ -29,6 +29,11 @@ const FTS_MIN_SEARCH_LENGTH = 3
  * gather most of the table before ORDER BY/LIMIT could cut it off, where LIKE walks the last-visit index
  * and stops at one page. */
 const FTS_DENSITY_LIMIT = 500
+/** Above this many rows to delete per row left afterward, dropping the FTS5 index for the delete and
+ * rebuilding it once from what remains beats deleting through the per-row secure-delete trigger: measured
+ * at roughly 0.33ms/row deleted that way against roughly 0.019ms per row a rebuild has to index, a ~17:1
+ * cost ratio the delete side crosses well before 16:1. */
+const BULK_DELETE_ROW_RATIO = 16
 
 type Change =
   | { readonly type: 'visit', readonly url: string, readonly title: string, readonly at: number }
@@ -53,6 +58,26 @@ const LIKE_CONDITION = "(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')"
  * for Unicode, where LIKE folds only ASCII), so LIKE stays the one definition of "matches" either way. */
 const LIKE_CONDITION_P = "(p.title LIKE ? ESCAPE '\\' OR p.url LIKE ? ESCAPE '\\')"
 
+/** The trigram FTS5 index over `pages(title, url)` and the triggers that keep it in step with every insert,
+ * update and delete on `pages` -- including a bulk UPDATE/DELETE, since SQLite fires the same row-level
+ * triggers for those. `content=` makes it an external-content table: the text is never duplicated, only
+ * indexed. One definition, used both by the v1-to-v2 migration and by `rebuildFtsIndex` after a bulk
+ * delete has dropped it -- CREATE, not re-CREATE, either way, since both start from it not existing. */
+const FTS_INDEX_DDL = `
+  CREATE VIRTUAL TABLE pages_fts USING fts5(title, url, content='pages', content_rowid='id', tokenize='trigram');
+  INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 1);
+  CREATE TRIGGER pages_fts_ai AFTER INSERT ON pages BEGIN
+    INSERT INTO pages_fts(rowid, title, url) VALUES (new.id, new.title, new.url);
+  END;
+  CREATE TRIGGER pages_fts_ad AFTER DELETE ON pages BEGIN
+    INSERT INTO pages_fts(pages_fts, rowid, title, url) VALUES ('delete', old.id, old.title, old.url);
+  END;
+  CREATE TRIGGER pages_fts_au AFTER UPDATE ON pages WHEN old.title IS NOT new.title OR old.url IS NOT new.url BEGIN
+    INSERT INTO pages_fts(pages_fts, rowid, title, url) VALUES ('delete', old.id, old.title, old.url);
+    INSERT INTO pages_fts(rowid, title, url) VALUES (new.id, new.title, new.url);
+  END;
+`
+
 export class SqliteHistoryStore implements HistoryStore {
   readonly kind = 'sqlite'
   private readonly db: DatabaseSync
@@ -75,6 +100,9 @@ export class SqliteHistoryStore implements HistoryStore {
     /** How many rows (up to `searchDensityLimit`) a trigram search would return: what `list` checks to choose
      * the FTS path or the LIKE fallback. */
     searchDensityProbe: StatementSync
+    /** How many pages would end up with no visits left in [from, to] -- what `removeRange` checks against
+     * how many would remain, to choose the bulk or per-row delete path. */
+    removeRangeCountToDelete: StatementSync
     /** One per WHERE shape `list` can need: with or without `after`, and none/LIKE/FTS for `search`. */
     list: {
       plain: StatementSync
@@ -86,15 +114,26 @@ export class SqliteHistoryStore implements HistoryStore {
     }
   }
 
-  private readonly limits: { readonly maxPages: number, readonly checkEvery: number, readonly searchDensityLimit: number }
+  private readonly limits: {
+    readonly maxPages: number
+    readonly checkEvery: number
+    readonly searchDensityLimit: number
+    readonly bulkDeleteRowRatio: number
+  }
 
   /** `path` may be `:memory:`. Throws if the file is not a database this can use. `limits` is for tests: any
    * field left out keeps its production default. */
-  constructor (path: string, limits: { readonly maxPages?: number, readonly checkEvery?: number, readonly searchDensityLimit?: number } = {}) {
+  constructor (path: string, limits: {
+    readonly maxPages?: number
+    readonly checkEvery?: number
+    readonly searchDensityLimit?: number
+    readonly bulkDeleteRowRatio?: number
+  } = {}) {
     this.limits = {
       maxPages: limits.maxPages ?? MAX_PAGES,
       checkEvery: limits.checkEvery ?? TRIM_CHECK_EVERY,
-      searchDensityLimit: limits.searchDensityLimit ?? FTS_DENSITY_LIMIT
+      searchDensityLimit: limits.searchDensityLimit ?? FTS_DENSITY_LIMIT,
+      bulkDeleteRowRatio: limits.bulkDeleteRowRatio ?? BULK_DELETE_ROW_RATIO
     }
     this.db = new DatabaseSync(path)
     try {
@@ -119,6 +158,12 @@ export class SqliteHistoryStore implements HistoryStore {
             last_visit = COALESCE((SELECT MAX(at) FROM visits WHERE page_id = pages.id), 0)
         `),
         removeRangeDeleteEmptyPages: this.db.prepare('DELETE FROM pages WHERE visit_count = 0'),
+        // A page ends up with none of its visits left once [from, to] is removed exactly when every visit
+        // it has now falls inside that range -- there is no visit of its outside it.
+        removeRangeCountToDelete: this.db.prepare(`
+          SELECT COUNT(*) AS n FROM pages p
+          WHERE NOT EXISTS (SELECT 1 FROM visits v WHERE v.page_id = p.id AND (v.at < ? OR v.at > ?))
+        `),
         searchDensityProbe: this.db.prepare(
           `SELECT COUNT(*) AS n FROM (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ? LIMIT ${String(this.limits.searchDensityLimit)})`
         ),
@@ -174,32 +219,49 @@ export class SqliteHistoryStore implements HistoryStore {
     if (version < 2) this.migrateToSearchIndex()
   }
 
-  /** Adds the trigram FTS5 index over `pages(title, url)` and the triggers that keep it in step with every
-   * insert, update and delete on `pages` -- including the bulk UPDATE/DELETE `removeRange` runs, which fire
-   * the same row-level triggers as a single-row change. `content=` makes it an external-content table: the
-   * text is never duplicated, only indexed, and `rebuild` builds that index from every row already there.
-   * `secure-delete` is set once here and stays set across every later reopen: without it, FTS5's own delete
+  /** Adds the trigram FTS5 index (`FTS_INDEX_DDL`) and rebuilds it from every row already in `pages`.
+   * `secure-delete`, part of that DDL, stays set across every later reopen: without it, FTS5's own delete
    * only tombstones a posting, leaving it in already-allocated pages that `secure_delete`/VACUUM on `pages`
    * itself cannot reach (see the test file's "what forgetting a page leaves" describe). */
   private migrateToSearchIndex (): void {
     this.db.exec('BEGIN')
     try {
-      this.db.exec(`
-        CREATE VIRTUAL TABLE pages_fts USING fts5(title, url, content='pages', content_rowid='id', tokenize='trigram');
-        INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 1);
-        CREATE TRIGGER pages_fts_ai AFTER INSERT ON pages BEGIN
-          INSERT INTO pages_fts(rowid, title, url) VALUES (new.id, new.title, new.url);
-        END;
-        CREATE TRIGGER pages_fts_ad AFTER DELETE ON pages BEGIN
-          INSERT INTO pages_fts(pages_fts, rowid, title, url) VALUES ('delete', old.id, old.title, old.url);
-        END;
-        CREATE TRIGGER pages_fts_au AFTER UPDATE ON pages WHEN old.title IS NOT new.title OR old.url IS NOT new.url BEGIN
-          INSERT INTO pages_fts(pages_fts, rowid, title, url) VALUES ('delete', old.id, old.title, old.url);
-          INSERT INTO pages_fts(rowid, title, url) VALUES (new.id, new.title, new.url);
-        END;
-        INSERT INTO pages_fts(pages_fts) VALUES ('rebuild');
-        PRAGMA user_version = 2;
-      `)
+      this.rebuildFtsIndex()
+      this.db.exec('PRAGMA user_version = 2')
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.rollback()
+      throw error
+    }
+  }
+
+  /** Drops the FTS5 index and the triggers that feed it -- triggers are schema objects of their own, defined
+   * `ON pages`, and are not dropped along with the virtual table they reference. Used only inside `deleteRows`'s
+   * bulk path, always paired with `rebuildFtsIndex` in the same transaction: the store is never left with a
+   * caller able to observe `pages` without a matching index. */
+  private dropFtsIndex (): void {
+    this.db.exec('DROP TRIGGER pages_fts_ai; DROP TRIGGER pages_fts_ad; DROP TRIGGER pages_fts_au; DROP TABLE pages_fts;')
+  }
+
+  /** Recreates the FTS5 index from `FTS_INDEX_DDL` and rebuilds it from every row currently in `pages`. */
+  private rebuildFtsIndex (): void {
+    this.db.exec(FTS_INDEX_DDL)
+    this.db.exec("INSERT INTO pages_fts(pages_fts) VALUES ('rebuild')")
+  }
+
+  /** Deletes rows through `mutate`, inside one transaction, choosing between two paths that leave the same
+   * result: per-row, where `mutate`'s DELETE/UPDATE fires the FTS5 triggers already in place (secure-delete,
+   * ~0.33ms per row deleted); or, when `toDelete` is large enough against `remaining` (`BULK_DELETE_ROW_RATIO`),
+   * bulk -- drop the index for `mutate`, so it runs at plain SQLite speed, then rebuild the index once from
+   * what is left (~0.019ms per remaining row). `PRAGMA secure_delete = ON` zeroes DROP TABLE's freed pages
+   * exactly as it does a per-row DELETE's, so both paths leave nothing of a forgotten row recoverable. */
+  private deleteRows (toDelete: number, remaining: number, mutate: () => void): void {
+    const bulk = toDelete * this.limits.bulkDeleteRowRatio > remaining
+    this.db.exec('BEGIN')
+    try {
+      if (bulk) this.dropFtsIndex()
+      mutate()
+      if (bulk) this.rebuildFtsIndex()
       this.db.exec('COMMIT')
     } catch (error) {
       this.rollback()
@@ -269,7 +331,9 @@ export class SqliteHistoryStore implements HistoryStore {
     this.newPagesSinceCheck = 0
     const total = (this.statements.count.get() as { n: number }).n
     if (total <= this.limits.maxPages) return
-    this.statements.trimDelete.run(total - Math.floor(this.limits.maxPages * 0.9))
+    const remaining = Math.floor(this.limits.maxPages * 0.9)
+    const toDelete = total - remaining
+    this.deleteRows(toDelete, remaining, () => { this.statements.trimDelete.run(toDelete) })
   }
 
   list (query: HistoryQuery = {}): HistoryEntry[] {
@@ -331,22 +395,21 @@ export class SqliteHistoryStore implements HistoryStore {
 
   removeRange (from: number, to: number): void {
     this.drain()
-    this.db.exec('BEGIN')
-    try {
+    const toDelete = (this.statements.removeRangeCountToDelete.get(from, to) as { n: number }).n
+    const total = (this.statements.count.get() as { n: number }).n
+    this.deleteRows(toDelete, total - toDelete, () => {
       this.statements.removeRangeDeleteVisits.run(from, to)
       this.statements.removeRangeUpdatePages.run()
       this.statements.removeRangeDeleteEmptyPages.run()
-      this.db.exec('COMMIT')
-    } catch (error) {
-      this.rollback()
-      throw error
-    }
+    })
     this.dropLog()
   }
 
   clear (): void {
     this.queue.length = 0
-    this.db.exec('DELETE FROM visits; DELETE FROM pages;')
+    const total = (this.statements.count.get() as { n: number }).n
+    // Always the bulk path (remaining is 0), unless there was nothing to delete in the first place.
+    this.deleteRows(total, 0, () => { this.db.exec('DELETE FROM visits; DELETE FROM pages;') })
     this.dropLog()
     // Rewrites the file so the space the addresses were in is not left behind.
     this.db.exec('VACUUM')
