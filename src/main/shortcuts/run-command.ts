@@ -63,6 +63,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'nav.hardReload': tabs.activeWebContents()?.reloadIgnoringCache(); return
     case 'nav.home': goHome(tabs, services.settings, { newTab: false }); return
     case 'nav.stop': tabs.activeWebContents()?.stop(); return
+    case 'focus.nextPane': return
+    case 'focus.previousPane': return
     case 'nav.focusAddress':
       chrome.webContents.focus()
       chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'focusAddress' })
@@ -118,14 +120,19 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.mute': if (active !== undefined) toggleMute(tabs, active.id); return
     case 'tab.closeOthers': if (active !== undefined) closeOthers(tabs, active.id); return
     case 'tab.closeRight': if (active !== undefined) closeToRight(tabs, active.id); return
+    case 'tab.group': return
+    case 'tab.ungroup': return
+    case 'tab.sleep': return
     case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
+    case 'window.newGuest': return
     case 'profiles.open': tabs.openInternal('profiles'); return
     case 'downloads.open': tabs.openInternal('downloads'); return
     case 'window.close': window.close(); return
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
     case 'bookmarks.toggleBar': toggleBookmarksBar(services); return
     case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
+    case 'sidePanel.toggle': return
     case 'settings.open': tabs.openInternal('settings'); return
     case 'passwords.open': return
     case 'siteSettings.open': return
@@ -137,6 +144,9 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return
+    case 'page.reader': return
+    case 'page.forceDark': return
+    case 'caret.toggle': return
     case 'share.copyLink': return
     case 'share.email': return
     case 'site.certificate': return
