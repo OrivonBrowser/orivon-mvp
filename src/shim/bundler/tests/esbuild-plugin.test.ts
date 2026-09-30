@@ -50,6 +50,15 @@ describe('orivonShimPlugin', () => {
     expect(inputs.some((input) => input.includes('node_modules/events/'))).toBe(true)
   })
 
+  it('hands a bundled CommonJS require() of a module that is itself a function (assert) that function, not the namespace', async () => {
+    const { text } = await bundle("const assert = require('assert')\nconsole.log(JSON.stringify([typeof assert, typeof assert.strictEqual, typeof assert.AssertionError]))\nassert(true, 'fine')")
+    const file = join(dir, 'require-assert.mjs')
+    writeFileSync(file, text)
+    const result = spawnNode(file)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual(['function', 'function', 'function'])
+  })
+
   it('does not capture a subpath', async () => {
     writeFileSync(join(dir, 'sub.js'), 'export default 1')
     const { text } = await bundle(`import x from './sub.js'\nglobalThis.x = x`)

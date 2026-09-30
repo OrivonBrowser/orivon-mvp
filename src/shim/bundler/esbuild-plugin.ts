@@ -26,6 +26,7 @@ const NODE_BUILTINS = new Set(builtinModules)
 const NODE_MODULES_DIR = `${CHECKOUT_ROOT}node_modules${sep}`
 const EMPTY_MODULE = `${HERE}empty.cjs`
 const PACKAGE_RESOLVE_MARK = 'orivon-shim-package-resolve'
+const REQUIRE_NAMESPACE = 'orivon-shim-require'
 
 /** The SQLite engine's browser build: the package's `node` export condition names a build that reads the disk with Node's own `fs`. */
 const SQLITE_ENGINE = `${NODE_MODULES_DIR}@sqlite.org${sep}sqlite-wasm${sep}dist${sep}index.mjs`
@@ -238,12 +239,21 @@ export function orivonShimPlugin (): Plugin {
         build.onResolve({ filter: new RegExp(entry.prefixOnly === true ? `^node:${escaped}$` : `^(?:node:)?${escaped}$`) }, async (args) => {
           // A package row's own inner resolve passes back through here.
           if (args.pluginData === PACKAGE_RESOLVE_MARK) return undefined
-          if (entry.kind === 'local') return { path: join(SHIM_DIR, entry.implementation.replace(/\.js$/, '.ts')) }
+          if (entry.kind === 'local') {
+            const path = join(SHIM_DIR, entry.implementation.replace(/\.js$/, '.ts'))
+            // A CommonJS `require('assert')` is the function itself in Node: esbuild would hand it the ES module's namespace.
+            return args.kind === 'require-call' ? { path, namespace: REQUIRE_NAMESPACE } : { path }
+          }
           packageRows[entry.specifier] ??= build.resolve(packageRequest(entry.implementation), { kind: args.kind, resolveDir: CHECKOUT_ROOT, pluginData: PACKAGE_RESOLVE_MARK })
           const resolved = await packageRows[entry.specifier]!
           return resolved.errors.length > 0 ? { errors: resolved.errors } : { path: resolved.path }
         })
       }
+      build.onLoad({ filter: /.*/, namespace: REQUIRE_NAMESPACE }, (args) => ({
+        contents: `import * as namespace from ${JSON.stringify(args.path)}\nmodule.exports = typeof namespace.default === 'function' ? namespace.default : Object.defineProperty({ ...namespace }, '__esModule', { value: true })\n`,
+        loader: 'js',
+        resolveDir: SHIM_DIR
+      }))
       build.onResolve({ filter: /^(?:node:|[a-z_])/ }, (args) => {
         if (args.pluginData === PACKAGE_RESOLVE_MARK) return undefined
         const bare = args.path.replace(/^node:/, '')
