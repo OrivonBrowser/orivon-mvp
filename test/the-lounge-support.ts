@@ -17,7 +17,7 @@ export const ORIGIN = `http://127.0.0.1:${String(SERVE_PORT)}`
 /** The port orivon.json fixes for the server's listener, and the address of the page it serves. */
 export const LOUNGE_PORT = 9000
 export const LOUNGE_URL = `http://lounge.localhost:${String(LOUNGE_PORT)}/`
-/** The fake IRC server's port: the only loopback address orivon.json grants a connection to. */
+/** The fake IRC server's port: a loopback port the port's orivon.json names exactly, since the broker reserves 6667 from any range. */
 export const IRC_PORT = 6667
 
 export const ACCOUNT = { name: 'orivon-tester', password: 'correct horse battery staple' }
