@@ -8,7 +8,7 @@ export interface DayGroup {
   readonly entries: readonly HistoryEntry[]
 }
 
-const startOfDay = (time: number): number => {
+export const startOfDay = (time: number): number => {
   const date = new Date(time)
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
 }
