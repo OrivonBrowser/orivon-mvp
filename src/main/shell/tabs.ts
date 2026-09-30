@@ -10,7 +10,7 @@
 // link, form or script navigation that changes a tab's origin is caught by
 // wireView()'s did-navigate handler, which repartitions the same way a typed
 // cross-origin navigation does (repartitionView()'s own doc: the residual).
-import type { LoadURLOptions, WebContentsView, View } from 'electron'
+import type { LoadURLOptions, View } from 'electron'
 import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
@@ -28,7 +28,7 @@ import { TabOpener } from './tab-open.js'
 import { TabPanes } from './tab-panes.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
-import type { TabState, TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
+import type { TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
 
 export class TabManager {
   /** One record per tab: a second, parallel map is the leak class this avoids. */
