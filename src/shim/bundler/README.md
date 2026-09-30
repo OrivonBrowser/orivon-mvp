@@ -100,6 +100,12 @@ already bundled.
 **A package row named like a builtin is asked for with a trailing slash** (`events/`). Under
 `platform: 'node'`, esbuild otherwise answers `events` with the builtin.
 
+**A CommonJS `require()` of a local module whose default export is a function gets that function.**
+`require('assert')` is the function in Node, and a dependency calls it (`assert(ok, message)`), while
+esbuild answers a `require()` of an ES module with its namespace. The plugin answers a `require-call` of
+a local row with a small CommonJS wrapper (the `orivon-shim-require` namespace) that exports the default
+when it is callable and a copy of the namespace otherwise, so `require('fs').x = y` still patches.
+
 **What it may depend on.** Node's own modules, and `import type` from `esbuild`.
 **What it must never import.** Any other file of this repository, [`src/broker/`](../../broker/)
 or `electron`. `is-shim-source.ts` treats this directory as build tooling: a module here resolves

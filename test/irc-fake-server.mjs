@@ -1,6 +1,6 @@
 // A minimal IRC server for end-to-end tests, on `node:net`: enough of RFC 1459/2812 for a real
 // client to register, join a channel, exchange messages and answer its keep-alive. It records
-// every line it receives, and can speak as another nick.
+// every line it receives, and can speak as another nick. It answers NICK, PART, TOPIC, LIST and WHOIS.
 //
 //   const irc = await startFakeIrc(6667)
 //   irc.lines            every line received from clients, in order
@@ -50,7 +50,12 @@ export async function startFakeIrc (port, host = '127.0.0.1') {
           case 'CAP':
             if (rest[0] === 'LS') send(':irc.test CAP * LS :')
             break
-          case 'NICK': nick = rest[0] ?? nick; break
+          case 'NICK': {
+            const wanted = (rest[0] ?? nick).replace(/^:/, '')
+            if (registered) send(`:${nick}!u@orivon.test NICK :${wanted}`)
+            nick = wanted
+            break
+          }
           case 'USER': user = true; break
           case 'PING': send(`:irc.test PONG irc.test ${rest[0] ?? ''}`); break
           case 'JOIN': {
@@ -58,6 +63,25 @@ export async function startFakeIrc (port, host = '127.0.0.1') {
             send(`:${nick}!u@orivon.test JOIN ${channel}`)
             send(`:irc.test 353 ${nick} = ${channel} :${nick} @op`)
             send(`:irc.test 366 ${nick} ${channel} :End of /NAMES list.`)
+            break
+          }
+          case 'PART': {
+            const channel = (rest[0] ?? '').replace(/^:/, '')
+            send(`:${nick}!u@orivon.test PART ${channel}`)
+            break
+          }
+          case 'TOPIC': send(`:${nick}!u@orivon.test TOPIC ${rest[0] ?? ''} ${rest.slice(1).join(' ')}`); break
+          case 'LIST':
+            send(`:irc.test 321 ${nick} Channel :Users Name`)
+            send(`:irc.test 322 ${nick} #orivon 2 :the test channel`)
+            send(`:irc.test 322 ${nick} #elsewhere 7 :another one`)
+            send(`:irc.test 323 ${nick} :End of /LIST`)
+            break
+          case 'WHOIS': {
+            const target = rest[rest.length - 1] ?? ''
+            send(`:irc.test 311 ${nick} ${target} ${target} orivon.test * :${target} real name`)
+            send(`:irc.test 312 ${nick} ${target} irc.test :the test server`)
+            send(`:irc.test 318 ${nick} ${target} :End of /WHOIS list.`)
             break
           }
           case 'QUIT': socket.end(); break
