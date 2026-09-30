@@ -176,7 +176,7 @@ describe('through the broker with the real adapters: which grant opens which soc
   }
 
   it('a .local-only grant opens a real loopback listener when scope is omitted or local, and is refused network', async () => {
-    const [first, second, third] = await freeTcpPorts(3)
+    const [first, second, third] = await freeTcpPorts(3) as [number, number, number]
     const broker = await brokerHolding('tcp.listen', 'local', [first, second, third])
 
     const omitted = await broker.net.listen(APP, { port: first })
@@ -194,7 +194,7 @@ describe('through the broker with the real adapters: which grant opens which soc
   })
 
   it('a .network grant opens a listener other devices can reach with scope network, and a loopback one with scope local', async () => {
-    const [first, second] = await freeTcpPorts(2)
+    const [first, second] = await freeTcpPorts(2) as [number, number]
     const broker = await brokerHolding('tcp.listen', 'network', [first, second])
 
     const wide = await broker.net.listen(APP, { port: first, scope: 'network' })

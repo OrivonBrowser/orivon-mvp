@@ -5,6 +5,8 @@ import { Console } from '../console-class.js'
 import { renderTable } from '../console-table.js'
 
 /** A writable that keeps what it is given, real enough for Node's own Console (it listens for stream errors). */
+type AnyConsole = Console | InstanceType<typeof NodeConsole>
+
 function sink (): Writable & { text: () => string } {
   const chunks: string[] = []
   const stream = new Writable({ write (chunk: Buffer, _encoding, done) { chunks.push(chunk.toString()); done() } })
@@ -12,24 +14,24 @@ function sink (): Writable & { text: () => string } {
 }
 
 /** What a console writes to `stdout` and to `stderr` for `scenario`, for ours and for Node's. */
-function both (scenario: (console: Console | NodeConsole) => void): [{ out: string, err: string }, { out: string, err: string }] {
-  const run = (Class: typeof Console | typeof NodeConsole): { out: string, err: string } => {
+function both (scenario: (console: AnyConsole) => void): [{ out: string, err: string }, { out: string, err: string }] {
+  const run = (Class: new (options: object) => AnyConsole): { out: string, err: string } => {
     const out = sink()
     const err = sink()
-    scenario(new Class({ stdout: out, stderr: err }) as Console)
+    scenario(new Class({ stdout: out, stderr: err }))
     return { out: out.text(), err: err.text() }
   }
-  return [run(Console), run(NodeConsole)]
+  return [run(Console as never), run(NodeConsole as never)]
 }
 
 describe('Console', () => {
   it.each([
-    ['log, info, debug and dirxml write to stdout, warn and error to stderr', (c: Console | NodeConsole) => { c.log('a %s', 'b', 1); c.info({ x: [1, 2] }); c.debug('d'); c.dirxml('x'); c.warn('w'); c.error(new Error('e').message, 2) }],
-    ['dir inspects with the options it is given', (c: Console | NodeConsole) => { c.dir({ a: { b: { c: {} } } }, { depth: 0 }); c.dir({ plain: 1, list: [1, 2] }) }],
-    ['group indents every line, including the lines of a multi-line message, until groupEnd', (c: Console | NodeConsole) => { c.group('outer'); c.log('a\nb'); c.group(); c.error('deep'); c.groupEnd(); c.groupCollapsed('c'); c.groupEnd(); c.groupEnd(); c.groupEnd(); c.log('flat') }],
-    ['count and countReset', (c: Console | NodeConsole) => { c.count(); c.count(); c.count('x'); c.countReset(); c.count() }],
-    ['assert prints only a failed assertion, with or without a message', (c: Console | NodeConsole) => { c.assert(true, 'no'); c.assert(false); c.assert(false, 'bad %s', 'thing'); c.assert(0, { a: 1 }) }],
-    ['a method works detached from its console', (c: Console | NodeConsole) => { const { log } = c; log('detached') }]
+    ['log, info, debug and dirxml write to stdout, warn and error to stderr', (c: AnyConsole) => { c.log('a %s', 'b', 1); c.info({ x: [1, 2] }); c.debug('d'); c.dirxml('x'); c.warn('w'); c.error(new Error('e').message, 2) }],
+    ['dir inspects with the options it is given', (c: AnyConsole) => { c.dir({ a: { b: { c: {} } } }, { depth: 0 }); c.dir({ plain: 1, list: [1, 2] }) }],
+    ['group indents every line, including the lines of a multi-line message, until groupEnd', (c: AnyConsole) => { c.group('outer'); c.log('a\nb'); c.group(); c.error('deep'); c.groupEnd(); c.groupCollapsed('c'); c.groupEnd(); c.groupEnd(); c.groupEnd(); c.log('flat') }],
+    ['count and countReset', (c: AnyConsole) => { c.count(); c.count(); c.count('x'); c.countReset(); c.count() }],
+    ['assert prints only a failed assertion, with or without a message', (c: AnyConsole) => { c.assert(true, 'no'); c.assert(false); c.assert(false, 'bad %s', 'thing'); (c.assert as (...args: unknown[]) => void)(0, { a: 1 }) }],
+    ['a method works detached from its console', (c: AnyConsole) => { const { log } = c; log('detached') }]
   ])('%s, as Node\'s does', (_name, scenario) => {
     const [mine, node] = both(scenario)
     expect(mine).toEqual(node)
