@@ -79,4 +79,4 @@ mio and tokio socket is; wasmtime never answers it. The streams read ahead of th
 `tcp.connect` is, so a wildcard never covers a reserved port (A82), and a manifest declares a
 wildcard host only as `*:*`: a program with its own DNS resolver names it, as `1.1.1.1:53`. The
 broker drops a refused datagram without an error (A87), so the program sees only a query that
-never gets an answer (A302).
+never gets an answer (A304).

@@ -69,6 +69,9 @@ export interface OrivonShell {
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
   /** Opens (or closes) the main menu under the button that opens it. */
   openMenu: (anchor: PanelAnchor) => void
+  /** The menu button was hovered or focused: builds the menu's view ahead of
+   * the click that usually follows. Safe to call more than once. */
+  prewarmMenu: () => void
   /** Puts a tab at a place in the strip. */
   moveTab: (id: string, index: number) => void
   /** A genuine tab drag has started (past the press threshold, before any tear-out): lets main start
@@ -159,6 +162,7 @@ const api: OrivonShell = {
   },
 
   openMenu: (anchor: PanelAnchor) => { send({ type: 'openMenu', anchor }) },
+  prewarmMenu: () => { send({ type: 'prewarmMenu' }) },
   moveTab: (id: string, index: number) => { send({ type: 'moveTab', id, index }) },
   beginTabDrag: (id: string) => { send({ type: 'tabDragStart', id }) },
   dragTab: (id: string, x?: number, y?: number) => { send(x === undefined || y === undefined ? { type: 'dragTab', id } : { type: 'dragTab', id, x, y }) },

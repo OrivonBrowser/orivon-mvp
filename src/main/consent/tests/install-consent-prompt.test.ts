@@ -91,6 +91,28 @@ describe('createInstallConsentPrompt', () => {
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning' }))
   })
 
+  it('extensions disclosure: with no extensionsOnSite injected, defaults to naming none', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+
+    await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
+
+    expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.not.stringContaining('Extensions that can also act on this site')
+    }))
+  })
+
+  it('extensions disclosure: an injected extensionsOnSite is fetched for the origin and rendered into detail', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const extensionsOnSite = vi.fn(async (origin: string) => origin === ORIGIN ? ['Ad Blocker', 'Password Manager'] : [])
+
+    await createInstallConsentPrompt(undefined, extensionsOnSite)(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
+
+    expect(extensionsOnSite).toHaveBeenCalledWith(ORIGIN)
+    expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.stringContaining('Extensions that can also act on this site: Ad Blocker, Password Manager.')
+    }))
+  })
+
   it('never shows a dialog when the caller has already left the origin', async () => {
     const caller = { window: () => undefined, stillOn: () => false }
 

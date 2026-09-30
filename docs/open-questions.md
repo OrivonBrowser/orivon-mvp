@@ -1390,17 +1390,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Blocks:** nothing
 
 
-### A288: One extension instance everywhere undoes per-app sessions **[OWNER]**
-
-- **Question:** The owner chose one extension instance for granted apps too (2026-09-28). Does a
-  grant then stop implying a session partition, with only a pinned cache keeping one?
-- **Why it matters:** ADR-0018, ADR-0003 and T18/T22 isolate each granted origin in
-  `persist:app-*`; Electron loads an extension per session, so one instance means one session.
-- **Options:** granted network-served origins join the default session, cache-served ones keep
-  their partition until pins are served on the network path (rec.); an extension copy per app.
-- **Who decides:** owner
-- **Blocks:** extensions build plan package 6
-
 ### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
 
 - **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs. Sandboxed it
@@ -1454,7 +1443,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A302: A82's reserved-port carve-out blocks a P2P app's own DNS-over-UDP **[OWNER]**
+### A304: A82's reserved-port carve-out blocks a P2P app's own DNS-over-UDP **[OWNER]**
 
 - **Question:** `udp.send` reuses `checkConnect`, so a wildcard never reaches port 53 (A82), and a
   manifest declares a wildcard host only as `*:*`. A program's own resolver works only when the
@@ -1550,6 +1539,26 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
+### A297: Google refuses sign-in from Orivon **[OWNER]**
+
+- **Question:** How does Orivon get past Google's "This browser or app may not be secure" at sign-in?
+- **Why it matters:** nobody can sign in to a Google account in Orivon; the user-agent string is already plain
+  Chrome, but the client hints still describe an unbranded Chromium.
+- **Options:** a Firefox identity on Google's sign-in hosts, header and page agreeing (rec.; the page half is on
+  branch `stream/sef-google`, the header rewrite and the `navigator.userAgentData` removal are not written);
+  a Chrome identity with a "Google Chrome" brand in the client hints; leave it.
+- **Who decides:** owner
+- **Blocks:** Google sign-in
+
+### A298: A keyboard command or context-menu click does not count as invoking an extension **[AI-REC]**
+
+- **Question:** Chrome grants activeTab, and so `chrome.tabCapture`, on a command or context-menu click as well as
+  the toolbar button; this build records only the toolbar button (`d-0204`). Record the other two?
+- **Why it matters:** an extension started by its keyboard shortcut is refused a capture Chrome would allow.
+- **Options:** record the invocation from `chrome.commands` and `contextMenus.onClicked` too (rec.); leave it.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
 ### A299: Developer mode is switched on by an environment variable **[OWNER]**
 
 - **Question:** Should developer mode be reachable only from the browser's own UI, or stay an
@@ -1581,5 +1590,16 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   what the file holds. A cap is a `src/contracts/` change (`LIMITS`).
 - **Options:** `LIMITS.fsCallBytes` (256 MiB), `'limit'` past it, big files through handles (rec.);
   leave it bounded by the file and the quota.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A303: `chrome.tabs.query` still answers a `chrome-extension://<id>//sandbox.html` request **[AI-REC]**
+
+- **Question:** A doubled-slash spelling of a sandbox page gets the sandbox CSP, an opaque origin and no
+  injected `chrome.*` from the vendored library, yet `chrome.tabs.query({})` still returns real tab data there
+  (measured through `WebFrameMain.executeJavaScript`, `test/e2e-extensions-sandbox-page.test.ts`). What answers?
+- **Why it matters:** code in a sandbox page reached by that spelling can still read the person's open tabs.
+- **Options:** redirect every non-canonical `chrome-extension://` path to its canonical form before it loads,
+  then confirm the query is refused (rec.); find the Electron native binding that answers and patch it; leave it.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing

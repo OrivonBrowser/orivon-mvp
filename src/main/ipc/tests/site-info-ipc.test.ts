@@ -29,7 +29,7 @@ const siteInfoWebContents = { mainFrame: SITE_INFO_FRAME, ipc: { handle: (channe
 const OTHER_FRAME = { url: POPUP_URL }
 const ORIGIN = 'https://app.example'
 
-const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing' }
+const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [] }
 
 function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoController {
   return {
@@ -52,17 +52,19 @@ function dispatch (command: unknown, senderFrame: unknown = SITE_INFO_FRAME): un
 
 function register (
   controller: SiteInfoController,
-  overrides: Partial<{ activeWebContents: () => import('electron').WebContents | undefined, reloadActiveTab: () => void, openAllSites: () => void }> = {}
-): { reloadActiveTab: ReturnType<typeof vi.fn>, openAllSites: ReturnType<typeof vi.fn> } {
+  overrides: Partial<{ activeWebContents: () => import('electron').WebContents | undefined, reloadActiveTab: () => void, openAllSites: () => void, openExtensions: () => void }> = {}
+): { reloadActiveTab: ReturnType<typeof vi.fn>, openAllSites: ReturnType<typeof vi.fn>, openExtensions: ReturnType<typeof vi.fn> } {
   const reloadActiveTab = vi.fn()
   const openAllSites = vi.fn()
+  const openExtensions = vi.fn()
   registerSiteInfoIpc(
     siteInfoWebContents, POPUP_URL, controller, ORIGIN, '/tmp/orivon-test-userdata',
     overrides.activeWebContents ?? (() => undefined),
     overrides.reloadActiveTab ?? reloadActiveTab,
-    overrides.openAllSites ?? openAllSites
+    overrides.openAllSites ?? openAllSites,
+    overrides.openExtensions ?? openExtensions
   )
-  return { reloadActiveTab, openAllSites }
+  return { reloadActiveTab, openAllSites, openExtensions }
 }
 
 describe('registerSiteInfoIpc -- get / trust', () => {
@@ -171,6 +173,12 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openAllSites', () =
     await dispatch({ type: 'openAllSites' })
     expect(openAllSites).toHaveBeenCalledOnce()
   })
+
+  it('openExtensions calls the injected callback', async () => {
+    const { openExtensions } = register(fakeController())
+    await dispatch({ type: 'openExtensions' })
+    expect(openExtensions).toHaveBeenCalledOnce()
+  })
 })
 
 describe('registerSiteInfoIpc -- clearBrowserData', () => {
@@ -232,7 +240,7 @@ describe('registerSiteInfoIpc -- data', () => {
 describe('registerSiteInfoIpc -- contentHeight', () => {
   it('a finite height reaches the injected callback', async () => {
     const onContentHeight = vi.fn()
-    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), onContentHeight)
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), vi.fn(), onContentHeight)
 
     await dispatch({ type: 'contentHeight', height: 240 })
 
@@ -241,7 +249,7 @@ describe('registerSiteInfoIpc -- contentHeight', () => {
 
   it('NaN/Infinity never reach the callback', async () => {
     const onContentHeight = vi.fn()
-    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), onContentHeight)
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), vi.fn(), onContentHeight)
 
     await dispatch({ type: 'contentHeight', height: Number.NaN })
     await dispatch({ type: 'contentHeight', height: Number.POSITIVE_INFINITY })

@@ -38,6 +38,13 @@ export async function launchElectron ({ appPath = '.', args = [] } = {}) {
     console.log(`[launch] stripped from env: ${stripped.join(', ')}`)
   }
 
+  // Nothing a gate plays may reach the owner's real speakers -- xvfb hides a
+  // window, not sound. See test/launch-electron.mjs's own SILENT_AUDIO_ENV
+  // doc for the full reasoning; duplicated here rather than imported, since
+  // this file's own header says spike/ survives independently of test/.
+  if (env['PULSE_SERVER'] === undefined) env['PULSE_SERVER'] = 'unix:/nonexistent'
+  if (!args.some((a) => a.startsWith('--alsa-output-device'))) args = [...args, '--alsa-output-device=null']
+
   const app = await electron.launch({ args: [appPath, ...args], env })
 
   // Forward MAIN-process stdout/stderr. Without this, console output from the

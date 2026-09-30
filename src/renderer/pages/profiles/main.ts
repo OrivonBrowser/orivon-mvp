@@ -78,7 +78,7 @@ function card (row: Row): HTMLElement {
       armed = true
       remove.textContent = 'Click again to delete'
       remove.classList.add('armed')
-      setTimeout(() => { armed = false; remove.textContent = 'Delete'; remove.classList.remove('armed') }, 4000)
+      setTimeout(() => { armed = false; remove.textContent = 'Delete'; remove.classList.remove('armed'); reloadUnlessBusy() }, 4000)
       return
     }
     void act({ type: 'remove', id: row.id })
@@ -125,4 +125,25 @@ document.getElementById('app')?.append(
 
 // Coming back to the tab shows who is open now.
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void load() })
+
+// A rename, a colour, a new or deleted profile -- made here, in Settings, in
+// another Profiles tab or in another profile's process. `load` redraws every
+// row, which would overwrite a keystroke the `change` event has not sent yet
+// and disarm a Delete waiting for its second click, so while either is in
+// progress the reload waits until it ends.
+let reloadPending = false
+function reloadUnlessBusy (): void {
+  if (!reloadPending) return
+  const editing = document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'text'
+  if (editing || document.querySelector('.armed') !== null) return
+  reloadPending = false
+  void load()
+}
+bridge.onEvent((topic) => {
+  if (topic !== 'profiles.changed') return
+  reloadPending = true
+  reloadUnlessBusy()
+})
+document.addEventListener('focusout', () => { setTimeout(reloadUnlessBusy) })
+
 void load()

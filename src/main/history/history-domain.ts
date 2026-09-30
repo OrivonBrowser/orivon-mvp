@@ -8,6 +8,7 @@ interface HistoryRequest {
   readonly type?: unknown
   readonly search?: unknown
   readonly after?: unknown
+  readonly limit?: unknown
   readonly id?: unknown
   readonly from?: unknown
   readonly to?: unknown
@@ -30,8 +31,13 @@ export function historyDomain (history: HistoryService): InternalDomain {
         case 'list': {
           const after = cursorFrom(request.after)
           const search = typeof request.search === 'string' ? request.search.slice(0, MAX_SEARCH_LENGTH) : undefined
+          // Bounds are `history.list`'s own (the store clamps again, never
+          // trusting this layer's arithmetic alone) -- this only keeps a
+          // non-number, or a page reloading itself back to a deeper page
+          // than it ever asked for, from reaching it at all.
+          const limit = Number.isFinite(request.limit) ? Math.trunc(request.limit as number) : undefined
           return {
-            entries: history.list({ ...(search === undefined ? {} : { search }), ...(after === undefined ? {} : { after }) }),
+            entries: history.list({ ...(search === undefined ? {} : { search }), ...(after === undefined ? {} : { after }), ...(limit === undefined ? {} : { limit }) }),
             status: history.status()
           }
         }

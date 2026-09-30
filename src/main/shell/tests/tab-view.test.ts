@@ -9,8 +9,9 @@ import type { Broker } from '../../../broker/broker-contracts.js'
 // a webContents with a working `.on` -- watchAppTab()'s own reportAppFailures
 // wiring calls it at construction, whatever additionalArguments it got.
 vi.mock('electron', () => ({
-  WebContentsView: vi.fn().mockImplementation(function (this: { webContents: unknown }) {
+  WebContentsView: vi.fn().mockImplementation(function (this: { webContents: unknown, setBackgroundColor: unknown }) {
     this.webContents = { on: vi.fn() }
+    this.setBackgroundColor = vi.fn()
   })
 }))
 
@@ -21,113 +22,150 @@ vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginServedFromCacheSync: (origin: string) => served.has(origin)
 }))
 
-const { appTabArgsFor, appTabFlagChanged, makeTabView, partitionChanged, partitionForTarget } = await import('../tab-view.js')
+const { appTabArgsFor, appTabFlagChanged, makeTabView, partitionChanged, partitionForTarget, popupTargetIsApp } = await import('../tab-view.js')
 
 const APP = 'https://app.example'
 const SITE = 'https://news.example'
 const OTHER_SITE = 'https://search.example'
 
-/**
- * Isolation follows CONSENT, not installation -- owner's decision,
- * 2026-09-16. `granted` is what actually decides; `registered` exists only
- * so a test can prove that installing something, on its own, does not.
- */
-function brokerWith (opts: { granted?: string[], registered?: string[] }): Broker {
+/** A minimal Broker stub for appTabArgsFor/appTabFlagChanged/popupTargetIsApp. */
+function brokerWith (opts: { registered?: string[], granted?: string[] }): Broker {
   return {
     app: {
-      hasGrantsSync: (origin: string) => (opts.granted ?? []).includes(origin),
-      isRegisteredSync: (origin: string) => (opts.registered ?? []).includes(origin)
+      isRegisteredSync: (origin: string) => (opts.registered ?? []).includes(origin),
+      hasGrantsSync: (origin: string) => (opts.granted ?? []).includes(origin)
     }
   } as unknown as Broker
 }
 
-const granted = (...origins: string[]): Broker => brokerWith({ granted: origins })
 const appPartition = partitionFor(originFromUrl(APP) as string)
 
-describe('partitionForTarget -- isolation follows consent, not installation', () => {
-  it('gives an origin the user has granted its own partition', () => {
-    expect(partitionForTarget(APP, granted(APP))).toBe(appPartition)
+describe('partitionForTarget -- ONLY a cache-served origin gets its own partition', () => {
+  it('leaves an ordinary, ungranted website on the shared default session', () => {
+    expect(partitionForTarget(SITE)).toBeUndefined()
   })
 
-  it('leaves an ordinary website on the shared default session', () => {
-    expect(partitionForTarget(SITE, granted(APP))).toBeUndefined()
+  it('does NOT isolate an origin merely because it is installed/registered', () => {
+    // isRegisteredSync plays no part in partitionForTarget at all: it takes
+    // no broker, so there is nothing here that could read a grant or a
+    // registration either way.
+    expect(partitionForTarget(APP)).toBeUndefined()
   })
 
-  it('does NOT isolate an app merely because it is installed', () => {
-    // The owner's rule, stated directly: "you still keep storage of an
-    // application if you granted permission to do so, it doesn't matter if
-    // you install it to run merely on local or not".
-    expect(partitionForTarget(APP, brokerWith({ registered: [APP] }))).toBeUndefined()
-  })
-
-  it('isolates an origin served from the pinned cache even with no grant yet', () => {
-    // ADR-0007 intercepts a cached bundle INSIDE the app's own partition, so
-    // a served origin whose tab sat on the default session could not load at
-    // all -- nothing there answers its scheme. This is the case that broke
-    // e2e-serve-from-cache.
+  it('isolates an origin served from the pinned cache -- ADR-0007\'s protocol.handle is partition-scoped, so a served origin sitting on the default session could not load at all', () => {
     served.add(APP)
     try {
-      expect(partitionForTarget(APP, brokerWith({}))).toBe(appPartition)
+      expect(partitionForTarget(APP)).toBe(appPartition)
     } finally {
       served.delete(APP)
     }
   })
 
-  it('leaves everything on the default session when no broker is published yet', () => {
-    expect(partitionForTarget(APP, undefined)).toBeUndefined()
-  })
-
   it('has no partition for a target with no derivable origin', () => {
-    expect(partitionForTarget('about:blank', granted(APP))).toBeUndefined()
+    expect(partitionForTarget('about:blank')).toBeUndefined()
   })
 
   it('leaves a chrome-extension: target on the default session, same as any other target with no derivable origin', () => {
     // The trusted path an extension-opened tab takes (tabs.ts's
-    // openTrusted(), extension-url-policy.ts's own gate) relies on this:
-    // originFromUrl only derives http(s) origins, so a chrome-extension:
-    // target -- where every extension actually runs -- never matches an
-    // app's grant or cache coverage and always stays on session.defaultSession.
-    expect(partitionForTarget('chrome-extension://abcdefghijklmnopabcdefghijklmnop/page.html', granted(APP))).toBeUndefined()
+    // openTrusted() relies on this: originFromUrl only derives http(s)
+    // origins, so a chrome-extension: target never matches cache coverage
+    // and always stays on session.defaultSession, where extensions load.
+    expect(partitionForTarget('chrome-extension://abcdefghijklmnopabcdefghijklmnop/page.html')).toBeUndefined()
+  })
+})
+
+// Unlike partitionForTarget above, a held grant DOES count here -- popups.ts's
+// README.md Design notes has the reasoning (ADR-0044's own gap).
+describe('popupTargetIsApp -- routePopup\'s own isApp: a held grant counts, unlike partitionForTarget', () => {
+  it('is true for a granted origin, even with no partition of its own', () => {
+    expect(popupTargetIsApp(APP, brokerWith({ granted: [APP] }))).toBe(true)
+  })
+
+  it('is true for a cache-served origin, granted or not', () => {
+    served.add(APP)
+    try {
+      expect(popupTargetIsApp(APP, brokerWith({}))).toBe(true)
+    } finally {
+      served.delete(APP)
+    }
+  })
+
+  it('is false for an ordinary, ungranted, non-cache-served origin', () => {
+    expect(popupTargetIsApp(SITE, brokerWith({ granted: [APP] }))).toBe(false)
+  })
+
+  it('is false with no broker to ask, and for a target with no derivable origin', () => {
+    expect(popupTargetIsApp(APP, undefined)).toBe(false)
+    expect(popupTargetIsApp('about:blank', brokerWith({ granted: [APP] }))).toBe(false)
+  })
+
+  it('does NOT read isRegisteredSync -- a merely-registered, ungranted, non-cache-served app is not "an app" for this purpose', () => {
+    expect(popupTargetIsApp(APP, brokerWith({ registered: [APP] }))).toBe(false)
   })
 })
 
 describe('partitionChanged -- when a navigation must swap the view', () => {
-  it('does not swap between two ordinary websites, which is what keeps back/forward alive (A109)', () => {
-    expect(partitionChanged(OTHER_SITE, undefined, granted(APP))).toBeUndefined()
+  it('does not swap between two ordinary, ungranted websites, which is what keeps back/forward alive (A109)', () => {
+    expect(partitionChanged(OTHER_SITE, undefined)).toBeUndefined()
   })
 
-  it('does not swap for a same-origin navigation inside an app', () => {
-    expect(partitionChanged(`${APP}/other`, appPartition, granted(APP))).toBeUndefined()
+  it('does not swap for a same-origin navigation inside a cache-served app', () => {
+    served.add(APP)
+    try {
+      expect(partitionChanged(`${APP}/other`, appPartition)).toBeUndefined()
+    } finally {
+      served.delete(APP)
+    }
   })
 
-  it('swaps an ordinary tab into an app partition when it reaches a granted app', () => {
-    expect(partitionChanged(APP, undefined, granted(APP))).toEqual({ to: appPartition })
+  it('swaps an ordinary tab into a cache-served origin\'s own partition when it reaches one', () => {
+    served.add(APP)
+    try {
+      expect(partitionChanged(APP, undefined)).toEqual({ to: appPartition })
+    } finally {
+      served.delete(APP)
+    }
   })
 
-  it('swaps an app tab back OUT to the default session when it leaves for an ordinary website', () => {
+  it('swaps a tab back OUT to the default session when it leaves a cache-served origin for an ordinary website', () => {
     // Without this the ordinary site would keep running inside the app's
-    // isolated session -- its cookies, its storage, and the partition a real
-    // capability grant is scoped to.
-    expect(partitionChanged(SITE, appPartition, granted(APP))).toEqual({ to: undefined })
+    // isolated session -- its cookies, its storage, and whatever the cache
+    // partition holds.
+    expect(partitionChanged(SITE, appPartition)).toEqual({ to: undefined })
   })
 
-  it('swaps straight from one app partition to another', () => {
+  it('swaps straight from one cache-served partition to another', () => {
     const second = 'https://other-app.example'
-    expect(partitionChanged(second, appPartition, granted(APP, second)))
-      .toEqual({ to: partitionFor(originFromUrl(second) as string) })
+    served.add(second)
+    try {
+      expect(partitionChanged(second, appPartition)).toEqual({ to: partitionFor(originFromUrl(second) as string) })
+    } finally {
+      served.delete(second)
+    }
+  })
+
+  it('never swaps two GRANTED, network-served origins -- they now share the default session, and a grant alone is never a reason to move', () => {
+    // The rule this file exists to prove: a held grant alone no longer gives
+    // an origin its own partition. Chrome extensions load into
+    // session.defaultSession and must run as one instance on every page,
+    // granted or not, so a granted app shares that session too --
+    // partitionChanged has no broker to even ask, and two granted origins
+    // produce no swap between them.
+    expect(partitionChanged(APP, undefined)).toBeUndefined()
+    expect(partitionChanged(SITE, undefined)).toBeUndefined()
   })
 
   it('never swaps for a target with no derivable origin, whatever the tab is in', () => {
-    expect(partitionChanged('about:blank', appPartition, granted(APP))).toBeUndefined()
-    expect(partitionChanged('about:blank', undefined, granted(APP))).toBeUndefined()
+    expect(partitionChanged('about:blank', appPartition)).toBeUndefined()
+    expect(partitionChanged('about:blank', undefined)).toBeUndefined()
   })
 })
 
-// hasGrantsSync (isolation) and isRegisteredSync (the app-tab flag) are
-// different predicates -- an app registered with nothing granted yet shares
-// the default session with every ordinary site, so partitionChanged alone
-// misses a navigation that crosses this boundary.
-describe('appTabFlagChanged -- a registered-but-ungranted app and an ordinary site can share a session while disagreeing on the flag', () => {
+// isRegisteredSync (the app-tab flag) is a REGISTRATION question, entirely
+// unaffected by this rule: a registered-but-not-cache-served app still
+// shares the default session with every ordinary site, and the flag can
+// change independently of any partition swap (there being none to make).
+describe('appTabFlagChanged -- a registered app and an ordinary site can share a session while disagreeing on the flag', () => {
   const registeredApp = brokerWith({ registered: [APP] })
 
   it('needs a rebuild leaving such an app for an ordinary site', () => {
@@ -148,5 +186,21 @@ describe('appTabFlagChanged -- a registered-but-ungranted app and an ordinary si
   it('never reads as a flag change for a target with no derivable origin', () => {
     const view = makeTabView('preload.js', undefined, appTabArgsFor(APP, registeredApp))
     expect(appTabFlagChanged('about:blank', view, registeredApp)).toBe(false)
+  })
+})
+
+// createTab() (tabs.ts) attaches a tab's view to screen BEFORE loadURL, so
+// whatever this view's background defaults to (Electron: opaque white) is
+// what actually paints first. Only the shell's own pages get a background
+// here -- see makeTabView's own doc.
+describe('makeTabView: an explicit backgroundColor is set on the view before it is ever shown', () => {
+  it('sets it when the caller passes one (the dashboard / an internal page)', () => {
+    const view = makeTabView('preload.js', undefined, undefined, { backgroundColor: '#0d0e14' })
+    expect((view as unknown as { setBackgroundColor: (c: string) => void }).setBackgroundColor).toHaveBeenCalledWith('#0d0e14')
+  })
+
+  it('leaves an ordinary tab (no colour passed) at Electron\'s own default', () => {
+    const view = makeTabView('preload.js', undefined, undefined)
+    expect((view as unknown as { setBackgroundColor: (c: string) => void }).setBackgroundColor).not.toHaveBeenCalled()
   })
 })

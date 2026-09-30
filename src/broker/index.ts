@@ -28,6 +28,7 @@ import type { PersistedApp } from './grants/ledger-storage.js'
 import { HandleTable } from './handles/handles.js'
 import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
+import { createGrantsChangeEmitter } from './grants/grant-events.js'
 import { socketAllowance } from './grants/resource-limits.js'
 import { originFromUrl } from './policy/origin.js'
 import { widensAuthority } from './policy/update.js'
@@ -63,6 +64,9 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // `PickedPathLedger` below -- see `createPickGuardCheck`'s own doc.
   const pickGuardCheck = createPickGuardCheck(deps)
   const pickedPaths = new PickedPathLedger(deps.ledgerStorage, pickGuardCheck)
+  // The Settings Apps list's live-update source (grant-events.ts's own
+  // header): every one of this file's four mutators below emits on it.
+  const grantsChanged = createGrantsChangeEmitter()
   // A restored app's pinned, hash-verified manifest (`hydrateFromPinnedManifest`),
   // standing in until `registerApp` supplies a fresh one. Not written into
   // `ledger`: `GrantLedger.registerApp` would raise the version floor and
@@ -132,7 +136,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // capabilities/fs.ts -- it is authorised by the picker choice, not by the
   // `fs` grant every other method here checks, and that difference is
   // structural (handles.ts's "FileHandle" exception), not cosmetic.
-  const fs = { ...createFsCapability({ deps, handleTable, ledger, canonical }), ...createUserSelectedCapability({ deps, handleTable, ledger, pickedPaths, canonical, pickGuardCheck }) }
+  const fs = { ...createFsCapability({ deps, handleTable, ledger, canonical }), ...createUserSelectedCapability({ deps, handleTable, ledger, pickedPaths, canonical, pickGuardCheck, notifyGrantsChanged: grantsChanged.emit }) }
 
   async function manifest (origin: string): Promise<Manifest> {
     const found = registeredManifest(canonical(origin))
@@ -348,6 +352,10 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     // handles, so its own revoke above never reaches it -- without this it
     // outlives the grant that justified storing it.
     if (live !== undefined && capability === 'web.embed') embed.forgetScript(key)
+    // Before the throw below, same reasoning as the cascade above: a live
+    // Settings page reads `app.grants()`, which is the in-memory ledger, so
+    // it must hear about an in-memory change even when persisting it failed.
+    if (removed) grantsChanged.emit(key)
     if (persistError !== undefined) {
       throw fail('internal', 'the revocation could not be persisted', undefined, errnoOf(persistError))
     }
@@ -373,6 +381,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     const key = canonical(origin)
     const removed = pickedPaths.revoke(key, pickId)
     await handleTable.revokeUserSelected(key, pickId)
+    if (removed) grantsChanged.emit(key)
     return removed
   }
 
@@ -405,6 +414,10 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
       const coversAll = !widensAuthority({ [capability]: record.patterns }, { [capability]: replaced.patterns })
       await handleTable.replaceGrant(key, replaced.id, record.id, record.patterns, coversAll)
     }
+    // Same "in-memory is what a live page reads" reasoning as
+    // revokePersisted above: emitted before the throw below, since the grant
+    // already took effect in `ledger` regardless of whether it persisted.
+    grantsChanged.emit(key)
     if (persistError !== undefined) throw fail('internal', 'the grant could not be persisted', undefined, errnoOf(persistError))
     return record
   }
@@ -437,6 +450,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     await handleTable.revoke(key, grantId)
     // `revokePersisted`'s own comment above -- the script string is not a handle.
     if (embedGrant?.id === grantId) embed.forgetScript(key)
+    grantsChanged.emit(key)
     if (persistError !== undefined) throw fail('internal', 'the revocation could not be persisted', undefined, errnoOf(persistError))
   }
 
@@ -466,6 +480,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     revoke,
     revokePersisted,
     revokeUserSelectedPath,
+    onGrantsChanged: grantsChanged.onChange,
     dropOrigin
   }
 }

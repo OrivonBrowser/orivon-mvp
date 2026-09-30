@@ -45,7 +45,7 @@ export function releaseOriginDocument (wc: WebContents, broker: Broker | undefin
 
 /**
  * Called on every committed navigation this WebContents makes, shown or
- * parked -- a parked view's own return to `about:blank` (tab-view.ts's
+ * parked -- a parked view's own return to `about:blank` (tab-parking.ts's
  * retireView) is a committed navigation too, and is exactly the "navigated
  * to another origin" case handle-contracts.md's Session teardown section
  * names. Origin derivation, not the wired-in `did-navigate` handler's own

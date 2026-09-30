@@ -35,15 +35,12 @@ function wellKnownUrl (origin: string): string {
 const EMPTY_CHILD_HOST_DOCUMENT = '<!DOCTYPE html><html><head><title></title></head><body></body></html>'
 
 /**
- * The session the app's own tabs use for `origin` -- `tab-view.ts`'s own
- * `partitionForTarget`, or the default session when it answers undefined
- * (an origin the broker does not yet see as granted or cached; the registry
- * never reaches this far for such an origin, since it refuses a connect for
- * one that is not even registered, but a defensive read here still resolves
- * to something rather than throwing).
+ * The session the app's own tabs use for `origin`: `tab-view.ts`'s own
+ * `partitionForTarget`, an app served from cache having a partition of its
+ * own and every other app the default session.
  */
-function appSessionFor (origin: string, broker: Broker): Session {
-  const partition = partitionForTarget(origin, broker)
+function appSessionFor (origin: string): Session {
+  const partition = partitionForTarget(origin)
   return partition === undefined ? electronSession.defaultSession : electronSession.fromPartition(partition)
 }
 
@@ -95,7 +92,7 @@ async function configureHostSession (hostSession: Session, origin: string, broke
   hostSession.on('will-download', (event) => { event.preventDefault() })
 
   const documentUrl = wellKnownUrl(origin)
-  const appSession = appSessionFor(origin, broker)
+  const appSession = appSessionFor(origin)
 
   const answer = async (request: Request): Promise<Response> => {
     if (request.url === documentUrl) {

@@ -5,9 +5,10 @@
 // because the broker itself cannot compute this answer: it needs the
 // loader's bundle-cache state (isOriginServedFromCacheSync), and
 // src/broker/ must never import src/loader/ (../../broker/README.md).
-// ../shell/tab-view.ts's partitionForTarget already combines the same two
-// facts for a navigating tab; this reuses it rather than re-deriving the
-// rule a second time.
+// ../shell/tab-view.ts's partitionForTarget already decides the same thing
+// for a navigating tab (a cache-served origin's own partition, the default
+// session for every other origin, granted or not: ADR-0044); this reuses it
+// rather than re-deriving the rule a second time.
 //
 // Why attribution is decided at a document's own commit, never re-decided
 // under a live document: README.md's Design notes.
@@ -29,31 +30,27 @@ interface AttributionRecord {
 /**
  * One record per WebContents, holding only what its OWN last main-frame
  * commit found true -- never updated except by that WebContents' own next
- * `did-navigate`, so a grant or a revoke that changes what a DIFFERENT
- * origin, or this same origin's NEXT document, would find never touches an
- * already-committed record.
+ * `did-navigate`, so an origin leaving the pinned cache (an uninstall),
+ * which changes what this same origin's NEXT document would find, never
+ * touches an already-committed record.
  *
  * RESIDUAL: IPC from a newly-committed document can in principle arrive
  * before its own `did-navigate` is processed (both cross the same event
  * loop, but nothing orders one strictly before the other), so a same-origin
- * reload right after a grant change can briefly be answered by the
- * PREVIOUS document's record instead of its own. It matters only for an
- * origin not served from cache -- one that is served from cache is checked
- * live below, never through this map -- and only until that document's own
- * `did-navigate` lands, since both documents are running the same origin
- * on the same live code either way.
+ * reload right after its origin leaves the pinned cache can briefly be
+ * answered by the PREVIOUS document's record instead of its own. It matters
+ * only for an origin not served from cache -- one that is served from cache
+ * is checked live below, never through this map -- and only until that
+ * document's own `did-navigate` lands, since both documents are running the
+ * same origin on the same live code either way.
  */
 const attributionRecords = new WeakMap<WebContents, AttributionRecord>()
 
 export const sessionAttributionSubsystem: Subsystem = {
   name: 'session-attribution',
   afterReady: (ctx: SubsystemContext) => {
-    // `ctx` is captured, not `ctx.broker` -- this runs before
-    // brokerIpcSubsystem publishes it, and the closure below is only ever
-    // called later, once a real request needs an answer, by which point it
-    // is there.
     const expectedSession = (origin: string): unknown => {
-      const partition = partitionForTarget(origin, ctx.broker)
+      const partition = partitionForTarget(origin)
       return partition === undefined ? session.defaultSession : session.fromPartition(partition)
     }
 

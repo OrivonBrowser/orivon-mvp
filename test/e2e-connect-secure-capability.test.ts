@@ -58,8 +58,9 @@ import type { Server } from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { HERMETIC_RESOLVER } from './smoke-helpers.mjs'
+import { asPage, closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { generateTlsFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -73,16 +74,20 @@ const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).r
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 
+/** asPage's (e2e-helpers.ts) own same-origin script URL, on this file's fixture origin -- see fixture-as-page.ts's own header for why this is a same-origin write rather than a new server route. */
+const AS_PAGE_SCRIPT_FULL_URL = `${FIXTURE_ORIGIN}/${AS_PAGE_SCRIPT_URL}`
+
 /**
  * A FIXED port, not an ephemeral one bound at runtime -- deliberately, the
  * same choice test/apps/fixture/config.mjs's ECHO_PORT and
- * e2e-udp-capability.test.ts's UDP_ECHO_PORT already make. `evaluateRetrying`
- * calls `page.evaluate(fn)` with no argument channel of its own, and a value
- * closed over from outside `fn` does not survive Playwright's own
- * serialisation boundary (e2e-capability-boundary.test.ts's Phase 2 makes the
- * identical point about `app.evaluate`) -- so the port has to be a literal
- * INSIDE each evaluate() callback below, which only works if it is known
- * ahead of time. Distinct from every other fixture port already in use
+ * e2e-udp-capability.test.ts's UDP_ECHO_PORT already make. `asPage` (used
+ * below for every window.orivon call, per ADR-0045) serialises `fn` via
+ * `Function.prototype.toString()` and re-evaluates it fresh in the page, so a
+ * value closed over from outside `fn` does not survive that boundary
+ * (e2e-capability-boundary.test.ts's Phase 2 makes the identical point about
+ * `app.evaluate`) -- so the port has to be a literal INSIDE each `fn` passed
+ * to `asPage` below, which only works if it is known ahead of time. Distinct
+ * from every other fixture port already in use
  * (8872/8873/8875/8876) so a stray leftover process from another suite is
  * never mistaken for this one.
  */
@@ -129,7 +134,7 @@ it('Phase 1: a real net.connectSecure through the full IPC pipe is correctly den
     try {
       const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
-      const state = await evaluateRetrying(view, async () => {
+      const state = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
         const orivon = (window as unknown as {
           orivon: {
             net: { connectSecure: (o: { host: string, port: number }) => Promise<{ close?: () => Promise<void> } | undefined> }
@@ -189,6 +194,7 @@ it('Phase 1: a real net.connectSecure through the full IPC pipe is correctly den
       )
     } finally {
       await closeElectronApp(app)
+      clearFixtureAsPageScript()
     }
   })
 }, TEST_TIMEOUT_MS)
@@ -235,13 +241,11 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
         JSON.stringify(grantOutcome.grant)
       )
 
-      // The dev-only hook lands on the broker directly, with no IPC round
-      // trip for anything to react to, so this document never moves into
-      // the app's own partition -- it does not need to: it already
-      // committed FIXTURE_ORIGIN, attributed, before the grant landed
-      // (src/main/sessions/session-attribution.ts), and that attribution
-      // survives a grant that changes what session the origin belongs in
-      // NEXT.
+      // The dev-only hook lands on the broker directly, and a grant moves no
+      // document: a granted network-served origin runs in the default session
+      // (ADR-0044), where this document already committed FIXTURE_ORIGIN,
+      // attributed (src/main/sessions/session-attribution.ts), so the calls
+      // below run from this same document.
       const view = beforeGrant
 
       // (a) OUTSIDE the granted pattern: '127.0.0.1' is the identical TCP
@@ -251,7 +255,7 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
       // before any handshake, proving the grant check runs for a real page's
       // connectSecure call. TLS_PORT is a literal here, not a closed-over
       // variable -- see this file's own doc on TLS_PORT for why.
-      const deniedState = await evaluateRetrying(view, async () => {
+      const deniedState = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
         const orivon = (window as unknown as {
           orivon: { net: { connectSecure: (o: { host: string, port: number }) => Promise<{ close?: () => Promise<void> } | undefined> } }
         }).orivon
@@ -286,7 +290,7 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
       // itself the proof this reached a genuine handshake rather than a
       // stub: a policy-only denial would answer 'denied' with no
       // platformCode, not 'unreachable' with a real one.
-      const handshakeState = await evaluateRetrying(view, async () => {
+      const handshakeState = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
         const orivon = (window as unknown as {
           orivon: { net: { connectSecure: (o: { host: string, port: number }) => Promise<{ close?: () => Promise<void> } | undefined> } }
         }).orivon
@@ -317,6 +321,7 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
       }
     } finally {
       await closeElectronApp(app)
+      clearFixtureAsPageScript()
     }
   })
 }, TEST_TIMEOUT_MS)

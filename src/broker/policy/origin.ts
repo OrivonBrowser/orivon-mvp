@@ -286,10 +286,11 @@ export function originFromSenderFrame (frame: SenderFrameLike | null | undefined
  * strictly; an already-committed document's own recorded answer; a live
  * check as the fallback when no record exists yet) and that directory's
  * README for why it is shaped this way. This is what lets an already-open,
- * already-attributed document survive a grant or a revoke that changes
- * which session `origin` belongs in NEXT -- it keeps calling successfully
- * until it next navigates, rather than being denied everything the instant
- * the ledger changes underneath it.
+ * already-attributed document survive a change to which session `origin`
+ * belongs in NEXT (its pinned copy going away; a grant or a revoke changes
+ * no session, ADR-0044) -- it keeps calling successfully until it next
+ * navigates, rather than being denied everything the instant the change
+ * lands underneath it.
  *
  * A document can still commit `origin` while sitting in the wrong session:
  * a non-typed navigation (a link, a redirect, a script, back/forward) lands

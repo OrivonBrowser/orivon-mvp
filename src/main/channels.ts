@@ -96,6 +96,12 @@ export const INTERNAL_COMMAND_CHANNEL = 'orivon-internal:command'
 /** The main menu popover's own WebContentsView -> main: what it lists, and which entry was chosen. See ./ipc/menu-ipc.ts. */
 export const MENU_COMMAND_CHANNEL = 'orivon-menu:command'
 
+/** Main -> the menu popover's own WebContentsView: it was just shown again. The
+ * menu is kept warm (shell/popover-view.ts's `warm`) rather than reloaded on
+ * every open, so this is what tells its already-loaded page to re-fetch its
+ * list and reset its own state (scroll position, keyboard focus). */
+export const MENU_SHOWN_CHANNEL = 'orivon-menu:shown'
+
 /** The split backdrop's own view -> main: the divider being dragged or reset. See ./shell/split-frame.ts. */
 export const SPLIT_FRAME_CHANNEL = 'orivon-split:command'
 
@@ -149,3 +155,20 @@ export const CHILD_HOST_PAGE_CHANNEL = 'orivon-children:host-page'
  * README.md` measures) is caught and its host closed, never left running
  * with no `orivon:child-host:page` listener at all (W2). */
 export const CHILD_HOST_READY_CHANNEL = 'orivon-children:host-ready'
+
+/** A `chrome-extension://` frame's own preload (the vendored library's
+ * `preload.ts`) -> main, synchronous (`ipcRenderer.sendSync`/
+ * `event.returnValue`): is THIS frame one of its own extension's manifest
+ * `sandbox.pages`? Real Chrome gives such a page no `chrome.*` at all
+ * (extensions put untrusted code there precisely because it cannot reach
+ * extension APIs); this is what the preload asks, before deciding whether
+ * to inject any, so a sandboxed page's own document_start script never
+ * sees one even briefly. Main derives the answer entirely from
+ * `event.senderFrame`'s own URL (never a payload) --
+ * `src/main/extensions/extension-host.ts`. The literal string is
+ * duplicated in `vendor/electron-chrome-extensions/src/preload.ts` rather
+ * than imported: `vendor/` may not depend on anything under `src/`
+ * (`src/main/extensions/README.md`'s own boundary), the same reason that
+ * file's `extension-host.ts` duplicates `EXTENSIONS_DEFAULT_PARTITION`
+ * instead of importing it. */
+export const EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL = 'orivon-extensions:sandbox-page-query'

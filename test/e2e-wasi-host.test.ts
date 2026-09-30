@@ -93,18 +93,72 @@ async function appScript (): Promise<Uint8Array> {
   return output.contents
 }
 
-async function pinFixture (userDataDir: string): Promise<void> {
+// ADR-0045: window.orivon refuses a call attributed to no page frame at all,
+// which is exactly what page.evaluate()/evaluateRetrying leave behind (see
+// smoke-helpers.mjs's own doc comment on evaluateRetrying). A check that
+// calls window.orivon.* has to run as a real <script src> the served origin
+// itself serves -- and because this origin is served from a hash-verified
+// pin (never a plain file server), that script has to be part of the pin
+// from the start. `extra` rides alongside this fixture's own bundle entries
+// the same way test/freetube-fixture.ts's `pinRealApp` does; serving is
+// driven by the pin's own asset tree (`isPinnedPath`), not by the
+// manifest's declared `assets` list, so an extra pinned path is servable
+// the same as any real one without being added to MANIFEST.assets.
+async function pinFixture (userDataDir: string, extra: readonly BundleEntry[] = []): Promise<void> {
   const storage = nodeLoaderStorage(userDataDir)
   const html = '<!doctype html><html><head><title>WASI host fixture</title><script src="/wasi-app.js"></script></head><body><h1>WASI host fixture</h1></body></html>'
   const entries: BundleEntry[] = [
     { path: '/.well-known/orivon.json', content: new TextEncoder().encode(JSON.stringify(MANIFEST)) },
     { path: '/index.html', content: new TextEncoder().encode(html) },
     { path: '/wasi-app.js', content: await appScript() },
-    { path: '/program.wasm', content: program() }
+    { path: '/program.wasm', content: program() },
+    ...extra
   ]
   const tree = await bundleTree(entries)
   for (const entry of entries) await storage.writeAsset(ORIGIN, entry.path, entry.content)
   await storage.writePin(ORIGIN, fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0))
+}
+
+/**
+ * Reads `greeting.txt` back through window.orivon.fs -- self-contained so it
+ * can ride as its own pinned asset (see pinFixture's own doc comment) and be
+ * loaded as a real <script src>, the only way a window.orivon call from this
+ * origin is attributed to the page rather than refused by ADR-0045's filter.
+ * Reports to a page-global rather than returning anything, since nothing
+ * outside the page can read a function's return value from a <script src>.
+ */
+const READ_BACK_SCRIPT = `
+(async () => {
+  try {
+    const bytes = await window.orivon.fs.readFile('greeting.txt')
+    window.__wasiReadBack = new TextDecoder().decode(bytes)
+  } catch (error) {
+    window.__wasiReadBack = 'threw ' + String(error)
+  }
+})()
+`
+
+/**
+ * Injects a pinned check script as a real <script src> (never inline -- CSP
+ * on a granted origin has no 'unsafe-inline', ADR-0045) and waits for it to
+ * report on a page-global. The injection itself and the final read are
+ * plain DOM manipulation and a plain global read, neither a window.orivon
+ * call, so they stay safe to drive through evaluateRetrying/waitForPageGlobal
+ * directly -- mirrors test/e2e-freetube-app.test.ts's runPinnedCheck shape.
+ */
+async function runPinnedCheck<T> (
+  view: Awaited<ReturnType<typeof navigateToFixture>>,
+  scriptPath: string,
+  globalName: string,
+  timeoutMs = 30_000
+): Promise<T> {
+  await view.evaluate((path: string) => {
+    const script = document.createElement('script')
+    script.src = path
+    document.head.appendChild(script)
+  }, scriptPath)
+  await waitForPageGlobal(view, globalName, timeoutMs)
+  return await view.evaluate((name: string) => (window as unknown as Record<string, unknown>)[name], globalName) as T
 }
 
 afterAll(async () => {
@@ -116,7 +170,7 @@ it('a pinned app runs a WASI program whose file calls reach the real broker thro
   try {
     await runPhase('WASI host', async (check) => {
       const userDataDir = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
-      await pinFixture(userDataDir)
+      await pinFixture(userDataDir, [{ path: '/__check-read-back.js', content: new TextEncoder().encode(READ_BACK_SCRIPT) }])
       const granted = await app.evaluate(async (_electron, request: DevGrantRequest) => {
         const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
         if (typeof hook !== 'function') return false
@@ -134,24 +188,28 @@ it('a pinned app runs a WASI program whose file calls reach the real broker thro
 
       const view = await navigateToFixture(app, `${ORIGIN}/`, 'WASI host fixture')
       await waitForPageGlobal(view, 'wasiE2e')
-      const outcome = await evaluateRetrying(view, async (): Promise<{ run: WasiRunResult, jspi: boolean, readBack: string }> => {
+      // Neither of these two calls reaches window.orivon: `wasiE2e.run()` is
+      // a plain page global the app's own served /wasi-app.js defined (its
+      // own internal file calls run attributed to that real <script src>,
+      // so ADR-0045's filter never sees them), and the WebAssembly.Suspending
+      // check reads a plain browser global. Both stay safe through
+      // evaluateRetrying directly.
+      const outcome = await evaluateRetrying(view, async (): Promise<{ run: WasiRunResult, jspi: boolean }> => {
         const jspi = typeof (WebAssembly as unknown as { Suspending?: unknown }).Suspending === 'function'
         const run = await (globalThis as unknown as { wasiE2e: { run: () => Promise<WasiRunResult> } }).wasiE2e.run()
-        let readBack: string
-        try {
-          const orivon = (window as unknown as { orivon: { fs: { readFile: (path: string) => Promise<Uint8Array> } } }).orivon
-          readBack = new TextDecoder().decode(await orivon.fs.readFile('greeting.txt'))
-        } catch (error) {
-          readBack = `threw ${String(error)}`
-        }
-        return { run, jspi, readBack }
+        return { run, jspi }
       }, 40_000)
+
+      // The read-back call DOES reach window.orivon.fs, so it has to run as
+      // a real <script src> from the pinned bundle rather than inline here
+      // (see pinFixture's and READ_BACK_SCRIPT's own doc comments).
+      const readBack = await runPinnedCheck<string>(view, '/__check-read-back.js', '__wasiReadBack', 40_000)
 
       check('the app tab\'s Chromium has JSPI', outcome.jspi, JSON.stringify(outcome))
       check('the program ran to proc_exit without the host throwing', outcome.run.error === undefined, JSON.stringify(outcome))
       check('every file call succeeded and the escape attempt came back NOTCAPABLE (exit code 76)', outcome.run.exitCode === 76, JSON.stringify(outcome))
       check('fd 1 reached the page console, one entry per line', outcome.run.stdout.includes('done'), JSON.stringify(outcome))
-      check('the bytes the program wrote are in the app\'s own files, read back through orivon.fs', outcome.readBack === GREETING, JSON.stringify(outcome))
+      check('the bytes the program wrote are in the app\'s own files, read back through orivon.fs', readBack === GREETING, readBack)
     })
   } finally {
     await closeElectronApp(app)

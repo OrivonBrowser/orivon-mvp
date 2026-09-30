@@ -1,8 +1,10 @@
 // "Clear browsing data": what is forgotten and how far back. History goes back
 // as far as the person chose; the browser's stored site data and cache cannot
-// be limited by time, so they are all or nothing. An app's own storage is kept
-// apart: apps keep their working data there, so it is only cleared when asked
-// for by name.
+// be limited by time, so they are all or nothing. A cache-served app's own
+// storage is kept apart, in its own session, so it is only cleared when
+// asked for by name; a granted-without-install app has no session of its
+// own and its storage is ordinary site data instead (README.md's Design
+// notes).
 import type { Session } from 'electron'
 import type { HistoryService } from '../history/history-service.js'
 import type { ZoomStore } from '../zoom/zoom-store.js'

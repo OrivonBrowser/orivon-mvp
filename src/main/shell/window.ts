@@ -32,7 +32,9 @@ import { showContextMenu } from './context-menu.js'
 import { chromeContextMenuHost } from './chrome-context-menu.js'
 import type { ShellWindowOptions } from './window-options.js'
 import { showIntro } from './intro-view.js'
-import { createWindowFrame, showWhenReady } from './window-frame.js'
+import { createWindowFrame, showWhenReady, windowBackgroundColor } from './window-frame.js'
+import { recordViewBackground } from './view-background-test-hook.js'
+import { onThemeUpdated } from './theme-colors.js'
 import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
 import { searchUrlFor } from '../browsing/search-engines.js'
@@ -88,7 +90,23 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       additionalArguments: [`--orivon-shell-url=${chromeUrl}`, `--orivon-drag-mode=${dragMode}`]
     }
   })
+  // Set BEFORE addChildView: a freshly created WebContentsView defaults to
+  // an opaque white, painted the instant it is attached -- the SAME white
+  // flash tab-view.ts and popover-view.ts fix, for the same reason (this
+  // view is attached ahead of its own first paint). The window's own
+  // background (createWindowFrame's `background()`) covers a torn-off
+  // window shown `instant` before either view exists; it does not cover
+  // THIS view's own separate surface once attached. Kept live across an OS
+  // theme change while the window stays open (theme-colors.ts's
+  // `onThemeUpdated` below), the same pattern window-frame.ts already uses
+  // for the window's own background and title-bar overlay.
+  const chromeBackground = windowBackgroundColor(services.profiles.isPrivate)
+  chrome.setBackgroundColor(chromeBackground)
+  recordViewBackground(chrome.webContents.id, chromeBackground)
   win.contentView.addChildView(chrome)
+  function applyChromeBackgroundForTheme (): void { chrome.setBackgroundColor(windowBackgroundColor(services.profiles.isPrivate)) }
+  const unregisterChromeThemeListener = onThemeUpdated(applyChromeBackgroundForTheme)
+  win.on('closed', () => { unregisterChromeThemeListener() })
   // The chrome preload is unconditionally privileged (src/preload/shell.ts
   // gates on this same URL, ipc.ts's isFromChrome checks it a second time
   // on every call) -- a view holding it must never end up attached to a
@@ -201,7 +219,16 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     internalPages: services.internalPages,
     devtools: services.devtools,
     backdrop: splitFrame,
-    tabLifecycle: services.tabLifecycle
+    tabLifecycle: services.tabLifecycle,
+    // Recurses into this same function for the new window, so it is made from
+    // the same `services` -- a private window's `services.profiles.isPrivate`
+    // stays true for whatever it opens (a shift-click, popups.ts).
+    openWindow: (url, loadOptions) => {
+      let contents
+      createShellWindow(ctx, services, { first: (newTabs) => { contents = newTabs.liveWebContents(newTabs.createTab(url, undefined, loadOptions)) } })
+      if (contents === undefined) throw new Error('openWindow: the new window made no tab')
+      return contents
+    }
   })
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one
@@ -360,6 +387,15 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     () => {
       siteInfoPanel.close()
       permissionsPanel.toggle(siteInfoMemory.anchor ?? { x: 0, y: chromeHeight(), width: 0, height: 0 }, siteInfoMemory.origin)
+    },
+    // The extensions disclosure's own "Manage" link (docs/planning/extensions-
+    // exploration.md): the same close-then-navigate shape as the row
+    // above, but to a real page (`tabs.openInternal`, `../pages/pages-
+    // domain.ts`'s own mechanism for one internal page linking to another)
+    // rather than a panel, since `orivon://extensions` is a full page.
+    () => {
+      siteInfoPanel.close()
+      tabs.openInternal('extensions')
     },
     import.meta.dirname
   )

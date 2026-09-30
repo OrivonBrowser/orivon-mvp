@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import type { FileStat } from '../../../contracts/handles.js'
-import { LIMITS, fakeBridge, fakeSocketBridgeResult, tick } from './main-world-socket.test-helpers.js'
+import { LIMITS, asPage, fakeBridge, fakeSocketBridgeResult, tick } from './main-world-socket.test-helpers.js'
 
 /** P-F6 below can run a whole `npm run build` inline -- always on a fresh CI
  * runner, where `npm test` runs before `npm run build` -- and vitest's 5 s
@@ -18,7 +18,7 @@ describe('installOrivon', () => {
 
     installOrivon(bridge, LIMITS, target)
 
-    const orivon = target.orivon as Record<string, unknown>
+    const orivon = asPage(target.orivon) as Record<string, unknown>
     expect(orivon.version).toBe(0)
     expect(typeof (orivon.app as Record<string, unknown>).manifest).toBe('function')
     expect(typeof (orivon.fs as Record<string, unknown>).readFile).toBe('function')
@@ -36,7 +36,7 @@ describe('installOrivon', () => {
     bridge.idSign = async (curve, payload) => { signCalls.push({ curve, payload }); return new Uint8Array([2]) }
     installOrivon(bridge, LIMITS, target)
 
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       id: {
         publicKey: (opts: { curve: string }) => Promise<Uint8Array>
         sign: (opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
@@ -59,7 +59,7 @@ describe('installOrivon', () => {
     bridge.appRequestGrant = async (request) => { calls.push(request); return false }
     installOrivon(bridge, LIMITS, target)
 
-    const orivon = target.orivon as { app: { requestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean> } }
+    const orivon = asPage(target.orivon) as { app: { requestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean> } }
     const granted = await orivon.app.requestGrant({ capability: 'fs' })
 
     expect(granted).toBe(false)
@@ -77,7 +77,7 @@ describe('installOrivon', () => {
     bridge.fsRename = async (from, to) => { calls.push(['rename', from, to]) }
     installOrivon(bridge, LIMITS, target)
 
-    const orivon = target.orivon as {
+    const orivon = asPage(target.orivon) as {
       fs: {
         mkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
         readdir: (path: string) => Promise<readonly string[]>
@@ -105,6 +105,7 @@ describe('installOrivon', () => {
   it('orivon.id is frozen, same as app/fs', () => {
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
+    // The REAL target.orivon, not asPage's copy: this asserts freezing itself (test-helpers.ts's own asPage doc).
     expect(Object.isFrozen((target.orivon as { id: unknown }).id)).toBe(true)
   })
 
@@ -119,7 +120,7 @@ describe('installOrivon', () => {
       })
       installOrivon(bridge, LIMITS, target)
 
-      const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+      const orivon = asPage(target.orivon) as { fs: { readFileSync: (path: string) => Uint8Array } }
       const result = orivon.fs.readFileSync('/a/b.txt')
 
       expect(calls).toEqual(['/a/b.txt'])
@@ -144,7 +145,7 @@ describe('installOrivon', () => {
       ))
       installOrivon(bridge, LIMITS, target)
 
-      const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+      const orivon = asPage(target.orivon) as { fs: { readFileSync: (path: string) => Uint8Array } }
       let caught: unknown
       try {
         orivon.fs.readFileSync('/a/b.txt')
@@ -163,7 +164,7 @@ describe('installOrivon', () => {
       ))
       installOrivon(bridge, LIMITS, target)
 
-      const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+      const orivon = asPage(target.orivon) as { fs: { readFileSync: (path: string) => Uint8Array } }
       let caught: unknown
       try {
         orivon.fs.readFileSync('/missing.txt')
@@ -189,7 +190,7 @@ describe('installOrivon', () => {
     }
     installOrivon(bridge, LIMITS, target)
 
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<unknown> } }
     let caught: unknown
     try {
       await orivon.net.connect({ host: 'x.example', port: 443 })
@@ -209,7 +210,7 @@ describe('installOrivon', () => {
     bridge.netConnect = async () => { throw boom }
     installOrivon(bridge, LIMITS, target)
 
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<unknown> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<unknown> } }
     await expect(orivon.net.connect({ host: 'x.example', port: 443 })).rejects.toBe(boom)
   })
 
@@ -218,7 +219,7 @@ describe('installOrivon', () => {
     const bridge = fakeBridge(fakeSocketBridgeResult())
     installOrivon(bridge, LIMITS, target)
 
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<Record<string, unknown>> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<Record<string, unknown>> } }
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
 
     expect(socket.id).toBe('h1')
@@ -241,7 +242,7 @@ describe('installOrivon', () => {
     const bridge = fakeBridge(fakeSocketBridgeResult(), undefined, undefined, secureResult)
     installOrivon(bridge, LIMITS, target)
 
-    const orivon = target.orivon as { net: { connectSecure: (opts: unknown) => Promise<Record<string, unknown>> } }
+    const orivon = asPage(target.orivon) as { net: { connectSecure: (opts: unknown) => Promise<Record<string, unknown>> } }
     const socket = await orivon.net.connectSecure({ host: 'x.example', port: 443 })
 
     expect(socket.id).toBe('h-secure')
@@ -265,7 +266,7 @@ describe('installOrivon', () => {
       }
     })
     installOrivon(fakeBridge(fakeSocketBridgeResult(), undefined, undefined, secureResult), LIMITS, target)
-    const orivon = target.orivon as { net: Record<string, (opts: unknown) => Promise<Record<string, unknown>>> }
+    const orivon = asPage(target.orivon) as { net: Record<string, (opts: unknown) => Promise<Record<string, unknown>>> }
 
     const secure = await orivon.net.connectSecure!({ host: 'node.lan', port: 50002, rejectUnauthorized: false })
     const plain = await orivon.net.connect!({ host: 'node.lan', port: 50001 })
@@ -282,7 +283,7 @@ describe('installOrivon', () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(result), LIMITS, target)
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array>, close: () => Promise<void> }> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array>, close: () => Promise<void> }> } }
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
 
     const sent = new TextEncoder().encode('hello')
@@ -313,7 +314,7 @@ describe('installOrivon', () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(result), LIMITS, target)
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ writable: WritableStream<Uint8Array> }> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<{ writable: WritableStream<Uint8Array> }> } }
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
 
     const writer = socket.writable.getWriter()
@@ -326,7 +327,7 @@ describe('installOrivon', () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(result), LIMITS, target)
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array> }> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array> }> } }
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
 
     result.emitReadEnd()
@@ -340,7 +341,7 @@ describe('installOrivon', () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(result), LIMITS, target)
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array> }> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array> }> } }
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
 
     result.emitReadEnd('revoked')
@@ -368,6 +369,7 @@ describe('installOrivon', () => {
     expect(desc?.writable).toBe(false)
     expect(desc?.configurable).toBe(false)
 
+    // The REAL target.orivon throughout, never asPage's copy: this asserts freezing itself (test-helpers.ts's own asPage doc).
     const orivon = target.orivon as { net: { connect: unknown } }
     expect(() => { orivon.net.connect = (): void => {} }).toThrow(TypeError)
     expect(typeof orivon.net.connect).toBe('function')
@@ -381,7 +383,7 @@ describe('installOrivon', () => {
   it('P-F7: each socket object is frozen too, but its streams stay functional', async () => {
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<Record<string, unknown>> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<Record<string, unknown>> } }
 
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
 
@@ -397,7 +399,7 @@ describe('installOrivon', () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(result), LIMITS, target)
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array> }> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array> }> } }
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
     const reader = socket.readable.getReader()
     const writer = socket.writable.getWriter()
@@ -416,7 +418,7 @@ describe('installOrivon', () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(result), LIMITS, target)
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array> }> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array> }> } }
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
     const reader = socket.readable.getReader()
 
@@ -436,7 +438,7 @@ describe('installOrivon', () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(result), LIMITS, target)
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ writable: WritableStream<Uint8Array> }> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<{ writable: WritableStream<Uint8Array> }> } }
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
     const writer = socket.writable.getWriter()
 
@@ -449,7 +451,7 @@ describe('installOrivon', () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(result), LIMITS, target)
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array>, close: () => Promise<void> }> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array>, close: () => Promise<void> }> } }
     const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
     const reader = socket.readable.getReader()
 
@@ -476,7 +478,7 @@ describe('installOrivon', () => {
       const result = fakeSocketBridgeResult()
       const target: Record<string, unknown> = {}
       installOrivon(fakeBridge(result), LIMITS, target)
-      const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<unknown> } }
+      const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<unknown> } }
       await orivon.net.connect({ host: 'x.example', port: 443 })
 
       result.emitData(new Uint8Array(5)) // far short of a full window
@@ -517,7 +519,7 @@ describe('installOrivon', () => {
     const target: Record<string, unknown> = {}
     expect(() => { reconstructed(fakeBridge(result), LIMITS, target) }).not.toThrow()
 
-    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ readable: unknown, writable: unknown }> } }
+    const orivon = asPage(target.orivon) as { net: { connect: (opts: unknown) => Promise<{ readable: unknown, writable: unknown }> } }
     return orivon.net.connect({ host: 'x.example', port: 443 }).then((socket) => {
       expect(socket.readable).toBeInstanceOf(ReadableStream)
       expect(socket.writable).toBeInstanceOf(WritableStream)

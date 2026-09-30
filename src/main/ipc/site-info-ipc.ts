@@ -50,6 +50,10 @@ export type SiteInfoCommand =
   | { type: 'clearBrowserData' }
   | { type: 'reload' }
   | { type: 'openAllSites' }
+  /** The extensions disclosure's own "Manage" link (docs/planning/extensions-
+   * exploration.md): opens `orivon://extensions` the same way `openAllSites`
+   * opens the all-sites panel. */
+  | { type: 'openExtensions' }
   /** Same contract as ./permissions-ipc.ts's own `contentHeight`. */
   | { type: 'contentHeight'; height: number }
 
@@ -93,6 +97,7 @@ export function registerSiteInfoIpc (
   activeWebContents: () => WebContents | undefined,
   reloadActiveTab: () => void,
   openAllSites: () => void,
+  openExtensions: () => void,
   onContentHeight: (height: number) => void = () => {}
 ): void {
   // On the popup's own webContents: the handler goes with it, and two windows
@@ -140,6 +145,9 @@ export function registerSiteInfoIpc (
         return
       case 'openAllSites':
         openAllSites()
+        return
+      case 'openExtensions':
+        openExtensions()
         return
       case 'contentHeight':
         if (Number.isFinite(command.height)) onContentHeight(command.height)

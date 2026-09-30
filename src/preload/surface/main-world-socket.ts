@@ -1,33 +1,23 @@
 // The one function handed to `contextBridge.executeInMainWorld`. SERIALISED
 // (Function.prototype.toString) and re-evaluated fresh in the main world, so
-// every helper it needs must be declared INSIDE its own body -- no free
-// variables, no imports, no module-level consts. That is what makes
-// `ReadableStream`/`WritableStream`/`ByteLengthQueuingStrategy` inside it the
-// PAGE's own constructors, not the preload's isolated-world ones --
-// contextBridge copies plain values across, but a stream built in the
-// isolated world crosses broken, which is the whole reason this exists
-// rather than building streams directly in ../ports/socket.ts. `web.
-// openContext` needs none of that (surface/web.ts's header) but stays here
-// too: `window.orivon` freezes non-configurable below, nothing bolts on later.
-//
-// `bridge` is a plain object of proxied closures surface/orivon.ts built,
-// one per CONTROL_CHANNEL method; `target` defaults to the real `window`
-// (overridable, matching src/shim/globals.ts) so a test never mutates the
-// one shared global environment.
+// every helper it needs -- streams, the caller-attribution check below --
+// must be declared INSIDE its own body: no free variables, no imports, no
+// module-level consts. See README.md's Design notes for why. `bridge` is a
+// plain object of proxied closures surface/orivon.ts built, one per
+// CONTROL_CHANNEL method; `target` defaults to the real `window` (overridable, matching src/shim/globals.ts) so a test never mutates the shared global.
 
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../../contracts/handles.js'
 import type { CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
 import type {
-  MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
+  CallSiteMethods, MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
 } from './main-world-bridges.js'
 
-// The bridge shapes -- including installOrivon's own `bridge` PARAMETER
-// shape, `MainWorldBridge` -- live in ./main-world-bridges.ts, split out
-// under code-guidelines.md Rule 2, safe despite this file's own serialised-
-// function constraint below since an `interface` produces no JS at all
-// (that file's own header). Re-exported so no import site changes.
+// The bridge shapes -- including `bridge`'s own PARAMETER shape,
+// MainWorldBridge -- live in ./main-world-bridges.ts (Rule 2: an `interface`
+// produces no JS, so this is safe despite the constraint above). Re-exported
+// so no import site changes.
 export type {
   MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
@@ -38,19 +28,7 @@ export function installOrivon (
   limits: OrivonLimits,
   target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown }
 ): void {
-  /**
-   * UNLIKE ../orivon-error.ts's isolated-world twin, this builds a REAL
-   * `Error`, not a plain object -- A152 (docs/open-questions.md). That
-   * file's plain object is load-bearing THERE because it still has to
-   * cross `contextBridge` (which strips a thrown Error down to its
-   * `.message`); everything this copy builds is already past that
-   * crossing (onReadEnd/onFatal/close/readFileSync all hand it straight
-   * to the page's own stream controllers or throw it directly), so
-   * nothing here needs to survive contextBridge a second time, and
-   * `OrivonError extends Error` (../../contracts/errors.ts) can actually
-   * hold. This file cannot import the isolated-world twin either way
-   * (serialised and re-run fresh in the main world; see the file header).
-   */
+  /** Builds a REAL `Error`, unlike ../orivon-error.ts's isolated-world twin -- see README.md's Design notes for why, and why this file cannot import that one either way. */
   function toOrivonError (
     code: OrivonErrorCode,
     options: { message?: string, platformCode?: string } = {}
@@ -62,19 +40,7 @@ export function installOrivon (
     if (platformCode !== undefined) error.platformCode = platformCode
     return error
   }
-
-  /**
-   * A `bridge.*` call's rejection crosses `contextBridge`'s own promise-
-   * rejection marshalling FROM the isolated world -- ../orivon-error.ts's
-   * plain-object choice (see its own header) survives that crossing with
-   * every field intact, measured live (A152), but lands here as a fresh
-   * plain object in THIS world, so `instanceof Error` is false for it
-   * despite the contract promising every OrivonError one is. Rebuilds a
-   * real Error from it, entirely inside the main world -- there is no
-   * further crossing after this point for anything this function returns.
-   * A rejection that does not look like one of ours (no string `.message`
-   * or `.code`) passes through unchanged rather than being reshaped.
-   */
+  /** Rebuilds a real `Error` from a bridge rejection (README.md's Design notes) -- one that does not look like one of ours (no string `.message`/`.code`) passes through unchanged. */
   async function callRevived<T> (promise: Promise<T>): Promise<T> {
     try {
       return await promise
@@ -90,14 +56,12 @@ export function installOrivon (
       throw revived
     }
   }
-
   /** A page-facing `closed`: revived, and marked handled so an abrupt close the page never listens for raises no `unhandledrejection` -- a page that does listen still sees the rejection. */
   function pageClosed (closed: Promise<void>): Promise<void> {
     const revived = callRevived(closed)
     revived.catch(() => {})
     return revived
   }
-
   /** A secure socket's handshake facts as plain page properties. The certificate is frozen but its `raw`/`pubkey` bytes cannot be: a non-empty typed array refuses `Object.freeze`. */
   function handshakeFields (tls: NonNullable<MainWorldSocketBridge['tls']>): Record<string, unknown> {
     const cert = tls.peerCertificate
@@ -120,8 +84,7 @@ export function installOrivon (
       start (controller) {
         readController = controller
         s.onData((chunk) => {
-          // A cancelled readable has no queue left: the bytes are dropped and
-          // credited at once, so the peer is not stalled by bytes nobody reads.
+          // A cancelled readable has no queue left -- credit dropped bytes at once so the peer is not stalled.
           if (readCancelled) { s.reportConsumed(chunk.byteLength); return }
           totalEnqueued += chunk.byteLength
           controller.enqueue(chunk)
@@ -131,8 +94,7 @@ export function installOrivon (
           if (code === undefined) {
             controller.close()
           } else {
-            // An abrupt read-end means no more writes will ever be accepted
-            // either -- error BOTH sides, not just the one this callback owns.
+            // An abrupt read-end errors BOTH sides, not just this callback's own.
             const error = toOrivonError(code, platformCode === undefined ? {} : { platformCode })
             controller.error(error)
             try { writeController.error(error) } catch { /* already settled */ }
@@ -141,14 +103,7 @@ export function installOrivon (
       },
       cancel () { readCancelled = true },
       pull (controller) {
-        // ByteLengthQueuingStrategy's own desiredSize = highWaterMark - the
-        // queue's current total byte size, so the queue's current size is
-        // recoverable from it without this file tracking anything the
-        // platform already tracks. The delta since the last pull() is what
-        // the app has genuinely drained since credit was last reported.
-        // desiredSize is null once the controller is no longer readable --
-        // falling back to 0 (not readWindowBytes) means crediting NOTHING in
-        // that case, never the whole window for bytes that may be unread.
+        // Bytes consumed since the last pull(), derived from desiredSize, never tracked separately -- README.md's Design notes.
         const desiredSize = controller.desiredSize ?? 0
         const queueSize = limits.readWindowBytes - desiredSize
         const consumedNow = totalEnqueued - queueSize
@@ -185,10 +140,7 @@ export function installOrivon (
       closed: pageClosed(s.closed),
       close: async () => {
         await callRevived(s.close())
-        // Reflect the closure on both WHATWG streams the page holds --
-        // ReadableStreamDefaultController has no other externally callable
-        // terminal state, and error() is the closest WritableStream has to
-        // an externally-triggered close (it has no controller.close()).
+        // Reflects the closure on both streams -- error() is the closest WritableStream has to an externally-triggered close.
         try { readController.close() } catch { /* already closed or errored */ }
         try { writeController.error(toOrivonError('closed')) } catch { /* already settled */ }
       },
@@ -197,21 +149,7 @@ export function installOrivon (
     })
   }
 
-  /**
-   * Builds the page's real `TcpServer` (contracts/handles.ts) -- the
-   * `connections` half of A114/d-0028, over exactly the closures
-   * ../ports/server.ts built in the isolated world.
-   *
-   * `highWaterMark: 0`, MATCHING THE BROKER'S OWN `entry.connections`
-   * EXACTLY (handle-contracts.md's "TcpServer" section, capabilities/net.ts's
-   * own `listen`): `pull()` below fires once per app `read()` that finds the
-   * queue empty, and each firing is EXACTLY one unit of accept demand
-   * (../ports/server.ts's `reportAccepted`, ../../broker/transport/relay/accept-pump.ts's
-   * own `handleDemand` one layer down). THIS IS THE PROPERTY THIS WHOLE LANE
-   * EXISTS TO PRESERVE: `reportAccepted` must never be called from anywhere
-   * but here, or the broker accepts connections nobody asked for
-   * (open-questions.md A185).
-   */
+  /** Builds the page's real `TcpServer` (contracts/handles.ts), the `connections` half of A114/d-0028, over the closures ../ports/server.ts built -- `pull()`'s `reportAccepted` invariant: README.md's Design notes. */
   function buildServer (s: Awaited<ReturnType<typeof bridge.netListen>>): unknown {
     let readController: ReadableStreamDefaultController<unknown>
 
@@ -252,11 +190,7 @@ export function installOrivon (
     let writeController: WritableStreamDefaultController
     let refusalController: ReadableStreamDefaultController<SendRefusal>
 
-    // Enqueued but not yet drained, oldest first. A CountQueuingStrategy makes
-    // the QUEUE's length recoverable from desiredSize, but the broker's credit
-    // window is denominated in both datagrams AND bytes -- so the byte figure
-    // has to come from somewhere, and the sizes of the datagrams that actually
-    // left the queue is the only honest source for it.
+    // Enqueued but not yet drained, oldest first -- the broker's credit window is denominated in bytes too, and CountQueuingStrategy only recovers the queue's LENGTH from desiredSize.
     const queuedSizes: number[] = []
     let enqueued = 0
     let consumedTotal = 0
@@ -287,9 +221,7 @@ export function installOrivon (
         })
       },
       pull (controller) {
-        // Same derivation as buildSocket's, counted rather than measured:
-        // desiredSize is null once the controller is no longer readable, and
-        // falling back to 0 credits NOTHING rather than the whole window.
+        // Same derivation as buildSocket's pull() (README.md's Design notes), counted rather than measured.
         const desiredSize = controller.desiredSize ?? 0
         const queueLength = limits.inboundDatagramWindow - desiredSize
         const delta = (enqueued - queueLength) - consumedTotal
@@ -304,23 +236,13 @@ export function installOrivon (
 
     const writable = new WritableStream<MainWorldDatagram>({
       start (controller) { writeController = controller },
-      // A datagram the broker REFUSED still resolves here. Rejecting would
-      // error this stream permanently, and a peer list outside the grant is
-      // ordinary traffic for a P2P app -- the refusal shows up in
-      // droppedOutbound instead (open-questions.md A87).
+      // A broker-REFUSED datagram still resolves here, not rejects -- an out-of-grant peer is ordinary P2P traffic, reported via droppedOutbound instead (A87).
       write: async (datagram) => { await callRevived(u.send(datagram)) },
       close: async () => { await callRevived(u.close()) },
       abort: async () => { await callRevived(u.close()) }
     }, new CountQueuingStrategy({ highWaterMark: limits.outboundDatagramWindow }))
 
-    // Fed by u.onRefusal (A87): every outbound datagram the broker refused,
-    // reported here instead of by rejecting `writable`'s sink -- a refused
-    // destination is ordinary P2P traffic and must not error the socket.
-    // Unlike `readable`, no wire-level credit window paces this: the broker
-    // reports a refusal as soon as it happens, with nothing pacing it against
-    // what this stream has drained. `droppedOutbound` above already counts
-    // every refusal regardless, so once the queue is full a new one is
-    // DROPPED here rather than queued without bound.
+    // Fed by u.onRefusal (A87): a refused destination is ordinary P2P traffic, reported here rather than by rejecting `writable`'s sink -- credit-window reasoning: README.md's Design notes.
     const refusals = new ReadableStream<SendRefusal>({
       start (controller) {
         refusalController = controller
@@ -345,9 +267,7 @@ export function installOrivon (
       readable,
       writable,
       refusals,
-      // GETTERS, not values: these move for the life of the socket, and a
-      // number copied once at acquisition would read zero forever. Object.freeze
-      // prevents redefinition, not invocation, so both survive it.
+      // GETTERS, not values copied once -- README.md's Design notes.
       get droppedInbound () { return droppedInbound },
       get droppedOutbound () { return droppedOutbound },
       closed: pageClosed(u.closed),
@@ -360,13 +280,7 @@ export function installOrivon (
     })
   }
 
-  /**
-   * `fsOpen`'s own counterpart to `buildSocket`/`buildUdpSocket` -- far
-   * simpler, because every method here is a plain request/reply round trip
-   * with no port and no stream to build. Each nested closure still needs
-   * its own `callRevived`: `f.read`/`f.write`/... each cross back into the
-   * isolated world independently, and any one of them can reject on its own.
-   */
+  /** `fsOpen`'s counterpart to `buildSocket`/`buildUdpSocket` -- a plain request/reply round trip, no port or stream; each nested closure needs its own `callRevived` since any one can reject independently. */
   function buildFile (f: Awaited<ReturnType<typeof bridge.fsOpen>>): MainWorldFileBridge {
     return Object.freeze({
       id: f.id,
@@ -404,74 +318,168 @@ export function installOrivon (
     })
   }
 
+  // Refuses extension code at every page-callable method below, over every built-in the decision path calls -- decision rule, what it catches and why: README.md's Design notes.
+  const RealError = Error
+  const nativeCaptureStackTrace = RealError.captureStackTrace
+  const { defineProperty: defineOwn, getOwnPropertyDescriptor: ownDescriptor, apply: applyOwn, getPrototypeOf: getProtoOf } = Reflect
+  const mapOwn = Array.prototype.map
+  const someOwn = Array.prototype.some
+  const { indexOf: indexOfOwn, startsWith: startsWithOwn } = String.prototype
+  function hasSource (text: unknown, needles: readonly string[]): boolean {
+    return typeof text === 'string' && applyOwn(someOwn, needles, [(needle: string) => applyOwn(indexOfOwn, text, [needle]) !== -1])
+  }
+  interface CallerFrame { fileName?: string, scriptNameOrSourceURL?: string, evalOrigin?: string }
+  /** Pure over already-captured frames (the wrapper's own already excluded). A verbatim top-level copy lives in tests/main-world-socket-extension-filter.test.ts -- one test there asserts the two never drift; this one cannot be imported (file header). */
+  function callerIsRefused (frames: readonly CallerFrame[]): boolean {
+    const isExtension = (f: CallerFrame): boolean =>
+      hasSource(f.fileName, ['chrome-extension://']) || hasSource(f.scriptNameOrSourceURL, ['chrome-extension://']) || hasSource(f.evalOrigin, ['chrome-extension://'])
+    // A real script's fileName only, STARTS-WITH -- never scriptNameOrSourceURL or an eval origin, both of which a `//# sourceURL=...` comment rewrites. README.md's Design notes.
+    const startsWithAny = (text: unknown, prefixes: readonly string[]): boolean =>
+      typeof text === 'string' && applyOwn(someOwn, prefixes, [(prefix: string) => applyOwn(startsWithOwn, text, [prefix])])
+    const isPage = (f: CallerFrame): boolean => startsWithAny(f.fileName, ['http://', 'https://', 'blob:http://', 'blob:https://'])
+    if (applyOwn(someOwn, frames, [isExtension])) return true
+    return !applyOwn(someOwn, frames, [isPage])
+  }
+  // The four CallSite.prototype methods, saved by mapFrames' own first call
+  // (forced synchronously below); a live/saved mismatch is itself tamper. README.md's Design notes.
+  let savedCallSiteMethods: CallSiteMethods | undefined
+  function mapFrames (raw: readonly NodeJS.CallSite[]): CallerFrame[] {
+    return applyOwn(mapOwn, raw, [(cs: NodeJS.CallSite) => {
+      const live = getProtoOf(cs) as CallSiteMethods | null
+      if (live === null) throw new RealError('orivon: no CallSite prototype')
+      if (savedCallSiteMethods === undefined) {
+        savedCallSiteMethods = { getFileName: live.getFileName, getScriptNameOrSourceURL: live.getScriptNameOrSourceURL, isEval: live.isEval, getEvalOrigin: live.getEvalOrigin }
+      } else if (live.getFileName !== savedCallSiteMethods.getFileName || live.getScriptNameOrSourceURL !== savedCallSiteMethods.getScriptNameOrSourceURL ||
+                 live.isEval !== savedCallSiteMethods.isEval || live.getEvalOrigin !== savedCallSiteMethods.getEvalOrigin) {
+        throw new RealError('orivon: CallSite prototype tampered')
+      }
+      const m = savedCallSiteMethods
+      if (m.getFileName === undefined || m.getScriptNameOrSourceURL === undefined || m.isEval === undefined || m.getEvalOrigin === undefined) throw new RealError('orivon: CallSite methods unavailable')
+      return {
+        fileName: applyOwn(m.getFileName, cs, []) ?? undefined,
+        scriptNameOrSourceURL: applyOwn(m.getScriptNameOrSourceURL, cs, []) ?? undefined,
+        evalOrigin: applyOwn(m.isEval, cs, []) ? applyOwn(m.getEvalOrigin, cs, []) : undefined
+      }
+    }]) as CallerFrame[]
+  }
+  /** Captures `exclude`'s caller's stack, excluding `exclude`'s own frame. `tampered: true` when the capture machinery was frozen first -- refuse rather than decide from an empty/partial stack. */
+  function captureCaller (exclude: (...args: never[]) => unknown): { tampered: boolean, frames: CallerFrame[] } {
+    const savedPrepare = ownDescriptor(RealError, 'prepareStackTrace')
+    let setPrepare = false
+    try { setPrepare = defineOwn(RealError, 'prepareStackTrace', { value: (_e: Error, s: unknown) => s, writable: true, configurable: true, enumerable: false }) } catch { setPrepare = false }
+    if (!setPrepare) return { tampered: true, frames: [] }
+    const savedLimit = ownDescriptor(RealError, 'stackTraceLimit')
+    let setLimit = false
+    try { setLimit = defineOwn(RealError, 'stackTraceLimit', { value: Infinity, writable: true, configurable: true, enumerable: false }) } catch { setLimit = false }
+    // Any frozen value refuses raising it to Infinity, not just 0 -- README.md's Design notes.
+    let tampered = !setLimit
+    let frames: CallerFrame[] = []
+    if (!tampered) {
+      try {
+        const holder: { stack?: unknown } = {}
+        if (typeof nativeCaptureStackTrace === 'function') applyOwn(nativeCaptureStackTrace, RealError, [holder, exclude])
+        else holder.stack = new RealError().stack
+        const raw = holder.stack as NodeJS.CallSite[] | undefined
+        frames = raw !== undefined && raw.length > 0 ? mapFrames(raw) : []
+        if (frames.length === 0) tampered = true
+      } catch { tampered = true }
+    }
+    try { if (savedPrepare !== undefined) defineOwn(RealError, 'prepareStackTrace', savedPrepare); else delete (RealError as { prepareStackTrace?: unknown }).prepareStackTrace } catch { /* best effort restore */ }
+    try { if (setLimit) { if (savedLimit !== undefined) defineOwn(RealError, 'stackTraceLimit', savedLimit); else delete (RealError as { stackTraceLimit?: unknown }).stackTraceLimit } } catch { /* best effort restore */ }
+    return { tampered, frames }
+  }
+  // Forces the bootstrap capture above to happen NOW, before any page or
+  // extension script runs, rather than on whatever call is first; a failed
+  // bootstrap leaves savedCallSiteMethods permanently mismatched (`{}`),
+  // refusing every call. Genuinely CALLED, not just referenced --
+  // captureStackTrace's exclude only trims a frame that is on the stack.
+  function bootstrapCallSiteMethods (): void { captureCaller(bootstrapCallSiteMethods) }
+  bootstrapCallSiteMethods()
+  if (savedCallSiteMethods === undefined) savedCallSiteMethods = {}
+  function refusal (): Error & { code: OrivonErrorCode } { return toOrivonError('denied', { message: "orivon: refused -- the caller could not be attributed to this page's own script" }) }
+  /** Wraps one page-callable leaf: `sync` (`fs.readFileSync` alone) throws on refusal, matching its own never-a-Promise shape; every other method rejects. Internal callers reach `fn` directly (`netConnectImpl` below), never through `wrapped`. */
+  function guarded<F extends (...args: never[]) => unknown> (fn: F, sync = false): F {
+    function wrapped (...args: unknown[]): unknown {
+      const captured = captureCaller(wrapped)
+      if (captured.tampered || callerIsRefused(captured.frames)) {
+        if (sync) throw refusal()
+        return Promise.reject(refusal())
+      }
+      return applyOwn(fn, undefined, args)
+    }
+    return wrapped as unknown as F
+  }
+
+  // UNWRAPPED net.connect/net.connectSecure -- ../routed/dial.ts's own use, via the internal-net slot below (README.md's Design notes).
+  const netConnectImpl = async (opts: { host: string, port: number }): Promise<unknown> => buildSocket(await callRevived(bridge.netConnect(opts)))
+  const netConnectSecureImpl = async (opts: SecureConnectOptions): Promise<unknown> => buildSocket(await callRevived(bridge.netConnectSecure(opts)))
+
   const api = {
     version: 0,
     app: Object.freeze({
-      manifest: async () => await callRevived(bridge.appManifest()),
-      grants: async () => await callRevived(bridge.appGrants()),
-      requestGrant: async (request: CapabilityRequest) => await callRevived(bridge.appRequestGrant(request))
+      manifest: guarded(async () => await callRevived(bridge.appManifest())),
+      grants: guarded(async () => await callRevived(bridge.appGrants())),
+      requestGrant: guarded(async (request: CapabilityRequest) => await callRevived(bridge.appRequestGrant(request)))
     }),
     fs: Object.freeze({
-      readFile: async (path: string) => await callRevived(bridge.fsReadFile(path)),
-      writeFile: async (path: string, data: Uint8Array) => { await callRevived(bridge.fsWriteFile(path, data)) },
-      // NOT wrapped in `async` -- confirmed live (a real Electron launch)
-      // to stay genuinely synchronous once proxied through
-      // `contextBridge.executeInMainWorld`; an `async` wrapper here would
-      // force a Promise even though the proxy itself does not.
-      // `bridge.fsReadFileSync` never throws (see its own doc on why); the
-      // failure branch is built and thrown HERE instead, entirely inside
-      // this main-world function, so the throw itself never has to cross
-      // the proxy boundary that strips a thrown value's shape. No
-      // callRevived here either -- this never goes through a `bridge.*`
-      // rejection at all.
-      readFileSync: (path: string) => {
+      readFile: guarded(async (path: string) => await callRevived(bridge.fsReadFile(path))),
+      writeFile: guarded(async (path: string, data: Uint8Array) => { await callRevived(bridge.fsWriteFile(path, data)) }),
+      // NOT `async`, genuinely synchronous through `executeInMainWorld` -- `bridge.fsReadFileSync` never throws, so the failure branch is built and thrown HERE, never via callRevived.
+      readFileSync: guarded((path: string) => {
         const response = bridge.fsReadFileSync(path)
         if (response.ok) return response.result
         throw toOrivonError(response.code, response.platformCode === undefined
           ? { message: response.message }
           : { message: response.message, platformCode: response.platformCode })
-      },
-      mkdir: async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsMkdir(path, opts)) },
-      readdir: async (path: string) => await callRevived(bridge.fsReaddir(path)),
-      stat: async (path: string) => await callRevived(bridge.fsStat(path)),
-      rm: async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsRm(path, opts)) },
-      rename: async (from: string, to: string) => { await callRevived(bridge.fsRename(from, to)) },
-      open: async (path: string, flags: string) => buildFile(await callRevived(bridge.fsOpen(path, flags))),
+      }, true),
+      mkdir: guarded(async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsMkdir(path, opts)) }),
+      readdir: guarded(async (path: string) => await callRevived(bridge.fsReaddir(path))),
+      stat: guarded(async (path: string) => await callRevived(bridge.fsStat(path))),
+      rm: guarded(async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsRm(path, opts)) }),
+      rename: guarded(async (from: string, to: string) => { await callRevived(bridge.fsRename(from, to)) }),
+      open: guarded(async (path: string, flags: string) => buildFile(await callRevived(bridge.fsOpen(path, flags)))),
       // Routes on `opts?.directory`, matching capability-api.ts's own overload split (A195).
-      userSelected: async (opts?: { directory?: boolean, multiple?: boolean }) => {
+      userSelected: guarded(async (opts?: { directory?: boolean, multiple?: boolean }) => {
         if (opts?.directory === true) {
           const dir = await callRevived(bridge.fsUserSelectedDirectory())
           return dir === null ? null : buildDirectory(dir)
         }
         const fileOpts = opts?.multiple === undefined ? undefined : { multiple: opts.multiple }
         return (await callRevived(bridge.fsUserSelected(fileOpts))).map(buildFile)
-      }
+      })
     }),
     id: Object.freeze({
-      publicKey: async (opts: { curve: string }) => await callRevived(bridge.idPublicKey(opts.curve)),
-      sign: async (opts: { curve: string, payload: Uint8Array }) => await callRevived(bridge.idSign(opts.curve, opts.payload))
+      publicKey: guarded(async (opts: { curve: string }) => await callRevived(bridge.idPublicKey(opts.curve))),
+      sign: guarded(async (opts: { curve: string, payload: Uint8Array }) => await callRevived(bridge.idSign(opts.curve, opts.payload)))
     }),
     secrets: Object.freeze({
-      available: async () => await callRevived(bridge.secretsAvailable()),
-      encrypt: async (plaintext: Uint8Array) => await callRevived(bridge.secretsEncrypt(plaintext)),
-      decrypt: async (ciphertext: Uint8Array) => await callRevived(bridge.secretsDecrypt(ciphertext))
+      available: guarded(async () => await callRevived(bridge.secretsAvailable())),
+      encrypt: guarded(async (plaintext: Uint8Array) => await callRevived(bridge.secretsEncrypt(plaintext))),
+      decrypt: guarded(async (ciphertext: Uint8Array) => await callRevived(bridge.secretsDecrypt(ciphertext)))
     }),
     web: Object.freeze({
-      openContext: async (origin: string, options?: { width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext({ origin, ...options }))),
-      setEmbedScript: async (source: string) => { await callRevived(bridge.webSetEmbedScript(source)) }
+      openContext: guarded(async (origin: string, options?: { width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext({ origin, ...options })))),
+      setEmbedScript: guarded(async (source: string) => { await callRevived(bridge.webSetEmbedScript(source)) })
     }),
     net: Object.freeze({
-      connect: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnect(opts))),
-      connectSecure: async (opts: SecureConnectOptions) => buildSocket(await callRevived(bridge.netConnectSecure(opts))),
-      udpBind: async (opts: { port: number }) => buildUdpSocket(await callRevived(bridge.netUdpBind(opts))),
-      listen: async (opts: { port: number }) => buildServer(await callRevived(bridge.netListen(opts))),
-      lookup: async (opts: { hostname: string }) => await callRevived(bridge.netLookup(opts))
+      connect: guarded(netConnectImpl),
+      connectSecure: guarded(netConnectSecureImpl),
+      udpBind: guarded(async (opts: { port: number }) => buildUdpSocket(await callRevived(bridge.netUdpBind(opts)))),
+      listen: guarded(async (opts: { port: number }) => buildServer(await callRevived(bridge.netListen(opts)))),
+      lookup: guarded(async (opts: { hostname: string }) => await callRevived(bridge.netLookup(opts)))
     })
   }
-  // A plain assignment here would let any page script (or a compromised
-  // third-party script tag on the same page) replace orivon.net.connect and
-  // have every OTHER script transparently use the substitute -- the old
-  // exposeInMainWorld path froze what it exposed; this one does not by
-  // default.
+  // A plain assignment would let a page script replace orivon.net.connect for every other script on the same page.
   Object.defineProperty(target, 'orivon', { value: Object.freeze(api), writable: false, configurable: false, enumerable: true })
+
+  // A private slot for the ../routed/ installers alone -- README.md's Design notes. `callerIsPage` is `guarded`'s own attribution, shared rather than copied a third time.
+  try {
+    Reflect.defineProperty(target, Symbol.for('orivon.internal-net'), {
+      value: Object.freeze({
+        connect: netConnectImpl, connectSecure: netConnectSecureImpl,
+        callerIsPage: (exclude: (...args: never[]) => unknown) => { const c = captureCaller(exclude); return !c.tampered && !callerIsRefused(c.frames) }
+      }),
+      writable: false, configurable: true, enumerable: false
+    })
+  } catch { /* no internal net path for ../routed/ this session; it fails closed on its own missing-slot check */ }
 }

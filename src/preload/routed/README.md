@@ -32,6 +32,21 @@ request, untouched, to the page's native API. A `Request`'s body is read from a 
 extracted only after the dial succeeds, so the native path still receives it. Mid-redirect there
 is no native fallback: a hop to an ungranted host fails the request.
 
+**Attribution, not just routing -- a caller `../surface/main-world-socket.ts`'s own filter would
+refuse also gets the native path, never the dial.** The replaced `fetch`, `XMLHttpRequest`,
+`EventSource` and `WebSocket` are, to Chromium, the page's own globals -- exactly what
+`window.orivon`'s own filter exists to stop an extension's MAIN-world script from abusing
+(ADR-0045); without this, a routed global would hand an extension the app's own grant with no
+CORS, unlike `window.orivon` itself. Each replaced entry point checks its caller SYNCHRONOUSLY, at
+the exact point it decides routed vs. native (`fetch()`'s own body; `XMLHttpRequest`'s `open()`;
+the `EventSource`/`WebSocket` constructors) -- before any `await`, since an async continuation has
+no caller frame left to capture, the same constraint `guarded`'s own doc states. A refused caller
+gets exactly the native path an ungranted host already takes, never a thrown error. The check
+itself is `installOrivon`'s own (`main-world-socket.ts`'s `guarded`), read through
+`target[Symbol.for('orivon.internal-net')]`'s `callerIsPage` -- the same private slot `dial.ts`
+already reads its unwrapped `net.connect`/`connectSecure` from -- never a third copy of the
+decision logic.
+
 **A WebSocket is decided the same way, once, before its handshake.** It is routed when its URL,
 read as `http(s):`, is cross-origin, so a dev server's hot-reload socket on the page's own host
 and port stays native, where the dev CSP's `connect-src 'self'` admits it (measured in Electron

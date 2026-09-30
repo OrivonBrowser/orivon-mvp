@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import type { MainWorldDirectoryBridge, MainWorldFileBridge } from '../main-world-socket.js'
-import { LIMITS, fakeBridge, fakeDirectoryBridgeResult, fakeFileBridgeResult, fakeSocketBridgeResult } from './main-world-socket.test-helpers.js'
+import { LIMITS, asPage, fakeBridge, fakeDirectoryBridgeResult, fakeFileBridgeResult, fakeSocketBridgeResult } from './main-world-socket.test-helpers.js'
 
 // orivon.fs.open (A184) -- split out of main-world-socket.test.ts under
 // code-guidelines.md's 800-line test limit, matching main-world-socket-udp.
@@ -13,7 +13,7 @@ import { LIMITS, fakeBridge, fakeDirectoryBridgeResult, fakeFileBridgeResult, fa
 // one of them, not only the ones a hand-written smoke test happens to call.
 
 function fsOrivon (target: Record<string, unknown>): { open: (path: string, flags: string) => Promise<MainWorldFileBridge> } {
-  return (target.orivon as { fs: { open: (path: string, flags: string) => Promise<MainWorldFileBridge> } }).fs
+  return (asPage(target.orivon) as { fs: { open: (path: string, flags: string) => Promise<MainWorldFileBridge> } }).fs
 }
 
 describe('orivon.fs.open', () => {
@@ -109,13 +109,13 @@ describe('orivon.fs.open', () => {
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
 
-    const orivon = target.orivon as Record<string, unknown>
+    const orivon = asPage(target.orivon) as Record<string, unknown>
     expect(typeof (orivon.fs as Record<string, unknown>).open).toBe('function')
   })
 })
 
 function fsUserSelectedOrivon (target: Record<string, unknown>): { userSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]> } {
-  return (target.orivon as { fs: { userSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]> } }).fs
+  return (asPage(target.orivon) as { fs: { userSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]> } }).fs
 }
 
 // orivon.fs.userSelected (A194, d-0032) -- the FILE shape only. `buildFile`
@@ -192,7 +192,7 @@ describe('orivon.fs.userSelected', () => {
 function fsUserSelectedDirOrivon (target: Record<string, unknown>): {
   userSelected: (opts: { directory: true }) => Promise<MainWorldDirectoryBridge | null>
 } {
-  return (target.orivon as { fs: { userSelected: (opts: { directory: true }) => Promise<MainWorldDirectoryBridge | null> } }).fs
+  return (asPage(target.orivon) as { fs: { userSelected: (opts: { directory: true }) => Promise<MainWorldDirectoryBridge | null> } }).fs
 }
 
 // orivon.fs.userSelected -- the FOLDER shape (A195, closing A194).

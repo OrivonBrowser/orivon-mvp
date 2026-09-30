@@ -27,8 +27,8 @@ import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
-import { PORT_APP_FREETUBE, startOwnServer, grantOriginOnly, readAppManifest } from './freetube-fixture.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import { AS_PAGE_SCRIPT_URL, PORT_APP_FREETUBE, clearFreetubeAsPageScript, grantOriginOnly, readAppManifest, setFreetubeAsPageScript, startOwnServer } from './freetube-fixture.js'
 
 const LIVE = process.env['CI'] !== 'true' || process.env['ORIVON_E2E_LIVE'] === '1'
 
@@ -72,7 +72,13 @@ it.skipIf(!LIVE)(
         const view = findViewShowing(app, chrome, `${ORIGIN}/`)
         if (view === undefined) throw new Error('no view found showing the live origin')
 
-        const detected = await evaluateRetrying(view, async () => {
+        // window.orivon.app.grants() must run as a script the page itself
+        // loaded, not through Playwright's page.evaluate() (ADR-0045;
+        // main-world-socket.ts's README.md Design notes) -- asPage
+        // (e2e-helpers.ts) does that via a real <script src>, served here
+        // by writing straight into serve.mjs's own static root
+        // (freetube-fixture.ts's setFreetubeAsPageScript).
+        const detected = await asPage(view, setFreetubeAsPageScript, `${ORIGIN}/${AS_PAGE_SCRIPT_URL}`, async () => {
           const grants = await (globalThis as unknown as { orivon: { app: { grants: () => Promise<unknown[]> } } }).orivon.app.grants()
           return {
             // The tell: the routed fetch is an ordinary JS function, while
@@ -82,6 +88,7 @@ it.skipIf(!LIVE)(
             grantKinds: (grants as Array<{ capability: string }>).map((g) => g.capability)
           }
         })
+        clearFreetubeAsPageScript()
         check(
           'GRANTING THE URL ALONE MAKES IT AN APP TAB: window.fetch is not the platform\'s own, so the routed fetch is installed, with nothing installed to disk',
           detected.notNativeFetch,
@@ -162,6 +169,7 @@ it.skipIf(!LIVE)(
       } finally {
         if (app !== undefined) await closeElectronApp(app)
         if (server !== undefined) await killChild(server)
+        clearFreetubeAsPageScript()
       }
     })
   },

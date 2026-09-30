@@ -238,3 +238,11 @@ export interface MainWorldBridge {
   /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */
   netLookup: (opts: { hostname: string }) => Promise<readonly LookupAddress[]>
 }
+
+/** The four `CallSite.prototype` methods `./main-world-socket.ts`'s `mapFrames` needs, saved once at install rather than read live (that file's README.md Design notes) -- moved here for the same Rule 2 reason as everything else in this file: an `interface` produces no JS. */
+export interface CallSiteMethods {
+  getFileName?: NodeJS.CallSite['getFileName'] | undefined
+  getScriptNameOrSourceURL?: NodeJS.CallSite['getScriptNameOrSourceURL'] | undefined
+  isEval?: NodeJS.CallSite['isEval'] | undefined
+  getEvalOrigin?: NodeJS.CallSite['getEvalOrigin'] | undefined
+}

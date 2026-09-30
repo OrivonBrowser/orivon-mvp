@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   describeExtensionInstall, describeHostAccess, describeStrippedPermissions, loadableManifest,
-  NOT_GRANTED_APPS_CLAUSE, readExtensionManifest, updateRequiresConsent,
+  GRANTED_APPS_CLAUSE, readExtensionManifest, updateRequiresConsent,
   type ExtensionManifestFacts, type StrippedRecord
 } from '../extension-manifest.js'
 
@@ -94,6 +94,23 @@ describe('readExtensionManifest', () => {
       label: '__MSG_ names, kept as-is',
       raw: { ...VALID_MV3, name: '__MSG_extName__' },
       wantOk: true
+    },
+    {
+      label: 'a sandbox.pages list right at the 200-entry cap',
+      raw: { ...VALID_MV3, sandbox: { pages: Array.from({ length: 200 }, (_, i) => `p${String(i)}.html`) } },
+      wantOk: true
+    },
+    {
+      // isSandboxPageUrl (vendor/electron-chrome-extensions/src/browser/
+      // router.ts, UPSTREAM.md patch 41) never caps or truncates the pages
+      // it matches against -- refusing an oversized manifest here, rather
+      // than silently truncating which of its declared pages that matcher
+      // recognises, is what keeps a page past some cut from ever being
+      // declared-but-unrecognised (a silent sandbox bypass).
+      label: 'a sandbox.pages list one entry past the 200-entry cap',
+      raw: { ...VALID_MV3, sandbox: { pages: Array.from({ length: 201 }, (_, i) => `p${String(i)}.html`) } },
+      wantOk: false,
+      reason: 'sandbox.pages has 201 entries, more than the 200 this build matches'
     }
   ]
 
@@ -329,7 +346,7 @@ describe('describeExtensionInstall', () => {
     const facts = factsOf({ manifest_version: 3, name: 'AllSites', version: '1.0.0', host_permissions: ['<all_urls>'] })
     const description = describeExtensionInstall(facts, 'unpacked')
     expect(description.detail).toContain('Read and change all your data on all websites')
-    expect(description.detail).toContain('It also runs on Web3 sites, but not on apps you have given permissions to.')
+    expect(description.detail).toContain('It also runs on Web3 sites and on apps you have given permissions to, except an app running from its pinned copy. Orivon keeps its code from using the permissions you have given those apps.')
     expect(description.warning).toBe(true)
   })
 
@@ -380,7 +397,7 @@ describe('describeExtensionInstall', () => {
 
   it('builds its Web3 line from the same clause describeHostAccess-adjacent callers reuse', () => {
     const facts = factsOf({ manifest_version: 3, name: 'x', version: '1.0.0', host_permissions: ['<all_urls>'] })
-    expect(describeExtensionInstall(facts, 'unpacked').detail).toContain(`but not on ${NOT_GRANTED_APPS_CLAUSE}.`)
+    expect(describeExtensionInstall(facts, 'unpacked').detail).toContain(`and on ${GRANTED_APPS_CLAUSE}.`)
   })
 })
 

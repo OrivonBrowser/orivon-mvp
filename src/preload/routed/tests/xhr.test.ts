@@ -200,4 +200,47 @@ describe('routed XMLHttpRequest -- the native path', () => {
     xhr.open('GET', 'https://api.example/x', false)
     expect(FakeNativeXhr.last!.calls[0]).toEqual(['open', 'GET', 'https://api.example/x', false])
   })
+
+  // A MAIN-world extension script calling open() must reach only what the
+  // page's own native XMLHttpRequest would -- never the app's granted dial.
+  // ./fetch.ts's own header has the fuller reasoning.
+  it('opens natively for a caller installOrivon\'s own check would refuse, even to a granted host', () => {
+    const target = xhrTarget(async () => { throw new Error('must not dial') }, { callerIsPage: () => false })
+    const xhr = new target.XMLHttpRequest()
+    xhr.open('GET', 'https://granted.example/x')
+    expect(FakeNativeXhr.last!.calls[0]).toEqual(['open', 'GET', 'https://granted.example/x', true])
+  })
+
+  it('still routes normally for a caller installOrivon\'s own check would accept', async () => {
+    const target = xhrTarget(async () => fakeSocket([OK_RESPONSE]), { callerIsPage: () => true })
+    const xhr = new target.XMLHttpRequest()
+    xhr.open('GET', 'https://granted.example/x')
+    xhr.send()
+    await done(xhr)
+    expect(xhr.status).toBe(200)
+  })
+
+  // Main-world code (the page, or an extension) can reassign
+  // XMLHttpRequest.prototype.open -- that property is a normal, writable
+  // slot. The stack-capture exclude open() hands callerIsPage must therefore
+  // be a reference captured once at install time, not a fresh read of that
+  // property: a fresh read would hand callerIsPage whatever the property
+  // holds AT CALL TIME, not the function actually executing, which defeats
+  // Error.captureStackTrace's own frame-trimming (main-world-socket.ts's
+  // captureCaller, `exclude` doc).
+  it('excludes the real, originally-installed open() from the stack capture -- not whatever XMLHttpRequest.prototype.open currently holds', () => {
+    let seenExclude: unknown
+    const target = xhrTarget(async () => fakeSocket([OK_RESPONSE]), {
+      callerIsPage: (exclude) => { seenExclude = exclude; return true }
+    })
+    const realOpen = target.XMLHttpRequest.prototype.open
+    // Simulates main-world code wrapping the method, as fetch.ts/websocket.ts/
+    // eventsource.ts's own tests exercise for their own routes.
+    target.XMLHttpRequest.prototype.open = function tampered (this: XMLHttpRequest, ...args: Parameters<typeof realOpen>) {
+      return realOpen.apply(this, args)
+    }
+    const xhr = new target.XMLHttpRequest()
+    xhr.open('GET', 'https://granted.example/x')
+    expect(seenExclude).toBe(realOpen)
+  })
 })

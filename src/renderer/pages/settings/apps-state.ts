@@ -1,8 +1,11 @@
 // The apps that hold permissions, as the page knows them: what each may do, the
 // files it was given, what it has stored, and whether the identity key is kept.
 // Revoking goes through main, which checks the request; the list is fetched
-// again after, so the page never shows a permission main no longer has.
+// again after, so the page never shows a permission main no longer has. A
+// grant or revoke made elsewhere (the site-info popover, another Settings
+// window, install) arrives as `apps.changed` and reloads the same way.
 import type { OrivonInternal } from '../shared/bridge.js'
+import { coalesce } from '../shared/coalesce.js'
 
 export interface AppRow {
   readonly origin: string
@@ -18,8 +21,21 @@ export class AppsState {
   apps: readonly AppRow[] | null = null
   identity: IdentityStorage = 'not-started'
   private loading = false
+  private readonly reload: () => void
 
-  constructor (private readonly bridge: OrivonInternal, private readonly changed: () => void) {}
+  constructor (private readonly bridge: OrivonInternal, private readonly changed: () => void) {
+    // A bulk revoke or an install granting several capabilities at once
+    // fires `apps.changed` once per grant -- coalesced so it costs one
+    // refetch, not one per grant.
+    this.reload = coalesce(() => { void this.load() })
+  }
+
+  /** True once this was for an `apps.changed` push. */
+  handle (topic: string): boolean {
+    if (topic !== 'apps.changed') return false
+    this.reload()
+    return true
+  }
 
   /** Asks for the list once; a second call while one is under way does nothing. */
   async load (): Promise<void> {

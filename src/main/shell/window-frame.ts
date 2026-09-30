@@ -10,12 +10,13 @@
 import { app, BaseWindow, nativeTheme, screen } from 'electron'
 import { join } from 'node:path'
 import type { Placement } from './window-options.js'
+import { onThemeUpdated } from './theme-colors.js'
 
 // Kept in sync with src/renderer/style.css's --wchrome/--wink tokens --
 // same dual-source-of-truth pattern as window.ts's CHROME_HEIGHT. The overlay
 // is native-drawn chrome outside the renderer's DOM, so CSS alone can't
-// theme it; nativeTheme.on('updated') below re-applies these on a
-// live OS theme change.
+// theme it; `onThemeUpdated` below re-applies these on a live OS theme
+// change.
 const OVERLAY_DARK = { color: '#1e1f24', symbolColor: '#e6e7e8' }
 const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
 // A private window is tinted (src/renderer/style.css's `data-private`), so it is never taken for the person's own.
@@ -50,15 +51,24 @@ export interface WindowFrame {
   readonly initialBounds: { x: number, y: number, width: number, height: number }
 }
 
+/** The window's own background colour for the current OS/app theme -- exported
+ * so window.ts can paint the chrome view (its own WebContentsView, a separate
+ * surface from the BaseWindow's own background) the SAME colour before it has
+ * a pixel of its own to show, one home for the fact rather than a second copy
+ * of these constants there. */
+export function windowBackgroundColor (isPrivate: boolean): string {
+  return isPrivate
+    ? (nativeTheme.shouldUseDarkColors ? BACKGROUND_PRIVATE_DARK : BACKGROUND_PRIVATE_LIGHT)
+    : (nativeTheme.shouldUseDarkColors ? BACKGROUND_DARK : BACKGROUND_LIGHT)
+}
+
 /** `dirname`: the calling module's own `import.meta.dirname`, from which a run
  * from source finds the repo's build/icon.png (out/main -> ../../build). */
 export function createWindowFrame (dirname: string, place: Placement = {}, isPrivate = false): WindowFrame {
   const overlay = (): { color: string, symbolColor: string } => isPrivate
     ? (nativeTheme.shouldUseDarkColors ? OVERLAY_PRIVATE_DARK : OVERLAY_PRIVATE_LIGHT)
     : (nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT)
-  const background = (): string => isPrivate
-    ? (nativeTheme.shouldUseDarkColors ? BACKGROUND_PRIVATE_DARK : BACKGROUND_PRIVATE_LIGHT)
-    : (nativeTheme.shouldUseDarkColors ? BACKGROUND_DARK : BACKGROUND_LIGHT)
+  const background = (): string => windowBackgroundColor(isPrivate)
   // Hands the app icon to the window. GNOME's dock does not read it -- the
   // icon shown for a running window comes from matching the window's WM_CLASS
   // ("orivon") against a .desktop entry's Icon=/StartupWMClass, and this
@@ -110,17 +120,19 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   // the native buttons freeze at whatever theme was active on launch.
   // macOS ignores the call entirely (trafficLightPosition covers it), so
   // skip it there rather than call a method on a platform it doesn't
-  // apply to. `nativeTheme` is a singleton shared by every window this
-  // process ever creates -- the listener is removed on 'closed', or a later
-  // theme change would call setTitleBarOverlay on an already-destroyed
-  // window.
+  // apply to. Registered through theme-colors.ts's `onThemeUpdated`, not a
+  // `nativeTheme.on('updated', ...)` of its own -- `nativeTheme` is one
+  // process-wide EventEmitter, and one direct listener per window would
+  // print `MaxListenersExceededWarning [NativeTheme]` from the 4th window
+  // on. Unregistered on 'closed', or a later theme change would call
+  // setTitleBarOverlay on an already-destroyed window.
   function applyOverlayForTheme (): void {
     win.setBackgroundColor(background())
     if (process.platform === 'darwin') return
     win.setTitleBarOverlay(overlay())
   }
-  nativeTheme.on('updated', applyOverlayForTheme)
-  win.on('closed', () => { nativeTheme.removeListener('updated', applyOverlayForTheme) })
+  const unregisterOverlayThemeListener = onThemeUpdated(applyOverlayForTheme)
+  win.on('closed', () => { unregisterOverlayThemeListener() })
 
   return { win, initialBounds }
 }

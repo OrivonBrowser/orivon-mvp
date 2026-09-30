@@ -78,6 +78,11 @@ export type ShellCommand =
   | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
   /** Opens, or closes, the main menu under the toolbar's menu button. Same `anchor` contract as `openPermissions`. */
   | { type: 'openMenu'; anchor: PanelAnchor }
+  /** The toolbar's menu button was hovered or focused: builds its (kept-warm)
+   * view ahead of the click that usually follows, so opening it costs no
+   * more than attaching an already-live view. Never fired at window
+   * construction -- see popover-view.ts's own doc on why. */
+  | { type: 'prewarmMenu' }
   /** Puts a tab at a place in the strip. */
   | { type: 'moveTab'; id: string; index: number }
   /** A genuine tab drag has started (tab-drag.ts's `begin()`, the moment the pointer passes the press
@@ -128,6 +133,7 @@ export interface ShellActions {
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
   runCommand: (id: CommandId) => void
   openMenu: (anchor: PanelAnchor) => void
+  prewarmMenu: () => void
   beginTabDrag: (id: string) => void
   dragTab: (id: string, at: { x: number, y: number } | null) => void
   dropTab: (id: string, screen: { x: number, y: number }, client: { x: number, y: number }) => void
@@ -221,6 +227,9 @@ export function registerShellIpc (
         return
       case 'openMenu':
         actions.openMenu(command.anchor)
+        return
+      case 'prewarmMenu':
+        actions.prewarmMenu()
         return
       case 'moveTab':
         if (typeof command.id === 'string' && Number.isFinite(command.index)) tabs.moveTab(command.id, command.index)

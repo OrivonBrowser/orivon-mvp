@@ -46,11 +46,20 @@ export function findChrome (app) {
   return win
 }
 
-/** Non-chrome views, as Playwright pages -- lets a check read a tab's OWN
- * location rather than trusting the toolbar's rendering of it (T25: the
- * address bar is a display layer and can lie independently). */
+/** Every popup shell/popover-view.ts builds, by its own renderer entry --
+ * never a real tab, so `tabViews()` below must never count one as one. A
+ * `warm` popup (the main menu) is the reason this exclusion is needed at
+ * all: its webContents can outlive being closed (popoverShown's own doc), so
+ * `app.windows()` keeps listing it long after a script that opened and
+ * closed it would otherwise expect the "just the tabs" count to settle back
+ * down. */
+const POPOVER_URL_PARTS = ['/menu/', '/permissions/', '/site-info/']
+
+/** Non-chrome, non-popover views, as Playwright pages -- lets a check read a
+ * tab's OWN location rather than trusting the toolbar's rendering of it
+ * (T25: the address bar is a display layer and can lie independently). */
 export function tabViews (app, chrome) {
-  return app.windows().filter((w) => w !== chrome)
+  return app.windows().filter((w) => w !== chrome && !POPOVER_URL_PARTS.some((part) => w.url().includes(part)))
 }
 
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -92,6 +101,20 @@ export async function waitFor (predicate, timeoutMs = WAIT_TIMEOUT_MS) {
  * own "it reports, it does not just exit" rule (scripts/smoke.mjs's
  * header). Racing the evaluate itself against the deadline is what
  * actually enforces it.
+ *
+ * NEVER CALL `window.orivon.*` FROM `fn` HERE. Measured live: a stack
+ * captured inside a plain `page.evaluate()` call has no fileName at any
+ * frame, all the way down through Playwright's own internal `eval` --
+ * and neither does a `<script>` element created with `document.
+ * createElement`/`appendChild` and no `src`, which Chromium attributes
+ * `<anonymous>` regardless. src/preload/surface/main-world-socket.ts's own
+ * extension-code check (that file's README.md Design notes) refuses such a
+ * call as unattributable, correctly. Only a literal `<script>` PRESENT IN
+ * THE SERVED HTML -- parser-inserted, the same as the page's own -- is
+ * attributed to the document's URL (`extension-stack-probe.json`'s own
+ * `mainWorld` entries; scripts/smoke.mjs's `/orivon-probe` fixture route is
+ * the worked example): the calling code has to be literal HTML a real
+ * server serves, which only the caller's own fixture can supply.
  */
 export async function evaluateRetrying (page, fn, timeoutMs = WAIT_TIMEOUT_MS) {
   const TRANSIENT = /Execution context was destroyed|frame was detached/i
@@ -123,6 +146,24 @@ export async function evaluateRetrying (page, fn, timeoutMs = WAIT_TIMEOUT_MS) {
  */
 export function findViewShowing (app, chrome, url) {
   return tabViews(app, chrome).find((w) => w.url() === url)
+}
+
+/**
+ * Whether the popover whose URL contains `urlPart` (e.g. `/menu/`) is
+ * currently attached to the screen. NOT the same question as "does its
+ * webContents exist" -- a `warm` popover (shell/popover-view.ts, the main
+ * menu) keeps its webContents alive while hidden rather than destroying it,
+ * so `app.windows()` still lists it long after it closed. Reads the e2e-only
+ * hook (shell/view-background-test-hook.ts's `recordPopoverShown`), present
+ * only in a dev-grant-enabled build (`npm run test:e2e`'s own build step).
+ */
+export async function popoverShown (app, urlPart) {
+  return await app.evaluate(({ webContents }, part) => {
+    const target = webContents.getAllWebContents().find((wc) => wc.getURL().includes(part))
+    if (target === undefined) return false
+    const shown = globalThis.__orivonDevPopoverShown
+    return shown !== undefined && shown.has(target.id)
+  }, urlPart)
 }
 
 /** ONE read of a tab view's own location and title. Deliberately not a poll --

@@ -438,6 +438,7 @@ describe('describeGrantRequest -- the confusable is elided everywhere the origin
     expect(content.title).toBe(ORIGIN)
     expect(content.detail.endsWith(ORIGIN)).toBe(true)
   })
+
 })
 
 // d-0025 (ADR-0012's 2026-09-13 amendment) / queue item S4-4: one dialog for
@@ -657,6 +658,7 @@ describe('describeInstallConsent', () => {
 
     expect(content.detail).not.toContain('[Already allowed]')
   })
+
 })
 
 // Owner decision, 2026-09-14: every dialog that shows an origin moves it to

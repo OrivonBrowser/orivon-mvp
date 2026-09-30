@@ -16,6 +16,181 @@ export type IpcEvent = Electron.IpcMainEvent | Electron.IpcMainServiceWorkerEven
 export type IpcInvokeEvent = Electron.IpcMainInvokeEvent | Electron.IpcMainServiceWorkerInvokeEvent
 export type IpcAnyEvent = IpcEvent | IpcInvokeEvent
 
+// Orivon patch (UPSTREAM.md patch 36): see waitForRegisteredExtension below.
+const EXTENSION_REGISTRATION_WAIT_MS = 2000
+
+/**
+ * A genuine page of an already-loading extension can call a crx-msg
+ * handler in the same tick its own webContents is created -- before
+ * `session.extensions.getExtension(id)` reflects the load already in
+ * flight (a real extension's popup script that calls a chrome.* API as its
+ * first statement wins this race every time; a fixture popup whose calls
+ * wait for a button click never does). `extensionId` is only ever set here
+ * from `onRouterMessage`, which already refused the call if
+ * `gMessageSenderIdCheck` was set and did not confirm `extensionId` names
+ * THIS sender's own origin -- so waiting instead of refusing outright adds
+ * no way for an unrelated page to spoof another extension's identity, only
+ * a bounded grace period for the real owner to finish registering.
+ */
+interface ExtensionRegistryEvents {
+  getExtension: (id: string) => Electron.Extension | null
+  on: (event: 'extension-loaded', listener: (event: Electron.Event, extension: Electron.Extension) => void) => unknown
+  removeListener: (event: 'extension-loaded', listener: (event: Electron.Event, extension: Electron.Extension) => void) => unknown
+}
+
+// Orivon patch (UPSTREAM.md patch 38): one pending wait per (extensions,
+// extensionId), shared by every caller -- onRouterMessage's own crx-msg
+// path AND onAddListener below both race the same registration, and a
+// stale page of a disabled/reloading extension can call either one
+// repeatedly; before this, EACH call created its own 'extension-loaded'
+// listener and its own EXTENSION_REGISTRATION_WAIT_MS timer, so a page
+// that never stops calling never stopped paying the full wait, and never
+// stopped accumulating listeners, either. A WeakMap keyed on the real
+// `extensions` object (one per session) so two sessions' pending waits
+// never collide.
+const pendingRegistrations = new WeakMap<ExtensionRegistryEvents, Map<string, Promise<Electron.Extension | undefined>>>()
+
+async function waitForRegisteredExtension (
+  extensions: ExtensionRegistryEvents,
+  extensionId: string,
+): Promise<Electron.Extension | undefined> {
+  const already = extensions.getExtension(extensionId)
+  if (already) return already
+
+  let pending = pendingRegistrations.get(extensions)
+  if (pending === undefined) {
+    pending = new Map()
+    pendingRegistrations.set(extensions, pending)
+  }
+
+  const existing = pending.get(extensionId)
+  if (existing !== undefined) return existing
+
+  const table = pending
+  const promise = new Promise<Electron.Extension | undefined>((resolve) => {
+    let settled = false
+    const onLoaded = (_event: Electron.Event, extension: Electron.Extension): void => {
+      if (settled || extension.id !== extensionId) return
+      settled = true
+      clearTimeout(timer)
+      extensions.removeListener('extension-loaded', onLoaded)
+      resolve(extension)
+    }
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      extensions.removeListener('extension-loaded', onLoaded)
+      resolve(extensions.getExtension(extensionId) ?? undefined)
+    }, EXTENSION_REGISTRATION_WAIT_MS)
+    extensions.on('extension-loaded', onLoaded)
+  })
+  void promise.finally(() => { table.delete(extensionId) })
+
+  pending.set(extensionId, promise)
+  return await promise
+}
+
+/**
+ * Linear-time match of one Chrome-style glob (`*` = any run of characters,
+ * everything else literal -- the only operator `sandbox.pages` grammar
+ * has) against `text`. Orivon patch (UPSTREAM.md patch 39): replaces a
+ * regex built from `pattern.split('*').map(escapeRegExp).join('.*')` --
+ * correct, but a pattern with several `*`s is a backtracking regex built
+ * from the extension's OWN manifest and run on every page load and every
+ * crx-msg, on the main thread: a pathological pattern
+ * (`'a*a*a*a*a*a*a*a*a*a*a*a*a*a*!'`) against a long, almost-matching
+ * string is the textbook catastrophic-backtracking shape. This never
+ * builds a regex at all: split on `*`, then `indexOf` each literal piece
+ * in order, anchoring the first piece to the start and the last to the
+ * end -- O(pattern length + text length) however many stars the pattern
+ * has.
+ */
+function matchesGlob (pattern: string, text: string): boolean {
+  const parts = pattern.split('*')
+  if (parts.length === 1) return pattern === text
+
+  const first = parts[0] ?? ''
+  if (!text.startsWith(first)) return false
+  const last = parts[parts.length - 1] ?? ''
+  if (!text.endsWith(last)) return false
+
+  let pos = first.length
+  const end = text.length - last.length
+  if (pos > end) return false // not even room for the two anchors, let alone anything between
+
+  for (let i = 1; i < parts.length - 1; i++) {
+    const piece = parts[i] ?? ''
+    if (piece.length === 0) continue // adjacent '**', or a '*' beside another
+    const found = text.indexOf(piece, pos)
+    if (found === -1 || found > end) return false
+    pos = found + piece.length
+  }
+  return pos <= end
+}
+
+/**
+ * Orivon patch (UPSTREAM.md patch 37, normalisation added by patch 39,
+ * corrected by patch 41): true if `url`'s own path matches one of `pages`
+ * (an extension's manifest `sandbox.pages`). Exported through
+ * `orivon:crx-extensions-router` (electron-chrome-extensions-lib.d.ts) so
+ * extension-host.ts's own preload-time query (the vendored preload decides
+ * whether to inject any chrome.* at all) answers the identical question
+ * onExtensionMessage below asks on every message -- one matcher, not two
+ * that could drift apart. `pages` is never capped or truncated here:
+ * `src/broker/policy/extension-manifest.ts`'s own `MAX_SANDBOX_PAGES`
+ * refuses to load a manifest with too many entries instead, so every
+ * `pages` array this ever sees in a real session already fits -- silently
+ * skipping some of a declared list here, as an earlier version of this
+ * function did, would leave a page past the cut still declared sandboxed
+ * by the manifest and still served by Electron, unrecognised by this
+ * matcher: no CSP, chrome.* injected, no router refusal, a silent bypass.
+ * Normalises both sides the way Chromium's own
+ * `ExtensionURLToRelativeFilePath` does before it turns this URL into the
+ * on-disk file it actually serves: ALL of a manifest entry's own leading
+ * `/` and `\` are stripped (not only the first, which let
+ * `chrome-extension://<id>//sandbox.html` or a leading `\` serve the real
+ * sandboxed file while comparing against a pathname this function still
+ * saw as un-stripped, missing it entirely), and the URL's pathname is
+ * percent-decoded (`%2E` and `.` name the same file) before having the
+ * same leading separators stripped. A pathname that fails to decode (a
+ * malformed percent-sequence) matches nothing, rather than being compared
+ * encoded -- silently accepting the wrong string here would be worse than
+ * refusing. `platform` defaults to `process.platform`, overridable for
+ * tests: on win32 and darwin, whose filesystems resolve "SANDBOX.html" and
+ * "sandbox.html" to the same file, Chromium serves the real sandboxed page
+ * for either spelling, so the match is case-insensitive there too; Linux's
+ * filesystem is case-sensitive (a differently-cased request 404s instead
+ * of reaching the real file), and this stays case-sensitive there to
+ * match.
+ */
+export function isSandboxPageUrl (
+  pages: readonly string[] | undefined,
+  url: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (pages === undefined || pages.length === 0) return false
+  let rawPathname: string
+  try {
+    rawPathname = new URL(url).pathname
+  } catch {
+    return false
+  }
+  let decodedPathname: string
+  try {
+    decodedPathname = decodeURIComponent(rawPathname)
+  } catch {
+    return false
+  }
+  const pathname = decodedPathname.replace(/^[/\\]+/, '')
+  const caseInsensitive = platform === 'win32' || platform === 'darwin'
+  const matchPathname = caseInsensitive ? pathname.toLowerCase() : pathname
+  return pages.some((page) => {
+    const pattern = page.replace(/^[/\\]+/, '')
+    const matchPattern = caseInsensitive ? pattern.toLowerCase() : pattern
+    return matchesGlob(matchPattern, matchPathname)
+  })
+}
+
 const getSessionFromEvent = (event: IpcAnyEvent): Electron.Session => {
   if (event.type === 'service-worker') {
     return event.session
@@ -114,6 +289,11 @@ class RoutingDelegate {
 
   private sessionMap: WeakMap<Session, RoutingDelegateObserver> = new WeakMap()
   private workers: WeakSet<any> = new WeakSet()
+  // Orivon patch (UPSTREAM.md patch 42): onAddListener's own deferred-add
+  // token per (extensions, listener key) -- listenerKey's own doc says why
+  // this is keyed the same way pendingRegistrations is (never across
+  // sessions).
+  private pendingListenerAdds: WeakMap<ExtensionRegistryEvents, Map<string, symbol>> = new WeakMap()
 
   private constructor() {
     ipcMain.handle('crx-msg', this.onRouterMessage)
@@ -219,11 +399,43 @@ class RoutingDelegate {
     // plain ipcMain.on listener, never awaited by anything: an uncaught
     // throw here becomes an uncaughtException in main/index.ts, which exits
     // the whole process for one page's stale subscription.
-    try {
-      return observer?.addListener(listener, extensionId, eventName)
-    } catch (error) {
-      d(`crx-add-listener failed for ${extensionId}: %s`, error)
+    //
+    // Orivon patch (UPSTREAM.md patch 38): the SAME registration race
+    // onRouterMessage's own crx-msg path already waits out (patch 36) --
+    // a popup's own top-level chrome.runtime.onMessage.addListener() call
+    // can reach here before session.extensions reflects the load already
+    // in flight, and without this the listener is refused outright and
+    // lost for good, not merely delayed. Resolved synchronously, in the
+    // same tick, when the extension is already registered (the common
+    // case): only an actual race defers to the shared wait.
+    const eventSession = getSessionFromEvent(event)
+    const eventSessionExtensions = eventSession.extensions || eventSession
+    // Orivon patch (UPSTREAM.md patch 42): a crx-remove-listener for this
+    // SAME subscription can arrive while the wait below is still running
+    // -- onRemoveListener cancels this token by deleting it, so the
+    // deferred add below is skipped instead of re-adding a subscription
+    // the caller already asked removed (`listenerKey`'s own doc).
+    let pending = this.pendingListenerAdds.get(eventSessionExtensions)
+    if (pending === undefined) {
+      pending = new Map()
+      this.pendingListenerAdds.set(eventSessionExtensions, pending)
     }
+    const key = listenerKey(eventName, extensionId, listener)
+    const token = Symbol('crx-add-listener')
+    pending.set(key, token)
+    const pendingTable = pending
+    void (async () => {
+      if (eventSessionExtensions.getExtension(extensionId) == null) {
+        await waitForRegisteredExtension(eventSessionExtensions, extensionId)
+      }
+      if (pendingTable.get(key) !== token) return // cancelled by a same-subscription crx-remove-listener
+      pendingTable.delete(key)
+      try {
+        observer?.addListener(listener, extensionId, eventName)
+      } catch (error) {
+        d(`crx-add-listener failed for ${extensionId}: %s`, error)
+      }
+    })()
   }
 
   private onRemoveListener = (
@@ -236,7 +448,8 @@ class RoutingDelegate {
       d(`crx-remove-listener refused: sender is not extension ${extensionId}`)
       return
     }
-    const observer = this.sessionMap.get(getSessionFromEvent(event))
+    const eventSession = getSessionFromEvent(event)
+    const observer = this.sessionMap.get(eventSession)
     const listener: EventListener =
       event.type === 'frame'
         ? {
@@ -248,6 +461,17 @@ class RoutingDelegate {
             type: event.type,
             extensionId,
           }
+    // Orivon patch (UPSTREAM.md patch 42): if a crx-add-listener for this
+    // exact subscription is still deferred (waiting out the registration
+    // race, patch 38), cancel it instead of falling through to
+    // removeListener below -- nothing was ever actually added yet, so
+    // there is nothing to remove, and letting the deferred add run anyway
+    // once it resolves would re-add the subscription this call asked
+    // removed.
+    const eventSessionExtensions = eventSession.extensions || eventSession
+    const key = listenerKey(eventName, extensionId, listener)
+    const pending = this.pendingListenerAdds.get(eventSessionExtensions)
+    if (pending?.delete(key) === true) return
     // Orivon patch: same reason as onAddListener above -- removeListener
     // itself never throws today, but this is the same untrusted, unawaited
     // call site, so it is guarded the same way rather than relying on that
@@ -310,6 +534,20 @@ const eventListenerEquals = (a: EventListener) => (b: EventListener) => {
     return a.host === b.host
   }
   return true
+}
+
+/**
+ * Orivon patch (UPSTREAM.md patch 42): a string key for
+ * `RoutingDelegate.pendingListenerAdds`, identifying a subscription the
+ * SAME way `eventListenerEquals` above already does (extensionId + type +
+ * host, scoped to one `eventName`) -- so a `crx-remove-listener` call can
+ * find and cancel a still-deferred `crx-add-listener` call for the exact
+ * subscription it names, never a different one that happens to share an
+ * extensionId or eventName.
+ */
+function listenerKey (eventName: string, extensionId: string, listener: EventListener): string {
+  const hostPart = listener.type === 'frame' ? String(getHostId(listener.host)) : ''
+  return `${eventName}\u0000${extensionId}\u0000${listener.type}\u0000${hostPart}`
 }
 
 export class ExtensionRouter {
@@ -464,9 +702,44 @@ export class ExtensionRouter {
       throw new Error(`${handlerName} does not support calling from a remote session`)
     }
 
-    const extension = extensionId ? eventSessionExtensions.getExtension(extensionId) : undefined
+    // Orivon patch (UPSTREAM.md patch 37, live since patch 40): a frame
+    // whose own real origin is opaque ("null", WebFrameMain.origin's own
+    // doc) never gets to call anything here, whatever it claims -- checked
+    // before extension resolution below, on the raw frame alone.
+    // extension-sandbox-csp.ts (src/main/extensions/) is what actually
+    // makes this true for a manifest sandbox.pages page: it serves those
+    // responses with Chrome's own CSP `sandbox` directive, which does give
+    // Electron's WebFrameMain.origin the literal string "null" here --
+    // measured directly. Before that patch this never fired for a
+    // sandbox.pages page on this Electron build (unlike real Chrome), so
+    // the second check below (the manifest's own sandbox.pages list) was
+    // the only one that caught it; both apply now, independently.
+    if (event.type === 'frame' && event.senderFrame?.origin === 'null') {
+      throw new Error(`${handlerName} refused: sender frame has an opaque origin`)
+    }
+
+    // Orivon patch (UPSTREAM.md patch 36): was a single unconditional
+    // `getExtension` read; see waitForRegisteredExtension's own doc.
+    let extension = extensionId ? eventSessionExtensions.getExtension(extensionId) : undefined
+    if (!extension && handler.extensionContext && extensionId !== undefined) {
+      extension = await waitForRegisteredExtension(eventSessionExtensions, extensionId)
+    }
     if (!extension && handler.extensionContext) {
       throw new Error(`${handlerName} was sent from an unknown extension context`)
+    }
+
+    // Orivon patch (UPSTREAM.md patch 37): a page the extension's OWN
+    // manifest declares under sandbox.pages gets no chrome.* API at all in
+    // real Chrome, precisely because extensions put untrusted code
+    // (templates, eval) there -- refused here from the extension's own
+    // loaded manifest, never from anything the sender claims, and
+    // regardless of handler.extensionContext, so a handler that does not
+    // otherwise require a resolved extension cannot be used to dodge it.
+    if (event.type === 'frame' && event.senderFrame != null && extension != null) {
+      const sandboxManifest: chrome.runtime.Manifest = extension.manifest
+      if (isSandboxPageUrl(sandboxManifest.sandbox?.pages, event.senderFrame.url)) {
+        throw new Error(`${handlerName} refused: sender frame is a declared sandbox page`)
+      }
     }
 
     if (handler.permission) {
