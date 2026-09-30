@@ -48,8 +48,8 @@ describe('describeCapabilityGrant -- web.embed (ADR-0039)', () => {
 })
 
 // ADR-0047: the local pattern and "*" listed beside other entries. The prompt
-// names each kind of reach the list holds, so "*" beside an exact origin is
-// no longer read as "*" alone.
+// names each kind of reach the list holds: "*" beside an exact origin or a
+// local pattern is shown with those entries, never as "*" alone.
 describe('describeCapabilityGrant -- web.embed with a local pattern (ADR-0047)', () => {
   it('says the app shows pages it serves itself from this computer, with the port', () => {
     const row = describeCapabilityGrant('web.embed', ['http://*.localhost:8123'])

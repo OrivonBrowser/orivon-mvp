@@ -270,7 +270,7 @@ it(
         check('a listener another program holds on a named port does not load', strangerLoad === 'refused:ERR_FAILED', strangerLoad)
         check('the request never reached that listener', strangerConnections === 0, String(strangerConnections))
 
-        // ---- (7) the app closes its listener: the same address no longer loads.
+        // ---- (7) the app closes its listener: the same address is refused.
         const closed = await asPage(view, setAsPageScript, AS_PAGE_URL, closeOwnServer)
         check('the app closes its listener', closed === 'closed', closed)
         const after = await show('a', `http://a.localhost:${APP_PORT}/?again`)
