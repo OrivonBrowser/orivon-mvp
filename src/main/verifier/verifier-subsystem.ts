@@ -14,6 +14,7 @@ import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { PARTITION_HEADER } from '../../loader/fetch/content-root.js'
+import { noteCertificate } from '../auth/note-certificate.js'
 import { verifierCertificateVerdict } from './certificate-check.js'
 import { requestPartition, withPartition } from './partition.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
@@ -61,6 +62,7 @@ function changed (): void {
 
 function installCertificateCheck (target: Session): void {
   target.setCertificateVerifyProc((request, callback) => {
+    noteCertificate(request.hostname, request.validatedCertificate, request.certificate)
     callback(verifierCertificateVerdict(request.hostname, request.certificate.fingerprint, fingerprint, (host) => BUILTIN_ADDRESSES.routesToVerifier(host)))
   })
 }

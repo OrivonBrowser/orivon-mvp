@@ -12,6 +12,7 @@ import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-le
 import { localDdocFor } from '../dev/local-ddoc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
+import { openCertificate } from '../auth/certificate-open.js'
 import type { SubsystemContext } from '../registry.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
 import type { SiteInfoMemory } from './window-actions.js'
@@ -83,6 +84,11 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, chrome
     () => {
       siteInfo.close()
       tabs.openInternal('extensions')
+    },
+    // The Certificate row: the popover gives way to the certificate viewer of the tab in front.
+    () => {
+      siteInfo.close()
+      openCertificate({ tabs, overlays })
     },
     dirname
   )

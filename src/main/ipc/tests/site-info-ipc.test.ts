@@ -174,6 +174,15 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openAllSites', () =
     expect(openAllSites).toHaveBeenCalledOnce()
   })
 
+  it('certificate calls the injected callback, from the popup only', async () => {
+    const openCertificate = vi.fn()
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, openCertificate)
+    await dispatch({ type: 'certificate' })
+    expect(openCertificate).toHaveBeenCalledOnce()
+    await dispatch({ type: 'certificate' }, { url: 'https://evil.test/' })
+    expect(openCertificate).toHaveBeenCalledOnce()
+  })
+
   it('openExtensions calls the injected callback', async () => {
     const { openExtensions } = register(fakeController())
     await dispatch({ type: 'openExtensions' })

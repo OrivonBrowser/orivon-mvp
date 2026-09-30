@@ -14,6 +14,7 @@ import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { reopenClosed } from '../session-restore/reopen.js'
+import { openCertificate } from '../auth/certificate-open.js'
 import { openQr } from '../qr/qr-open.js'
 import { TAB_SEARCH_OVERLAY } from '../tab-search/tab-search-overlay.js'
 import { dismissRestoreOffer } from '../startup/restore-offer.js'
@@ -139,7 +140,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.viewSource': void viewSourceCommand(target); return
     case 'share.copyLink': return
     case 'share.email': return
-    case 'site.certificate': return
+    case 'site.certificate': openCertificate(target); return
     case 'site.shortcut': return
     case 'page.screenshot': void screenshotCommand(target); return
     case 'page.qr': openQr(target); return

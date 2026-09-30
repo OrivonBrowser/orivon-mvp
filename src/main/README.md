@@ -29,7 +29,7 @@ rather than editing here.
 | [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |
 | [`site-settings/`](site-settings/) | What a site may do: per-site permissions, content settings and the prompt that asks | no | the installers only |
 | [`passwords/`](passwords/) | The saved-login store, its Settings domain and the form watcher that feeds it | yes: `passwords.json` | the installer and the runner only |
-| [`auth/`](auth/) | The sign-in sheets an HTTP server asks for and the certificates a connection shows | no | the installer only |
+| [`auth/`](auth/) | The sign-in sheets an HTTP server asks for and the certificates a connection shows | in memory only: pending challenges, the certificates connections presented | the installer, the clipboard write and the tab navigation count |
 | [`os/`](os/) | What the operating system is told about Orivon: links from other programs, the default-browser registration, shortcuts, sharing | no | the installer only |
 | [`autofill/`](autofill/) | Saved postal addresses and the chooser that fills a form from them | no | the installer only |
 | [`devices/`](devices/) | The choosers for a screen to share and for a USB or HID device | no | the installer only |

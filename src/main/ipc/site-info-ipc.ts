@@ -54,6 +54,8 @@ export type SiteInfoCommand =
    * exploration.md): opens `orivon://extensions` the same way `openAllSites`
    * opens the all-sites panel. */
   | { type: 'openExtensions' }
+  /** The Certificate row: closes this popup and opens the certificate viewer for the active tab. */
+  | { type: 'certificate' }
   /** Same contract as ./permissions-ipc.ts's own `contentHeight`. */
   | { type: 'contentHeight'; height: number }
 
@@ -98,7 +100,8 @@ export function registerSiteInfoIpc (
   reloadActiveTab: () => void,
   openAllSites: () => void,
   openExtensions: () => void,
-  onContentHeight: (height: number) => void = () => {}
+  onContentHeight: (height: number) => void = () => {},
+  openCertificate: () => void = () => {}
 ): void {
   // On the popup's own webContents: the handler goes with it, and two windows
   // can each have one open.
@@ -148,6 +151,9 @@ export function registerSiteInfoIpc (
         return
       case 'openExtensions':
         openExtensions()
+        return
+      case 'certificate':
+        openCertificate()
         return
       case 'contentHeight':
         if (Number.isFinite(command.height)) onContentHeight(command.height)
