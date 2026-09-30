@@ -1,0 +1,67 @@
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('../tab-factory.js', () => ({ BLANK_URL: 'about:blank' }))
+vi.mock('../tab-parking.js', () => ({ repartitionView: vi.fn() }))
+vi.mock('../tab-view.js', () => ({
+  appTabFlagChanged: () => false,
+  partitionChanged: () => undefined,
+  EXIT_FULLSCREEN_WORLD_ID: 1001
+}))
+
+const { navigateTab } = await import('../tab-navigation.js')
+type Env = Parameters<typeof navigateTab>[0]
+
+function setup (): { navigate: (input: string) => void, openInternal: ReturnType<typeof vi.fn>, viewSource: ReturnType<typeof vi.fn>, loadURL: ReturnType<typeof vi.fn> } {
+  const loadURL = vi.fn(async () => {})
+  const openInternal = vi.fn()
+  const viewSource = vi.fn(() => true)
+  const env = {
+    record: () => ({ view: { webContents: { isDestroyed: () => false, loadURL } }, partition: undefined }),
+    liveWebContents: () => undefined,
+    openInternal,
+    viewSource,
+    broker: () => undefined,
+    searchUrl: (query: string) => `https://search.example/?q=${encodeURIComponent(query)}`
+  } as unknown as Env
+  return { navigate: (input) => { navigateTab(env, 'tab-1', input) }, openInternal, viewSource, loadURL }
+}
+
+describe('typing into the address bar', () => {
+  it('opens Orivon\'s page for an about: or chrome:// name other browsers use', () => {
+    const { navigate, openInternal, loadURL } = setup()
+    navigate('about:version')
+    navigate('chrome://gpu')
+    navigate('chrome://history')
+    expect(openInternal.mock.calls).toEqual([['about', '/'], ['about', '/gpu'], ['history', '/']])
+    expect(loadURL).not.toHaveBeenCalled()
+  })
+
+  it('still opens an orivon:// address', () => {
+    const { navigate, openInternal } = setup()
+    navigate('orivon://settings/privacy')
+    expect(openInternal).toHaveBeenCalledWith('settings', '/privacy')
+  })
+
+  it('leaves about:blank refused and a name Orivon has no page for a search, as before', () => {
+    const { navigate, openInternal, loadURL } = setup()
+    navigate('about:blank')
+    navigate('chrome://net-internals')
+    expect(openInternal).not.toHaveBeenCalled()
+    expect(loadURL.mock.calls.map((call) => call[0])).toEqual(['about:blank', 'https://search.example/?q=chrome%3A%2F%2Fnet-internals'])
+  })
+
+  it('shows the source of a typed view-source: web address, and loads nothing itself', () => {
+    const { navigate, viewSource, loadURL } = setup()
+    navigate('view-source:https://a.example/page')
+    expect(viewSource).toHaveBeenCalledWith('https://a.example/page')
+    expect(loadURL).not.toHaveBeenCalled()
+  })
+
+  it('treats view-source: of anything else as it always did: a search, never a view-source load', () => {
+    const { navigate, viewSource, loadURL } = setup()
+    navigate('view-source:javascript:1')
+    navigate('view-source:file:///etc/passwd')
+    expect(viewSource).not.toHaveBeenCalled()
+    for (const call of loadURL.mock.calls) expect(String(call[0])).not.toMatch(/^(view-source|javascript|file):/i)
+  })
+})

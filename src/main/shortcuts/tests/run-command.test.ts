@@ -14,7 +14,7 @@ vi.mock('../../page-tools/real-deps.js', () => ({ realDeps: { real: true } }))
 interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
 
-function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
+function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle' | 'openConsole', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
   const calls = Object.fromEntries(['createTab', 'navigate', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'stop', 'overlayShow', 'overlayToggle', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
@@ -38,7 +38,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
   } as unknown as ShellWindow
   const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn(), children: vi.fn(() => []) }
   const zoom = { step: vi.fn(), reset: vi.fn() }
-  const devtools = { toggle: vi.fn() }
+  const devtools = { toggle: vi.fn(), openConsole: vi.fn() }
   const profiles = { openPrivate: vi.fn() }
   return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack(), kiosk: options.kiosk === true, settings: { get: () => options.homeUrl ?? '', set: vi.fn() } } as unknown as ShellServices, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
 }
@@ -262,6 +262,19 @@ describe('runCommand', () => {
     const { target, deps, devtools } = harness([tab('a')], 'a')
     runCommand('devtools.toggle', target, deps)
     expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }), target.window)
+  })
+
+  it('opens developer tools on the active tab\'s Console panel', () => {
+    const { target, deps, devtools } = harness([tab('a')], 'a')
+    runCommand('devtools.console', target, deps)
+    expect(devtools.openConsole).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }), target.window)
+  })
+
+  it('opens the About page and the task manager as shell pages', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('about.open', target, deps)
+    runCommand('tasks.open', target, deps)
+    expect(calls['openInternal']!.mock.calls).toEqual([['about'], ['tasks']])
   })
 
   it('stops the active tab\'s load', () => {

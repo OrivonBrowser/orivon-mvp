@@ -67,7 +67,7 @@ export const COMMANDS = [
   { id: 'history.open', label: 'History', category: 'navigation', default: 'Mod+H' },
   { id: 'downloads.open', label: 'Downloads', category: 'navigation', default: 'Mod+J', yieldToApp: true },
   { id: 'devtools.toggle', label: 'Developer tools', category: 'navigation', default: 'F12', macDefault: 'Mod+Alt+I', aliases: ['Mod+Shift+I'] },
-  { id: 'devtools.console', label: 'JavaScript console', category: 'navigation', default: 'Mod+Shift+J', macDefault: 'Mod+Alt+J', pending: true },
+  { id: 'devtools.console', label: 'JavaScript console', category: 'navigation', default: 'Mod+Shift+J', macDefault: 'Mod+Alt+J' },
   { id: 'bookmark.toggle', label: 'Bookmark this page', category: 'navigation', default: 'Mod+D' },
   { id: 'bookmark.allTabs', label: 'Bookmark all tabs', category: 'navigation', default: 'Mod+Shift+D', pending: true },
   { id: 'bookmarks.open', label: 'Bookmark manager', category: 'navigation', default: 'Mod+Shift+O', pending: true },
@@ -93,9 +93,9 @@ export const COMMANDS = [
   { id: 'settings.open', label: 'Open Settings', category: 'window', default: 'Mod+,' },
   { id: 'extensions.open', label: 'Extensions', category: 'window' },
   { id: 'import.open', label: 'Import bookmarks and history', category: 'window', pending: true },
-  { id: 'about.open', label: 'About Orivon', category: 'window', pending: true },
+  { id: 'about.open', label: 'About Orivon', category: 'window' },
   // Shift+Escape is an alias, not the default: a binding needs Ctrl, Alt or Cmd, and this one is fixed to match the key other browsers use.
-  { id: 'tasks.open', label: 'Task manager', category: 'window', aliases: ['Shift+Escape'], pending: true },
+  { id: 'tasks.open', label: 'Task manager', category: 'window', aliases: ['Shift+Escape'] },
   { id: 'app.quit', label: 'Quit Orivon', category: 'window', default: 'Ctrl+Shift+Q' }
 ] as const satisfies readonly CommandDef[]
 

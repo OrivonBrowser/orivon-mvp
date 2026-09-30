@@ -7,12 +7,14 @@ export const INTERNAL_SCHEME = 'orivon'
 export const INTERNAL_PARTITION = 'orivon-internal'
 
 export const INTERNAL_PAGES = [
+  'about',
   'downloads',
   'extensions',
   'history',
   'private',
   'profiles',
-  'settings'
+  'settings',
+  'tasks'
 ] as const
 export type InternalPageId = (typeof INTERNAL_PAGES)[number]
 

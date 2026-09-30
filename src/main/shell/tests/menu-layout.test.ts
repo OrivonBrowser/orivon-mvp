@@ -145,7 +145,7 @@ describe('menuItems', () => {
     const { ctx } = await setup()
     const on = vi.fn(() => true)
     const hint = vi.fn(() => 'note')
-    const items = menuItems(ctx, ['tab.new', 'bookmarks.open', { check: 'bookmark.allTabs', on }, { item: 'about.open', hint }])
+    const items = menuItems(ctx, ['tab.new', 'bookmarks.open', { check: 'bookmark.allTabs', on }, { item: 'import.open', hint }])
     expect(items).toEqual([expect.objectContaining({ id: 'tab.new' })])
     expect(on).not.toHaveBeenCalled()
     expect(hint).not.toHaveBeenCalled()
@@ -157,7 +157,7 @@ describe('menuItems', () => {
     const submenu = items.find((item) => item.kind === 'submenu' && item.label === 'Bookmarks')
     expect(submenu).toMatchObject({ items: [expect.objectContaining({ id: 'bookmarks.toggleBar' })] })
     const ids = runnableIds(items)
-    for (const id of ['bookmarks.open', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'devtools.console', 'tasks.open', 'import.open', 'about.open']) {
+    for (const id of ['bookmarks.open', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'import.open']) {
       expect(ids.has(id as never), id).toBe(false)
     }
   })
@@ -200,6 +200,14 @@ describe('the QR code row', () => {
     const { ctx } = await setup('orivon://newtab/')
     expect(find(more(menuItems(ctx)), 'page.qr')).toMatchObject({ disabled: true })
     expect(runnableIds(menuItems(ctx)).has('page.qr')).toBe(false)
+  })
+})
+
+describe('the about and task manager entries', () => {
+  it('list About Orivon, the JavaScript console and the Task manager', async () => {
+    const { ctx } = await setup()
+    const ids = runnableIds(menuItems(ctx))
+    for (const id of ['about.open', 'devtools.console', 'tasks.open']) expect(ids.has(id as never), id).toBe(true)
   })
 })
 

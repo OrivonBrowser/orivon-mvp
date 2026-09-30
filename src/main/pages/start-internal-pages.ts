@@ -24,6 +24,11 @@ import { historyDomain } from '../history/history-domain.js'
 import { throttleChanges } from '../downloads/change-throttle.js'
 import { downloadsDomain } from '../downloads/downloads-domain.js'
 import { downloadsHost } from '../downloads/folder-runner.js'
+import { infoDomain } from '../info/about-domain.js'
+import { copyToClipboard, readAboutFacts, readGpu } from '../info/about-runner.js'
+import { tasksDomain } from '../info/tasks-domain.js'
+import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
+import type { TasksEnv } from '../info/tasks-runner.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
@@ -58,12 +63,21 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     throw new Error('startInternalPages requires ctx.extensions -- check extensionsSubsystem\'s position in subsystems.ts')
   }
   const extensions = ctx.extensions
+  const tasksEnv: TasksEnv = {
+    windows: services.windows,
+    extensionName: (id) => extensions.list().find((entry) => entry.id === id)?.name
+  }
   registerInternalIpc(services.internalPages, internalSession, {
     settings: settingsDomain(services.settings),
     shortcuts: shortcutsDomain(services.shortcuts),
     startup: startupDomain(services.windows),
     history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyText: (text) => { clipboard.writeText(text) } }),
     downloads: downloadsDomain(services.downloads, downloadsHost(services)),
+    info: infoDomain({
+      facts: () => readAboutFacts(services.settings, services.isPrivate),
+      gpu: readGpu,
+      copy: copyToClipboard
+    }),
     profiles: profilesDomain(services.profiles),
     pages: pagesDomain(services.windows),
     extensions: extensionsDomain({
@@ -97,6 +111,11 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       forcedOff: () => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off'
     }),
     app: appDomain(app, services.profiles.isPrivate),
+    tasks: tasksDomain({
+      list: () => listTasks(tasksEnv),
+      end: (pid) => endProcess(tasksEnv, pid),
+      focus: (tabId, caller) => focusTab(tasksEnv, tabId, caller.contents)
+    }),
     telemetry: telemetryDomain(app, services.profiles.isPrivate),
     updates: updatesDomain(
       async () => await checkUpdateNow(app),
