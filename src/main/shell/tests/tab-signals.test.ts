@@ -61,8 +61,9 @@ beforeEach(() => { createdViews.length = 0 })
 afterEach(() => { (TAB_SIGNALS as TabSignal[]).length = 0 })
 
 describe('the tab signal registry', () => {
-  it('ships empty: no feature is wired until it adds its line', () => {
-    expect(TAB_SIGNALS).toEqual([])
+  it('lists its features by name, in order', () => {
+    const names = TAB_SIGNALS.map((signal) => signal.name)
+    expect(names).toEqual([...names].sort())
   })
 
   it('runs every wire, then every apply, and gives each the same context', () => {

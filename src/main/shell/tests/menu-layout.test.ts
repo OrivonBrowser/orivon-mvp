@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { commandById } from '../../shortcuts/commands.js'
 import { ShortcutService } from '../../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../../shortcuts/shortcut-store.js'
+import { ClosedStack } from '../../session-restore/closed-stack.js'
 import { MENU_LAYOUT, menuItems, runnableIds } from '../menu-layout.js'
 import type { MenuEntry, MenuItemView } from '../menu-layout.js'
 import type { WindowContext } from '../window-context.js'
@@ -13,20 +14,21 @@ let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-menu-layout-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
-interface Setup { shortcuts: ShortcutService, ctx: WindowContext }
+interface Setup { shortcuts: ShortcutService, ctx: WindowContext, closedTabs: ClosedStack }
 
 async function setup (url = 'https://a.example/', zoomPercent = 100, onTop = false): Promise<Setup> {
   const store = new ShortcutStore(join(dir, 'shortcuts.json'), 'linux')
   await store.load()
   const shortcuts = new ShortcutService(store, 'linux')
+  const closedTabs = new ClosedStack()
   const ctx = {
     window: {
       window: { isAlwaysOnTop: () => onTop },
       tabs: { getState: () => ({ tabs: [{ id: 'a', url }], activeTabId: 'a' }) }
     },
-    services: { shortcuts, zoom: { percentFor: (origin: string | null) => origin === null ? 100 : zoomPercent } }
+    services: { shortcuts, closedTabs, zoom: { percentFor: (origin: string | null) => origin === null ? 100 : zoomPercent } }
   } as unknown as WindowContext
-  return { shortcuts, ctx }
+  return { shortcuts, ctx, closedTabs }
 }
 
 const commandsIn = (entries: readonly MenuEntry[]): string[] => entries.flatMap((entry): string[] => {
@@ -97,6 +99,16 @@ describe('menuItems', () => {
     const { ctx } = await setup()
     expect(menuItems(ctx, [{ item: 'history.open', hint: () => '3 new' }])).toEqual([expect.objectContaining({ hint: '3 new' })])
     expect(menuItems(ctx, [{ item: 'history.open', hint: () => null }])).toEqual([expect.objectContaining({ hint: null })])
+  })
+
+  it('shows what Reopen closed tab would bring back, directly under History, and nothing when there is none', async () => {
+    const { ctx, closedTabs } = await setup()
+    const rows = (): MenuItemView[] => menuItems(ctx)
+    const under = (): MenuItemView | undefined => rows()[rows().findIndex((row) => row.kind === 'command' && row.id === 'history.open') + 1]
+    expect(under()).toMatchObject({ id: 'tab.reopen', label: 'Reopen closed tab', keys: ['Ctrl', 'Shift', 'T'], hint: null })
+
+    closedTabs.push({ kind: 'tab', tab: { url: 'https://a.example/', title: 'Invoice 2231 - Acme', pinned: false }, index: 0, windowKey: 1 })
+    expect(under()).toMatchObject({ id: 'tab.reopen', hint: 'Invoice 2231 - Acme' })
   })
 
   it('drops a submenu with nothing in it, and the separators it leaves doubled', async () => {

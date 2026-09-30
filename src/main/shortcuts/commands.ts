@@ -44,7 +44,7 @@ export const COMMANDS = [
   { id: 'split.swap', label: 'Swap the panes', category: 'tabs', default: 'Mod+Alt+X' },
   { id: 'split.rotate', label: 'Side by side or stacked', category: 'tabs' },
   { id: 'tab.moveToNewWindow', label: 'Move tab to a new window', category: 'tabs' },
-  { id: 'tab.reopen', label: 'Reopen closed tab', category: 'tabs', default: 'Mod+Shift+T', pending: true },
+  { id: 'tab.reopen', label: 'Reopen closed tab', category: 'tabs', default: 'Mod+Shift+T' },
   { id: 'tab.duplicate', label: 'Duplicate tab', category: 'tabs', pending: true },
   { id: 'tab.pin', label: 'Pin tab', category: 'tabs', pending: true },
   { id: 'tab.mute', label: 'Mute tab', category: 'tabs', pending: true },

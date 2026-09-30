@@ -2,6 +2,7 @@
 // One line per hook in WINDOW_HOOKS, alphabetical.
 import type { WindowContext } from './window-context.js'
 import type { ShellWindowOptions } from './window-options.js'
+import { sessionRecorder } from '../session-restore/session-hook.js'
 
 export interface WindowHook {
   readonly name: string
@@ -11,7 +12,9 @@ export interface WindowHook {
   closing?: (ctx: WindowContext) => void
 }
 
-export const WINDOW_HOOKS: readonly WindowHook[] = []
+export const WINDOW_HOOKS: readonly WindowHook[] = [
+  sessionRecorder
+]
 
 /** A hook that throws is logged and skipped: a throw out of a window event would reach Electron's error dialog. */
 export function runWindowHooks (

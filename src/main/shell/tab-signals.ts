@@ -5,6 +5,7 @@
 import type { WebContents, WebContentsView } from 'electron'
 import { contain } from './contain.js'
 import type { TabRecord, TabState } from './tab-types.js'
+import { restoredTitle } from '../session-restore/restored-title.js'
 
 export interface TabSignalContext {
   readonly id: string
@@ -26,7 +27,9 @@ export interface TabSignal {
 }
 
 /** One line per feature, alphabetical by name. */
-export const TAB_SIGNALS: readonly TabSignal[] = []
+export const TAB_SIGNALS: readonly TabSignal[] = [
+  restoredTitle
+]
 
 function contextFor (id: string, record: TabRecord): TabSignalContext {
   const view = record.view
