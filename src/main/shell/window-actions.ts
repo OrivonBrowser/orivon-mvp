@@ -8,7 +8,6 @@ import type { PermissionsPanel } from '../permissions/permissions-panel.js'
 import type { PopoverAnchor } from '../permissions/popover-view.js'
 import type { SiteInfoPanel } from '../permissions/site-info-panel.js'
 import { runChromeAction } from './chrome-actions.js'
-import type { MenuPanel } from './menu-panel.js'
 import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
 import { dropTab, moveToNewWindow, moveToWindow } from './tab-move.js'
@@ -34,7 +33,9 @@ export interface SiteInfoMemory {
 export interface WindowParts {
   readonly entry: ShellWindow
   readonly services: ShellServices
-  readonly panels: { readonly permissions: PermissionsPanel, readonly siteInfo: SiteInfoPanel, readonly menu: MenuPanel }
+  /** Closes the overlay popups but not the two panels above, which a caller toggles itself. */
+  readonly closeOverlays: () => void
+  readonly panels: { readonly permissions: PermissionsPanel, readonly siteInfo: SiteInfoPanel }
   readonly memory: SiteInfoMemory
   readonly openWindow: (options: ShellWindowOptions) => void
   /** How tall the top of the window (tab strip and toolbar) is: where another window's strip can be dropped on. */
@@ -50,7 +51,7 @@ function windowLabel (other: ShellWindow, position: number): string {
 }
 
 export function shellActions (parts: WindowParts): ShellActions {
-  const { entry, services, panels, memory, openWindow, topHeight, area } = parts
+  const { entry, services, panels, memory, closeOverlays, openWindow, topHeight, area } = parts
   const { tabs, window } = entry
 
   /** Captured once at the start of a manual window move (drag-mode.ts), null between drags. */
@@ -86,7 +87,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       // an error.
       const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
       panels.siteInfo.close() // only one popup open at a time
-      panels.menu.close()
+      closeOverlays()
       panels.permissions.toggle(anchor, focusOrigin)
     },
     openSiteInfo: (anchor, page, url) => {
@@ -95,17 +96,13 @@ export function shellActions (parts: WindowParts): ShellActions {
       memory.anchor = anchor
       memory.origin = origin
       panels.permissions.close()
-      panels.menu.close()
+      closeOverlays()
       panels.siteInfo.toggle(anchor, origin, page)
     },
     runCommand: (id) => { services.commands.run(id, entry) },
     act: (name, payload) => runChromeAction(name, payload, { window: entry, services }),
-    openMenu: (anchor) => {
-      panels.permissions.close()
-      panels.siteInfo.close()
-      panels.menu.toggle(anchor)
-    },
-    prewarmMenu: () => { panels.menu.prewarm() },
+    openMenu: (anchor) => { entry.overlays.toggle('menu', anchor) },
+    prewarmMenu: () => { entry.overlays.prewarm('menu') },
     dragTab: (id, point) => {
       const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)
       tabs.splits.setPreview(zone)

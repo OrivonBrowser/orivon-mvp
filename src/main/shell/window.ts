@@ -13,6 +13,8 @@ import { registerShellIpc } from '../ipc/ipc.js'
 import { shellActions } from './window-actions.js'
 import { SplitFrame } from './split-frame.js'
 import { CHROME_TOP_ROWS, createWindowLayout } from './window-layout.js'
+import { createOverlayHost } from '../overlays/overlay-host.js'
+import { OVERLAYS } from '../overlays/overlays.js'
 import { createWindowPanels } from './window-panels.js'
 import { createWindowState } from './window-state.js'
 import type { WindowContext } from './window-context.js'
@@ -139,7 +141,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     // Closed rather than repositioned: a toolbar popup that follows a
     // drag-resize around is stranger than one that simply dismisses, and
     // this is what every browser does with its own.
-    panels.closePanels()
+    overlays.relayout()
   }
 
   // A16, resolved (owner decision, 2026-08-28): closing the last tab
@@ -189,15 +191,20 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     services,
     runCommand: (id) => { services.commands.run(id, entry) }
   })
-  const entry: ShellWindow = { window: win, chrome, tabs, shortcutsSuspended: () => fullscreen.tabId !== null }
+  // Read by an overlay's handler when it is first used, which is after `entry` exists.
+  const overlays = createOverlayHost({
+    win, contentView: win.contentView, dirname: import.meta.dirname, defs: OVERLAYS,
+    context: () => context, area: tabBounds, activeContents: () => tabs.activeWebContents()
+  })
+  const entry: ShellWindow = { window: win, chrome, tabs, overlays, shortcutsSuspended: () => fullscreen.tabId !== null }
 
   const context: WindowContext = { window: entry, services }
-  const panels = createWindowPanels({ ctx, win, services, tabs, entry: () => entry, chromeHeight, dirname: import.meta.dirname })
+  const panels = createWindowPanels({ ctx, win, services, tabs, overlays, chromeHeight, dirname: import.meta.dirname })
   const windowState = createWindowState({
     win, chrome, tabs, services, context, fullscreen,
     layout: { chromeHeight, layoutChrome, tabBounds },
     bookmarksBarShown,
-    closePanels: panels.closePanels,
+    overlays,
     closeSiteInfo: () => { panels.siteInfo.close() }
   })
   const { pushState } = windowState
@@ -227,6 +234,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     entry,
     services,
     panels,
+    closeOverlays: overlays.closeOverlays,
     memory: panels.memory,
     openWindow: (options) => { createShellWindow(ctx, services, options) },
     topHeight: CHROME_TOP_ROWS,
@@ -237,7 +245,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   win.on('closed', () => {
     forgetWindow()
     windowState.stop()
-    panels.closePanels()
+    overlays.dispose()
     splitFrame.dispose()
     // Destroying a window leaves its views' renderers running: the chrome
     // view's is closed here, as the tabs' are by `dispose`.

@@ -21,11 +21,12 @@ function fakeMaximizedWindow (): { window: unknown, calls: string[] } {
 }
 
 function makeParts (window: unknown): WindowParts {
-  const entry = { window, chrome: {}, tabs: {}, shortcutsSuspended: () => false }
+  const entry = { window, chrome: {}, tabs: {}, overlays: {}, shortcutsSuspended: () => false }
   return {
     entry: entry as never,
     services: {} as never,
-    panels: { permissions: { close: vi.fn() }, siteInfo: { close: vi.fn() }, menu: { close: vi.fn() } } as never,
+    panels: { permissions: { close: vi.fn() }, siteInfo: { close: vi.fn() } } as never,
+    closeOverlays: vi.fn(),
     memory: { anchor: null, origin: undefined },
     openWindow: vi.fn(),
     topHeight: 0,

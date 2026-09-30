@@ -252,6 +252,27 @@ describe('createOverlayHost: layers', () => {
     host.relayout()
     expect(panel.close).toHaveBeenCalledTimes(2)
   })
+
+  it('a tab switch and disposing close an adopted panel too', () => {
+    const panel = { close: vi.fn() }
+    const { host } = setup([def('pop')])
+    host.adopt(panel)
+    host.tabSwitched()
+    expect(panel.close).toHaveBeenCalledTimes(1)
+    host.dispose()
+    expect(panel.close).toHaveBeenCalledTimes(2)
+  })
+
+  it('closeOverlays closes the popup overlays and leaves an adopted panel alone', () => {
+    const panel = { close: vi.fn() }
+    const { host } = setup([def('pop')])
+    host.adopt(panel)
+    host.show('pop', ANCHOR)
+    panel.close.mockClear()
+    host.closeOverlays()
+    expect(host.isOpen('pop')).toBe(false)
+    expect(panel.close).not.toHaveBeenCalled()
+  })
 })
 
 describe('createOverlayHost: restack order', () => {

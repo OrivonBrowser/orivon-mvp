@@ -38,6 +38,8 @@ export interface OverlayHostDeps {
 export type OverlayHostHandle = OverlayHost & {
   /** Puts a legacy panel under the same close-all and relayout rules. `close` must be idempotent. */
   adopt: (panel: { close: () => void }) => void
+  /** Closes the popup overlays but not the adopted panels: for a panel that toggles itself after. */
+  closeOverlays: () => void
   tabSwitched: () => void
   navigated: () => void
   relayout: () => void
@@ -171,8 +173,12 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.returnTo = undefined
   }
 
-  function closePopups (except: Slot | undefined, reason: OverlayCloseReason): void {
+  function closeOverlayPopups (except: Slot | undefined, reason: OverlayCloseReason): void {
     for (const slot of openSlots()) if (slot.def.layer === 'popup' && slot !== except) closeSlot(slot, reason)
+  }
+
+  function closePopups (except: Slot | undefined, reason: OverlayCloseReason): void {
+    closeOverlayPopups(except, reason)
     for (const panel of adopted) panel.close()
   }
 
@@ -244,7 +250,11 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     },
     send,
     adopt: (panel) => { adopted.push(panel) },
-    tabSwitched: () => { for (const slot of openSlots()) if (slot.def.closeOn.tabSwitch) closeSlot(slot, 'tab-switch') },
+    closeOverlays: () => { closeOverlayPopups(undefined, 'request') },
+    tabSwitched: () => {
+      for (const slot of openSlots()) if (slot.def.closeOn.tabSwitch) closeSlot(slot, 'tab-switch')
+      for (const panel of adopted) panel.close()
+    },
     navigated: () => { for (const slot of openSlots()) if (slot.def.closeOn.navigation) closeSlot(slot, 'navigation') },
     relayout () {
       for (const slot of openSlots()) {
@@ -259,6 +269,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       disposed = true
       unregisterTheme()
       for (const slot of openSlots()) closeSlot(slot, 'window-closed')
+      for (const panel of adopted) panel.close()
       for (const slot of slots.values()) { slot.view?.destroy(); slot.view = null }
     }
   }

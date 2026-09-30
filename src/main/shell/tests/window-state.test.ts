@@ -8,7 +8,7 @@ interface FakeTab { id: string, url: string, favicon: string | null }
 function setup (): {
   push: (tabs: FakeTab[], active: string | null) => void
   send: ReturnType<typeof vi.fn>
-  closePanels: ReturnType<typeof vi.fn>
+  overlays: { tabSwitched: ReturnType<typeof vi.fn>, navigated: ReturnType<typeof vi.fn>, restack: ReturnType<typeof vi.fn> }
   closeSiteInfo: ReturnType<typeof vi.fn>
   fillMissingFavicon: ReturnType<typeof vi.fn>
   tabsChanged: ReturnType<typeof vi.fn>
@@ -19,7 +19,7 @@ function setup (): {
   let notify: () => void = () => {}
   const unsubscribed = vi.fn()
   const send = vi.fn()
-  const closePanels = vi.fn()
+  const overlays = { tabSwitched: vi.fn(), navigated: vi.fn(), restack: vi.fn() }
   const closeSiteInfo = vi.fn()
   const fillMissingFavicon = vi.fn()
   const tabsChanged = vi.fn()
@@ -40,12 +40,12 @@ function setup (): {
     fullscreen: { tabsChanged } as never,
     layout: { chromeHeight: () => 76, layoutChrome: vi.fn(), tabBounds: () => ({ x: 0, y: 76, width: 1, height: 1 }) },
     bookmarksBarShown: () => false,
-    closePanels,
+    overlays: overlays as never,
     closeSiteInfo
   })
   return {
     push: (list, active) => { snapshot = { tabs: list as never, activeTabId: active }; notify() },
-    send, closePanels, closeSiteInfo, fillMissingFavicon, tabsChanged, stop: state.stop, unsubscribed
+    send, overlays, closeSiteInfo, fillMissingFavicon, tabsChanged, stop: state.stop, unsubscribed
   }
 }
 
@@ -62,16 +62,29 @@ describe('createWindowState', () => {
     }))
   })
 
-  it('dismisses the toolbar popovers when the active tab changes, and only then', () => {
-    const { push, closePanels } = setup()
+  it('tells the overlays when the active tab changes, and only then', () => {
+    const { push, overlays } = setup()
 
     push([tab('a', 'https://a.example/'), tab('b', 'https://b.example/')], 'a')
-    closePanels.mockClear()
+    overlays.tabSwitched.mockClear()
     push([tab('a', 'https://a.example/'), tab('b', 'https://b.example/')], 'a')
-    expect(closePanels).not.toHaveBeenCalled()
+    expect(overlays.tabSwitched).not.toHaveBeenCalled()
 
     push([tab('a', 'https://a.example/'), tab('b', 'https://b.example/')], 'b')
-    expect(closePanels).toHaveBeenCalledTimes(1)
+    expect(overlays.tabSwitched).toHaveBeenCalledTimes(1)
+    expect(overlays.navigated).not.toHaveBeenCalled()
+  })
+
+  it('tells the overlays about a same-tab navigation, not a fragment change, and restacks after every push', () => {
+    const { push, overlays } = setup()
+    push([tab('a', 'https://a.example/one')], 'a')
+    overlays.navigated.mockClear()
+
+    push([tab('a', 'https://a.example/one#part')], 'a')
+    expect(overlays.navigated).not.toHaveBeenCalled()
+    push([tab('a', 'https://a.example/two')], 'a')
+    expect(overlays.navigated).toHaveBeenCalledTimes(1)
+    expect(overlays.restack).toHaveBeenCalledTimes(3)
   })
 
   it('closes the site-info popover when the same tab moves to another origin, not for a path or fragment', () => {

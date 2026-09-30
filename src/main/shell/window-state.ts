@@ -6,6 +6,7 @@
 import type { BaseWindow, WebContentsView } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { STATE_CHANNEL } from '../channels.js'
+import type { OverlayHostHandle } from '../overlays/overlay-host.js'
 import type { HtmlFullscreen } from './fullscreen.js'
 import { readStateParts, watchStateParts } from './shell-state-parts.js'
 import type { ShellServices } from './shell-services.js'
@@ -22,8 +23,7 @@ export interface WindowStateDeps {
   readonly fullscreen: HtmlFullscreen
   readonly layout: WindowLayout
   readonly bookmarksBarShown: () => boolean
-  /** Dismisses every toolbar popover (window-panels.ts). */
-  readonly closePanels: () => void
+  readonly overlays: OverlayHostHandle
   /** Dismisses the site-info popover alone: it describes one origin. */
   readonly closeSiteInfo: () => void
 }
@@ -35,7 +35,7 @@ export interface WindowState {
 }
 
 export function createWindowState (deps: WindowStateDeps): WindowState {
-  const { win, chrome, tabs, services, context, fullscreen, layout, bookmarksBarShown, closePanels, closeSiteInfo } = deps
+  const { win, chrome, tabs, services, context, fullscreen, layout, bookmarksBarShown, overlays, closeSiteInfo } = deps
   const { bookmarks } = services
 
   /** Previous push's active tab, so pushState() can tell a genuine tab
@@ -56,17 +56,17 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
    * panel is only on top because it was added last -- so this does not depend on focus semantics to avoid
    * leaving a panel stranded under a page. */
   function onTabSwitched (): void {
-    closePanels()
+    overlays.tabSwitched()
   }
 
   /** The active tab loaded another page (the fragment does not count). */
   function onNavigated (): void {
-    // Nothing follows a navigation yet but the site-info origin check in pushState.
+    overlays.navigated()
   }
 
   /** After a push has been sent. */
   function afterPush (): void {
-    // Nothing to restack yet.
+    overlays.restack()
   }
 
   function pushState (): void {

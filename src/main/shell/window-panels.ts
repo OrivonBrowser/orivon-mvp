@@ -1,7 +1,6 @@
-// The toolbar popovers one window owns: the all-sites permissions list, the
-// site-info card and the main menu, and what they need to open one from
-// another. Built once per window; `closePanels` is the one way the window
-// dismisses them all.
+// The toolbar popovers one window owns: the all-sites permissions list and the
+// site-info card, and what they need to open one from the other. Built once per
+// window and handed to the overlay host, which closes them with every overlay.
 import { app, type BaseWindow } from 'electron'
 import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron/serve.js'
 import { verifierNameEvidence } from '../verifier/verifier-subsystem.js'
@@ -14,19 +13,17 @@ import { localDdocFor } from '../dev/local-ddoc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
 import type { SubsystemContext } from '../registry.js'
-import { createMenuPanel } from './menu-panel.js'
+import type { OverlayHostHandle } from '../overlays/overlay-host.js'
 import type { SiteInfoMemory } from './window-actions.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
-import type { ShellWindow } from './window-registry.js'
 
 export interface WindowPanelsDeps {
   readonly ctx: SubsystemContext
   readonly win: BaseWindow
   readonly services: ShellServices
   readonly tabs: TabManager
-  /** The window's entry, read when a menu row runs. */
-  readonly entry: () => ShellWindow
+  readonly overlays: OverlayHostHandle
   /** Where the toolbar ends: an anchor with no rect of its own opens here. */
   readonly chromeHeight: () => number
   readonly dirname: string
@@ -35,16 +32,13 @@ export interface WindowPanelsDeps {
 export interface WindowPanels {
   readonly permissions: ReturnType<typeof createPermissionsPanel>
   readonly siteInfo: ReturnType<typeof createSiteInfoPanel>
-  readonly menu: ReturnType<typeof createMenuPanel>
   /** What the site-info popover last opened on. */
   readonly memory: SiteInfoMemory
   /** The site-info popover's controller, which the chrome's IPC also reaches. */
   readonly siteInfoController: SiteInfoController
-  /** Dismisses every popover: a window resize, a tab switch and the window closing all do this. */
-  closePanels: () => void
 }
 
-export function createWindowPanels ({ ctx, win, services, tabs, entry, chromeHeight, dirname }: WindowPanelsDeps): WindowPanels {
+export function createWindowPanels ({ ctx, win, services, tabs, overlays, chromeHeight, dirname }: WindowPanelsDeps): WindowPanels {
   // Queue item 4.4: the all-sites popup reads/revokes through this one
   // controller, closing over `ctx` so it always sees whichever broker is
   // currently published (permissions.ts's own doc). `scoreLevelOverrideFor`
@@ -93,12 +87,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, entry, chromeHei
     dirname
   )
 
-  const menu = createMenuPanel(win, win.contentView, services.shortcuts, (id) => { services.commands.run(id, entry()) }, dirname)
-
-  const closePanels = (): void => {
-    permissions.close()
-    siteInfo.close()
-    menu.close()
-  }
-  return { permissions, siteInfo, menu, memory, siteInfoController, closePanels }
+  overlays.adopt(permissions)
+  overlays.adopt(siteInfo)
+  return { permissions, siteInfo, memory, siteInfoController }
 }
