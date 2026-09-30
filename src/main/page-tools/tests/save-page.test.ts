@@ -15,7 +15,7 @@ function contents (contentType: string | Error = 'text/html', extra: Partial<Sav
     savePage: vi.fn(async () => {}),
     downloadURL: vi.fn(),
     session,
-    mainFrame: { executeJavaScript: async () => { if (contentType instanceof Error) throw contentType; return contentType } },
+    executeJavaScriptInIsolatedWorld: async () => { if (contentType instanceof Error) throw contentType; return contentType },
     ...extra
   } as never
 }
@@ -68,6 +68,24 @@ describe('savePage, a web page', () => {
     expect(wc.savePage).toHaveBeenCalled()
   })
 
+  it('adds .html to a name typed without an extension, and leaves one that has it', async () => {
+    const { window } = fakeWindow()
+    const bare = contents()
+    await savePage(window, page(bare), fakeDeps('/out/report'))
+    expect(bare.savePage).toHaveBeenCalledWith('/out/report.html', 'HTMLComplete')
+    const named = contents()
+    await savePage(window, page(named), fakeDeps('/out/report.mhtml'))
+    expect(named.savePage).toHaveBeenCalledWith('/out/report.mhtml', 'MHTML')
+  })
+
+  it('reads the content type in a world the page cannot reach', async () => {
+    const { window } = fakeWindow()
+    const wc = contents()
+    const read = vi.fn(async () => 'text/html')
+    await savePage(window, page({ ...wc, executeJavaScriptInIsolatedWorld: read } as never), fakeDeps('/out/a.html'))
+    expect(read).toHaveBeenCalledWith(1002, [{ code: 'document.contentType' }])
+  })
+
   it('refuses a page that is not on the web, and a crashed one', async () => {
     const { window, toasts } = fakeWindow()
     const wc = contents()
@@ -79,9 +97,10 @@ describe('savePage, a web page', () => {
 })
 
 describe('savePage, a file the tab shows', () => {
-  const download = (wc: ReturnType<typeof contents>, state: string, sourceId = 4): void => {
-    wc.downloadURL.mockImplementation(() => {
-      const item = Object.assign(new EventEmitter(), { setSavePath: vi.fn() })
+  /** `chain`: the addresses the download came through; by default it is the one asked for. */
+  const download = (wc: ReturnType<typeof contents>, state: string, sourceId = 4, chain?: string[]): void => {
+    wc.downloadURL.mockImplementation((asked: string) => {
+      const item = Object.assign(new EventEmitter(), { setSavePath: vi.fn(), cancel: vi.fn(), getURLChain: () => chain ?? [asked] })
       wc.session.emit('will-download', {}, item, { id: sourceId })
       queueMicrotask(() => { item.emit('done', {}, state) })
       ;(wc as unknown as { item: unknown }).item = item
@@ -106,6 +125,50 @@ describe('savePage, a file the tab shows', () => {
     download(wc, 'interrupted')
     await savePage(window, page(wc, 'https://a.example/a.png'), fakeDeps('/out/a.png'))
     expect(toasts()).toEqual(['saveFailed'])
+  })
+
+  it('takes a redirected download by the address it was asked for, and leaves a download the page started itself alone', async () => {
+    const { window } = fakeWindow()
+    const redirected = contents('application/pdf')
+    download(redirected, 'completed', 4, ['https://a.example/doc.pdf', 'https://cdn.example/x.pdf'])
+    await savePage(window, page(redirected, 'https://a.example/doc.pdf'), fakeDeps('/out/doc.pdf'))
+    expect(((redirected as unknown as { item: { setSavePath: ReturnType<typeof vi.fn> } }).item).setSavePath).toHaveBeenCalledWith('/out/doc.pdf')
+
+    vi.useFakeTimers()
+    try {
+      const own = contents('application/pdf')
+      download(own, 'completed', 4, ['https://a.example/from-the-page.zip'])
+      const done = savePage(window, page(own, 'https://a.example/doc.pdf'), fakeDeps('/out/doc.pdf'))
+      await vi.advanceTimersByTimeAsync(11_000)
+      await done
+      expect(((own as unknown as { item: { setSavePath: ReturnType<typeof vi.fn> } }).item).setSavePath).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives up on a download that stops making progress, and cancels it', async () => {
+    const { window, toasts } = fakeWindow()
+    vi.useFakeTimers()
+    try {
+      const wc = contents('application/pdf')
+      let item: (EventEmitter & { cancel: ReturnType<typeof vi.fn> }) | undefined
+      wc.downloadURL.mockImplementation((asked: string) => {
+        item = Object.assign(new EventEmitter(), { setSavePath: vi.fn(), cancel: vi.fn(), getURLChain: () => [asked] })
+        wc.session.emit('will-download', {}, item, { id: 4 })
+      })
+      const done = savePage(window, page(wc, 'https://a.example/doc.pdf'), fakeDeps('/out/doc.pdf'))
+      await vi.advanceTimersByTimeAsync(50_000)
+      item?.emit('updated')
+      await vi.advanceTimersByTimeAsync(50_000)
+      expect(item?.cancel).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(11_000)
+      await done
+      expect(item?.cancel).toHaveBeenCalledTimes(1)
+      expect(toasts()).toEqual(['saveFailed'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('leaves another tab\'s download alone', async () => {

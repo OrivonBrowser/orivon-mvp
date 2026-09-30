@@ -26,6 +26,25 @@ export const ENTER_SCRIPT = `(async () => {
   return true
 })()`
 
+/**
+ * Toggles the video under a point: the one right-clicked, not the page's main one. Only numbers reach the script, and
+ * they are whole: nothing the page sent is text here.
+ */
+export function pointScript (x: number, y: number): string {
+  const whole = (n: number): number => Number.isFinite(n) ? Math.round(n) : 0
+  return `(async () => {
+  const video = document.elementsFromPoint(${String(whole(x))}, ${String(whole(y))}).find((element) => element instanceof HTMLVideoElement)
+  if (video === undefined) return false
+  if (document.pictureInPictureElement === video) {
+    await document.exitPictureInPicture()
+    return true
+  }
+  if (video.disablePictureInPicture) return false
+  await video.requestPictureInPicture()
+  return true
+})()`
+}
+
 export interface PipFrame { executeJavaScript: (code: string, userGesture: boolean) => Promise<unknown> }
 export interface PipContents {
   readonly mainFrame: { readonly framesInSubtree: readonly PipFrame[] }
@@ -46,6 +65,16 @@ async function firstFrameToAnswer (frames: readonly PipFrame[], script: string):
     }
   }
   return false
+}
+
+/** Pops out, or puts back, the video at a point of `frame`. False when there is none there or it cannot be done: the caller may fall back to the page's main video. */
+export async function togglePictureInPictureAt (frame: PipFrame | null, x: number, y: number): Promise<boolean> {
+  if (frame === null) return false
+  try {
+    return await withTimeout(frame.executeJavaScript(pointScript(x, y), true), PIP_MS, 'the frame') === true
+  } catch {
+    return false
+  }
 }
 
 export async function togglePictureInPicture (wc: PipContents): Promise<PipOutcome> {

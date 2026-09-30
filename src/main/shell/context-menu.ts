@@ -10,6 +10,7 @@ import {
   DEFAULT_CONTEXT, editableGroup, imageGroup, linkGroup, mediaGroup, pageGroup, selectionGroup, spellingGroup
 } from './context-menu-groups.js'
 import type { ContextMenuActions, ContextMenuContext, MenuParams } from './context-menu-groups.js'
+import { togglePictureInPictureAt } from '../page-tools/pip.js'
 import { searchUrlFor } from '../browsing/search-engines.js'
 
 export type { ContextMenuActions, ContextMenuContext } from './context-menu-groups.js'
@@ -60,7 +61,7 @@ export interface ContextMenuHost {
   /** Opens an address in a tab put in front: what a search of the selection does. */
   openInFront?: (url: string) => void
   /** Present for a tab's menu and absent for the chrome's, whose menu holds only edit items. `bare`: an internal page or the new-tab page. */
-  readonly page?: { readonly bare: () => boolean }
+  readonly page?: { readonly bare: () => boolean, readonly viewSource?: () => boolean }
   /** What the menu reads: the search engine and the spelling switch. Absent in tests. */
   readonly services?: Pick<ShellServices, 'settings'>
   /** Runs a command on the window: Save, Print, Screenshot, View Source, Picture in Picture. */
@@ -108,8 +109,15 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     }
     actions.replaceMisspelling = (word) => { onTab(() => { wc.replaceMisspelling(word) })() }
     actions.addToDictionary = (word) => { onTab(() => { wc.session.addWordToSpellCheckerDictionary(word) })() }
-    if (runCommand !== undefined) actions.run = runCommand
+    if (runCommand !== undefined) {
+      actions.run = runCommand
+      // The video clicked, else the page's main one.
+      actions.pipAt = (x, y) => {
+        void togglePictureInPictureAt(params.frame, x, y).then((done) => { if (!done) runCommand('page.pip') })
+      }
+    }
     context.bare = host.page.bare()
+    context.viewSource = host.page.viewSource?.() ?? true
     if (settings !== undefined) {
       context.spellcheckOn = settings.get('spellcheck.enabled')
       context.engineLabel = engineLabelFor(settings.get('search.engine'))

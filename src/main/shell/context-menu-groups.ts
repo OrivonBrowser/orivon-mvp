@@ -27,6 +27,8 @@ export interface ContextMenuActions {
   navigate?: { canGoBack: boolean, canGoForward: boolean, back: () => void, forward: () => void, reload: () => void }
   /** Runs a command on the window, as a key would. */
   run?: (id: CommandId) => void
+  /** Toggles Picture in Picture for the video at a point of the page: the one clicked, not the page's main video. */
+  pipAt?: (x: number, y: number) => void
   replaceMisspelling?: (word: string) => void
   addToDictionary?: (word: string) => void
   toggleSpellcheck?: () => void
@@ -47,10 +49,12 @@ export interface ContextMenuContext {
   engineLabel: string
   /** An internal page or the new-tab page: nothing to save, print or view as source. */
   bare: boolean
+  /** The page's source can be shown: a web page, not an app's own tab. */
+  viewSource: boolean
   spellcheckOn: boolean
 }
 
-export const DEFAULT_CONTEXT: ContextMenuContext = { engineLabel: 'the Web', bare: false, spellcheckOn: true }
+export const DEFAULT_CONTEXT: ContextMenuContext = { engineLabel: 'the Web', bare: false, viewSource: true, spellcheckOn: true }
 
 const MAX_SUGGESTIONS = 5
 const SEPARATOR: MenuItemConstructorOptions = { type: 'separator' }
@@ -117,7 +121,8 @@ export function mediaGroup (params: MenuParams, actions: ContextMenuActions): Me
   const items: MenuItemConstructorOptions[] = []
   const run = actions.run
   if (params.mediaType === 'video' && params.mediaFlags?.canShowPictureInPicture === true && run !== undefined) {
-    items.push({ label: 'Picture in Picture', type: 'checkbox', checked: params.mediaFlags.isShowingPictureInPicture, click: () => { run('page.pip') } })
+    const at = actions.pipAt
+    items.push({ label: 'Picture in Picture', type: 'checkbox', checked: params.mediaFlags.isShowingPictureInPicture, click: () => { if (at === undefined) run('page.pip'); else at(params.x, params.y) } })
   }
   const address = webAddress(params.srcURL)
   if (address === null) return items
@@ -172,9 +177,8 @@ export function pageGroup (actions: ContextMenuActions, context: ContextMenuCont
     SEPARATOR,
     { label: 'Save Page As…', click: () => { run('page.save') } },
     { label: 'Print…', click: () => { run('page.print') } },
-    { label: 'Take a Screenshot', click: () => { run('page.screenshot') } },
-    SEPARATOR,
-    { label: 'View Page Source', click: () => { run('page.viewSource') } }
+    { label: 'Take a Screenshot', click: () => { run('page.screenshot') } }
   )
+  if (context.viewSource) items.push(SEPARATOR, { label: 'View Page Source', click: () => { run('page.viewSource') } })
   return items
 }

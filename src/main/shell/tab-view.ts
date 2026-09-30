@@ -16,6 +16,7 @@ import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
+import { canViewSource } from '../page-tools/view-source.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
@@ -284,7 +285,7 @@ export function wireView (id: string, record: TabRecord): void {
       openInWindow: (url) => { record.host.openWindow(url) },
       // A private window has no way back to the profile: it offers no second private session.
       ...(services === undefined || services.isPrivate ? {} : { openInPrivate: (url: string) => { services.profiles.openPrivate(url) } }),
-      page: { bare: () => record.internalPage !== null || record.isDashboardTab },
+      page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()) },
       ...(services === undefined ? {} : { services }),
       runCommand,
       ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { devtools.inspect(wc, window, x, y) } } : {})

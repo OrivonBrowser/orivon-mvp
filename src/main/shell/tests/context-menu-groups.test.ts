@@ -115,6 +115,14 @@ describe('media group', () => {
     expect(a.run).toHaveBeenCalledWith('page.pip')
   })
 
+  it('pops out the video that was clicked, at the place clicked, when the window can do that', () => {
+    const video = params({ mediaType: 'video', srcURL: 'https://example.com/v.mp4', mediaFlags: { canShowPictureInPicture: true, isShowingPictureInPicture: false } } as never)
+    const a = { ...full(), pipAt: vi.fn() }
+    click(contextMenuTemplate(video, a as never, false, ctx), 'Picture in Picture')
+    expect(a.pipAt).toHaveBeenCalledWith(video.x, video.y)
+    expect(a.run).not.toHaveBeenCalled()
+  })
+
   it('names audio as audio and has no Picture in Picture', () => {
     const audio = params({ mediaType: 'audio', srcURL: 'https://example.com/a.mp3' })
     expect(labels(contextMenuTemplate(audio, full(), false, ctx))).toEqual(['Open Audio in New Tab', 'Save Audio As…', 'Copy Audio Address'])

@@ -9,6 +9,7 @@ const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
 function contents (over: Partial<CaptureContents> = {}): CaptureContents {
   return {
     capturePage: async () => ({ toPNG: () => png, isEmpty: () => false }),
+    getZoomFactor: () => 1,
     isDevToolsOpened: () => false,
     isCrashed: () => false,
     debugger: {
@@ -59,6 +60,13 @@ describe('takeScreenshot', () => {
     expect(deps.pickSave).toHaveBeenCalledWith(window.window, expect.objectContaining({ defaultPath: '/home/me/Downloads/Screenshot 2026-09-30 at 14.05.09.png' }))
     expect(deps.files.get('/out/shot.png')).toEqual(png)
     expect(show).toHaveBeenLastCalledWith('toast', undefined, { code: 'saved', name: 'shot.png', revealPath: '/out/shot.png' })
+  })
+
+  it('adds .png to a name typed without an extension', async () => {
+    const { window } = fakeWindow()
+    const deps = fakeDeps('/out/shot')
+    await takeScreenshot(window, contents(), { area: 'visible', to: 'save' }, deps)
+    expect([...deps.files.keys()]).toEqual(['/out/shot.png'])
   })
 
   it('writes nothing and shows nothing when the save dialog is cancelled', async () => {

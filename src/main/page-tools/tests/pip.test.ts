@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ENTER_SCRIPT, EXIT_SCRIPT, togglePictureInPicture } from '../pip.js'
+import { ENTER_SCRIPT, EXIT_SCRIPT, pointScript, togglePictureInPicture, togglePictureInPictureAt } from '../pip.js'
 import type { PipFrame } from '../pip.js'
 
 const frame = (answers: { exit?: unknown, enter?: unknown }): PipFrame & { executeJavaScript: ReturnType<typeof vi.fn> } => ({
@@ -52,5 +52,22 @@ describe('togglePictureInPicture', () => {
 
   it('takes nothing from the page: the scripts are constants with no placeholders', () => {
     for (const script of [ENTER_SCRIPT, EXIT_SCRIPT]) expect(script).not.toMatch(/\$\{/)
+  })
+})
+
+describe('the video at a point', () => {
+  it('puts only whole numbers into the script, whatever it is given', () => {
+    expect(pointScript(10.4, 20.6)).toContain('elementsFromPoint(10, 21)')
+    expect(pointScript(Number.NaN, Number.POSITIVE_INFINITY)).toContain('elementsFromPoint(0, 0)')
+    expect(pointScript(5, 6)).not.toMatch(/\$\{/)
+  })
+
+  it('runs in the frame clicked, with a user gesture, and says whether a video was toggled', async () => {
+    const answering = { executeJavaScript: vi.fn(async () => true) }
+    expect(await togglePictureInPictureAt(answering, 3, 4)).toBe(true)
+    expect(answering.executeJavaScript).toHaveBeenCalledWith(pointScript(3, 4), true)
+    expect(await togglePictureInPictureAt({ executeJavaScript: async () => false }, 3, 4)).toBe(false)
+    expect(await togglePictureInPictureAt({ executeJavaScript: async () => { throw new Error('no frame') } }, 3, 4)).toBe(false)
+    expect(await togglePictureInPictureAt(null, 3, 4)).toBe(false)
   })
 })

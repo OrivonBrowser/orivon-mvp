@@ -19,6 +19,7 @@ export function fakeDeps (chosen: string | null = '/out/file'): PageToolDeps & {
     rename: async (from, to) => { const data = files.get(from); if (data !== undefined) { files.set(to, data); files.delete(from) } },
     remove: async (path) => { files.delete(path) },
     reveal: () => {},
+    displayScale: () => 1,
     copyImage: vi.fn(async () => {}),
     now: () => new Date(2026, 8, 30, 14, 5, 9),
     wait: async () => {}

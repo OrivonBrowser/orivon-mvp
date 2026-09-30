@@ -10,7 +10,7 @@ interface FakeContents {
   isDestroyed: () => boolean
   isCrashed: () => boolean
   isLoadingMainFrame: () => boolean
-  mainFrame: { executeJavaScript: ReturnType<typeof vi.fn> }
+  executeJavaScriptInIsolatedWorld: ReturnType<typeof vi.fn>
 }
 
 function contents (id: string, selection = ''): FakeContents {
@@ -22,7 +22,7 @@ function contents (id: string, selection = ''): FakeContents {
     isDestroyed: () => false,
     isCrashed: () => false,
     isLoadingMainFrame: () => false,
-    mainFrame: { executeJavaScript: vi.fn(async () => await Promise.resolve(selection)) }
+    executeJavaScriptInIsolatedWorld: vi.fn(async () => await Promise.resolve(selection))
   }
 }
 
@@ -277,7 +277,7 @@ describe('the find bar handler', () => {
     vi.useFakeTimers()
     try {
       const a = contents('a')
-      a.mainFrame.executeJavaScript.mockReturnValue(new Promise(() => {}))
+      a.executeJavaScriptInIsolatedWorld.mockReturnValue(new Promise(() => {}))
       const r = rig({ a })
 
       const reply = r.handler.show?.(undefined)

@@ -1,5 +1,5 @@
 // The page tools' real dependencies: the file system, the clipboard and the save dialog.
-import { app, clipboard, ClipboardItem, shell } from 'electron'
+import { app, clipboard, ClipboardItem, screen, shell } from 'electron'
 import { rename, rm, writeFile } from 'node:fs/promises'
 import { pickSaveFile } from '../shell/file-dialogs.js'
 import type { PageToolDeps } from './deps.js'
@@ -10,6 +10,7 @@ export const realDeps: PageToolDeps = {
   writeFile: async (path, data) => { await writeFile(path, data) },
   rename,
   remove: async (path) => { await rm(path, { force: true }) },
+  displayScale: (window) => window === undefined || window.isDestroyed() ? screen.getPrimaryDisplay().scaleFactor : screen.getDisplayMatching(window.getBounds()).scaleFactor,
   reveal: (path) => { shell.showItemInFolder(path) },
   copyImage: async (png) => {
     const blob = new Blob([new Uint8Array(png)], { type: 'image/png' })

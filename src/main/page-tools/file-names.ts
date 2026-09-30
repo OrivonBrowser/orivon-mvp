@@ -51,12 +51,23 @@ export function isSavableDocument (url: string, contentType: string | undefined)
   }
 }
 
+/** What an extension from an address may be: a few letters and digits. The page chooses the address, so anything
+ * else (a separator, a control character, a long run) is not carried into a path. */
+const SAFE_EXTENSION = /^[a-z0-9]{1,16}$/i
+
 /** A name for a non-page download, taken from the address's last segment. */
 export function downloadName (url: string): string {
   try {
     const last = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '')
-    return safeFileName(last.replace(/\.[^.]*$/, ''), last.includes('.') ? last.split('.').pop() ?? 'bin' : 'bin')
+    const ext = last.includes('.') ? last.split('.').pop() ?? '' : ''
+    return safeFileName(last.replace(/\.[^.]*$/, ''), SAFE_EXTENSION.test(ext) ? ext : 'bin')
   } catch {
     return 'download.bin'
   }
+}
+
+/** `path` with `ext` added when the person typed a name with none: a save dialog on some platforms adds nothing. */
+export function withExtension (path: string, ext: string): string {
+  const name = baseName(path)
+  return name.includes('.') && !name.endsWith('.') ? path : `${path.replace(/\.+$/, '')}.${ext}`
 }
