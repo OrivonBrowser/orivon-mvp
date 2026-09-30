@@ -7,7 +7,7 @@ hand-written `assert`, `querystring`, `string_decoder`, `timers`, `url` and `str
 `worker_threads` (`Worker` over [`../child-process/`](../child-process/)'s Web Worker runtime,
 `isMainThread`/`parentPort`/`workerData` read at evaluation time) and `vm`
 (code run in the page's own context), and the modules a server's dependency graph asks for as it
-loads: `tty`, `readline`, `http2`, `diagnostics_channel`, `async_hooks`, `perf_hooks` and `console`.
+loads: `tty`, `readline`, `http2`, `diagnostics_channel`, `async_hooks`, `perf_hooks`, `console` and `process`.
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../errors.ts`](../errors.ts),
 [`../unimplemented.ts`](../unimplemented.ts) and [`../virtual-root.ts`](../virtual-root.ts)
@@ -78,3 +78,14 @@ each stands on machinery a loader should not pull into every bundle; `registerBu
 one. Every module's `require` shares one cache, keyed by resolved path. Cycles return the partial
 exports as Node does, and a module that throws is dropped from the cache. Provisional: package
 resolution would settle whether a `node_modules` directory ever appears in an app's own fs.
+
+**`process` is the global, with forwarding named exports** ([`process.ts`](process.ts)): a bundled
+`require('process')` reads the namespace, so the function members forward to the global at call
+time, and the data members are what the global holds when the module loads.
+
+**Four members that `express` and `got` reach through their dependencies are answered, not
+refused.** `url.Url` is the legacy class (`parseurl` builds one with `new Url()`), `StringDecoder` is
+a function that `StringDecoder.call(this, encoding)` can extend (`iconv-lite` does, for every body
+`body-parser` reads), `buffer.isUtf8` and `isAscii` exist (`ws` prefers them, and destructuring a
+refusing stand-in would have made it pick one that throws), and `util.types.isProxy` returns false,
+since a Proxy cannot be told from its target in userland (a request timer asks it of every socket).

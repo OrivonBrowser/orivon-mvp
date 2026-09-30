@@ -71,7 +71,18 @@ export const debuglog = utilPackage.debuglog
 export const deprecate = utilPackage.deprecate
 export const format = utilPackage.format
 export const inspect = utilPackage.inspect
-export const types = nodeModule('util.types', utilPackage.types)
+/**
+ * The `util` package throws for these three, which need engine internals. A library that asks (a
+ * request timer asks `isProxy(socket)` for every socket it sees) must get an answer: a Proxy cannot
+ * be told from its target in userland, so it is never reported, and no native external exists here.
+ * A module namespace object does announce itself through its string tag.
+ */
+export const types = nodeModule('util.types', {
+  ...utilPackage.types,
+  isProxy: (_value: unknown): boolean => false,
+  isExternal: (_value: unknown): boolean => false,
+  isModuleNamespaceObject: (value: unknown): boolean => typeof value === 'object' && value !== null && Object.prototype.toString.call(value) === '[object Module]'
+})
 // Real on the package's default export only: named here too, so a bundled
 // CommonJS require()'s namespace (which never sees the default) carries them.
 export const isArray = utilPackage.isArray

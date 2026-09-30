@@ -7,7 +7,8 @@
    app ([`ADR-0005`](../../docs/decisions/ADR-0005-apps-are-url-addressed-not-bundled.md)).
 2. **Core polyfills**: the modules a dependency graph needs just to *evaluate* (`Buffer`,
    `stream`, `events`, `path`, `os`, `crypto`, `zlib`, `util`, plus hand-written `url`,
-   `querystring`, `string_decoder`, `timers`, `assert`), the `dup` rows of
+   `querystring`, `string_decoder`, `timers`, `assert`, and the modules a server's dependencies load: `tty`,
+   `readline`, `http2`, `diagnostics_channel`, `async_hooks`, `perf_hooks`, `console`, `process`), the `dup` rows of
    [`compatibility-matrix.md`](../../docs/planning/compatibility-matrix.md) Table 3.
 
 | Folder | Holds |

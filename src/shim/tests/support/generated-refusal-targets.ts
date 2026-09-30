@@ -53,6 +53,7 @@ export const REFUSAL_TARGETS: readonly RefusalTarget[] = [
   generic('async_hooks', 'polyfills/async-hooks.js', 'polyfills/generated/async-hooks.ts'),
   generic('diagnostics_channel', 'polyfills/diagnostics-channel.js', 'polyfills/generated/diagnostics-channel.ts'),
   generic('perf_hooks', 'polyfills/perf-hooks.js', 'polyfills/generated/perf-hooks.ts'),
+  generic('process', 'polyfills/process.js', 'polyfills/generated/process.ts'),
   generic('console', 'polyfills/console.js', 'polyfills/generated/console.ts'),
   {
     specifier: 'tty',

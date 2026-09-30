@@ -163,6 +163,11 @@
       "prefixOnly": true
     },
     {
+      "specifier": "process",
+      "kind": "local",
+      "implementation": "./polyfills/process.js"
+    },
+    {
       "specifier": "assert",
       "kind": "local",
       "implementation": "./polyfills/assert.js"
