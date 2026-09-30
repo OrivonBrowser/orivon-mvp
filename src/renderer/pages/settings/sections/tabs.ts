@@ -1,4 +1,5 @@
 import type { Section } from '../model.js'
+import { hoverCardRows } from './rows/hover-card.js'
 
 export const tabs: Section = {
   id: 'tabs',
@@ -16,6 +17,7 @@ export const tabs: Section = {
           { value: 'newTab', label: 'Open a new tab' }
         ]
       }
-    }
+    },
+    ...hoverCardRows
   ]
 }

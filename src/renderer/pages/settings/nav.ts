@@ -2,7 +2,7 @@
 // muted groups it falls under. Kept here, apart from main.ts's rendering and
 // sections/index.ts's ordering, so a new section only has to be added to one
 // list of icons and one map of groups, not worked into the drawing code.
-import { appearanceIcon, appsIcon, developerIcon, downloadIcon, fileIcon, homeIcon, infoIcon, keyboardIcon, keyIcon, mapPinIcon, privacyIcon, profilesIcon, searchGlassIcon, slidersIcon, tabsIcon, webIcon } from '../shared/icons.js'
+import { accessibilityIcon, appearanceIcon, appsIcon, developerIcon, downloadIcon, fileIcon, gaugeIcon, homeIcon, infoIcon, keyboardIcon, keyIcon, languagesIcon, mapPinIcon, privacyIcon, profilesIcon, searchGlassIcon, slidersIcon, tabsIcon, webIcon } from '../shared/icons.js'
 import type { Section } from './model.js'
 
 export const NAV_ICON: Readonly<Record<string, () => SVGSVGElement>> = {
@@ -10,6 +10,8 @@ export const NAV_ICON: Readonly<Record<string, () => SVGSVGElement>> = {
   search: searchGlassIcon,
   startup: homeIcon,
   content: fileIcon,
+  accessibility: accessibilityIcon,
+  languages: languagesIcon,
   tabs: tabsIcon,
   downloads: downloadIcon,
   profiles: profilesIcon,
@@ -19,6 +21,7 @@ export const NAV_ICON: Readonly<Record<string, () => SVGSVGElement>> = {
   addresses: mapPinIcon,
   apps: appsIcon,
   web3: webIcon,
+  performance: gaugeIcon,
   shortcuts: keyboardIcon,
   developer: developerIcon,
   about: infoIcon
@@ -33,6 +36,8 @@ const NAV_GROUP: Readonly<Record<string, string>> = {
   search: 'Browsing',
   startup: 'Browsing',
   content: 'Browsing',
+  accessibility: 'Browsing',
+  languages: 'Browsing',
   tabs: 'Browsing',
   downloads: 'Browsing',
   profiles: 'Privacy and accounts',
@@ -42,6 +47,7 @@ const NAV_GROUP: Readonly<Record<string, string>> = {
   addresses: 'Privacy and accounts',
   apps: 'Privacy and accounts',
   web3: 'Privacy and accounts',
+  performance: 'Advanced',
   shortcuts: 'Advanced',
   developer: 'Advanced',
   about: 'Advanced'

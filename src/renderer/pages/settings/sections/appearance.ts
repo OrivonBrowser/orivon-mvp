@@ -1,4 +1,8 @@
 import type { Section } from '../model.js'
+import { accentRows } from './rows/accent.js'
+import { sidePanelRows } from './rows/side-panel.js'
+import { toolbarRows } from './rows/toolbar.js'
+import { uiScaleRows } from './rows/ui-scale.js'
 
 export const appearance: Section = {
   id: 'appearance',
@@ -19,6 +23,7 @@ export const appearance: Section = {
         ]
       }
     },
+    ...accentRows,
     {
       id: 'bookmarks-bar',
       label: 'Bookmarks bar',
@@ -40,6 +45,9 @@ export const appearance: Section = {
       help: 'How large websites are shown, unless you have zoomed a site yourself. Zoom a site with Ctrl and the mouse wheel, or Ctrl + and Ctrl -.',
       keywords: ['zoom', 'size', 'text', 'larger', 'smaller', 'magnify', 'scale'],
       control: { type: 'choice', key: 'appearance.defaultZoom' }
-    }
+    },
+    ...uiScaleRows,
+    ...sidePanelRows,
+    ...toolbarRows
   ]
 }

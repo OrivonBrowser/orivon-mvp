@@ -227,6 +227,10 @@ export function panelRightIcon (): SVGSVGElement {
   return icon((el) => { el.append(rect(3, 3, 18, 18, 2), path('M15 3v18', '2')) })
 }
 
+export function panelLeftIcon (): SVGSVGElement {
+  return icon((el) => { el.append(rect(3, 3, 18, 18, 2), path('M9 3v18', '2')) })
+}
+
 export function puzzleIcon (): SVGSVGElement {
   return icon((el) => {
     el.append(path('M19.4 7.9c-.05.32.06.65.29.88l1.57 1.57a2.4 2.4 0 0 1 0 3.4l-1.6 1.6a1 1 0 0 1-.84.28c-.47-.07-.8-.48-.97-.93a2.5 2.5 0 1 0-3.2 3.2c.45.17.86.5.93.97a1 1 0 0 1-.28.84l-1.6 1.6a2.4 2.4 0 0 1-3.4 0l-1.57-1.57a1 1 0 0 0-.88-.29c-.49.07-.84.5-1.02.97a2.5 2.5 0 1 1-3.24-3.24c.47-.18.9-.53.97-1.02a1 1 0 0 0-.29-.88L2.7 13.7a2.4 2.4 0 0 1 0-3.4l1.53-1.53c.24-.24.58-.35.92-.3.51.08.88.53 1.07 1.01a2.5 2.5 0 1 0 3.26-3.26c-.48-.2-.93-.56-1.01-1.07-.05-.34.06-.68.3-.92L10.3 2.7a2.4 2.4 0 0 1 3.4 0l1.57 1.57c.23.23.56.34.88.29.49-.07.84-.5 1.02-.97a2.5 2.5 0 1 1 3.24 3.24c-.47.18-.9.53-.97 1.02z', '2'))
@@ -269,5 +273,49 @@ export function maximizeIcon (): SVGSVGElement {
   return icon((el) => {
     el.append(path('M8 3H5a2 2 0 0 0-2 2v3', '2'), path('M21 8V5a2 2 0 0 0-2-2h-3', '2'))
     el.append(path('M3 16v3a2 2 0 0 0 2 2h3', '2'), path('M16 21h3a2 2 0 0 0 2-2v-3', '2'))
+  })
+}
+
+export function moonIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z', '2')) })
+}
+
+export function bookOpenIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M12 7v14', '2'))
+    el.append(path('M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z', '2'))
+  })
+}
+
+/** A dial, for the section about how much the browser uses. */
+export function gaugeIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M12 14l4-4', '2'), path('M3.34 19a10 10 0 1 1 17.32 0', '2')) })
+}
+
+/** A person with open arms in a circle, for the section of accessibility choices. */
+export function accessibilityIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(circle(12, 12, 10), circle(12, 7.5, 1), path('M7 10.5l5 1 5-1', '2'), path('M12 11.5v3', '2'), path('M9.5 18l2.5-3.5 2.5 3.5', '2'))
+  })
+}
+
+export function leafIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z', '2'), path('M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12', '2'))
+  })
+}
+
+export function userRoundIcon (): SVGSVGElement {
+  return icon((el) => { el.append(circle(12, 8, 5), path('M20 21a8 8 0 0 0-16 0', '2')) })
+}
+
+export function typeIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M12 4v16', '2'), path('M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2', '2'), path('M9 20h6', '2')) })
+}
+
+/** A character of one script beside a character of another, for the section of languages. */
+export function languagesIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M5 8l6 6', '2'), path('M4 14l6-6 2-3', '2'), path('M2 5h12', '2'), path('M7 2h1', '2'), path('M22 22l-5-10-5 10', '2'), path('M14 18h6', '2'))
   })
 }

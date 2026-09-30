@@ -1,0 +1,40 @@
+/* The sites list: the add field and its button, then the sites in one hairline box. The remove button is drawn
+   but see-through until the row is hovered or holds focus, so a row never shifts. */
+
+.row:has(.host-list) { gap: 12px; }
+.host-list { display: grid; gap: 10px; width: 100%; }
+
+.host-list-add { display: flex; align-items: center; gap: 8px; }
+.host-list-add .text { flex: 1 1 auto; min-width: 0; max-width: none; }
+.host-list-add .btn { height: 32px; }
+
+.host-list-items {
+  gap: 0;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  background: var(--wsurface);
+  overflow: hidden;
+}
+.host-list-item {
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 4px 0 12px;
+  border-radius: 0;
+  border-top: 1px solid var(--wborder);
+  cursor: default;
+}
+.host-list-item:first-child { border-top: none; }
+.host-list-item .item-title { font-size: 13px; user-select: text; }
+.host-list-item .item-meta { margin-left: 10px; }
+
+.host-list-remove { opacity: 0; }
+.host-list-item:hover .host-list-remove,
+.host-list-item:focus-within .host-list-remove,
+.host-list-remove:focus-visible { opacity: 1; }
+
+.host-list .empty-state.compact {
+  padding: 16px 12px;
+  border: 1px dashed var(--wborder);
+  border-radius: 8px;
+}
+.host-list .empty-state p { margin: 0; font-size: 13px; }
