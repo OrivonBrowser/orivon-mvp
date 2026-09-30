@@ -125,6 +125,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'clearData': field = renderClearData(state); break
     case 'apps': field = renderApps(state); break
     case 'usage': field = renderUsage(state); break
+    case 'custom': field = control.render(state); break
     case 'info': field = h('span', { className: 'value', textContent: control.text(state) }); break
   }
 
@@ -144,7 +145,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
   // A control that is more than one compact field (several checkboxes, a
   // list of apps, the usage-statistics block) stacks under its own label
   // full width, rather than squeezed beside it at the row's right edge.
-  const isWide = control.type === 'apps' || control.type === 'usage' || control.type === 'clearData' || control.type === 'pageList'
+  const isWide = control.type === 'apps' || control.type === 'usage' || control.type === 'clearData' || control.type === 'pageList' || (control.type === 'custom' && control.wide === true)
   return h('div', { className: isWide ? 'row wide' : 'row', id: `row-${row.id}` },
     h('div', { className: 'row-text' },
       labelsControl

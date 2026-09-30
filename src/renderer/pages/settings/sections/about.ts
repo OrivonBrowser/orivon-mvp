@@ -1,4 +1,5 @@
 import type { Section } from '../model.js'
+import { aboutSystemRows } from './about-system.js'
 
 export const about: Section = {
   id: 'about',
@@ -36,6 +37,7 @@ export const about: Section = {
       control: { type: 'info', text: (state) => state.updates.words() },
       visible: (state) => state.updates.words() !== ''
     },
+    ...aboutSystemRows,
     {
       id: 'reset-all',
       label: 'Reset every setting',

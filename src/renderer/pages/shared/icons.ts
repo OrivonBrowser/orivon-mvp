@@ -187,6 +187,16 @@ export function keyIcon (): SVGSVGElement {
   return icon((el) => { el.append(path('M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4', '2')) })
 }
 
+/** Three sliders, for the section of per-site choices. */
+export function slidersIcon (): SVGSVGElement {
+  return icon((el) => { el.append(line(4, 7, 20, 7), line(4, 12, 20, 12), line(4, 17, 20, 17), circle(9, 7, 2), circle(15, 12, 2), circle(8, 17, 2)) })
+}
+
+/** A map pin, for the section of saved addresses. */
+export function mapPinIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z', '2'), circle(12, 10, 3)) })
+}
+
 export function printerIcon (): SVGSVGElement {
   return icon((el) => {
     el.append(path('M6 9V2h12v7', '2'), path('M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2', '2'), rect(6, 14, 12, 8))

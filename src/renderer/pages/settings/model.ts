@@ -21,6 +21,8 @@ export type Control =
   | { readonly type: 'apps' }
   /** What to forget, and the button that forgets it. */
   | { readonly type: 'clearData' }
+  /** A control a feature draws itself; `wide` stacks it under its label at full width. It reads what it shows from `state` and acts through `state.request` or a part of `state.part`. */
+  | { readonly type: 'custom', readonly wide?: boolean, readonly render: (state: SettingsState) => HTMLElement }
   /** A value shown, not changed. */
   | { readonly type: 'info', readonly text: (state: SettingsState) => string }
   /** A button. With `confirm`, the first click arms it and the second does it. */

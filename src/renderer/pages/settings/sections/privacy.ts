@@ -1,4 +1,6 @@
 import type { Section } from '../model.js'
+import { privacyNetworkRows } from './privacy-network.js'
+import { privacySiteDataRows } from './privacy-site-data.js'
 
 export const privacy: Section = {
   id: 'privacy',
@@ -33,6 +35,7 @@ export const privacy: Section = {
       keywords: ['history', 'visited', 'search', 'delete', 'remove'],
       control: { type: 'action', label: 'Open history', run: async (state) => { await state.openPage('history') } }
     },
+    ...privacyNetworkRows,
     {
       id: 'usage-statistics',
       label: 'Usage statistics',
@@ -40,6 +43,7 @@ export const privacy: Section = {
       keywords: ['telemetry', 'analytics', 'statistics', 'usage', 'send', 'report', 'measure', 'consent'],
       control: { type: 'usage' }
     },
+    ...privacySiteDataRows,
     {
       id: 'clear-data',
       label: 'Clear browsing data',
