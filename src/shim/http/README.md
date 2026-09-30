@@ -79,5 +79,6 @@ when repeated, and `cookie` joins with `; `, as a Node server's `req.headers` do
 callback that fed the parser would otherwise turn it into an unhandled rejection and leave the
 connection half-parsed.
 
-**`listen` refuses a loopback-only host, as `net.Server` does.** `orivon.net.listen` binds every
-interface and takes no host: see [`../net/README.md`](../net/README.md).
+**`listen` takes the hosts `net.Server` takes.** A loopback host binds loopback only, under the
+local grant; no host asks for every interface and falls back to loopback when only the local
+grant is held: see [`../net/README.md`](../net/README.md).

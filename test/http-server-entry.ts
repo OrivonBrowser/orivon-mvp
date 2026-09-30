@@ -41,7 +41,7 @@ async function start (): Promise<HttpServerStartResult> {
   server = created
   await new Promise<void>((resolve, reject) => {
     created.once('error', reject)
-    created.listen(port, resolve)
+    created.listen(port, '127.0.0.1', resolve)
   })
   progress.push('listening')
   const selfReply = await new Promise<NonNullable<HttpServerStartResult['selfReply']>>((resolve, reject) => {

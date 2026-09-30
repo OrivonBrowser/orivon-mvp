@@ -1,6 +1,6 @@
 // `http.createServer` in a real app tab: the page's own HTTP server listens on a
 // loopback port through the broker (`orivon.net.listen`, under a granted
-// tcp.listen.network for that one port), answers a request the page makes to it
+// tcp.listen.local for that one port), answers a request the page makes to it
 // through the shim's client, and answers real requests from outside the browser
 // (a GET, a chunked POST, a HEAD, keep-alive reuse of one connection). After
 // `close()` the port no longer answers.
@@ -68,17 +68,17 @@ it('a page runs http.createServer on a loopback port, and real requests from out
     version: '1.0.0',
     entry: 'index.html',
     assets: ['app.js'],
-    capabilities: { net: { tcp: { connect: [`127.0.0.1:${port}`], listen: { network: [String(port)] } } } }
+    capabilities: { net: { tcp: { connect: [`127.0.0.1:${port}`], listen: { local: [String(port)] } } } }
   }
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     await runPhase('http server', async (check) => {
       const html = '<!doctype html><html><head><title>http server fixture</title><script src="/app.js"></script></head><body><h1>http server fixture</h1></body></html>'
-      const served = await serveApp(app, ORIGIN, manifest, 'tcp.listen.network', {
+      const served = await serveApp(app, ORIGIN, manifest, 'tcp.listen.local', {
         '/index.html': new TextEncoder().encode(html),
         '/app.js': await bundleForApp(fileURLToPath(new URL('./http-server-entry.ts', import.meta.url)))
       }, [String(port)], [{ capability: 'tcp.connect', patterns: [`127.0.0.1:${port}`] }])
-      check('the fixture is granted tcp.listen.network and tcp.connect for one port, and registered', served.granted && served.registered, JSON.stringify(served))
+      check('the fixture is granted tcp.listen.local and tcp.connect for one port, and registered', served.granted && served.registered, JSON.stringify(served))
 
       const view = await navigateToFixture(app, `${ORIGIN}/`, 'http server fixture')
       await waitForPageGlobal(view, 'httpServerE2e')
