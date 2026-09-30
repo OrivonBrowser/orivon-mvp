@@ -28,14 +28,23 @@ async function startHeaderServer (): Promise<{ port: number, close: () => void, 
   return { port, close: () => { server.close() }, documentHeaders: () => last }
 }
 
-async function navigate (chrome: any, url: string): Promise<void> {
-  await chrome.evaluate((u: string) => {
-    const input = document.querySelector('#address') as HTMLInputElement
-    input.value = u
-    input.dispatchEvent(new Event('focus'))
-    const form = document.querySelector('#address-form') as HTMLFormElement
-    form.dispatchEvent(new Event('submit', { cancelable: true }))
-  }, url)
+/** Submits the address bar, repeating until a tab whose URL contains `needle` exists: the first
+ * submit can land before the chrome view has wired its form handler. */
+async function navigateTo (app: import('playwright').ElectronApplication, chrome: any, url: string, needle: string): Promise<void> {
+  const appeared = await waitFor(async () => {
+    if (!app.windows().some((w: any) => w.url().includes(needle))) {
+      await chrome.evaluate((u: string) => {
+        const input = document.querySelector('#address') as HTMLInputElement
+        input.value = u
+        input.dispatchEvent(new Event('focus'))
+        const form = document.querySelector('#address-form') as HTMLFormElement
+        form.dispatchEvent(new Event('submit', { cancelable: true }))
+      }, url)
+      return false
+    }
+    return true
+  }, 30_000)
+  if (!appeared) throw new Error(`no tab matching ${needle} after retrying the address bar`)
 }
 
 async function pageReport (tab: any): Promise<{ userAgent: string, hasUserAgentData: boolean, brands: number }> {
@@ -67,8 +76,7 @@ describe('the Firefox sign-in identity, against local fixtures only', () => {
 
       // An unlisted host first, so its request headers are not touched by a
       // tab that has been on a sign-in host.
-      await navigate(chrome, `http://127.0.0.1:${plainFixture.port}/`)
-      expect(await waitFor(async () => app.windows().some((w: any) => w.url().includes(String(plainFixture.port))), 15_000)).toBe(true)
+      await navigateTo(app, chrome, `http://127.0.0.1:${plainFixture.port}/`, String(plainFixture.port))
       const plainTab = app.windows().find((w: any) => w.url().includes(String(plainFixture.port)))
       if (plainTab === undefined) throw new Error('plain fixture tab not found')
       const plainReport = await pageReport(plainTab)
@@ -78,8 +86,7 @@ describe('the Firefox sign-in identity, against local fixtures only', () => {
       expect(plainReport.brands).toBeGreaterThan(0)
       expect(plainFixture.documentHeaders()?.['user-agent']).toMatch(/Chrome\/\d+\.0\.0\.0/)
 
-      await navigate(chrome, `http://127.0.0.1:${signInFixture.port}/`)
-      expect(await waitFor(async () => app.windows().some((w: any) => w.url().includes(String(signInFixture.port))), 15_000)).toBe(true)
+      await navigateTo(app, chrome, `http://127.0.0.1:${signInFixture.port}/`, String(signInFixture.port))
       const signInTab = app.windows().find((w: any) => w.url().includes(String(signInFixture.port)))
       if (signInTab === undefined) throw new Error('sign-in fixture tab not found')
       const signInReport = await pageReport(signInTab)
@@ -91,7 +98,7 @@ describe('the Firefox sign-in identity, against local fixtures only', () => {
       expect(Object.keys(signInHeaders ?? {}).filter((name) => name.startsWith('sec-ch-ua'))).toEqual([])
 
       // Leaving the host restores the page-visible identity.
-      await navigate(chrome, `http://127.0.0.1:${plainFixture.port}/?again=1`)
+      await navigateTo(app, chrome, `http://127.0.0.1:${plainFixture.port}/?again=1`, 'again=1')
       expect(await waitFor(async () => {
         const tab = app.windows().find((w: any) => w.url().includes('again=1'))
         return tab !== undefined && (await pageReport(tab)).userAgent.includes('Chrome/')
