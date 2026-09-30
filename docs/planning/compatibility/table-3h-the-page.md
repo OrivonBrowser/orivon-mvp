@@ -1,8 +1,8 @@
 # Table 3h: the page (origin, served policy, storage, workers, frames)
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 The universe is the 27 Content-Security-Policy directive names (the 10 the loader sets and the 17 it leaves unset), the 19 response headers of a pinned asset (the 8 it carries and the 11 it never sets), the 7 browser storage kinds (`localStorage`, `sessionStorage`, IndexedDB, the Cache API, the Origin Private File System, cookies, WebSQL), the 6 worker kinds (dedicated, `blob:`, shared, service, worklet, and the one the shim starts), the 9 frame and embedded-document kinds (same-origin, cross-origin, `srcdoc`, sandboxed, `data:`, `blob:`, `<object>`, `<embed>`, `<webview>`), and the `navigator` fields an app reads to identify its environment. [Table 3b](table-3b-modules-and-delivery.md) compares the four delivery environments and Table 8 lists the browser features around the page.
 
