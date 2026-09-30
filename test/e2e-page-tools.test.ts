@@ -163,8 +163,10 @@ async function shoot (app: App, page: Page, name: string): Promise<void> {
 }
 
 it('Ctrl+S saves the page complete, or as one .mhtml file by its extension, and names it in a toast', async () => {
-  const { app } = await launched(`${origin}/`)
+  const { app, chrome } = await launched(`${origin}/`)
   try {
+    // The file name comes from the tab's title, which arrives after the address.
+    expect((await waitForTab(chrome, { title: 'Fixture: page tools' })).ok).toBe(true)
     const html = join(outDir, 'page.html')
     await stubSaveDialog(app, html)
     await pressKey(app, origin, 'S', ['control'])
