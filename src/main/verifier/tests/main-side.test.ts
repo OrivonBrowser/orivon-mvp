@@ -10,11 +10,19 @@ describe('composeResolverRules', () => {
 
   it('puts developer names first, then every protocol host, then the rules already given', () => {
     expect(composeResolverRules({ devClauses: 'MAP freetube.eth 127.0.0.1:8875', port: 40001, suffixes, existing: 'MAP * ~NOTFOUND, EXCLUDE 127.0.0.1' }))
-      .toBe('MAP freetube.eth 127.0.0.1:8875,MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP * ~NOTFOUND, EXCLUDE 127.0.0.1')
+      .toBe('MAP freetube.eth 127.0.0.1:8875,MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1,MAP * ~NOTFOUND, EXCLUDE 127.0.0.1')
   })
 
-  it('is the protocol clauses alone when nothing else is given', () => {
-    expect(composeResolverRules({ devClauses: '', port: 40001, suffixes, existing: '' })).toBe('MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001')
+  it('maps every .localhost name to the IPv4 loopback address, ahead of any rule already given, so a page under one never reaches an IPv6 server', () => {
+    const rules = composeResolverRules({ devClauses: '', port: 40001, suffixes, existing: 'MAP * ~NOTFOUND' })
+    expect(rules.indexOf('MAP *.localhost 127.0.0.1')).toBeGreaterThan(-1)
+    expect(rules.indexOf('MAP *.localhost 127.0.0.1')).toBeLessThan(rules.indexOf('MAP * ~NOTFOUND'))
+  })
+
+  it('is the protocol clauses and the localhost clause when nothing else is given, and the localhost clause even with no suffix', () => {
+    expect(composeResolverRules({ devClauses: '', port: 40001, suffixes, existing: '' }))
+      .toBe('MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1')
+    expect(composeResolverRules({ devClauses: '', port: 40001, suffixes: [], existing: '' })).toBe('MAP *.localhost 127.0.0.1')
   })
 })
 

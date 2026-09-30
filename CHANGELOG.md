@@ -33,6 +33,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **Google's sign-in pages are shown a Firefox identity**, since Google rejects this browser as "not secure"; the
   request headers, `navigator.userAgent` and the missing `navigator.userAgentData` agree on `accounts.google.com`
   and `accounts.youtube.com` alone. Not yet confirmed against a real account.
+- **A failed e2e spec leaves its evidence** in `qa-artifacts/latest/`: a screenshot per shown view, the console,
+  page errors, failed requests, crashes and the main log. `npm run qa` adds layout-audited, baseline-compared
+  shell states, a restart journey and adversarial specs; CI uploads the evidence on a red e2e job.
 - **An app's child processes outlive the tab that started them** while another tab of the app is open,
   and end with its last page: they run in a hidden host of the app's own, with the app's grants
   (ADR-0046).
@@ -150,6 +153,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A tab title no longer loses the bottom row of its descenders** (g, p, y): its line box was shorter than the text.
 - **A burst of short-lived sockets no longer brings the browser down.** The broker's socket streams no longer go
   through Node's `Duplex.toWeb`, whose teardown could throw where nothing could catch it.
 - **A program a forked child spawns can use the app's files and network.** Every `orivon.*` call from it failed

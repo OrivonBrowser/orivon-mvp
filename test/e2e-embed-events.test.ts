@@ -40,6 +40,7 @@ const SITE_ORIGIN = `http://${HOST}:${SITE_PORT}`
 const OTHER_ORIGIN = `http://${HOST}:${OTHER_PORT}`
 const TEST_TIMEOUT_MS = 180_000
 const EVENT_WAIT_MS = 10_000
+const STEP_TIMEOUT_MS = 20_000
 /** An action's event is heard once: this long after the first one, nothing more must have come. */
 const SETTLE_MS = 800
 
@@ -334,6 +335,34 @@ it(
         const surfaceAfter = await surface()
         check('no window, view or tab was opened by any of it', same(surfaceBefore, surfaceAfter), JSON.stringify({ surfaceBefore, surfaceAfter }))
         check('no file was written for any download', keptFiles().length === 0, JSON.stringify({ downloadsDir, files: keptFiles() }))
+
+        // ---- an element inside a shadow root is found too, once the shallow search has no match.
+        const shadowGuest = await evaluateRetrying(view, async () => {
+          const page = window as unknown as PageState & { __embedShadowHeard: string[] }
+          page.__embedShadowHeard = []
+          const host = document.createElement('div')
+          const root = host.attachShadow({ mode: 'open' })
+          const el = document.createElement('webview') as HTMLElement & Element2 & { src: string }
+          el.src = `${location.protocol}//${location.hostname}:8961/`
+          el.style.width = '640px'
+          el.style.height = '520px'
+          root.addEventListener('orivon-popup', () => { page.__embedShadowHeard.push('shadow root heard it') })
+          const loaded = new Promise<string>((resolve) => {
+            el.addEventListener('did-finish-load', () => { resolve('finished') })
+            setTimeout(() => { resolve('timeout') }, 15_000)
+          })
+          root.append(el)
+          document.body.append(host)
+          return { outcome: await loaded, guestId: el.getWebContentsId() }
+        }, STEP_TIMEOUT_MS)
+        check('a <webview> inside a shadow root loads', shadowGuest.outcome === 'finished', JSON.stringify(shadowGuest))
+        const fromShadow = await heardAfter(view, async () => { await clickGuest(app, shadowGuest.guestId, rowMiddle('blank')) })
+        const shadowHeard = await evaluateRetrying(view, () => (window as unknown as { __embedShadowHeard: string[] }).__embedShadowHeard.slice())
+        check(
+          'a notice for a page shown inside a shadow root is fired on that element: its root and the document both hear it once',
+          fromShadow.length === 1 && fromShadow[0]?.name === 'orivon-popup' && shadowHeard.length === 1,
+          JSON.stringify({ fromShadow, shadowHeard })
+        )
 
         // ---- A306: a scheme Chromium does not know.
         const dialogs = await app.evaluate(({ dialog }) => {

@@ -155,10 +155,21 @@ describe('HttpResponseParser -- unbounded line guard', () => {
     h.parser.write(enc.encode('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n'))
 
     const junk = enc.encode('X-Junk: '.repeat(128))
-    for (let i = 0; i < 12 && h.errors.length === 0; i++) h.parser.write(junk)
+    for (let i = 0; i < 60 && h.errors.length === 0; i++) h.parser.write(junk)
 
     expect(h.errors).toHaveLength(1)
-    expect(h.errors[0]?.message).toMatch(/trailer line exceeded/)
+    expect(h.errors[0]?.message).toMatch(/trailer section exceeded/)
+    expect(h.complete).toBe(0)
+  })
+
+  it('bounds the whole trailer section, not only each line: thousands of short trailer lines overflow', () => {
+    const h = makeParser()
+    h.parser.write(enc.encode('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n'))
+    const line = enc.encode('X-Trailer: 0123456789012345678901234567890\r\n')
+    for (let i = 0; i < 4000 && h.errors.length === 0; i++) h.parser.write(line)
+
+    expect(h.errors).toHaveLength(1)
+    expect((h.errors[0] as Error & { code?: string }).code).toBe('HPE_HEADER_OVERFLOW')
     expect(h.complete).toBe(0)
   })
 })

@@ -121,3 +121,14 @@ jobs:
       # Builds first (the app launches from out/), then runs the e2e config.
       - name: Capability-enforcement end-to-end test
         run: xvfb-run -a npm run test:e2e
+
+      # Screenshots, console logs and the main-process log of every failed
+      # spec (test/qa-evidence.mjs); absent when the suite passes.
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qa-artifacts
+          path: qa-artifacts/latest/
+          if-no-files-found: ignore
+          retention-days: 7

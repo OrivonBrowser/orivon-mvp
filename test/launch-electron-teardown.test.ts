@@ -31,7 +31,7 @@
 // test/vitest.e2e.config.ts test/launch-electron-teardown.test.ts`
 
 import { describe, expect, it, vi } from 'vitest'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdtemp, realpath, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -53,6 +53,7 @@ import {
   findLiveElectronPids,
   killProcessTree,
   launchElectron,
+  profileDirOf,
   registerLaunchForTeardown,
   resolveExePath,
   waitForPidExit
@@ -114,6 +115,16 @@ function forceKill (pid: number | undefined): void {
   try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
 }
 
+/** A profile directory registered the way a real launch registers its own, then kept as closeElectron({ keepProfile }) keeps one. */
+async function madeProfile (): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'orivon-test-'))
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])
+  const app = { process: () => child, close: async () => {} }
+  registerLaunchForTeardown(app, { userDataDir: dir })
+  await closeElectron(app, { keepProfile: true })
+  return dir
+}
+
 describe('launchElectron', () => {
   it('leaves no orivon-test-* directory behind when electron.launch itself rejects (C-12)', async () => {
     // electron.launch is fully mocked (see the vi.mock above) -- this never
@@ -134,6 +145,61 @@ describe('launchElectron', () => {
     const userDataDir = userDataDirArg.slice('--user-data-dir='.length)
     await expect(stat(userDataDir)).rejects.toThrow()
   })
+
+  it.each([
+    ['a real-looking profile under the home directory', () => Promise.resolve('/home/someone/.config/orivon')],
+    ['a temp directory with the wrong name', () => Promise.resolve(join(tmpdir(), 'somebody-elses-dir'))],
+    ['a path that only starts like the temp directory', () => Promise.resolve(`${tmpdir()}-evil/orivon-test-x`)],
+    ['an orivon-test-* directory this process never made', () => mkdtemp(join(tmpdir(), 'orivon-test-'))],
+    ['a directory nested below one this process made', async () => `${await madeProfile()}/deeper`]
+  ])('refuses to reuse %s, before any launch', async (_label, pick) => {
+    const dir = await pick()
+    mockElectronLaunch.mockClear()
+    await expect(launchElectron({ reuseProfile: dir })).rejects.toThrow(/reuseProfile must be a profile directory this process made and kept/)
+    expect(mockElectronLaunch).not.toHaveBeenCalled()
+    await rm(dir.replace(/\/deeper$/, ''), { recursive: true, force: true })
+  })
+
+  it('launches on a reused profile this process made, and leaves it alone when the launch itself fails', async () => {
+    const dir = await madeProfile()
+    try {
+      mockElectronLaunch.mockClear()
+      mockElectronLaunch.mockRejectedValueOnce(new Error('injected: launch failure'))
+      await expect(launchElectron({ reuseProfile: dir })).rejects.toThrow('injected: launch failure')
+      const [{ args }] = mockElectronLaunch.mock.calls[0] as [{ args: string[] }]
+      expect(args).toContain(`--user-data-dir=${dir}`)
+      expect((await stat(dir)).isDirectory()).toBe(true)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('a profile kept for a relaunch that never comes', () => {
+  it('is removed when the process that kept it exits, so a failed relaunch leaks nothing', async () => {
+    const launcher = new URL('./launch-electron.mjs', import.meta.url).href
+    const script = `
+      import { closeElectron, registerLaunchForTeardown } from ${JSON.stringify(launcher)}
+      import { mkdtemp } from 'node:fs/promises'
+      import { tmpdir } from 'node:os'
+      import { join } from 'node:path'
+      import { spawn } from 'node:child_process'
+      const dir = await mkdtemp(join(tmpdir(), 'orivon-test-'))
+      const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])
+      const app = { process: () => child, close: async () => {} }
+      registerLaunchForTeardown(app, { userDataDir: dir })
+      await closeElectron(app, { keepProfile: true })
+      console.log('KEPT ' + dir)
+    `
+    const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 30_000 })
+    const dir = /KEPT (\S+)/.exec(run.stdout)?.[1]
+    if (dir === undefined) throw new Error(`the child kept no profile: ${run.stdout} ${run.stderr}`)
+    try {
+      await expect(stat(dir)).rejects.toThrow()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }, 45_000)
 })
 
 describe('collectProcessTree', () => {
@@ -253,6 +319,31 @@ describe('closeElectron, against a fake app wrapping a real (non-Electron) proce
       await closeElectron(app, { raceMs: APP_CLOSE_RACE_MS })
       expect(await waitForPidExit(pid, 2_000)).toBe(true)
       await expect(stat(userDataDir)).rejects.toThrow()
+    } finally {
+      forceKill(pid)
+      await rm(userDataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the profile dir for a relaunch when asked, and closing it again then removes it', async () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])
+    const pid = child.pid
+    if (pid === undefined) throw new Error('child reported no pid')
+    const userDataDir = await mkdtemp(join(tmpdir(), 'orivon-test-'))
+    const app = fakeApp(child, { hangs: false })
+    registerLaunchForTeardown(app, { userDataDir })
+    try {
+      expect(profileDirOf(app)).toBe(userDataDir)
+      await closeElectron(app, { keepProfile: true })
+      expect(await waitForPidExit(pid, 2_000)).toBe(true)
+      expect((await stat(userDataDir)).isDirectory()).toBe(true)
+
+      const second = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])
+      const secondApp = fakeApp(second, { hangs: false })
+      registerLaunchForTeardown(secondApp, { userDataDir })
+      await closeElectron(secondApp)
+      await expect(stat(userDataDir)).rejects.toThrow()
+      forceKill(second.pid)
     } finally {
       forceKill(pid)
       await rm(userDataDir, { recursive: true, force: true })

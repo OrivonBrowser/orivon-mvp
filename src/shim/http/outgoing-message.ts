@@ -14,6 +14,7 @@ import { Stream, type Duplex } from 'stream'
 import { Buffer } from 'buffer'
 import { HeaderBag, type HeaderValue } from './headers.js'
 import { validateHeaderName, validateHeaderValue } from './header-validation.js'
+import { CODING_CHUNKED, CONNECTION_CLOSE } from './header-tokens.js'
 import { codedError } from '../node-errors.js'
 import { toBytesJoined } from '../stream-bytes.js'
 
@@ -22,8 +23,6 @@ type WriteCallback = (error?: Error | null) => void
 
 /** Below this a head and its body go out as one socket write; above it the body is not copied. */
 const COALESCE_LIMIT = 64 * 1024
-const CONNECTION_CLOSE = /(?:^|\W)close(?:$|\W)/i
-const TE_CHUNKED = /(?:^|\W)chunked(?:$|\W)/i
 const LAST_CHUNK = '0\r\n'
 const NOOP = (): void => {}
 
@@ -182,7 +181,7 @@ export class OutgoingMessage extends Stream {
       case 'transfer-encoding':
         state.transferEncoding = true
         this.removedTransferEncoding = false
-        if (TE_CHUNKED.test(value)) this.chunkedEncoding = true
+        if (CODING_CHUNKED.test(value)) this.chunkedEncoding = true
         break
       case 'content-length':
         state.contentLength = true

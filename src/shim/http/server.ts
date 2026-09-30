@@ -19,6 +19,9 @@ import type { Socket } from '../net/socket.js'
 /** How a server listens. Absent, it is orivon.net.listen, looked up when listen() runs, never at construction. */
 export const kListen: unique symbol = Symbol('orivon-node-shim.listen')
 
+/** A test seam: the connections a server holds. Not part of Node's `http.Server`. */
+export const kConnections: unique symbol = Symbol('orivon-node-shim.connections')
+
 export interface HttpServerOptions {
   IncomingMessage?: typeof IncomingMessage
   ServerResponse?: typeof ServerResponse
@@ -78,14 +81,18 @@ export class Server extends NetServer implements HttpServerHost {
     if (listener !== undefined) this.on('request', listener)
   }
 
+  get [kConnections] (): ReadonlySet<HttpConnection> { return this.active }
+
   get stopping (): boolean { return this.closeRequested }
 
   override get listening (): boolean { return super.listening && !this.closeRequested }
 
+  /** Throws, leaving a close that is still draining alone, when the server is already listening. */
   override listen (...args: readonly unknown[]): this {
+    const result = super.listen(...args)
     this.closeRequested = false
     this.closeIssued = false
-    return super.listen(...args)
+    return result
   }
 
   override address (): { address: string, port: number, family: string } | null {

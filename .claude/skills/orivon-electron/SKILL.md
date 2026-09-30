@@ -430,3 +430,28 @@ down correctly.
   (`ADR-0043`).
 - **Any embedder `session.webRequest` listener silences extensions' own `webRequest` and
   `declarativeNetRequest`**, and static dNR rules never apply at all.
+
+## Screenshots, hidden views and dead renderers (measured on Electron 44 under xvfb)
+
+What `test/qa-evidence.mjs` and `test/qa-visual.ts` rely on, each measured here:
+
+- **`webContents.capturePage()` throws `UnknownVizError`** with no GPU. **Playwright's
+  `page.screenshot()` works** on every `WebContentsView` (the chrome view and each tab view, at their own
+  size) with no GPU switch, and `app.context().tracing` with `screenshots: true` works too. Use
+  Playwright's, per view; the window composite is built from the views' bounds
+  (`BaseWindow.getAllWindows()[n].contentView.children`).
+- **A hidden view (a background tab) cannot paint.** `page.screenshot()` on one waits for its whole
+  timeout, and an awaited `requestAnimationFrame` never resolves, so a `page.evaluate` that awaits one
+  never returns. Shoot and settle only the views `getVisible()` reports.
+- **A failed load splits the identity.** The view's `webContents.getURL()` is the URL that failed;
+  Playwright's page for it reports `chrome-error://chromewebdata/`. Pairing views to pages by URL
+  alone drops it; pair by size when the URL finds nothing.
+- **`webContents.forcefullyCrashRenderer()` hangs the harness.** Kill the renderer's real pid
+  instead: `webContents.getOSProcessId()`, then `process.kill(pid, 'SIGKILL')`. Chromium then reports
+  `render-process-gone` with `reason: 'killed'`.
+- **Watch the main process with `process.on('uncaughtExceptionMonitor')`, never `'uncaughtException'`.**
+  Not measured, because it cannot be provoked safely: Electron documents that a plain listener
+  suppresses its own error dialog, which would change what a test observes, and that dialog blocks a
+  headless run, so no spec provokes an uncaught exception.
+- **Playwright's mouse stays where the last click left it**, so the button it clicked keeps its
+  hover look in every later screenshot. Park the pointer in empty tab-strip space before a capture.

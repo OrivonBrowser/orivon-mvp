@@ -32,6 +32,14 @@ export function boundedAddress (url: string): string {
   return Buffer.byteLength(url, 'utf8') > LIMITS.embedEventUrlBytes ? '' : url
 }
 
+/** The most UTF-8 bytes a frame name, a file name or a MIME type may carry in a notice; longer arrives as `''`. */
+export const NOTICE_TEXT_BYTES = 4096
+
+/** Text a shown page chose, as the app is told it: itself, or `''` past `NOTICE_TEXT_BYTES` UTF-8 bytes. */
+export function boundedText (text: string): string {
+  return Buffer.byteLength(text, 'utf8') > NOTICE_TEXT_BYTES ? '' : text
+}
+
 /** A file name with any directory part removed, whichever separator it used; `''` when nothing but a directory is left. */
 export function bareFileName (name: string): string {
   const bare = name.slice(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1)
@@ -42,8 +50,8 @@ export function popupDetail (raw: RawWindowOpen): EmbedPopup {
   return {
     url: boundedAddress(raw.url),
     disposition: DISPOSITIONS.has(raw.disposition) ? raw.disposition as EmbedPopup['disposition'] : 'other',
-    frameName: typeof raw.frameName === 'string' ? raw.frameName : '',
-    referrer: typeof raw.referrer?.url === 'string' ? raw.referrer.url : '',
+    frameName: typeof raw.frameName === 'string' ? boundedText(raw.frameName) : '',
+    referrer: typeof raw.referrer?.url === 'string' ? boundedAddress(raw.referrer.url) : '',
     method: raw.postBody === undefined || raw.postBody === null ? 'GET' : 'POST'
   }
 }
@@ -52,8 +60,8 @@ export function downloadDetail (raw: RawDownload): EmbedDownload {
   const final = raw.urlChain[raw.urlChain.length - 1] ?? ''
   return {
     url: boundedAddress(final),
-    filename: bareFileName(raw.filename),
-    mimeType: raw.mimeType,
+    filename: boundedText(bareFileName(raw.filename)),
+    mimeType: boundedText(raw.mimeType),
     totalBytes: Number.isFinite(raw.totalBytes) && raw.totalBytes > 0 ? raw.totalBytes : 0
   }
 }

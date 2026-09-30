@@ -20,6 +20,9 @@ export default defineConfig({
     // (test/apps/fixture/config.mjs) and launches Electron, so two at once
     // fail to bind STATIC_PORT and fail electron.launch() with ETXTBSY.
     // Separate port ranges would not fix it: concurrent launches still race.
-    fileParallelism: false
+    fileParallelism: false,
+    // Failure evidence for every spec; see test/qa-evidence.mjs.
+    globalSetup: ['test/qa-global-setup.ts'],
+    setupFiles: ['test/qa-setup.ts']
   }
 })

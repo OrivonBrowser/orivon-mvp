@@ -40,6 +40,8 @@ export class IncomingMessage extends Readable {
   req: unknown = null
   /** Set by the first `_read()`; the server dumps a body nobody consumed once its response is done. */
   _consuming = false
+  /** How the server asks for more bytes when the reader wants them; absent, the socket is resumed. */
+  _onRead: (() => void) | undefined
 
   constructor (socket: ResponseSocket | null = null) {
     super({ autoDestroy: true, emitClose: true })
@@ -52,7 +54,8 @@ export class IncomingMessage extends Readable {
     this._consuming = true
     // An upgrade response owns no bytes: its socket now belongs to whoever
     // took the 'upgrade' event, and resuming it here would drop their data.
-    if (!this.upgrade) this.socket?.resume()
+    if (this._onRead !== undefined) this._onRead()
+    else if (!this.upgrade) this.socket?.resume()
   }
 
   /** http/client.ts calls this once, when the parser finishes the status line and headers. */
