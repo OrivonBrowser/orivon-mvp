@@ -157,7 +157,8 @@ export function buildChildrenBridge (): ChildrenPageBridge {
  * defaults to the real `window`, overridable so a test never mutates the
  * one shared global environment (`surface/main-world-socket.ts`'s own
  * `installOrivon` takes the identical parameter for the identical reason).
- * Every entry applies `installOrivon`'s page-caller check, so it must run AFTER `exposeOrivon()`.
+ * Every entry applies `installOrivon`'s page-caller check, read from the internal-net slot here:
+ * it must run AFTER `exposeOrivon()` and BEFORE `exposeFetchRoute()`, which releases that slot.
  */
 export function installChildrenBridge (
   bridge: ChildrenPageBridge,

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { installChildrenBridge } from '../expose-child-host-connect.js'
 import type { ChildrenPageBridge } from '../expose-child-host-connect.js'
 import { installOrivon } from '../surface/main-world-socket.js'
+import { releaseRoutedSlot } from '../routed/core.js'
 import { LIMITS, fakeBridge, fakeSocketBridgeResult } from '../surface/tests/main-world-socket.test-helpers.js'
 
 function frameNamed (filename: string): <T>(fn: () => T) => T {
@@ -41,6 +42,25 @@ function targetWithRealSlot (): Record<PropertyKey, unknown> {
 const DENIED = { name: 'OrivonError', code: 'denied' }
 
 describe('installChildrenBridge: the page-caller check', () => {
+  it('keeps working for a page frame after the routed installers release the slot it read', async () => {
+    const inner = fakeChildrenBridge()
+    const target = targetWithRealSlot()
+    const bridge = installedOn(target, inner)
+    releaseRoutedSlot(target)
+    expect(target[SLOT]).toBeUndefined()
+    await expect(asPageFrame(async () => await bridge.start({}, () => {}))).resolves.toBe('0')
+    expect(inner.calls).toEqual(['start'])
+  })
+
+  it('installed after the slot is released, refuses even a page frame', async () => {
+    const inner = fakeChildrenBridge()
+    const target = targetWithRealSlot()
+    releaseRoutedSlot(target)
+    const bridge = installedOn(target, inner)
+    await expect(asPageFrame(async () => await bridge.start({}, () => {}))).rejects.toMatchObject(DENIED)
+    expect(inner.calls).toEqual([])
+  })
+
   it('a page-frame caller reaches start, send and kill', async () => {
     const inner = fakeChildrenBridge()
     const bridge = installedOn(targetWithRealSlot(), inner)

@@ -16,6 +16,11 @@ import { installManifestHintWatcher } from './manifest-hint.js'
 export function exposeOrdinaryTabSurface (): void {
   if (location.protocol === 'chrome-extension:') return
   exposeOrivon()
+  // ADR-0046: lets a real app tab's page reach its app's child host, gated
+  // on the app-tab flag. Must run AFTER exposeOrivon() and BEFORE
+  // exposeFetchRoute(): its entries take their page-caller check from the
+  // internal-net slot the first creates and the second releases.
+  exposeChildHostConnect()
   // ADR-0017: routes this tab's own fetch(), XMLHttpRequest and
   // EventSource through orivon.net for a registered app's granted hosts.
   // Must run AFTER exposeOrivon() -- it depends on window.orivon already
@@ -25,9 +30,6 @@ export function exposeOrdinaryTabSurface (): void {
   // for a real app tab, gated on the identical --orivon-app-tab flag
   // exposeFetchRoute() reads -- see expose-shim-globals.ts's own header.
   exposeShimGlobals()
-  // ADR-0046: lets a real app tab's page reach its app's child host, gated
-  // on the same app-tab flag exposeShimGlobals() reads.
-  exposeChildHostConnect()
   // S4-2: the discovery trigger. Order relative to the calls above does
   // not matter -- this never touches window.orivon, only the DOM and
   // ipcRenderer.
