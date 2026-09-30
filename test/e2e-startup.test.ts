@@ -385,6 +385,7 @@ it('leaves the session on the closed stack when the bar is dismissed, and offers
   const dismissed = await launchShell({ seedProfile: seed({ session: crashed }) })
   try {
     expect(await waitFor(async () => await popoverShown(dismissed.app, 'overlay=restore'))).toBe(true)
+    expect(await waitFor(() => dismissed.app.windows().some((w) => w.url().includes('overlay=restore')))).toBe(true)
     const bar = dismissed.app.windows().find((w) => w.url().includes('overlay=restore')) as Page
     await bar.click('.btn.icon')
     expect(await waitFor(async () => !(await popoverShown(dismissed.app, 'overlay=restore')))).toBe(true)
