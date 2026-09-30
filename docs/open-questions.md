@@ -1660,14 +1660,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A313: No port consumes the Node shim **[OWNER]**
+### A313: Most ports do not consume the Node shim **[OWNER]**
 
-- **Question:** Should a port bundle against the shim (the `module-map.ts` aliases and the page globals), or keep
-  bringing its own polyfills and empty stubs, as every port in `orivon-ports` does?
-- **Why it matters:** what the compatibility tables say the shim offers reaches no ported app, and a port's own
-  `crypto-browserify` or empty `fs` hides both the shim's gains and its gaps.
-- **Options:** publish the alias table and the globals entry as a preset each port's bundler loads (rec.); keep
-  per-port polyfills and describe the shim as for apps written for Orivon.
+- **Question:** The Lounge's port bundles against the shim through `src/shim/bundler/esbuild-plugin.ts`; the
+  other ports in `orivon-ports` bring their own polyfills and empty stubs. Should every port bundle against the
+  shim, which for the webpack-built ones means a webpack preset of the same alias table and the page globals?
+- **Why it matters:** what the compatibility tables say the shim offers reaches only the ports that bundle
+  against it, and a port's own `crypto-browserify` or empty `fs` hides both the shim's gains and its gaps.
+- **Options:** a preset for each bundler the ports use, esbuild's being built, and each port moved over when it
+  is next touched (rec.); keep per-port polyfills and describe the shim as for apps written for Orivon.
 - **Who decides:** owner
 - **Blocks:** how much of compatibility Tables 2 and 3 a port benefits from
 

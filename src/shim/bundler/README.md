@@ -69,7 +69,7 @@ own replaces the fetch.
   `prefixOnly` row (`sqlite`) matches `node:sqlite` alone, since the bare name is another npm package.
   A `local` row resolves to the `.ts` file in this checkout, a `package` row to the package in
   this checkout's `node_modules`, whatever directory the port builds from.
-- Any other Node builtin (`cluster`, `node:sqlite` until it has a row, ...) fails the build with
+- Any other Node builtin (`cluster`, `v8`, `inspector`, ...) fails the build with
   an error naming the specifier and the file that imported it. Left to esbuild, `platform: 'node'`
   would keep it as an external `import`, and the bundle would fail only when run.
 - An unmapped builtin's error reads exactly `'<name>' is a Node builtin the Orivon shim has no
