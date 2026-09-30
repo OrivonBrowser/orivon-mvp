@@ -18,6 +18,12 @@ export type MenuEntry = '-' | CommandId
   /** A row that opens `items` in place of the menu, under a row that goes back. */
   | { readonly submenu: string, readonly items: readonly MenuEntry[] }
 
+/** The rule the window lays out by: 'auto' shows the bar when there is a bookmark to put in it. */
+function barShown ({ settings, bookmarks }: WindowContext['services']): boolean {
+  const mode = settings.get('appearance.bookmarksBar')
+  return mode === 'always' || (mode === 'auto' && bookmarks.getAll().length > 0)
+}
+
 export const MENU_LAYOUT: readonly MenuEntry[] = [
   'tab.new',
   'window.new',
@@ -25,7 +31,18 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   '-',
   'history.open',
   { item: 'tab.reopen', hint: ({ services }) => hintFor(services.closedTabs) },
+  'downloads.open',
   'bookmark.toggle',
+  { submenu: 'Bookmarks', items: [
+    'bookmark.allTabs',
+    'readingList.add',
+    '-',
+    { check: 'bookmarks.toggleBar', on: ({ services }) => barShown(services) },
+    'bookmarks.open',
+    'readingList.open',
+    '-',
+    'import.open'
+  ] },
   '-',
   { zoom: true },
   '-',
@@ -38,15 +55,19 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
     'page.screenshot',
     'page.pip',
     'page.pdf',
+    'page.qr',
     'page.viewSource',
     { check: 'window.alwaysOnTop', on: ({ window }) => window.window.isAlwaysOnTop() },
-    'devtools.toggle'
+    'devtools.toggle',
+    'devtools.console',
+    'tasks.open'
   ] },
   '-',
   'extensions.open',
   'profiles.open',
   'settings.open',
   '-',
+  'about.open',
   'app.quit'
 ]
 
@@ -88,16 +109,19 @@ function tidy (items: readonly MenuItemView[]): MenuItemView[] {
 
 export function menuItems (ctx: WindowContext, layout: readonly MenuEntry[] = MENU_LAYOUT): MenuItemView[] {
   const rows = new Map(ctx.services.shortcuts.rows().map((row) => [row.id, row]))
-  const command = (id: CommandId, hint: string | null, checked: boolean | null): MenuItemView[] => {
+  // `hint` and `checked` are read only for a command that is offered: a reserved one has nothing to run yet, and
+  // what it would ask of the window may not exist either.
+  const command = (id: CommandId, hint: () => string | null, checked: () => boolean | null): MenuItemView[] => {
     const row = rows.get(id)
-    return row === undefined ? [] : [{ kind: 'command', id, label: commandById(id)?.label ?? row.label, keys: row.keys, hint, checked }]
+    if (row === undefined || commandById(id)?.pending === true) return []
+    return [{ kind: 'command', id, label: commandById(id)?.label ?? row.label, keys: row.keys, hint: hint(), checked: checked() }]
   }
   const build = (entries: readonly MenuEntry[]): MenuItemView[] => tidy(entries.flatMap((entry): MenuItemView[] => {
     if (entry === '-') return [{ kind: 'separator' }]
-    if (typeof entry === 'string') return command(entry, null, null)
+    if (typeof entry === 'string') return command(entry, () => null, () => null)
     if ('zoom' in entry) return [zoomRow(ctx)]
-    if ('check' in entry) return command(entry.check, null, entry.on(ctx))
-    if ('item' in entry) return command(entry.item, entry.hint(ctx), null)
+    if ('check' in entry) return command(entry.check, () => null, () => entry.on(ctx))
+    if ('item' in entry) return command(entry.item, () => entry.hint(ctx), () => null)
     const items = build(entry.items)
     return items.length === 0 ? [] : [{ kind: 'submenu', label: entry.submenu, items }]
   }))

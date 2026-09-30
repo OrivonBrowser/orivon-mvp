@@ -3,7 +3,7 @@
 // holds what happened; this decides whether to write it down and how long to
 // keep it.
 import type { SettingsStore } from '../settings/settings-store.js'
-import type { HistoryEntry, HistoryQuery, HistoryStore } from './history-store.js'
+import type { HistoryEntry, HistoryImportRow, HistoryQuery, HistoryStore, HistorySuggestion } from './history-store.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -57,6 +57,41 @@ export class HistoryService {
 
   list (query?: HistoryQuery): HistoryEntry[] {
     return this.store.list(query)
+  }
+
+  /** Like `list`, in `query.order` from `query.offset`, each entry with its `favicon`. */
+  listOrdered (query?: HistoryQuery): HistoryEntry[] {
+    return this.store.listOrdered(query)
+  }
+
+  suggest (text: string, limit: number): HistorySuggestion[] {
+    return this.store.suggest(text, limit)
+  }
+
+  /** Nothing is written down while history is off, a typed address included. */
+  markTyped (url: string): void {
+    if (!this.remembering) return
+    this.store.markTyped(url)
+  }
+
+  setFavicon (host: string, dataUrl: string): void {
+    if (!this.remembering) return
+    this.store.setFavicon(host, dataUrl)
+  }
+
+  faviconsFor (hosts: readonly string[]): Record<string, string> {
+    return this.store.faviconsFor(hosts)
+  }
+
+  pruneFavicons (): void {
+    this.store.pruneFavicons()
+  }
+
+  /** The person chose to bring these in, so they are kept whether or not new visits are being remembered. */
+  importPages (rows: readonly HistoryImportRow[]): number {
+    const added = this.store.importPages(rows)
+    if (added > 0) this.notify('entries')
+    return added
   }
 
   remove (id: number): void {

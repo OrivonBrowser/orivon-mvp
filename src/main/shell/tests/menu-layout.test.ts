@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { commandById } from '../../shortcuts/commands.js'
 import { ShortcutService } from '../../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../../shortcuts/shortcut-store.js'
@@ -138,6 +138,24 @@ describe('menuItems', () => {
   it('leaves out an entry whose command does not exist', async () => {
     const { ctx } = await setup()
     expect(menuItems(ctx, ['tab.new', 'no.such' as never])).toHaveLength(1)
+  })
+
+  it('leaves out a command whose feature is still pending, and never reads its tick or its hint', async () => {
+    const { ctx } = await setup()
+    const read = vi.fn(() => true)
+    const items = menuItems(ctx, ['tab.new', 'downloads.open', { check: 'bookmarks.toggleBar', on: read }, { item: 'about.open', hint: read }])
+    expect(items).toEqual([expect.objectContaining({ id: 'tab.new' })])
+    expect(read).not.toHaveBeenCalled()
+  })
+
+  it('shows none of the library commands while they are pending, and no Bookmarks submenu', async () => {
+    const { ctx } = await setup()
+    const items = menuItems(ctx)
+    expect(items.some((item) => item.kind === 'submenu' && item.label === 'Bookmarks')).toBe(false)
+    const ids = runnableIds(items)
+    for (const id of ['downloads.open', 'bookmarks.open', 'bookmarks.toggleBar', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'page.qr', 'devtools.console', 'tasks.open', 'import.open', 'about.open']) {
+      expect(ids.has(id as never), id).toBe(false)
+    }
   })
 })
 

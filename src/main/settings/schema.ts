@@ -3,6 +3,7 @@
 // this, so the page cannot offer a value the store would refuse and a file
 // edited by hand cannot make one up.
 import { isAddressList, isEmptyOrAddress } from './address-checks.js'
+import { isEmptyOrAbsolutePath } from './path-checks.js'
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
 export type SettingSpec =
@@ -30,6 +31,16 @@ const SPECS = {
     labels: { ...Object.fromEntries(SEARCH_ENGINES.map((engine) => [engine.id, engine.label])), [CUSTOM_SEARCH_ENGINE]: 'Custom' }
   },
   'search.customUrl': { kind: 'text', default: '', maxLength: 2048, check: (value) => value === '' || isValidSearchTemplate(value) },
+  // Whether the address bar finishes what is typed from pages already visited, and whether it keeps the whole address visible.
+  'addressBar.autocomplete': { kind: 'bool', default: true },
+  'addressBar.showFullUrl': { kind: 'bool', default: false },
+  // Whether what is typed is also sent to the search engine for suggestions: off, since it tells the engine what is being typed.
+  'search.suggestions': { kind: 'bool', default: false },
+  // Where downloads go: empty is the operating system's Downloads folder. With askWhere off a file is saved there without a dialog.
+  'downloads.folder': { kind: 'text', default: '', maxLength: 4096, check: isEmptyOrAbsolutePath },
+  'downloads.askWhere': { kind: 'bool', default: false },
+  // Whether starting a download opens the list under the toolbar button.
+  'downloads.showBubble': { kind: 'bool', default: true },
   // Whether pages are written down, and for how long. 90 days is provisional: what a person expects a browser to remember is not yet measured.
   'history.remember': { kind: 'bool', default: true },
   'history.retentionDays': { kind: 'enum', options: ['7', '30', '90', 'forever'], default: '90', labels: { 7: '7 days', 30: '30 days', 90: '90 days', forever: 'Forever' } },
@@ -46,6 +57,8 @@ const SPECS = {
   // Empty means the new-tab page.
   'home.url': { kind: 'text', default: '', maxLength: 2048, check: isEmptyOrAddress },
   'toolbar.home': { kind: 'bool', default: false },
+  // 'auto' shows the button while a download is under way or was recent.
+  'toolbar.downloads': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
   'spellcheck.enabled': { kind: 'bool', default: true },
   'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' },
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.

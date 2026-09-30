@@ -61,6 +61,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       chrome.webContents.focus()
       chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'focusAddress' })
       return
+    case 'nav.focusSearch': return
     case 'zoom.in': case 'zoom.out': case 'zoom.reset': {
       const origin = active === undefined ? null : originFromUrl(active.url)
       if (origin === null) return
@@ -72,14 +73,20 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'find.next': dismissRestoreOffer(target); findStep(target, true); return
     case 'find.previous': dismissRestoreOffer(target); findStep(target, false); return
     case 'history.open': tabs.openInternal('history'); return
+    case 'bookmarks.open': return
     case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
+    case 'devtools.console': return
+    case 'tasks.open': return
     case 'bookmark.toggle':
       // The same rule as the star in the toolbar: a page with a site, and no other.
       if (active === undefined || active.isNewTab || active.isInternal) return
       if (services.bookmarks.has(active.url)) services.bookmarks.remove(active.url)
       else services.bookmarks.add({ url: active.url, title: active.title.length > 0 ? active.title : active.url, favicon: tabs.faviconFor(active.id) })
       return
+    case 'bookmark.allTabs': return
     case 'window.new': deps.openWindow({ place: cascadeFrom(window.getBounds()) }); return
+    case 'readingList.add': return
+    case 'readingList.open': return
     case 'tab.moveLeft': case 'tab.moveRight': {
       if (active === undefined) return
       // A joined pair moves as one, from where it begins.
@@ -104,17 +111,22 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
     case 'profiles.open': tabs.openInternal('profiles'); return
+    case 'downloads.open': return
     case 'window.close': window.close(); return
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
+    case 'bookmarks.toggleBar': return
     case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
     case 'settings.open': tabs.openInternal('settings'); return
+    case 'about.open': return
     case 'extensions.open': tabs.openInternal('extensions'); return
+    case 'import.open': return
     case 'app.quit': deps.quit(); return
     case 'page.print': void printCommand(target); return
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return
     case 'page.screenshot': void screenshotCommand(target); return
+    case 'page.qr': return
     case 'page.pip': void pipCommand(target); return
   }
 }
