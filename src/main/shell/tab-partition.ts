@@ -19,8 +19,8 @@ export const APP_TAB_FLAG = '--orivon-app-tab'
  * cached bundle with `protocol.handle`, scoped to one session, so an origin
  * served from cache whose tab sat on the default session could not load at
  * all; nothing there answers its scheme. This reads the registry
- * `registerAppOrigin` itself writes -- deciding it from a different one is
- * what made a served app unreachable (A109).
+ * `registerAppOrigin` itself writes -- deciding it from a different one
+ * makes a served app unreachable.
  *
  * A held grant, on its own, is not isolated: a Chrome extension runs as one
  * instance across every page, granted or not, so a granted app shares the
@@ -42,7 +42,7 @@ export function partitionForTarget (target: string): string | undefined {
  * `to: undefined` is a REAL answer, not a missing one -- it means "swap this
  * tab back onto the shared default session", which is what an app tab
  * navigating away to an ordinary website needs. Collapsing the two into one
- * `string | undefined` return (as this did before 2026-09-15) silently left
+ * `string | undefined` return would silently leave
  * that website running inside the app's own partition: its cookies, its
  * storage, and the partition a capability grant is scoped to. */
 export interface PartitionSwap {
@@ -52,8 +52,7 @@ export interface PartitionSwap {
 /** The one comparison that decides whether a navigation must swap a tab's
  * view -- shared by navigate()'s own explicit repartition and wireView()'s
  * did-navigate catch for a redirect, clicked link, form submission or script
- * navigation that changes origin without ever calling navigate() (Rule 3;
- * A108/A109, docs/open-questions.md).
+ * navigation that changes origin without ever calling navigate().
  *
  * A target with no derivable origin (about:blank, a rejected navigation)
  * never swaps: there is nothing to isolate, and moving the tab off its

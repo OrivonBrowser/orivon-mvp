@@ -106,9 +106,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // the chrome view receives.
   const bookmarks = services.bookmarks
 
-  // The bookmarks bar is rendered only when there is something in it
-  // (owner, 2026-09-15) -- it holds the real list and nothing else now, so
-  // an empty one is an empty row. Main has to own this, not just CSS: the
+  // The bookmarks bar is rendered only when there is something in it: it
+  // holds the real list and nothing else, so an empty one is an empty row.
+  // Main has to own this, not just CSS: the
   // tab view starts where the chrome view ends, so a row the renderer
   // hides without main shrinking these bounds leaves a 28px band of empty
   // chrome above the page instead of giving it back to the page.
@@ -144,9 +144,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     overlays.relayout()
   }
 
-  // A16, resolved (owner decision, 2026-08-28): closing the last tab
-  // closes the window, rather than being left open and empty. No
-  // app.quit() here -- index.ts's window-all-closed handler already owns
+  // Closing the last tab closes the window, rather than leaving it open and
+  // empty. No app.quit() here -- index.ts's window-all-closed handler already owns
   // whether the whole process then exits (quits on non-darwin, stays
   // resident on macOS per platform convention).
   // The guard is load-bearing, not defensive noise: on teardown the window
