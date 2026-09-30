@@ -178,10 +178,13 @@ async function main () {
      * and still reports green. */
     const leakCheck = async (label, expectedWindows) => {
       const windows = app.windows()
+      // An overlay view is built on first use (the address dropdown after a typed address), so the count leaves it
+      // out, except at launch, where no overlay may exist. Its own leak check still runs below.
+      const counted = label === 'on launch' ? windows : windows.filter((win) => !win.url().includes('/overlay/'))
       check(
         `leak checks cover all ${expectedWindows} windows (${label})`,
-        windows.length === expectedWindows,
-        windows.length === expectedWindows ? undefined : `saw ${windows.length}`
+        counted.length === expectedWindows,
+        counted.length === expectedWindows ? undefined : `saw ${counted.length}`
       )
       for (const win of windows) {
         const leak = await evaluateRetrying(win, () => ({
