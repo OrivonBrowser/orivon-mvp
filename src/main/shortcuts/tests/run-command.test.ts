@@ -20,7 +20,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
     window,
-    chrome: { webContents: { focus: vi.fn(), send } },
+    chrome: { webContents: { focus: vi.fn(), send, isDestroyed: () => false } },
     tabs: {
       getState: () => ({ tabs, activeTabId }),
       tabCount: tabs.length,
@@ -162,6 +162,14 @@ describe('runCommand', () => {
     runCommand('nav.focusAddress', target, deps)
 
     expect(send).toHaveBeenCalledWith('orivon-shell:event', { type: 'focusAddress' })
+  })
+
+  it('asks the address bar module for a search, so the field is ready for the words of one', () => {
+    const { target, send, deps } = harness([tab('a')], 'a')
+
+    runCommand('nav.focusSearch', target, deps)
+
+    expect(send).toHaveBeenCalledWith('orivon-shell:event', { type: 'module', module: 'address-suggest', payload: { type: 'focusSearch' } })
   })
 
   it('bookmarks a page and removes the bookmark on the second press, with its icon', () => {

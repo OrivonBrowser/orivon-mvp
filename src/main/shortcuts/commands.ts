@@ -60,7 +60,7 @@ export const COMMANDS = [
   { id: 'nav.stop', label: 'Stop loading', category: 'navigation' },
   { id: 'nav.home', label: 'Home page', category: 'navigation', default: 'Alt+Home' },
   { id: 'nav.focusAddress', label: 'Go to the address bar', category: 'navigation', default: 'Mod+L', aliases: ['F6', 'Alt+D'] },
-  { id: 'nav.focusSearch', label: 'Search the web', category: 'navigation', default: 'Mod+K', aliases: ['Mod+E'], yieldToApp: true, pending: true },
+  { id: 'nav.focusSearch', label: 'Search the web', category: 'navigation', default: 'Mod+K', aliases: ['Mod+E'], yieldToApp: true },
   { id: 'zoom.in', label: 'Zoom in', category: 'navigation', default: 'Mod+=', aliases: ['Mod++'], repeatable: true },
   { id: 'zoom.out', label: 'Zoom out', category: 'navigation', default: 'Mod+-', repeatable: true },
   { id: 'zoom.reset', label: 'Actual size', category: 'navigation', default: 'Mod+0' },

@@ -1,3 +1,4 @@
+import { omniboxClose, omniboxPick, omniboxQuery, omniboxSelect } from '../omnibox/omnibox-actions.js'
 import { homeOpen } from './actions/home-open.js'
 import { overlayClose, overlayToggle } from './actions/overlay.js'
 import { tabMute } from './actions/tab-mute.js'
@@ -10,6 +11,10 @@ export type ChromeAction = (payload: unknown, ctx: WindowContext) => unknown
 /** One entry per action, alphabetical by name. */
 export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'home.open': homeOpen,
+  'omnibox.close': omniboxClose,
+  'omnibox.pick': omniboxPick,
+  'omnibox.query': omniboxQuery,
+  'omnibox.select': omniboxSelect,
   'overlay.close': overlayClose,
   'overlay.toggle': overlayToggle,
   'tab.mute': tabMute

@@ -33,9 +33,14 @@ const TRIM_CHECK_EVERY = 1000
  * cost ratio the delete side crosses well before 16:1. */
 const BULK_DELETE_ROW_RATIO = 16
 
+/** How long an address typed before its page is recorded waits for the page: a slow load is still the page that was typed. */
+const TYPED_WAIT_MS = 60_000
+const MAX_TYPED_WAITING = 64
+
 type Change =
   | { readonly type: 'visit', readonly url: string, readonly title: string, readonly at: number }
   | { readonly type: 'title', readonly url: string, readonly title: string }
+  | { readonly type: 'typed', readonly url: string, readonly at: number }
 
 export class SqliteHistoryStore implements HistoryStore {
   readonly kind = 'sqlite'
@@ -43,6 +48,8 @@ export class SqliteHistoryStore implements HistoryStore {
   private closed = false
   private newPagesSinceCheck = 0
   private readonly queue: Change[] = []
+  /** Addresses typed whose page was not in the history yet, with when they were typed: counted when it is. */
+  private readonly typedWaiting = new Map<string, number>()
   private readonly writer = new DebouncedWriter(async () => { this.drain() }, WRITE_DELAY_MS)
   private readonly statements: {
     findPage: StatementSync
@@ -171,6 +178,10 @@ export class SqliteHistoryStore implements HistoryStore {
           setTitle.run(change.title, change.url, change.title)
           continue
         }
+        if (change.type === 'typed') {
+          if (!markPageTyped(this.db, change.url)) this.waitForPage(change.url, change.at)
+          continue
+        }
         const found = findPage.get(change.url) as { id: number } | undefined
         let id: number
         if (found === undefined) {
@@ -182,6 +193,7 @@ export class SqliteHistoryStore implements HistoryStore {
           if (change.title !== '') setTitle.run(change.title, change.url, change.title)
         }
         insertVisit.run(id, change.at)
+        this.countWaitingTyped(change.url, change.at)
       }
       this.db.exec('COMMIT')
       if (this.newPagesSinceCheck >= this.limits.checkEvery) this.trim()
@@ -227,8 +239,21 @@ export class SqliteHistoryStore implements HistoryStore {
   }
 
   markTyped (url: string): void {
-    this.drain()
-    markPageTyped(this.db, url)
+    if (url.length > MAX_URL_LENGTH) return
+    // Queued behind the visit it belongs to, which is recorded once the page has loaded and so may come after.
+    this.enqueue({ type: 'typed', url, at: Date.now() })
+  }
+
+  private waitForPage (url: string, at: number): void {
+    if (this.typedWaiting.size >= MAX_TYPED_WAITING) this.typedWaiting.delete(this.typedWaiting.keys().next().value as string)
+    this.typedWaiting.set(url, at)
+  }
+
+  private countWaitingTyped (url: string, visitedAt: number): void {
+    const typedAt = this.typedWaiting.get(url)
+    if (typedAt === undefined) return
+    this.typedWaiting.delete(url)
+    if (visitedAt - typedAt <= TYPED_WAIT_MS) markPageTyped(this.db, url)
   }
 
   setFavicon (host: string, dataUrl: string): void { setHostFavicon(this.db, host, dataUrl) }
@@ -277,6 +302,7 @@ export class SqliteHistoryStore implements HistoryStore {
 
   clear (): void {
     this.queue.length = 0
+    this.typedWaiting.clear()
     const total = (this.statements.count.get() as { n: number }).n
     // Always the bulk path (remaining is 0), unless there was nothing to delete in the first place.
     this.deleteRows(total, 0, () => {

@@ -10,6 +10,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `tab-strip.ts` | the tabs, the new-tab button, the empty tail, the cross-window drop mark |
 | `tab-search-button.ts` | the button at the strip's right end that opens tab search |
 | `navigation.ts` | back, forward, reload, the address bar |
+| `address-suggest.ts` | the address field's dropdown from the field's side: what is typed, the arrows, Enter and Escape (the rules are in `address-suggest-model.ts`) |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |
