@@ -2,7 +2,7 @@
 import type { CommandDeps } from '../shortcuts/run-command.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import type { ClosedEntry, ClosedStack } from './closed-stack.js'
-import { fillTabs } from './restore.js'
+import { optionsFor } from './restore.js'
 import { openSnapshot } from './open-snapshot.js'
 
 /** `full`: the window has no room for another tab, and the entry stays. `unusable`: it could not be opened, and is dropped. */
@@ -21,7 +21,7 @@ export function reopenEntry (entry: ClosedEntry, target: ShellWindow, deps: Comm
   const stack = deps.services.closedTabs
   if (entry.kind === 'window') {
     stack.take(entry.id)
-    deps.openWindow({ place: entry.window.bounds, maximized: entry.window.maximized, first: fillTabs(entry.window) })
+    deps.openWindow(optionsFor(entry.window, deps.displays()))
     return 'opened'
   }
   const home = windowOfEntry(entry, target, deps)
@@ -44,8 +44,17 @@ export function reopenClosed (target: ShellWindow, deps: CommandDeps): void {
   }
 }
 
+/** The page's title, else where it is from: a bare address is not a name. */
 function labelOf (tab: { title: string, url: string }): string {
-  return (tab.title.length > 0 ? tab.title : tab.url).replace(/\s+/g, ' ').trim()
+  return (tab.title.length > 0 ? tab.title : hostOf(tab.url)).replace(/\s+/g, ' ').trim()
+}
+
+function hostOf (url: string): string {
+  try {
+    return new URL(url).host || url
+  } catch {
+    return url
+  }
 }
 
 /** What the menu shows beside "Reopen closed tab": the title of what would come back, or how many tabs. */

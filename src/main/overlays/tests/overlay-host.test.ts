@@ -59,18 +59,24 @@ function tab (): { id: number, focus: ReturnType<typeof vi.fn>, isDestroyed: () 
   return { id: 1, focus: vi.fn(), isDestroyed: () => false }
 }
 
-function setup (defs: OverlayDef[], active = tab()): { host: ReturnType<typeof createOverlayHost>, contentView: object, active: ReturnType<typeof tab> } {
+/** The chrome of the test window holds the id 5, and the tab in front the id 1; `other` windows are the ones that report focus. */
+const CHROME_ID = 5
+
+function setup (defs: OverlayDef[], active = tab(), options: { focused?: boolean, otherFocused?: boolean } = {}): { host: ReturnType<typeof createOverlayHost>, contentView: object, active: ReturnType<typeof tab>, front: { current: ReturnType<typeof tab> } } {
   const contentView = {}
+  const front = { current: active }
+  const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), isFocused: () => options.focused ?? true }
+  const other = { window: { isDestroyed: () => false, isFocused: () => options.otherFocused ?? false } }
   const host = createOverlayHost({
-    win: { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }) } as never,
+    win: win as never,
     contentView: contentView as never,
     dirname: '/app',
     defs,
-    context: () => ({ window: {}, services: {} }) as never,
+    context: () => ({ window: { chrome: { webContents: { id: CHROME_ID } } }, services: { windows: { all: () => [{ window: win }, other] } } }) as never,
     area: () => ({ x: 0, y: 76, width: 1200, height: 724 }),
-    activeContents: () => active as never
+    activeContents: () => front.current as never
   })
-  return { host, contentView, active }
+  return { host, contentView, active, front }
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(10_000) })
@@ -445,6 +451,39 @@ describe('createOverlayHost: focus', () => {
     expect(active.focus).not.toHaveBeenCalled()
   })
 
+  it('never hands focus to a view of another window, or to a tab since switched away from', () => {
+    const foreign = tab(); foreign.id = 77
+    focus.current = foreign
+    const { host, active } = setup([def('a')])
+    host.show('a', ANCHOR)
+    host.close('a')
+    expect(foreign.focus).not.toHaveBeenCalled()
+    expect(active.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('a bar that outlives a tab switch hands a click\'s focus to the tab in front now, not the one it was shown over', () => {
+    const { host, active, front } = setup([def('bar', { layer: 'bar', focus: 'never', closeOn: { blur: false, tabSwitch: false, navigation: false, layout: false } })])
+    focus.current = active
+    host.show('bar')
+    const next = tab(); next.id = 2
+    front.current = next
+    views[0]?.spec.onFocus()
+    expect(active.focus).not.toHaveBeenCalled()
+    expect(next.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not take focus in a window the person is not using', () => {
+    const { host } = setup([def('a')], tab(), { focused: false, otherFocused: true })
+    host.show('a', ANCHOR)
+    expect(views[0]?.focusWanted).toBeNull()
+  })
+
+  it('still takes focus when no window reports focus at all', () => {
+    const { host } = setup([def('a')], tab(), { focused: false, otherFocused: false })
+    host.show('a', ANCHOR)
+    expect(views[0]?.focusWanted).not.toBeNull()
+  })
+
   it('focus wanted is false once the overlay closed before its page loaded', () => {
     const { host } = setup([def('a')])
     host.show('a', ANCHOR)
@@ -559,14 +598,76 @@ describe('createOverlayHost: what the page hears', () => {
     host.show('a', ANCHOR)
     host.send('a', 'early')
     expect(views[0]?.sent).toEqual([])
-    await views[0]?.spec.port.ready()
-    await vi.advanceTimersByTimeAsync(0)
-    expect(views[0]?.sent).toEqual([[OVERLAY_EVENT_CHANNEL, { type: 'event', event: 'early' }]])
+    // The held events travel in the reply that carries the show, so the page sees them after it.
+    await expect(views[0]?.spec.port.ready()).resolves.toEqual({ shown: true, payload: undefined, events: ['early'] })
+    expect(views[0]?.sent).toEqual([])
     host.send('a', 'late')
-    expect(views[0]?.sent).toHaveLength(2)
+    expect(views[0]?.sent).toEqual([[OVERLAY_EVENT_CHANNEL, { type: 'event', event: 'late' }]])
     host.close('a')
     host.send('a', 'after')
-    expect(views[0]?.sent).toHaveLength(2)
+    expect(views[0]?.sent).toHaveLength(1)
+  })
+
+  it('holds an event sent while the page waits for an async show, and delivers it in the same reply', async () => {
+    let finish: (value: string) => void = () => {}
+    const { host } = setup([def('a', {}, { show: async () => await new Promise<string>((resolve) => { finish = resolve }) })])
+    host.show('a', ANCHOR)
+    const reply = views[0]?.spec.port.ready()
+    host.send('a', 'during')
+    expect(views[0]?.sent).toEqual([])
+    finish('shown')
+    await expect(reply).resolves.toEqual({ shown: true, payload: 'shown', events: ['during'] })
+    expect(views[0]?.sent).toEqual([])
+  })
+
+  it('does not hand a new view the events held for the one it replaced', async () => {
+    const finishers: Array<(value: string) => void> = []
+    const { host } = setup([def('a', {}, { show: async () => await new Promise<string>((resolve) => { finishers.push(resolve) }) })])
+    host.show('a', ANCHOR)
+    const first = views[0]?.spec.port.ready()
+    host.close('a')
+    host.show('a', ANCHOR)
+    host.send('a', 'for the new one')
+    for (const finish of finishers) finish('x')
+    await expect(first).resolves.toEqual({ shown: false })
+    expect(views[0]?.sent).toEqual([])
+    expect(views[1]?.sent).toEqual([])
+  })
+
+  it('forgets events held for a warm page that was closed before it asked', async () => {
+    const { host } = setup([def('w', { keep: 'warm' })])
+    host.show('w', ANCHOR)
+    host.send('w', 'stale')
+    host.close('w')
+    host.show('w', ANCHOR)
+    await expect(views[0]?.spec.port.ready()).resolves.toEqual({ shown: true, payload: undefined })
+  })
+
+  it('leaves nothing on screen when the handler closes the overlay while it is being shown', () => {
+    for (const keep of ['fresh', 'warm'] as const) {
+      views.length = 0
+      let close: () => void = () => {}
+      const { host } = setup([{ ...def('a', { keep }), attach: (win) => { close = win.close; return { request: () => undefined, show: () => { close(); return undefined } } } }])
+      host.show('a', ANCHOR)
+      expect(host.isOpen('a')).toBe(false)
+      expect(views[0]?.log).not.toContain('attach')
+      expect(views[0]?.sent).toEqual([])
+    }
+  })
+
+  it('leaves nothing on screen when the handler opens another popup over it while it is being shown', () => {
+    const { host } = setup([{ ...def('a'), attach: () => ({ request: () => undefined, show: () => { host.show('b', ANCHOR); return undefined } }) }, def('b')])
+    host.show('a', ANCHOR)
+    expect(host.isOpen('a')).toBe(false)
+    expect(host.isOpen('b')).toBe(true)
+    expect(views[0]?.log).not.toContain('attach')
+  })
+
+  it('ignores an anchor that is not a rectangle of numbers', () => {
+    const { host } = setup([def('a')])
+    host.show('a', { x: Number.NaN, y: 1, width: 2, height: 3 })
+    expect(views[0]?.bounds).toMatchObject({ x: expect.any(Number) as number })
+    expect(Number.isFinite((views[0]?.bounds as { x: number }).x)).toBe(true)
   })
 
   it('request reaches only the handler of the def the view was built from', () => {
@@ -590,6 +691,17 @@ describe('createOverlayHost: what the page hears', () => {
 })
 
 describe('createOverlayHost: theme and dispose', () => {
+  it('tells every handler the window is gone, open or shut, and survives one that throws', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const shut = vi.fn(); const open = vi.fn()
+    const { host } = setup([def('shut', {}, { disposed: shut }), def('open', {}, { disposed: () => { open(); throw new Error('x') } }), def('unused')])
+    host.show('shut', ANCHOR); host.close('shut')
+    host.show('open', ANCHOR)
+    host.dispose()
+    expect(shut).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
   it('repaints every built view on a theme change, once per host', () => {
     const { host } = setup([def('w', { keep: 'warm' }), def('f')])
     expect(themeListeners.size).toBe(1)

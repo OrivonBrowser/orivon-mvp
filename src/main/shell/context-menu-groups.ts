@@ -13,7 +13,8 @@ export interface ContextMenuActions {
   paste: () => void
   selectAll: () => void
   copyText: (text: string) => void
-  openInNewTab: (url: string) => void
+  /** Absent in a kiosk, which opens nothing beside the page it shows. */
+  openInNewTab?: (url: string) => void
   /** Absent where a split is not offered. */
   openInSplit?: (url: string) => void
   openInWindow?: (url: string) => void
@@ -26,6 +27,8 @@ export interface ContextMenuActions {
   navigate?: { canGoBack: boolean, canGoForward: boolean, back: () => void, forward: () => void, reload: () => void }
   /** Runs a command on the window, as a key would. */
   run?: (id: CommandId) => void
+  /** Toggles Picture in Picture for the video at a point of the page: the one clicked, not the page's main video. */
+  pipAt?: (x: number, y: number) => void
   replaceMisspelling?: (word: string) => void
   addToDictionary?: (word: string) => void
   toggleSpellcheck?: () => void
@@ -48,12 +51,14 @@ export interface ContextMenuContext {
   engineLabel: string
   /** An internal page or the new-tab page: nothing to save, print or view as source. */
   bare: boolean
+  /** The page's source can be shown: a web page, not an app's own tab. */
+  viewSource: boolean
   spellcheckOn: boolean
   /** `addressBar.showFullUrl`, for the tick on the address bar's menu. */
   fullAddresses: boolean
 }
 
-export const DEFAULT_CONTEXT: ContextMenuContext = { engineLabel: 'the Web', bare: false, spellcheckOn: true, fullAddresses: false }
+export const DEFAULT_CONTEXT: ContextMenuContext = { engineLabel: 'the Web', bare: false, viewSource: true, spellcheckOn: true, fullAddresses: false }
 
 const MAX_SUGGESTIONS = 5
 const SEPARATOR: MenuItemConstructorOptions = { type: 'separator' }
@@ -84,7 +89,8 @@ export function linkGroup (params: MenuParams, actions: ContextMenuActions): Men
   // Only what a fresh tab can load: the same check window.open targets get.
   const openable = sanitizeDirectUrl(params.linkURL)
   if (openable !== null) {
-    items.push({ label: 'Open Link in New Tab', click: () => { actions.openInNewTab(openable) } })
+    const inTab = actions.openInNewTab
+    if (inTab !== undefined) items.push({ label: 'Open Link in New Tab', click: () => { inTab(openable) } })
     const inWindow = actions.openInWindow
     if (inWindow !== undefined) items.push({ label: 'Open Link in New Window', click: () => { inWindow(openable) } })
     const inPrivate = actions.openInPrivate
@@ -104,7 +110,8 @@ export function imageGroup (params: MenuParams, actions: ContextMenuActions): Me
   if (params.mediaType !== 'image') return []
   const items: MenuItemConstructorOptions[] = []
   const address = webAddress(params.srcURL)
-  if (address !== null) items.push({ label: 'Open Image in New Tab', click: () => { actions.openInNewTab(address) } })
+  const inTab = actions.openInNewTab
+  if (address !== null && inTab !== undefined) items.push({ label: 'Open Image in New Tab', click: () => { inTab(address) } })
   const save = actions.saveUrl
   if (address !== null && save !== undefined) items.push({ label: 'Save Image As…', click: () => { save(address) } })
   if (params.hasImageContents) items.push({ label: 'Copy Image', click: () => { actions.copyImageAt(params.x, params.y) } })
@@ -118,11 +125,13 @@ export function mediaGroup (params: MenuParams, actions: ContextMenuActions): Me
   const items: MenuItemConstructorOptions[] = []
   const run = actions.run
   if (params.mediaType === 'video' && params.mediaFlags?.canShowPictureInPicture === true && run !== undefined) {
-    items.push({ label: 'Picture in Picture', type: 'checkbox', checked: params.mediaFlags.isShowingPictureInPicture, click: () => { run('page.pip') } })
+    const at = actions.pipAt
+    items.push({ label: 'Picture in Picture', type: 'checkbox', checked: params.mediaFlags.isShowingPictureInPicture, click: () => { if (at === undefined) run('page.pip'); else at(params.x, params.y) } })
   }
   const address = webAddress(params.srcURL)
   if (address === null) return items
-  items.push({ label: `Open ${noun} in New Tab`, click: () => { actions.openInNewTab(address) } })
+  const inTab = actions.openInNewTab
+  if (inTab !== undefined) items.push({ label: `Open ${noun} in New Tab`, click: () => { inTab(address) } })
   const save = actions.saveUrl
   if (save !== undefined) items.push({ label: `Save ${noun} As…`, click: () => { save(address) } })
   items.push({ label: `Copy ${noun} Address`, click: () => { actions.copyText(address) } })
@@ -173,10 +182,14 @@ export function pageGroup (actions: ContextMenuActions, context: ContextMenuCont
     SEPARATOR,
     { label: 'Save Page As…', click: () => { run('page.save') } },
     { label: 'Print…', click: () => { run('page.print') } },
-    { label: 'Take a Screenshot', click: () => { run('page.screenshot') } },
-    SEPARATOR,
-    { label: 'View Page Source', click: () => { run('page.viewSource') } },
-    { label: 'Create QR Code for This Page', click: () => { run('page.qr') } }
+    { label: 'Take a Screenshot', click: () => { run('page.screenshot') } }
   )
+  if (context.viewSource) {
+    items.push(
+      SEPARATOR,
+      { label: 'View Page Source', click: () => { run('page.viewSource') } },
+      { label: 'Create QR Code for This Page', click: () => { run('page.qr') } }
+    )
+  }
   return items
 }

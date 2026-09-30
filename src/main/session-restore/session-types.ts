@@ -60,7 +60,11 @@ export function cleanWindow (raw: unknown): SavedWindow | null {
     if (position === source['active']) active = tabs.length
     tabs.push(tab)
   }
-  return { bounds: cleanBounds(source['bounds']), maximized: source['maximized'] === true, active: Math.max(0, active), tabs }
+  // Pinned tabs lead the strip: the strip's ordering rules count and clamp from a run that starts at its left end,
+  // and this file may be written by anything running as the person. A stable partition keeps `active` on its tab.
+  const frontTab = tabs[Math.max(0, active)]
+  const ordered = [...tabs.filter((tab) => tab.pinned), ...tabs.filter((tab) => !tab.pinned)]
+  return { bounds: cleanBounds(source['bounds']), maximized: source['maximized'] === true, active: Math.max(0, ordered.indexOf(frontTab as TabSnapshot)), tabs: ordered }
 }
 
 export function parseSession (text: string): SavedSession | null {

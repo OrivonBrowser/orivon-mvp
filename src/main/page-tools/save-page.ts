@@ -4,14 +4,18 @@
 import { join } from 'node:path'
 import type { ShellWindow } from '../shell/window-registry.js'
 import type { PageToolDeps } from './deps.js'
-import { baseName, downloadName, formatFor, isSavableDocument, safeFileName } from './file-names.js'
+import { baseName, downloadName, formatFor, isSavableDocument, safeFileName, withExtension } from './file-names.js'
 import type { SaveFormat } from './file-names.js'
 import { showToast } from './toast.js'
 import { TimedOut, withTimeout } from './with-timeout.js'
 
 interface DownloadItemLike {
   setSavePath: (path: string) => void
+  /** The address the download was asked for first, then each redirect: the one this save asked for is among them. */
+  getURLChain: () => string[]
+  cancel: () => void
   once: (event: 'done', listener: (event: unknown, state: string) => void) => unknown
+  on: (event: 'updated', listener: () => void) => unknown
 }
 
 type WillDownload = (event: unknown, item: DownloadItemLike, source: { id: number }) => void
@@ -26,12 +30,19 @@ export interface SaveContents {
     on: (event: 'will-download', listener: WillDownload) => unknown
     removeListener: (event: 'will-download', listener: WillDownload) => unknown
   }
-  readonly mainFrame: { executeJavaScript: (code: string) => Promise<unknown> }
+  /** Runs a script in a world the page cannot reach: what a page overrides in its own world does not apply there. */
+  executeJavaScriptInIsolatedWorld: (worldId: number, scripts: Array<{ code: string }>) => Promise<unknown>
 }
+
+/** An isolated world of its own for what the page tools read from a page (others: the storage estimate 1000,
+ * leaving fullscreen 1001, the find bar 1003). */
+export const PAGE_TOOLS_WORLD_ID = 1002
 
 const SAVE_MS = 60_000
 const TYPE_MS = 2000
 const DOWNLOAD_START_MS = 10_000
+/** A download that makes no progress for this long is given up on. */
+const DOWNLOAD_STALL_MS = 60_000
 
 const FILTERS = [
   { name: 'Web page, complete (*.html)', extensions: ['html', 'htm'] },
@@ -41,7 +52,7 @@ const FILTERS = [
 /** The page's own content type, or undefined when it cannot say (a dead or still loading page). */
 async function contentTypeOf (wc: SaveContents): Promise<string | undefined> {
   try {
-    const type = await withTimeout(wc.mainFrame.executeJavaScript('document.contentType'), TYPE_MS, 'the page')
+    const type = await withTimeout(wc.executeJavaScriptInIsolatedWorld(PAGE_TOOLS_WORLD_ID, [{ code: 'document.contentType' }]), TYPE_MS, 'the page')
     return typeof type === 'string' ? type : undefined
   } catch {
     return undefined
@@ -53,12 +64,21 @@ async function downloadTo (wc: SaveContents, url: string, path: string): Promise
   return await new Promise<boolean>((resolve) => {
     const startTimer = setTimeout(() => { wc.session.removeListener('will-download', onItem); resolve(false) }, DOWNLOAD_START_MS)
     function onItem (_event: unknown, item: DownloadItemLike, source: { id: number }): void {
-      if (source.id !== wc.id) return
+      // This tab's session sees every download the tab starts: only the one asked for here takes the chosen name,
+      // or a page that starts its own download would decide what lands under it.
+      if (source.id !== wc.id || !item.getURLChain().includes(url)) return
       clearTimeout(startTimer)
       wc.session.removeListener('will-download', onItem)
       // Synchronously: a download given its path later never completes.
       item.setSavePath(path)
-      item.once('done', (_done, state) => { resolve(state === 'completed') })
+      let stall: ReturnType<typeof setTimeout> | undefined
+      const watch = (): void => {
+        clearTimeout(stall)
+        stall = setTimeout(() => { item.cancel(); resolve(false) }, DOWNLOAD_STALL_MS)
+      }
+      watch()
+      item.on('updated', watch)
+      item.once('done', (_done, state) => { clearTimeout(stall); resolve(state === 'completed') })
     }
     wc.session.on('will-download', onItem)
     try {
@@ -76,15 +96,16 @@ export async function savePage (window: ShellWindow, page: { wc: SaveContents, t
   if (!/^https?:/i.test(url)) { showToast(window, 'cannotSave'); return }
   if (wc.isCrashed()) { showToast(window, 'saveFailed'); return }
   const document = isSavableDocument(url, await contentTypeOf(wc))
-  const path = await deps.pickSave(window.window, document
+  const chosen = await deps.pickSave(window.window, document
     ? { title: 'Save page as', defaultPath: join(deps.downloadsDir(), safeFileName(page.title, 'html')), filters: FILTERS }
     : { title: 'Save as', defaultPath: join(deps.downloadsDir(), downloadName(url)) })
-  if (path === undefined) return
+  if (chosen === undefined) return
+  const path = document ? withExtension(chosen, 'html') : chosen
   try {
     let saved = true
     if (document) await withTimeout(wc.savePage(path, formatFor(path)), SAVE_MS, 'the page')
     else saved = await downloadTo(wc, url, path)
-    showToast(window, saved ? 'saved' : 'saveFailed', saved ? baseName(path) : undefined)
+    showToast(window, saved ? 'saved' : 'saveFailed', saved ? baseName(path) : undefined, saved ? path : undefined)
   } catch (error) {
     if (!(error instanceof TimedOut)) console.error('[page-tools] saving the page failed', error)
     showToast(window, 'saveFailed')

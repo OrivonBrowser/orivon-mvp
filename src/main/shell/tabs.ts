@@ -357,9 +357,9 @@ export class TabManager {
    * the common guard every read-only accessor below needs, and what tear-drag.ts captures a thumbnail from
    * (via tab-view.ts's `captureTabPage`, which turns this into a snapshot or `null`, never a throw). */
   liveWebContents (id: string): Electron.WebContents | undefined {
-    const record = this.tabs.get(id)
-    if (record === undefined || record.view.webContents.isDestroyed()) return undefined
-    return record.view.webContents
+    // A page's own event can land while it is being torn down, when the view no longer has a webContents at all.
+    const wc: Electron.WebContents | undefined = this.tabs.get(id)?.view.webContents
+    return wc === undefined || wc.isDestroyed() ? undefined : wc
   }
 
   /** The active tab's own webContents -- the site-info popup's Cookies and

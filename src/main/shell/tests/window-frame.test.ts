@@ -55,6 +55,14 @@ describe('showWhenReady', () => {
     expect(order).toEqual(['show', 'setBounds'])
   })
 
+  it('shows an inactive window without taking focus, and says when it is shown', () => {
+    const { win, order } = fakeWindow()
+    const onShown = vi.fn()
+    showWhenReady({ win, initialBounds: bounds, kiosk: false }, { instant: true, inactive: true, onShown })
+    expect(order).toEqual(['showInactive', 'setBounds'])
+    expect(onShown).toHaveBeenCalledTimes(1)
+  })
+
   it('leaves a kiosk window at the whole screen: no size is asserted on it', () => {
     const { win, order } = fakeWindow()
     showWhenReady({ win, initialBounds: bounds, kiosk: true }, { instant: true, maximized: true })

@@ -25,10 +25,25 @@
 .tab .tab-audio svg { width: 14px; height: 14px; }
 .tab.has-sound .title { padding-right: 4px; }
 
-/* Under 72px a tab has no room for it, unless it is the tab in front. */
+/* A container query measures the tab's content box, which is 24px narrower than the tab (its padding).
+   Narrow: a tab that is not in front gives up its icon and keeps the sound mark, which is the one thing about it the
+   title cannot say. */
 @container (max-width: 71px) {
-  .tab:not(.active) .tab-audio { display: none; }
+  .tab:not(.active).has-sound .fav { display: none; }
+  .tab:not(.active) .tab-audio { margin-right: 0; }
   .tab:not(.active).has-sound .title { padding-right: 16px; }
+}
+
+/* At the minimum width, icon only, as in other browsers: the tab in front shows its close button alone, where the
+   icon was, and the others show their icon (or their sound mark) centred. */
+@container (max-width: 35px) {
+  .tab .title { display: none; }
+  .tab .fav { margin: 0 auto; }
+  .tab:not(.active) .close { display: none; }
+  .tab:not(.active).has-sound .tab-audio { margin: 0 auto; }
+  .tab.active .fav,
+  .tab.active .tab-audio { display: none; }
+  .tab.active .close { right: auto; left: 50%; transform: translateX(-50%); }
 }
 
 /* Pinned: the icon alone, in a fixed narrow tab. No title, no close button (Mod+W and a middle click still close it). */

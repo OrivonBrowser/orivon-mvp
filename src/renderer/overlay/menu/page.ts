@@ -47,9 +47,11 @@ export const menuPage: OverlayPage = {
         type: 'button', className: 'menu-row', role: tick ? 'menuitemcheckbox' : 'menuitem',
         onclick: () => { if (item.disabled !== true) run(item.id, false) }
       },
-      h('span', { className: 'menu-label' }, item.label),
-      item.hint !== null && h('span', { className: 'menu-hint' }, item.hint),
-      item.hint === null && item.keys !== null && h('span', { className: 'menu-keys' }, formatKeys(item.keys, overlay.platform)),
+      // A hint (what Reopen would bring back) goes under the label, so the shortcut keeps its column.
+      item.hint === null
+        ? h('span', { className: 'menu-label' }, item.label)
+        : h('span', { className: 'menu-text' }, h('span', { className: 'menu-label' }, item.label), h('span', { className: 'menu-hint' }, item.hint)),
+      item.keys !== null && h('span', { className: 'menu-keys' }, formatKeys(item.keys, overlay.platform)),
       item.checked === true && h('span', { className: 'menu-check' }, checkIcon()))
       button.dataset['key'] = `cmd:${item.id}`
       if (tick) button.setAttribute('aria-checked', String(item.checked))

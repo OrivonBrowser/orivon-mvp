@@ -120,18 +120,18 @@ An app never calls `orivon.*` directly unless it was written for Orivon. Somethi
 
 | Family | What it presents | Backed by | Status |
 |---|---|---|:--:|
-| **Node stdlib** | The 72 specifiers of Node 24's `builtinModules`. [`module-map.ts`](../../src/shim/module-map.ts) maps 31 of them (`net`, `dgram`, `fs`, `http`, `https`, `tls`, `buffer`, `stream`...) and leaves 41 unmapped | `net.*`, `fs.*`, `orivon.net.lookup`, npm polyfill packages, hand-written modules, Web Workers, the web platform | ⚠️ partial: none of the 31 mapped modules has every Node 24 export behaving as Node's (28 partial, 3 differ), and the 41 unmapped ones are `❌ missing`. An unmapped specifier is left to the app's own bundler. A mapped module resolves under its `node:` name in Vite and in the esbuild plugin; webpack 5 needs a plugin that strips the scheme. **Named refusals, by design:** `net.Server#listen` and `dgram` `bind` on one address that is neither loopback nor every interface, `FileHandle#createReadStream`/`createWriteStream` (A184), `tls` STARTTLS and a prebuilt `secureContext` (A226), `https.createServer` (no TLS listener), WASI links, file times and sockets, and every other `dns.*`/`net.*` member the shim has not decided on. Table 2a has every module |
+| **Node stdlib** | The 72 specifiers of Node 24's `builtinModules`. [`module-map.ts`](../../src/shim/module-map.ts) maps 40 of them (`net`, `dgram`, `fs`, `http`, `https`, `tls`, `buffer`, `stream`, `tty`, `process`, `node:sqlite`...) and leaves 32 unmapped | `net.*`, `fs.*`, `orivon.net.lookup`, npm polyfill packages, hand-written modules, Web Workers, the web platform | ⚠️ partial: none of the 40 mapped modules has every Node 24 export behaving as Node's (36 partial, 4 differ), and the 32 unmapped ones are `❌ missing`. An unmapped specifier is left to the app's own bundler. A mapped module resolves under its `node:` name in Vite and in the esbuild plugin (`node:sqlite` only under that name, since the bare `sqlite` is another npm package); webpack 5 needs a plugin that strips the scheme. **Named refusals, by design:** `net.Server#listen` and `dgram` `bind` on one address that is neither loopback nor every interface, `FileHandle#createReadStream`/`createWriteStream` (A184), `tls` STARTTLS and a prebuilt `secureContext` (A226), `https.createServer` (no TLS listener), WASI links, file times and sockets, and every other `dns.*`/`net.*` member the shim has not decided on. Table 2a has every module |
 | **`electron` module** | `app`, `ipcRenderer`/`ipcMain`, `dialog` | `app.*`, `fs.userSelected` | ⚠️ partial, in [`src/shim-electron/`](../../src/shim-electron/): of the 48 value exports of `require('electron')`, none is built; 4 are partial (`app`, `ipcMain`, `ipcRenderer`, `safeStorage`), 1 differs (`nativeTheme`), 18 refuse by name and 25 are absent. Table 2b has every export |
 | **Web ecosystem** | `window.nostr` (NIP-07), `window.ethereum` | `id.*` | ❌ missing: no page receives either. [`nip07.ts`](../../src/nostr/nip07.ts) builds the NIP-07 object against a stub signer, and wiring it into a page needs `id.requestIdentity` (A111). `window.ethereum` is not built. A wallet extension can inject one in a granted, network-served tab ([ADR-0044](../decisions/ADR-0044-a-grant-no-longer-gives-an-origin-its-own-session.md)). Table 2d has every provider |
 | **The app's own preload surface** | whatever that app's preload exposed -- `window.ftElectron` for FreeTube | any capability its calls happen to map to | ➖ **Not Orivon's to ship.** One file per ported app, living with the app |
 
 ### How a port gets these families
 
-The alias table [`module-map.ts`](../../src/shim/module-map.ts) and the [`src/shim-electron/`](../../src/shim-electron/) package are consumed by this repository's own renderer build ([`electron.vite.config.ts`](../../electron.vite.config.ts)). No package publishes them, `package.json` is private, and outside this repository's own builds the only bundler recipe that applies them is test support ([`shim-esbuild-plugin.ts`](../../src/shim/tests/support/shim-esbuild-plugin.ts)). The five ports in `orivon-ports` apply neither. Each bundles with its own polyfills or with empty stubs: FreeTube's build sets `resolve.fallback` to `false` for eleven modules (`fs`, `path`, `stream`, `crypto`, `http`, `https`, `zlib`, `url`, `net`, `tls`, `child_process`), all of which the shim maps; ASGARDEX uses `process/browser`, `stream-browserify`, `crypto-browserify` and `assert`, and empties `path`, `url`, `https`, `http`, `zlib` and `fs`; Element empties `fs`, `net`, `tls` and `crypto` and takes `events` and `util` from npm; AirGap Vault takes `path`, `stream`, `crypto`, `http`, `https` and `zlib` from `path-browserify`, `stream-browserify`, `crypto-browserify`, `stream-http`, `https-browserify` and `browserify-zlib`; The Lounge's client imports no builtin. No renderer of the five imports `electron`. So a port today ships its own polyfills, and a consumable form of the shim (a published alias table with the `installGlobals` entry) is not built. Whether a port should bundle against the shim instead is A313.
+The alias table [`module-map.ts`](../../src/shim/module-map.ts) and the [`src/shim-electron/`](../../src/shim-electron/) package are consumed by this repository's own renderer build ([`electron.vite.config.ts`](../../electron.vite.config.ts)). For Node modules an esbuild plugin, [`bundler/esbuild-plugin.ts`](../../src/shim/bundler/esbuild-plugin.ts), applies the alias table to a port's own build: it maps every row to the shim under `platform: 'node'`, fails the build on a Node builtin the shim has no row for, and ships the SQLite engine's files. No package publishes it, `package.json` is private, and a port locates this checkout with `ORIVON_MVP_ROOT`. The Lounge's server bundles with the plugin, and its client imports no builtin. The other four ports in `orivon-ports` apply neither the plugin nor the alias table. Each bundles with its own polyfills or with empty stubs: FreeTube's build sets `resolve.fallback` to `false` for eleven modules (`fs`, `path`, `stream`, `crypto`, `http`, `https`, `zlib`, `url`, `net`, `tls`, `child_process`), all of which the shim maps; ASGARDEX uses `process/browser`, `stream-browserify`, `crypto-browserify` and `assert`, and empties `path`, `url`, `https`, `http`, `zlib` and `fs`; Element empties `fs`, `net`, `tls` and `crypto` and takes `events` and `util` from npm; AirGap Vault takes `path`, `stream`, `crypto`, `http`, `https` and `zlib` from `path-browserify`, `stream-browserify`, `crypto-browserify`, `stream-http`, `https-browserify` and `browserify-zlib`. No renderer of the five imports `electron`. So the shim is consumable as an esbuild plugin only: no webpack or Vite preset of the alias table with the `installGlobals` entry exists, and the other four ports do not use the plugin. Whether they should bundle against the shim instead is A313.
 
 | Sub-table | What it holds | Rows | ✅ | ⚠️ | ❌ | 🚫 | ➖ |
 |---|---|--:|--:|--:|--:|--:|--:|
-| [2a](compatibility/table-2a-node-modules.md) | Node's standard library, one row per builtin specifier, with a "Used by" column from the app scans | 60 | 0 | 31 | 29 | 0 | 0 |
+| [2a](compatibility/table-2a-node-modules.md) | Node's standard library, one row per builtin specifier, with a "Used by" column from the app scans | 60 | 0 | 40 | 20 | 0 | 0 |
 | [2b](compatibility/table-2b-electron.md) | The `electron` module, one row per export and per group of members, with a "Used by" column | 177 | 12 | 22 | 123 | 19 | 1 |
 | [2c](compatibility/table-2b-electron.md#table-2c-packages-that-wrap-electron) | Packages that wrap Electron (`electron-store`, `electron-updater`, `keytar` and others) | 28 | 1 | 9 | 18 | 0 | 0 |
 | [2d](compatibility/table-2b-electron.md#table-2d-web-ecosystem-providers) | Providers a page expects injected (`window.nostr`, `window.ethereum`, wallet discovery) and the app's own preload surface | 15 | 1 | 4 | 6 | 0 | 4 |
@@ -154,11 +154,11 @@ the small part.
 | Sub-table | What it holds | Rows | ✅ | ⚠️ | ❌ | 🚫 | ➖ |
 |---|---|--:|--:|--:|--:|--:|--:|
 | [3a](compatibility/table-3a-globals-and-process.md) | Globals and `process`: every Node global, every `process` member, event and environment key, where the globals exist, timers, detection idioms | 107 | 23 | 45 | 34 | 3 | 2 |
-| [3b](compatibility/table-3b-modules-and-delivery.md) | Module system, bundling and delivery: `require` and `import.meta`, package conditions, aliases, the manifest, MIME types, limits, routing, the first visit, the delivery modes compared | 73 | 21 | 34 | 14 | 4 | 0 |
-| [3c](compatibility/table-3c-files.md) | Files: every `fs`, `fs.promises`, `FileHandle`, `Stats` and `fs.constants` member, `path`, `os`, path semantics and bounds | 98 | 7 | 56 | 34 | 1 | 0 |
-| [3d](compatibility/table-3d-network.md) | Network: `net`, `dgram`, `dns`, `tls`, `http`, `https`, `http2`, and the page's routed `fetch`, `XMLHttpRequest`, `EventSource`, `WebSocket` | 102 | 19 | 66 | 17 | 0 | 0 |
+| [3b](compatibility/table-3b-modules-and-delivery.md) | Module system, bundling and delivery: `require` and `import.meta`, package conditions, aliases, the manifest, MIME types, limits, routing, the first visit, the delivery modes compared | 73 | 21 | 35 | 13 | 4 | 0 |
+| [3c](compatibility/table-3c-files.md) | Files: every `fs`, `fs.promises`, `FileHandle`, `Stats` and `fs.constants` member, `path`, `os`, path semantics and bounds | 98 | 7 | 61 | 29 | 1 | 0 |
+| [3d](compatibility/table-3d-network.md) | Network: `net`, `dgram`, `dns`, `tls`, `http`, `https`, `http2`, and the page's routed `fetch`, `XMLHttpRequest`, `EventSource`, `WebSocket` | 102 | 19 | 67 | 16 | 0 | 0 |
 | [3e](compatibility/table-3e-crypto-compression-buffers.md) | Crypto, compression and buffers: every `crypto` export and algorithm family, `zlib`, `Buffer` | 80 | 15 | 44 | 21 | 0 | 0 |
-| [3f](compatibility/table-3f-streams-events-utilities.md) | Streams, events, utilities, timers and `assert` | 38 | 2 | 25 | 11 | 0 | 0 |
+| [3f](compatibility/table-3f-streams-events-utilities.md) | Streams, events, utilities, timers and `assert` | 38 | 2 | 26 | 10 | 0 | 0 |
 | [3g](compatibility/table-3g-running-code.md) | Running code: `child_process`, `worker_threads`, `cluster`, `vm`, `module`, WASI preview1 and 0.2, Node-API, WebAssembly engine features and toolchains | 135 | 14 | 93 | 23 | 5 | 0 |
 | [3h](compatibility/table-3h-the-page.md) | The page: origin, every CSP directive, response headers, cookies and storage, workers and frames, `navigator` | 69 | 19 | 36 | 2 | 6 | 6 |
 | [3i](compatibility/table-3i-windows-and-lifecycle.md) | Windows, lifecycle and the desktop around the app: the main process, windows and tabs, quit signals, throttling, background lifetime, shortcuts the browser takes, menus, dialogs, drag and drop, packaging assumptions | 63 | 6 | 26 | 23 | 8 | 0 |
@@ -183,15 +183,15 @@ open blockers are listed; a resolved one is deleted, not struck through.
 | 9 | `hid`/USB, the wallet cluster | `orivon.hid.*` + device chooser | Contracts + prompt UX + security argument |
 | 10 | A native addon's WebAssembly build that is threaded and loaded through `process.dlopen` rather than a napi-rs package's own loader | Threads as emnapi workers over `worker_threads`, once an addon build needs them. An addon that runs a network node runs that node as a WASI 0.2 component the app spawns and reaches over loopback, which works today (`d-0216`); an addon with no WebAssembly build: substitute per library (Table 5) | Shim work; threads need `crossOriginIsolated` |
 | 11 | Tier 3, no HTML frontend | Container + xpra ([doc](container-apps-opportunity.md)) | Parked; reopens `subprocess` in a narrow shape |
-| 14 | No port consumes the Node shim: the alias table and the page globals are this repository's own, so each port brings its own polyfills or empties the modules, and what Tables 2 and 3 say the shim offers reaches no ported app | A preset each port's bundler loads: the aliases of [`module-map.ts`](../../src/shim/module-map.ts), the `node:` handling webpack needs, and the globals entry | Shim + `orivon-ports`; A313 (owner) |
-| 15 | 41 of Node's 72 builtin specifiers have no alias row, so an import fails the build or yields an empty object ([Table 2a](compatibility/table-2a-node-modules.md)) | An alias row with an honest answer for each cheap one: `process` to the global, `assert/strict`, `sys`, `punycode`, `stream/web`, `stream/consumers`, `path/win32`, `constants`, `console`, `perf_hooks`, `diagnostics_channel`, and inert `tty`, `readline` and `cluster` stubs | Shim only |
-| 16 | A missing member does not always refuse by name: `process`, the `electron` package's `app` and IPC objects, the unwrapped `stream` and `events` packages, 15 `dgram.Socket` members, the subpath modules' named exports, and data members typed as functions | Wrap each with the refusal the other modules already use (`refusingProxy`, generated stand-ins), and give data members real values | Shim only; A310 |
+| 14 | Four of the five ports in `orivon-ports` do not bundle against the Node shim: the alias table and the page globals reach a port only through an esbuild plugin ([`bundler/esbuild-plugin.ts`](../../src/shim/bundler/esbuild-plugin.ts)) that The Lounge's server uses, so each of the others brings its own polyfills or empties the modules, and what Tables 2 and 3 say the shim offers reaches only that one port | A preset for each other bundler the ports use, webpack among them: the aliases of [`module-map.ts`](../../src/shim/module-map.ts), the `node:` handling webpack needs, and the globals entry; each port moved over when it is next touched | Shim + `orivon-ports`; A313 (owner) |
+| 15 | 32 of Node's 72 builtin specifiers have no alias row, so an import fails the build or yields an empty object ([Table 2a](compatibility/table-2a-node-modules.md)) | An alias row with an honest answer for each cheap one: `assert/strict`, `sys`, `punycode`, `stream/web`, `stream/consumers`, `path/win32`, `constants`, and an inert `cluster` stub | Shim only |
+| 16 | A missing member does not always refuse by name: `process` (the global, which `require('process')` returns), the `electron` package's `app` and IPC objects, the unwrapped `stream` and `events` packages, 15 `dgram.Socket` members, the subpath modules' named exports, and data members typed as functions | Wrap each with the refusal the other modules already use (`refusingProxy`, generated stand-ins), and give data members real values | Shim only; A310 |
 | 17 | Options a shim function accepts and never reads change the result with no error ([Tables 3c](compatibility/table-3c-files.md) to [3e](compatibility/table-3e-crypto-compression-buffers.md)) | Refuse by name where the option changes the result, warn once where it does not | Shim only; A311 |
 | 18 | Calls a ported Electron app makes at start-up throw: `app.on`, `app.requestSingleInstanceLock`, `app.commandLine.appendSwitch`, `Menu.setApplicationMenu`, `crashReporter.start`, `powerMonitor.on`, `new Tray` ([Table 2b](compatibility/table-2b-electron.md)) | Inert answers for lifecycle and desktop calls that mean nothing in a tab, refusals kept for calls whose result the app relies on | Shim only (`src/shim-electron/`) |
 | 19 | A peer on the local network is reachable only by an address literal written in the manifest: no LAN-scoped pattern ([Table 3k](compatibility/table-3k-protocol-stacks.md) ranks it first) | A local-network connect pattern, asked as its own grant | Contracts + broker policy + prompt UX |
 | 20 | No UDP multicast or broadcast: mDNS, SSDP, UPnP port mapping and LAN discovery cannot run | A multicast grant naming the group and port | Contracts + broker + adapters |
 | 21 | No TLS upgrade of an open socket (STARTTLS): PostgreSQL and MySQL with TLS, SMTP on 587, IMAP on 143, XMPP, LDAP | Upgrade a connected socket on the trusted side, with the grant check the upgrade needs | Contracts + broker; A226 |
-| 22 | `http2` has no alias row, so a gRPC client cannot load | An HTTP/2 client in the shim over `net.connectSecure`, whose `alpnProtocols` option can ask for `h2` | Shim only |
+| 22 | `http2` loads and every function refuses by name, so a gRPC client cannot connect | An HTTP/2 client in the shim over `net.connectSecure`, whose `alpnProtocols` option can ask for `h2` | Shim only |
 
 Rows 1 and 2 are the top of the list: neither needs anything but the work itself or one
 confirmation. Row 6 sits behind them despite touching the metric, because it needs
@@ -303,7 +303,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `devtools_page` | ⚠️ | Electron supports `chrome.devtools.*` natively; not separately measured loading a `devtools_page` |
 | `web_accessible_resources` | ✅ | Tracked for the install prompt; Chromium enforces the resource list itself |
 | `externally_connectable` | ❌ | No wiring for `runtime.onMessageExternal`/`onConnectExternal` |
-| `commands` | ⚠️ | `getAll`/`onCommand` work; no page to view or rebind an extension's key combinations |
+| `commands` | ⚠️ | `getAll` lists each declared command with an empty shortcut; no key is ever registered, so `onCommand` never fires; no page to view or rebind a combination |
 | `omnibox` | ❌ | Orivon's own address bar is unrelated code |
 | `side_panel` | ❌ | `chrome.sidePanel` is a no-op stub (Table 7c); the key drives no real panel surface |
 | `host_permissions` | ✅ | Gates `chrome.cookies`/`chrome.tabs`/`insertCSS`/`webNavigation` API access |
@@ -336,16 +336,16 @@ is not the same as it doing anything: read the note, not just the symbol.
 
 | API | Works | Note |
 |---|---|---|
-| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup, `getUserSettings` |
+| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup and `getUserSettings`, which always answers `isOnToolbar: true` |
 | `alarms` | ✅ | `create` + `onAlarm` measured firing |
-| `commands` | ✅ | `getAll`, `onCommand` measured working |
+| `commands` | ⚠️ | `getAll` returns each command the manifest declares with an empty shortcut, and no key is registered, so `onCommand` never fires (measured; `vendor/electron-chrome-extensions/src/browser/api/commands.ts`) |
 | `contextMenus` | ✅ | `create`/`remove`/`removeAll`/`onClicked` work; `update` is a no-op |
 | `cookies` | ✅ | `get`/`getAll`/`set`/`remove`/`getAllCookieStores`/`onChanged`, gated on the `cookies` permission and per-URL host access |
 | `devtools.inspectedWindow`, `devtools.network`, `devtools.panels` | ✅ | Native to Electron |
 | `dns` | ⚠️ | `chrome.dns.resolve` exists as a real function, not exercised in measurement; dev-channel-only in real Chrome too |
 | `downloads` | ⚠️ | Every method and event is a declared no-op stub; nothing downloads, cancels or reports |
 | `extension` | ⚠️ | `isAllowedFileSchemeAccess`/`isAllowedIncognitoAccess` always answer `false`; `getViews` always `[]` |
-| `i18n` | ⚠️ | `getMessage` resolves the real `_locales` string; `getUILanguage`/`getAcceptLanguages` are hardcoded `en-US`, no real negotiation |
+| `i18n` | ⚠️ | `getMessage` resolves the real `_locales` string and `getUILanguage` returns the real UI language (measured: `en-GB`); `getAcceptLanguages` is not measured |
 | `idle` | ✅ | `queryState()` measured returning `"active"` |
 | `management` | ⚠️ | Only `getPermissionWarningsByManifest`/`getSelf`/`uninstallSelf` are real; `getAll` is not a function |
 | `notifications` | ⚠️ | `clear`/`getAll`/`update`/its three events present; `create`'s live effect is untested by policy (nothing here reaches a real OS notification) |
@@ -363,7 +363,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `storage.session` | ✅ | Measured round-tripping in a service worker/popup/options/tab; present as a real function in an MV3 isolated content script, absent in MV2's |
 | `system.cpu`, `system.display`, `system.memory`, `system.storage` | ✅ | `system.cpu.getInfo()` measured returning real hardware data (actual CPU model, core count, per-core usage) |
 | `tabCapture` | ✅ | `getMediaStreamId`/`getCapturedTabs`/`onStatusChanged`; needs a click on the extension's toolbar button on that tab; only an http(s) tab of no app holding grants; the tab is muted locally while captured |
-| `tabs` | ⚠️ | A rich working set, filtered by permission/host access; `captureVisibleTab` specifically is not a function |
+| `tabs` | ⚠️ | A rich working set, filtered by permission/host access; `pinned` comes from the tab's record and `audible` and `mutedInfo` from its page, but `update({ pinned, muted })` changes neither; `captureVisibleTab` specifically is not a function |
 | `topSites` | ⚠️ | `get()` resolves an empty stub |
 | `userScripts` | ⚠️ | Every method resolves as a no-op; no user-script world runs |
 | `webNavigation` | ✅ | `getFrame`/`getAllFrames` and the full event set work |
@@ -414,8 +414,8 @@ policy source this build has no equivalent of.
 | Storage: `sync`/`managed` | ⚠️ | Alias `local`, not real sync or policy delivery (Table 7c) |
 | Storage: `session` | ✅ | Confirmed round-tripping (Table 7c) |
 | Storage: quotas | ⚠️ | Whatever Electron's own `storage.local` implementation enforces; not measured separately |
-| i18n / `_locales` | ✅ | Name/description/icon resolution on the extensions page; `chrome.i18n` itself is a thin, non-negotiated fallback (Table 7c) |
-| Toolbar: pin/unpin, badge, icon, title | ✅ | |
+| i18n / `_locales` | ✅ | Name/description/icon resolution on the extensions page; `chrome.i18n` answers from Electron's own implementation (Table 7c) |
+| Toolbar: pin/unpin, badge, icon, title | ⚠️ | Badge, icon and title work. There is no pin or unpin: `getUserSettings` always answers `isOnToolbar: true` and no pin control exists (measured) |
 | Toolbar: enable/disable a button per tab | ✅ | `getState`/`activate` |
 | Site access controls: "on click" / "on specific sites" / "on all sites" picker | ❌ | Not modelled; host access is all-or-nothing per the manifest's own declared patterns, decided once at install/update |
 | Site access controls: `activeTab` (temporary grant on click) | ❌ | Treated like any other declared permission, not as a one-click temporary host grant |
@@ -424,7 +424,7 @@ policy source this build has no equivalent of.
 | Install from CRX/zip/unpacked | ✅ | Table 7a |
 | Enabling/disabling/uninstalling | ✅ | Table 7a |
 | Errors page | ❌ | Table 7a |
-| Keyboard shortcuts page | ❌ | `chrome.commands` itself works; no page to view or rebind a combination |
+| Keyboard shortcuts page | ❌ | `chrome.commands.getAll` lists commands with empty shortcuts (Table 7c); no page to view or rebind a combination |
 | Extension devtools/inspect views | ⚠️ | `chrome.devtools.*` is native to Electron; no test exercises it end to end |
 | Running without the Chromium sandbox | ❌ | The service-worker preload that injects most `chrome.*` APIs is silently never invoked for any worker when Electron launches `--no-sandbox`; every automated launch here runs sandboxed instead (`A289`) |
 | Apps a person has granted permissions to | ✅ | One instance, in the default session (`ADR-0044`); extension code is refused at `window.orivon`, a filter rather than a session split (`ADR-0045`). An app served from its pinned copy keeps its own partition and runs none |
@@ -439,8 +439,8 @@ the reference set, and whether this build has it.
 | Feature | Orivon | Note |
 |---|---|---|
 | Back / forward | ✅ | `webContents.goBack/goForward` (`src/main/shell/tabs.ts`), `Alt+Left`/`Alt+Right` |
-| Reload / stop | ✅ | `nav.reload`/`nav.hardReload`; no Stop control separate from the reload button toggling |
-| Home button | ❌ | No homepage/home-button concept |
+| Reload / stop | ✅ | `nav.reload`/`nav.hardReload`; the reload button becomes Stop while a tab loads (`nav.stop`, `src/renderer/chrome/reload-stop.ts`), and Escape in the page stops a load (`src/main/shell/signals/stop-key.ts`) |
+| Home button | ✅ | A toolbar button (`toolbar.home`, off by default; `src/renderer/chrome/home-button.ts`) and `nav.home` (`Alt+Home`) open the home page in the current tab; a middle or Ctrl click opens a background tab |
 | Omnibox: address-or-search classification | ✅ | `src/main/browsing/omnibox.ts`, refuses `javascript:`/`data:`/`file:`/`about:` typed in the bar |
 | Search suggestions (live dropdown) | ❌ | No suggestion/autocomplete code for the address bar |
 | History/bookmark autocomplete in the bar | ❌ | Omnibox is pure classification only |
@@ -450,9 +450,9 @@ the reference set, and whether this build has it.
 | Security indicator / padlock | ⚠️ | No padlock; a broader "Website Level" trust indicator (`src/trust/`) replaces it |
 | Site info panel | ✅ | `src/main/permissions/site-info.ts`, `popover-view.ts`, `site-info-panel.ts` |
 | Copy URL | ✅ | Native input field behaviour |
-| Paste-and-go | ⚠️ | Paste works; no dedicated context-menu command |
+| Paste-and-go | ✅ | The address bar's context menu has Paste and Go: main reads the clipboard and the address form submits it as typed (`src/main/shell/paste-and-go.ts`, `chrome-context-menu.ts`) |
 | QR code share of current page | ❌ | Not found |
-| `view-source:` | ⚠️ | Reaches Chromium's own built-in viewer (internal scheme list); no address-bar menu item or shortcut types it for a person |
+| `view-source:` | ⚠️ | `page.viewSource` (`Ctrl+U`) and the page menu open `view-source:<address>` in a tab beside the page, for an http(s) page in an ordinary tab (`src/main/page-tools/view-source.ts`); typing it in the address bar is not recognised as an address |
 | `data:` / `file:` typed in the address bar | 🚫 | `DANGEROUS_SCHEMES` refuses `javascript:`, `data:`, `file:`, `about:` typed or pasted |
 | `file://` browsing (via a link, not typed) | ⚠️ | Treated as internal (loads directly); directory-listing behaviour is Chromium's own default, unverified without a launch |
 
@@ -462,22 +462,23 @@ the reference set, and whether this build has it.
 |---|---|---|
 | New tab | ✅ | `tab.new` (`Mod+T`) |
 | Close tab | ✅ | `tab.close` (`Mod+W`) |
-| Reopen last closed tab | ❌ | No closed-tab stack |
-| Restore previous session on launch | ❌ | A fresh launch opens a clean window |
-| Pin tab | ❌ | No pinned state on a tab |
-| Mute tab | ❌ | No per-tab audio mute |
-| Audio-playing indicator | ❌ | No audible-state indicator on the tab strip |
-| Duplicate tab | ✅ | `tab-menu.ts` |
-| Drag to reorder | ✅ | `tab-drag.ts`, `tab-order.ts` |
+| Reopen last closed tab | ✅ | `tab.reopen` (`Ctrl+Shift+T`) puts back the last closed tab where it was, or the last closed window with its tabs; 25 entries, in memory (`src/main/session-restore/closed-stack.ts`, `reopen.ts`) |
+| Restore previous session on launch | ✅ | `startup.mode` "Continue where you left off" reopens the windows in `session.json` (`src/main/startup/startup-plan.ts`); after a run that did not end cleanly a bar offers them back; a private session and a kiosk do neither |
+| Pin tab | ✅ | `tab.pin` (unbound) and the tab menu; pinned tabs lead the strip, are 36px wide with no title or close button (`src/main/shell/tab-pin.ts`, `tab-order.ts`) |
+| Mute tab | ✅ | `tab.mute` (unbound), the tab menu and the speaker badge on the tab; the mute belongs to the tab and follows it to another window (`src/main/shell/signals/audio.ts`) |
+| Audio-playing indicator | ✅ | A speaker badge on the tab from `audio-state-changed`; a muted tab keeps it, and a pinned tab shows it as a mark on its icon (`src/renderer/chrome/tab-badges.ts`) |
+| Duplicate tab | ✅ | `tab.duplicate` and the tab menu open a copy, with its back and forward list, right of its source; not offered for the new-tab page or a shell page (`src/main/shell/tab-commands.ts`, `tab-history.ts`) |
+| Drag to reorder | ✅ | `tab-drag.ts`, `tab-order.ts`; a pinned tab stays in the leading run, and a split refuses a pinned tab |
 | Tear off into a new window | ✅ | `tear-drag.ts` |
 | Move tab to another open window | ✅ | `tab-menu.ts`, `tab-move.ts` |
 | Tab groups (named/coloured) | ❌ | No grouping concept |
 | Vertical tabs | ❌ | Tab strip is horizontal only |
-| Tab search (Ctrl+Shift+A style) | ❌ | Not found |
+| Tab search (Ctrl+Shift+A style) | ✅ | `tab.search` (`Ctrl+Shift+A`), More tools and the strip's button list every open tab of every window and the recently closed ones, filtered by title and address as you type (`src/main/tab-search/`, overlay `tab-search`) |
 | Hover preview / thumbnail | ❌ | Not found |
 | Tab discarding / memory saver | ❌ | No discard/suspend logic |
 | Split view (two tabs side by side) | ✅ | `split-controller.ts`, `split-model.ts`, `split-frame.ts` |
-| Close other tabs | ✅ | `tab-menu.ts` |
+| Close other tabs | ✅ | `tab.closeOthers` and the tab menu close every unpinned tab but the one chosen (`src/main/shell/tab-commands.ts`) |
+| Close tabs to the right | ✅ | `tab.closeRight` and the tab menu close the unpinned tabs right of a tab, or of its split pair (`src/main/shell/tab-commands.ts`) |
 | Next/previous tab, go to tab N | ✅ | `tab.next`/`tab.previous`/`tab.goto1..9`/`tab.gotoLast` |
 | Open a link in a new tab (`target=_blank`, `window.open`) | ✅ | Every such request reaches `setWindowOpenHandler`; ctrl+shift+click and `target=_blank` open it in the foreground |
 | Open a link in a background tab (keeps the current tab focused) | ✅ | A middle click or a plain ctrl+click opens a background tab; the current tab stays in front (`popups.ts`) |
@@ -485,9 +486,9 @@ the reference set, and whether this build has it.
 | Middle-click a tab to close it | ✅ | `auxclick`/`mousedown` guard on each tab element |
 | Middle-click the empty end of the tab strip to open a tab | ⚠️ | Linux X11 only (`docs/open-questions.md` A292) |
 | Tab loading spinner | ✅ | `.loading` class on the favicon element |
-| Tab title tooltip on hover | ❌ | No `title` attribute on an ordinary tab element |
-| Tab close button appears on hover | ✅ | `.tab:hover .close` |
-| Tab crashed indicator | ❌ | `render-process-gone` only logs to the console |
+| Tab title tooltip on hover | ✅ | Title, host, and whether the tab is playing audio, muted, in a split view or crashed (`src/renderer/chrome/tab-badges.ts`, `tab-crashed.ts`) |
+| Tab close button appears on hover | ✅ | `.tab:hover .close`; a pinned tab has none, and an inactive tab too narrow for one shows none |
+| Tab crashed indicator | ✅ | `src/main/shell/signals/crashed.ts` keeps the renderer's death on the tab; the strip shows a warning icon in place of the favicon and a tooltip line (`src/renderer/chrome/tab-crashed.ts`) |
 
 ### Windows and profiles
 
@@ -498,9 +499,9 @@ the reference set, and whether this build has it.
 | Guest mode | ❌ | No guest-session concept distinct from a private window |
 | Profiles | ✅ | `orivon://profiles`, `profile-store.ts`: a separate browser instance/data directory |
 | Full screen (browser chrome, F11) | ✅ | `fullscreen.ts` |
-| Kiosk mode | ❌ | No kiosk-window option |
-| Always on top | ⚠️ | Only for the ephemeral tab-tear drag-preview window |
-| Window state (size/maximized) restored on relaunch | ❌ | A new window always opens at a computed placement, never a remembered one |
+| Kiosk mode | ✅ | `--orivon-kiosk` opens full-screen windows with no tab strip or toolbar that run only back, forward, reload, zoom, find, print and quit; quit is the only way out, and a page's own `window.open` still opens a tab (`src/main/window-state/kiosk.ts`) |
+| Always on top | ✅ | `window.alwaysOnTop` (More tools, unbound) keeps the focused window above others; per window, not remembered |
+| Window state (size/maximized) restored on relaunch | ✅ | The first window of a launch opens at the last-used window's size, position and maximised state, clamped to a visible display (`src/main/window-state/`); a private session records nothing; on Wayland the position is the compositor's |
 | Multiple monitors, HiDPI, touch, IME input | ➖ | Chromium's own default support applies |
 
 ### New tab page and start-up
@@ -508,9 +509,9 @@ the reference set, and whether this build has it.
 | Feature | Orivon | Note |
 |---|---|---|
 | Custom new-tab page | ✅ | A dashboard replacing `about:blank` (`src/renderer/newtab/`) |
-| Homepage setting | ❌ | No homepage URL setting |
-| Startup pages ("open these pages") | ❌ | Not found |
-| Continue where you left off | ❌ | No session-restore machinery |
+| Homepage setting | ✅ | `home.url` (Settings, On start-up): any address the address bar would load; empty means the new tab page (`src/main/shell/home.ts`) |
+| Startup pages ("open these pages") | ✅ | `startup.mode` "Open specific pages" and `startup.pages`: up to eight addresses, each checked as the address bar checks one (`src/main/startup/`, `src/renderer/pages/settings/controls/page-list.ts`) |
+| Continue where you left off | ✅ | `startup.mode` "Continue where you left off" reopens the last session's windows, tabs, pins and places from `session.json`; the addresses on the command line open in front (`src/main/startup/startup-plan.ts`) |
 | First-launch welcome/intro screen | ✅ | Shown once per profile (`intro-view.ts`, `intro-state.ts`) |
 | White flash avoided on window open, new tab, internal pages and popovers | ✅ | Every such view's `backgroundColor`/theme colour is set before it has a pixel to show (`theme-colors.ts`, `popover-view.ts`); the main menu's own view is kept built between opens rather than recreated |
 
@@ -610,7 +611,7 @@ the reference set, and whether this build has it.
 | Certificate viewer | ❌ | `certificate-check.ts` pins Orivon's own verifier certificate, not a user-facing viewer |
 | Certificate error interstitial | ➖ | Chromium's own default applies |
 | Custom CA management | ❌ | Not found |
-| HSTS | ❌ | Beyond Chromium's own built-in preload list |
+| HSTS | ⚠️ | Chromium applies the HSTS headers it is sent and its preload list in every tab; Electron has no API to list or clear the stored entries, so no Orivon page shows them |
 | Site isolation | ➖ | Chromium's own default; also load-bearing to the capability model |
 | Sandbox | ✅ | `sandbox: true, nodeIntegration: false` for every app tab |
 | Proxy settings (user-configurable) | ❌ | The only proxy code checks whether the OS proxy interferes with the verifier's own fetches |
@@ -666,21 +667,21 @@ the reference set, and whether this build has it.
 
 | Feature | Orivon | Note |
 |---|---|---|
-| Find in page | ❌ | No `findInPage`/`Ctrl+F` command |
-| Zoom (page) | ✅ | `zoom.in`/`zoom.out`/`zoom.reset`, per-origin |
-| Print / print preview | ❌ | No `webContents.print()` call |
-| Save page as | ❌ | Not found |
-| View source | ⚠️ | See Navigation, `view-source:` |
+| Find in page | ✅ | `find.open` (`Ctrl+F`), `find.next` (`Ctrl+G`, `F3`), `find.previous`: a bar with a live count, match case and Enter/Shift+Enter, per tab; `Ctrl+F` and `Ctrl+G` go to a registered app's tab (`src/main/find/`, overlay `find`) |
+| Zoom (page) | ✅ | `zoom.in`/`zoom.out`/`zoom.reset`, per-origin; a tab zooms per webContents (`isolated` mode) so the page's pixels scale and `innerWidth` follows (`src/main/zoom/attach-zoom.ts`) |
+| Print / print preview | ⚠️ | `page.print` (`Ctrl+P`, menu, More tools) opens the system print dialog with backgrounds on, and with no printer offers Save as PDF instead; no in-browser preview (`src/main/page-tools/print.ts`) |
+| Save page as | ✅ | `page.save` (`Ctrl+S`) saves complete HTML, a single-file `.mhtml` by extension, and downloads an image, PDF or text page as it is; `page.pdf` saves the page as PDF (`src/main/page-tools/save-page.ts`, `save-pdf.ts`) |
+| View source | ✅ | `page.viewSource` (`Ctrl+U`) opens `view-source:` beside the page for an http(s) page that is not an app's tab (`src/main/page-tools/view-source.ts`) |
 | Reader mode | ❌ | Not found |
 | Translate | ❌ | Not found |
-| Spellcheck | ⚠️ | Disabled only on Settings/History search boxes; ordinary page text uses Chromium's own default |
+| Spellcheck | ⚠️ | `spellcheck.enabled` (on by default) checks text in every tab; the menu offers up to five suggestions, Add to Dictionary and a Check Spelling switch; no language picker, and Chromium downloads each dictionary once (`src/main/spellcheck/`) |
 | Dictionary / look up word | ❌ | Not found |
-| PDF viewer | ❌ | No PDFium wiring (`plugins: true` never set) |
+| PDF viewer | ✅ | A served PDF opens in an ordinary tab in Chromium's built-in viewer with no `plugins` flag and no setting (`test/e2e-page-tools.test.ts`) |
 | Image viewer | ➖ | Chromium's own default applies |
-| Picture-in-picture | ❌ | Not found |
+| Picture-in-picture | ✅ | `page.pip` (More tools, the video's menu) pops out the video under the pointer, or the playing or largest one, and puts it back on a second run (`src/main/page-tools/pip.ts`) |
 | Media controls / global media hub | ❌ | Not found |
 | Casting (Chromecast/AirPlay) | ❌ | Not found |
-| Screenshots / page capture | ⚠️ | Only used internally for the tab-tear drag preview, not user-facing |
+| Screenshots / page capture | ✅ | `page.screenshot` (`Ctrl+Shift+S`): the visible area or the whole page, to the clipboard or a PNG file; a page longer than 16,384 device pixels is cut there (`src/main/page-tools/screenshot.ts`, overlay `screenshot`) |
 | Text-to-speech / read aloud | ❌ | No "read aloud" UI; the page's own `speechSynthesis` call is ungated |
 | Forced dark mode for light-only sites | ⚠️ | `appearance.theme` flips OS-level `prefers-color-scheme`; no forced repaint of a site with no dark styles |
 | Page fonts / minimum font size | ❌ | Not found |
@@ -689,30 +690,33 @@ the reference set, and whether this build has it.
 | Pinch zoom, smooth scrolling, autoscroll (middle-click drag on a page) | ➖ | Chromium's own default applies to page content |
 | Drag-and-drop of links/images/files into the page | ➖ | Chromium's own default applies |
 | Network / DNS / certificate error pages ("can't be reached") | ➖ | Chromium's own built-in interstitials apply |
-| "Aw, snap" crash page / sad-tab reload | ❌ | A crashed renderer is only logged to the console |
+| "Aw, snap" crash page / sad-tab reload | ✅ | Overlay `sad-tab` (`src/main/sad-tab/`) over a crashed active tab with Reload and Close tab; an unresponsive page gets the same card with Wait and Reload; a background crash shows only the strip icon until the tab is activated |
 | `beforeunload` guard | ✅ | Asks Leave/Stay (`leave-page-prompt.ts`) |
 
 ### Context menus
 
 | Feature | Orivon | Note |
 |---|---|---|
-| Link: open in new tab | ✅ | `context-menu.ts` |
-| Link: open in new window | ❌ | Not a context-menu item (see Tabs for shift+click) |
-| Link: open in private window | ❌ | Not found |
+| Link: open in new tab | ✅ | Opens in a background tab (`src/main/shell/context-menu-groups.ts`) |
+| Link: open in new window | ✅ | Open Link in New Window opens a real window (`context-menu-groups.ts`) |
+| Link: open in private window | ✅ | Starts a private session on the address; hidden inside a private window and in a kiosk (`context-menu-groups.ts`, `ProfilesService.openPrivate`) |
 | Link: copy link address | ✅ | |
-| Link: save link as | ❌ | Not found |
+| Link: save link as | ✅ | `webContents.downloadURL` through Electron's own save dialog (`context-menu-groups.ts`) |
 | Link: open in split view | ✅ | Orivon-specific addition |
-| Image: open image in new tab | ❌ | Not found |
-| Image: save image as | ❌ | Not found |
+| Link: copy link text | ✅ | `context-menu-groups.ts` |
+| Image: open image in new tab | ✅ | Shown for http(s) images; opens in a background tab |
+| Image: save image as | ✅ | `webContents.downloadURL` through Electron's own save dialog; not offered for `data:` or `blob:` images |
 | Image: copy image | ✅ | |
-| Image: copy image address | ❌ | Not found |
+| Image: copy image address | ✅ | Shown for http(s) images |
 | Image: search image | ❌ | Not found |
 | Selection: copy | ✅ | |
-| Selection: search selected text | ❌ | Not found |
+| Selection: search selected text | ✅ | The engine chosen in Settings searches for the selection, in a tab in front; the text is sent only on the click, at most 1,000 characters (`context-menu-groups.ts`, `context-menu-text.ts`) |
 | Selection: translate selection | ❌ | Not found |
-| Page: back/forward/reload in menu | ❌ | Only Reload; navigation otherwise via toolbar |
+| Page: back/forward/reload in menu | ✅ | Back, Forward and Reload when nothing more specific was clicked; Back and Forward follow the tab's history |
+| Page: save page as, print, screenshot, view source | ✅ | In the same group, for a web page; an internal page shows only Back, Forward and Reload |
 | Page: inspect element | ✅ | Opens DevTools at the clicked element |
-| Cut/copy/paste/select all (editable fields) | ✅ | Plus the chrome's own edit menu |
+| Cut/copy/paste/select all (editable fields) | ✅ | Undo, Redo, Cut, Copy, Paste, Paste as Plain Text, Select All and Check Spelling, each enabled from the field's state; a misspelt word adds suggestions and Add to Dictionary; plus the chrome's own edit menu |
+| Video/audio: open, save, copy address, picture in picture | ✅ | Open Video in New Tab, Save Video As, Copy Video Address and a Picture in Picture check (`context-menu-groups.ts`) |
 
 ### Web platform features that need the browser
 
@@ -730,7 +734,7 @@ the reference set, and whether this build has it.
 | PWA install / standalone app windows | ❌ | Orivon's own "app" concept is unrelated to a `beforeinstallprompt` PWA path |
 | File handlers (web app file associations) | ❌ | Not found |
 | DRM / Widevine / EME | ❌ | No CDM wiring; the stock `electron` package ships without Widevine |
-| Proprietary codecs (H.264/AAC/HEVC) | ⚠️ | The `libffmpeg.so` of Electron 44.0.0 decodes H.264, AAC, MP3, FLAC, Opus, Vorbis and PCM and demuxes MP4 and MOV, Matroska and WebM, Ogg, WAV, MP3, AAC and FLAC. It has no HEVC, AC-3, E-AC-3 or DTS decoder. HEVC through a platform hardware decoder is not measured |
+| Proprietary codecs (H.264/AAC/HEVC) | ⚠️ | The stock `libffmpeg.so` of Electron 44.0.0 decodes H.264, AAC, MP3, FLAC, Opus, Vorbis and PCM and demuxes MP4 and MOV, Matroska and WebM, Ogg, WAV, MP3, AAC and FLAC. It has no HEVC, AC-3, E-AC-3 or DTS decoder (`MediaSource.isTypeSupported` answers true for H.264 and AAC and false for HEVC). HEVC through a platform hardware decoder is not measured |
 | WebRTC | ➖ | Chromium's own default applies. An app tab's WebRTC is not bounded by CSP or by grants and reaches STUN, TURN and peers with no grant (A41); media tracks depend on camera/microphone permission, denied by default |
 | WebGL / WebGPU | ➖ | Chromium's own default GPU-accelerated rendering applies |
 | WebXR | ⚠️ | No Electron permission name exists for it; Chromium's default in this build applies (not measured) |
@@ -818,7 +822,7 @@ the reference set, and whether this build has it.
 | Languages / UI locale switcher | ❌ | No i18n/locale-switching code; UI strings are hard-coded English |
 | Enterprise policy support | ❌ | Not found |
 | Run from source, no compiler needed (Windows/macOS) | ✅ | Forces a no-native-modules policy on Orivon's own dependencies (Rule 8) |
-| Linux packaging (AppImage/deb) | ⚠️ | Not yet done |
+| Linux packaging (AppImage/deb) | ⚠️ | `electron-builder.yml` and `npm run package:linux` build a `deb` and an AppImage; there is no packaging job in CI and no release workflow, so nothing is built or published automatically |
 | External protocol links (`mailto:`, `magnet:`, `bitcoin:`, ...) | ✅ | Opened by the OS's default app only after a per-site, per-URL confirmation dialog (`ADR-0027`) |
 | `beforeunload` guard | ✅ | See Page content tools |
 | Right-click menu (chrome + page) | ✅ | See Context menus |

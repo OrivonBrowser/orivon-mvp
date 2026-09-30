@@ -6,6 +6,11 @@ export const MAX_PAGES = 8
 
 export const PROBLEM_ADDRESS = 'Enter a web address, like https://example.com'
 export const PROBLEM_FULL = `You can open up to ${String(MAX_PAGES)} pages at start-up`
+export const PLACEHOLDER_FULL = `You can open up to ${String(MAX_PAGES)} pages`
+export const PLACEHOLDER_ADD = 'Add a page, like example.com'
+export const PROBLEM_UNAVAILABLE = 'Orivon could not do that. Try again.'
+export const NOTE_NONE_OPEN = 'No other pages are open right now.'
+export const PROBLEM_SAVE = 'The pages could not be saved. Try again.'
 
 export function splitPages (value: unknown): string[] {
   if (typeof value !== 'string') return []

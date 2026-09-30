@@ -22,6 +22,12 @@ export function tabTooltip (tab: TabState): string {
   return lines.filter((line) => line !== '').join('\n')
 }
 
+/** A tab's accessible name: its title, and whether it is playing or muted, which the icon and mark show only to sight. */
+export function tabName (tab: TabState): string {
+  const title = tab.title.length > 0 ? tab.title : 'New tab'
+  return `${title}${tab.muted ? ', muted' : tab.audible ? ', playing audio' : ''}`
+}
+
 /** What the speaker badge does: a tab that is muted offers to unmute, and any other to mute. */
 export function muteLabel (tab: TabState): string {
   return tab.muted ? 'Unmute tab' : 'Mute tab'
@@ -31,13 +37,13 @@ export function muteLabel (tab: TabState): string {
  * button; a pinned tab has neither, so it shows the state as a small mark on its icon. */
 export const decorateTabBadges: TabDecorator = function decorateTabBadges (el, tab, state, ctx) {
   el.title = tabTooltip(tab)
+  el.setAttribute('aria-label', tabName(tab))
   const sound = tab.audible || tab.muted
   el.classList.toggle('has-sound', sound && !tab.pinned)
   if (tab.pinned) {
     const at = state.tabs.findIndex((other) => other.id === tab.id)
     el.classList.add('pinned')
     el.classList.toggle('last-pinned', state.tabs[at + 1]?.pinned === false)
-    el.setAttribute('aria-label', tab.title.length > 0 ? tab.title : 'New Tab')
     el.querySelector('.close')?.remove()
     if (sound) {
       const mark = document.createElement('span')

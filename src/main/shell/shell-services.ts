@@ -83,6 +83,9 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
   const windows = new WindowRegistry()
   const tabLifecycle = new TabLifecycle()
   const closedTabs = new ClosedStack()
+  // A kiosk runs on the person's own profile but is not their browsing: it records no session, offers none back
+  // and starts no other browser.
+  const kiosk = app.commandLine.hasSwitch(KIOSK_FLAG.slice(2))
   watchClosedTabs(tabLifecycle, closedTabs)
   // A private session writes down no pages: it never opens a history file at all.
   const openedHistory = runtime.isPrivate ? { store: new NullHistoryStore(), problem: null } : openHistory(join(userDataPath, 'history.db'))
@@ -110,10 +113,10 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem),
     internalPages,
     isPrivate: runtime.isPrivate,
-    kiosk: app.commandLine.hasSwitch(KIOSK_FLAG.slice(2)),
+    kiosk,
     passwords: memoryVault(),
-    profiles: new ProfilesService(runtime),
-    session: runtime.isPrivate ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
+    profiles: new ProfilesService(runtime, undefined, kiosk),
+    session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,

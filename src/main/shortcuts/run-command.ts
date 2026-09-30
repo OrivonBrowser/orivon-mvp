@@ -26,6 +26,8 @@ import { realDeps } from '../page-tools/real-deps.js'
 export interface CommandDeps {
   readonly services: ShellServices
   readonly openWindow: (options?: ShellWindowOptions) => void
+  /** The displays as they are now: a saved window's place is used only where one of them shows it. */
+  readonly displays: () => ReadonlyArray<{ readonly bounds: { x: number, y: number, width: number, height: number } }>
   readonly quit: () => void
 }
 

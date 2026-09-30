@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { cleanBounds, MAX_SESSION_WINDOWS, MAX_WINDOW_TABS, parseSession } from '../session-types.js'
 
+const pinnedTab = (n: number | string): Record<string, unknown> => ({ ...tab(n), pinned: true })
 const tab = (n: number | string): Record<string, unknown> => ({ url: `https://a.example/${String(n)}`, title: String(n), pinned: false })
 const file = (windows: unknown[], extra: Record<string, unknown> = {}): string => JSON.stringify({ version: 1, clean: false, windows, ...extra })
 const window = (tabs: unknown[], extra: Record<string, unknown> = {}): Record<string, unknown> => ({ bounds: { x: 10, y: 20, width: 800, height: 600 }, maximized: false, active: 0, tabs, ...extra })
 
 describe('parseSession', () => {
+  it('puts pinned tabs first, keeping the order within each kind and the front tab where it was', () => {
+    const parsed = parseSession(file([window([tab(1), pinnedTab(2), tab(3), pinnedTab(4)], { active: 2 })]))
+    expect(parsed?.windows[0]?.tabs.map((entry) => entry.title)).toEqual(['2', '4', '1', '3'])
+    expect(parsed?.windows[0]?.tabs.map((entry) => entry.pinned)).toEqual([true, true, false, false])
+    expect(parsed?.windows[0]?.active).toBe(3)
+  })
+
   it('reads what the recorder writes', () => {
     const text = file([window([tab(1), tab(2)], { active: 1, maximized: true })], { clean: true })
     expect(parseSession(text)).toEqual({

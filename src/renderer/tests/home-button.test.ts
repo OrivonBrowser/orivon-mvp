@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ShellState } from '../../main/shell/tabs.js'
 import { CHROME_MODULES } from '../chrome/modules.js'
 import type { ChromeContext, ToolbarButtonSpec } from '../chrome/context.js'
@@ -22,7 +22,9 @@ function setup (): { module: ReturnType<typeof createHomeButton>, ctx: ChromeCon
   return { module, ctx, act, spec: () => { if (given === undefined) throw new Error('no button'); return given }, button, fire }
 }
 
-const state = (homeButton: boolean): ShellState => ({ homeButton }) as ShellState
+const state = (homeButton: boolean, home: string[] | null = ['Alt', 'Home']): ShellState => ({ homeButton, shortcutKeys: { 'nav.home': home, 'tab.search': null } }) as unknown as ShellState
+
+afterEach(() => { vi.unstubAllGlobals() })
 
 describe('the Home button', () => {
   it('is one of the chrome modules', () => {
@@ -32,16 +34,31 @@ describe('the Home button', () => {
   it('sits in the nav slot right of Reload, named Home, hidden until the setting shows it', () => {
     const { spec, button } = setup()
     expect(spec()).toMatchObject({ id: 'home', slot: 'nav', order: 10, label: 'Home' })
-    expect(button.title).toBe('Home (Alt+Home)')
+    expect(button.title).toBe('Home')
     expect(button.hidden).toBe(true)
   })
 
   it('follows the setting as each state is pushed', () => {
     const { module, ctx, button } = setup()
+    vi.stubGlobal('document', { documentElement: { dataset: { platform: 'linux' } } })
     module.render?.(state(true), ctx)
     expect(button.hidden).toBe(false)
     module.render?.(state(false), ctx)
     expect(button.hidden).toBe(true)
+  })
+
+  it('names the binding that runs now in its tooltip, written the platform\'s way', () => {
+    const { module, ctx, button } = setup()
+    vi.stubGlobal('document', { documentElement: { dataset: { platform: 'linux' } } })
+    module.render?.(state(true), ctx)
+    expect(button.title).toBe('Home (Alt+Home)')
+    module.render?.(state(true, ['Ctrl', 'Shift', 'H']), ctx)
+    expect(button.title).toBe('Home (Ctrl+Shift+H)')
+    module.render?.(state(true, null), ctx)
+    expect(button.title).toBe('Home')
+    vi.stubGlobal('document', { documentElement: { dataset: { platform: 'darwin' } } })
+    module.render?.(state(true, ['Cmd', 'Shift', 'H']), ctx)
+    expect(button.title).toBe('Home (⌘⇧H)')
   })
 
   it('loads the home page here on a click, and in a new tab on a Mod click', () => {

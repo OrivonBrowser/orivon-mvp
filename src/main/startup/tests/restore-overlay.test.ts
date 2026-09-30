@@ -12,7 +12,7 @@ function setup (previous: SavedSession | null) {
   const openWindow = vi.fn()
   const close = vi.fn()
   const overlay = restoreOverlayFor({ displays: () => [display] })
-  const handler = overlay.attach({ services: { session: { previous: () => previous }, closedTabs, commands: { openWindow } }, close } as never)
+  const handler = overlay.attach({ services: { session: { previous: () => previous }, closedTabs, commands: { openWindow }, shortcuts: { keysOf: () => ['Ctrl', 'Shift', 'T'] } }, close } as never)
   return { overlay, handler, openWindow, close, closedTabs }
 }
 
@@ -35,6 +35,19 @@ describe('the restore overlay', () => {
     expect(openWindow).toHaveBeenCalledTimes(2)
     expect(openWindow.mock.calls[0]?.[0]).toMatchObject({ place: { x: 10, y: 10, width: 800, height: 600 }, maximized: false })
     expect(closedTabs.size).toBe(0)
+  })
+
+  it('does not open again a window that Reopen already brought back', () => {
+    const { handler, openWindow, closedTabs } = setup(previous)
+    closedTabs.pop()
+    handler.request({ type: 'restore' })
+    expect(openWindow).toHaveBeenCalledTimes(1)
+    expect(openWindow.mock.calls[0]?.[0]).toMatchObject({ place: { x: 10 } })
+  })
+
+  it('tells the page the keys that do the same from the keyboard', () => {
+    const { handler } = setup(previous)
+    expect(handler.show?.(undefined)).toEqual({ keys: ['Ctrl', 'Shift', 'T'] })
   })
 
   it('restores once, however often it is asked', () => {

@@ -4,7 +4,7 @@ import type { CommandId } from '../shortcuts/commands.js'
 
 export const KIOSK_FLAG = '--orivon-kiosk'
 
-/** The only commands a kiosk runs. Leaving is quit (Mod+Shift+Q) and nothing else: that is the point. */
+/** The only commands a kiosk runs. Leaving is quit (Ctrl+Shift+Q, or Cmd+Q from the macOS app menu) and nothing else: that is the point. */
 const ALLOWED: ReadonlySet<CommandId> = new Set<CommandId>([
   'nav.back', 'nav.forward', 'nav.reload', 'nav.hardReload',
   'zoom.in', 'zoom.out', 'zoom.reset',

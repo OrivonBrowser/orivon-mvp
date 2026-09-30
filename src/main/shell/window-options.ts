@@ -1,5 +1,6 @@
 // How a new shell window is to open. Types and one pure function, so the
 // commands that open windows need not import the window itself.
+import type { BaseWindow } from 'electron'
 import type { TabManager } from './tabs.js'
 import type { IntroPlan } from './intro-state.js'
 
@@ -29,8 +30,12 @@ export interface ShellWindowOptions {
   readonly instant?: boolean | undefined
   /** The window opens maximized, over `place`. */
   readonly maximized?: boolean | undefined
-  /** Run once, by the launch, after this window exists: the windows of a restored session that come after the first. */
-  readonly after?: (() => void) | undefined
+  /** Run once, by the launch, after this window exists, with it: the windows of a restored session that come after the first. */
+  readonly after?: ((first: BaseWindow) => void) | undefined
+  /** Shown without taking focus or the front: the other windows of a restored session, which must not cover the one holding an address the person asked for. */
+  readonly inactive?: boolean | undefined
+  /** Called once the window has been shown. */
+  readonly shown?: (() => void) | undefined
 }
 
 /** A window opened from another one sits a little down and to the right of it, so the two are told apart. */

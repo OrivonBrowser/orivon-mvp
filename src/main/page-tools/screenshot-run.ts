@@ -2,7 +2,7 @@
 import { join } from 'node:path'
 import type { ShellWindow } from '../shell/window-registry.js'
 import type { PageToolDeps } from './deps.js'
-import { baseName, screenshotName } from './file-names.js'
+import { baseName, screenshotName, withExtension } from './file-names.js'
 import { captureFullPage, captureVisible } from './screenshot.js'
 import type { CaptureContents } from './screenshot.js'
 import { showToast } from './toast.js'
@@ -17,7 +17,7 @@ const COPY_MS = 2000
 export async function takeScreenshot (window: ShellWindow, wc: CaptureContents, choice: { area: ShotArea, to: ShotTarget }, deps: PageToolDeps): Promise<void> {
   let shot: Awaited<ReturnType<typeof captureVisible>>
   try {
-    shot = choice.area === 'full' ? await captureFullPage(wc) : await captureVisible(wc, deps.wait)
+    shot = choice.area === 'full' ? await captureFullPage(wc, deps.displayScale(window.window)) : await captureVisible(wc, deps.wait)
   } catch (error) {
     console.error('[page-tools] the screenshot failed', error)
     showToast(window, 'shotFailed')
@@ -33,16 +33,17 @@ export async function takeScreenshot (window: ShellWindow, wc: CaptureContents, 
     }
     return
   }
-  const path = await deps.pickSave(window.window, {
+  const chosen = await deps.pickSave(window.window, {
     title: 'Save screenshot',
     defaultPath: join(deps.downloadsDir(), screenshotName(deps.now())),
     filters: [{ name: 'PNG image', extensions: ['png'] }]
   })
-  if (path === undefined) return
+  if (chosen === undefined) return
+  const path = withExtension(chosen, 'png')
   try {
     await deps.writeFile(path, shot.png)
     if (shot.truncated) showToast(window, 'longPage')
-    else showToast(window, 'saved', baseName(path))
+    else showToast(window, 'saved', baseName(path), path)
   } catch (error) {
     console.error('[page-tools] writing the screenshot failed', error)
     showToast(window, 'shotFailed')

@@ -36,6 +36,13 @@ function anchorlessRect (placement: OverlayPlacement, frame: OverlayFrame): Over
   return { x: frame.width - EDGE, y: frame.area.y - GAP, width: 0, height: 0 }
 }
 
+/** A rectangle of finite numbers: what a chrome-side anchor must be before it is used to place a view. */
+export function isAnchor (value: unknown): value is OverlayAnchor {
+  if (typeof value !== 'object' || value === null) return false
+  const rect = value as Record<string, unknown>
+  return [rect['x'], rect['y'], rect['width'], rect['height']].every((n) => typeof n === 'number' && Number.isFinite(n))
+}
+
 export function overlayBounds (
   placement: OverlayPlacement,
   anchor: OverlayAnchor | undefined,

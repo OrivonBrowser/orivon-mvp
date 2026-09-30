@@ -22,13 +22,17 @@
      background it needs to be lighter in the dark theme to clear 4.5:1 -- a
      fill's contrast is against the white it carries, not against the page,
      so it does not need the same swap. */
-  --waccent-text: var(--waccent);
+  --waccent-text: #4338ca;
   --waccent-ink: #ffffff;
   --waccent-wash: color-mix(in srgb, var(--waccent-text) 14%, transparent);
   --wdanger: #dc2626;
+  /* Red AS TEXT: lighter in the dark theme, where #dc2626 on the panel is under 4.5:1. */
+  --wdanger-text: var(--wdanger);
   --wdanger-wash: color-mix(in srgb, var(--wdanger) 10%, transparent);
   --wok: #00a848;
   --wwarn: #f97316;
+  /* The warning as a mark that must be seen: the plain orange is 2.2:1 on a light panel. */
+  --wwarn-mark: #c2410c;
   --wok-wash: color-mix(in srgb, var(--wok) 14%, transparent);
   --wwarn-wash: color-mix(in srgb, var(--wwarn) 14%, transparent);
   /* A toast is a dark chip in both themes, like the fullscreen notice. */
@@ -53,6 +57,8 @@
     --wink-off: #6b7280;
     --whover: rgba(255, 255, 255, 0.07);
     --waccent-text: #8b93f8;
+    --wdanger-text: #f87171;
+    --wwarn-mark: #f97316;
     --wok: #00c950;
     --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a4a5af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }

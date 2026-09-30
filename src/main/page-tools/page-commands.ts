@@ -42,7 +42,7 @@ export async function saveCommand (target: ShellWindow, deps: PageToolDeps): Pro
 export async function viewSourceCommand (target: ShellWindow): Promise<void> {
   await guarded('view source', () => {
     const page = activePage(target)
-    if (page !== undefined) openViewSource(target.tabs, page.url)
+    if (page !== undefined && !openViewSource(target.tabs, page.url)) showToast(target, 'noSource')
   })
 }
 

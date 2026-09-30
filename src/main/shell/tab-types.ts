@@ -83,6 +83,8 @@ export interface ShellState extends TabsSnapshot {
   homeButton: boolean
   /** Whether the address bar shows the literal address when it is not being edited (`addressBar.showFullUrl`). */
   showFullUrl: boolean
+  /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
+  shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
 }
 
 export interface Bounds {

@@ -167,6 +167,38 @@ it('closes the others, or those to the right, but never a pinned tab, and copies
   }
 }, TEST_TIMEOUT_MS)
 
+it('gives the tabs the room there is, then scrolls only their run, keeping the buttons and the tab in front in view', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await openTabs(chrome, '/one', '/two')
+    const widths = await chrome.evaluate(() => [...document.querySelectorAll<HTMLElement>('.tab')].map((el) => el.getBoundingClientRect().width))
+    // With room to spare a tab is as wide as a tab gets, not at its minimum.
+    expect(widths.every((width) => width >= 150)).toBe(true)
+
+    for (let n = 0; n < 40; n += 1) {
+      await chrome.evaluate((url) => { (window as unknown as { orivonShell: { newTab: (u: string) => void } }).orivonShell.newTab(url) }, `${origin}/many${String(n)}`)
+    }
+    expect(await waitFor(async () => (await order(chrome)).length >= 43)).toBe(true)
+    const layout = await waitFor(async () => await chrome.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('#tab-scroll')
+      const row = document.querySelector<HTMLElement>('#tabrow')
+      const active = document.querySelector<HTMLElement>('.tab.active')
+      if (scroller === null || row === null || active === null) return false
+      const bounds = scroller.getBoundingClientRect()
+      const at = active.getBoundingClientRect()
+      const button = document.querySelector('#new-tab')?.getBoundingClientRect()
+      const search = document.querySelector('#tab-search')?.getBoundingClientRect()
+      return scroller.scrollWidth > scroller.clientWidth && row.scrollLeft === 0 &&
+        at.left >= bounds.left - 1 && at.right <= bounds.right + 1 &&
+        button !== undefined && button.left >= bounds.right - 1 && search !== undefined && search.right <= row.getBoundingClientRect().right
+    }))
+    expect(layout, 'the tab in front is in view, and the buttons sit after the scrolling run').toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('gives the copy of a tab the pages behind it', async () => {
   const { app, chrome } = await launched()
   try {
@@ -177,12 +209,16 @@ it('gives the copy of a tab the pages behind it', async () => {
     expect(await waitFor(async () => (await order(chrome)).length === 3)).toBe(true)
     const copy = (await order(chrome))[2] as string
     await waitForTab(chrome, { address: pageOf('/two') })
-    const canGoBack = await waitFor(async () => await app.evaluate(({ webContents }, url) => {
+    // The original and the copy hold the same three entries (the new-tab page, /one, /two) and stand on the last: a copy made
+    // while its own load was still running would hold a fourth, duplicate /two, and its first Back would stay on /two.
+    const same = await waitFor(async () => await app.evaluate(({ webContents }, url) => {
       const wcs = webContents.getAllWebContents().filter((w) => w.getURL() === url && !w.isLoading())
-      // The original has a page behind it too: both must.
-      return wcs.filter((w) => w.navigationHistory.canGoBack()).length === 2
+      return wcs.length === 2 && wcs.every((w) => {
+        const entries = w.navigationHistory.getAllEntries().map((entry) => entry.url)
+        return entries.length === 3 && w.navigationHistory.getActiveIndex() === 2 && entries[1]?.endsWith('/one') === true && entries[2] === url
+      })
     }, pageOf('/two')))
-    expect(canGoBack, `copy ${copy} has no history`).toBe(true)
+    expect(same, `copy ${copy} does not hold the original's pages`).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

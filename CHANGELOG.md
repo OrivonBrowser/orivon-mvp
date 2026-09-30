@@ -13,6 +13,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Tabs can be pinned, muted and duplicated**, and show when a page is playing sound; Close other tabs and Close tabs
+  to the right keep pinned ones. A long strip scrolls and keeps the tab in front in view.
+- **A closed tab or window comes back with Ctrl+Shift+T**, in its place and with its history; the main menu names what
+  would return.
+- **Orivon can start where it left off, or on pages you list** (Settings, On start-up); after a crash a bar offers the
+  last session back. The first window opens where the last one was.
+- **A Home button and a home page**, addresses on the command line opening as tabs, Keep window on top, and
+  `--orivon-kiosk` for one full-screen page that can only be left by quitting.
+- **Find in page** (Ctrl+F) with a live count and match case; the reload button is Stop while a page loads, and so is
+  Escape.
+- **Right-click menus for links, images, video, selected text, text fields and pages**, with spelling suggestions and
+  Paste and Go in the address bar.
+- **Print, Save as PDF, Save page as, View page source, screenshots (visible area or the whole page) and Picture in
+  picture**, each reporting in a toast; a PDF opens in a tab.
+- **Tab search** (Ctrl+Shift+A) lists every open tab of every window and the recently closed ones, filtered as you type.
+- **A tab whose page crashed or stopped answering shows a card with Reload**, and a warning mark on the strip.
+- **A forked child behaves as a Node child does**: it ends when nothing listens on its IPC channel, `setTimeout` and friends
+  return Node's objects (`unref`, `refresh`), `process.versions.node` is set, a taken port is `EADDRINUSE`, a bundled
+  `require('assert')` is the function, and `fs.Stats` reports the modes of an app-private store. The Lounge's server runs on it.
+- **A Node web server's stack runs on the shim**: real `express` and `socket.io` on `http.createServer`, `fs.watch`, a run-time
+  CommonJS `require` (also a forked child's global one), the full `fs.Stats`, `chmod`, and `tty`, `readline`, `http2`,
+  `diagnostics_channel`, `async_hooks`, `perf_hooks`, `console` (with its `Console` class) and `process` modules; a fork's `console`
+  is a `Console` over its `process.stdout` and `process.stderr`, and `require('process')` is the global itself.
+- **An esbuild plugin for ports** (`src/shim/bundler/`): maps every Node builtin to the shim under `platform: 'node'`, fails the
+  build on a builtin it lacks, serves `node:sqlite` with its browser engine, and loads from another repository.
+- **`node:sqlite` in the Node shim**: `DatabaseSync` and `StatementSync` over the SQLite WebAssembly build, with a database file in
+  the app's files (a rollback journal, page-level writes) in a forked child or thread of a cross-origin isolated app, and
+  `:memory:` everywhere. A commit reaches the file at the end of its transaction, `synchronous=off` included. Function, aggregate,
+  session, extension and backup members refuse by name.
 - **The compatibility matrix lists everything a ported app can need**, not only what ports have hit: every
   Node builtin, every `electron` export, every `orivon.*` member, permission string and protocol stack has a
   row, checked against the code, one sub-table per file under `docs/planning/compatibility/`.
@@ -148,6 +177,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Page zoom scales the page in every tab**: a tab's zoom now resizes what is drawn, where before only the percentage
+  changed.
+- **Shrinking a window with the main menu open no longer ends the browser.**
 - **A tab title no longer loses the bottom row of its descenders** (g, p, y): its line box was shorter than the text.
 - **A burst of short-lived sockets no longer brings the browser down.** The broker's socket streams no longer go
   through Node's `Duplex.toWeb`, whose teardown could throw where nothing could catch it.
@@ -206,6 +238,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Security
 
+- **Every panel, bar and sheet Orivon draws over a page shares one sandboxed bridge**, and each can reach only its own
+  handler, checked by frame and exact address on every call (ADR-0048).
 - **A site's permissions work only from a page that committed in that site's own session**: a page
   a link or redirect reached before its tab moved, a page an app shows or a web context is `denied`.
   A grant or revoke never strands an open page; a site's handles close when its last tab goes.

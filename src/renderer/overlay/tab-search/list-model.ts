@@ -35,14 +35,18 @@ export function titleOf (row: SearchRow): string {
 export function groupsFor (rows: readonly SearchRow[], query: string, hidden: ReadonlySet<string> = new Set()): Group[] {
   const open: Item[] = []
   const closed: Item[] = []
-  const ranked: Array<{ item: Item, score: number }> = []
+  const ranked: Array<{ item: Item, score: number, loose: boolean }> = []
   for (const row of rows) {
     const key = keyOf(row)
     if (hidden.has(key)) continue
     const title = titleOf(row)
     const match = matchRow(query, title, row.host)
     if (match === null) continue
-    ranked.push({ item: { key, row, title, titleRanges: match.titleRanges, hostRanges: match.hostRanges }, score: match.score })
+    ranked.push({ item: { key, row, title, titleRanges: match.titleRanges, hostRanges: match.hostRanges }, score: match.score, loose: match.loose })
+  }
+  // Letters merely in order are only worth showing when nothing matches better: beside a real hit they are noise.
+  if (ranked.some((entry) => !entry.loose)) {
+    for (let at = ranked.length - 1; at >= 0; at -= 1) if (ranked[at]?.loose === true) ranked.splice(at, 1)
   }
   if (query.trim() !== '') ranked.sort((a, b) => b.score - a.score)
   for (const { item } of ranked) (item.row.kind === 'tab' ? open : closed).push(item)
@@ -76,9 +80,13 @@ export function reconcile (before: readonly string[], selected: string | null, a
   return after[Math.min(at, after.length - 1)] ?? null
 }
 
-/** "14 tabs", or "14 tabs in 2 windows". */
-export function countLine (rows: readonly SearchRow[]): string {
+/**
+ * "14 tabs", or "14 tabs in 2 windows". With a query, `matched` is how many open tabs the list still shows:
+ * "3 of 14 tabs", or "No matches", so the line never contradicts the list beside it.
+ */
+export function countLine (rows: readonly SearchRow[], matched?: number): string {
   const tabs = rows.filter((row) => row.kind === 'tab')
+  if (matched !== undefined) return matched === 0 ? 'No matches' : `${String(matched)} of ${String(tabs.length)} ${tabs.length === 1 ? 'tab' : 'tabs'}`
   const windows = new Set(tabs.map((row) => row.kind === 'tab' ? row.windowKey : 0)).size
   const text = `${String(tabs.length)} ${tabs.length === 1 ? 'tab' : 'tabs'}`
   return windows > 1 ? `${text} in ${String(windows)} windows` : text

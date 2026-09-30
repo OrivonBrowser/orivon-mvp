@@ -201,6 +201,25 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
     expect(run).toHaveBeenCalledWith('page.print')
   })
 
+  it('offers a kiosk no way to open another tab, window or private session, and keeps the copy items', () => {
+    buildFromTemplate.mockClear()
+    const open = vi.fn()
+    showContextMenu(tabContents() as never, params({ linkURL: 'https://example.com/', mediaType: 'image', srcURL: 'https://example.com/i.png', selectionText: 'words', editFlags: { ...NO_EDIT, canCopy: true } }), {
+      window: {} as never, kiosk: true, openInNewTab: open, openInWindow: open, openInPrivate: open, openInSplit: open, openInFront: open,
+      page: { bare: () => false }, services: { settings: settings({ 'search.engine': 'brave', 'search.customUrl': '', 'spellcheck.enabled': true }) } as never
+    })
+    const all = labels(lastTemplate())
+    expect(all.filter((label) => /Open |Search/.test(label))).toEqual([])
+    expect(all).toContain('Copy Link Address')
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('leaves View Page Source out for a tab whose source cannot be shown', () => {
+    buildFromTemplate.mockClear()
+    showContextMenu(tabContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false, viewSource: () => false }, runCommand: vi.fn() })
+    expect(labels(lastTemplate())).toEqual(['Back', 'Forward', 'Reload', 'Save Page As…', 'Print…', 'Take a Screenshot'])
+  })
+
   it('trims the page group to navigation on a bare page', () => {
     buildFromTemplate.mockClear()
     showContextMenu(tabContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => true } })

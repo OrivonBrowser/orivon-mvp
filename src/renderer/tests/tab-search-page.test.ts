@@ -29,6 +29,12 @@ describe('groupsFor', () => {
     expect(group?.items[0]).toMatchObject({ key: 'tab:b', titleRanges: [[0, 3]] })
   })
 
+  it('drops rows that match only as letters in order when any row matches better', () => {
+    const list: SearchRow[] = [tab('a', 'Gamma'), tab('b', 'Gma notes')]
+    expect(flatten(groupsFor(list, 'gma')).map((item) => item.key)).toEqual(['tab:b'])
+    expect(flatten(groupsFor([tab('a', 'Gamma'), tab('c', 'Go mega')], 'gma')).map((item) => item.key)).toEqual(['tab:a', 'tab:c'])
+  })
+
   it('leaves out rows the person has just closed', () => {
     expect(flatten(groupsFor(rows, '', new Set(['tab:b']))).map((item) => item.key)).toEqual(['tab:a', 'tab:g', 'closed:1'])
   })
@@ -90,6 +96,13 @@ describe('countLine', () => {
     expect(countLine([tab('a', 'A'), tab('b', 'B')])).toBe('2 tabs')
     expect(countLine([tab('a', 'A'), tab('b', 'B', { windowKey: 2 })])).toBe('2 tabs in 2 windows')
     expect(countLine([])).toBe('0 tabs')
+  })
+
+  it('says how many of the open tabs a query leaves, or that none match', () => {
+    const four = [tab('a', 'A'), tab('b', 'B'), tab('c', 'C'), tab('d', 'D'), closed(1, 'E')]
+    expect(countLine(four, 2)).toBe('2 of 4 tabs')
+    expect(countLine([tab('a', 'A')], 1)).toBe('1 of 1 tab')
+    expect(countLine(four, 0)).toBe('No matches')
   })
 })
 

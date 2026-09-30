@@ -79,13 +79,8 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
   }
 
   function pushState (): void {
-    // A16 makes this reachable routinely now, not just via an OS-level
-    // window close: closing the last tab calls win.close(), which
-    // destroys `chrome` -- and bookmarks.onChange()/the pending
-    // bookmarks.load().then(pushState) below have no other guard against
-    // firing afterward. Sending on a destroyed WebContents throws, with
-    // no top-level handler anywhere in this app (same class of gap
-    // tabs.ts's own 'destroyed' handling exists for).
+    // Closing the last tab destroys `chrome`, and a late bookmarks or zoom
+    // callback must not send to it: sending on a destroyed WebContents throws.
     if (chrome.webContents.isDestroyed()) return
     const state = tabs.getState()
 

@@ -142,6 +142,20 @@ it('shows the profiles in Settings, and leads to the page that manages them', as
   }
 }, TEST_TIMEOUT_MS)
 
+interface PrivatePeer { pids: number[], dir: string, command: string }
+
+/** The private process started for the browser that owns `userData`, with the directory its own command line names. */
+function privatePeer (userData: string): PrivatePeer | undefined {
+  const pids = processesWith('--orivon-private', `--user-data-dir=${userData}`)
+  for (const pid of pids) {
+    let args: string[]
+    try { args = readFileSync(join('/proc', String(pid), 'cmdline'), 'utf8').split('\0') } catch { continue }
+    const dir = args.find((argument) => argument.startsWith('--orivon-private-dir='))?.replace('--orivon-private-dir=', '')
+    if (dir !== undefined && dir !== '') return { pids, dir, command: args.join(' ') }
+  }
+  return undefined
+}
+
 /** Every process whose command line has all of `parts`, by scanning /proc: a detached peer is nobody's child to find. */
 function processesWith (...parts: string[]): number[] {
   const found: number[] = []
@@ -166,13 +180,14 @@ it.skipIf(process.platform !== 'linux')('starts a private window as a process of
     const userData = await userDataOf(app)
     await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('window.newPrivate') })
 
-    let peer: number[] = []
-    expect(await waitFor(() => { peer = processesWith('--orivon-private', `--user-data-dir=${userData}`); return peer.length > 0 })).toBe(true)
-    peerPids.push(...peer)
-    const dirArgument = readFileSync(join('/proc', String(peer[0]), 'cmdline'), 'utf8').split('\0').find((argument) => argument.startsWith('--orivon-private-dir=')) ?? ''
-    const dir = dirArgument.replace('--orivon-private-dir=', '')
+    // The directory is read in the same poll that finds the process: a process that is still starting
+    // or already gone reads as an empty command line, and that must read as "not yet", never as a directory.
+    let peer: PrivatePeer | undefined
+    expect(await waitFor(() => { peer = privatePeer(userData); return peer !== undefined })).toBe(true)
+    const { pids, dir, command } = peer as PrivatePeer
+    peerPids.push(...pids)
     leftBehind.push(dir)
-    expect(dir.startsWith(join(tmpdir(), 'orivon-private-'))).toBe(true)
+    expect(dir.startsWith(join(tmpdir(), 'orivon-private-')), `the private process's command line was: ${command}`).toBe(true)
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toMatchObject({ values: { 'appearance.theme': 'dark' } })
     expect(existsSync(join(dir, 'bookmarks.json'))).toBe(false)
     // It is alive: it marks its directory with its own process id once it has started.

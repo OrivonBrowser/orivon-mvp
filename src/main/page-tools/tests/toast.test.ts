@@ -35,6 +35,12 @@ describe('showToast', () => {
     expect(show).toHaveBeenCalledWith('toast', undefined, { code: 'saved', name: 'a.png' })
   })
 
+  it('carries the path a saved file can be shown at', () => {
+    const { window, show } = fakeWindow()
+    showToast(window, 'saved', 'a.png', '/out/a.png')
+    expect(show).toHaveBeenCalledWith('toast', undefined, { code: 'saved', name: 'a.png', revealPath: '/out/a.png' })
+  })
+
   it('never throws, whatever the overlay does', () => {
     const { window } = fakeWindow()
     window.overlays.show = vi.fn(() => { throw new Error('gone') })

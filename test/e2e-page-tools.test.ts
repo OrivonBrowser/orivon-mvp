@@ -316,7 +316,7 @@ it('with a printer, print is called with backgrounds on and the system dialog', 
   }
 }, TEST_TIMEOUT_MS)
 
-it('the toast never takes focus and is gone after three seconds', async () => {
+it('the toast never takes focus, and a saved one that offers to show the file stays eight seconds', async () => {
   const { app } = await launched(`${origin}/`)
   try {
     await stubSaveDialog(app, join(outDir, 'toast.html'))
@@ -324,9 +324,13 @@ it('the toast never takes focus and is gone after three seconds', async () => {
     expect(await waitForToast(app, 'Saved')).toBe(true)
     const role = await (toastPage(app) as Page).locator('.toast').getAttribute('role')
     expect(role).toBe('status')
+    // The link that shows the saved file in its folder (never pressed here: it would open a file manager) and a way to dismiss.
+    expect(await (toastPage(app) as Page).locator('.toast .link-btn').textContent()).toBe('Show in folder')
+    expect(await (toastPage(app) as Page).locator('.toast .toast-dismiss').getAttribute('aria-label')).toBe('Dismiss')
     const shownAt = Date.now()
-    expect(await waitFor(async () => !(await popoverShown(app, 'overlay=toast')), 6000)).toBe(true)
-    expect(Date.now() - shownAt).toBeGreaterThan(2000)
+    expect(await waitFor(async () => !(await popoverShown(app, 'overlay=toast')), 12_000)).toBe(true)
+    // Longer than a toast with nothing to do, which goes after three seconds.
+    expect(Date.now() - shownAt).toBeGreaterThan(6000)
   } finally {
     await closeElectron(app)
   }

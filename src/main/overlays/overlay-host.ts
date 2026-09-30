@@ -2,13 +2,13 @@
 // sits, when it closes and where focus goes after. It knows no feature; a
 // feature is an OverlayDef (./overlay-types.ts). Views are built lazily, so a
 // window carries no overlay renderer until something first shows or warms one.
-import type { BaseWindow, View, WebContents } from 'electron'
+import type { BaseWindow, View, WebContents, WebContentsView } from 'electron'
 import { OVERLAY_EVENT_CHANNEL } from '../channels.js'
 import type { Bounds } from '../shell/tab-types.js'
 import { onThemeUpdated } from '../shell/theme-colors.js'
 import { recordPopoverShown } from '../shell/view-background-test-hook.js'
 import type { WindowContext } from '../shell/window-context.js'
-import { overlayBounds } from './overlay-bounds.js'
+import { isAnchor, overlayBounds } from './overlay-bounds.js'
 import { createOverlayView, focusedContents } from './overlay-view.js'
 import type { FocusTarget, OverlayViewHandle } from './overlay-view.js'
 import type { OverlayAnchor, OverlayCloseReason, OverlayDef, OverlayHandler, OverlayHost, OverlayReady } from './overlay-types.js'
@@ -31,8 +31,6 @@ export interface OverlayHostDeps {
   /** The tab area, as the window lays it out now. */
   area: () => Bounds
   activeContents: () => WebContents | undefined
-  /** Called with each overlay view's webContents as it is built, so the window can wire what every view of it shares (the browser's shortcuts). */
-  viewCreated?: (contents: WebContents) => void
 }
 
 export type OverlayHostHandle = OverlayHost & {
@@ -52,6 +50,8 @@ interface Slot {
   handler: OverlayHandler | null
   view: OverlayViewHandle | null
   pageReady: boolean
+  /** The page has asked for its first show and has not been answered: events wait for that answer, which carries them. */
+  awaitingReply: boolean
   /** The show result the page has not fetched yet. */
   pending: Promise<OverlayReady> | null
   queued: unknown[]
@@ -76,7 +76,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
   for (const def of deps.defs) {
     if (slots.has(def.name)) throw new Error(`overlay "${def.name}" is declared twice`)
     slots.set(def.name, {
-      def, handler: null, view: null, pageReady: false, pending: null, queued: [], open: false,
+      def, handler: null, view: null, pageReady: false, awaitingReply: false, pending: null, queued: [], open: false,
       anchor: undefined, height: def.height?.initial ?? DEFAULT_HEIGHT.initial, returnTo: undefined, lastBlurCloseAt: 0
     })
   }
@@ -102,12 +102,27 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     return slot.handler
   }
 
-  /** Where focus goes back to: what held it before this overlay took it, else the active tab. */
+  /** What this window may hand focus back to: its own chrome, or the tab in front now. A view of another window, or a tab since switched away from, is not. */
+  function ownTarget (target: FocusTarget | undefined): FocusTarget | undefined {
+    if (target === undefined || target.isDestroyed()) return undefined
+    const chrome = deps.context().window.chrome as Partial<WebContentsView> | undefined
+    if (chrome?.webContents?.id === target.id) return target
+    return deps.activeContents()?.id === target.id ? target : undefined
+  }
+
+  /** True when the person is in another window of this app: an overlay shown here must not pull focus there. */
+  function inBackground (): boolean {
+    if (deps.win.isFocused()) return false
+    return deps.context().services.windows.all().some((other) => other.window !== deps.win && !other.window.isDestroyed() && other.window.isFocused())
+  }
+
+  /** Where focus goes back to: what held it before this overlay took it, if this window still owns it, else the active tab. */
   function restoreFocus (slot: Slot, reason: OverlayCloseReason): void {
     // A click into the page is the person's own choice of where focus goes; a closed window has nowhere to put it.
     if (reason === 'blur' || reason === 'window-closed' || reason === 'replaced') return
-    const before = reason === 'tab-switch' ? undefined : slot.returnTo
-    const target = before !== undefined && !before.isDestroyed() ? before : deps.activeContents()
+    // An overlay that outlives tab switches (the restore bar) would otherwise return to the tab it was shown over.
+    const before = reason === 'tab-switch' ? undefined : ownTarget(slot.returnTo)
+    const target = before ?? deps.activeContents()
     if (target !== undefined && !target.isDestroyed()) target.focus()
   }
 
@@ -117,18 +132,22 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     mine = createOverlayView({
       dirname: deps.dirname,
       def: slot.def,
-      onCreated: deps.viewCreated,
       port: {
         ready: () => {
           if (!current()) return { shown: false }
           slot.pageReady = true
-          const reply = slot.pending ?? Promise.resolve<OverlayReady>({ shown: false })
+          slot.awaitingReply = true
+          const waiting = slot.pending ?? Promise.resolve<OverlayReady>({ shown: false })
           slot.pending = null
-          void reply.then(() => {
-            const held = slot.queued.splice(0)
-            for (const event of held) slot.view?.send(OVERLAY_EVENT_CHANNEL, { type: 'event', event })
+          // The events go in the reply itself: sent beside it they could reach the page first, and a page that
+          // resets on its first show would throw them away.
+          return waiting.then((reply): OverlayReady => {
+            if (!current()) return { shown: false }
+            slot.awaitingReply = false
+            if (!slot.open) return { shown: false }
+            const events = slot.queued.splice(0)
+            return events.length === 0 ? reply : { ...reply, events }
           })
-          return reply
         },
         request: (command) => current() ? slot.handler?.request(command) : undefined,
         size: (height) => {
@@ -145,6 +164,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     })
     slot.view = mine
     slot.pageReady = false
+    slot.awaitingReply = false
     slot.height = slot.def.height?.initial ?? DEFAULT_HEIGHT.initial
     return mine
   }
@@ -158,6 +178,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.view?.destroy()
     slot.view = null
     slot.pageReady = false
+    slot.awaitingReply = false
     slot.pending = null
     slot.queued = []
   }
@@ -167,6 +188,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.open = false
     openOrder = openOrder.filter((other) => other !== slot)
     slot.pending = null
+    slot.queued = []
+    slot.awaitingReply = false
     const view = slot.view
     if (view !== null && !view.isDestroyed()) {
       if (!disposed) view.detach(deps.contentView)
@@ -178,7 +201,6 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       view?.destroy()
       slot.view = null
       slot.pageReady = false
-      slot.queued = []
     }
     if (slot.def.focus === 'take') restoreFocus(slot, reason)
     slot.returnTo = undefined
@@ -211,14 +233,17 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     const before = holder === undefined ? focused : holder.returnTo
     if (slot.def.layer === 'popup') closePopups(slot, 'replaced')
     const wasOpen = slot.open
-    if (!wasOpen) slot.returnTo = before
+    if (!wasOpen) slot.returnTo = ownTarget(before)
     const handler = handlerFor(slot)
     const view = ensureView(slot)
-    slot.anchor = anchor ?? slot.anchor
+    // An anchor that is not a rectangle of numbers is not a place: keep the last good one.
+    slot.anchor = isAnchor(anchor) ? anchor : slot.anchor
     slot.open = true
     if (!wasOpen) openOrder.push(slot)
     view.setBounds(boundsFor(slot))
     const result = showResult(handler, payload)
+    // The handler runs at once, and may close this overlay or open another popup over it: nothing is left to attach then.
+    if (!slot.open || slot.view !== view) return
     if (slot.pageReady) {
       void result.then((reply) => {
         if (slot.open && slot.view === view && reply.shown) view.send(OVERLAY_EVENT_CHANNEL, { type: 'show', payload: reply.payload })
@@ -229,13 +254,13 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     view.attach(deps.contentView)
     restack()
     recordPopoverShown(view.id, true)
-    if (slot.def.focus === 'take') view.focusWhenReady(() => slot.open && slot.view === view)
+    if (slot.def.focus === 'take' && !inBackground()) view.focusWhenReady(() => slot.open && slot.view === view)
   }
 
   function send (name: string, event: unknown): void {
     const slot = slots.get(name)
     if (slot === undefined || !slot.open || slot.view === null) return
-    if (slot.pageReady) slot.view.send(OVERLAY_EVENT_CHANNEL, { type: 'event', event })
+    if (slot.pageReady && !slot.awaitingReply) slot.view.send(OVERLAY_EVENT_CHANNEL, { type: 'event', event })
     else if (slot.queued.length < QUEUE_LIMIT) slot.queued.push(event)
   }
 
@@ -284,6 +309,9 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       unregisterTheme()
       for (const slot of openSlots()) closeSlot(slot, 'window-closed')
       for (const panel of adopted) panel.close()
+      for (const slot of slots.values()) {
+        try { slot.handler?.disposed?.() } catch (error) { console.error('[overlay] disposed hook failed', error) }
+      }
       for (const slot of slots.values()) { slot.view?.destroy(); slot.view = null }
     }
   }

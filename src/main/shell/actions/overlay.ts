@@ -9,7 +9,7 @@ export interface OverlayControls {
 
 interface OverlayRect { x: number, y: number, width: number, height: number }
 
-function isRect (value: unknown): value is OverlayRect {
+export function isRect (value: unknown): value is OverlayRect {
   if (typeof value !== 'object' || value === null) return false
   const rect = value as Record<string, unknown>
   return [rect['x'], rect['y'], rect['width'], rect['height']].every((n) => typeof n === 'number' && Number.isFinite(n))

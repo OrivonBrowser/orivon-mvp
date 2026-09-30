@@ -7,7 +7,7 @@ import * as nodeUrl from 'node:url'
 import { describe, expect, it } from 'vitest'
 import querystring from '../querystring.js'
 import { StringDecoder } from '../string-decoder.js'
-import url, { fileURLToPath, format, parse, pathToFileURL, resolve, URL as ShimURL, URLSearchParams as ShimURLSearchParams } from '../url.js'
+import url, { fileURLToPath, format, parse, pathToFileURL, resolve, Url, URL as ShimURL, URLSearchParams as ShimURLSearchParams } from '../url.js'
 
 describe('url', () => {
   it('URL and URLSearchParams are the platform\'s', () => {
@@ -36,6 +36,30 @@ describe('url', () => {
     for (const key of ['protocol', 'slashes', 'auth', 'host', 'port', 'hostname', 'hash', 'search', 'query', 'pathname', 'path', 'href'] as const) {
       expect(ours[key], key).toEqual(node[key])
     }
+  })
+
+  const NodeUrlClass = (nodeUrl as unknown as { Url: new () => object }).Url
+
+  it('legacy Url: parse returns one, and a bare `new Url()` has Node\'s twelve null-or-empty own fields', () => {
+    expect(parse('/x?y=1')).toBeInstanceOf(Url)
+    expect(url.Url).toBe(Url)
+    expect(Object.keys(new Url())).toEqual(Object.keys(new NodeUrlClass()))
+    expect(Object.getOwnPropertyNames(Url.prototype)).toEqual(Object.getOwnPropertyNames(NodeUrlClass.prototype))
+    expect(new Url().parse('http://a.test/p?q=1').pathname).toBe('/p')
+    const withHost = Object.assign(new Url(), { host: 'a.test:81' })
+    withHost.parseHost()
+    expect([withHost.host, withHost.port, withHost.hostname]).toEqual(['a.test:81', '81', 'a.test'])
+  })
+
+  it('parseurl\'s own construction shape works: a Url given only path, href, pathname, query and search', () => {
+    const parsed = new Url()
+    parsed.path = '/a?b=1'
+    parsed.href = '/a?b=1'
+    parsed.pathname = '/a'
+    parsed.query = 'b=1'
+    parsed.search = '?b=1'
+    expect(parsed.protocol).toBeNull()
+    expect(format(parsed)).toBe('/a?b=1')
   })
 
   it('legacy parse with parseQueryString gives an object query', () => {
@@ -98,5 +122,15 @@ describe('string_decoder', () => {
     const ours = new StringDecoder('utf8')
     const node = new NodeStringDecoder('utf8')
     expect(ours.write(new Uint8Array([0xe2, 0x82])) + ours.end()).toBe(node.write(Buffer.from([0xe2, 0x82])) + node.end())
+  })
+
+  it('can be inherited from the legacy way, `StringDecoder.call(this, encoding)`, as iconv-lite does', () => {
+    function Decoder (this: object, encoding: string): void { (StringDecoder as unknown as (this: object, encoding: string) => void).call(this, encoding) }
+    Object.setPrototypeOf(Decoder.prototype, StringDecoder.prototype)
+    const derived = new (Decoder as unknown as new (encoding: string) => InstanceType<typeof StringDecoder>)('utf8')
+    expect(derived).toBeInstanceOf(StringDecoder)
+    expect(derived.encoding).toBe('utf8')
+    expect(derived.write(new Uint8Array([0xe2, 0x82])) + derived.write(new Uint8Array([0xac]))).toBe('\u20ac')
+    expect(() => StringDecoder.prototype.write.call({}, 'x')).toThrowError(expect.objectContaining({ code: 'ERR_INVALID_THIS' }) as Error)
   })
 })

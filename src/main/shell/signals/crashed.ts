@@ -4,12 +4,23 @@
 import type { WebContentsView } from 'electron'
 import { markResponsive, markUnresponsive, troubleOf } from '../../sad-tab/sad-tab-state.js'
 import { syncSadTab, watchActivations } from '../../sad-tab/sad-tab-controller.js'
-import { DEFAULT_BACKGROUND, INTERNAL_PAGE_BACKGROUND, resolveThemeColor } from '../theme-colors.js'
+import { DEFAULT_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from '../theme-colors.js'
 import type { TabSignal } from '../tab-signals.js'
 import type { TabRecord } from '../tab-types.js'
 
-/** Views painted dark because their page died, so the colour is put back only for those. */
-const dimmed = new WeakSet<WebContentsView>()
+/** Views painted for the theme because their page died, so the colour is put back only for those, and a theme
+ * change repaints them. A view leaves the set when its tab recovers or is destroyed. */
+const dimmed = new Set<WebContentsView>()
+let followingTheme = false
+
+/** One listener for the process, installed with the first dead tab: a light card must not sit on a dark field. */
+function followTheme (): void {
+  if (followingTheme) return
+  followingTheme = true
+  onThemeUpdated(() => {
+    for (const view of dimmed) view.setBackgroundColor(resolveThemeColor(INTERNAL_PAGE_BACKGROUND))
+  })
+}
 
 /** A dead view paints nothing of its own, so it would show Electron's white behind the card in a dark theme. The
  * dashboard and the shell's own pages already carry their own colour; only an ordinary page is on the default. */
@@ -17,6 +28,7 @@ function dim (view: WebContentsView, record: TabRecord): void {
   if (record.isDashboardTab || record.internalPage !== null) return
   view.setBackgroundColor(resolveThemeColor(INTERNAL_PAGE_BACKGROUND))
   dimmed.add(view)
+  followTheme()
 }
 
 function undim (view: WebContentsView): void {
@@ -42,6 +54,7 @@ export const crashedSignal: TabSignal = {
       sync()
     }
 
+    wc.once('destroyed', () => { dimmed.delete(view) })
     wc.on('render-process-gone', (_event, details) => {
       if (wc.isDestroyed() || !shown() || details.reason === 'clean-exit') return
       record.crashed = details.reason

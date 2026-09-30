@@ -24,13 +24,26 @@ function renderFavicon (tab: TabState): HTMLSpanElement {
  * dragged from another window is over this strip. */
 export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModule {
   let tabrow: HTMLDivElement | undefined
+  let tabScroll: HTMLDivElement | undefined
   let newTabBtn: HTMLButtonElement | undefined
   let dropMark: HTMLDivElement | null = null
   let renderDeferred = false
+  let shownActiveId: string | null = null
+
+  /** Which ends of the scrolling run have more tabs past them, for the edge fade: the scrollbar is hidden, so this
+   * is the only sign that tabs lie out of view. */
+  function markOverflow (): void {
+    const scroller = tabScroll
+    if (scroller === undefined) return
+    const before = scroller.scrollLeft > 1
+    const after = scroller.scrollLeft < scroller.scrollWidth - scroller.clientWidth - 1
+    scroller.dataset['fade'] = before && after ? 'both' : before ? 'start' : after ? 'end' : 'none'
+  }
 
   function renderTabs (state: ShellState, ctx: ChromeContext): void {
-    if (tabrow === undefined || newTabBtn === undefined) return
+    if (tabrow === undefined || tabScroll === undefined || newTabBtn === undefined) return
     const row = tabrow
+    const scroller = tabScroll
     const { shell } = ctx
     // A tab held by the pointer is not rebuilt under it; the strip is redrawn when it is let go.
     if (isDraggingTab()) {
@@ -60,7 +73,7 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
 
       const title = document.createElement('span')
       title.className = 'title'
-      title.textContent = tab.title.length > 0 ? tab.title : 'New Tab'
+      title.textContent = tab.title.length > 0 ? tab.title : 'New tab'
 
       const close = document.createElement('button')
       close.className = 'close no-drag'
@@ -104,9 +117,18 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
         }
       })
       runDecorators(decorators, el, tab, state, ctx)
-      // Tabs render before the ever-present #new-tab button, matching its fixed position at the end of the strip.
-      newTabBtn.before(el)
+      // Pinned tabs stay put in front; the rest scroll in their own run, so the new-tab and search buttons
+      // never scroll away and nothing paints under the window buttons.
+      if (tab.pinned) scroller.before(el)
+      else scroller.append(el)
     }
+    scroller.style.setProperty('--tab-count', String(Math.max(1, scroller.childElementCount)))
+    const active = scroller.querySelector<HTMLElement>('.tab.active')
+    if (state.activeTabId !== shownActiveId && active !== null && typeof active.scrollIntoView === 'function') {
+      active.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+    }
+    shownActiveId = state.activeTabId
+    markOverflow()
   }
 
   function showDropMark (index: number): void {
@@ -124,12 +146,11 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
     const tabs = [...row.querySelectorAll<HTMLElement>('.tab')]
     const before = tabs[index]
     const rowLeft = row.getBoundingClientRect().left
-    // #tabrow scrolls horizontally once there are more tabs than fit: a tab's own viewport rect already
-    // accounts for that scroll, so the mark needs `scrollLeft` added on top of the viewport-relative distance
-    // to land in the row's own scrolled coordinate space.
-    const x = (before !== undefined
+    // The row itself never scrolls (only the run of unpinned tabs inside it does), and a tab's viewport rect
+    // already accounts for that run's scroll, so the distance from the row's edge is the mark's place.
+    const x = before !== undefined
       ? before.getBoundingClientRect().left - rowLeft
-      : (tabs.at(-1)?.getBoundingClientRect().right ?? rowLeft) - rowLeft) + row.scrollLeft
+      : (tabs.at(-1)?.getBoundingClientRect().right ?? rowLeft) - rowLeft
     dropMark.style.left = `${String(x)}px`
     dropMark.hidden = false
   }
@@ -138,6 +159,16 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
     name: 'tab-strip',
     init: ({ shell }) => {
       tabrow = must(document.querySelector<HTMLDivElement>('#tabrow'), '#tabrow missing')
+      tabScroll = must(document.querySelector<HTMLDivElement>('#tab-scroll'), '#tab-scroll missing')
+      tabScroll.addEventListener('scroll', markOverflow, { passive: true })
+      // A narrower window must not leave the tab in front out of view.
+      const scroller = tabScroll
+      if (typeof ResizeObserver === 'function') {
+        new ResizeObserver(() => {
+          scroller.querySelector<HTMLElement>('.tab.active')?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+          markOverflow()
+        }).observe(scroller)
+      }
       newTabBtn = must(document.querySelector<HTMLButtonElement>('#new-tab'), '#new-tab missing')
       const stripTail = must(document.querySelector<HTMLDivElement>('#tab-strip-tail'), '#tab-strip-tail missing')
       newTabBtn.addEventListener('click', () => shell.newTab())

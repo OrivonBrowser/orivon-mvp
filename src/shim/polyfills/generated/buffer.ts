@@ -11,8 +11,6 @@ import { nodeModuleRefusal } from '../module-proxy.js'
 
 const classify = (prop: string) => nodeModuleRefusal('buffer', prop)
 
-export const isAscii = refusingExport('isAscii', classify)
-export const isUtf8 = refusingExport('isUtf8', classify)
 export const resolveObjectURL = refusingExport('resolveObjectURL', classify)
 export const transcode = refusingExport('transcode', classify)
 

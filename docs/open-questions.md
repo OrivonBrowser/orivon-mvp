@@ -1660,13 +1660,83 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A313: No port consumes the Node shim **[OWNER]**
+### A313: Most ports do not consume the Node shim **[OWNER]**
 
-- **Question:** Should a port bundle against the shim (the `module-map.ts` aliases and the page globals), or keep
-  bringing its own polyfills and empty stubs, as every port in `orivon-ports` does?
-- **Why it matters:** what the compatibility tables say the shim offers reaches no ported app, and a port's own
-  `crypto-browserify` or empty `fs` hides both the shim's gains and its gaps.
-- **Options:** publish the alias table and the globals entry as a preset each port's bundler loads (rec.); keep
-  per-port polyfills and describe the shim as for apps written for Orivon.
+- **Question:** The Lounge's port bundles against the shim through `src/shim/bundler/esbuild-plugin.ts`; the
+  other ports in `orivon-ports` bring their own polyfills and empty stubs. Should every port bundle against the
+  shim, which for the webpack-built ones means a webpack preset of the same alias table and the page globals?
+- **Why it matters:** what the compatibility tables say the shim offers reaches only the ports that bundle
+  against it, and a port's own `crypto-browserify` or empty `fs` hides both the shim's gains and its gaps.
+- **Options:** a preset for each bundler the ports use, esbuild's being built, and each port moved over when it
+  is next touched (rec.); keep per-port polyfills and describe the shim as for apps written for Orivon.
 - **Who decides:** owner
 - **Blocks:** how much of compatibility Tables 2 and 3 a port benefits from
+
+### A314: A connect grant cannot pair a wildcard host with one port **[AI-REC]**
+
+- **Question:** `net.tcp.connect` and `net.https.connect` accept `*` as a host only in `*:*`. An app that dials
+  whatever server its user names on one service port (IRC on 6697) must ask for every port on every host.
+- **Why it matters:** the consent prompt then shows unlimited network access for an app that needs one port.
+- **Options:** accept `*:<port>` and `*:<low>-<high>` in the loader and the broker, still refusing private
+  addresses under `*` (rec.); leave `*:*` as the only wildcard.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** a narrower grant for The Lounge's port
+
+### A315: The `node:sqlite` VFS assumes one connection per file **[AI-REC]**
+
+- **Question:** the VFS takes no lock and caches file size and existence, which is safe only while one
+  connection uses a file. Nothing refuses a second connection to the same file, in the same context or another.
+- **Why it matters:** a second connection would read stale pages and could corrupt the database.
+- **Options:** refuse a second open of a file already open in any context of the app (rec.); a lock over
+  `orivon.fs`; leave it to the app.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A316: Every forked child parses a runtime of about 1 MB **[AI-REC]**
+
+- **Question:** the builtin table behind a child's run-time `require` holds most of the shim statically, so the
+  Worker runtime bundle is about 1 MB, parsed by every child.
+- **Why it matters:** start-up time and memory for each child, most of which never call `require` at run time.
+- **Options:** load the table's modules on first `require` (rec.); a smaller table plus `registerBuiltin` per
+  app; accept the size.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A317: Chromium did not report a hung page as unresponsive in this build **[RESEARCH]**
+
+- **Question:** A page spinning in `while (true) {}` was sent mouse, key and wheel input for 45 to 60 seconds in an
+  inactive window under xvfb; its title stopped changing and `webContents` never emitted `unresponsive`. Does it
+  fire on a real display, in an active window, or at all? Reload on a genuinely hung renderer is unmeasured too.
+- **Why it matters:** the "This page isn't responding" card and its Wait and Reload buttons are driven by that event.
+- **Options:** measure on a real display with a window manager (rec.); watch for a stalled page in main.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A318: The older popovers close on blur the way the menu did when a resize crashed it **[RESEARCH]**
+
+- **Question:** Shrinking a window so that the open main menu lay wholly outside it killed the main process,
+  because Chromium blurred the view inside the native `setSize` call and the host removed the view re-entrantly.
+  The overlay host now delivers the blur afterwards. Do the permissions and site-info popovers
+  (`src/main/permissions/popover-view.ts`) close on blur in the same call, and can a resize reach them?
+- **Why it matters:** a crash with no log line, from an ordinary window resize.
+- **Options:** probe each popover with a resize to a width that leaves it outside the window (rec.); move both onto the overlay host.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A319: A kiosk still lets a page open a tab and shows the welcome screen **[AI-REC]**
+
+- **Question:** In a `--orivon-kiosk` window a page's own `window.open` or `target=_blank` opens a tab in front, with
+  no strip to reach the earlier one, and the first-run welcome screen still shows. The link menu is trimmed already.
+- **Why it matters:** a kiosk on a public screen should stay on the page it was given.
+- **Options:** navigate a kiosk's popup request in place and skip the welcome screen when `services.kiosk` (rec.); leave it.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A320: Spell checking downloads its dictionaries from Chromium's host **[OWNER]**
+
+- **Question:** With spell checking on (the default), Chromium fetches each language's dictionary once, from a host
+  the person never chose. The Settings row says so. Is that egress acceptable, or should Orivon host the files?
+- **Why it matters:** the project tells people what leaves the machine; this is a request to a third party with no consent step.
+- **Options:** keep it, named in Settings (current); off until the person turns it on; self-host the dictionaries.
+- **Who decides:** owner
+- **Blocks:** nothing

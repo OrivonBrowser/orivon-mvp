@@ -9,7 +9,8 @@ export const OFFER_DELAY_MS = 1000
 export const restoreOffer: WindowHook = {
   name: 'restore-offer',
   opened: ({ window, services }, options) => {
-    if (options.firstOfLaunch !== true) return
+    // A kiosk has no session of its own to offer back, and the person's windows are not for a public screen.
+    if (options.firstOfLaunch !== true || services.kiosk) return
     if (!shouldOfferRestore(services.settings.get('startup.mode'), services.session.previous(), services.isPrivate)) return
     const timer = setTimeout(() => {
       if (!window.window.isDestroyed()) window.overlays.show(RESTORE_OVERLAY)

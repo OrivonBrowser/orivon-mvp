@@ -55,6 +55,12 @@ export function firstWindowOptions ({ services, isPrivate, argv, displays = [], 
     options.maximized = saved.maximized
     takeOffStack(services.closedTabs, openWindow === undefined ? [first.saved] : [first.saved, ...plan.more])
   }
-  if (plan.more.length > 0 && openWindow !== undefined) options.after = () => { restoreWindows(plan.more, openWindow, displays) }
+  if (plan.more.length > 0 && openWindow !== undefined) {
+    // A person who clicked a link wants that page in front: the other windows come up behind it, and it gets the
+    // focus back once they are all there.
+    options.after = (first) => {
+      restoreWindows(plan.more, openWindow, displays, { allShown: () => { if (!first.isDestroyed()) first.focus() } })
+    }
+  }
   return options
 }

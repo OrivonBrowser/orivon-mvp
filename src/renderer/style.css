@@ -77,6 +77,12 @@
    .address-dot.insecure). Theme-invariant in the reference, same as
    --waccent/--wmark/--wok above, so it isn't in the light/dark table. */
 :root { --winsecure: #f97316; }
+/* The warning colour as a mark that must be seen on the chrome (a crashed tab's icon): the plain orange is 2.2:1 on
+   the light chrome, so light takes a darker one. */
+:root { --wwarn-mark: #c2410c; }
+@media (prefers-color-scheme: dark) {
+  :root { --wwarn-mark: #f97316; }
+}
 
 * { box-sizing: border-box; }
 

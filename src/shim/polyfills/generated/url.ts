@@ -12,7 +12,6 @@ import { nodeModuleRefusal } from '../module-proxy.js'
 const classify = (prop: string) => nodeModuleRefusal('url', prop)
 
 export const URLPattern = refusingExport('URLPattern', classify)
-export const Url = refusingExport('Url', classify)
 export const domainToASCII = refusingExport('domainToASCII', classify)
 export const domainToUnicode = refusingExport('domainToUnicode', classify)
 export const fileURLToPathBuffer = refusingExport('fileURLToPathBuffer', classify)

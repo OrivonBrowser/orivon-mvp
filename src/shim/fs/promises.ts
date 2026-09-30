@@ -5,6 +5,8 @@
 // `fs.promises.constants`.
 
 import { openHandle } from './handle.js'
+import { doChmod } from './permissions.js'
+import { watchPromise } from './watch.js'
 import {
   doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRealpath, doRename, doRm, doRmdir, doStat,
   doUnlink, doWriteFile,
@@ -73,6 +75,11 @@ async function access (path: PathLike, _mode?: number): Promise<void> {
   await doAccess(path)
 }
 
+/** No mode to set (permissions.ts): succeeds after an existence check. */
+async function chmod (path: PathLike, mode: unknown): Promise<void> {
+  await doChmod(path, mode)
+}
+
 function otherFsPromisesMember (prop: string) {
   return refuseShim(
     `fs.promises.${prop}`, 'unimplemented',
@@ -84,6 +91,9 @@ function otherFsPromisesMember (prop: string) {
 export const promises = refusingProxy({
   open: openHandle,
   access,
+  chmod,
+  lchmod: chmod,
+  watch: watchPromise,
   readFile,
   writeFile,
   appendFile,
@@ -102,6 +112,6 @@ export const promises = refusingProxy({
 
 // The `fs/promises` module target (module-map.ts) is this file itself: the
 // same object as fs.promises, as default export and as named members.
-export { openHandle as open, access, readFile, writeFile, appendFile, rename, unlink, rmdir, realpath, mkdir, readdir, stat, rm }
+export { openHandle as open, access, chmod, chmod as lchmod, watchPromise as watch, readFile, writeFile, appendFile, rename, unlink, rmdir, realpath, mkdir, readdir, stat, rm }
 export const constants = FS_CONSTANTS
 export default promises

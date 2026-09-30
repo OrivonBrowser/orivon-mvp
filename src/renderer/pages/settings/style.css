@@ -92,7 +92,7 @@
 .row-control { display: flex; align-items: center; gap: 12px; flex: none; max-width: 55%; }
 .row-control .value { color: var(--wink-dim); user-select: text; overflow-wrap: anywhere; text-align: right; white-space: pre-line; }
 .text-control { display: grid; gap: 6px; width: 340px; }
-.problem { color: var(--wdanger); font-size: 12.5px; }
+.problem { color: var(--wdanger-text); font-size: 12.5px; }
 .problem:empty { display: none; }
 
 .changed {
