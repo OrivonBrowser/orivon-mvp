@@ -2,7 +2,7 @@
 // would give each its own in-memory copy of one file, and the last to write
 // would win.
 import { join } from 'node:path'
-import { app, session } from 'electron'
+import { app, safeStorage, session } from 'electron'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
@@ -15,7 +15,9 @@ import { HistoryService } from '../history/history-service.js'
 import { NullHistoryStore } from '../history/history-store.js'
 import { openHistory } from '../history/open-history.js'
 import { ProfilesService } from '../launch/profiles-service.js'
-import { memoryVault, type PasswordVault } from '../passwords/vault.js'
+import { devPasswordStorage } from '../passwords/dev-password-storage.js'
+import { openVault } from '../passwords/open-vault.js'
+import type { PasswordVault } from '../passwords/vault.js'
 import { SiteSettingsStore } from '../site-settings/site-settings-store.js'
 import type { Runtime } from '../launch/start-launch.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
@@ -117,7 +119,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     internalPages,
     isPrivate: runtime.isPrivate,
     kiosk,
-    passwords: memoryVault(),
+    passwords: openVault({ path: join(userDataPath, 'passwords.json'), isPrivate: runtime.isPrivate, storage: devPasswordStorage() ?? safeStorage }),
     profiles: new ProfilesService(runtime, undefined, kiosk),
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,

@@ -33,7 +33,9 @@ function renderChoice (control: Extract<Control, { type: 'choice' }>, state: Set
 }
 
 function renderToggle (control: Extract<Control, { type: 'toggle' }>, state: SettingsState, id: string): HTMLElement {
-  const input = h('input', { type: 'checkbox', id, checked: state.value(control.key) === true })
+  // A switch that cannot act shows what is really happening: off.
+  const disabled = control.disabled?.(state) === true
+  const input = h('input', { type: 'checkbox', id, checked: !disabled && state.value(control.key) === true, disabled })
   input.addEventListener('change', () => { void state.set(control.key, input.checked) })
   return h('span', { className: 'switch' }, input, h('span', { className: 'track' }))
 }

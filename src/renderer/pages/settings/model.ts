@@ -10,7 +10,8 @@ export type Control =
   | { readonly type: 'choice', readonly key: SettingKey, readonly options?: ReadonlyArray<{ readonly value: string, readonly label: string }> }
   /** `problem` is what the row says when main refuses the value; without it, the search address's own message. */
   | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string, readonly problem?: string }
-  | { readonly type: 'toggle', readonly key: SettingKey }
+  /** `disabled` greys it out while something stops it from meaning anything. */
+  | { readonly type: 'toggle', readonly key: SettingKey, readonly disabled?: (state: SettingsState) => boolean }
   /** A list of web addresses kept as the newline-separated text of a setting, with a way to add, remove and take the open pages. */
   | { readonly type: 'pageList', readonly key: SettingKey }
   /** A keyboard shortcut: its keys, and the buttons that change it. */

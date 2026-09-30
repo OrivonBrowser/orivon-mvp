@@ -29,6 +29,7 @@ import { copyToClipboard, readAboutFacts, readGpu } from '../info/about-runner.j
 import { tasksDomain } from '../info/tasks-domain.js'
 import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
 import type { TasksEnv } from '../info/tasks-runner.js'
+import { passwordsDomainFor } from '../passwords/passwords-runner.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
@@ -80,6 +81,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     }),
     profiles: profilesDomain(services.profiles),
     pages: pagesDomain(services.windows),
+    passwords: passwordsDomainFor(services),
     extensions: extensionsDomain({
       extensions,
       readFacts: readExtensionFacts,
@@ -149,6 +151,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   services.closedTabs.onChange(() => { services.internalPages.publish('history.closed', undefined, ['history']) })
   services.downloads.onChange(throttleChanges((change) => { services.internalPages.publish('downloads.changed', change, ['downloads']) }))
   services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })
+  services.passwords.onChange(() => { services.internalPages.publish('passwords.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
   // Never fires in a private session: startTelemetry never runs there, and
   // telemetry-domain.ts's own isPrivate guard makes decideConsent unreachable.

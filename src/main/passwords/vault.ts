@@ -33,7 +33,10 @@ export interface NeverSaved {
 }
 
 export interface PasswordVault {
+  /** Where the store stands. A store that has to ask the system whether it can keep anything answers `unavailable` until `ready` resolves. */
   state: () => VaultState
+  /** Resolves once `state` is final; absent on a store that knows at once. */
+  ready?: () => Promise<void>
   /** Every login, or those of one origin; oldest first. Never carries a password. */
   list: (origin?: string) => readonly Login[]
   /** The password of one login, or undefined when there is none. Only the store's own pages call this. */

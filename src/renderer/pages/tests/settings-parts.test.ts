@@ -3,7 +3,6 @@ import { groupLabelFor, NAV_ICON } from '../settings/nav.js'
 import { sectionsFor } from '../settings/sections/index.js'
 import { aboutSystemRows } from '../settings/sections/about-system.js'
 import { addresses } from '../settings/sections/addresses.js'
-import { passwords } from '../settings/sections/passwords.js'
 import { privacyNetworkRows } from '../settings/sections/privacy-network.js'
 import { privacySiteDataRows } from '../settings/sections/privacy-site-data.js'
 import { sites } from '../settings/sections/sites.js'
@@ -88,15 +87,14 @@ describe('SettingsState.request', () => {
 })
 
 describe('the sections a feature fills', () => {
-  it('starts with the Site settings, Passwords and Addresses sections empty, and lists none of them', async () => {
-    for (const [section, id, title] of [[sites, 'sites', 'Site settings'], [passwords, 'passwords', 'Passwords'], [addresses, 'addresses', 'Addresses']] as const) {
+  it('starts with the Site settings and Addresses sections empty, and lists neither', async () => {
+    for (const [section, id, title] of [[sites, 'sites', 'Site settings'], [addresses, 'addresses', 'Addresses']] as const) {
       expect(section).toMatchObject({ id, title, rows: [] })
     }
     const { state } = setup([])
     await state.load()
     const listed = sectionsFor(state).map((section) => section.id)
     expect(listed).not.toContain('sites')
-    expect(listed).not.toContain('passwords')
     expect(listed).not.toContain('addresses')
     expect(listed.slice(0, 3)).toEqual(['appearance', 'search', 'startup'])
   })
