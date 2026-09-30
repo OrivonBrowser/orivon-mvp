@@ -35,7 +35,31 @@ export const atob = globalThis.atob
 export const btoa = globalThis.btoa
 export const File = globalThis.File
 
+function bytesOf (input: unknown, api: string): Uint8Array {
+  if (input instanceof ArrayBuffer || (typeof SharedArrayBuffer !== 'undefined' && input instanceof SharedArrayBuffer)) return new Uint8Array(input)
+  if (ArrayBuffer.isView(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength)
+  throw Object.assign(new TypeError(`The "input" argument must be an instance of ArrayBuffer, Buffer or TypedArray. Received ${typeof input}`), { code: 'ERR_INVALID_ARG_TYPE', api })
+}
+
+const strictUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+
+/** True when `input` holds well-formed UTF-8 (`ws` asks before it hands a text frame on). */
+export function isUtf8 (input: unknown): boolean {
+  const bytes = bytesOf(input, 'buffer.isUtf8')
+  try {
+    strictUtf8.decode(bytes)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** True when every byte of `input` is 7-bit ASCII. */
+export function isAscii (input: unknown): boolean {
+  return bytesOf(input, 'buffer.isAscii').every((byte) => byte < 0x80)
+}
+
 // A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
 export * from './generated/buffer.js'
 
-export default nodeModule('buffer', { Buffer, SlowBuffer, INSPECT_MAX_BYTES, kMaxLength, Blob, atob, btoa, File })
+export default nodeModule('buffer', { Buffer, SlowBuffer, INSPECT_MAX_BYTES, kMaxLength, Blob, atob, btoa, File, isUtf8, isAscii })

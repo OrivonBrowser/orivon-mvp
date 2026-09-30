@@ -53,6 +53,17 @@ file, no tsconfig paths, no `enum`. `tests/esbuild-plugin.test.ts` loads it that
 temporary directory. `tests/alias-table.test.ts` fails when the JSON is stale;
 `ORIVON_WRITE_ALIAS_TABLE=1` rewrites it after a `module-map.ts` edit.
 
+**A package the shim depends on keeps its `browser` field, even under `platform: 'node'`.**
+`crypto-browserify` and what it stands on (`create-hash`, `randombytes`, `browserify-sign`, ...)
+each ship a Node entry point that requires the very builtin they implement; through this plugin
+that is the shim's `crypto` again, and the cycle leaves `createHash` undefined. esbuild applies a
+`browser` field only for `platform: 'browser'`, so the plugin applies it, for the files of the shim
+and of the packages this checkout's `dependencies` reach, and for those only: the port's own
+packages, and this checkout's devDependencies, resolve as a Node bundle does. Provisional: it
+reimplements the part of esbuild's `browser` handling the shim's tree needs (a string that replaces
+`main`, `"./file": "./other"`, `"name": false`), and a published package would ship this tree
+already bundled.
+
 **A package row named like a builtin is asked for with a trailing slash** (`events/`). Under
 `platform: 'node'`, esbuild otherwise answers `events` with the builtin.
 

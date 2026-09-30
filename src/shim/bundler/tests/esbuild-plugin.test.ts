@@ -20,7 +20,7 @@ async function bundle (source: string, platform: 'node' | 'browser' = 'node'): P
   writeFileSync(entry, source)
   const built = await esbuild.build({
     entryPoints: [entry], bundle: true, platform, format: 'esm', write: false, metafile: true, logLevel: 'silent',
-    plugins: [orivonShimPlugin()]
+    plugins: [orivonShimPlugin()], nodePaths: [fileURLToPath(new URL('../../../../node_modules', import.meta.url))]
   })
   return { text: built.outputFiles[0]?.text ?? '', inputs: Object.keys(built.metafile.inputs) }
 }
@@ -71,6 +71,22 @@ describe('orivonShimPlugin', () => {
       plugins: [orivonShimPlugin(), { name: 'mine', setup (b) { b.onLoad({ filter: /sub\.js$/ }, () => { seen.push('loaded'); return { contents: 'export default 2', loader: 'js' } }) } }]
     })
     expect(seen).toEqual(['loaded'])
+  })
+
+  it('applies a shim dependency\'s browser field under platform node, so crypto works', async () => {
+    const entry = join(dir, 'crypto-entry.js')
+    writeFileSync(entry, "import crypto from 'crypto'\nimport os from 'os'\nconsole.log(JSON.stringify([crypto.createHash('sha1').update('abc').digest('hex'), crypto.createHmac('sha256', 'k').update('x').digest('hex').length, crypto.randomBytes(8).length]))\n")
+    const built = await esbuild.build({ entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent', plugins: [orivonShimPlugin()] })
+    const bundle = join(dir, 'crypto-bundle.mjs')
+    writeFileSync(bundle, built.outputFiles[0]?.text ?? '')
+    const child = spawnNode(bundle)
+    expect(child.status, child.stderr).toBe(0)
+    expect(JSON.parse(child.stdout)).toEqual(['a9993e364706816aba3e25717850c26c9cd0d89d', 64, 8])
+  }, 60_000)
+
+  it('leaves a devDependency of this checkout on Node semantics', async () => {
+    const { inputs } = await bundle("import iconv from 'iconv-lite'\nglobalThis.x = iconv")
+    expect(inputs.some((input) => input.endsWith('iconv-lite/lib/extend-node.js'))).toBe(true)
   })
 
   it('loads under plain node from another directory', () => {
