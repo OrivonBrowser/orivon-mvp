@@ -1,6 +1,6 @@
 // trackScope: the timers a forked child or thread gets are Node's, objects with ref, unref, refresh and
 // close, and the child stays alive exactly as long as one ref'd timer, immediate or fetch is pending.
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Liveness, trackScope } from '../liveness.js'
 
 type Timer = { ref: () => Timer, unref: () => Timer, hasRef: () => boolean, refresh: () => Timer, close: () => Timer, [Symbol.toPrimitive]: () => number }
@@ -20,7 +20,12 @@ function tracked (): { scope: { setTimeout: (handler: () => void, ms?: number, .
   return { scope: scope as never, liveness, idle }
 }
 
-const sleep = async (ms: number): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, ms)) }
+// The clock is the test's: no assertion depends on how long the machine takes to run a turn.
+beforeEach(() => { vi.useFakeTimers() })
+afterEach(() => { vi.useRealTimers() })
+
+/** Moves the fake clock forward `ms`, running every timer, immediate and microtask that falls due. */
+const sleep = async (ms: number): Promise<void> => { await vi.advanceTimersByTimeAsync(ms) }
 
 describe('the timers of a child', () => {
   it('setTimeout returns a Node Timeout: it runs the handler with its arguments, and is a number when asked', async () => {
@@ -79,7 +84,7 @@ describe('the timers of a child', () => {
     timer.refresh()
     await sleep(25)
     expect(handler).not.toHaveBeenCalled()
-    await sleep(40)
+    await sleep(15)
     expect(handler).toHaveBeenCalledTimes(1)
     expect(liveness.idle).toBe(true)
     timer.refresh()
@@ -93,7 +98,7 @@ describe('the timers of a child', () => {
     const handler = vi.fn()
     const timer = scope.setInterval(handler, 5)
     await sleep(40)
-    expect(handler.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(handler).toHaveBeenCalledTimes(8)
     timer.unref()
     expect(liveness.idle).toBe(true)
     scope.clearInterval(timer)
