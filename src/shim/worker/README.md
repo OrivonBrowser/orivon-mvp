@@ -95,6 +95,12 @@ takes an optional `runSpawnSync` to answer it, given only where a Worker's `oriv
 ([`../child-process/`](../child-process/)'s `spawn.ts`'s `launch()`) -- the grandchild it starts
 runs on THIS thread, asynchronously, same as any other child; only the Worker that asked blocks.
 
+**A Worker that starts a child serves its own `orivon` to it, and the call travels up to the page.**
+`serveOrivon` finds a method only among an object's own properties, so a name inherited from
+`Object.prototype` is never callable; the Worker's `orivon` is a Proxy, so `orivon-client.ts` gives
+it a `getOwnPropertyDescriptor` trap that reports what `get` answers. What exists is still decided
+once, by the page's server against the real `orivon`.
+
 **Disposing the server closes every handle the Worker still holds**, so a killed child leaves no
 slot open in the broker's per-app handle table.
 
