@@ -300,6 +300,7 @@ describe('createOverlayHost: restack with adopted panels', () => {
     const adopted = panel('adopted', order)
     host.adopt(adopted, adopted.restack)
     host.show('bar'); host.show('pop', ANCHOR)
+    order.length = 0
     for (const view of views) {
       const push = view.log.push.bind(view.log)
       view.log.push = (...items: string[]) => { if (items[0] === 'attach') order.push(view.id === views[0]?.id ? 'bar' : 'pop'); return push(...items) }
@@ -316,6 +317,7 @@ describe('createOverlayHost: restack with adopted panels', () => {
     host.adopt({ close: vi.fn() }, () => { throw new Error('boom') })
     host.adopt({ close: vi.fn() }, later)
     host.show('bar')
+    later.mockClear(); complaint.mockClear()
     expect(() => { host.restack() }).not.toThrow()
     expect(later).toHaveBeenCalledTimes(1)
     expect(complaint).toHaveBeenCalledTimes(1)
