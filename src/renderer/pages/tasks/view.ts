@@ -204,7 +204,7 @@ export function createTasksView (state: TasksState): TasksView {
   const element = h('main', { className: 'page' },
     h('header', { className: 'head' },
       h('div', { className: 'head-text' },
-        h('h1', { textContent: 'Task manager' }),
+        h('h1', null, developerIcon(), 'Task manager'),
         h('p', { className: 'intro', textContent: 'Memory and processor use of Orivon\'s processes. Updates every 2 seconds.' })),
       endButton),
     notice,

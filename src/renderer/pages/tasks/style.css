@@ -4,11 +4,12 @@
 html, body { height: 100%; }
 #app { height: 100%; }
 
-.page { display: flex; flex-direction: column; gap: 12px; height: 100%; max-width: 860px; margin: 0 auto; padding: 28px 24px 24px; }
+.page { display: flex; flex-direction: column; gap: 12px; height: 100%; max-width: 860px; margin: 0 auto; padding: 40px 24px 24px; }
 
 .head { display: flex; align-items: flex-end; gap: 16px; }
 .head-text { flex: 1 1 auto; min-width: 0; }
-.head h1 { font-size: 22px; font-weight: 600; }
+.head h1 { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; color: var(--waccent-text); }
+.head h1 .icon { width: 24px; height: 24px; }
 .intro { margin-top: 2px; color: var(--wink-dim); font-size: 14px; }
 .head .btn { flex: none; }
 
