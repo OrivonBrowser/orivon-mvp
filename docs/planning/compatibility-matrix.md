@@ -38,13 +38,26 @@ are for looking up a single name. Counts such as "49 of 80" come from a source s
 open-source Electron apps and 56 Node apps with a web front end: they say how common a need is,
 never that a given app runs.
 
+**Legend, for this page and the pages under [`compatibility/`](compatibility/).** ✅ built |
+⚠️ partial | ❌ missing | 🚫 excluded by design | ➖ not applicable. **⚠️ differs** marks the
+dangerous case: the call runs with no error and gives a different result than Node or Electron.
+When an app reaches a gap, one of four things happens, and the rows say which:
+
+- *throws a clear "not supported" error* (the detail pages say **refuses by name**): the member
+  exists, so `typeof x === 'function'` still says it is there, and a call throws an error that
+  names it;
+- *is missing, so calling it crashes* (**reads `undefined`**): a bare `TypeError`;
+- *the build fails* (**fails the build**): the app's bundler rejects the import;
+- *runs but differs* (**differs**): a result comes back, and it is not Node's or Electron's.
+
+A Table 1 row whose route is a web-platform API has ➖ in its four columns and a note that starts
+"Web platform:", giving the permission gate's answer.
+
 ## Table 1: the capability surface (authority)
 
 **Spec'd** = in [`src/contracts/`](../../src/contracts/) | **Broker** = implemented in
-[`index.ts`](../../src/broker/index.ts) | **Page** = reachable from `window.orivon` |
+[`src/broker/`](../../src/broker/) and returned by `createBroker` | **Page** = reachable from `window.orivon` |
 **Node shim** = a Node-shaped equivalent exists in [`src/shim/`](../../src/shim/)
-
-✅ done | ❌ not there | ⚠️ partial or unsettled | 🚫 excluded by design | ➖ not applicable
 
 Every member, limit and error code is in [Table 1](compatibility/table-1-capabilities.md).
 
