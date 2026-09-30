@@ -1,6 +1,6 @@
 # ADR-0039: An app may show a site inside its own page
 
-- **Status:** accepted
+- **Status:** accepted, **amended 2026-09-30** by ADR-0047 (below)
 - **Date:** 2026-09-28
 - **Type:** security
 - **Decided by:** owner (the feature); AI recommendation for its shape, with the provisional
@@ -128,6 +128,14 @@ independently-timed lookup. A286 is the one residual this still leaves.
 - **`LIMITS.embeds` (32) and the T12 rule for `"*"` are provisional**, AI-chosen
   (`docs/open-questions.md` A261). The owner's confirmation settles them.
 - **A contracts change**, so the usual cost: permanent once an app ships against it (ADR-0002).
+
+## Amendment, 2026-09-30: ADR-0047
+
+[`ADR-0047`](ADR-0047-an-app-shows-pages-it-serves-itself-and-hears-a-shown-page-s-popups-and-downloads.md)
+changes three statements above. `origins` takes a third kind of entry, a local pattern for pages
+the app serves from its own listener. `"*"` may be listed with other entries. And a shown page's
+new window and download, which still open nothing and keep nothing, are now told to the app.
+Alternative 5, a scheme the app answers, is closed there: the app serves those pages itself.
 
 ## Reversibility
 
