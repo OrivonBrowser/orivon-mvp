@@ -25,10 +25,10 @@ export const likePattern = (text: string): string => `%${text.replace(/[\\%_]/g,
  * as the literal text it is -- never as MATCH syntax (AND, OR, NOT, column filters, `*`). */
 const ftsPhrase = (text: string): string => `"${text.replace(/"/g, '""')}"`
 
-const LIST_COLUMNS = 'id, url, title, last_visit, visit_count'
+export const LIST_COLUMNS = 'id, url, title, last_visit, visit_count'
 const LIST_ORDER = 'ORDER BY last_visit DESC, id DESC LIMIT ?'
 const AFTER_CONDITION = '(last_visit < ? OR (last_visit = ? AND id < ?))'
-const LIKE_CONDITION = "(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')"
+export const LIKE_CONDITION = "(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')"
 /** Same as `LIKE_CONDITION`, aliased for the FTS join: MATCH only narrows candidates fast (and folds case
  * for Unicode, where LIKE folds only ASCII), so LIKE stays the one definition of "matches" either way. */
 const LIKE_CONDITION_P = "(p.title LIKE ? ESCAPE '\\' OR p.url LIKE ? ESCAPE '\\')"

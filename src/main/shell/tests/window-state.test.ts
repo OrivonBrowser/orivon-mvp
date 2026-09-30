@@ -3,7 +3,7 @@ import { SHELL_EVENT_CHANNEL, STATE_CHANNEL } from '../../channels.js'
 import { createWindowState } from '../window-state.js'
 import type { TabsSnapshot } from '../tab-types.js'
 
-interface FakeTab { id: string, url: string, favicon: string | null }
+interface FakeTab { id: string, url: string, displayUrl: string, favicon: string | null }
 
 function setup (): {
   push: (tabs: FakeTab[], active: string | null) => void
@@ -14,6 +14,7 @@ function setup (): {
   closeSiteInfo: ReturnType<typeof vi.fn>
   fillMissingFavicon: ReturnType<typeof vi.fn>
   barItems: (items: unknown[]) => void
+  setFavicon: ReturnType<typeof vi.fn>
   tabsChanged: ReturnType<typeof vi.fn>
   stop: () => void
   unsubscribed: ReturnType<typeof vi.fn>
@@ -26,6 +27,7 @@ function setup (): {
   const closeSiteInfo = vi.fn()
   const fillMissingFavicon = vi.fn()
   let bar: unknown[] = []
+  const setFavicon = vi.fn()
   const tabsChanged = vi.fn()
   const tabLayout = vi.fn()
   const tabs = { getState: () => snapshot, onStateChange: (cb: () => void) => { notify = cb }, layout: tabLayout }
@@ -34,6 +36,7 @@ function setup (): {
   let bookmarksChanged: () => void = () => {}
   const services = {
     bookmarks: { fillMissingFavicon, has: () => false, children: () => bar, onChange: (cb: () => void) => { bookmarksChanged = cb; return unsubscribed }, load: async () => {} },
+    history: { setFavicon },
     zoom: { onChange: subscribe, percentFor: () => 100, defaultPercent: () => 100 },
     profiles: { onChange: subscribe, look: () => ({ name: 'p', color: '#000', isPrivate: false, shown: false }) },
     settings: { onChange: subscribe }
@@ -53,11 +56,11 @@ function setup (): {
   return {
     push: (list, active) => { snapshot = { tabs: list as never, activeTabId: active }; notify() },
     changeBookmarks: (height) => { chromeHeight = height; bookmarksChanged() },
-    barItems: (items) => { bar = items }, tabLayout, send, overlays, closeSiteInfo, fillMissingFavicon, tabsChanged, stop: state.stop, unsubscribed
+    barItems: (items) => { bar = items }, tabLayout, send, overlays, closeSiteInfo, fillMissingFavicon, setFavicon, tabsChanged, stop: state.stop, unsubscribed
   }
 }
 
-const tab = (id: string, url: string, favicon: string | null = null): FakeTab => ({ id, url, favicon })
+const tab = (id: string, url: string, favicon: string | null = null): FakeTab => ({ id, url, displayUrl: url, favicon })
 
 describe('createWindowState', () => {
   it('sends the tabs with whether the page is bookmarked, the bar, the zoom chip and the profile look', () => {
@@ -150,6 +153,14 @@ describe('createWindowState', () => {
     push([tab('a', 'https://a.example/', 'data:icon')], 'a')
 
     expect(send.mock.calls.filter(([channel]) => channel === SHELL_EVENT_CHANNEL)).toHaveLength(1)
+  })
+
+  it('keeps a tab\'s icon under the host of a page history could hold, and no other', () => {
+    const { push, setFavicon } = setup()
+
+    push([tab('a', 'https://A.example:8080/x', 'data:icon'), tab('b', 'orivon://settings/', 'data:other'), tab('c', 'https://c.example/')], 'a')
+
+    expect(setFavicon).toHaveBeenCalledExactlyOnceWith('a.example', 'data:icon')
   })
 
   it('ends every subscription it made when stopped', () => {
