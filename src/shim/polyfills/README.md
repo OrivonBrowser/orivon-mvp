@@ -79,9 +79,10 @@ one. Every module's `require` shares one cache, keyed by resolved path. Cycles r
 exports as Node does, and a module that throws is dropped from the cache. Provisional: package
 resolution would settle whether a `node_modules` directory ever appears in an app's own fs.
 
-**`process` is the global, with forwarding named exports** ([`process.ts`](process.ts)): a bundled
-`require('process')` reads the namespace, so the function members forward to the global at call
-time, and the data members are what the global holds when the module loads.
+**`process` is the global, with forwarding named exports** ([`process.ts`](process.ts)): the default
+export is the global itself, so a bundled `require('process') === process`. The named function members
+forward to the global at call time, and the data members are what the global holds when the module
+loads.
 
 **Four members that `express` and `got` reach through their dependencies are answered, not
 refused.** `url.Url` is the legacy class (`parseurl` builds one with `new Url()`), `StringDecoder` is

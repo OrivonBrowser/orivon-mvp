@@ -241,7 +241,7 @@ export function orivonShimPlugin (): Plugin {
           if (args.pluginData === PACKAGE_RESOLVE_MARK) return undefined
           if (entry.kind === 'local') {
             const path = join(SHIM_DIR, entry.implementation.replace(/\.js$/, '.ts'))
-            // A CommonJS `require('assert')` is the function itself in Node: esbuild would hand it the ES module's namespace.
+            // A CommonJS `require('assert')` is the module object itself in Node, and `require('process')` is the global: esbuild would hand it a copy of the ES module's namespace.
             return args.kind === 'require-call' ? { path, namespace: REQUIRE_NAMESPACE } : { path }
           }
           packageRows[entry.specifier] ??= build.resolve(packageRequest(entry.implementation), { kind: args.kind, resolveDir: CHECKOUT_ROOT, pluginData: PACKAGE_RESOLVE_MARK })
@@ -250,7 +250,7 @@ export function orivonShimPlugin (): Plugin {
         })
       }
       build.onLoad({ filter: /.*/, namespace: REQUIRE_NAMESPACE }, (args) => ({
-        contents: `import * as namespace from ${JSON.stringify(args.path)}\nmodule.exports = typeof namespace.default === 'function' ? namespace.default : Object.assign({ __esModule: true }, namespace)\n`,
+        contents: `import * as namespace from ${JSON.stringify(args.path)}\nconst shaped = namespace.default\nmodule.exports = (typeof shaped === 'function' || (typeof shaped === 'object' && shaped !== null)) ? shaped : Object.assign({ __esModule: true }, namespace)\n`,
         loader: 'js',
         resolveDir: SHIM_DIR
       }))

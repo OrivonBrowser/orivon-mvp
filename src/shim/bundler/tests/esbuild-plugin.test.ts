@@ -59,6 +59,15 @@ describe('orivonShimPlugin', () => {
     expect(JSON.parse(result.stdout)).toEqual(['function', 'function', 'function'])
   })
 
+  it('hands a bundled CommonJS require() of a module object the default export itself, so require(process) is the global and writes to it stick', async () => {
+    const { text } = await bundle("const p = require('process')\nconst os = require('os')\np.exitCode = 2\nconsole.log(JSON.stringify([p === process, globalThis.process.exitCode, require('process') === p, typeof os.hostname]))")
+    const file = join(dir, 'require-process.mjs')
+    writeFileSync(file, text)
+    const result = spawnNode(file)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual([true, 2, true, 'function'])
+  })
+
   it('does not capture a subpath', async () => {
     writeFileSync(join(dir, 'sub.js'), 'export default 1')
     const { text } = await bundle(`import x from './sub.js'\nglobalThis.x = x`)

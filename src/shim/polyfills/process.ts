@@ -4,8 +4,6 @@
 // or the app has patched answers; the data members are the objects the global
 // holds when this module loads, which the runtime has set up by then.
 
-import { nodeModule } from './module-proxy.js'
-
 type Call = (...args: unknown[]) => unknown
 const current = (): Record<string, Call> => globalThis.process as unknown as Record<string, Call>
 const forward = (name: string): Call => (...args) => current()[name]!(...args)
@@ -35,4 +33,4 @@ export const hrtime = Object.assign(forward('hrtime'), { bigint: () => (current(
 // A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
 export * from './generated/process.js'
 
-export default nodeModule('process', proc as unknown as object)
+export default proc
