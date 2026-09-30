@@ -54,6 +54,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   default, binds `127.0.0.1`, and the shim maps a loopback host onto it (ADR-0034).
 - **`http.createServer` in the Node shim**, with `Server`, `ServerResponse` and `OutgoingMessage`, over
   `orivon.net.listen`; `https.createServer` still refuses.
+- **Content blockers.** MV3 blockers such as uBlock Origin Lite block ads and trackers: Orivon applies their
+  `declarativeNetRequest` rules itself, with Firefox's matcher, and shows each one's per-tab count on its badge.
+- **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
+  `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
+  popups and options pages work on every website and on apps holding permissions, whose `window.orivon` refuses extension code.
 - **Google's sign-in pages are shown a Firefox identity**, since Google rejects this browser as "not secure"; the
   request headers, `navigator.userAgent` and the missing `navigator.userAgentData` agree on `accounts.google.com`
   and `accounts.youtube.com` alone. Not yet confirmed against a real account.

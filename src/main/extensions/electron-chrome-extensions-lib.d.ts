@@ -58,6 +58,34 @@ declare module 'orivon:crx-extensions' {
       isDestroyed (): boolean
       destroy (): void
     }) => void): void
+    /** UPSTREAM.md patch 43: this session's ExtensionRouter, for registering
+     * an additional main-side API handler the same way this library's own
+     * API classes do. */
+    getRouter (): ExtensionRouterHandle
+    /** UPSTREAM.md patch 44: sets `extensionId`'s badge text for `tabId`
+     * directly from main, bypassing the `crx-msg` path a real
+     * `chrome.action.setBadgeText` call takes. */
+    setBadgeText (extensionId: string, tabId: number, text: string): void
+  }
+
+  /** The subset of `src/browser/router.ts`'s `ExtensionRouter` a caller
+   * outside this library needs: registering a handler and sending an event
+   * to a listening extension. */
+  export interface ExtensionRouterApiEvent {
+    readonly extension: { readonly id: string }
+  }
+  export interface ExtensionRouterHandlerOptions {
+    extensionContext?: boolean
+    allowRemote?: boolean
+    permission?: string
+  }
+  export interface ExtensionRouterHandle {
+    apiHandler (): (
+      name: string,
+      callback: (event: ExtensionRouterApiEvent, ...args: any[]) => any,
+      opts?: ExtensionRouterHandlerOptions
+    ) => void
+    sendEvent (targetExtensionId: string | undefined, eventName: string, ...args: any[]): void
   }
 }
 
@@ -75,6 +103,12 @@ declare module 'orivon:crx-extensions-router' {
   interface ServiceWorkerMessageEvent { type: 'service-worker', serviceWorker: Electron.ServiceWorkerMain }
   type MessageEvent = FrameMessageEvent | ServiceWorkerMessageEvent
   export function setMessageSenderIdCheck (check: (event: MessageEvent, claimedExtensionId: string | undefined) => boolean): void
+
+  /** UPSTREAM.md patch 43: overrides the manifest-permission check
+   * `onExtensionMessage` runs for a handler registered with `permission`
+   * set, answering from `extensionId`'s ORIGINAL permission record instead
+   * of the (stripped) loaded manifest's own `permissions` list. */
+  export function setPermissionCheck (check: (extensionId: string, permission: string) => boolean): void
 
   export function setEventListenerFilter (
     filter: ((extensionId: string, eventName: string, args: readonly unknown[]) => readonly unknown[] | undefined) | undefined

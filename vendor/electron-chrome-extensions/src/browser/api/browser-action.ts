@@ -324,6 +324,18 @@ export class BrowserActionAPI {
     return action
   }
 
+  // Orivon patch: same tab-scoped write and onUpdate() broadcast
+  // setDetails('BadgeText') makes for an extension calling
+  // chrome.action.setBadgeText on itself, for a caller (main-process code,
+  // not an extension) that already has the extensionId/tabId/text it wants
+  // set and skips the ExtensionEvent/default-value lookup that path needs.
+  setBadgeTextFromMain(extensionId: string, tabId: number, text: string): void {
+    const action = this.getAction(extensionId)
+    const tabAction = action.tabs[tabId] || (action.tabs[tabId] = {})
+    tabAction.text = text
+    this.onUpdate()
+  }
+
   // TODO: Make private for v4 major release.
   removeActions(extensionId: string) {
     if (this.actionMap.has(extensionId)) {

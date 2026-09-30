@@ -635,29 +635,26 @@ export const injectExtensionAPIs = () => {
       // Orivon patch (UPSTREAM.md patch 10): chrome.declarativeNetRequest,
       // chrome.sidePanel, chrome.userScripts and the rest of
       // chrome.webRequest were entirely absent (only
-      // webRequest.onHeadersReceived existed). None of these enforce
-      // anything yet: declarativeNetRequest's write methods reject "not
-      // supported", its read methods resolve empty, and sidePanel/
-      // userScripts resolve as no-ops. Present so an extension's own
-      // startup code that calls or feature-detects them does not throw.
+      // webRequest.onHeadersReceived existed). sidePanel/userScripts resolve
+      // as no-ops: no real side panel, no real user script world.
+      // declarativeNetRequest's own methods (UPSTREAM.md patch 15) call
+      // through this session's crx-msg IPC like every other real API here;
+      // src/main/extensions/dnr-api.ts is the main-side handler.
       declarativeNetRequest: {
         factory: (base) => {
-          const notSupported = (name: string) => async () => {
-            throw new Error(`declarativeNetRequest.${name} is not supported in Orivon yet`)
-          }
           return {
             ...base,
-            updateDynamicRules: notSupported('updateDynamicRules'),
-            updateSessionRules: notSupported('updateSessionRules'),
-            updateEnabledRulesets: notSupported('updateEnabledRulesets'),
-            setExtensionActionOptions: notSupported('setExtensionActionOptions'),
-            getDynamicRules: async () => [],
-            getSessionRules: async () => [],
-            getEnabledRulesets: async () => [],
-            getAvailableStaticRuleCount: async () => 0,
-            getMatchedRules: notSupported('getMatchedRules'),
-            testMatchOutcome: notSupported('testMatchOutcome'),
-            isRegexSupported: async () => ({ isSupported: false, reason: 'unsupported' }),
+            updateDynamicRules: invokeExtension('declarativeNetRequest.updateDynamicRules'),
+            updateSessionRules: invokeExtension('declarativeNetRequest.updateSessionRules'),
+            updateEnabledRulesets: invokeExtension('declarativeNetRequest.updateEnabledRulesets'),
+            setExtensionActionOptions: invokeExtension('declarativeNetRequest.setExtensionActionOptions'),
+            getDynamicRules: invokeExtension('declarativeNetRequest.getDynamicRules'),
+            getSessionRules: invokeExtension('declarativeNetRequest.getSessionRules'),
+            getEnabledRulesets: invokeExtension('declarativeNetRequest.getEnabledRulesets'),
+            getAvailableStaticRuleCount: invokeExtension('declarativeNetRequest.getAvailableStaticRuleCount'),
+            getMatchedRules: invokeExtension('declarativeNetRequest.getMatchedRules'),
+            testMatchOutcome: invokeExtension('declarativeNetRequest.testMatchOutcome'),
+            isRegexSupported: invokeExtension('declarativeNetRequest.isRegexSupported'),
             onRuleMatchedDebug: new ExtensionEvent('declarativeNetRequest.onRuleMatchedDebug'),
           }
         },

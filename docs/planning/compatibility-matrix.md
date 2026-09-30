@@ -263,7 +263,8 @@ Lite, Dark Reader, Bitwarden, MetaMask) through `test/e2e-extensions-real.test.t
 (Volume Master, opt-in via `ORIVON_VOLUME_MASTER_DIR`) through
 `test/e2e-extensions-offscreen-capture.test.ts`; plus a full `chrome.*` namespace sweep across a
 service worker, popup, options page, a `side_panel`-declared tab, a sandboxed page and content
-scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on.
+scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on. uBlock Origin Lite blocks through its own
+default rulesets.
 
 ### Table 7a: Install, update and lifecycle
 
@@ -368,7 +369,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `userScripts` | ⚠️ | Every method resolves as a no-op; no user-script world runs |
 | `webNavigation` | ✅ | `getFrame`/`getAllFrames` and the full event set work |
 | `webRequest` | ⚠️ | Every event object exists so feature-detection does not throw, but none of it ever fires -- Orivon owns the session's one `webRequest` listener |
-| `declarativeNetRequest` | ⚠️ | Write methods reject "not supported"; read methods resolve empty; the ruleset key is read and recorded, never enforced |
+| `declarativeNetRequest` | ✅ | Static, dynamic and session rules, applied by Orivon (`ADR-9001`); `responseHeaders` conditions are refused; websites' worker requests are not matched |
 | `windows` | ⚠️ | A rich working set, filtered the same as `tabs` |
 
 **Not there** (`typeof === 'undefined'` in every context measured, including the most privileged):
@@ -772,7 +773,7 @@ the reference set, and whether this build has it.
 | Options page | ✅ | Table 7b |
 | Extension popup stays open, and closes only on focus loss, tab switch or navigation | ✅ | Table 7d |
 | `chrome.offscreen`, `chrome.tabCapture`, `chrome.runtime.getContexts` | ✅ | Table 7c/7d; Volume Master captures a tab it was invoked on |
-| `declarativeNetRequest` | ⚠️ | Present so extensions start; rules are not applied (Table 7c) |
+| `declarativeNetRequest` | ✅ | Static, dynamic and session rules are applied (Table 7c) |
 | `webRequest` | ⚠️ | Present, never fires (Table 7c) |
 | `sidePanel`, `userScripts` | ⚠️ | Present as no-ops (Table 7c) |
 | Native messaging | 🚫 | Off by design: it would start desktop programs outside the broker |

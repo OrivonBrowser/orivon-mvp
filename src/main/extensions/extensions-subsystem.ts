@@ -17,7 +17,11 @@ import { createExtensionHost } from './extension-host.js'
 import { installExtensionPermissionWarningFilter } from './extension-known-permissions.js'
 import { startWebStore } from './store-runner.js'
 import { installStoreTestHook } from './store-test-hook.js'
+import { installExtensionsInstallTestHook } from './extensions-install-test-hook.js'
 import type { InstalledExtension } from './registry.js'
+import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
+import { installDnrPermissionCheck, registerDnrApiHandlers } from './dnr-api.js'
+import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
 
 export interface ExtensionsApi {
   readonly installFromFolder: (dir: string) => Promise<InstallOutcome>
@@ -74,16 +78,26 @@ export const extensionsSubsystem: Subsystem = {
     // every file's code regardless of its original src/ nesting -- the same
     // reason tabs.ts's own join(import.meta.dirname, '../preload/app.js')
     // has one, not the two its src/main/shell/ nesting might suggest.
-    createExtensionHost(join(import.meta.dirname, '../preload/extension-api.js'))
+    const hostExtensions = createExtensionHost(join(import.meta.dirname, '../preload/extension-api.js'))
 
     const userDataPath = ctx.app.getPath('userData')
+
+    // Must attach before loadEnabledExtensions() below fires its first
+    // 'extension-loaded' (extensions-dnr.ts's own header says why), and the
+    // router/webRequest wiring may as well go right alongside it: nothing
+    // reaches either before the first extension loads regardless.
+    attachExtensionsDnr(session.defaultSession, userDataPath)
+    installDnrPermissionCheck(session.defaultSession)
+    const { onRuleMatched, onTabNavigated } = registerDnrApiHandlers(hostExtensions.getRouter(), hostExtensions, userDataPath)
+    installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
+
     await loadEnabledExtensions(userDataPath)
 
     const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt() }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     const store = await startWebStore(install, preloadPath)
     installStoreTestHook(store)
-    publishExtensions(ctx, {
+    const extensionsApi: ExtensionsApi = {
       installFromFolder: async (dir) => await installFromFolder(install, dir),
       installFromFile: async (filePath) => await installFromFile(install, filePath),
       uninstall: async (id) => { await uninstall(install, id) },
@@ -92,6 +106,8 @@ export const extensionsSubsystem: Subsystem = {
       installFromStore: store.installFromStore,
       checkForUpdates: store.checkForUpdates,
       updateFromStore: store.updateFromStore
-    })
+    }
+    installExtensionsInstallTestHook(extensionsApi)
+    publishExtensions(ctx, extensionsApi)
   }
 }

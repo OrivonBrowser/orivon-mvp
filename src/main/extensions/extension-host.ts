@@ -35,6 +35,7 @@ import { appOrigin } from '../shell/devtools-app-origin.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
+import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
 import { hasApiOrHostAccess, hasApiPermission, hasHostAccess } from './extension-host-access.js'
@@ -304,7 +305,17 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     }
   })
 
-  watchForMissedServiceWorkerPreload(session.defaultSession)
+  // extension-sw-preload-recovery.ts must not import extensions-dnr.ts
+  // itself (its own header says why -- a preload script imports from that
+  // file too), so this call site is what supplies the dNR-specific reload
+  // marking: extensions-dnr.ts's own 'extension-unloaded' handler would
+  // otherwise drop session rules, badge mode and its webRequest
+  // registration for a worker recovering from a missed preload, which is
+  // not a real unload.
+  watchForMissedServiceWorkerPreload(session.defaultSession, (id, phase) => {
+    if (phase === 'start') beginDnrReload(id)
+    else endDnrReload(id)
+  })
 
   // Orivon patch: an extension popup's own page, and an MV2 background
   // page (Electron's own native support creates these -- never this

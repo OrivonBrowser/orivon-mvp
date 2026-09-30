@@ -7,7 +7,7 @@
 // dialog.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
-import { extname, join, resolve, sep } from 'node:path'
+import { dirname, extname, join, resolve, sep } from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Session } from 'electron'
 import {
@@ -22,6 +22,8 @@ import {
   writeRegistry
 } from './registry-runner.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
+import { clearPersistedRuleState } from './dnr/dnr-runner.js'
+import { clearPendingDnrInstall, registerPendingDnrInstall } from './extensions-dnr.js'
 import { generateId } from '../../../vendor/electron-chrome-web-store/src/browser/id.js'
 import { downloadCrxBytes } from '../../../vendor/electron-chrome-web-store/src/browser/installer.js'
 import { storeCrxDownloadUrl, storeTestPublisherKeyHash } from './store-download-seam.js'
@@ -194,10 +196,34 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
     throw error
   }
 
+  const now = Date.now()
+  const entry: InstalledExtension = {
+    id,
+    name: facts.name,
+    version: facts.version,
+    enabled: true,
+    installedAt: now,
+    updatedAt: now,
+    source: pending.source,
+    updater: pending.updater,
+    path: targetDir,
+    stripped
+  }
+
+  // Handed to the declarativeNetRequest service BEFORE loadExtension: the
+  // registry write below only lands after the load resolves, so its own
+  // 'extension-loaded' listener would otherwise find no entry (a fresh
+  // install) or the previous one (an update). extensions-dnr.ts has the
+  // full account.
+  registerPendingDnrInstall(entry)
+
   let loaded: Awaited<ReturnType<Session['extensions']['loadExtension']>>
   try {
     loaded = await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
   } catch (error) {
+    // Left in place, the pending entry would be taken for the previous
+    // version that restoreAsideOnFailure may reload under this same id.
+    clearPendingDnrInstall(id)
     await restoreAsideOnFailure()
     throw error
   }
@@ -210,6 +236,7 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   // slipped past canonicalization some other way must never be registered
   // under a name it does not actually run as.
   if (loaded.id !== id) {
+    clearPendingDnrInstall(id)
     ctx.session.extensions.removeExtension(loaded.id)
     // Loading under an installed extension's id replaced it in the session: load that one back.
     const displaced = readRegistry(ctx.userDataPath).find((existing) => existing.id === loaded.id && existing.enabled)
@@ -219,20 +246,6 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
     }
     await restoreAsideOnFailure()
     return { installed: false, reason: 'install refused: the loaded extension\'s id does not match its resolved key' }
-  }
-
-  const now = Date.now()
-  const entry: InstalledExtension = {
-    id: loaded.id,
-    name: facts.name,
-    version: facts.version,
-    enabled: true,
-    installedAt: now,
-    updatedAt: now,
-    source: pending.source,
-    updater: pending.updater,
-    path: targetDir,
-    stripped
   }
 
   // Re-reads the registry inside the lock rather than reusing the `registry`
@@ -444,6 +457,10 @@ export async function uninstall (ctx: InstallContext, id: string): Promise<void>
     if (entry === undefined) return
     ctx.session.extensions.removeExtension(id)
     rmSync(entry.path, { recursive: true, force: true })
+    // Chrome clears an uninstalled extension's dynamic rules and enabled-
+    // ruleset choice too. The slot's key.pub stays: a reinstall into the
+    // same slot must resolve to the same id.
+    clearPersistedRuleState(dirname(entry.path))
     writeRegistry(ctx.userDataPath, registry.filter((candidate) => candidate.id !== id))
   })
 }

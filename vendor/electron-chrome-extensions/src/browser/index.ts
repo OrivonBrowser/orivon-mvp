@@ -240,6 +240,33 @@ export class ElectronChromeExtensions extends EventEmitter {
     }
   }
 
+  /**
+   * Orivon patch: exposes this session's `ExtensionRouter` so a caller
+   * outside this library's own API classes (`src/browser/api/*.ts`) can
+   * register additional main-side handlers on the SAME router real
+   * extension messages (`crx-msg`) are dispatched through -- e.g. Orivon's
+   * own `declarativeNetRequest` API, whose renderer-side calls
+   * (`src/renderer/index.ts`) already go through `invokeExtension`/`crx-msg`
+   * like every other API here.
+   */
+  getRouter(): ExtensionRouter {
+    return this.ctx.router
+  }
+
+  /**
+   * Orivon patch: sets `extensionId`'s badge text for `tabId` directly from
+   * main, bypassing the `crx-msg`/`ExtensionEvent` path a real
+   * `chrome.action.setBadgeText` call takes. Reason: Orivon's own
+   * `declarativeNetRequest.setExtensionActionOptions({
+   * displayActionCountAsBadgeText: true })` wiring
+   * (`src/main/extensions/dnr-api.ts`) renders a per-tab matched-rule count
+   * driven by `webRequest`, from main, never from the extension's own
+   * script.
+   */
+  setBadgeText(extensionId: string, tabId: number, text: string): void {
+    this.api.browserAction.setBadgeTextFromMain(extensionId, tabId, text)
+  }
+
   /** Add webContents to be tracked as a tab. */
   addTab(tab: Electron.WebContents, window: Electron.BaseWindow) {
     this.checkWebContentsArgument(tab)

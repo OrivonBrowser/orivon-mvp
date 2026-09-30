@@ -51,7 +51,7 @@ and chrome.tabs' own host-access checks, and `site-reach.ts` uses for a person's
 [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts)'s `originFromUrl` (durable;
 `extension-tab-capture-invocation.ts`'s own recorder and `extension-host.ts`'s `chrome.tabCapture`
 app-refusal check both key on it),
-[`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
+[`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`,
 [`../channels.ts`](../channels.ts)'s `EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL`,
 [`../sessions/tab-capture-grants.ts`](../sessions/tab-capture-grants.ts)'s `mintTabCaptureGrant`
@@ -94,6 +94,20 @@ same exception, reached only through the virtual specifiers above).
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
 
 ## Design notes
+
+**`extension-sw-preload-recovery.ts` must import nothing beyond `electron`'s ambient types.**
+Its own exports (the two health-check channel constants, `extensionIdFromScope`) are imported by
+`src/preload/extension-sw-verify.ts`, a PRELOAD script that runs in every extension service
+worker. A real import added to `extension-sw-preload-recovery.ts` -- even one nothing in that
+file ever calls -- bundles that whole dependency's module graph into that preload script too: a
+bundler's tree-shaking works per used export, not per file, and cannot prune an import with real
+side effects (disk I/O, a vendored library) just because the importing file's own exports never
+reach it. Measured directly: adding `extensions-dnr.ts` as an unused import there added several
+seconds to a single e2e run seeding four real extensions (dNR's own vendored rule engine and its
+`node:fs` I/O layer riding along into every service worker's preload). `watchForMissedServiceWorkerPreload`'s
+`onReloadBoundary` parameter is how a caller-side concern (dNR's own reload marking, wired from
+`extension-host.ts`'s call site instead) reaches this file's generic hook without this file ever
+importing that caller's module itself.
 
 **[`site-reach.ts`](site-reach.ts) returns none for an origin served from its pinned cache,
 without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
@@ -268,7 +282,11 @@ neither.
 
 **`allowFileAccess` is never `true`, anywhere in this directory.** An extension with file access
 could read `file://` pages, including a page-cache-served or dashboard `file://` URL the shell
-itself never grants an ordinary web page.
+itself never grants an ordinary web page. Because no extension ever gets it, a `file:` URL is
+never covered by an extension's host permission: `<all_urls>` leaves `file` out
+(`../../broker/policy/extension-host-patterns.ts`'s `ALL_URLS_SCHEMES`), and
+`dnr/host-permissions.ts`'s `createHostAccessChecker` and `extension-host-access.ts`'s
+`hasHostAccess` refuse a `file:` request, initiator or url whatever pattern would otherwise match.
 
 **The extensions page reads an entry's own loaded folder for what a list needs, never the
 registry alone.** A name or description can be a `__MSG_...` reference into `_locales/<default_locale>/messages.json`,
