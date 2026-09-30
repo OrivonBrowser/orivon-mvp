@@ -7,6 +7,7 @@ import { apps } from './apps.js'
 import { appearance } from './appearance.js'
 import { content } from './content.js'
 import { developer } from './developer.js'
+import { downloads } from './downloads.js'
 import { privacy } from './privacy.js'
 import { profiles } from './profiles.js'
 import { search } from './search.js'
@@ -17,5 +18,5 @@ import { web3 } from './web3.js'
 
 /** After the state has loaded: some sections are built from what main reports. */
 export function sectionsFor (state: SettingsState): readonly Section[] {
-  return [appearance, search, startup, content, tabs, profiles, privacy, apps, web3, shortcutsSection(state.shortcuts.rows), developer, about]
+  return [appearance, search, startup, content, tabs, downloads, profiles, privacy, apps, web3, shortcutsSection(state.shortcuts.rows), developer, about]
 }

@@ -1,0 +1,78 @@
+@import '../shared/tokens.css';
+@import '../shared/controls.css';
+
+.page { max-width: 820px; margin: 0 auto; padding: 40px 24px 64px; }
+
+.head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.head-text { min-width: 0; flex: 1 1 280px; }
+.head h1 { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; color: var(--waccent-text); }
+.head h1 .icon { width: 24px; height: 24px; }
+.folder-line { margin: 4px 0 0 36px; color: var(--wink-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+
+.banner { margin-bottom: 16px; }
+
+.day { margin-bottom: 22px; }
+.day h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wink-dim);
+}
+.day h2::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--wborder); }
+.entries { display: flex; flex-direction: column; gap: 2px; }
+
+/* A fixed height, so progress, pause and completion never move the rows below. */
+.download {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 86px;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wpanel) 45%, transparent);
+}
+.download:hover, .download:focus-within { background: var(--wpanel); border-color: var(--wborder); }
+.download:focus-visible { outline-offset: -2px; }
+
+.dl-icon, .dl-skeleton-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; color: var(--wink-dim); }
+.dl-icon .icon { width: 28px; height: 28px; }
+.is-missing .dl-icon, .is-cancelled .dl-icon { opacity: 0.5; }
+
+.dl-main { flex: 1 1 auto; min-width: 0; display: grid; gap: 0; }
+.dl-name, .dl-source, .dl-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-name { height: 20px; line-height: 20px; font-size: 14px; font-weight: 500; color: var(--wink-strong); }
+.dl-name-link { display: block; padding: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; font-weight: 500; text-align: left; line-height: 20px; }
+.dl-name-link, .dl-name-link:hover { color: var(--waccent-text); }
+.is-missing .dl-name, .is-cancelled .dl-name { color: var(--wink-dim); }
+.dl-source { height: 16px; line-height: 16px; font-size: 12.5px; color: var(--wink-dim); }
+.dl-status { display: flex; align-items: center; gap: 8px; height: 18px; line-height: 18px; font-size: 12.5px; color: var(--wink-dim); }
+.dl-status .badge { flex: none; }
+.dl-status .badge[hidden] { display: none; }
+.dl-status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dl-main .progress { margin-top: 5px; }
+.progress[hidden] { display: none; }
+
+.dl-actions { flex: none; display: flex; align-items: center; gap: 2px; }
+.dl-time { flex: none; width: 76px; text-align: right; color: var(--wink-dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+.empty-state[hidden] { display: none; }
+
+.skeleton-row { pointer-events: none; }
+.skeleton-row:hover { background: color-mix(in srgb, var(--wpanel) 45%, transparent); border-color: transparent; }
+.dl-skeleton-icon { height: 28px; border-radius: 6px; }
+.dl-skeleton-name { width: 40%; margin-bottom: 8px; }
+.dl-skeleton-line { width: 25%; height: 12px; }
+
+@media (max-width: 640px) {
+  .page { padding: 28px 16px 48px; }
+  .dl-time { display: none; }
+  .head-actions { flex-wrap: wrap; }
+}
+
+/* The shared hover rule for icon buttons is more specific than the armed look, which would hide it under the pointer. */
+.btn.icon.danger.armed, .btn.icon.danger.armed:hover:not([disabled]), .btn.icon.danger.armed:active:not([disabled]) { background: var(--wdanger); border-color: var(--wdanger); color: #fff; }

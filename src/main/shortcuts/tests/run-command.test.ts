@@ -336,4 +336,10 @@ describe('runCommand', () => {
     expect(profiles.openPrivate).toHaveBeenCalledTimes(1)
     expect(calls['openInternal']).toHaveBeenCalledWith('profiles')
   })
+
+  it('opens the Downloads page', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('downloads.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('downloads')
+  })
 })

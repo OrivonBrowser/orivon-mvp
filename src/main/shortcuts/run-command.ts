@@ -118,7 +118,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
     case 'profiles.open': tabs.openInternal('profiles'); return
-    case 'downloads.open': return
+    case 'downloads.open': tabs.openInternal('downloads'); return
     case 'window.close': window.close(); return
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
     case 'bookmarks.toggleBar': toggleBookmarksBar(services); return

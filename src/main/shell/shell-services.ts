@@ -19,6 +19,8 @@ import type { Runtime } from '../launch/start-launch.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmOpenDevTools } from '../devtools/devtools-prompt.js'
 import { DevToolsService } from '../devtools/devtools-service.js'
+import { createDownloadService } from '../downloads/create-download-service.js'
+import type { DownloadService } from '../downloads/download-service.js'
 import { CommandBus } from '../shortcuts/command-bus.js'
 import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
@@ -42,6 +44,8 @@ export interface ShellServices {
   readonly closedTabs: ClosedStack
   readonly commands: CommandBus
   readonly devtools: DevToolsService
+  /** The files tabs have downloaded and the ones in progress; a private session keeps the list in memory only. */
+  readonly downloads: DownloadService
   readonly history: HistoryService
   readonly internalPages: InternalPageRegistry
   /** This process is a private session: it never writes a store file of its own. */
@@ -99,6 +103,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
       developerMode: devModeEnabled,
       confirm: confirmOpenDevTools
     }),
+    downloads: createDownloadService(userDataPath, runtime.isPrivate, settings),
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem),
     internalPages,
     isPrivate: runtime.isPrivate,

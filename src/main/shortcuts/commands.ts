@@ -65,7 +65,7 @@ export const COMMANDS = [
   { id: 'zoom.out', label: 'Zoom out', category: 'navigation', default: 'Mod+-', repeatable: true },
   { id: 'zoom.reset', label: 'Actual size', category: 'navigation', default: 'Mod+0' },
   { id: 'history.open', label: 'History', category: 'navigation', default: 'Mod+H' },
-  { id: 'downloads.open', label: 'Downloads', category: 'navigation', default: 'Mod+J', yieldToApp: true, pending: true },
+  { id: 'downloads.open', label: 'Downloads', category: 'navigation', default: 'Mod+J', yieldToApp: true },
   { id: 'devtools.toggle', label: 'Developer tools', category: 'navigation', default: 'F12', macDefault: 'Mod+Alt+I', aliases: ['Mod+Shift+I'] },
   { id: 'devtools.console', label: 'JavaScript console', category: 'navigation', default: 'Mod+Shift+J', macDefault: 'Mod+Alt+J', pending: true },
   { id: 'bookmark.toggle', label: 'Bookmark this page', category: 'navigation', default: 'Mod+D' },

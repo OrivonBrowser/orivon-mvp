@@ -145,7 +145,7 @@ describe('menuItems', () => {
     const { ctx } = await setup()
     const on = vi.fn(() => true)
     const hint = vi.fn(() => 'note')
-    const items = menuItems(ctx, ['tab.new', 'downloads.open', { check: 'bookmarks.open', on }, { item: 'about.open', hint }])
+    const items = menuItems(ctx, ['tab.new', 'bookmarks.open', { check: 'bookmark.allTabs', on }, { item: 'about.open', hint }])
     expect(items).toEqual([expect.objectContaining({ id: 'tab.new' })])
     expect(on).not.toHaveBeenCalled()
     expect(hint).not.toHaveBeenCalled()
@@ -157,7 +157,7 @@ describe('menuItems', () => {
     const submenu = items.find((item) => item.kind === 'submenu' && item.label === 'Bookmarks')
     expect(submenu).toMatchObject({ items: [expect.objectContaining({ id: 'bookmarks.toggleBar' })] })
     const ids = runnableIds(items)
-    for (const id of ['downloads.open', 'bookmarks.open', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'devtools.console', 'tasks.open', 'import.open', 'about.open']) {
+    for (const id of ['bookmarks.open', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'devtools.console', 'tasks.open', 'import.open', 'about.open']) {
       expect(ids.has(id as never), id).toBe(false)
     }
   })
