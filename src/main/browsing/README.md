@@ -6,6 +6,9 @@ operation), `bookmark-file.ts` (reading and writing the file, pure),
 `bookmarks-domain.ts` (what the Bookmarks page may ask, each field checked), `bookmarks-undo.ts` (what a delete in it can take back),
 `bookmarks-html-export.ts` (the Netscape bookmark file, pure) and `bookmarks-export-runner.ts` (the save dialog and the write),
 `favicon.ts` and its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL),
+`search-engines.ts` (the built-in engines, their keywords and suggestion addresses, and the template rule), `search-resolve.ts` and
+`search-current.ts` (which engine a typed search goes to, pure), `search-engine-store.ts` (the engines a person keeps in
+`search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
 `favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), and `site-trust.ts` (the Web3 Score page and the
 toolbar shield's data). `site-trust.ts` is pure: its caller,
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts), hands it the
@@ -29,6 +32,13 @@ dependency on tab-collection state, which keeps it importable under plain vitest
 **Owner stream.** `shell`. Maintenance only.
 
 ## Design notes
+
+**A keyword is the first word of a search, never an address.** `search-resolve.ts` takes `<keyword> <terms>` only when
+something follows the keyword, so `w` alone and `w.com` are parsed as before and a keyword cannot stand in for a host.
+The tab's Enter and the dropdown's first row both call `resolveCurrent`, so the row never names an engine Enter would
+not reach. Built-in keywords are fixed; the site engines (Wikipedia, YouTube, GitHub, OpenStreetMap) are ordinary
+entries of `search-engines.json`, which remembers a removed one so it stays removed. A private session reads the file
+its opener had and refuses every write.
 
 **`bookmarks.json` is a tree with stable ids, and nothing else reads its text.** Format 2 holds three roots (`bar`,
 `other`, `reading`) of nested nodes, each with a random id that stays the same from the first load on. A file that is a bare array

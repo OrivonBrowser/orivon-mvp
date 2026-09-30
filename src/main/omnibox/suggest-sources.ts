@@ -7,6 +7,8 @@ import {
   BOOKMARK_BONUS, TAB_BONUS, historyBonus, isCompletablePage, matchRanges, matchTier, stripAddress
 } from './suggest.js'
 import type { SuggestionRow } from './suggest.js'
+import { engineSuggestions } from './suggest-fetch.js'
+import type { SuggestDeps } from './suggest-fetch.js'
 
 /** The pages the history offers for the text; `limit` bounds how many. */
 const HISTORY_CANDIDATES = 60
@@ -33,6 +35,8 @@ export interface SuggestContext {
   history: { suggest: (text: string, limit: number) => readonly HistorySuggestion[] }
   bookmarks: () => readonly Bookmark[]
   tabs: () => readonly SuggestTab[]
+  /** What the engine's own suggestions need; absent, none are asked for. */
+  suggest?: SuggestDeps
 }
 
 export type SuggestSource = (text: string, ctx: SuggestContext) => SuggestionRow[]
@@ -92,5 +96,7 @@ export const SUGGEST_SOURCES: readonly SuggestSource[] = [
   tabs
 ]
 
-/** Empty: nothing the person types leaves this process until a source is listed here. */
-export const LATE_SOURCES: readonly LateSource[] = []
+/** What the person types leaves this process only through a source listed here, and only when that source's own guards hold. */
+export const LATE_SOURCES: readonly LateSource[] = [
+  engineSuggestions
+]

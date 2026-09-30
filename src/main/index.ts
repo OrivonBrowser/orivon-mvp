@@ -159,7 +159,7 @@ function boot (runtime: Runtime): void {
     publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
-    await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load()])
+    await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load()])
     seedClosedStack(shell.closedTabs, shell.session.previous())
     applyThemeSetting(shell.settings, nativeTheme)
     // The light client starts after the first page loads, by which time the settings have been read: the person's choice reaches it.

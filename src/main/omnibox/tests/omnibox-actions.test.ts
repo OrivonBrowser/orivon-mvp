@@ -39,6 +39,7 @@ function setup (options: { history?: Array<{ url: string, title: string }>, book
       faviconsFor: () => ({}), markTyped
     },
     bookmarks: { getAll: () => (options.bookmarks ?? []).map((bookmark) => ({ ...bookmark, favicon: null })) },
+    searchEngines: { all: () => [] },
     settings: { get: (key: string) => key === 'search.engine' ? 'duckduckgo' : key === 'addressBar.autocomplete' ? true : '' }
   }
   const ctx = { window: here.entry, services } as unknown as WindowContext

@@ -31,6 +31,7 @@ body[data-overlay='omnibox'] .listbox-item:not(.no-sub) > .item-title { max-widt
 body[data-overlay='omnibox'] .omni-star svg { width: 12px; height: 12px; fill: currentColor; }
 body[data-overlay='omnibox'] .listbox-item[aria-selected='true'] .omni-star { color: var(--waccent-text); }
 body[data-overlay='omnibox'] .omni-meta { color: var(--wink-dim); }
+body[data-overlay='omnibox'] .omni-typed { color: var(--wink-dim); }
 
 /* The kit's chip is a button look; here it only labels, so it neither shows a hand nor reacts to the pointer. */
 body[data-overlay='omnibox'] .chip { cursor: inherit; pointer-events: none; padding: 1px 8px; font-size: 12px; }
