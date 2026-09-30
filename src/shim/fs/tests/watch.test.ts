@@ -224,6 +224,79 @@ describe('FSWatcher', () => {
   })
 })
 
+describe('what a context tells the others', () => {
+  /** The notices and counts every context posts, read off the channel as they are sent. */
+  function posted (): { fs: () => string[], watching: () => Array<{ from: string, count: number }> } {
+    const sent: Array<{ t: string, path?: string, from?: string, count?: number }> = []
+    const post = BroadcastChannel.prototype.postMessage
+    vi.spyOn(BroadcastChannel.prototype, 'postMessage').mockImplementation(function (this: BroadcastChannel, message: unknown) { sent.push(message as never); post.call(this, message) })
+    return {
+      fs: () => sent.filter((message) => message.t === 'fs').map((message) => message.path as string),
+      watching: () => sent.filter((message) => message.t === 'watching').map((message) => ({ from: message.from as string, count: message.count as number }))
+    }
+  }
+
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  it('does not post a write once it has had time to hear of every watcher and none exists', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    installFakeOrivon()
+    const sent = posted()
+    const fs = await import('../fs.js')
+    await write(fs, 'early.json')
+    expect(sent.fs()).toContain('early.json')
+    vi.setSystemTime(Date.now() + 60_000)
+    await write(fs, 'late.json')
+    await settle()
+    expect(sent.fs()).not.toContain('late.json')
+  })
+
+  it('still reaches a watcher that subscribes after the writer stopped posting', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    installFakeOrivon()
+    const writingFs = await import('../fs.js')
+    await write(writingFs, 'warmup.json')
+    vi.setSystemTime(Date.now() + 60_000)
+    vi.resetModules()
+    const watchingFs = await import('../fs.js')
+    const watcher = watchingFs.watch('users', { persistent: false })
+    const seen = collect(watcher)
+    await settle()
+    await write(writingFs, 'users/after.json')
+    await settle()
+    expect(seen.map(([, name]) => name)).toContain('after.json')
+    watcher.close()
+  })
+
+  it('a watching context repeats its count, and a count that is not repeated lapses', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    installFakeOrivon()
+    const sent = posted()
+    const fs = await import('../fs.js')
+    const watcher = fs.watch('users', { persistent: false })
+    const before = sent.watching().length
+    await vi.advanceTimersByTimeAsync(12_000)
+    expect(sent.watching().length).toBeGreaterThan(before)
+    watcher.close()
+    const afterClose = sent.watching().length
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(sent.watching().length).toBe(afterClose)
+
+    // A context that died without saying so: its one count is all that was ever heard.
+    vi.setSystemTime(Date.now() + 20_000)
+    const ghost = new BroadcastChannel('orivon.fs.watch')
+    ghost.postMessage({ t: 'watching', from: 'ghost', count: 1 })
+    await settle()
+    await write(fs, 'while-the-ghost-is-fresh.json')
+    expect(sent.fs()).toContain('while-the-ghost-is-fresh.json')
+    vi.setSystemTime(Date.now() + 60_000)
+    await write(fs, 'after-the-ghost-lapsed.json')
+    await settle()
+    ghost.close()
+    expect(sent.fs()).not.toContain('after-the-ghost-lapsed.json')
+  })
+})
+
 describe('fs.promises.watch', () => {
   it('yields events until the loop is left', async () => {
     installFakeOrivon()

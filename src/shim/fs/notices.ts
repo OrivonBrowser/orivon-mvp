@@ -4,9 +4,12 @@
 // scoped to its origin, so an app's notices never reach another app). Only a
 // write made through the shim is announced; README.md's Design notes say why.
 //
-// Contexts also tell each other how many watchers they hold. That lets a
-// creating write pay for one existence check, to tell 'rename' (created) from
-// 'change' (rewritten), only when someone is watching.
+// Contexts also tell each other how many watchers they hold, and repeat it while
+// they hold any. That lets a creating write pay for one existence check, to tell
+// 'rename' (created) from 'change' (rewritten), only when someone is watching, and
+// lets a context that has had time to hear from every watcher stop posting when
+// none is left. A count that is not repeated lapses, so a context that died
+// without saying so is forgotten.
 
 export type WatchKind = 'rename' | 'change'
 export type NoticeListener = (path: string, kind: WatchKind) => void
@@ -18,10 +21,19 @@ type Message =
 
 const CHANNEL_NAME = 'orivon.fs.watch'
 const contextId = Math.random().toString(36).slice(2)
+/** How often a context holding watchers repeats its count. */
+const HEARTBEAT_MS = 10_000
+/** A count older than this, unrepeated, no longer counts: two beats may be lost before it lapses. */
+const LAPSE_MS = 3 * HEARTBEAT_MS
+/** After opening its channel a context posts every notice: a watcher it has not heard of repeats itself within one beat. */
+const SETTLE_MS = HEARTBEAT_MS + 1_000
+
 const local = new Set<NoticeListener>()
-const remote = new Map<string, number>()
+const remote = new Map<string, { readonly count: number, readonly at: number }>()
 let channel: BroadcastChannel | undefined
 let attempted = false
+let openedAt = 0
+let beat: unknown
 
 /** A path in the form every announcement and watcher shares: no leading `./` or `/`, no trailing `/`, `''` for the app's root. */
 export function normalizeNoticePath (path: string): string {
@@ -34,6 +46,25 @@ function dispatch (path: string, kind: WatchKind): void {
 
 function tellCount (): void {
   channel?.postMessage({ t: 'watching', from: contextId, count: local.size } satisfies Message)
+  if (local.size > 0 && beat === undefined) {
+    beat = setInterval(tellCount, HEARTBEAT_MS)
+    // Node's timer would keep a process alive for a context that only repeats a count.
+    ;(beat as { unref?: () => void }).unref?.()
+  } else if (local.size === 0 && beat !== undefined) {
+    clearInterval(beat as Parameters<typeof clearInterval>[0])
+    beat = undefined
+  }
+}
+
+/** True when a count heard lately says another context is watching; counts that have lapsed are forgotten. */
+function remoteWatching (): boolean {
+  const now = Date.now()
+  let watching = false
+  for (const [from, { count, at }] of remote) {
+    if (now - at > LAPSE_MS) remote.delete(from)
+    else if (count > 0) watching = true
+  }
+  return watching
 }
 
 function open (): BroadcastChannel | undefined {
@@ -48,9 +79,10 @@ function open (): BroadcastChannel | undefined {
     if (message.t === 'fs') dispatch(message.path, message.kind)
     else if (message.t === 'hello') { if (local.size > 0) tellCount() }
     else if (message.count === 0) remote.delete(message.from)
-    else remote.set(message.from, message.count)
+    else remote.set(message.from, { count: message.count, at: Date.now() })
   }
   channel = opened
+  openedAt = Date.now()
   opened.postMessage({ t: 'hello' } satisfies Message)
   return opened
 }
@@ -69,15 +101,15 @@ export function subscribe (listener: NoticeListener): () => void {
 /** True when some context is known to be watching, so a creating write is worth an existence check. */
 export function watchersExist (): boolean {
   if (!attempted) open()
-  if (local.size > 0) return true
-  for (const count of remote.values()) if (count > 0) return true
-  return false
+  return local.size > 0 || remoteWatching()
 }
 
 export function announce (path: string, kind: WatchKind): void {
   const normalized = normalizeNoticePath(path)
   dispatch(normalized, kind)
-  open()?.postMessage({ t: 'fs', path: normalized, kind } satisfies Message)
+  const opened = open()
+  // Another context needs the notice only if it watches, and a context hears of one by its count.
+  if (opened !== undefined && (Date.now() - openedAt < SETTLE_MS || remoteWatching())) opened.postMessage({ t: 'fs', path: normalized, kind } satisfies Message)
 }
 
 /** A write that created its file reads 'rename' then 'change', as inotify's create and modify do; a rewrite is 'change' alone. `existed` is unknown-true when nobody watched at the time. */

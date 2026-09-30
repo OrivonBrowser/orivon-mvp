@@ -87,8 +87,12 @@ reads as missing).
 
 A write that creates its file reads `'rename'` then `'change'`, as inotify's create and modify do;
 telling it from a rewrite costs a `stat`, which a writer pays only while some context is known to
-be watching. Contexts learn that from a count each posts on the same channel, so a context's
-first announcement, made before it has heard from the others, reads `'change'` alone. A persistent
+be watching. Contexts learn that from a count each posts on the same channel and repeats every ten
+seconds while it holds a watcher; a count not repeated for thirty seconds lapses, so a context that died
+without saying so is forgotten. A context's first announcement, made before it has heard from the
+others, reads `'change'` alone. Once a context has had one beat's time to hear from every watcher and
+none is known, it stops posting its notices; a watcher that subscribes later announces itself and the
+posting resumes. A persistent
 watcher (the default) keeps a forked child alive until `close()` or `unref()`, as it keeps a Node
 process; `persistent: false` does not. `fs.promises.watch` is an async iterator over the same
 events, and `signal` closes either form. `watchFile` and `unwatchFile` refuse by name: they poll,
