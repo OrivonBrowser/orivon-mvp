@@ -1,5 +1,10 @@
 import type { Section } from '../model.js'
 
+const HELP: Readonly<Record<string, string>> = {
+  continue: 'Your windows and tabs from last time reopen. Private windows are never reopened.',
+  pages: 'These pages open in the first window.'
+}
+
 export const startup: Section = {
   id: 'startup',
   title: 'On start-up',
@@ -7,7 +12,8 @@ export const startup: Section = {
     {
       id: 'startup-mode',
       label: 'When Orivon starts',
-      keywords: ['launch', 'open', 'restore', 'session', 'continue', 'last time', 'new tab', 'pages'],
+      helpFor: (state) => HELP[String(state.value('startup.mode'))] ?? '',
+      keywords: ['startup', 'launch', 'restore', 'session', 'tabs', 'reopen', 'begin', 'continue', 'last time', 'new tab', 'pages'],
       control: {
         type: 'choice',
         key: 'startup.mode',
@@ -17,6 +23,13 @@ export const startup: Section = {
           { value: 'pages', label: 'Open specific pages' }
         ]
       }
+    },
+    {
+      id: 'startup-pages',
+      label: 'Pages to open',
+      keywords: ['startup', 'launch', 'pages', 'addresses', 'websites', 'urls', 'sites'],
+      control: { type: 'pageList', key: 'startup.pages' },
+      visible: (state) => state.value('startup.mode') === 'pages'
     },
     {
       id: 'home-url',

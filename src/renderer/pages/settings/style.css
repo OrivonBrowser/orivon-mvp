@@ -1,5 +1,6 @@
 @import '../shared/tokens.css';
 @import '../shared/controls.css';
+@import './controls/page-list.css';
 
 .layout { display: flex; height: 100vh; }
 

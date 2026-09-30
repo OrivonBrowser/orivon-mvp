@@ -3,6 +3,7 @@
 import { windowStateRecorder } from '../window-state/window-state-recorder.js'
 import type { WindowContext } from './window-context.js'
 import type { ShellWindowOptions } from './window-options.js'
+import { restoreOffer } from '../startup/restore-offer.js'
 import { sessionRecorder } from '../session-restore/session-hook.js'
 
 export interface WindowHook {
@@ -14,6 +15,7 @@ export interface WindowHook {
 }
 
 export const WINDOW_HOOKS: readonly WindowHook[] = [
+  restoreOffer,
   sessionRecorder,
   windowStateRecorder
 ]

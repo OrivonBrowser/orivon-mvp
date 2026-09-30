@@ -204,14 +204,18 @@ function boot (runtime: Runtime): void {
         markStarted()
       }
     } else {
+      let afterFirst: (() => void) | undefined
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
-        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, displays: screen.getAllDisplays() })
+        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
+        afterFirst = plan.after
         createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
       } finally {
         markStarted()
       }
+      // The rest of a restored session, once the first window exists and a second launch may be answered.
+      try { afterFirst?.() } catch (error) { console.error('[orivon] restoring the other windows failed:', error) }
       app.on('activate', () => {
         if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
       })

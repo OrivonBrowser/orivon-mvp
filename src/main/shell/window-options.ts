@@ -29,6 +29,8 @@ export interface ShellWindowOptions {
   readonly instant?: boolean | undefined
   /** The window opens maximized, over `place`. */
   readonly maximized?: boolean | undefined
+  /** Run once, by the launch, after this window exists: the windows of a restored session that come after the first. */
+  readonly after?: (() => void) | undefined
 }
 
 /** A window opened from another one sits a little down and to the right of it, so the two are told apart. */

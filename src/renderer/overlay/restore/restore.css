@@ -1,0 +1,25 @@
+/* One 44px row: a mark, the message, the action and the dismiss button. The message gives way first. */
+
+body[data-overlay='restore'] .restorebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 8px 0 14px;
+}
+
+body[data-overlay='restore'] .restore-mark { flex: none; display: inline-flex; color: var(--wwarn); }
+body[data-overlay='restore'] .restore-mark svg { width: 16px; height: 16px; }
+
+body[data-overlay='restore'] .restore-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--wink);
+}
+
+body[data-overlay='restore'] .btn { flex: none; }
