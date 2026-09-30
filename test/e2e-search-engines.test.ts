@@ -149,7 +149,8 @@ it('lists the engines in Settings, adds, edits, removes and makes one the defaul
     // Built-in engines offer neither Edit nor Remove; site engines offer both.
     expect(await itemNamed(page, 'Google').locator('.engine-edit, .engine-remove').count()).toBe(0)
     expect(await itemNamed(page, 'Wikipedia').locator('.engine-edit, .engine-remove').count()).toBe(2)
-    await page.locator('#row-search-engines').scrollIntoViewIfNeeded()
+    // The page draws itself again as each part of its state arrives, so the row can be replaced while a locator action waits for it to hold still.
+    await page.evaluate(() => { document.querySelector('#row-search-engines')?.scrollIntoView({ block: 'nearest' }) })
     await shootPage(app, page, 'settings-engines')
 
     // The form opens on Name; Enter saves.
