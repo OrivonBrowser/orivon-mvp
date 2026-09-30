@@ -4,6 +4,7 @@
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import { commandById } from '../shortcuts/commands.js'
+import { bookmarksBarShown } from './bookmarks-bar/bar-visibility.js'
 import { hintFor } from '../session-restore/reopen.js'
 import type { WindowContext } from './window-context.js'
 
@@ -18,12 +19,6 @@ export type MenuEntry = '-' | CommandId
   /** A row that opens `items` in place of the menu, under a row that goes back. */
   | { readonly submenu: string, readonly items: readonly MenuEntry[] }
 
-/** The rule the window lays out by: 'auto' shows the bar when there is a bookmark to put in it. */
-function barShown ({ settings, bookmarks }: WindowContext['services']): boolean {
-  const mode = settings.get('appearance.bookmarksBar')
-  return mode === 'always' || (mode === 'auto' && bookmarks.getAll().length > 0)
-}
-
 export const MENU_LAYOUT: readonly MenuEntry[] = [
   'tab.new',
   'window.new',
@@ -37,7 +32,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
     'bookmark.allTabs',
     'readingList.add',
     '-',
-    { check: 'bookmarks.toggleBar', on: ({ services }) => barShown(services) },
+    { check: 'bookmarks.toggleBar', on: ({ services }) => bookmarksBarShown(services) },
     'bookmarks.open',
     'readingList.open',
     '-',

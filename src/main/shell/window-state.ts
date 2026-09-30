@@ -1,5 +1,5 @@
-// What one window tells its chrome view: the tab collection, the bookmarks, the
-// zoom chip and the profile look, folded into one ShellState and pushed on
+// What one window tells its chrome view: the tab collection, whether the page is
+// bookmarked, the zoom chip and the profile look, folded into one ShellState and pushed on
 // every change. It also decides which dismissals a push implies (a tab switch,
 // a navigation, the site-info origin changing) and starts the sources whose
 // changes cause a push, and the stop that ends them with the window.
@@ -7,7 +7,9 @@ import type { BaseWindow, WebContentsView } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { STATE_CHANNEL } from '../channels.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
+import { barItemsOf } from './bookmarks-bar/bar-items.js'
 import type { HtmlFullscreen } from './fullscreen.js'
+import { sendChromeEvent } from './shell-events.js'
 import { readStateParts, watchStateParts } from './shell-state-parts.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
@@ -85,10 +87,10 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     // pushes state -- this is where that late icon reaches the bookmark it
     // belongs to. fillMissingFavicon never overwrites an icon already
     // stored, and deliberately does not notify listeners, so this cannot
-    // push state from inside a state push; the list read below already
-    // reflects it.
+    // push state from inside a state push.
+    let iconFilled = false
     for (const tab of state.tabs) {
-      if (tab.favicon !== null) bookmarks.fillMissingFavicon(tab.url, tab.favicon)
+      if (tab.favicon !== null && bookmarks.fillMissingFavicon(tab.url, tab.favicon)) iconFilled = true
     }
     const switched = state.activeTabId !== lastActiveTabId
     if (switched) {
@@ -114,12 +116,17 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     chrome.webContents.send(STATE_CHANNEL, {
       ...readStateParts(context, state),
       ...state,
-      bookmarks: bookmarks.getAll(),
       bookmarksBar: bookmarksBarShown(),
       zoomPercent: zoomChip(activeTab?.url),
       profile: profileLook
     })
+    // The bar's items travel only when they change, so an icon that arrived late is sent here.
+    if (iconFilled) sendBarItems()
     afterPush()
+  }
+
+  function sendBarItems (): void {
+    sendChromeEvent(context.window, 'bookmarks-bar', barItemsOf(bookmarks))
   }
 
   // Only the first and last bookmark change the chrome's height, so the
@@ -138,6 +145,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
       // either is now off by the row's height.
       overlays.relayout()
     }
+    sendBarItems()
     pushState()
   }
 

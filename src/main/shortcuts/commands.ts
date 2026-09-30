@@ -71,7 +71,7 @@ export const COMMANDS = [
   { id: 'bookmark.toggle', label: 'Bookmark this page', category: 'navigation', default: 'Mod+D' },
   { id: 'bookmark.allTabs', label: 'Bookmark all tabs', category: 'navigation', default: 'Mod+Shift+D', pending: true },
   { id: 'bookmarks.open', label: 'Bookmark manager', category: 'navigation', default: 'Mod+Shift+O', pending: true },
-  { id: 'bookmarks.toggleBar', label: 'Show bookmarks bar', category: 'navigation', default: 'Mod+Shift+B', pending: true },
+  { id: 'bookmarks.toggleBar', label: 'Show bookmarks bar', category: 'navigation', default: 'Mod+Shift+B' },
   { id: 'readingList.add', label: 'Add page to reading list', category: 'navigation', pending: true },
   { id: 'readingList.open', label: 'Reading list', category: 'navigation', pending: true },
   { id: 'find.open', label: 'Find in page', category: 'tools', default: 'Mod+F', yieldToApp: true },

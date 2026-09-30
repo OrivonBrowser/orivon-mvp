@@ -14,21 +14,22 @@ let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-menu-layout-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
-interface Setup { shortcuts: ShortcutService, ctx: WindowContext, closedTabs: ClosedStack }
+interface Setup { shortcuts: ShortcutService, ctx: WindowContext, closedTabs: ClosedStack, bar: { mode: string, items: number } }
 
 async function setup (url = 'https://a.example/', zoomPercent = 100, onTop = false): Promise<Setup> {
   const store = new ShortcutStore(join(dir, 'shortcuts.json'), 'linux')
   await store.load()
   const shortcuts = new ShortcutService(store, 'linux')
   const closedTabs = new ClosedStack()
+  const bar = { mode: 'auto', items: 0 }
   const ctx = {
     window: {
       window: { isAlwaysOnTop: () => onTop },
       tabs: { getState: () => ({ tabs: [{ id: 'a', url }], activeTabId: 'a' }) }
     },
-    services: { shortcuts, closedTabs, zoom: { percentFor: (origin: string | null) => origin === null ? 100 : zoomPercent } }
+    services: { shortcuts, closedTabs, settings: { get: () => bar.mode }, bookmarks: { children: () => new Array(bar.items).fill({}) }, zoom: { percentFor: (origin: string | null) => origin === null ? 100 : zoomPercent } }
   } as unknown as WindowContext
-  return { shortcuts, ctx, closedTabs }
+  return { shortcuts, ctx, closedTabs, bar }
 }
 
 const commandsIn = (entries: readonly MenuEntry[]): string[] => entries.flatMap((entry): string[] => {
@@ -64,7 +65,7 @@ describe('the main menu layout', () => {
     const { ctx } = await setup()
     const items = menuItems(ctx)
     expect(items.map((item) => item.kind)).toContain('zoom')
-    expect(items.find((item) => item.kind === 'submenu')).toMatchObject({ label: 'More tools' })
+    expect(items.find((item) => item.kind === 'submenu' && item.label === 'More tools')).toBeDefined()
   })
 
   it('lists Find in page with its key, between Print and Save page as', async () => {
@@ -78,7 +79,7 @@ describe('the main menu layout', () => {
 
   it('lists Search tabs with its key in More tools, right after Split view', async () => {
     const { ctx } = await setup()
-    const more = menuItems(ctx).find((item) => item.kind === 'submenu')
+    const more = menuItems(ctx).find((item) => item.kind === 'submenu' && item.label === 'More tools')
     const rows = more?.kind === 'submenu' ? more.items : []
     const at = rows.findIndex((item) => item.kind === 'command' && item.id === 'tab.search')
     expect(rows[at]).toMatchObject({ label: 'Search tabs', keys: ['Ctrl', 'Shift', 'A'] })
@@ -144,20 +145,41 @@ describe('menuItems', () => {
     const { ctx } = await setup()
     const on = vi.fn(() => true)
     const hint = vi.fn(() => 'note')
-    const items = menuItems(ctx, ['tab.new', 'downloads.open', { check: 'bookmarks.toggleBar', on }, { item: 'about.open', hint }])
+    const items = menuItems(ctx, ['tab.new', 'downloads.open', { check: 'bookmarks.open', on }, { item: 'about.open', hint }])
     expect(items).toEqual([expect.objectContaining({ id: 'tab.new' })])
     expect(on).not.toHaveBeenCalled()
     expect(hint).not.toHaveBeenCalled()
   })
 
-  it('shows none of the library commands while they are pending, and no Bookmarks submenu', async () => {
+  it('shows none of the library commands while they are pending, and the Bookmarks submenu only with what has landed', async () => {
     const { ctx } = await setup()
     const items = menuItems(ctx)
-    expect(items.some((item) => item.kind === 'submenu' && item.label === 'Bookmarks')).toBe(false)
+    const submenu = items.find((item) => item.kind === 'submenu' && item.label === 'Bookmarks')
+    expect(submenu).toMatchObject({ items: [expect.objectContaining({ id: 'bookmarks.toggleBar' })] })
     const ids = runnableIds(items)
-    for (const id of ['downloads.open', 'bookmarks.open', 'bookmarks.toggleBar', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'page.qr', 'devtools.console', 'tasks.open', 'import.open', 'about.open']) {
+    for (const id of ['downloads.open', 'bookmarks.open', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'page.qr', 'devtools.console', 'tasks.open', 'import.open', 'about.open']) {
       expect(ids.has(id as never), id).toBe(false)
     }
+  })
+})
+
+describe('the bookmarks bar check', () => {
+  const tick = (items: readonly MenuItemView[]): boolean | null | undefined => {
+    const submenu = items.find((item) => item.kind === 'submenu' && item.label === 'Bookmarks') as Extract<MenuItemView, { kind: 'submenu' }>
+    return (find(submenu.items, 'bookmarks.toggleBar') as Extract<MenuItemView, { kind: 'command' }> | undefined)?.checked
+  }
+
+  it('is on when the bar is shown by the setting or by an item in it, and off otherwise', async () => {
+    const { ctx, bar } = await setup()
+
+    expect(tick(menuItems(ctx))).toBe(false)
+    bar.items = 2
+    expect(tick(menuItems(ctx))).toBe(true)
+    bar.mode = 'never'
+    expect(tick(menuItems(ctx))).toBe(false)
+    bar.mode = 'always'
+    bar.items = 0
+    expect(tick(menuItems(ctx))).toBe(true)
   })
 })
 

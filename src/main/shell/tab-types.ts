@@ -6,7 +6,6 @@
 import type { BaseWindow, LoadURLOptions, View, WebContents, WebContentsView } from 'electron'
 import type { FrameState } from './split-controller.js'
 import type { Broker } from '../../broker/broker-contracts.js'
-import type { Bookmark } from '../browsing/bookmarks.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import type { DevToolsGate } from '../devtools/devtools-service.js'
@@ -69,7 +68,8 @@ export interface TabsSnapshot {
 }
 
 export interface ShellState extends TabsSnapshot {
-  bookmarks: Bookmark[]
+  /** The active tab's address is in the bar or in Other bookmarks: the star shows it. */
+  bookmarked: boolean
   /** Whether the bookmarks bar is shown: main decides (it sizes the chrome view to match) and the page follows. */
   bookmarksBar: boolean
   /** The active page's zoom, when it differs from what a site gets by default; otherwise null. */

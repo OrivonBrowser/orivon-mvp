@@ -4,6 +4,7 @@ import { SHELL_EVENT_CHANNEL } from '../channels.js'
 import { findStep, openFind } from '../find/find-commands.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { closeOthers, closeToRight, duplicateTab, toggleMute, togglePin } from '../shell/tab-commands.js'
+import { toggleBookmarksBar } from '../shell/bookmarks-bar/bar-visibility.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
 import { goHome } from '../shell/home.js'
 import { cascadeFrom } from '../shell/window-options.js'
@@ -114,7 +115,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'downloads.open': return
     case 'window.close': window.close(); return
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
-    case 'bookmarks.toggleBar': return
+    case 'bookmarks.toggleBar': toggleBookmarksBar(services); return
     case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
     case 'settings.open': tabs.openInternal('settings'); return
     case 'about.open': return
