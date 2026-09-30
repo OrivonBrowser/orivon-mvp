@@ -157,13 +157,42 @@ export function buildChildrenBridge (): ChildrenPageBridge {
  * defaults to the real `window`, overridable so a test never mutates the
  * one shared global environment (`surface/main-world-socket.ts`'s own
  * `installOrivon` takes the identical parameter for the identical reason).
+ * Every entry applies `installOrivon`'s page-caller check, so it must run AFTER `exposeOrivon()`.
  */
 export function installChildrenBridge (
   bridge: ChildrenPageBridge,
   target: object = typeof window === 'undefined' ? {} : window
 ): void {
+  // ADR-0045's page-caller check, read from the slot `installOrivon` shares (an extension's
+  // main-world script must not start, message or kill an app's children). Fail closed: no slot,
+  // or no check in it, refuses every entry. Everything here stays inside this function's body.
+  const slot = (target as Record<symbol, { callerIsPage?: (exclude: (...args: never[]) => unknown) => boolean } | undefined>)[Symbol.for('orivon.internal-net')]
+  const callerIsPage = typeof slot?.callerIsPage === 'function' ? slot.callerIsPage : undefined
+  function refusal (): Error & { code: string } {
+    const error = new Error("orivon: refused -- the caller could not be attributed to this page's own script") as Error & { code: string }
+    error.name = 'OrivonError'
+    error.code = 'denied'
+    return error
+  }
+  function allowed (wrapped: (...args: never[]) => unknown): boolean {
+    try { return callerIsPage !== undefined && callerIsPage(wrapped) } catch { return false }
+  }
+  const guardedBridge: ChildrenPageBridge = {
+    start: function wrappedStart (start, onMessage) {
+      if (!allowed(wrappedStart as (...args: never[]) => unknown)) return Promise.reject(refusal())
+      return bridge.start(start, onMessage)
+    },
+    send: function wrappedSend (childId, message) {
+      if (!allowed(wrappedSend as (...args: never[]) => unknown)) throw refusal()
+      bridge.send(childId, message)
+    },
+    kill: function wrappedKill (childId) {
+      if (!allowed(wrappedKill as (...args: never[]) => unknown)) throw refusal()
+      bridge.kill(childId)
+    }
+  }
   Object.defineProperty(target, Symbol.for('orivon:children'), {
-    value: Object.freeze(bridge),
+    value: Object.freeze(guardedBridge),
     writable: false,
     configurable: false,
     enumerable: false

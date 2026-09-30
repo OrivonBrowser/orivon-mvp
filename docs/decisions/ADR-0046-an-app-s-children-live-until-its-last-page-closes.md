@@ -91,6 +91,10 @@ changes.
 
 ## Consequences
 
+- The page reaches its children through `contextBridge` closures that hold no port (T17) and
+  apply the page-caller check `window.orivon` applies
+  ([ADR-0045](./ADR-0045-window-orivon-refuses-extension-code-a-filter-not-a-sandbox.md)): an
+  extension's script in the page gets no child of the app's.
 - **Tied to Electron:** the host's lifecycle and session (`src/main/children/`). **Durable:** the
   host script and the routing in the shim (`src/shim/worker/`, `src/shim/child-process/`).
 - A child's web storage (IndexedDB, Cache Storage) is the host session's, not the app pages'.
