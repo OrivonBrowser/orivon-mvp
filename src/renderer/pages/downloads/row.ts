@@ -2,7 +2,7 @@
 // pointed at, or has focus, is never replaced under the person.
 import type { DownloadEntry } from '../../../main/downloads/download-types.js'
 import { h } from '../shared/dom.js'
-import { closeIcon, fileIcon, folderOpenIcon, pauseIcon, playIcon, refreshIcon, trashIcon } from '../shared/icons.js'
+import { checkIcon, closeIcon, fileIcon, folderOpenIcon, pauseIcon, playIcon, refreshIcon, trashIcon, warningIcon } from '../shared/icons.js'
 import { actionsFor, opensFile } from './actions.js'
 import type { ActionId, RowAction } from './actions.js'
 import { fractionOf, reasonText, sourceLabel, statusLine } from './format.js'
@@ -15,7 +15,9 @@ const ICONS: Readonly<Record<ActionId, () => SVGSVGElement>> = {
   retry: refreshIcon,
   remove: closeIcon,
   showInFolder: folderOpenIcon,
-  deleteFile: trashIcon
+  deleteFile: trashIcon,
+  keep: checkIcon,
+  discard: trashIcon
 }
 
 const DISARM_MS = 4000
@@ -35,13 +37,15 @@ export class DownloadRow {
   private readonly progress = h('div', { className: 'progress', hidden: true }, h('div', { className: 'progress-bar' }))
   private readonly actions = h('div', { className: 'dl-actions' })
   private readonly time = h('span', { className: 'dl-time' })
+  private readonly icon = h('span', { className: 'dl-icon' }, fileIcon())
+  private held = false
   private nameMode: 'link' | 'text' | null = null
   private armed: { readonly id: ActionId, readonly timer: ReturnType<typeof setTimeout> } | null = null
 
   constructor (entry: DownloadEntry, private readonly handlers: RowHandlers) {
     this.entry = entry
     this.element = h('div', { className: 'download', role: 'listitem', tabIndex: -1 },
-      h('span', { className: 'dl-icon' }, fileIcon()),
+      this.icon,
       h('div', { className: 'dl-main' },
         this.nameSlot,
         this.source,
@@ -58,6 +62,7 @@ export class DownloadRow {
     this.entry = entry
     if (stateChanged) this.disarm()
     this.element.className = `download is-${entry.state}${entry.missing === true ? ' is-missing' : ''}${entry.danger ? ' is-danger' : ''}`
+    this.renderIcon()
     this.renderName()
     this.source.textContent = sourceLabel(entry.url)
     this.source.title = entry.url
@@ -75,6 +80,14 @@ export class DownloadRow {
   /** Stops a pending two-click confirmation's timer. */
   dispose (): void {
     this.disarm()
+  }
+
+  /** A file held as dangerous shows the warning mark in place of the file's. */
+  private renderIcon (): void {
+    const held = this.entry.state === 'held'
+    if (held === this.held && this.icon.firstChild !== null) return
+    this.held = held
+    this.icon.replaceChildren(held ? warningIcon() : fileIcon())
   }
 
   private renderName (): void {
@@ -126,7 +139,9 @@ export class DownloadRow {
   }
 
   private makeButton (action: RowAction): HTMLButtonElement {
-    const button = h('button', { className: 'btn icon', type: 'button' }, ICONS[action.id]())
+    const button = action.text === true
+      ? h('button', { className: 'btn small', type: 'button', textContent: action.label })
+      : h('button', { className: 'btn icon', type: 'button' }, ICONS[action.id]())
     button.dataset['action'] = action.id
     button.addEventListener('click', () => { this.press(action) })
     return button

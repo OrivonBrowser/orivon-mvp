@@ -1,47 +1,9 @@
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { DownloadService, MAX_RUNNING_PER_TAB } from '../download-service.js'
-import type { DownloadDeps } from '../download-service.js'
-import type { DownloadStore } from '../download-store.js'
+import { MAX_RUNNING_PER_TAB } from '../download-service.js'
 import type { DownloadEntry } from '../download-types.js'
 import { fakeContents, FakeItem } from './fake-item.js'
-
-const DIR = join('/', 'dl')
-
-function harness (stored: DownloadEntry[] = [], over: Partial<DownloadDeps> = {}) {
-  const files = new Set<string>()
-  const written: DownloadEntry[][] = []
-  const store: DownloadStore = { read: () => stored, write: (entries) => { written.push([...entries]) }, flush: async () => {} }
-  let clock = 1000
-  let counter = 0
-  const deps: DownloadDeps = {
-    folder: () => DIR,
-    fallbackFolder: () => join('/', 'system'),
-    askWhere: () => false,
-    fileExists: (path) => files.has(path),
-    ensureFolder: vi.fn(() => true),
-    folderWritable: () => true,
-    openPath: vi.fn(async () => ''),
-    showInFolder: vi.fn(),
-    trash: vi.fn(async (path: string) => { files.delete(path) }),
-    fetchAgain: vi.fn(),
-    now: () => { clock += 1; return clock },
-    newId: () => { counter += 1; return `id${String(counter)}` },
-    ...over
-  }
-  const service = new DownloadService(store, deps)
-  const event = { preventDefault: vi.fn() }
-  const start = (item: FakeItem, tab = 1): string => {
-    const seen: string[] = []
-    const off = service.onStart((info) => { seen.push(info.id) })
-    service.track(item.asItem(), fakeContents(tab), event)
-    off()
-    return seen[0] ?? ''
-  }
-  return { service, deps, files, written, event, start }
-}
-
-const item = (name = 'file.bin', mime?: string, total?: number): FakeItem => new FakeItem(name, ['https://a.example/' + name], mime, total)
+import { DIR, harness, item } from './service-harness.js'
 
 describe('starting a download', () => {
   it('sets the save path before it returns, inside the folder, and lists the download', () => {
@@ -331,8 +293,10 @@ describe('opening, showing and deleting a file', () => {
     expect(deps.openPath).toHaveBeenCalledWith(path)
   })
 
-  it('never opens a dangerous type, but still shows it in its folder', async () => {
-    const { service, id, path, deps } = finished('setup.exe')
+  it('never opens a dangerous type, but still shows it in its folder once it is kept', async () => {
+    const { service, id, deps } = finished('setup.exe')
+    expect(service.keep(id)).toBe(true)
+    const path = service.list()[0]?.savePath ?? ''
     expect(await service.open(id)).toBe(false)
     expect(deps.openPath).not.toHaveBeenCalled()
     expect(service.showInFolder(id)).toBe(true)

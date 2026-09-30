@@ -94,3 +94,9 @@ describe('groupByStartDay', () => {
     expect(groups.map((group) => [group.label, group.entries.map((item) => item.id)])).toEqual([['Today', ['a', 'b']], ['Yesterday', ['c']]])
   })
 })
+
+describe('statusLine of a held file', () => {
+  it('says why it waits', () => {
+    expect(statusLine({ state: 'held', total: 10, received: 10, danger: true } as DownloadEntry)).toBe('This type of file can harm your computer.')
+  })
+})

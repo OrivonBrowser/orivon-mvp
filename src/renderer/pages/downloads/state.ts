@@ -33,7 +33,7 @@ export class DownloadsState {
 
   /** Whether "Clear list" has anything to clear: a download that is not running. */
   get clearable (): boolean {
-    return this.entries.some((entry) => entry.state !== 'progressing' && entry.state !== 'paused')
+    return this.entries.some((entry) => entry.state !== 'progressing' && entry.state !== 'paused' && entry.state !== 'held')
   }
 
   async load (): Promise<void> {

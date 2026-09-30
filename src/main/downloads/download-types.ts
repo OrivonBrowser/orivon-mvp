@@ -4,7 +4,8 @@
 /** Why a download did not finish. Chromium reports none of these; the service infers them (download-service.ts). */
 export type DownloadReason = 'network' | 'server' | 'disk' | 'closed' | 'flood'
 
-export type DownloadState = 'progressing' | 'paused' | 'completed' | 'cancelled' | 'interrupted'
+/** `held`: a file of a type that runs code has arrived under a temporary name and waits for Keep or Discard. */
+export type DownloadState = 'progressing' | 'paused' | 'held' | 'completed' | 'cancelled' | 'interrupted'
 
 export interface DownloadEntry {
   readonly id: string
@@ -25,6 +26,8 @@ export interface DownloadEntry {
   readonly endedAt?: number
   /** A type that runs code: the file is never opened from Orivon. */
   readonly danger: boolean
+  /** The file is being written, or waits, under a temporary name (danger-hold.ts); `fileName` is what Keep will call it. */
+  readonly held?: boolean
   /** Complete, but the file is no longer on disk. Filled when the list is read. */
   readonly missing?: boolean
   /** Bytes per second, for a download in progress. */

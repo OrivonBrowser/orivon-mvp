@@ -1,0 +1,55 @@
+/* The toolbar's downloads button: a ring that fills with the share downloaded, a quarter arc that turns when
+   the size is unknown, and a dot for what wants a look. The ring draws over the button's 32px box. */
+:root { --wwarn: #f97316; --wdanger: #dc2626; }
+
+#downloads { position: relative; }
+#downloads[data-ring='fill'], #downloads[data-ring='turn'] { color: var(--wink); }
+
+#downloads .dl-ring {
+  position: absolute;
+  inset: 0;
+  width: 32px;
+  height: 32px;
+  display: none;
+  pointer-events: none;
+  transform: rotate(-90deg);
+}
+#downloads[data-ring='fill'] .dl-ring,
+#downloads[data-ring='turn'] .dl-ring { display: block; }
+#downloads .dl-ring circle { fill: none; stroke-width: 2; }
+#downloads .dl-ring-track { stroke: var(--whover-strong); }
+#downloads .dl-ring-arc { stroke: var(--waccent); stroke-linecap: round; transition: stroke-dasharray 250ms linear; }
+#downloads[data-paused='true'] .dl-ring-arc { stroke: var(--wink-off); }
+#downloads[data-ring='turn'] .dl-ring { animation: dl-ring-turn 1s linear infinite; }
+#downloads[data-ring='turn'] .dl-ring-arc { transition: none; }
+@keyframes dl-ring-turn { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+
+#downloads .dl-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--waccent);
+  display: none;
+  pointer-events: none;
+}
+#downloads[data-attention='done'] .dl-dot,
+#downloads[data-attention='warn'] .dl-dot,
+#downloads[data-attention='failed'] .dl-dot { display: block; }
+#downloads[data-attention='warn'] .dl-dot { background: var(--wwarn); }
+#downloads[data-attention='failed'] .dl-dot { background: var(--wdanger); }
+
+/* The bubble is open: the button is pressed. */
+#downloads[aria-expanded='true'] { color: var(--wink); background: var(--whover-strong); }
+
+@media (prefers-reduced-motion: reduce) {
+  #downloads[data-ring='turn'] .dl-ring { animation: none; }
+  #downloads .dl-ring-arc { transition: none; }
+}
+
+/* A narrow window has no room for it; the Downloads page stays one key away. */
+@media (max-width: 640px) {
+  #downloads { display: none; }
+}

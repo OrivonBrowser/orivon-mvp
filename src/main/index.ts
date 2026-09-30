@@ -12,6 +12,7 @@ import { installSpellcheck } from './spellcheck/install-spellcheck.js'
 import { installZoom } from './zoom/install-zoom.js'
 import { installHistory } from './history/install-history.js'
 import { installDownloads } from './downloads/install-downloads.js'
+import { installDownloadsPeek } from './downloads/auto-open.js'
 import { createSubsystemContext, criticalFailureMessage, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
@@ -176,6 +177,7 @@ function boot (runtime: Runtime): void {
     installSpellcheck(app, shell.windows, shell.settings)
     installHistory(app, shell.windows, shell.internalPages, shell.history)
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession })
+    installDownloadsPeek(shell)
     registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
     // Looks for a newer release once a day when the person has said it may; installs nothing.
     if (!runtime.isPrivate && shell.settings.get('updates.check')) {

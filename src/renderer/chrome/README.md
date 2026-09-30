@@ -12,6 +12,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `navigation.ts` | back, forward, reload, the address bar |
 | `address-suggest.ts` | the address field's dropdown from the field's side: what is typed, the arrows, Enter and Escape (the rules are in `address-suggest-model.ts`) |
 | `address-display.ts` | the unfocused address over the input: the connection mark and the address in two tones (`address-format.ts` splits it) |
+| `downloads-button.ts` | the downloads button in the cluster: a progress ring, a dot for what wants a look, the bubble on a click; `downloads-ring.ts` is its pure part |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |

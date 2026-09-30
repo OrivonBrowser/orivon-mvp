@@ -38,6 +38,13 @@ export const downloads: Section = {
       help: 'Orivon shows a save dialog for every download.',
       keywords: ['download location', 'prompt', 'dialog', 'save as', 'ask', 'folder'],
       control: { type: 'toggle', key: 'downloads.askWhere' }
+    },
+    {
+      id: 'downloads-show-bubble',
+      label: 'Show downloads when a download starts',
+      help: 'The list of downloads opens under the toolbar button when a file begins to download, and closes by itself when they are done.',
+      keywords: ['download bubble', 'popup', 'panel', 'shelf', 'bar', 'notification', 'show', 'open', 'start'],
+      control: { type: 'toggle', key: 'downloads.showBubble' }
     }
   ]
 }

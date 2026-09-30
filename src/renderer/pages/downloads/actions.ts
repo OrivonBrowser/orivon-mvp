@@ -1,13 +1,15 @@
 // What a person can do to a download in each state. Pure, so the table is tested without a document.
 import type { DownloadEntry } from '../../../main/downloads/download-types.js'
 
-export type ActionId = 'pause' | 'resume' | 'cancel' | 'retry' | 'remove' | 'showInFolder' | 'deleteFile'
+export type ActionId = 'pause' | 'resume' | 'cancel' | 'retry' | 'remove' | 'showInFolder' | 'deleteFile' | 'keep' | 'discard'
 
 export interface RowAction {
   readonly id: ActionId
   readonly label: string
   /** Asks for a second click: it cannot be taken back. */
   readonly confirm?: { readonly label: string }
+  /** Drawn as a labelled button instead of an icon: the answer to a file held as dangerous. */
+  readonly text?: boolean
 }
 
 const PAUSE: RowAction = { id: 'pause', label: 'Pause' }
@@ -16,12 +18,15 @@ const CANCEL: RowAction = { id: 'cancel', label: 'Cancel' }
 const RETRY: RowAction = { id: 'retry', label: 'Retry' }
 const REMOVE: RowAction = { id: 'remove', label: 'Remove from list' }
 const SHOW: RowAction = { id: 'showInFolder', label: 'Show in folder' }
+const KEEP: RowAction = { id: 'keep', label: 'Keep', text: true }
+const DISCARD: RowAction = { id: 'discard', label: 'Discard', text: true }
 const DELETE: RowAction = { id: 'deleteFile', label: 'Delete file', confirm: { label: 'Click again to delete the file' } }
 
 export function actionsFor (entry: DownloadEntry): readonly RowAction[] {
   switch (entry.state) {
     case 'progressing': return [PAUSE, CANCEL]
     case 'paused': return [RESUME, CANCEL]
+    case 'held': return [DISCARD, KEEP]
     case 'completed': return entry.missing === true ? [RETRY, REMOVE] : [SHOW, DELETE, REMOVE]
     case 'cancelled':
     case 'interrupted': return [RETRY, REMOVE]
@@ -35,7 +40,7 @@ export function opensFile (entry: DownloadEntry): boolean {
 
 /** Delete and Backspace take a row off the list only when nothing is running in it. */
 export function isRemovable (entry: DownloadEntry): boolean {
-  return entry.state !== 'progressing' && entry.state !== 'paused'
+  return entry.state !== 'progressing' && entry.state !== 'paused' && entry.state !== 'held'
 }
 
 /** Space pauses a running download and resumes a paused one; it does nothing to any other. */
