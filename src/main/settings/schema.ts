@@ -3,6 +3,7 @@
 // this, so the page cannot offer a value the store would refuse and a file
 // edited by hand cannot make one up.
 import { isAddressList, isEmptyOrAddress, MAX_LISTED_ADDRESSES } from './address-checks.js'
+import { isFontName, isHostList, isLanguageTagList, MAX_LANGUAGE_TAGS, MAX_LISTED_HOSTS } from './list-checks.js'
 import { isEmptyOrAbsolutePath } from './path-checks.js'
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
@@ -12,6 +13,10 @@ export type SettingSpec =
   | { readonly kind: 'bool', readonly default: boolean }
   | { readonly kind: 'int', readonly default: number, readonly min: number, readonly max: number }
   | { readonly kind: 'text', readonly default: string, readonly maxLength: number, readonly check?: (value: string) => boolean }
+
+/** Room for the most entries at their longest, plus the separators between them. */
+const HOST_LIST_LENGTH = MAX_LISTED_HOSTS * 254
+const LANGUAGE_LIST_LENGTH = MAX_LANGUAGE_TAGS * 16
 
 const SPECS = {
   'appearance.theme': { kind: 'enum', options: ['system', 'light', 'dark'], default: 'system' },
@@ -24,6 +29,16 @@ const SPECS = {
     default: '100',
     labels: { 75: '75%', 80: '80%', 90: '90%', 100: '100%', 110: '110%', 125: '125%', 150: '150%', 175: '175%', 200: '200%' }
   },
+  // How large the browser's own interface is, apart from the pages it shows; percent, as text.
+  'appearance.uiScale': {
+    kind: 'enum',
+    options: ['90', '100', '110', '125', '150'],
+    default: '100',
+    labels: { 90: '90%', 100: '100%', 110: '110%', 125: '125%', 150: '150%' }
+  },
+  // The colour of buttons, focus rings and selected rows. Indigo is the colour the interface is drawn in.
+  'appearance.accent': { kind: 'enum', options: ['indigo', 'blue', 'teal', 'green', 'amber', 'orange', 'pink', 'graphite'], default: 'indigo' },
+  'sidePanel.side': { kind: 'enum', options: ['right', 'left'], default: 'right' },
   'search.engine': {
     kind: 'enum',
     options: [...SEARCH_ENGINES.map((engine) => engine.id), CUSTOM_SEARCH_ENGINE],
@@ -86,8 +101,44 @@ const SPECS = {
   'toolbar.home': { kind: 'bool', default: false },
   // 'auto' shows the button while a download is under way or was recent.
   'toolbar.downloads': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
+  // Which optional toolbar buttons are shown. A button that says where the person is, or what a site holds, cannot be hidden.
+  'toolbar.bookmarkStar': { kind: 'bool', default: true },
+  'toolbar.sidePanel': { kind: 'bool', default: true },
+  'toolbar.tabSearch': { kind: 'bool', default: true },
+  'toolbar.profile': { kind: 'bool', default: true },
   'spellcheck.enabled': { kind: 'bool', default: true },
+  // Language tags, comma-separated, most wanted first. Empty follows the system.
+  'spellcheck.languages': { kind: 'text', default: '', maxLength: LANGUAGE_LIST_LENGTH, check: isLanguageTagList },
+  'languages.content': { kind: 'text', default: '', maxLength: LANGUAGE_LIST_LENGTH, check: isLanguageTagList },
+  // Fonts and sizes are read when a tab is made, so a change reaches new tabs. An empty family is the browser's own.
+  'content.fontSize': { kind: 'enum', options: ['9', '12', '16', '20', '24'], default: '16' },
+  'content.minimumFontSize': { kind: 'enum', options: ['0', '9', '10', '12', '14', '16', '18', '20', '24'], default: '0' },
+  'content.fontStandard': { kind: 'text', default: '', maxLength: 64, check: isFontName },
+  'content.fontSerif': { kind: 'text', default: '', maxLength: 64, check: isFontName },
+  'content.fontSansSerif': { kind: 'text', default: '', maxLength: 64, check: isFontName },
+  'content.fontMonospace': { kind: 'text', default: '', maxLength: 64, check: isFontName },
+  // Dark mode for sites that have none of their own; the exceptions are site names, one per line.
+  'content.forceDark': { kind: 'bool', default: false },
+  'content.forceDarkExcept': { kind: 'text', default: '', maxLength: HOST_LIST_LENGTH, check: isHostList },
+  // The reader view's own text settings; the size is in pixels, as text.
+  'reader.font': { kind: 'enum', options: ['sans', 'serif'], default: 'sans' },
+  'reader.size': { kind: 'enum', options: ['14', '16', '18', '20', '24', '28'], default: '18' },
+  'reader.width': { kind: 'enum', options: ['narrow', 'medium', 'wide'], default: 'medium' },
+  'reader.theme': { kind: 'enum', options: ['auto', 'light', 'sepia', 'dark'], default: 'auto' },
+  // 'more' asks websites and Orivon's own pages for higher contrast; 'system' follows the operating system.
+  'accessibility.contrast': { kind: 'enum', options: ['system', 'more'], default: 'system' },
+  'accessibility.reduceMotion': { kind: 'enum', options: ['system', 'reduce'], default: 'system' },
+  // Caret browsing is off until asked for, and asks before it turns on.
+  'accessibility.caretBrowsing': { kind: 'bool', default: false },
+  'accessibility.caretAsk': { kind: 'bool', default: true },
   'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' },
+  'tabs.hoverCard': { kind: 'enum', options: ['preview', 'text', 'off'], default: 'preview' },
+  // Tabs that have not been used for a while go to sleep and wake when opened. 2 hours is provisional: what a person expects a browser to do with an idle tab is not yet measured.
+  'performance.memorySaver': { kind: 'bool', default: true },
+  'performance.sleepAfter': { kind: 'enum', options: ['15m', '30m', '1h', '2h', '4h'], default: '2h', labels: { '15m': '15 minutes', '30m': '30 minutes', '1h': '1 hour', '2h': '2 hours', '4h': '4 hours' } },
+  // Sites that never go to sleep, one per line.
+  'performance.keepAwake': { kind: 'text', default: '', maxLength: HOST_LIST_LENGTH, check: isHostList },
+  'performance.energySaver': { kind: 'enum', options: ['off', 'battery'], default: 'off' },
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
   'extensions.developerMode': { kind: 'bool', default: false }
 } as const satisfies Record<string, SettingSpec>
