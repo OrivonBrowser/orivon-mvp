@@ -39,7 +39,7 @@ describe('one connection, many requests', () => {
 
   it('reuses one connection for keep-alive requests from a real client agent', async () => {
     const remotePorts: (number | undefined)[] = []
-    const { port } = await startServer((req, res) => { remotePorts.push(req.socket.remotePort); res.end('x') })
+    const { port } = await startServer((req, res) => { remotePorts.push(req.socket?.remotePort); res.end('x') })
     const agent = new Agent({ keepAlive: true, maxSockets: 1 })
     const get = async (): Promise<string> => await new Promise((resolve, reject) => {
       request({ host: '127.0.0.1', port, agent }, (res) => { let text = ''; res.on('data', (c: Buffer) => { text += c.toString() }); res.on('end', () => resolve(text)) }).on('error', reject).end()

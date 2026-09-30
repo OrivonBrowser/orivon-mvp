@@ -15,7 +15,7 @@
 | (top level) | `globals.ts`, `virtual-root.ts`, `module-map.ts` (the alias table), `node-errors.ts`, `errors.ts`, `unimplemented.ts`, `orivon-global.ts`, `stream-bytes.ts`, `encoding.ts`, `warn-once.ts` |
 | [`fs/`](fs/) | Node's `fs` over `orivon.fs` |
 | [`net/`](net/) | `net`, `tls`, `dgram` and `dns` over `orivon.net` |
-| [`http/`](http/) | `http` and `https`, over `net/`'s real socket |
+| [`http/`](http/) | `http` and `https`: the client, and `http.createServer`, over `net/`'s real socket and listener |
 | [`polyfills/`](polyfills/) | The core polyfills |
 | [`wasi/`](wasi/) | A WASI preview1 host over `orivon.fs`, and Node's `wasi` module over it |
 | [`wasi-p2/`](wasi-p2/) | A WASI 0.2 host over `orivon.fs` and `orivon.net`, for a component `spawn` runs from jco's output |

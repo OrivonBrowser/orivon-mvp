@@ -36,7 +36,7 @@ export function otherHttpMember (moduleName: 'http' | 'https') {
   return (prop: string): OrivonShimError => refuseShim(
     `${moduleName}.${prop}`, 'unimplemented',
     `${moduleName}.${prop} is real Node ${moduleName} surface this shim has not implemented -- ` +
-    `this module builds the client (request()/get(), Agent, globalAgent) only ` +
+    `this module builds ${moduleName === 'http' ? 'the client (request()/get(), Agent, globalAgent) and the server (createServer, Server, ServerResponse)' : 'the client (request()/get(), Agent, globalAgent)'} only ` +
     `(docs/planning/compatibility-matrix.md Table 3).`
   )
 }
