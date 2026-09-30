@@ -119,12 +119,15 @@ export abstract class HttpMessageParser {
   protected buf: Uint8Array = new Uint8Array(0)
   protected state: ParserState = { kind: 'head' }
   private trailerLines: string[] = []
+  private trailerBytes = 0
 
-  constructor (private readonly bodyCb: HttpBodyCallbacks) {}
+  /** `maxTrailerBytes` bounds the whole trailer section, as llhttp counts it against the header size. */
+  constructor (private readonly bodyCb: HttpBodyCallbacks, private readonly maxTrailerBytes = MAX_HEAD_BYTES) {}
 
   write (chunk: Uint8Array): void {
     if (this.state.kind === 'done') return
-    this.buf = concatBytes(this.buf, chunk)
+    // Nothing held over: keep the chunk itself, so a run of pipelined requests is not re-copied for each one.
+    this.buf = this.buf.length === 0 ? chunk : concatBytes(this.buf, chunk)
     this.pump()
   }
 
@@ -186,14 +189,14 @@ export abstract class HttpMessageParser {
    * when more data is needed and when the parser just failed -- callers
    * only need to bail out on a negative index either way.
    */
-  private findLineOrFail (label: string): number {
+  private findLineOrFail (label: string, limit = MAX_LINE_BYTES, code?: string): number {
     const idx = indexOfSubarray(this.buf, CRLF)
     if (idx === -1) {
-      if (this.buf.length > MAX_LINE_BYTES) this.fail(`${label} exceeded ${MAX_LINE_BYTES} bytes without a terminator`)
+      if (this.buf.length > limit) this.fail(`${label} exceeded ${limit} bytes without a terminator`, code)
       return -1
     }
-    if (idx > MAX_LINE_BYTES) {
-      this.fail(`${label} exceeded ${MAX_LINE_BYTES} bytes`)
+    if (idx > limit) {
+      this.fail(`${label} exceeded ${limit} bytes`, code)
       return -1
     }
     return idx
@@ -235,10 +238,15 @@ export abstract class HttpMessageParser {
 
   /** Trailer lines are collected until the terminating blank line, then handed to `onTrailers`. */
   private tryConsumeTrailerLine (): boolean {
-    const idx = this.findLineOrFail('trailer line')
+    const idx = this.findLineOrFail('trailer section', this.maxTrailerBytes - this.trailerBytes, 'HPE_HEADER_OVERFLOW')
     if (idx === -1) return false
     const line = new TextDecoder('latin1').decode(this.buf.subarray(0, idx))
     this.buf = this.buf.subarray(idx + 2)
+    this.trailerBytes += idx + 2
+    if (idx > 0 && this.trailerBytes > this.maxTrailerBytes) {
+      this.fail(`trailer section exceeded ${this.maxTrailerBytes} bytes`, 'HPE_HEADER_OVERFLOW')
+      return false
+    }
     if (idx === 0) {
       this.state = { kind: 'done' }
       if (this.trailerLines.length > 0) this.bodyCb.onTrailers?.(this.trailerLines)

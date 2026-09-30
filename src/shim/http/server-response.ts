@@ -6,6 +6,7 @@
 import { OutgoingMessage, headersSentError } from './outgoing-message.js'
 import { STATUS_CODES } from './status-codes.js'
 import { validateHeaderName, validateHeaderValue } from './header-validation.js'
+import { CODING_CHUNKED, INVALID_HEADER_CONTENT } from './header-tokens.js'
 import { codedError } from '../node-errors.js'
 import type { HeaderValue } from './headers.js'
 import type { IncomingMessage } from './message.js'
@@ -13,8 +14,6 @@ import type { IncomingMessage } from './message.js'
 type HeaderInput = Record<string, HeaderValue | undefined> | readonly HeaderValue[] | readonly (readonly [string, HeaderValue])[]
 type WriteCallback = (error?: Error | null) => void
 
-const TE_CHUNKED = /(?:^|\W)chunked(?:$|\W)/i
-const INVALID_STATUS_MESSAGE_CHARACTER = /[^\t\x20-\x7e\x80-\xff]/
 
 export class ServerResponse extends OutgoingMessage {
   statusCode = 200
@@ -28,7 +27,7 @@ export class ServerResponse extends OutgoingMessage {
     if (req.method === 'HEAD') this._hasBody = false
     // An HTTP/1.0 client is answered in HTTP/1.1 syntax, but only chunked when it says it can take it.
     if (req.httpVersionMajor < 1 || (req.httpVersionMajor === 1 && req.httpVersionMinor < 1)) {
-      this.useChunkedEncodingByDefault = TE_CHUNKED.test(String(req.headers.te ?? ''))
+      this.useChunkedEncodingByDefault = CODING_CHUNKED.test(String(req.headers.te ?? ''))
       this.shouldKeepAlive = false
     }
   }
@@ -47,7 +46,7 @@ export class ServerResponse extends OutgoingMessage {
     }
     let headers = maybeHeaders
     if (typeof reasonOrHeaders === 'string') {
-      if (INVALID_STATUS_MESSAGE_CHARACTER.test(reasonOrHeaders)) throw codedError(TypeError, 'ERR_INVALID_CHAR', 'Invalid character in statusMessage')
+      if (INVALID_HEADER_CONTENT.test(reasonOrHeaders)) throw codedError(TypeError, 'ERR_INVALID_CHAR', 'Invalid character in statusMessage')
       this.statusMessage = reasonOrHeaders
     } else {
       this.statusMessage ||= STATUS_CODES[code] ?? 'unknown'

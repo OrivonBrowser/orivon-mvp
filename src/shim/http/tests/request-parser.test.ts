@@ -102,6 +102,23 @@ describe('HttpRequestParser: the body', () => {
     expect(seen.complete).toBe(1)
   })
 
+  it('bounds the trailer section by the header size, as Node does: many short lines, one huge line, and an unterminated one all fail with HPE_HEADER_OVERFLOW', () => {
+    const start = 'POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n'
+    const flood = Array.from({ length: 3000 }, (_, i) => `X-T${String(i)}: ${'v'.repeat(20)}\r\n`).join('')
+    expect(parse([start, flood, '\r\n'], { maxHeaderSize: 1024 }).seen.errors).toEqual(['HPE_HEADER_OVERFLOW'])
+    expect(parse([`${start}X: ${'a'.repeat(3000)}\r\n\r\n`], { maxHeaderSize: 1024 }).seen.errors).toEqual(['HPE_HEADER_OVERFLOW'])
+    const unterminated = parse([start, 'X: '.repeat(600)], { maxHeaderSize: 1024 })
+    expect(unterminated.seen.errors).toEqual(['HPE_HEADER_OVERFLOW'])
+    expect(unterminated.seen.complete).toBe(0)
+  })
+
+  it('accepts a trailer section within the bound', () => {
+    const { seen } = parse(['POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX-A: 1\r\nX-B: 2\r\n\r\n'], { maxHeaderSize: 1024 })
+    expect(seen.errors).toEqual([])
+    expect(seen.trailers).toEqual([['X-A: 1', 'X-B: 2']])
+    expect(seen.complete).toBe(1)
+  })
+
   it('fails a chunk size that is not hexadecimal', () => {
     expect(parse(['POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n']).seen.errors).toEqual(['HPE_INVALID_CHUNK_SIZE'])
   })

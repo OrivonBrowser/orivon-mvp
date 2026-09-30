@@ -10,6 +10,7 @@
 // oversized head).
 
 import { METHODS } from './status-codes.js'
+import { HTTP_TOKEN } from './header-tokens.js'
 import {
   CRLFCRLF, HttpMessageParser, combineHeaders, indexOfSubarray,
   type HttpBodyCallbacks, type ParserState
@@ -27,7 +28,6 @@ const DISCRETE_HEADERS: ReadonlySet<string> = new Set([
 
 const KNOWN_METHODS: ReadonlySet<string> = new Set(METHODS)
 const REQUEST_LINE = /^([A-Za-z-]+) (\S+) HTTP\/(\d)\.(\d)$/
-const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 const CONTROL_CHARACTER = /[\0\r\n]/
 
 export interface ParsedRequestHead {
@@ -56,7 +56,7 @@ export class HttpRequestParser extends HttpMessageParser {
   private readonly maxHeaderSize: number
 
   constructor (private readonly cb: HttpRequestParserCallbacks, options: { readonly maxHeaderSize?: number } = {}) {
-    super(cb)
+    super(cb, options.maxHeaderSize ?? MAX_HEADER_SIZE)
     this.maxHeaderSize = options.maxHeaderSize ?? MAX_HEADER_SIZE
   }
 
@@ -126,7 +126,7 @@ function malformedRequestLine (line: string): ParseFailure {
 function checkHeaderLines (lines: readonly string[]): ParseFailure | undefined {
   for (const line of lines) {
     const colon = line.indexOf(':')
-    if (colon === -1 || !HEADER_NAME.test(line.slice(0, colon)) || CONTROL_CHARACTER.test(line)) {
+    if (colon === -1 || !HTTP_TOKEN.test(line.slice(0, colon)) || CONTROL_CHARACTER.test(line)) {
       return [`malformed header line ${JSON.stringify(line)}`, 'HPE_INVALID_HEADER_TOKEN']
     }
   }
