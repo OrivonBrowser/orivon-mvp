@@ -49,6 +49,22 @@ describe('calls', () => {
     await expect(client.fs.toString()).rejects.toThrow(/orivon has no method fs.toString/)
   })
 
+  it('serves its own orivon to a child of its own, so a call from that child reaches the page', async () => {
+    // A Worker that spawns a program serves the Worker's client as that program's orivon.
+    const inner = connect({ fs: { mkdir: async (path: string) => `made ${path}` } })
+    const nested = new MessageChannel()
+    const nestedServer = serveOrivon(nested.port1, inner)
+    try {
+      const grandchild = createOrivonClient(nested.port2) as unknown as { fs: { mkdir: Method, toString: Method } }
+      expect(await grandchild.fs.mkdir('/data')).toBe('made /data')
+      // The page's own-property check still decides: an inherited member is refused there.
+      await expect(grandchild.fs.toString()).rejects.toThrow(/orivon has no method fs.toString/)
+    } finally {
+      await nestedServer.dispose()
+      nested.port2.close()
+    }
+  })
+
   it('refuses readFileSync by name without shared memory, and is never mistaken for a promise', async () => {
     // A Worker of an app that is not cross-origin isolated has no SharedArrayBuffer to block on.
     vi.stubGlobal('SharedArrayBuffer', undefined)
