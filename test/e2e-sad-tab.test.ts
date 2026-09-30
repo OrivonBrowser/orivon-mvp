@@ -22,10 +22,6 @@ beforeAll(async () => {
   server = await startServer((request, response) => {
     const path = request.url ?? '/'
     loads.set(path, (loads.get(path) ?? 0) + 1)
-    if (path === '/hang') {
-      html(response, '<!doctype html><title>hang</title><body style="font:16px sans-serif"><button id="go" onclick="while (true) {}">Hang</button></body>')
-      return
-    }
     const title = path === '/' ? 'sad fixture' : path.slice(1)
     html(response, `<!doctype html><title>${title}</title><body style="font:16px sans-serif"><h1>${title}</h1><p>load ${String(loads.get(path))}</p></body>`)
   })
@@ -78,7 +74,11 @@ async function waitCrashedMark (chrome: Page, title: string, crashed: boolean): 
 }
 
 async function waitCard (app: App, shown: boolean): Promise<Page | undefined> {
-  expect(await waitFor(async () => await cardShown(app) === shown)).toBe(true)
+  return await waitCardFor(app, shown, 8_000)
+}
+
+async function waitCardFor (app: App, shown: boolean, timeoutMs: number): Promise<Page | undefined> {
+  expect(await waitFor(async () => await cardShown(app) === shown, timeoutMs)).toBe(true)
   if (!shown) return undefined
   expect(await waitFor(() => cardPage(app) !== undefined)).toBe(true)
   const card = cardPage(app) as Page
@@ -86,10 +86,17 @@ async function waitCard (app: App, shown: boolean): Promise<Page | undefined> {
   return card
 }
 
+/** Enter reloads, which closes the card's own page under the key: the press may end with the page already gone. */
+async function pressEnter (card: Page): Promise<void> {
+  try { await card.keyboard.press('Enter') } catch (error) { if (!/closed/.test(String(error))) throw error }
+}
+
 const activeFocus = async (card: Page): Promise<string> => await card.evaluate(() => document.activeElement?.textContent ?? '')
 
-async function setScheme (app: App, scheme: 'light' | 'dark'): Promise<void> {
+/** The colours the shell and the card draw follow the page's media query, which Playwright pins; the view behind the card follows the OS theme. */
+async function setScheme (app: App, chrome: Page, scheme: 'light' | 'dark'): Promise<void> {
   await app.evaluate(({ nativeTheme }, source) => { nativeTheme.themeSource = source }, scheme)
+  await chrome.emulateMedia({ colorScheme: scheme })
   await delay(400)
 }
 
@@ -143,10 +150,7 @@ it('marks a crashed tab, shows the card with Reload focused, and stays until tol
     expect(await activeFocus(card)).toBe('Reload')
 
     await shoot('strip-and-card-1280-light')
-    try { await card.keyboard.press('Enter') } catch (error) {
-      const pages = app.windows().filter((w) => w.url().includes('overlay=sad-tab')).map((w) => w.isClosed())
-      throw new Error(`DEBUG ${String(error)} pages=${JSON.stringify(pages)} shown=${String(await cardShown(app))} out=${mainOutput(app).slice(-1500)}`)
-    }
+    await pressEnter(card)
     await waitCard(app, false)
     await waitCrashedMark(chrome, 'sad fixture', false)
     expect(await waitFor(() => loads.get('/') === 2)).toBe(true)
@@ -250,20 +254,21 @@ it('draws the strip and the card in light and dark, at 1280 and 700 wide', async
     expect((await waitForTab(chrome, { address: here('/other') })).ok).toBe(true)
     await chrome.locator('.tab', { hasText: 'sad fixture' }).click()
     for (const scheme of ['light', 'dark'] as const) {
-      await setScheme(app, scheme)
+      await setScheme(app, chrome, scheme)
       for (const width of [1280, 700]) {
         await resize(app, width, 800)
         await crash(app, here())
         const card = await waitCard(app, true) as Page
-        await delay(300)
+        await card.emulateMedia({ colorScheme: scheme })
+        await delay(400)
         await shoot(`card-${String(width)}-${scheme}`)
         if (width === 1280) await card.screenshot({ path: SHOTS_DIR === undefined ? '/dev/null' : join(SHOTS_DIR, `card-only-${scheme}.png`) })
-        await card.keyboard.press('Enter')
+        await pressEnter(card)
         await waitCard(app, false)
         await waitCrashedMark(chrome, 'sad fixture', false)
       }
     }
-    await setScheme(app, 'light')
+    await setScheme(app, chrome, 'light')
     await resize(app, 1280, 800)
     await crash(app, here())
     await waitCard(app, true)
@@ -275,3 +280,52 @@ it('draws the strip and the card in light and dark, at 1280 and 700 wide', async
     await closeElectron(app)
   }
 }, QA_TEST_TIMEOUT_MS * 2)
+
+/** Chromium's own hang detection never fired in a headless run, even 45 s after a spinning page was sent input, so the
+ * event is emitted on the page's webContents: what is under test is what the shell does when it arrives. */
+async function emitOnPage (app: App, url: string, event: 'unresponsive' | 'responsive'): Promise<void> {
+  await app.evaluate(({ webContents }, [target, name]) => {
+    const wc = webContents.getAllWebContents().find((candidate) => candidate.getURL() === target)
+    if (wc === undefined) throw new Error(`no webContents at ${String(target)}`)
+    wc.emit(name as string)
+  }, [url, event] as const)
+}
+
+it('says a page that stopped answering is not responding: Wait keeps quiet until the next event, responsive clears it, Reload reloads', async () => {
+  const { app, chrome } = await launchShell()
+  loads.clear()
+  try {
+    await visit(app, chrome, here())
+    await emitOnPage(app, here(), 'unresponsive')
+    const card = await waitCard(app, true) as Page
+    expect(await card.locator('.sheet-title').textContent()).toBe("This page isn't responding")
+    expect(await card.locator('.sad-body').textContent()).toBe('You can wait for it or reload it.')
+    expect(await card.locator('.sad .btn').allTextContents()).toEqual(['Wait', 'Reload'])
+    expect(await waitFor(async () => await activeFocus(card) === 'Reload')).toBe(true)
+    expect((await tabTitled(chrome, 'sad fixture')).crashed).toBe(false)
+    expect((await tabTitled(chrome, 'sad fixture')).tooltip).not.toContain('crashed')
+    await card.keyboard.press('Escape')
+    await delay(400)
+    expect(await cardShown(app)).toBe(true)
+    await shoot('unresponsive-1280-light')
+
+    await card.getByRole('button', { name: 'Wait' }).click()
+    await waitCard(app, false)
+    await delay(600)
+    expect(await cardShown(app)).toBe(false)
+
+    await emitOnPage(app, here(), 'unresponsive')
+    await waitCard(app, true)
+    await emitOnPage(app, here(), 'responsive')
+    await waitCard(app, false)
+
+    await emitOnPage(app, here(), 'unresponsive')
+    const again = await waitCard(app, true) as Page
+    await again.getByRole('button', { name: 'Reload' }).click()
+    await waitCard(app, false)
+    expect(await waitFor(() => loads.get('/') === 2)).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
