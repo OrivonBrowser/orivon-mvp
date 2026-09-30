@@ -12,26 +12,23 @@
 // Run with `npm run test:e2e`, or directly:
 //   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-embed-local.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { createServer as createHttpServer } from 'node:http'
 import { createServer as createTcpServer } from 'node:net'
 import type { Server as TcpServer } from 'node:net'
-import { spawn } from 'node:child_process'
-import type { ChildProcess } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { asPage, closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
-import { AS_PAGE_SCRIPT_URL, clearFixtureAsPageScript, setFixtureAsPageScript } from './fixture-as-page.js'
-import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
+import { asPage, closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
-const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
-const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
-const AS_PAGE_URL = `${FIXTURE_URL}${AS_PAGE_SCRIPT_URL}`
+const HOST = '127.0.0.1'
+/** The suite's hermetic resolver (smoke-helpers.mjs's HERMETIC_RESOLVER) with every `localhost` name left to Chromium, which answers it with loopback itself. */
+const LOCALHOST_RESOLVER = '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE *.localhost, EXCLUDE localhost'
 const APP_PORT = 9171
 const OTHER_PORT = 9172
+const APP_SERVER_PORT = 9173
+const FIXTURE_ORIGIN = `http://${HOST}:${APP_SERVER_PORT}`
+const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
+const AS_PAGE_URL = `${FIXTURE_URL}as-page.js`
 const STEP_TIMEOUT_MS = 20_000
 const TEST_TIMEOUT_MS = 180_000
 
@@ -40,22 +37,35 @@ const BARE_PATTERN = `http://*.localhost:${APP_PORT}`
 const NAMED_PATTERN = `http://*.shared.localhost:${APP_PORT}`
 const OTHER_PATTERN = `http://*.localhost:${OTHER_PORT}`
 
-let staticServer: ChildProcess
+// The app's own page and the script asPage (e2e-helpers.ts) loads into it, served from this file rather than
+// test/apps/fixture/ so a run beside another e2e file that serves that fixture cannot collide on its port.
+let asPageScript = ''
+const setAsPageScript = (js: string): void => { asPageScript = js }
+const appServer = createHttpServer((req, res) => {
+  if (req.url?.startsWith('/as-page.js') === true) {
+    res.writeHead(200, { 'content-type': 'text/javascript' }).end(asPageScript)
+    return
+  }
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    .end('<!doctype html><html><head><meta charset="utf-8"><title>Orivon embed local fixture</title></head><body><h1>Orivon embed local fixture</h1></body></html>')
+})
+const PAGE_TITLE = 'Orivon embed local fixture'
+
 /** A listener this process holds itself: another program on the computer, as far as the app is concerned. */
 let strangerConnections = 0
 const stranger: TcpServer = createTcpServer((socket) => { strangerConnections += 1; socket.destroy() })
 
 beforeAll(async () => {
-  staticServer = spawn(process.execPath, [join(FIXTURE_DIR, 'serve.mjs')], { stdio: 'pipe' })
-  forwardOutput('fixture-server', staticServer)
-  await new Promise<void>((resolve) => { stranger.listen(OTHER_PORT, HOST, resolve) })
-  await Promise.all([waitForTcpReady(HOST, STATIC_PORT, 10_000), waitForTcpReady(HOST, OTHER_PORT, 10_000)])
+  await Promise.all([
+    new Promise<void>((resolve) => { appServer.listen(APP_SERVER_PORT, HOST, resolve) }),
+    new Promise<void>((resolve) => { stranger.listen(OTHER_PORT, HOST, resolve) })
+  ])
+  await Promise.all([waitForTcpReady(HOST, APP_SERVER_PORT, 10_000), waitForTcpReady(HOST, OTHER_PORT, 10_000)])
   strangerConnections = 0
 }, 15_000)
 
 afterAll(async () => {
-  await killChild(staticServer)
-  await new Promise<void>((resolve) => { stranger.close(() => resolve()) })
+  await Promise.all([appServer, stranger].map(async (server) => await new Promise<void>((resolve) => { server.close(() => resolve()) })))
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
@@ -102,8 +112,9 @@ function installSurface (): void {
       try {
         await el.loadURL(url)
         return 'loaded'
-      } catch {
-        return 'refused'
+      } catch (error) {
+        // ERR_FAILED is what the shell's own cancel reports; a closed port with nothing checking would say ERR_CONNECTION_REFUSED.
+        return `refused:${/ERR_[A-Z_]+/.exec(String((error as { message?: string }).message))?.[0] ?? 'other'}`
       }
     },
     async run (id: string, code: string): Promise<unknown> {
@@ -183,7 +194,7 @@ it(
   'another program\'s port and a closed listener do not load, and a cookie set for "localhost" does not cross labels',
   async () => {
     await runPhase('web.embed local pattern e2e', async (check: Check) => {
-      const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+      const app = await launchElectron({ appPath: '.', args: [LOCALHOST_RESOLVER] })
       try {
         const manifest = manifestFor('app.orivon.embed-local-e2e', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN])
         const installed = await grant(app, manifest, 'tcp.listen.network', [String(APP_PORT)])
@@ -191,16 +202,16 @@ it(
         if (!installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         await grant(app, manifest, 'web.embed', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN])
 
-        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        const view = await navigateToFixture(app, FIXTURE_URL, PAGE_TITLE)
         await view.evaluate(installSurface)
         const { show, run } = drive(view)
 
         // ---- (1) the app holds no listener yet, so a page under its own pattern does not load.
         const before = await show('a', `http://a.localhost:${APP_PORT}/`)
-        check('before the app listens, a page under its local pattern is refused', before === 'refused', before)
+        check('before the app listens, a page under its local pattern is refused', before === 'refused:ERR_FAILED', before)
 
         // ---- (2) the app listens; two labels load, each an origin of its own.
-        const port = await asPage(view, setFixtureAsPageScript, AS_PAGE_URL, serveOwnPages, APP_PORT)
+        const port = await asPage(view, setAsPageScript, AS_PAGE_URL, serveOwnPages, APP_PORT)
         check('the app listens on its port through orivon.net.listen', port === APP_PORT, String(port))
 
         const a = await show('a', `http://a.localhost:${APP_PORT}/`)
@@ -241,32 +252,31 @@ it(
         const long63 = await show('l63', `http://${'a'.repeat(63)}.localhost:${APP_PORT}/`)
         const long64 = await show('l64', `http://${'a'.repeat(64)}.localhost:${APP_PORT}/`)
         check('a label of 63 characters loads', long63 === 'loaded', long63)
-        check('a label of 64 characters does not', long64 === 'refused', long64)
+        check('a label of 64 characters does not', long64 === 'refused:ERR_FAILED', long64)
 
         // ---- (5) a two-label host, the bare name, an address, and another port are not what `*` stands for.
         const twoLabels = await show('two', `http://x.y.localhost:${APP_PORT}/`)
         const bareName = await show('bare', `http://localhost:${APP_PORT}/`)
         const literal = await show('lit', `http://127.0.0.1:${APP_PORT}/`)
         const otherPort = await show('port', `http://a.localhost:${APP_PORT + 5}/`)
-        check('two labels where * stands are refused', twoLabels === 'refused', twoLabels)
-        check('the bare localhost name is refused', bareName === 'refused', bareName)
-        check('127.0.0.1 named by address is refused', literal === 'refused', literal)
-        check('a port the pattern does not name is refused', otherPort === 'refused', otherPort)
+        check('two labels where * stands are refused', twoLabels === 'refused:ERR_FAILED', twoLabels)
+        check('the bare localhost name is refused', bareName === 'refused:ERR_FAILED', bareName)
+        check('127.0.0.1 named by address is refused', literal === 'refused:ERR_FAILED', literal)
+        check('a port the pattern does not name is refused', otherPort === 'refused:ERR_FAILED', otherPort)
 
         // ---- (6) another program's listener on a port the manifest names does not load, and is never connected to.
         const strangerLoad = await show('stranger', `http://a.localhost:${OTHER_PORT}/`)
-        check('a listener another program holds on a named port does not load', strangerLoad === 'refused', strangerLoad)
+        check('a listener another program holds on a named port does not load', strangerLoad === 'refused:ERR_FAILED', strangerLoad)
         check('the request never reached that listener', strangerConnections === 0, String(strangerConnections))
 
         // ---- (7) the app closes its listener: the same address no longer loads.
-        const closed = await asPage(view, setFixtureAsPageScript, AS_PAGE_URL, closeOwnServer)
+        const closed = await asPage(view, setAsPageScript, AS_PAGE_URL, closeOwnServer)
         check('the app closes its listener', closed === 'closed', closed)
         const after = await show('a', `http://a.localhost:${APP_PORT}/?again`)
         const afterFresh = await show('fresh', `http://c.localhost:${APP_PORT}/`)
-        check('the address that loaded now refuses, in the element that showed it', after === 'refused', after)
-        check('a new label refuses too', afterFresh === 'refused', afterFresh)
+        check('the address that loaded now refuses, in the element that showed it', after === 'refused:ERR_FAILED', after)
+        check('a new label refuses too', afterFresh === 'refused:ERR_FAILED', afterFresh)
       } finally {
-        clearFixtureAsPageScript()
         await closeElectronApp(app)
       }
     })
@@ -278,7 +288,7 @@ it(
   '"*" listed beside a local pattern still leaves loopback closed by address and by the bare name, and the pattern loads',
   async () => {
     await runPhase('web.embed "*" beside a local pattern e2e', async (check: Check) => {
-      const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+      const app = await launchElectron({ appPath: '.', args: [LOCALHOST_RESOLVER] })
       try {
         const manifest = manifestFor('app.orivon.embed-local-e2e-wildcard', ['*', BARE_PATTERN])
         const installed = await grant(app, manifest, 'tcp.listen.network', [String(APP_PORT)])
@@ -286,22 +296,21 @@ it(
         if (!installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         await grant(app, manifest, 'web.embed', ['*', BARE_PATTERN])
 
-        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        const view = await navigateToFixture(app, FIXTURE_URL, PAGE_TITLE)
         await view.evaluate(installSurface)
         const { show } = drive(view)
-        await asPage(view, setFixtureAsPageScript, AS_PAGE_URL, serveOwnPages, APP_PORT)
+        await asPage(view, setAsPageScript, AS_PAGE_URL, serveOwnPages, APP_PORT)
 
         const local = await show('a', `http://a.localhost:${APP_PORT}/`)
         const literal = await show('lit', `http://127.0.0.1:${APP_PORT}/`)
         const bareName = await show('bare', `http://localhost:${APP_PORT}/`)
         const otherLocal = await show('other', `http://a.localhost:${OTHER_PORT}/`)
         check('the local pattern loads beside "*"', local === 'loaded', local)
-        check('"*" does not reach 127.0.0.1 named by address', literal === 'refused', literal)
-        check('"*" does not reach the bare localhost name', bareName === 'refused', bareName)
-        check('"*" does not reach a localhost label on a port the pattern does not name', otherLocal === 'refused', otherLocal)
+        check('"*" does not reach 127.0.0.1 named by address', literal === 'refused:ERR_FAILED', literal)
+        check('"*" does not reach the bare localhost name', bareName === 'refused:ERR_FAILED', bareName)
+        check('"*" does not reach a localhost label on a port the pattern does not name', otherLocal === 'refused:ERR_FAILED', otherLocal)
         check('the request never reached a listener the app does not hold', strangerConnections === 0, String(strangerConnections))
       } finally {
-        clearFixtureAsPageScript()
         await closeElectronApp(app)
       }
     })
