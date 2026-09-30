@@ -1,6 +1,6 @@
 # ADR-0034: Listening is local unless the app declares the network
 
-- **Status:** accepted
+- **Status:** accepted, **amended 2026-09-30** (below)
 - **Date:** 2026-09-25
 - **Type:** security
 - **Decided by:** owner
@@ -83,6 +83,22 @@ specifically, not a general pattern-grammar change.
   is a narrower, fail-closed gap rather than the reverse.
 - A manifest written against the old flat `listen`/`bind` shape (a bare array, not an object) is
   refused as a malformed field, not silently misparsed: `readBindScopes` requires an object.
+
+## Amendment, 2026-09-30: the scope is built
+
+The Consequences above say `listen` and `udpBind` bind every interface whatever grant authorised
+them. That is no longer so. `'local'`, and an omitted scope, is authorised by a live `.local`
+grant or a live `.network` one and binds `127.0.0.1` alone; `'network'` needs the `.network` grant
+and binds every interface; a `.local` grant never authorises `'network'`. The handle is tied to
+the grant that authorised it, the narrower first, and `localAddress` reports what was bound. The
+transport and the preload carry `scope`, and any value but `'local'`, `'network'` or none is
+`'invalid'`.
+
+The shim no longer refuses a loopback host, as the third alternative above says it did: a
+loopback host asks for `'local'`, and no host or an every-interface one asks for `'network'` and
+is asked again as `'local'` when that is denied. Any other single address is refused by name,
+for TCP and for UDP. The need that built it is `ADR-0047`: an app serving its own pages must not
+be reachable from another device.
 
 ## Reversibility
 

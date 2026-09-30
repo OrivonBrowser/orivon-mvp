@@ -910,15 +910,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A228: Is `http.createServer` in this build's scope? **[OWNER]**
-
-- **Question:** `net.createServer` exists but no HTTP parser or `ServerResponse`, so
-  `http.createServer` refuses by name. Build an HTTP server for a port that serves HTTP?
-- **Why it matters:** Rule 4 builds it only when a need calls; `scope.md` names none yet.
-- **Options:** refuse until a port needs it (rec.); an HTTP server over `orivon.net.listen`.
-- **Who decides:** owner
-- **Blocks:** any port that serves HTTP
-
 ### A231: Leave/Stay blocks the main process; closing a tab never asks **[AI-REC]**
 
 - **Question:** `will-prevent-unload` settles synchronously, so its prompt stalls every tab's broker
@@ -1457,28 +1448,16 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A305: `web.embed`'s local pattern and its two events are AI-chosen shapes **[OWNER]**
 
-- **Question:** ADR-0047 lets a pattern's `*` stand for exactly one label, under a `localhost`
-  name only and reaching only the app's own listener; hands a shown page's popup and download to
-  the app as a notice with no window and no bytes; and caps an event's address at 2 MiB
-  (`LIMITS.embedEventUrlBytes`). Confirm them?
+- **Question:** ADR-0047 lets a pattern's `*` stand for one label, under a `localhost` name only
+  and reaching only the app's own listener; hands a shown page's popup and download to the app
+  as a notice with no window and no bytes; caps an event's address at 2 MiB; and the shell
+  drops a page's notices past 20 a second, a bound the contract does not state. Confirm them?
 - **Why it matters:** the pattern decides what a person is asked to grant, and the shapes are
   `src/contracts/`, permanent once an app ships against them.
-- **Options:** confirm (rec.); let `*` span several labels; add a way to take a download's bytes.
+- **Options:** confirm, and state the bound at the next contracts change (rec.); let `*` span
+  several labels; add a way to take a download's bytes.
 - **Who decides:** owner
 - **Blocks:** nothing; a real app reaching one of the three limits reopens it
-
-### A306: A shown page's link to a scheme Chromium does not know may raise the external-link prompt **[AI-REC]**
-
-- **Question:** The element's `will-navigate` names such a navigation, so an app can load an
-  address of its own for it (ADR-0047). Does the shell's own external-link prompt also appear,
-  asking a person about a link the app has already handled? Read from the permission gate, not
-  measured in a shown page.
-- **Why it matters:** an app that turns its own scheme's links into pages it serves would show a
-  prompt on every such link.
-- **Options:** measure it, then never offer a shown page's navigation to another program and
-  leave it to the app (rec.); keep the prompt.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
 
 ### A307: A shown page cannot reach a `.eth` name or an `ipfs://` address under `"*"` **[AI-REC]**
 
@@ -1490,6 +1469,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   `embed-host.ts` says a shown page reaches it as any tab does.
 - **Options:** admit verifier-routed hosts under `"*"` and rewrite an `ipfs://` navigation in a
   shown page as a tab's is (rec.); keep the refusal and correct the comment.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A308: A program on IPv6 loopback could stand in for an app's own local listener **[AI-REC]**
+
+- **Question:** A local pattern is admitted while the app holds a listener on its port, and that
+  listener binds `127.0.0.1` alone. Chromium may try `::1` first for a `localhost` name. Could
+  another program bound to the same port on `::1` only be shown in the app instead? Inferred
+  from how Chromium resolves `localhost` names; not measured.
+- **Why it matters:** the app's script would run in that program's page. It needs a program
+  already running as the person, which can do worse by other means.
+- **Options:** measure it, then hold `::1` on the same port for a `'local'` listener, or refuse a
+  local page whose connection was not to `127.0.0.1` (rec.); accept it as stated in T53.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
