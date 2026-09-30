@@ -21,6 +21,9 @@ import { updatesDomain } from '../self-update/updates-domain.js'
 import { onTelemetryChanged } from '../../telemetry/runner.js'
 import { profilesDomain } from '../launch/profiles-domain.js'
 import { historyDomain } from '../history/history-domain.js'
+import { throttleChanges } from '../downloads/change-throttle.js'
+import { downloadsDomain } from '../downloads/downloads-domain.js'
+import { downloadsHost } from '../downloads/folder-runner.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
@@ -60,6 +63,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     shortcuts: shortcutsDomain(services.shortcuts),
     startup: startupDomain(services.windows),
     history: historyDomain(services.history),
+    downloads: downloadsDomain(services.downloads, downloadsHost(services)),
     profiles: profilesDomain(services.profiles),
     pages: pagesDomain(services.windows),
     extensions: extensionsDomain({
@@ -123,6 +127,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     services.internalPages.publish('history.changed', undefined, ['history'])
     if (change !== 'titled') services.internalPages.publish('privacy.changed', undefined, ['settings'])
   })
+  services.downloads.onChange(throttleChanges((change) => { services.internalPages.publish('downloads.changed', change, ['downloads']) }))
   services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
   // Never fires in a private session: startTelemetry never runs there, and

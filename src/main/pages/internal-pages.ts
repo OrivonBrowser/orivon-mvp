@@ -7,6 +7,7 @@ export const INTERNAL_SCHEME = 'orivon'
 export const INTERNAL_PARTITION = 'orivon-internal'
 
 export const INTERNAL_PAGES = [
+  'downloads',
   'extensions',
   'history',
   'private',

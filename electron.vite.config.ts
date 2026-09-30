@@ -293,6 +293,7 @@ export default defineConfig({
           intro: resolve(root, 'src/renderer/intro/index.html'),
           permissions: resolve(root, 'src/renderer/permissions/index.html'),
           'page-settings': resolve(root, 'src/renderer/pages/settings/index.html'),
+          'page-downloads': resolve(root, 'src/renderer/pages/downloads/index.html'),
           'page-history': resolve(root, 'src/renderer/pages/history/index.html'),
           'page-profiles': resolve(root, 'src/renderer/pages/profiles/index.html'),
           'page-private': resolve(root, 'src/renderer/pages/private/index.html'),
