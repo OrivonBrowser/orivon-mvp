@@ -42,9 +42,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   the app's files (a rollback journal, page-level writes) in a forked child or thread of a cross-origin isolated app, and
   `:memory:` everywhere. A commit reaches the file at the end of its transaction, `synchronous=off` included. Function, aggregate,
   session, extension and backup members refuse by name.
-- **The compatibility matrix lists everything a ported app can need**, not only what ports have hit: every
-  Node builtin, every `electron` export, every `orivon.*` member, permission string and protocol stack has a
-  row, checked against the code, one sub-table per file under `docs/planning/compatibility/`.
+- **The compatibility matrix covers everything a ported app can need**, in readable tables, one row per topic:
+  what works, what does not, and what the app sees at the gap. Every Node builtin, `electron` export, `orivon.*`
+  member, permission and protocol is also listed one by one, checked against the code, in `docs/planning/compatibility/`.
 - **An app can show pages it serves itself**, each at an origin of its own, beside ordinary websites: a
   `web.embed` local pattern (`http://*.localhost:<port>`), admitted only while the app holds a listener on
   that port (ADR-0047).

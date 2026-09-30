@@ -1,8 +1,8 @@
 # Table 3d: network (Node modules and the page's routed APIs)
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 The universe is Node 24's `net` (17 exports, with the `Socket` and `Server` members and the `connect` and `listen` options), `dgram` (3 exports and 26 `Socket` members), `dns` (50 exports), `dns/promises` (46), `tls` (18, with the 21 `TLSSocket` members and the `connect` options), `http` (20), `https` (6), `http2` (11), and the members and options of `fetch` (`RequestInit` and `Response`), `XMLHttpRequest`, `EventSource` and `WebSocket`. Every Node module here is built from the five methods of `orivon.net` (`connect`, `connectSecure`, `listen`, `udpBind`, `lookup`; [Table 1a](table-1-capabilities.md)). Which hosts, ports and addresses a grant admits is [Table 1a](table-1-capabilities.md) and [Table 1b](table-1-capabilities.md), and the rows below say only what the Node surface does. A member the shim lacks reads as a function that refuses by name on a module's default export, and as a generated refusing export or nothing at all on a named import; a member missing from a built class reads `undefined`.
 

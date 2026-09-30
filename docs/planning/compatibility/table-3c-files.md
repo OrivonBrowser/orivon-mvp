@@ -1,8 +1,8 @@
 # Table 3c: files (`fs`, `path`, `os`)
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 The universe is Node 24's `fs` (104 keys), `fs.promises` (33), the `FileHandle` prototype (20 members and `close`), `Stats` (25 members), `Dirent` (9), `Dir` (8), the stream and watcher classes, `fs.constants` (56 keys), `path` (17 members, each again on `posix` and `win32`) and `os` (23 members, among them `os.constants` with 5 members). The file API under it is [`orivon.fs`](../../../src/contracts/capability-api.ts), which [Table 1a](table-1-capabilities.md) lists; every path is relative to one root per origin, shown to the app as `/orivon/app`. Of the 104 `fs` keys, 51 are present (24 callback functions, 23 `*Sync` functions, `lchmod` and `lchmodSync`, which are `undefined` in Node on Linux, `constants`, `promises`) and 53 refuse by name on both import forms.
 
