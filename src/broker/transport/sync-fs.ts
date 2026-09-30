@@ -18,7 +18,7 @@
 // ./ipc.ts's handleControlRequest: `SyncControlEvent`, `SyncFsPolicy` and
 // `RateLimiter` are all structural.
 
-import { originFromSenderFrame } from '../policy/origin.js'
+import { isAttributedSession, originFromSenderFrame } from '../policy/origin.js'
 import type { SenderFrameLike } from '../policy/origin.js'
 import { mapIoError } from '../io-errors.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
@@ -27,6 +27,14 @@ import { toFailureResponse } from './response-envelope.js'
 
 export interface SyncControlEvent {
   readonly senderFrame: SenderFrameLike | null
+  /** `isAttributedSession`'s own `mainFrame` comparison (policy/origin.ts),
+   * plus `session` for the injected `attributed` predicate to read -- this
+   * channel never reloads a tab (unlike ./ipc.ts's CONTROL_CHANNEL), so it
+   * needs neither `reload` nor `isDestroyed`. */
+  readonly sender: {
+    readonly mainFrame: SenderFrameLike | null
+    readonly session: unknown
+  }
 }
 
 export interface SyncFsReadRequest { readonly path: string }
@@ -78,11 +86,18 @@ export function handleSyncFsReadRequest (
   policy: SyncFsPolicy,
   event: SyncControlEvent,
   payload: unknown,
-  limiter?: RateLimiter
+  limiter?: RateLimiter,
+  attributed?: (sender: unknown, origin: string) => boolean
 ): ResponseEnvelope<Uint8Array> {
   const origin = originFromSenderFrame(event.senderFrame)
   if (origin === null) {
     return { id: NO_ID, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
+  }
+
+  // Same check, same reason, as ./ipc.ts's own CONTROL_CHANNEL handler --
+  // see isAttributedSession's doc (policy/origin.ts).
+  if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) {
+    return { id: NO_ID, ok: false, code: 'denied', message: 'this document is not in the session its origin belongs to' }
   }
 
   if (limiter !== undefined && !limiter.tryConsume(origin)) {

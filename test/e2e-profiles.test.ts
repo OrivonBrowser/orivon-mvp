@@ -68,6 +68,10 @@ it('makes, renames, recolours and deletes a profile, and shows the chip only whi
     expect(JSON.parse(readFileSync(join(userData, 'profiles', id, 'profile.json'), 'utf8'))).toMatchObject({ name: 'Office', color: 'red' })
 
     await card.locator('button.danger').click()
+    // Another process writing the registry while Delete is armed must not disarm it.
+    const file = join(userData, 'profiles', id, 'profile.json')
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), color: 'green' }))
+    await new Promise((resolve) => setTimeout(resolve, 800))
     await card.locator('button.danger').click()
     expect(await waitFor(async () => await page.locator('.profile').count() === 1)).toBe(true)
     expect(existsSync(join(userData, 'profiles', id))).toBe(false)

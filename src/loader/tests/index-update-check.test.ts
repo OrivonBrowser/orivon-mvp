@@ -69,3 +69,58 @@ describe('createLoader: a declined capability is not asked about again', () => {
     expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('needs-capability-prompt')
   })
 })
+
+// id.curves/fs.quotaBytes/net.concurrentSockets never turn into a Pattern
+// (broker/policy/manifest-patterns.ts's own doc on widensInvisibleLimits),
+// so decideUpdate's own PatternSet-based widening check cannot see one of
+// them grow between the pinned manifest and a re-fetched one. Without the
+// extra check decideAndRoute folds in, an update like this reads as a bare
+// hash change -- 'needs-reconsent', whose dialog says permissions have not
+// changed -- when the app just asked for something new.
+describe('createLoader: a widened id/fs/net limit escalates past a bare reconsent', () => {
+  it('a new id.curves entry, with the bundle otherwise changed, needs a capability prompt, not a reconsent', async () => {
+    const v1 = { capabilities: { id: { curves: ['secp256k1'] } } }
+    const v2 = { capabilities: { id: { curves: ['secp256k1', 'P-256'] } } }
+    const storage = memoryStorage()
+    expect((await createLoader({
+      fetch: stubFetch({ [MANIFEST_URL]: { body: utf8(manifestJson(v1)) }, [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>v1') } }),
+      storage, now: () => 0, resolve: PUBLIC_RESOLVER
+    }).load(ORIGIN, NO_GRANTS)).outcome).toBe('installed')
+
+    // A DIFFERENT body: without this, an unrelated defect (widening ignored
+    // because the bundle hash didn't move either) could not be told apart
+    // from the one this test actually targets.
+    const result = await createLoader({
+      fetch: stubFetch({ [MANIFEST_URL]: { body: utf8(manifestJson(v2)) }, [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>v2') } }),
+      storage, now: () => 0, resolve: PUBLIC_RESOLVER
+    }).load(ORIGIN, NO_GRANTS)
+    expect(result.outcome).toBe('needs-capability-prompt')
+  })
+
+  it('fs.quotaBytes growing alone, same bundle hash, still needs a capability prompt', async () => {
+    const v1 = { capabilities: { fs: { quotaBytes: 1024 } } }
+    const v2 = { capabilities: { fs: { quotaBytes: Number.MAX_SAFE_INTEGER } } }
+    const ROUTES_V1 = { [MANIFEST_URL]: { body: utf8(manifestJson(v1)) }, [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') } }
+    const ROUTES_V2 = { [MANIFEST_URL]: { body: utf8(manifestJson(v2)) }, [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') } }
+    const storage = memoryStorage()
+    expect((await createLoader({ fetch: stubFetch(ROUTES_V1), storage, now: () => 0, resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)).outcome).toBe('installed')
+
+    const result = await createLoader({ fetch: stubFetch(ROUTES_V2), storage, now: () => 0, resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
+    expect(result.outcome).toBe('needs-capability-prompt')
+  })
+
+  it('an unrelated bundle change with no limit widening still resolves the ordinary way (reconsent)', async () => {
+    const manifest = { capabilities: { id: { curves: ['secp256k1'] } } }
+    const storage = memoryStorage()
+    expect((await createLoader({
+      fetch: stubFetch({ [MANIFEST_URL]: { body: utf8(manifestJson(manifest)) }, [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>v1') } }),
+      storage, now: () => 0, resolve: PUBLIC_RESOLVER
+    }).load(ORIGIN, NO_GRANTS)).outcome).toBe('installed')
+
+    const result = await createLoader({
+      fetch: stubFetch({ [MANIFEST_URL]: { body: utf8(manifestJson(manifest)) }, [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>v2 -- same capabilities') } }),
+      storage, now: () => 0, resolve: PUBLIC_RESOLVER
+    }).load(ORIGIN, NO_GRANTS)
+    expect(result.outcome).toBe('needs-reconsent')
+  })
+})

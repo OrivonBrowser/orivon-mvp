@@ -59,6 +59,7 @@ interface RecordedView {
   options: { webPreferences?: Record<string, unknown> }
   webContents: FakeWebContents
   setBounds: ReturnType<typeof vi.fn>
+  setBackgroundColor: ReturnType<typeof vi.fn>
 }
 const createdViews: RecordedView[] = []
 
@@ -86,6 +87,7 @@ vi.mock('electron', () => ({
     // An adopted popup arrives with Chromium's own webContents.
     this.webContents = options.webContents ?? makeFakeWebContents()
     this.setBounds = vi.fn()
+    this.setBackgroundColor = vi.fn()
     createdViews.push(this)
   })
 }))
@@ -144,7 +146,11 @@ function ctxWithRegisteredOrigins (...origins: string[]): SubsystemContext {
   const registered = new Set(origins)
   for (const origin of origins) served.add(origin)
   return {
-    broker: { app: { isRegisteredSync: (origin: string) => registered.has(origin) } }
+    // dropOrigin fires on every navigation and close (tab-view.ts's own
+    // origin-liveness tracking), whether or not a test cares -- a no-op
+    // default keeps that side effect harmless here; a test asserting on it
+    // supplies its own broker instead.
+    broker: { app: { isRegisteredSync: (origin: string) => registered.has(origin) }, dropOrigin: async () => {} }
   } as unknown as SubsystemContext
 }
 
@@ -497,6 +503,21 @@ describe('TabManager -- did-navigate repartitions a tab for a redirect, link, fo
     expect(createdViews).toHaveLength(1)
   })
 
+  it('resets the SAME view\'s background once it stops being the dashboard, so a site with no CSS background of its own does not render on the dashboard\'s dark wash', () => {
+    const manager = newManager()
+    manager.createTab() // dashboard -- makeTabView sets its own pre-paint background
+    const view = createdViews[0] as RecordedView
+    view.setBackgroundColor.mockClear()
+
+    view.webContents.emit('did-navigate', {}, 'https://app.example/')
+
+    // No repartition (asserted above): the dashboard's own dark-washed view
+    // is the one still showing this site, so its colour must have been put
+    // back to Electron's own default, not left however makeTabView set it.
+    expect(createdViews).toHaveLength(1)
+    expect(view.setBackgroundColor).toHaveBeenCalledWith('#FFFFFF')
+  })
+
   it('a did-navigate landing on about:blank never swaps -- partitionForTarget(BLANK_URL) is always undefined', () => {
     const manager = newManager()
     manager.createTab('https://a.example/')
@@ -640,7 +661,7 @@ describe('TabManager -- a tab coming back to an app it left gets the app\'s own 
     served.add(APP)
     const registered = new Set<string>()
     const ctx = {
-      broker: { app: { isRegisteredSync: (o: string) => registered.has(o) } }
+      broker: { app: { isRegisteredSync: (o: string) => registered.has(o) }, dropOrigin: async () => {} }
     } as unknown as SubsystemContext
     const { manager, app, provider } = leftForProvider(ctx)
     registered.add(APP)

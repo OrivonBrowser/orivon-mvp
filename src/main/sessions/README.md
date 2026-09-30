@@ -1,16 +1,23 @@
 # `src/main/sessions/`: what an Electron `Session` is allowed to do
 
 **What lives here.** `permission-gate.ts` denies every Chromium permission (camera, clipboard
-reads, geolocation, ...) on every session a tab can reach, except the names in the table below.
-`external-links.ts` and `site-notifications.ts` decide the two that ask the person;
-`notification-decisions.ts` remembers each site's notification answer; `tab-prompts.ts` is what
-each tab remembers between questions. `web-context-host.ts` is `ADR-0019`'s Electron half of the
-isolated `WebContext`: the real `WebContextHost`
-[`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) calls through
-`CreateBrokerOptions.webContextHost`. `web-request-owner.ts` is the one place anything registers
-Electron's own `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived` on a session it
-covers, composing every registered handler through `web-request-compose.ts`'s pure ordering
-logic; see this file's Design notes below.
+reads, geolocation, ...) on every session a tab can reach, except the names in the table below,
+plus one conditional case: `'media'` for a `chrome-extension://` origin redeeming a live
+`chrome.tabCapture` grant (`tab-capture-grants.ts`'s own doc; wired from
+[`../extensions/extension-host.ts`](../extensions/extension-host.ts)). `external-links.ts` and
+`site-notifications.ts` decide the two that ask the person; `notification-decisions.ts` remembers
+each site's notification answer; `tab-prompts.ts` is what each tab remembers between questions.
+`web-context-host.ts` is `ADR-0019`'s Electron half of the isolated `WebContext`: the real
+`WebContextHost` [`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) calls
+through `CreateBrokerOptions.webContextHost`. `web-request-owner.ts` is the one place anything
+registers Electron's own `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived` on a session
+it covers, composing every registered handler through `web-request-compose.ts`'s pure ordering
+logic; see this file's Design notes below. `session-attribution.ts` publishes
+`ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
+claims, decided at that document's own commit and reused afterward rather than re-decided live,
+reusing [`../shell/tab-view.ts`](../shell/tab-view.ts)'s own `partitionForTarget` rule so every
+renderer-reachable broker channel can refuse a call whose WebContents never committed the origin
+it claims in the session it belongs in.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
@@ -18,22 +25,23 @@ logic; see this file's Design notes below.
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the two
 questions, `external-link-prompt.ts` and `notification-prompt.ts`; `showing-window.ts`;
-`exclusive-access-notice.ts`; `lock-navigation.ts`), the top-level `registry.ts`. Only
-`permission-gate.ts`, `web-context-host.ts` and `web-request-owner.ts` import `electron`: the
-decision files, `web-request-compose.ts` included, are unit-tested under plain vitest.
+`exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), the
+top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`
+and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
+included, are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in
 [`../../broker/capabilities/web.ts`](../../broker/capabilities/web.ts) instead: that file stays
 Electron-free by its own rule, which is why this directory exists. The partition, the view
 construction and the network confinement have to live somewhere Electron-shaped, and this is it.
 
-**Durable or tied to Electron.** `permission-gate.ts`, `web-context-host.ts` and
-`web-request-owner.ts` are tied to Electron's `Session`; the decision files
-(`web-request-compose.ts` included) and the notification store are plain Node and would survive
-an engine change.
+**Durable or tied to Electron.** `permission-gate.ts`, `web-context-host.ts`,
+`web-request-owner.ts` and `session-attribution.ts` are tied to Electron's `Session`; the decision
+files (`web-request-compose.ts` included), the notification store and `tab-capture-grants.ts` are
+plain Node and would survive an engine change.
 
-**Owner stream.** `shell` (`permission-gate.ts`); `ADR-0019` (`web-context-host.ts`).
-Maintenance only.
+**Owner stream.** `shell` (`permission-gate.ts`, `session-attribution.ts`); `ADR-0019`
+(`web-context-host.ts`). Maintenance only.
 
 ## Design notes
 
@@ -56,6 +64,26 @@ A name passes on one of two grounds (A202; `ADR-0025` has the amended wording):
 2. **The person answers a real prompt**, in the window showing the page, naming the site that
    asks. Nothing passes before the answer, and the check handler, which cannot ask, never allows
    on the person's behalf.
+
+**`media` meets neither ground, and is not in the table below for that reason: it stays denied
+for an ordinary page.** The one case it passes is a THIRD ground: an extension itself already
+proved a legitimate capture request by calling the permission-gated `chrome.tabCapture` API,
+which is what `tab-capture-grants.ts` checks for. No person is asked, because the person's own
+consent already happened once, at install, over the `tabCapture` permission line the install
+prompt showed. That carve-out is narrower than "this extension holds a live grant": the REQUEST
+handler's own `contents` argument must be the exact tab the grant named, the request's own
+`mediaTypes` must be empty, and the request must be from the requesting page's own MAIN frame.
+A device request (`getUserMedia({ audio: true })`, say) fires with `contents` as the extension's
+OWN page and a non-empty `mediaTypes`, so a live tabCapture grant never widens into real
+microphone/camera access on its own page. `mediaTypes` alone is not enough, though: MEASURED,
+`getUserMedia({ mandatory: { chromeMediaSource: 'desktop' } })` ALSO reports `mediaTypes: []`, and
+a web-accessible `chrome-extension://` page the extension injects as an `<iframe>` into the SAME
+tab it minted a grant for shares that tab's own `contents` (an iframe is a frame within a page's
+one `WebContents`, never a separate `WebContents`), matching the grant on both signals otherwise
+checked -- `isMainFrame` is what the legitimate flow always has and an iframe's own request never
+does. The CHECK handler answers `false` for `'media'` unconditionally: it fires speculatively,
+with no real call behind it, and carries neither the captured tab's identity nor the request shape
+to check either signal against.
 
 | Name | Ground | What meets it | ADR |
 |---|---|---|---|
@@ -87,6 +115,22 @@ runs only on a private session bus
 are the only thing keeping every name above away from a document running another site's script;
 they look like duplication and are not. The grant ledger is untouched by the gate: it governs
 `orivon.*` capabilities, not Chromium's own.
+
+**[`session-attribution.ts`](session-attribution.ts) decides attribution at a document's own
+commit, never by re-checking a live document against the CURRENT state.** A live re-check
+sounds simpler, but it strands every already-open, already-attributed document of an origin the
+instant that origin's session changes: an origin whose pinned copy goes away moves from its own
+partition back to the default session, and a tab still showing it would be denied even
+`app.requestGrant`, because its `WebContents` never moves on its own. A grant or a revoke does
+not move an origin at all: a granted network-served origin runs in the default session
+(`ADR-0044`), exactly where an ungranted one runs. Recording what a document's session
+was found to be at its own last main-frame `did-navigate`, and trusting that record afterward,
+lets an already-attributed document keep calling successfully until it next navigates -- the same
+navigation that already triggers `../shell/tab-view.ts`'s own partition swap for any other
+cross-origin move. A cache-served (pinned) origin is the one exception, checked live and strictly
+regardless of any record, because its bundle is only ever intercepted inside its own partition
+(`ADR-0007`): a document attributed to it must run there at every call, not merely at whatever
+moment it committed.
 
 **[`web-context-host.ts`](web-context-host.ts): two WebRTC belts, and why the discard-port
 proxy does not break the context's own `fetch()`.** `protocol.handle` and

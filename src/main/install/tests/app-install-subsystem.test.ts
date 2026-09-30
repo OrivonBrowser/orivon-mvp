@@ -11,7 +11,7 @@ vi.mock('electron', () => ({
   session: { defaultSession: { webRequest: { onHeadersReceived: vi.fn(), onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn() } } }
 }))
 
-const { appInstallSubsystem } = await import('../app-install-subsystem.js')
+const { appInstallSubsystem, readCapped } = await import('../app-install-subsystem.js')
 const { createSubsystemContext, publishBroker, publishLoader } = await import('../../registry.js')
 const { stubBroker } = await import('../../../broker/transport/tests/ipc.test-helpers.js')
 
@@ -52,5 +52,51 @@ describe('appInstallSubsystem', () => {
 
   it('is not marked critical -- an unwired install path must never take the real browser down', () => {
     expect(appInstallSubsystem.critical).not.toBe(true)
+  })
+})
+
+// fetchGrantManifest never reads a loopback server's whole response body to
+// a string before grantWithoutInstall's own MAX_MANIFEST_BYTES check runs --
+// readCapped enforces that, exercised here directly against a real streamed
+// Response rather than through the whole subsystem.
+describe('readCapped', () => {
+  function streamed (chunks: readonly string[]): Response {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start (controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+        controller.close()
+      }
+    })
+    return new Response(stream)
+  }
+
+  it('reads the whole body when it fits under the cap', async () => {
+    expect(await readCapped(streamed(['hello', ' ', 'world']), 1024)).toBe('hello world')
+  })
+
+  it('stops reading, never decoding more than a few bytes past the cap, for a body far larger than it', async () => {
+    const bigChunk = 'x'.repeat(1_000_000)
+    const response = streamed([bigChunk, bigChunk, bigChunk]) // 3 MB total
+    const text = await readCapped(response, 10)
+    // Stops the first time the running total crosses the cap -- one 1 MB
+    // chunk here, not all 3 MB, and never the unbounded body a hostile
+    // server could keep streaming forever.
+    expect(text.length).toBe(1_000_000)
+    expect(text.length).toBeLessThan(3_000_000)
+  })
+
+  it('cancels the stream rather than draining it once the cap is crossed', async () => {
+    let cancelled = false
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start (controller) {
+        controller.enqueue(encoder.encode('x'.repeat(100)))
+        controller.enqueue(encoder.encode('y'.repeat(100)))
+      },
+      cancel () { cancelled = true }
+    })
+    await readCapped(new Response(stream), 10)
+    expect(cancelled).toBe(true)
   })
 })

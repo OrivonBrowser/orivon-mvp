@@ -1158,13 +1158,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing until a real app reaches either limit
 
-### A262: The direct gateway route trusts a proxy check made at the verifier host's start **[OWNER]**
+### A262: The verifier host's direct routes trust a proxy check made at its start **[OWNER]**
 
-- **Question:** Should the direct route check for a proxy when it is taken, not only when the
-  verifier host starts?
+- **Question:** Should the direct gateway route and CCIP-Read's pinned dial check for a proxy when
+  taken, not only when the verifier host starts?
 - **Why it matters:** a proxy turned on mid-run (a VPN, a corporate network, Tor through a proxy)
   is not seen until the host restarts; until then a failing gateway whose system address disagrees
-  with DNS-over-HTTPS is reached directly, from the person's real address (T40).
+  with DNS-over-HTTPS (T40), and every CCIP-Read query (T31), is reached from the real address.
 - **Options:** the host asks main (`app.resolveProxy`) at decision time, one round trip on a rare
   path (rec.); main pushes proxy changes into the host; keep the snapshot and say so.
 - **Who decides:** owner
@@ -1389,19 +1389,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A285: CCIP-Read egress validates a resolved hostname, then fetches the hostname again **[OWNER]**
-
-- **Question:** `urlRefusal` resolves a CCIP gateway hostname and checks every address against
-  T12, but `requestOne` then fetches the ORIGINAL url string, which resolves again -- a
-  DNS-rebinding TOCTOU `direct-fetch.ts`'s `pinnedLookup` already avoids on the sibling path.
-- **Why it matters:** a `.eth` name's own resolver contract controls the CCIP gateway url, so a
-  short-TTL rebind could point the verifier-host process at an internal address.
-- **Options:** reuse `pinnedLookup` for CCIP's POST/redirect-following path (rec.; a real change,
-  since CCIP needs a body and its own redirect loop, unlike `createDirectFetch`'s GET/HEAD-only
-  shape); accept the residual, narrowed by the existing `https`-only rule.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A287: A CommonJS `require()` of a shim module gets no named refusal **[AI-REC]**
 
 - **Question:** Refusal by name lives on each module's default export. A CommonJS dependency
@@ -1551,13 +1538,67 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A296: A cache-served app's network document runs with its grants until the tab swaps session **[AI-REC]**
+### A297: Google refuses sign-in from Orivon **[OWNER]**
 
-- **Question:** A navigation into a cache-served origin commits the network-delivered document in
-  the default session, with `window.orivon` and the app's grants, before did-navigate moves the
-  tab into the app's partition -- the host, not the pin, supplied that code.
-- **Why it matters:** pinning is meant to keep a changed host from running with the app's grants (T18).
-- **Options:** the broker refuses a cache-served origin's calls outside its own partition, via a
-  predicate main injects (rec.); repartition on will-navigate/will-redirect before the commit.
+- **Question:** How does Orivon get past Google's "This browser or app may not be secure" at sign-in?
+- **Why it matters:** nobody can sign in to a Google account in Orivon; the user-agent string is already plain
+  Chrome, but the client hints still describe an unbranded Chromium.
+- **Options:** a Firefox identity on Google's sign-in hosts, header and page agreeing (rec.; the page half is on
+  branch `stream/sef-google`, the header rewrite and the `navigator.userAgentData` removal are not written);
+  a Chrome identity with a "Google Chrome" brand in the client hints; leave it.
+- **Who decides:** owner
+- **Blocks:** Google sign-in
+
+### A298: A keyboard command or context-menu click does not count as invoking an extension **[AI-REC]**
+
+- **Question:** Chrome grants activeTab, and so `chrome.tabCapture`, on a command or context-menu click as well as
+  the toolbar button; this build records only the toolbar button (`d-0204`). Record the other two?
+- **Why it matters:** an extension started by its keyboard shortcut is refused a capture Chrome would allow.
+- **Options:** record the invocation from `chrome.commands` and `contextMenus.onClicked` too (rec.); leave it.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing in this build; the granted-origin CSP and window.orivon filter apply meanwhile.
+- **Blocks:** nothing
+
+### A299: Developer mode is switched on by an environment variable **[OWNER]**
+
+- **Question:** Should developer mode be reachable only from the browser's own UI, or stay an
+  environment switch (`ORIVON_DEV_ORIGINS=1`) read at launch?
+- **Why it matters:** it routes loopback and developer `.eth` names, grants without install for
+  them, enables the Level 4 override (T39) and DevTools in shown pages; anything that sets a
+  launch's environment (a desktop shortcut, a same-user process) can turn it on. No page can.
+- **Options:** a Settings switch read at launch, with the variable honoured only in an unpackaged
+  build (rec.); keep the variable and say so (today, T13c).
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A300: The verifier host has Node and no sandbox **[AI-REC]**
+
+- **Question:** Should the untrusted parsers T34 names run in a sandboxed process with no Node?
+- **Why it matters:** T34 keeps a parser bug out of main, but the host is a Node utility process:
+  a bug exploited there reads and writes the person's files and reaches the network as they can.
+- **Options:** move UnixFS, dag-pb, IPNS, CCIP answers and the light client's WebAssembly into a
+  sandboxed process that only computes, keeping I/O in a thin host (rec.); keep one host and say so
+  (today).
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A301: One `orivon.fs` call has no byte cap **[AI-REC]**
+
+- **Question:** Should a single `orivon.fs` read, write or whole-file read be capped in bytes?
+- **Why it matters:** a granted app can make main hold a whole file (up to Node's 2 GiB `readFile`
+  limit) or a large write at once, stalling every tab; a read's allocation is already clamped to
+  what the file holds. A cap is a `src/contracts/` change (`LIMITS`).
+- **Options:** `LIMITS.fsCallBytes` (256 MiB), `'limit'` past it, big files through handles (rec.);
+  leave it bounded by the file and the quota.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A303: `chrome.tabs.query` still answers a `chrome-extension://<id>//sandbox.html` request **[AI-REC]**
+
+- **Question:** A doubled-slash spelling of a sandbox page gets the sandbox CSP, an opaque origin and no
+  injected `chrome.*` from the vendored library, yet `chrome.tabs.query({})` still returns real tab data there
+  (measured through `WebFrameMain.executeJavaScript`, `test/e2e-extensions-sandbox-page.test.ts`). What answers?
+- **Why it matters:** code in a sandbox page reached by that spelling can still read the person's open tabs.
+- **Options:** redirect every non-canonical `chrome-extension://` path to its canonical form before it loads,
+  then confirm the query is refused (rec.); find the Electron native binding that answers and patch it; leave it.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing

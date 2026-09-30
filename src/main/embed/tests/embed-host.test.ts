@@ -13,7 +13,7 @@ fakeApp.setMaxListeners(0)
 
 interface FakeSession {
   on: ReturnType<typeof vi.fn>
-  webRequest: { onBeforeRequest: ReturnType<typeof vi.fn> }
+  webRequest: { onBeforeRequest: ReturnType<typeof vi.fn>, onBeforeSendHeaders: ReturnType<typeof vi.fn> }
   resolveHost: ReturnType<typeof vi.fn>
 }
 
@@ -23,7 +23,7 @@ const sessionsByPartition = new Map<string, FakeSession>()
 function fakeSession (): FakeSession {
   return {
     on: vi.fn(),
-    webRequest: { onBeforeRequest: vi.fn() },
+    webRequest: { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn() },
     resolveHost: vi.fn(async () => ({ endpoints: [] }))
   }
 }
@@ -252,5 +252,64 @@ describe('configureEmbedSession -- onBeforeRequest resolves through the guest se
     await new Promise((resolve) => { setImmediate(resolve) })
 
     expect(callback).toHaveBeenCalledWith({ cancel: true })
+  })
+})
+
+// A shown page reaches the verifier the same ordinary way a tab does, so
+// whatever it puts on its own request for the partition header must be
+// stripped and replaced with its OWN top-level page's origin -- never left
+// as whatever the page set, and never left unset for a page's own document
+// request either.
+describe('configureEmbedSession -- the verifier partition header is stripped and restamped', () => {
+  beforeEach(() => {
+    fakeApp.removeAllListeners()
+    sessionsByPartition.clear()
+  })
+
+  function attachAndGetSession (appOrigin: string): FakeSession {
+    const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
+    const broker = fakeBroker(new Set([appOrigin]), attach)
+    installEmbedHost(broker, '/preload/embed.js')
+    const embedder = fakeEmbedder(`${appOrigin}/tab`)
+    fakeApp.emit('web-contents-created', {}, embedder)
+    embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const [session] = sessionsByPartition.values()
+    if (session === undefined) throw new Error('no session was configured')
+    return session
+  }
+
+  interface Details { url: string, resourceType: string, requestHeaders: Record<string, string>, frame: { top: { url: string } | null } | undefined }
+  type Listener = (details: Details, callback: (r: { requestHeaders: Record<string, string> }) => void) => void
+
+  it("stamps a top-level page's own request with its own origin, never with what it sent", () => {
+    const session = attachAndGetSession(ORIGIN_A)
+    const onBeforeSendHeaders = session.webRequest.onBeforeSendHeaders.mock.calls[0]?.[1] as Listener
+    const callback = vi.fn()
+    onBeforeSendHeaders({
+      url: 'https://shown.eth/',
+      resourceType: 'mainFrame',
+      requestHeaders: { 'x-orivon-partition': 'https://attacker.example' },
+      frame: { top: { url: 'https://shown.eth/' } }
+    }, callback)
+    expect(callback).toHaveBeenCalledWith({ requestHeaders: { 'x-orivon-partition': 'https://shown.eth' } })
+  })
+
+  it('strips the header from a subframe request with no top frame to ask, rather than keeping what it sent', () => {
+    const session = attachAndGetSession(ORIGIN_A)
+    const onBeforeSendHeaders = session.webRequest.onBeforeSendHeaders.mock.calls[0]?.[1] as Listener
+    const callback = vi.fn()
+    onBeforeSendHeaders({
+      url: 'https://shown.eth/frame',
+      resourceType: 'subFrame',
+      requestHeaders: { 'x-orivon-partition': 'https://attacker.example' },
+      frame: undefined
+    }, callback)
+    expect(callback).toHaveBeenCalledWith({ requestHeaders: {} })
+  })
+
+  it('is scoped to the verifier-routed hosts, the same way the default session is', () => {
+    const session = attachAndGetSession(ORIGIN_A)
+    const [filter] = session.webRequest.onBeforeSendHeaders.mock.calls[0] as [{ urls: string[] }]
+    expect(filter.urls).toEqual(expect.arrayContaining(['https://*.eth/*']))
   })
 })

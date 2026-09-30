@@ -15,7 +15,10 @@ import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
+import { recordViewBackground } from './view-background-test-hook.js'
+import { repartitionView } from './tab-parking.js'
+import { parseInternalUrl } from '../pages/internal-pages.js'
+import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { wireSignInIdentity } from './sign-in-identity-tab.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
@@ -147,28 +150,70 @@ export function tabWebPreferences (preload: string, partition: string | undefine
   }
 }
 
+/** Electron's own default: what a WebContentsView paints before anything
+ * ever calls `setBackgroundColor` on it. Named so `resetViewBackground`
+ * below reads as putting a view back to this, not to an arbitrary white. */
+const DEFAULT_BACKGROUND = '#FFFFFF'
+
 /** Builds one tab's WebContentsView, shared by tabs.ts's createTab() and
- * repartitionView(). `target`, when known, is what the view is about to
- * load -- see appTabOrigins below for why watchAppTab needs it. */
-export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[], target?: string): WebContentsView {
+ * repartitionView().
+ *
+ * `opts.backgroundColor`: painted before this view is ever attached to the
+ * screen -- createTab() (tabs.ts) attaches it BEFORE `loadURL`, since a
+ * detached view's first paint has nowhere live to land, so whatever colour
+ * the view already carries when attached is what actually paints first, for
+ * however long the page then takes to apply its own CSS background. Only
+ * the shell's OWN pages (the new-tab dashboard, orivon:// internal pages)
+ * get one here -- an ordinary website's tab is deliberately left at the
+ * default, matching every browser's own new-tab-vs-site distinction (a site
+ * may itself be transparent/dark/light and this shell has no opinion on
+ * that). A tab built with one is reset to `DEFAULT_BACKGROUND` the moment it
+ * stops being the dashboard or an internal page (`resetViewBackground`,
+ * called from wireView's did-navigate below) -- the SAME view keeps
+ * carrying its old colour across an ordinary navigation that needs no
+ * partition swap, and a page with no CSS background of its own would
+ * otherwise render on top of it instead of the white the web expects.
+ *
+ * `opts.target`, when known, is what the view is about to load -- see
+ * appTabOrigins below for why watchAppTab needs it. A trailing options
+ * object, not two more positional strings: both are optional and hard to
+ * tell apart at a call site by position alone. */
+export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[], opts: { backgroundColor?: string, target?: string } = {}): WebContentsView {
   const view = new WebContentsView({ webPreferences: tabWebPreferences(preload, partition, additionalArguments) })
-  watchAppTab(view, additionalArguments, target)
+  if (opts.backgroundColor !== undefined) {
+    view.setBackgroundColor(opts.backgroundColor)
+    recordViewBackground(view.webContents.id, opts.backgroundColor)
+  }
+  watchAppTab(view, additionalArguments, opts.target)
   return view
+}
+
+/** Puts a view's background back to Electron's own default -- called the
+ * moment a tab that had one (the dashboard, an internal page) stops being
+ * that (wireView's did-navigate below): the colour `makeTabView` set no
+ * longer describes this tab, and the SAME view keeps showing it forever
+ * otherwise, since Electron never repaints a view's background on its own
+ * past the first `setBackgroundColor` call. */
+function resetViewBackground (view: WebContentsView): void {
+  view.setBackgroundColor(DEFAULT_BACKGROUND)
+  recordViewBackground(view.webContents.id, DEFAULT_BACKGROUND)
 }
 
 /** The views built with APP_TAB_FLAG. Electron cannot read a view's
  * webPreferences back, and a parked view may only be reused while its flag
- * still matches what its origin needs (takeParkedView). */
-const appTabViews = new WeakSet<WebContentsView>()
+ * still matches what its origin needs (tab-parking.ts's takeParkedView, the
+ * one outside reader -- exported for that, not for general use). */
+export const appTabViews = new WeakSet<WebContentsView>()
 
 /** The origin each app-tab view currently serves, kept current by wireView's
  * did-navigate handler for as long as the view stays put -- see the comment
- * there. retireView's park key (ADR-0044) reads this rather than the view's
- * live `getURL()`: by the time a redirect or script navigation's
- * did-navigate fires and retirement follows, the view has already committed
- * the URL it is LEAVING FOR, not the one it is leaving; only this map still
- * has the departing origin. */
-const appTabOrigins = new WeakMap<WebContentsView, string>()
+ * there. tab-parking.ts's retireView reads this for its park key (ADR-0044)
+ * rather than the view's live `getURL()`: by the time a redirect or script
+ * navigation's did-navigate fires and retirement follows, the view has
+ * already committed the URL it is LEAVING FOR, not the one it is leaving;
+ * only this map still has the departing origin. Exported for that one
+ * outside reader, not for general use. */
+export const appTabOrigins = new WeakMap<WebContentsView, string>()
 
 /** A registered app's tab gets its failures reported; see reportAppFailures. */
 function watchAppTab (view: WebContentsView, additionalArguments: string[] | undefined, target?: string): void {
@@ -234,6 +279,12 @@ export function wireView (id: string, record: TabRecord): void {
   // A press in a pane is the person choosing it, in a split. Not focus, which a page loading in the other pane can take.
   wc.on('input-event', (_event, input) => { if (input.type === 'mouseDown') record.host.paneClicked(id) })
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
+    // Unconditional, ahead of the `shown()` gate below: a parked or
+    // background view's own navigation still changes which origin's
+    // document count this WebContents holds, and `retireView`'s own
+    // about:blank load is where a session teardown for the origin just left
+    // actually fires.
+    trackDocumentOrigin(wc, navigatedUrl, record.host.broker)
     if (!shown()) return
     if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
       record.favicon = null
@@ -258,6 +309,23 @@ export function wireView (id: string, record: TabRecord): void {
     // one-way rule exists to protect.
     if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(record.host.dashboardUrl)) {
       record.isDashboardTab = false
+      // The dashboard's own dark wash (makeTabView's own doc) must not
+      // bleed through a site with no CSS background of its own -- and a
+      // navigation with nothing to swap partitions over (the common case:
+      // an ordinary site with no grants yet) reuses THIS SAME view below,
+      // never rebuilding it fresh.
+      resetViewBackground(view)
+    }
+    // guardInternalView (../pages/internal-tab.ts) refuses every navigation
+    // an internal page's OWN content could trigger, so this fires only for
+    // one path it cannot see: the address bar (tabs.ts's navigate()) typing
+    // something with no derivable origin -- about:blank, say -- straight
+    // onto this view with no partition to swap either. Same one-way rule as
+    // the dashboard's own flag just above: only ever cleared here, and the
+    // view's colour reset the moment it is.
+    if (record.internalPage !== null && parseInternalUrl(navigatedUrl)?.page !== record.internalPage) {
+      record.internalPage = null
+      resetViewBackground(view)
     }
     if (!record.isDashboardTab) {
       const swap = partitionChanged(navigatedUrl, record.partition)
@@ -325,7 +393,14 @@ export function wireView (id: string, record: TabRecord): void {
   // actually reachable rather than theatre. Only for the view the tab
   // shows: repartitionView() closes a swapped-out view after the record has
   // moved on, and that close must not forget a tab that is not closing.
-  wc.on('destroyed', () => { if (shown()) record.host.forgetTab(id) })
+  wc.on('destroyed', () => {
+    // Unconditional, same reason as the trackDocumentOrigin call above: a
+    // view closed outright (never parked to about:blank first) still ends
+    // whatever document it held, and this is the only remaining chance to
+    // release it.
+    releaseOriginDocument(wc, record.host.broker)
+    if (shown()) record.host.forgetTab(id)
+  })
 
   wc.on('enter-html-full-screen', () => { record.host.htmlFullscreenChanged(id, true) })
   wc.on('leave-html-full-screen', () => { record.host.htmlFullscreenChanged(id, false) })
@@ -362,143 +437,23 @@ export function wireView (id: string, record: TabRecord): void {
     })
   })
 
-  // T18: never a real OS popup window. A popup the page can talk to becomes
-  // a tab (./popups.ts); everything else opens as a new tab.
+  // T18: a popup the page can talk to becomes a tab, never an OS window
+  // (./popups.ts); a shift-click opens a new window instead, but with a
+  // fresh tab in it, partitioned exactly as an ordinary tab there would be
+  // -- never the opener's own session.
   wc.setWindowOpenHandler(windowOpenHandler({
     atCapacity: () => record.host.atCapacity(),
-    openTab: (url) => { record.host.openTab(url) },
-    adoptPopup: (view, partition, url) => {
+    openTab: (url, active, loadOptions) => record.host.openTab(url, active, loadOptions),
+    adoptPopup: (view, partition, url, active) => {
       watchAppTab(view, appTabArgsFor(url, record.host.broker), url)
-      record.host.adoptPopup(view, partition)
+      record.host.adoptPopup(view, partition, active)
     },
+    openBlobTab: (url, partition, active, loadOptions) => record.host.openBlobTab(url, partition, active, loadOptions),
+    openWindow: (url, loadOptions) => record.host.openWindow(url, loadOptions),
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
-}
-
-/** Swaps the view `record` shows for one in `nextPartition` -- the ONLY way
- * to change a tab's Electron session partition after creation (Electron fixes
- * `webPreferences.partition` at construction; there is no live "reassign
- * session" API). Called from two places, both guarded by `partitionChanged`
- * so neither fires for a same-origin navigation, a rejected/about:blank
- * fallback or the dashboard: navigate() (a typed target, pre-fetch) and
- * wireView()'s did-navigate handler (a redirect, clicked link, form
- * submission or script navigation -- the target is only known once Chromium
- * has already committed it).
- *
- * A view leaving an app's partition is parked rather than closed, and a tab
- * coming back to that app gets it again, with the app's own history and
- * sessionStorage. Every other swap starts from an empty `navigationHistory`,
- * since Electron gives no way to carry it across: entering an app, or
- * leaving one for the open web, still costs the back button (A109; ADR-0018
- * for what swaps at all). */
-export function repartitionView (
-  id: string,
-  record: TabRecord,
-  target: string,
-  nextPartition: string | undefined
-): void {
-  const { host } = record
-  // A navigation that commits as the window closes must not make a view nobody will close.
-  if (host.isClosing()) return
-  const oldView = record.view
-  const oldPartition = record.partition
-  const wasShown = host.isShown(id)
-
-  if (wasShown) host.detachView(oldView)
-
-  const appTabArgs = appTabArgsFor(target, host.broker)
-  const parked = takeParkedView(record, nextPartition, appTabArgs, target)
-  const newView = parked ?? makeTabView(host.preloadPath, nextPartition, appTabArgs, target)
-  record.view = newView
-  record.partition = nextPartition
-  record.isDashboardTab = false
-  record.internalPage = null
-  if (parked === undefined) wireView(id, record)
-  else keepOnlyOwnEntriesOnReturn(record, parked, target)
-
-  // Same tab, fresh WebContents -- the lifecycle seam's one event tab-
-  // view.ts raises directly (tab-lifecycle.ts's own doc says why).
-  host.tabLifecycle?.viewReplaced(oldView.webContents, newView.webContents, host.window)
-
-  // Only once the record shows the new view: the old one's handlers then
-  // ignore it, so closing it here cannot reach forgetTab().
-  retireView(record, oldView, oldPartition)
-
-  if (wasShown) host.attachView(id, newView)
-
-  void newView.webContents.loadURL(target)
-}
-
-function closeView (view: WebContentsView): void {
-  if (!view.webContents.isDestroyed()) view.webContents.close()
-}
-
-/** The identity a view parks under, so a tab returning to it can find it
- * again. A cache-served app keeps its own partition string, unique per app
- * already. A registered app with NO partition of its own (ADR-0044: held
- * grants, delivered from the network) still needs a key that is unique to
- * IT and not to every other app sharing the default session -- its own
- * origin -- or the first such app to retire in this tab would hand its
- * parked view to whichever different app returns first. Neither an
- * unregistered page nor a partition-less view with no derivable origin has
- * anything worth keeping past a navigation away. */
-function parkKeyFor (partition: string | undefined, isAppTab: boolean, origin: string | null): string | undefined {
-  if (partition !== undefined) return partition
-  return isAppTab && origin !== null ? `app:${origin}` : undefined
-}
-
-/** An app's view is parked on about:blank for the tab's return; any other
- * view is closed, an internal page's included: it is one per window and is
- * opened again from the shell, not returned to. */
-function retireView (record: TabRecord, view: WebContentsView, partition: string | undefined): void {
-  record.host.devtools?.closeFor(view.webContents)
-  const key = parkKeyFor(partition, appTabViews.has(view), appTabOrigins.get(view) ?? null)
-  if (key === undefined || partition === INTERNAL_PARTITION || view.webContents.isDestroyed()) {
-    closeView(view)
-    return
-  }
-  record.parkedViews.set(key, view)
-  void view.webContents.loadURL('about:blank')
-}
-
-/** The view this tab parked for `target`, if it can serve it. Its app-tab
- * flag was fixed when it was built, so one that no longer matches its
- * origin's registration is closed, and the tab gets the fresh view it would
- * have had anyway. */
-function takeParkedView (record: TabRecord, partition: string | undefined, appTabArgs: string[] | undefined, target: string): WebContentsView | undefined {
-  const key = parkKeyFor(partition, appTabArgs !== undefined, originFromUrl(target))
-  if (key === undefined) return undefined
-  const view = record.parkedViews.get(key)
-  if (view === undefined) return undefined
-  record.parkedViews.delete(key)
-  if (!view.webContents.isDestroyed() && appTabViews.has(view) === (appTabArgs !== undefined)) return view
-  closeView(view)
-  return undefined
-}
-
-/** Once a parked view commits the tab's return, drops every history entry
- * that is not its app's own page: the page the app left for, which committed
- * here before the tab moved, and the blank page it waited on. Going back to
- * either would load it inside the app's session. */
-function keepOnlyOwnEntriesOnReturn (record: TabRecord, view: WebContentsView, target: string): void {
-  const origin = originFromUrl(target)
-  view.webContents.once('did-navigate', () => {
-    const history = view.webContents.navigationHistory
-    const active = history.getActiveIndex()
-    // From the end, so each removal leaves the indices still to visit alone.
-    for (let index = history.length() - 1; index >= 0; index--) {
-      if (index !== active && originFromUrl(history.getEntryAtIndex(index).url) !== origin) history.removeEntryAtIndex(index)
-    }
-    record.host.emitState()
-  })
-}
-
-/** Closes the views a tab parked for the apps it left: the tab is going. */
-export function closeParkedViews (record: TabRecord): void {
-  for (const view of record.parkedViews.values()) closeView(view)
-  record.parkedViews.clear()
 }
 
 /** A snapshot of a page, for the floating preview a tear-off drag shows (tear-drag.ts). `null` for a gone or

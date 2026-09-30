@@ -102,4 +102,66 @@ describe('PickedPathLedger', () => {
       expect(() => { ledger.record(APP, 'file', '/x', 1, undefined) }).not.toThrow()
     })
   })
+
+  // "Re-check persisted picked paths when they are restored" -- a pick
+  // recorded before a guard existed (or from a machine where Orivon's own
+  // data directory has since moved) must not go on looking legitimate in
+  // the settings list forever just because it is read back off disk.
+  describe('re-checking a hydrated pick against the picker guard', () => {
+    it('drops a persisted pick the guard now blocks, the first time it is read back', () => {
+      const storage = memoryLedgerStorage()
+      const first = new PickedPathLedger(storage)
+      const kept = first.record(APP, 'directory', '/home/user/Downloads', 1, undefined)
+      const blocked = first.record(APP, 'directory', '/would/be/blocked', 2, undefined)
+
+      const guardedReason = (path: string): string | null => path === blocked.path ? "this folder holds Orivon's own data" : null
+      const afterRestart = new PickedPathLedger(storage, guardedReason)
+
+      expect(afterRestart.listFor(APP)).toEqual([kept])
+    })
+
+    it('persists the drop immediately -- a further restart does not bring the blocked entry back', () => {
+      const storage = memoryLedgerStorage()
+      const first = new PickedPathLedger(storage)
+      first.record(APP, 'directory', '/would/be/blocked', 1, undefined)
+
+      const guardedReason = (): string | null => 'blocked'
+      const afterFirstRestart = new PickedPathLedger(storage, guardedReason)
+      afterFirstRestart.listFor(APP) // triggers hydration, and the persisted correction
+
+      // A THIRD instance, with NO guard at all -- if the drop had not been
+      // persisted, this would read the stale entry straight back.
+      const afterSecondRestart = new PickedPathLedger(storage)
+      expect(afterSecondRestart.listFor(APP)).toEqual([])
+    })
+
+    it('a caller with no guard concept (every test that predates this) keeps today\'s behaviour exactly', () => {
+      const storage = memoryLedgerStorage()
+      const first = new PickedPathLedger(storage)
+      const pick = first.record(APP, 'directory', '/home/user/Downloads', 1, undefined)
+
+      const afterRestart = new PickedPathLedger(storage)
+
+      expect(afterRestart.listFor(APP)).toEqual([pick])
+    })
+  })
+
+  // An origin with zero picks left should not go on holding a row in
+  // this ledger's own per-origin map for the rest of the process -- see
+  // `revoke`'s own comment. Not directly observable from outside the class
+  // (the map is a true private field), so this proves the OBSERVABLE half:
+  // revoking an origin's only pick, then picking again, behaves exactly as
+  // if that origin had never been seen, with nothing left over from before.
+  describe('revoke leaves nothing behind once an origin has no picks left', () => {
+    it('an origin revoked down to zero picks behaves like a fresh one on its next pick', () => {
+      const ledger = new PickedPathLedger()
+      const first = ledger.record(APP, 'file', '/x/a.txt', 1, undefined)
+      ledger.revoke(APP, first.id)
+      expect(ledger.listFor(APP)).toEqual([])
+
+      const second = ledger.record(APP, 'file', '/x/b.txt', 2, undefined)
+
+      expect(ledger.listFor(APP)).toEqual([second])
+    })
+  })
 })

@@ -13,10 +13,11 @@ const { showMessageBoxSync, buildFromTemplate, adoptedViews } = vi.hoisted(() =>
   adoptedViews: [] as Array<{ options: Record<string, unknown> }>
 }))
 vi.mock('electron', () => ({
-  WebContentsView: vi.fn().mockImplementation(function (this: { options: Record<string, unknown>, webContents: unknown, setBounds: unknown }, options: Record<string, unknown>) {
+  WebContentsView: vi.fn().mockImplementation(function (this: { options: Record<string, unknown>, webContents: unknown, setBounds: unknown, setBackgroundColor: unknown }, options: Record<string, unknown>) {
     this.options = options
     this.webContents = options['webContents'] ?? fakeContents()
     this.setBounds = vi.fn()
+    this.setBackgroundColor = vi.fn()
     adoptedViews.push(this)
   }),
   dialog: { showMessageBoxSync },
@@ -31,6 +32,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' }))
 
 const { wireView, makeTabView } = await import('../tab-view.js')
+const { MAX_NEW_WINDOWS_PER_MINUTE_PROCESS, processWindowBudget } = await import('../popups.js')
 type Record_ = Parameters<typeof wireView>[1]
 type Host = Record_['host']
 
@@ -74,6 +76,8 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
     forgetTab: vi.fn(),
     openTab: vi.fn(),
     adoptPopup: vi.fn(),
+    openBlobTab: vi.fn(),
+    openWindow: vi.fn(),
     atCapacity: () => false,
     isClosing: () => false,
     htmlFullscreenChanged: vi.fn(),
@@ -162,7 +166,7 @@ describe('wireView -- window.open', () => {
 
     expect(returned).toBe(guest)
     expect(adoptedViews[0]?.options).toEqual({ webContents: guest, webPreferences })
-    expect(host.adoptPopup).toHaveBeenCalledWith(adoptedViews[0], undefined)
+    expect(host.adoptPopup).toHaveBeenCalledWith(adoptedViews[0], undefined, true)
     expect(host.openTab).not.toHaveBeenCalled()
   })
 
@@ -192,7 +196,171 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://accounts.example/auth', disposition: 'new-window', features: 'width=500' })
     response.createWindow?.({ webContents: fakeContents(), webPreferences: {} } as never)
 
-    expect(host.adoptPopup).toHaveBeenCalledWith(expect.anything(), 'persist:app')
+    expect(host.adoptPopup).toHaveBeenCalledWith(expect.anything(), 'persist:app', true)
+    expect(host.openWindow).not.toHaveBeenCalled()
+  })
+
+  it('routes a modifier-click open with no guest webContents through the ordinary tab pipeline, never a view of its own', () => {
+    const wc = fakeContents()
+    const opened = fakeContents('https://other.example/')
+    const openTab = vi.fn((): never => opened as never)
+    const host = fakeHost({ openTab })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'background-tab' })
+    const returned = response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(openTab).toHaveBeenCalledWith('https://other.example/', false, undefined)
+    expect(returned).toBe(opened)
+    expect(adoptedViews).toHaveLength(0)
+    expect(host.adoptPopup).not.toHaveBeenCalled()
+  })
+
+  it('opens a same-origin blob: URL as a tab in the opener\'s own partition, never about:blank', () => {
+    // The bug this guards: routePopup returns 'adopt' here (the blob's own minter origin equals
+    // the opener's), but a modifier-click never carries a guest to adopt, and the ordinary tab
+    // pipeline (openTab/createTab) refuses a blob: URL outright (sanitizeDirectUrl) -- silently
+    // landing it on about:blank instead of the same-origin content it can safely show.
+    const wc = fakeContents('https://other.example/')
+    const opened = fakeContents('blob:https://other.example/1b4e28ba-2fa1')
+    const openBlobTab = vi.fn((): never => opened as never)
+    const host = fakeHost({ openBlobTab })
+    wireView('tab-1', record(wc, 'persist:other', host))
+
+    const response = openHandler(wc)({ url: 'blob:https://other.example/1b4e28ba-2fa1', disposition: 'background-tab' })
+    const returned = response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(openBlobTab).toHaveBeenCalledWith('blob:https://other.example/1b4e28ba-2fa1', 'persist:other', false, undefined)
+    expect(returned).toBe(opened)
+    expect(host.openTab).not.toHaveBeenCalled()
+    expect(adoptedViews).toHaveLength(0)
+  })
+
+  it('never opens a cross-origin blob: URL at all -- its bytes are not in this session, whatever the opener', () => {
+    const wc = fakeContents('https://opener.example/')
+    const openTab = vi.fn((): never => fakeContents('about:blank') as never)
+    const openBlobTab = vi.fn()
+    const host = fakeHost({ openTab, openBlobTab })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'blob:https://minter.example/1b4e28ba-2fa1', disposition: 'background-tab' })
+
+    expect(response.action).toBe('deny')
+    expect(openTab).toHaveBeenCalledWith('blob:https://minter.example/1b4e28ba-2fa1', false, undefined)
+    expect(openBlobTab).not.toHaveBeenCalled()
+  })
+
+  it('routes a same-origin middle-click inside a cache-served app through the ordinary tab pipeline, never an unpartitioned view of its own', () => {
+    // The bug this guards: routePopup returns 'adopt' here (the target's own
+    // partition -- cache-served, ADR-0044 -- equals the opener's), but a
+    // middle click never carries a guest to adopt (guestOf's own doc). The
+    // fix routes through openTab/createTab (correct partition AND
+    // sanitizeDirectUrl) instead of building an unpartitioned view that
+    // would load the app's origin into session.defaultSession, network-
+    // served, with the broker still keying the app's grants to that origin.
+    const wc = fakeContents(`${APP}/`)
+    const opened = fakeContents(`${APP}/other`)
+    const openTab = vi.fn((): never => opened as never)
+    const host = fakeHost({ openTab })
+    wireView('tab-1', record(wc, APP_PARTITION, host))
+
+    const response = openHandler(wc)({ url: `${APP}/other`, disposition: 'background-tab' })
+    const returned = response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(openTab).toHaveBeenCalledWith(`${APP}/other`, false, undefined)
+    expect(returned).toBe(opened)
+    expect(adoptedViews).toHaveLength(0)
+    expect(host.adoptPopup).not.toHaveBeenCalled()
+  })
+
+  it('opens a shift-click (new-window, no guest) in a new window rather than adopting a tab here', () => {
+    const wc = fakeContents()
+    const openedContents = fakeContents('https://other.example/')
+    const openWindow = vi.fn((): never => openedContents as never)
+    const host = fakeHost({ openWindow })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' })
+    const returned = response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined)
+    expect(returned).toBe(openedContents)
+    expect(adoptedViews).toHaveLength(0)
+    expect(host.adoptPopup).not.toHaveBeenCalled()
+  })
+
+  it('rate-limits new-window opens per tab: one a second, and a small cap within a minute, falling back to an ordinary tab past either', () => {
+    // Electron's HandlerDetails carries no per-open user-gesture flag (measured against 44's own
+    // type), and a page's own synthetic, untrusted dispatchEvent click still reaches here with a
+    // real 'new-window' disposition (measured against a real launch) -- so a script could open
+    // windows without bound if nothing here budgeted them.
+    processWindowBudget.reset()
+    const wc = fakeContents()
+    const openWindow = vi.fn((): never => fakeContents('https://other.example/') as never)
+    const host = fakeHost({ openWindow })
+    wireView('tab-1', record(wc, undefined, host))
+    const openOnce = (): void => { openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' }).createWindow?.({ webPreferences: {} } as never) }
+
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(0)
+      openOnce()
+      expect(openWindow).toHaveBeenCalledTimes(1)
+
+      // Under a second later: too soon, falls back to an ordinary (foreground) tab instead.
+      vi.setSystemTime(500)
+      openOnce()
+      expect(openWindow).toHaveBeenCalledTimes(1)
+      expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
+
+      // Spaced a full second apart, up to the cap: each opens a real window.
+      for (let seconds = 2; seconds <= 5; seconds++) {
+        vi.setSystemTime(seconds * 1000)
+        openOnce()
+      }
+      expect(openWindow).toHaveBeenCalledTimes(5)
+
+      // A sixth, even spaced a full second later, exceeds the rolling-minute cap.
+      vi.setSystemTime(6_000)
+      openOnce()
+      expect(openWindow).toHaveBeenCalledTimes(5)
+
+      // Past a minute since the first, the oldest opens age out and one more is allowed again.
+      vi.setSystemTime(61_000)
+      openOnce()
+      expect(openWindow).toHaveBeenCalledTimes(6)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('also rate-limits new-window opens process-wide: a page that opens itself gets a fresh per-tab budget in every window, but not a fresh process one', () => {
+    // Each open below simulates a page shift-clicking itself: a BRAND NEW opener tab every time
+    // (wireView called fresh, its own windowOpenHandler and so its own per-tab budget), spaced a
+    // full second apart so the per-tab throttle alone would wave every one of them through, the
+    // same way each new window's own copy of the page would if only a per-tab budget existed --
+    // 5, 25, 125 windows. Only the shared process budget can catch this.
+    processWindowBudget.reset()
+    const openWindow = vi.fn((): never => fakeContents('https://other.example/') as never)
+    const openAsNewOpener = (): void => {
+      const wc = fakeContents()
+      const host = fakeHost({ openWindow })
+      wireView('tab-1', record(wc, undefined, host))
+      openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' }).createWindow?.({ webPreferences: {} } as never)
+    }
+
+    vi.useFakeTimers()
+    try {
+      const attempts = MAX_NEW_WINDOWS_PER_MINUTE_PROCESS + 10
+      for (let seconds = 0; seconds < attempts; seconds++) {
+        vi.setSystemTime(seconds * 1000)
+        openAsNewOpener()
+      }
+      expect(openWindow.mock.calls.length).toBeLessThan(attempts)
+      expect(openWindow.mock.calls.length).toBeLessThanOrEqual(MAX_NEW_WINDOWS_PER_MINUTE_PROCESS)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('opens noopener as today\'s disconnected tab', () => {
@@ -203,7 +371,63 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
 
     expect(response.action).toBe('deny')
-    expect(host.openTab).toHaveBeenCalledWith('https://other.example/')
+    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
+  })
+
+  it('carries a modifier-click form submit\'s referrer and POST body to the tab it opens', () => {
+    // Measured against Electron 44: details.postBody/referrer are populated for a modifier-click
+    // submit of a method=post form exactly as for an ordinary click, but createTab's own
+    // loadURL(target) call otherwise carries neither, silently turning the POST into a GET with
+    // no referrer.
+    const wc = fakeContents()
+    const opened = fakeContents('https://other.example/target')
+    const openTab = vi.fn((): never => opened as never)
+    const host = fakeHost({ openTab })
+    wireView('tab-1', record(wc, undefined, host))
+    const referrer = { url: 'https://other.example/', policy: 'strict-origin-when-cross-origin' as const }
+    const postBody = { contentType: 'application/x-www-form-urlencoded', data: [{ type: 'rawData' as const, bytes: Buffer.from('field=value') }] }
+
+    const response = openHandler(wc)({ url: 'https://other.example/target', disposition: 'background-tab', referrer, postBody })
+    response.createWindow?.({ webPreferences: {} } as never)
+
+    expect(openTab).toHaveBeenCalledWith('https://other.example/target', false, {
+      httpReferrer: referrer,
+      postData: postBody.data,
+      extraHeaders: 'content-type: application/x-www-form-urlencoded\n'
+    })
+  })
+
+  it('sends a shift-click that routePopup would otherwise send straight to a tab, to a new window instead', () => {
+    // routePopup returns 'new-tab' here (noopener) before disposition is ever weighed, but a
+    // shift-click still reaches here with the same 'new-window' disposition it gets everywhere
+    // else -- it deserves a window, not a tab, same as any other shift-click.
+    const wc = fakeContents()
+    const openedWindow = fakeContents('https://other.example/')
+    const openWindow = vi.fn((): never => openedWindow as never)
+    const host = fakeHost({ openWindow })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener', disposition: 'new-window' })
+
+    expect(response.action).toBe('deny')
+    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined)
+    expect(host.openTab).not.toHaveBeenCalled()
+  })
+
+  it('keeps a plain window.open() to a noopener target an ordinary tab -- its disposition is never new-window', () => {
+    // Measured against Electron 44: a plain window.open(url) (no sizing features) always gets
+    // 'foreground-tab', whatever features string it passes -- only a real sized popup or a
+    // genuine shift-click ever produces 'new-window'.
+    const wc = fakeContents()
+    const openWindow = vi.fn()
+    const host = fakeHost({ openWindow })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener', disposition: 'foreground-tab' })
+
+    expect(response.action).toBe('deny')
+    expect(openWindow).not.toHaveBeenCalled()
+    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
   })
 
   it('refuses outright at the tab ceiling', () => {
@@ -283,7 +507,7 @@ describe('wireView -- a popup\'s opener is cut once it navigates itself into a D
     const host = fakeHost({
       broker: { app: { isRegisteredSync: (o: string) => o === R || o === G, hasGrantsSync: (o: string) => o === G } } as unknown as Broker
     })
-    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${R}/`)
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], { target: `${R}/` })
     const wc = view.webContents as unknown as FakeContents
     wc.opener = { url: `${R}/` }
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
@@ -305,7 +529,7 @@ describe('wireView -- a popup\'s opener is cut once it navigates itself into a D
     const host = fakeHost({
       broker: { app: { isRegisteredSync: (o: string) => o === X || o === G, hasGrantsSync: (o: string) => o === G } } as unknown as Broker
     })
-    const view = makeTabView('/preload/app.js', APP_PARTITION, ['--orivon-app-tab'], `${X}/`)
+    const view = makeTabView('/preload/app.js', APP_PARTITION, ['--orivon-app-tab'], { target: `${X}/` })
     const wc = view.webContents as unknown as FakeContents
     wc.opener = { url: `${X}/` }
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: APP_PARTITION, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
@@ -322,7 +546,7 @@ describe('wireView -- a popup\'s opener is cut once it navigates itself into a D
     const host = fakeHost({
       broker: { app: { isRegisteredSync: (o: string) => o === R || o === R2, hasGrantsSync: () => false } } as unknown as Broker
     })
-    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${R}/`)
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], { target: `${R}/` })
     const wc = view.webContents as unknown as FakeContents
     wc.opener = { url: `${R}/` }
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
@@ -331,6 +555,40 @@ describe('wireView -- a popup\'s opener is cut once it navigates itself into a D
     wc.emit('did-navigate', {}, `${R2}/`)
 
     expect(r.view).toBe(view)
+  })
+})
+
+describe('wireView -- an internal-page tab that stops being one', () => {
+  // guardInternalView (../pages/internal-tab.ts) refuses every navigation an
+  // internal page's OWN content could trigger, so the one path that reaches
+  // did-navigate with a foreign target is the address bar typing something
+  // with no derivable origin straight onto this view -- about:blank here.
+  it('clears record.internalPage and resets the SAME view\'s background, so a site with no CSS background of its own does not render on the page\'s own theme colour', () => {
+    const host = fakeHost()
+    const view = makeTabView('/preload/internal.js', 'orivon-internal', [], { backgroundColor: '#f4f4f8' })
+    const wc = view.webContents as unknown as FakeContents
+    const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: 'orivon-internal', isDashboardTab: false, internalPage: 'settings', parkedViews: new Map() } as Record_
+    wireView('tab-1', r)
+    ;(view.setBackgroundColor as ReturnType<typeof vi.fn>).mockClear()
+
+    wc.emit('did-navigate', {}, 'about:blank')
+
+    expect(r.internalPage).toBeNull()
+    expect(view.setBackgroundColor).toHaveBeenCalledWith('#FFFFFF')
+  })
+
+  it('leaves record.internalPage and the view\'s colour alone for an ordinary in-page navigation (a different path, same page)', () => {
+    const host = fakeHost()
+    const view = makeTabView('/preload/internal.js', 'orivon-internal', [], { backgroundColor: '#f4f4f8' })
+    const wc = view.webContents as unknown as FakeContents
+    const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: 'orivon-internal', isDashboardTab: false, internalPage: 'settings', parkedViews: new Map() } as Record_
+    wireView('tab-1', r)
+    ;(view.setBackgroundColor as ReturnType<typeof vi.fn>).mockClear()
+
+    wc.emit('did-navigate', {}, 'orivon://settings/privacy')
+
+    expect(r.internalPage).toBe('settings')
+    expect(view.setBackgroundColor).not.toHaveBeenCalled()
   })
 })
 
@@ -389,7 +647,7 @@ describe('wireView -- a tab that changes host', () => {
 
     openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
 
-    expect(after.openTab).toHaveBeenCalledWith('https://other.example/')
+    expect(after.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
     expect(before.openTab).not.toHaveBeenCalled()
   })
 
@@ -422,7 +680,7 @@ describe('wireView -- developer tools do not survive a navigation between two gr
       broker: { app: { isRegisteredSync: () => true, hasGrantsSync: (origin: string) => origin === A || origin === B } } as unknown as Broker,
       devtools: { allowed: vi.fn(), inspect: vi.fn(), closeFor } as unknown as Host['devtools']
     })
-    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${A}/`)
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], { target: `${A}/` })
     const wc = view.webContents as unknown as FakeContents
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
     wireView('tab-1', r)
@@ -440,7 +698,7 @@ describe('wireView -- developer tools do not survive a navigation between two gr
       broker: { app: { isRegisteredSync: () => true, hasGrantsSync: (origin: string) => origin === A } } as unknown as Broker,
       devtools: { allowed: vi.fn(), inspect: vi.fn(), closeFor } as unknown as Host['devtools']
     })
-    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], `${A}/page-one`)
+    const view = makeTabView('/preload/app.js', undefined, ['--orivon-app-tab'], { target: `${A}/page-one` })
     const wc = view.webContents as unknown as FakeContents
     const r = { host, view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition: undefined, isDashboardTab: false, internalPage: null, parkedViews: new Map() } as Record_
     wireView('tab-1', r)

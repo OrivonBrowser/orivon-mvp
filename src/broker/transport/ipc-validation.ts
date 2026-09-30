@@ -132,6 +132,23 @@ export interface NetSetKeepAliveParams { readonly id: string, readonly on: boole
 export interface AppRequestGrantParams { readonly capability: string, readonly patterns?: readonly Pattern[] }
 
 /**
+ * What `app.requestGrant`'s own dialog needs to know about the calling tab
+ * -- the same shape as `../../main/consent/request-grant.js`'s
+ * `DialogCaller`, declared again here rather than imported so this module
+ * stays free of any dependency on `../../main/`: the two are kept in sync by
+ * `ipc.test.ts` and `request-grant.test.ts` both exercising the same
+ * `ConsentPrompt` contract, the same way `SenderFrameLike` and
+ * `ManifestHintEvent` (`../../main/install/manifest-hint.js`) stay in sync
+ * without either importing the other.
+ */
+export interface RequestGrantCaller {
+  readonly window: () => unknown
+  readonly stillOn: (origin: string) => boolean
+  /** An opaque per-tab identity -- `../../main/consent/request-grant.js`'s `DialogCaller.id`, same doc, same reason. */
+  readonly id?: unknown
+}
+
+/**
  * The one field of `SubsystemContext` (../../main/registry.js)
  * `transport/dispatch/app.ts`'s 'app.requestGrant' case needs, read via THIS object's
  * own live getter on every call rather than captured once: `registerBrokerIpc`
@@ -145,7 +162,7 @@ export interface AppRequestGrantParams { readonly capability: string, readonly p
  * module rather than in either one.
  */
 export interface RequestGrantCtx {
-  readonly requestGrant: ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined
+  readonly requestGrant: ((origin: string, request: CapabilityRequest, caller: RequestGrantCaller, abandoned?: AbortSignal) => Promise<boolean>) | undefined
 }
 
 export function isNetUdpBindParams (payload: unknown): payload is NetUdpBindParams {

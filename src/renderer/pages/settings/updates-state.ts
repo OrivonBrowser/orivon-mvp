@@ -1,4 +1,6 @@
-// What "Check now" found, in words. The check is main's; the page shows the answer.
+// What "Check now" found, in words. The check is main's; the page shows the
+// answer. Another open Settings window's own "Check now" arrives as
+// `updates.changed`, so the two windows agree without either asking again.
 import type { OrivonInternal } from '../shared/bridge.js'
 
 interface Answer {
@@ -13,6 +15,14 @@ export class UpdatesState {
   private answer: Answer | 'checking' | 'refused' | null = null
 
   constructor (private readonly bridge: OrivonInternal, private readonly changed: () => void) {}
+
+  /** True once this was for an `updates.changed` push -- another window's own check, never this one's (it already set `answer` itself). */
+  handle (topic: string, payload: unknown): boolean {
+    if (topic !== 'updates.changed') return false
+    this.answer = payload as Answer
+    this.changed()
+    return true
+  }
 
   async check (): Promise<void> {
     this.answer = 'checking'

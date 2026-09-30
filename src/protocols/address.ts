@@ -145,7 +145,16 @@ export class ProtocolAddresses {
     } catch {
       return url
     }
-    if (parsed.protocol !== 'https:' || parsed.port !== '' || parsed.username !== '' || parsed.password !== '') return url
+    // Userinfo shown verbatim lets `https://accounts.google.com@evil.example/`
+    // read, at a glance, as the first host -- stripped from what this returns
+    // whatever else it does with the URL below. Only the display text changes:
+    // nothing here touches the URL a tab actually navigates or reloads.
+    if (parsed.username !== '' || parsed.password !== '') {
+      parsed.username = ''
+      parsed.password = ''
+      url = parsed.href
+    }
+    if (parsed.protocol !== 'https:' || parsed.port !== '') return url
     const tail = `${parsed.search}${parsed.hash}`
     const served = this.servedName(parsed.hostname)
     const shown = served === undefined ? undefined : this.shownScheme(served)

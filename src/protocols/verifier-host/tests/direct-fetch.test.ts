@@ -221,3 +221,49 @@ describe('createDirectFetch -- what it will dial', () => {
     await expect(createDirectFetch()(`https://${HOST}/`, undefined, [])).rejects.toThrow(/pinned address/)
   })
 })
+
+describe('createDirectFetch -- allowPost and allowRedirect, opted into for CCIP-Read', () => {
+  it('still refuses POST when allowPost is not set', async () => {
+    await expect(createDirectFetch()(`https://${HOST}/`, { method: 'POST', body: 'x' }, ['127.0.0.1'])).rejects.toThrow(/GET.HEAD/)
+  })
+
+  it('sends a POST body to the pinned address, still with the real hostname for TLS and Host', async () => {
+    let seenBody = ''
+    let seenHost: string | undefined
+    fixture = await startFixture((req, res) => {
+      seenHost = req.headers.host
+      req.on('data', (chunk: Buffer) => { seenBody += chunk.toString() })
+      req.on('end', () => { res.writeHead(200, { 'content-type': 'application/json' }).end('{"data":"0xfeed"}') })
+    })
+    const post = createDirectFetch({ fixture: { ca: cert.certPem }, allowPost: true })
+    const url = new URL(`https://${HOST}/lookup`)
+    url.port = String(fixture.port)
+    const response = await post(url.toString(), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"data":"0x1234"}' }, ['127.0.0.1'])
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('{"data":"0xfeed"}')
+    expect(seenBody).toBe('{"data":"0x1234"}')
+    expect(seenHost).toBe(`${HOST}:${String(fixture.port)}`)
+  })
+
+  it('refuses a POST whose body is not a string', async () => {
+    const post = createDirectFetch({ fixture: { ca: cert.certPem }, allowPost: true })
+    await expect(post(`https://${HOST}/`, { method: 'POST', body: new Blob(['x']) }, ['127.0.0.1'])).rejects.toThrow(/string/)
+  })
+
+  it('still refuses a redirect when allowRedirect is not set', async () => {
+    fixture = await startFixture((_req, res) => { res.writeHead(302, { location: 'https://elsewhere.example/' }).end() })
+    const url = new URL(`https://${HOST}/`)
+    url.port = String(fixture.port)
+    await expect(fetch(url.toString(), undefined, ['127.0.0.1'])).rejects.toThrow(/redirect/)
+  })
+
+  it('hands back a redirect response, location header included, when allowRedirect is set', async () => {
+    fixture = await startFixture((_req, res) => { res.writeHead(302, { location: '/b' }).end() })
+    const redirecting = createDirectFetch({ fixture: { ca: cert.certPem }, allowRedirect: true })
+    const url = new URL(`https://${HOST}/a`)
+    url.port = String(fixture.port)
+    const response = await redirecting(url.toString(), undefined, ['127.0.0.1'])
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toBe('/b')
+  })
+})

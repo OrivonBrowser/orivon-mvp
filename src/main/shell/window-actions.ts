@@ -103,6 +103,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       panels.siteInfo.close()
       panels.menu.toggle(anchor)
     },
+    prewarmMenu: () => { panels.menu.prewarm() },
     dragTab: (id, point) => {
       const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)
       tabs.splits.setPreview(zone)

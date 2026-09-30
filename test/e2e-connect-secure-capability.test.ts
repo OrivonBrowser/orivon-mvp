@@ -204,7 +204,7 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
   await runPhase('Phase 2 (connectSecure)', async (check) => {
     const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
     try {
-      const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+      const beforeGrant = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
       // A manifest CONSTRUCTED for this test, not fetched from the real
       // fixture (test/apps/fixture/.well-known/orivon.json declares only
@@ -240,6 +240,13 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
         grantOutcome.grant.capability === 'https.connect' && JSON.stringify(grantOutcome.grant.patterns) === JSON.stringify([grantPattern]),
         JSON.stringify(grantOutcome.grant)
       )
+
+      // The dev-only hook lands on the broker directly, and a grant moves no
+      // document: a granted network-served origin runs in the default session
+      // (ADR-0044), where this document already committed FIXTURE_ORIGIN,
+      // attributed (src/main/sessions/session-attribution.ts), so the calls
+      // below run from this same document.
+      const view = beforeGrant
 
       // (a) OUTSIDE the granted pattern: '127.0.0.1' is the identical TCP
       // peer as 'localhost' (the server is bound to 127.0.0.1), but

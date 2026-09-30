@@ -14,7 +14,7 @@ import { notificationDecisions } from '../sessions/permission-gate.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
 import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { localDdocFor } from '../dev/local-ddoc.js'
-import { rendererEntryUrl } from './renderer-entry.js'
+import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import { lockNavigation } from './lock-navigation.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabManager, type Bounds } from './tabs.js'
@@ -32,7 +32,9 @@ import { showContextMenu } from './context-menu.js'
 import { chromeContextMenuHost } from './chrome-context-menu.js'
 import type { ShellWindowOptions } from './window-options.js'
 import { showIntro } from './intro-view.js'
-import { createWindowFrame, showWhenReady } from './window-frame.js'
+import { createWindowFrame, showWhenReady, windowBackgroundColor } from './window-frame.js'
+import { recordViewBackground } from './view-background-test-hook.js'
+import { onThemeUpdated } from './theme-colors.js'
 import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
 import { searchUrlFor } from '../browsing/search-engines.js'
@@ -54,7 +56,7 @@ const CHROME_HEIGHT = CHROME_TOP_ROWS + BOOKMARKS_BAR_HEIGHT
 
 /** The new-tab page's own URL: the dev server's nested path, or the built file. */
 export function resolveDashboardUrl (): string {
-  return rendererEntryUrl(import.meta.dirname, process.env['ELECTRON_RENDERER_URL'], '/newtab/', '../renderer/newtab/index.html')
+  return rendererEntryUrl(import.meta.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/newtab/', '../renderer/newtab/index.html')
 }
 
 /** One shell window. `services` are what every window of this process shares;
@@ -65,7 +67,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate)
   const { win } = frame
 
-  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
+  const devServerUrl = validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL'])
   // The chrome's own resolved URL -- computed before construction so both
   // the preload's expected-URL argument and the load target name the exact
   // same string, the pattern `--orivon-newtab-url` already establishes
@@ -88,7 +90,23 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       additionalArguments: [`--orivon-shell-url=${chromeUrl}`, `--orivon-drag-mode=${dragMode}`]
     }
   })
+  // Set BEFORE addChildView: a freshly created WebContentsView defaults to
+  // an opaque white, painted the instant it is attached -- the SAME white
+  // flash tab-view.ts and popover-view.ts fix, for the same reason (this
+  // view is attached ahead of its own first paint). The window's own
+  // background (createWindowFrame's `background()`) covers a torn-off
+  // window shown `instant` before either view exists; it does not cover
+  // THIS view's own separate surface once attached. Kept live across an OS
+  // theme change while the window stays open (theme-colors.ts's
+  // `onThemeUpdated` below), the same pattern window-frame.ts already uses
+  // for the window's own background and title-bar overlay.
+  const chromeBackground = windowBackgroundColor(services.profiles.isPrivate)
+  chrome.setBackgroundColor(chromeBackground)
+  recordViewBackground(chrome.webContents.id, chromeBackground)
   win.contentView.addChildView(chrome)
+  function applyChromeBackgroundForTheme (): void { chrome.setBackgroundColor(windowBackgroundColor(services.profiles.isPrivate)) }
+  const unregisterChromeThemeListener = onThemeUpdated(applyChromeBackgroundForTheme)
+  win.on('closed', () => { unregisterChromeThemeListener() })
   // The chrome preload is unconditionally privileged (src/preload/shell.ts
   // gates on this same URL, ipc.ts's isFromChrome checks it a second time
   // on every call) -- a view holding it must never end up attached to a
@@ -201,7 +219,16 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     internalPages: services.internalPages,
     devtools: services.devtools,
     backdrop: splitFrame,
-    tabLifecycle: services.tabLifecycle
+    tabLifecycle: services.tabLifecycle,
+    // Recurses into this same function for the new window, so it is made from
+    // the same `services` -- a private window's `services.profiles.isPrivate`
+    // stays true for whatever it opens (a shift-click, popups.ts).
+    openWindow: (url, loadOptions) => {
+      let contents
+      createShellWindow(ctx, services, { first: (newTabs) => { contents = newTabs.liveWebContents(newTabs.createTab(url, undefined, loadOptions)) } })
+      if (contents === undefined) throw new Error('openWindow: the new window made no tab')
+      return contents
+    }
   })
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one

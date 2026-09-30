@@ -155,7 +155,29 @@ export interface PortDeliveryFrame extends SenderFrameLike {
   postMessage (channel: string, message: unknown, transfer?: unknown[]): void
 }
 
-/** The per-request event shape `../ipc.ts` and `../dispatch/net.ts` both read `senderFrame` off. */
+/**
+ * The WebContents that sent a control request -- distinct from
+ * `senderFrame` above, which is the FRAME. `isAttributedSession`
+ * (policy/origin.ts) compares `mainFrame` against `senderFrame` itself to
+ * refuse a subframe, an embed guest or a web-context document speaking for
+ * its top frame's origin, then hands this whole object to the injected
+ * `attributed` predicate, which reads `session` (and this object's own
+ * identity) to decide whether it is the WebContents `origin`'s documents
+ * belong in. `isDestroyed` guards `stillOn`'s live re-check
+ * (`dispatch()`'s `app.requestGrant` case); `reload` mirrors the real
+ * WebContents this type stands in for, though nothing on this channel
+ * calls it -- attribution is decided at a document's own commit, not
+ * re-established by reloading it mid-call.
+ */
+export interface ControlSender {
+  readonly mainFrame: PortDeliveryFrame | null
+  readonly session: unknown
+  reload: () => void
+  isDestroyed: () => boolean
+}
+
+/** The per-request event shape `../ipc.ts` and `../dispatch/net.ts` both read `senderFrame`/`sender` off. */
 export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
+  readonly sender: ControlSender
 }

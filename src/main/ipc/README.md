@@ -8,8 +8,11 @@ popup), `menu-ipc.ts` (the main menu's list and the one entry chosen, which must
 field). All but `newtab-ipc.ts` register on the `ipc` of the view they serve, so the handler goes with
 the view and each window has its own; `newtab-ipc.ts` serves every dashboard tab in every window and
 registers on `ipcMain` once per process. Each verifies `event.senderFrame` against a known frame
-before doing anything, because a webContents' handlers hear every frame in it; each file's header
-says why identity beats a URL allowlist.
+before doing anything, because a webContents' handlers hear every frame in it; `ipc.ts`,
+`newtab-ipc.ts`, `permissions-ipc.ts`, `menu-ipc.ts` and `site-info-ipc.ts` all also check that
+frame's committed URL against the one address the view was built to show, since a `WebFrameMain`
+reference kept past a navigation Electron re-points elsewhere would otherwise still pass identity
+alone.
 
 **Tied to Electron.** All five files.
 

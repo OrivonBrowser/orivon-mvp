@@ -1,11 +1,11 @@
-import { statSync } from 'node:fs'
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, readFile as fsReadFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createBroker } from '../../index.js'
 import { nodeFs } from '../node-fs-adapter.js'
-import { originHash } from '../../grants/origin-hash.js'
+import { appDataRoot, originHash } from '../../grants/origin-hash.js'
 
 // The real filesystem adapter's own suite -- split out of
 // node-adapters.test.ts under code-guidelines.md Rule 2, paired with
@@ -268,6 +268,7 @@ describe('the fs capability works end to end for an origin that has never writte
       listen: async () => { throw new Error('not used by this test') },
       resolve: async () => [],
       resolveLookup: async () => [],
+      proxyConfigured: async () => false,
       now: () => Date.now(),
       fs: nodeFs(userData),
       keychain: { getSeed: async () => { throw new Error('not used by this test') } },
@@ -299,5 +300,109 @@ describe('nodeFs.diskUsage', () => {
     expect(await fs.diskUsage?.(root)).toBe(15)
     expect(await fs.diskUsage?.(join(root, 'dir'))).toBe(5)
     expect(await fs.diskUsage?.(join(root, 'missing'))).toBe(0)
+  })
+})
+
+// T13b: an app's own files now live under `app-data/<hash>/files`,
+// SEPARATE from the loader's own `apps/<hash>` state (pinned code,
+// staging, pin.json) -- `rootFor` moves whatever an earlier version of
+// this adapter wrote under the old, shared `apps/<hash>/files` layout the
+// first time an origin's `fs` is touched this process.
+describe('nodeFs.rootFor -- the one-time move off the old apps/<hash>/files layout', () => {
+  const ORIGIN = 'https://app.example'
+
+  it('moves an existing apps/<hash>/files directory to app-data/<hash>/files, keeping every file', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const oldRoot = join(userData, 'apps', originHash(ORIGIN), 'files')
+    mkdirSync(join(oldRoot, 'sub'), { recursive: true })
+    writeFileSync(join(oldRoot, 'a.bin'), new Uint8Array([1, 2, 3]))
+    writeFileSync(join(oldRoot, 'sub', 'b.bin'), new Uint8Array([4, 5]))
+
+    const fs = nodeFs(userData)
+    const newRoot = fs.rootFor(ORIGIN)
+
+    expect(newRoot).toBe(join(appDataRoot(userData, ORIGIN), 'files'))
+    expect(existsSync(oldRoot)).toBe(false) // moved, not copied
+    expect(Array.from(await fsReadFile(join(newRoot, 'a.bin')))).toEqual([1, 2, 3])
+    expect(Array.from(await fsReadFile(join(newRoot, 'sub', 'b.bin')))).toEqual([4, 5])
+  })
+
+  it('an origin with nothing under the old layout just gets a fresh new-layout root, same as any other first use', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const fs = nodeFs(userData)
+
+    const root = fs.rootFor(ORIGIN)
+
+    expect(root).toBe(join(appDataRoot(userData, ORIGIN), 'files'))
+    expect(existsSync(root)).toBe(true)
+  })
+
+  it('runs at most once per origin -- a second rootFor call does not touch an already-migrated, already-populated directory', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const oldRoot = join(userData, 'apps', originHash(ORIGIN), 'files')
+    mkdirSync(oldRoot, { recursive: true })
+    writeFileSync(join(oldRoot, 'a.bin'), new Uint8Array([1]))
+    const fs = nodeFs(userData)
+
+    const first = fs.rootFor(ORIGIN)
+    writeFileSync(join(first, 'b.bin'), new Uint8Array([2])) // written AFTER the migration
+    const second = fs.rootFor(ORIGIN)
+
+    expect(second).toBe(first)
+    expect(Array.from(await fsReadFile(join(second, 'a.bin')))).toEqual([1]) // the migrated file
+    expect(Array.from(await fsReadFile(join(second, 'b.bin')))).toEqual([2]) // survived the second call
+  })
+
+  it('does not re-run the migration check on a later call, even when a fresh old-layout directory reappears', async () => {
+    // `vi.spyOn` cannot wrap `node:fs`'s own `existsSync`/`renameSync`
+    // (Vitest refuses to redefine a Node built-in's ESM export), so "at
+    // most once" is proven the same way NEVER-LOSES-DATA below is: by a
+    // directory the SECOND call must leave alone if, and only if,
+    // `migrateFilesRoot` did not run again for this origin.
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const fs = nodeFs(userData)
+    fs.rootFor(ORIGIN) // nothing to migrate yet; marks ORIGIN as done
+
+    // A directory reappears at the OLD layout's path after the first call --
+    // unrealistic in production, but exactly what a re-run of
+    // migrateFilesRoot on this second rootFor() would notice and act on.
+    const oldRoot = join(userData, 'apps', originHash(ORIGIN), 'files')
+    mkdirSync(oldRoot, { recursive: true })
+    writeFileSync(join(oldRoot, 'reappeared.bin'), new Uint8Array([7]))
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    fs.rootFor(ORIGIN)
+
+    // A second run would have found both roots existing and logged the
+    // conflict (see the NEVER-LOSES-DATA case below); skipping the check
+    // entirely for an already-done origin means neither happens.
+    expect(logged).not.toHaveBeenCalled()
+    expect(existsSync(join(oldRoot, 'reappeared.bin'))).toBe(true) // left exactly where it reappeared
+    logged.mockRestore()
+  })
+
+  it('NEVER LOSES DATA: when both the old and new roots already exist, leaves both alone and logs rather than picking a side', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-migrate-'))
+    const oldRoot = join(userData, 'apps', originHash(ORIGIN), 'files')
+    const newRoot = join(appDataRoot(userData, ORIGIN), 'files')
+    mkdirSync(oldRoot, { recursive: true })
+    writeFileSync(join(oldRoot, 'old.bin'), new Uint8Array([9]))
+    mkdirSync(newRoot, { recursive: true })
+    writeFileSync(join(newRoot, 'new.bin'), new Uint8Array([8]))
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const fs = nodeFs(userData)
+    const root = fs.rootFor(ORIGIN)
+
+    expect(root).toBe(newRoot)
+    expect(existsSync(oldRoot)).toBe(true) // left in place, never deleted
+    expect(existsSync(join(oldRoot, 'old.bin'))).toBe(true)
+    expect(existsSync(join(newRoot, 'new.bin'))).toBe(true)
+    expect(logged).toHaveBeenCalledTimes(1)
+
+    fs.rootFor(ORIGIN) // same still-conflicted origin, again
+    expect(logged).toHaveBeenCalledTimes(1) // not once per call -- once per origin, ever
+
+    logged.mockRestore()
   })
 })

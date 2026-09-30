@@ -16,6 +16,7 @@
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishRequestGrant } from '../registry.js'
 import { requestGrant } from './request-grant.js'
+import type { PendingGrantPrompts, PendingGrantRequests } from './request-grant.js'
 import { createGrantPrompt } from './request-grant-prompt.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
@@ -40,6 +41,16 @@ export const requestGrantSubsystem: Subsystem = {
       return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
     }
     const consent = createGrantPrompt(broker, scoreLevelOverrideFor, extensionsOnSite)
-    publishRequestGrant(ctx, async (origin, request) => await requestGrant(broker, consent, origin, request))
+    // ONE map for this running app's whole lifetime: every app.requestGrant
+    // call, from any tab, shares it, so a burst of concurrent calls asking
+    // for the same capability gets one dialog, not one per call -- see
+    // PendingGrantRequests's own doc (./request-grant.js).
+    const pending: PendingGrantRequests = new Map()
+    // A second map, also for this running app's whole lifetime: serialises
+    // the dialog itself across DIFFERENT capabilities of the same origin, so
+    // a page cannot stack one dialog per capability it asks for at once --
+    // see PendingGrantPrompts's own doc.
+    const prompts: PendingGrantPrompts = new Map()
+    publishRequestGrant(ctx, async (origin, request, caller, abandoned) => await requestGrant(broker, consent, origin, request, pending, caller, prompts, abandoned))
   }
 }

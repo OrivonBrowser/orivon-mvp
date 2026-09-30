@@ -38,6 +38,24 @@ import { join } from 'node:path'
 const POISON = ['ELECTRON_RUN_AS_NODE']
 
 /**
+ * This machine's audio output is a real, audible desktop: xvfb hides a
+ * window, but nothing hides sound -- Chromium's audio service reaches
+ * PipeWire/PulseAudio regardless of the virtual display, so a test page
+ * that plays a tone (an oscillator, a captured tab) is heard on the
+ * owner's real speakers. `PULSE_SERVER=unix:/nonexistent` makes Chromium's
+ * PulseAudio client unable to connect, and it falls back to ALSA;
+ * `--alsa-output-device=null` points that ALSA fallback at alsa-lib's own
+ * null PCM instead of the real card. Audio still runs at real-time rate
+ * (capture and `isCurrentlyAudible()` keep working, measured against
+ * test/probe-tabcapture -- a tabCapture feasibility probe), only nothing
+ * reaches a speaker. `--mute-audio` was not used instead: it can replace
+ * the renderer's own sink with a null one and was not verified to leave
+ * tab capture intact.
+ */
+const SILENT_AUDIO_ENV = { PULSE_SERVER: 'unix:/nonexistent' }
+const SILENT_AUDIO_SWITCH = '--alsa-output-device=null'
+
+/**
  * Ceiling on any single Playwright ACTION (click, fill, press) started
  * through an app launched here.
  *
@@ -174,6 +192,12 @@ export async function launchElectron ({
   if (stripped.length > 0) {
     console.log(`[launch] stripped from env: ${stripped.join(', ')}`)
   }
+
+  // Nothing a test plays may reach the owner's real speakers -- see
+  // SILENT_AUDIO_ENV/SILENT_AUDIO_SWITCH's own doc. A caller that already
+  // set PULSE_SERVER is left alone.
+  if (env['PULSE_SERVER'] === undefined) env['PULSE_SERVER'] = SILENT_AUDIO_ENV.PULSE_SERVER
+  if (!args.some((a) => a.startsWith('--alsa-output-device'))) args = [...args, SILENT_AUDIO_SWITCH]
 
   // Every launch made through this shared file defaults to the no-focus
   // window path (src/main/window.ts) unless a caller explicitly overrides

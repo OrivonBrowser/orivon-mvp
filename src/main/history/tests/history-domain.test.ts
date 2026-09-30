@@ -26,6 +26,18 @@ describe('the history domain', () => {
     expect(service.list).toHaveBeenLastCalledWith({ search: 'x'.repeat(200) })
   })
 
+  it('forwards a numeric limit, truncated, so a page can ask for more than one default page at once', () => {
+    const { call, service } = setup()
+    call({ type: 'list', limit: 250 })
+    expect(service.list).toHaveBeenLastCalledWith({ limit: 250 })
+    call({ type: 'list', limit: 250.9 })
+    expect(service.list).toHaveBeenLastCalledWith({ limit: 250 })
+    call({ type: 'list', limit: 'lots' })
+    expect(service.list).toHaveBeenLastCalledWith({})
+    call({ type: 'list', limit: Number.NaN })
+    expect(service.list).toHaveBeenLastCalledWith({})
+  })
+
   it('forgets a page by a whole-number id only', () => {
     const { call, service } = setup()
     call({ type: 'remove', id: 4 })

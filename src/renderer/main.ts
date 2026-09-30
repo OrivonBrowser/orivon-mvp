@@ -426,6 +426,21 @@ sitePermissionsBtn.addEventListener('click', () => {
 zoomChip.addEventListener('click', () => { shell.runCommand('zoom.reset') })
 profileChip.addEventListener('click', () => { shell.openInternal(currentState.profile.isPrivate ? 'private' : 'profiles') })
 menuBtn.addEventListener('click', () => { shell.openMenu(anchorFor(menuBtn)) })
+// Builds the menu's (kept-warm) view ahead of the click that usually
+// follows a hover or a keyboard tab-stop, so opening it then costs no more
+// than attaching an already-live view -- never at window startup, which
+// would cost every window a hidden renderer process nobody may ever open.
+// Once is enough: the same click a hover never preceded (a keyboard Enter
+// with no prior focus event, or a test's direct click) still builds it,
+// just not ahead of time.
+let menuPrewarmed = false
+function prewarmMenuOnce (): void {
+  if (menuPrewarmed) return
+  menuPrewarmed = true
+  shell.prewarmMenu()
+}
+menuBtn.addEventListener('pointerenter', prewarmMenuOnce)
+menuBtn.addEventListener('focus', prewarmMenuOnce)
 
 // A keyboard shortcut in main asks for the address bar, or (while a tab
 // dragged from any window is over this one's strip) main asks the strip to

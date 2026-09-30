@@ -56,6 +56,25 @@ describe('createReconsentPrompt', () => {
       detail: expect.stringContaining('Its code has changed. What it is allowed to do has not.')
     }))
   })
+
+  it('never shows a dialog when the caller has already left the origin', async () => {
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    const result = await createReconsentPrompt()(ORIGIN, MANIFEST, caller)
+
+    expect(result).toBe(false)
+    expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('parents the dialog to the window the caller resolves, when one is given', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const fakeWindow = { id: 'the-tabs-window' }
+    const caller = { window: () => fakeWindow, stillOn: () => true }
+
+    await createReconsentPrompt()(ORIGIN, MANIFEST, caller)
+
+    expect(showMessageBox).toHaveBeenCalledWith(fakeWindow, expect.objectContaining({ title: ORIGIN }))
+  })
 })
 
 describe('createCapabilityPrompt', () => {
@@ -116,6 +135,15 @@ describe('createCapabilityPrompt', () => {
 
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' }))
   })
+
+  it('never shows a dialog when the caller has already left the origin', async () => {
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    const result = await createCapabilityPrompt()(ORIGIN, MANIFEST, { fs: [] }, caller)
+
+    expect(result).toBe(false)
+    expect(showMessageBox).not.toHaveBeenCalled()
+  })
 })
 
 describe('createRollbackChoicePrompt', () => {
@@ -169,5 +197,14 @@ describe('createRollbackChoicePrompt', () => {
       message: 'This app is offering an older version.',
       detail: expect.stringContaining('2.0.0')
     }))
+  })
+
+  it('never shows a dialog when the caller has already left the origin', async () => {
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    const result = await createRollbackChoicePrompt()(ORIGIN, MANIFEST, '2.0.0', caller)
+
+    expect(result).toBe(false)
+    expect(showMessageBox).not.toHaveBeenCalled()
   })
 })

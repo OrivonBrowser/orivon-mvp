@@ -128,6 +128,16 @@ describe('describeGrantRequest', () => {
     expect(content.title).toBe(ORIGIN)
     expect(content.detail).toContain(manifest.name)
   })
+
+  // macOS drops the dialog's title (A127) -- the origin must still be
+  // readable in the body every platform actually shows.
+  it('names the origin in the body too, not only in the title', () => {
+    const manifest = manifestWith({ fs: {} })
+
+    const content = describeGrantRequest(ORIGIN, manifest, 'fs', [])
+
+    expect(content.detail).toContain(ORIGIN)
+  })
 })
 
 // ADR-0034: `tcp.listen.local`/`udp.bind.local` read differently from their

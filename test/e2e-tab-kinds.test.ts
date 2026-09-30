@@ -170,3 +170,45 @@ for (const kind of KINDS) {
     }
   }, TEST_TIMEOUT_MS)
 }
+
+// The dashboard's own dark wash (tab-factory.ts, theme-colors.ts's
+// APP_DARK_WASH) must not bleed through a site with no CSS background of
+// its own once the SAME tab navigates there -- the common case, since a
+// site with no grants yet needs no partition swap and so never gets a
+// freshly built, colourless view. capturePage() throws UnknownVizError
+// under this machine's headless GPU-less xvfb, so this reads the recorded
+// colour through view-background-test-hook.ts instead of a real pixel.
+it('resets the dashboard tab\'s background once it navigates to a plain site with no CSS background', async () => {
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+  try {
+    expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
+    const chrome = findChrome(app)
+
+    const dashboardId = async (): Promise<number | undefined> =>
+      await app.evaluate(({ webContents }) => webContents.getAllWebContents().find((wc) => wc.getURL().includes('/newtab/'))?.id)
+    const recordedBackground = async (id: number | undefined): Promise<string | undefined> =>
+      id === undefined ? undefined : await app.evaluate((_e, wcId: number) =>
+        (globalThis as unknown as { __orivonDevViewBackgrounds?: Map<number, string> }).__orivonDevViewBackgrounds?.get(wcId), id)
+    // NOT dashboardId() again -- once this tab has navigated away it no
+    // longer matches '/newtab/', which is exactly the point: this checks
+    // the SAME id (by getAllWebContents' own id, not by re-deriving a URL
+    // match) is still alive, proving no rebuild happened.
+    const stillAlive = async (wcId: number | undefined): Promise<boolean> =>
+      wcId !== undefined && await app.evaluate(({ webContents }, i: number) => webContents.getAllWebContents().some((wc) => wc.id === i), wcId)
+
+    // The dashboard tab loads after the chrome view appears: wait for both it and its recorded colour.
+    let id: number | undefined
+    expect(await waitFor(async () => { id = await dashboardId(); return (await recordedBackground(id)) !== undefined })).toBe(true)
+    expect(await recordedBackground(id)).toBe('#0d0e14')
+
+    await clickAddressBarRetrying(chrome, `${origin}/site`)
+    expect((await waitForTab(chrome, { address: `${origin}/site` })).ok).toBe(true)
+
+    // The same webContents, not a rebuilt one: the site has no grants yet,
+    // so partitionChanged() sees no swap and this tab's own view is reused.
+    expect(await stillAlive(id)).toBe(true)
+    expect(await waitFor(async () => (await recordedBackground(id)) === '#FFFFFF')).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)

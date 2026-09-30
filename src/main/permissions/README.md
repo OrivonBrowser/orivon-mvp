@@ -30,6 +30,7 @@ types), [`../../loader/`](../../loader/) (`index.ts`, `manifest/manifest.ts`),
 `docs/planning/extensions-exploration.md`),
 [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts),
 `../shell/renderer-entry.ts`, `../shell/lock-navigation.ts`, `../shell/shell-session.ts`,
+`../shell/theme-colors.ts`, `../shell/view-background-test-hook.ts`,
 `../ipc/permissions-ipc.ts`, `../ipc/site-info-ipc.ts`, the top-level
 `channels.ts`/`registry.ts`, `node:fs/promises`, `node:path`.
 

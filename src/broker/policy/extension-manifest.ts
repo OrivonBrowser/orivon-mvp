@@ -51,6 +51,18 @@ export type ExtensionManifestResult =
 
 const ORIVON_KEY_REFUSAL = 'Orivon permissions are not supported yet'
 
+/** `sandbox.pages` beyond this many entries is refused outright, never
+ * silently truncated: `isSandboxPageUrl` (vendor/electron-chrome-
+ * extensions/src/browser/router.ts, UPSTREAM.md patch 39) runs
+ * synchronously on the main thread for every page load and `crx-msg`, so an
+ * unbounded list is a real DoS surface; but truncating which declared pages
+ * it recognises -- as an earlier version of that matcher did -- would leave
+ * a page past the cut still declared sandboxed by the manifest, still
+ * served by Electron, and refused no CSP and no chrome.* refusal at all: a
+ * silent sandbox bypass. Refusing the whole manifest here means the matcher
+ * itself never needs a cap: every extension it ever sees already fits. */
+const MAX_SANDBOX_PAGES = 200
+
 /** A match-pattern-shaped string (`<all_urls>` or `scheme://...`), never an
  * API permission name -- API permission names never contain `://` and Chrome
  * never names one `<all_urls>`, so this is an exact, not a heuristic, split
@@ -156,6 +168,12 @@ export function readExtensionManifest (raw: unknown): ExtensionManifestResult {
   const orivonKey = Object.hasOwn(raw, 'orivon')
 
   if (orivonKey) return { ok: false, reason: ORIVON_KEY_REFUSAL }
+
+  const sandboxSection = ownProperty(raw, 'sandbox', (v): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v))
+  const sandboxPages = sandboxSection === undefined ? [] : stringArray(ownProperty(sandboxSection, 'pages', isArray))
+  if (sandboxPages.length > MAX_SANDBOX_PAGES) {
+    return { ok: false, reason: `sandbox.pages has ${String(sandboxPages.length)} entries, more than the ${String(MAX_SANDBOX_PAGES)} this build matches` }
+  }
 
   const facts: ExtensionManifestFacts = {
     manifestVersion: manifestVersionRaw,

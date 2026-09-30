@@ -260,7 +260,8 @@ orivon.fs.writeFile(path, data)      // => Promise<void>
 orivon.fs.readFileSync(path)         // => Uint8Array  the one synchronous call (ADR-0016); genuinely blocks
 orivon.fs.open(path, flags)          // => Promise<FileHandle>
 orivon.fs.mkdir / readdir / stat / rm / rename
-orivon.fs.userSelected(opts)         // => OS file picker; user's choice IS the consent
+orivon.fs.userSelected(opts)         // => OS file picker; user's choice IS the consent; needs a
+                                      //   user activation, and some folders are refused
 
 // --- identity: app keys (silent, per-origin) ---
 orivon.id.publicKey({ curve })       // => Promise<Uint8Array>   derived per origin, no prompt
@@ -426,7 +427,7 @@ spellings of one of them are two different identities, permanently.
   Otherwise renaming an identity, or merely changing its case, destroys the npub with nothing to
   restore from.
 
-`window.nostr` semantics: injected in ordinary tabs; first `getPublicKey()` per site triggers
+`window.nostr` semantics, once named identities are built (they are not: A111): injected in ordinary tabs; first `getPublicKey()` per site triggers
 the connect prompt; after connecting, signing is silent for that site (per-event prompts would
 make Nostr unusable). Presence of `window.nostr` is fingerprintable, as it is of every NIP-07
 extension; the *data* is what sits behind consent (`security-model.md` T16).
@@ -468,6 +469,11 @@ justification, first becomes possible.
 ### Rules that apply to every app, signed included
 - `fs` is confined to the app's files directory. `..` traversal is rejected. Outside access
   exists only via `fs.userSelected`.
+- `fs.userSelected` opens a picker only during a user activation in the calling page (a click or
+  key press a moment before, as the web's own pickers require); called without one, it rejects
+  `denied` and shows nothing. The picker refuses a folder that is the browser's own data
+  directory, lies inside it or contains it, a filesystem root, or the home folder itself: it says
+  why, and the call resolves as a cancellation.
 - `net` requires manifest-declared patterns, surfaced verbatim in the grant prompt.
 - `id` app keys derive per origin silently; **named identities** are cross-origin only through
   the explicit connect prompt. In both modes the seed is never exposed and raw key export is

@@ -62,6 +62,10 @@ beforeEach(() => {
   sendSync.mockReset()
   exposeInMainWorld.mockReset()
   executeInMainWorld = undefined
+  // `fs.userSelected` needs a fresh user gesture -- defaulted to
+  // present so tests exercising the picker's OWN wiring, not this gate,
+  // are not incidentally testing it too (see orivon-user-activation.test.ts).
+  Object.defineProperty(navigator, 'userActivation', { configurable: true, value: { isActive: true } })
 })
 
 // exposeFallback()'s own tests (window.orivon with no executeInMainWorld, or

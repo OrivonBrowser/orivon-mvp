@@ -306,6 +306,61 @@ describe('requestInstallConsent (stubbed broker)', () => {
   })
 })
 
+// Task 1: a dialog answered by, or on behalf of, a page the person is no
+// longer looking at must never turn into a grant -- and must never be
+// written down as a decline either, since nobody who could see the question
+// actually answered "no".
+describe('requestInstallConsent: a caller that has left by the time consent() resolves', () => {
+  it('never grants, even though consent() resolved true', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      grants: async () => [],
+      declinedCapabilitiesFor: async () => undefined,
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const manifest = manifestWith({ fs: { quotaBytes: 1024 } })
+    const consent = vi.fn(async () => true)
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    await requestInstallConsent(broker, consent, APP, manifest, undefined, caller)
+
+    expect(calls.some((call) => call.method === 'grant')).toBe(false)
+  })
+
+  it('does not record a decline for a caller that left -- a later, genuine visit still asks in full', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      grants: async () => [],
+      declinedCapabilitiesFor: async () => undefined
+    })
+    const manifest = manifestWith({ fs: { quotaBytes: 1024 } })
+    const consent = vi.fn(async () => true)
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    await requestInstallConsent(broker, consent, APP, manifest, undefined, caller)
+
+    expect(calls.some((call) => call.method === 'recordDeclinedConsent')).toBe(false)
+    expect(calls.some((call) => call.method === 'clearDeclinedConsent')).toBe(false)
+  })
+
+  it('a caller still present is unaffected -- consent()\'s own answer still governs', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      grants: async () => [],
+      declinedCapabilitiesFor: async () => undefined,
+      clearDeclinedConsent: async () => {},
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const manifest = manifestWith({ fs: { quotaBytes: 1024 } })
+    const consent = vi.fn(async () => true)
+    const caller = { window: () => undefined, stillOn: () => true }
+
+    await requestInstallConsent(broker, consent, APP, manifest, undefined, caller)
+
+    expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
+  })
+})
+
 describe('requestInstallConsent (real broker) -- proves "once per origin, ever" against real hydration', () => {
   it('a second visit within the same broker instance is silent after acceptance', async () => {
     const broker = createBroker(baseDeps())

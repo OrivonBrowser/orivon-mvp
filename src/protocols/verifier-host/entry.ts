@@ -36,12 +36,14 @@ function main (): void {
       if (host !== undefined) return
       host = startHost(message.config, {
         // No HTTP cache: one would answer a block another site's pages fetched faster, and so tell a page where the person has been (A256).
-        fetch: async (url, init) => await net.fetch(url, { ...init, cache: 'no-store' }),
+        // No credentials: this process's fetches are gateways, RPCs and DNS-over-HTTPS endpoints, never a page's own request, so nothing here should carry a cookie or a client certificate a session might hold.
+        fetch: async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' }),
         resolveHost: async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address),
         post,
         startLightClient: startHeliosLightClient,
         fixturesAllowed: FIXTURES_ALLOWED,
-        directFetch: createDirectFetch()
+        directFetch: createDirectFetch(),
+        ccipFetch: createDirectFetch({ allowPost: true, allowRedirect: true })
       })
       host.then(
         (running) => { post({ type: 'listening', fingerprint: running.fingerprint }) },

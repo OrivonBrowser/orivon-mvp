@@ -17,6 +17,7 @@ import { appDomain } from './app-domain.js'
 import { telemetryDomain } from './telemetry-domain.js'
 import { checkUpdateNow } from '../self-update/update-check-runner.js'
 import { updatesDomain } from '../self-update/updates-domain.js'
+import { onTelemetryChanged } from '../../telemetry/runner.js'
 import { profilesDomain } from '../launch/profiles-domain.js'
 import { historyDomain } from '../history/history-domain.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
@@ -91,13 +92,42 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     }),
     app: appDomain(app, services.profiles.isPrivate),
     telemetry: telemetryDomain(app, services.profiles.isPrivate),
-    updates: updatesDomain(async () => await checkUpdateNow(app), services.profiles.isPrivate),
+    updates: updatesDomain(
+      async () => await checkUpdateNow(app),
+      services.profiles.isPrivate,
+      (answer) => { services.internalPages.publish('updates.changed', answer, ['settings']) }
+    ),
     about: aboutDomain()
   })
   onVerifierChange(() => { services.internalPages.publish('web3.changed', verifierView(), ['settings']) })
   // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain.
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
+  // Every grant/revoke, from every surface (install, the site-info popover, a
+  // dev-grant test seam, the Apps list's own revoke), lands through the
+  // broker's four mutators -- see grant-events.ts's own header for why
+  // hooking those is the whole mechanism. Undefined only before the broker
+  // subsystem runs, which is always before this function is ever called.
+  // Origin-keyed, not session-keyed: fires the same way for a cache-served
+  // app's own partition and a granted-without-install app sharing
+  // session.defaultSession (see `appSessions` above for that split).
+  ctx.broker?.onGrantsChanged(() => { services.internalPages.publish('apps.changed', undefined, ['settings']) })
+  // The History page cares about every change, titles included; Settings'
+  // Privacy section shows only a count, which a title update never changes
+  // (history-service.ts's own `HistoryChange`) -- a retitling page (a tab's
+  // own document.title, which a site may set as often as it likes) must
+  // never itself keep redrawing a section that has nothing new to show.
+  services.history.onChange((change) => {
+    services.internalPages.publish('history.changed', undefined, ['history'])
+    if (change !== 'titled') services.internalPages.publish('privacy.changed', undefined, ['settings'])
+  })
+  services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })
+  services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
+  // Never fires in a private session: startTelemetry never runs there, and
+  // telemetry-domain.ts's own isPrivate guard makes decideConsent unreachable.
+  if (!services.profiles.isPrivate) {
+    onTelemetryChanged(() => { services.internalPages.publish('usage.changed', undefined, ['settings']) })
+  }
   // Fire-and-forget, like the update check below it in index.ts: a one-time
   // cleanup, never the window's own critical path. orphaned-app-partitions.ts's
   // own header has the full reasoning. A second, throwaway LoaderStorage
