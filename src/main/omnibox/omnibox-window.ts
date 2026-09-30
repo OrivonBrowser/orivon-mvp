@@ -3,6 +3,7 @@
 import { parseOmniboxInput } from '../browsing/omnibox.js'
 import { SEARCH_ENGINES, searchUrlFor } from '../browsing/search-engines.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
+import { aliasToInternal, viewSourceTarget } from '../pages/internal-aliases.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import type { WindowContext } from '../shell/window-context.js'
 import type { ShellWindow } from '../shell/window-registry.js'
@@ -44,7 +45,7 @@ function depsFor (ctx: WindowContext): OmniboxDeps {
     }),
     verbatim: (text) => verbatimRow(text, {
       classify,
-      isInternal: (candidate) => parseInternalUrl(candidate) !== null,
+      isInternal: (candidate) => parseInternalUrl(candidate) !== null || aliasToInternal(candidate) !== null || viewSourceTarget(candidate) !== null,
       engineName: SEARCH_ENGINES.find((engine) => engine.id === shell.settings.get('search.engine'))?.label ?? ''
     }),
     autocomplete: () => shell.settings.get('addressBar.autocomplete'),

@@ -1,7 +1,9 @@
 // What the address bar asks of main while someone types (`omnibox.*` chrome actions), and what choosing a row
 // does to the window. Every payload comes from a renderer: text is bounded and every address that is opened is
 // one the service holds, reached by an index.
+import { aliasToInternal, viewSourceTarget } from '../pages/internal-aliases.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
+import { openViewSource } from '../page-tools/view-source.js'
 import type { ChromeAction } from '../shell/chrome-actions.js'
 import { sendChromeEvent } from '../shell/shell-events.js'
 import type { WindowContext } from '../shell/window-context.js'
@@ -95,12 +97,15 @@ function perform (ctx: WindowContext, outcome: Outcome): void {
   }
   if (outcome.markTyped !== null) services.history.markTyped(outcome.markTyped)
   const { tabs } = window
-  const internal = parseInternalUrl(outcome.target)
+  const internal = aliasToInternal(outcome.target) ?? parseInternalUrl(outcome.target)
+  const source = viewSourceTarget(outcome.target)
   if (outcome.disposition === 'current') {
     const active = tabs.getState().activeTabId
     if (active !== null) tabs.navigate(active, outcome.target)
   } else if (internal !== null) {
     tabs.openInternal(internal.page, internal.path)
+  } else if (source !== null) {
+    openViewSource(tabs, source)
   } else {
     tabs.createTab(outcome.target, outcome.disposition === 'tab')
   }

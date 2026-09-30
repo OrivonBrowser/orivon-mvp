@@ -16,7 +16,7 @@ window they are given. The ranking, the sources, the service and the first row t
 
 **What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`); [`../shell/`](../shell/) (the window
 context, the chrome actions, the tab state); [`../history/`](../history/) and [`../browsing/`](../browsing/) (types
-and the address classifier); [`../pages/`](../pages/) (own pages are opened before anything is classified).
+and the address classifier); [`../pages/`](../pages/) (own pages and the names other browsers give them are opened before anything is classified); [`../page-tools/`](../page-tools/) (`view-source.ts`).
 
 **What it must never import.** The renderer, or a network module: nothing typed here leaves the process.
 

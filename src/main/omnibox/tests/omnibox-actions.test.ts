@@ -143,6 +143,14 @@ describe('the omnibox chrome actions', () => {
       expect(here.manager.createTab).not.toHaveBeenCalled()
     })
 
+    it('offers another browser\'s name for an own page as that page, not as a search', () => {
+      const { run, here, anchor } = setup()
+      run('omnibox.query', { text: 'chrome://gpu', typing: false, anchor })
+      run('omnibox.pick', { index: 0, disposition: 'tab' })
+      expect(here.manager.openInternal).toHaveBeenCalledWith('about', '/gpu')
+      expect(here.manager.createTab).not.toHaveBeenCalled()
+    })
+
     it.each([
       [{ index: -1, disposition: 'current' }], [{ index: 1.5, disposition: 'current' }], [{ index: 99, disposition: 'current' }], [{ index: '1', disposition: 'current' }],
       [{ index: 1, disposition: 'window' }], [{ index: 1 }], [{ index: 1, disposition: 'current', seq: 'x' }], [undefined], [null]

@@ -136,6 +136,8 @@ export function createAddressSuggest (): ChromeModule {
         typed = tab === undefined || tab.isNewTab ? '' : tab.displayUrl
         input.value = typed
         input.select()
+        // With nothing left to close, the bar goes back to showing the page's address.
+        input.blur()
       }
 
       input.addEventListener('input', onInput)
