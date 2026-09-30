@@ -13,6 +13,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `address-suggest.ts` | the address field's dropdown from the field's side: what is typed, the arrows, Enter and Escape (the rules are in `address-suggest-model.ts`) |
 | `address-display.ts` | the unfocused address over the input: the connection mark and the address in two tones (`address-format.ts` splits it) |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
+| `prompt-anchor.ts` | reports the address pill's rectangle to main (`prompt.anchor`), so a prompt can open under it |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |
 | `bookmarks-bar.ts` | the row under the toolbar: the bar's items, folder menus, the overflow button, the right-click menu |
