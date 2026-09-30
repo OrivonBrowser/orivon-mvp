@@ -39,9 +39,14 @@ function shimModuleAliases (): Alias[] {
   })
 }
 
+/** The engine's browser build, as a bundled app gets it: the package's `node` condition would hand the tests a build no app ships. */
+function sqliteEngineAlias (): Alias {
+  return { find: /^@sqlite\.org\/sqlite-wasm$/, replacement: resolve(root, 'node_modules/@sqlite.org/sqlite-wasm/dist/index.mjs') }
+}
+
 // Node, not a DOM: the unit suite tests pure functions and needs no browser.
 export default defineConfig({
-  resolve: { alias: shimModuleAliases() },
+  resolve: { alias: [...shimModuleAliases(), sqliteEngineAlias()] },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],

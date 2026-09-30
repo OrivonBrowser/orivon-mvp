@@ -4,6 +4,7 @@
 // journal is a real file beside the database, so a commit is durable and only
 // the pages a transaction changed are written.
 
+import { bufferedFile } from './buffered-file.js'
 import { orivonSqliteFiles, type SqliteFile, type SqliteOpenMode } from './files.js'
 import type { Sqlite3 } from './engine.js'
 
@@ -27,6 +28,8 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
   const { capi, wasm } = sqlite3
   const open = new Map<number, OpenFile>()
   let lastError = ''
+  // What a path is known to be while some file of this VFS is open: SQLite asks after a journal and a WAL before every read transaction.
+  const accessed = new Map<string, boolean>()
 
   const fail = (error: unknown, code: number): number => {
     lastError = error instanceof Error ? error.message : String(error)
@@ -46,7 +49,10 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
           open.delete(pFile)
           try {
             entry.file.close()
-            if (entry.deleteOnClose) orivonSqliteFiles().remove(entry.path)
+            if (entry.deleteOnClose) {
+              orivonSqliteFiles().remove(entry.path)
+              accessed.set(entry.path, false)
+            }
             return 0
           } catch (error) {
             return fail(error, capi.SQLITE_IOERR_CLOSE)
@@ -134,7 +140,9 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
             if (!(flags & capi.SQLITE_OPEN_READWRITE)) mode = 'read'
             else if (!(flags & capi.SQLITE_OPEN_CREATE)) mode = 'readwrite'
             else mode = (flags & capi.SQLITE_OPEN_EXCLUSIVE) || !named ? 'create-exclusive' : 'create'
-            const file = files.open(path, mode)
+            if (open.size === 0) accessed.clear()
+            const file = bufferedFile(files.open(path, mode))
+            accessed.set(path, true)
             open.set(pFile, { file, path, deleteOnClose: !named || (flags & capi.SQLITE_OPEN_DELETEONCLOSE) !== 0 })
             const sqliteFile = new capi.sqlite3_file(pFile)
             sqliteFile.$pMethods = ioMethods.pointer
@@ -147,7 +155,9 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
         },
         xDelete (_pVfs: number, zName: number) {
           try {
-            orivonSqliteFiles().remove(cString(zName))
+            const path = cString(zName)
+            orivonSqliteFiles().remove(path)
+            accessed.set(path, false)
             return 0
           } catch (error) {
             return fail(error, (error as { code?: string }).code === 'ENOENT' ? capi.SQLITE_IOERR_DELETE_NOENT : capi.SQLITE_IOERR_DELETE)
@@ -155,7 +165,13 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
         },
         xAccess (_pVfs: number, zName: number, _flags: number, pOut: number) {
           try {
-            wasm.poke32(pOut, orivonSqliteFiles().exists(cString(zName)) ? 1 : 0)
+            const path = cString(zName)
+            let exists = accessed.get(path)
+            if (exists === undefined) {
+              exists = orivonSqliteFiles().exists(path)
+              if (open.size > 0) accessed.set(path, exists)
+            }
+            wasm.poke32(pOut, exists ? 1 : 0)
             return 0
           } catch (error) {
             return fail(error, capi.SQLITE_IOERR_ACCESS)

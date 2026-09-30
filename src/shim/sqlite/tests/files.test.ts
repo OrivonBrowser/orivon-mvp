@@ -114,11 +114,12 @@ describe('the rollback journal', () => {
     fill(db, 30)
     const before = fs.contents(FILE)
     db.exec('pragma cache_size = 4')
+    fs.calls.length = 0
     db.exec('begin')
     const insert = db.prepare('insert into t (body) values (?)')
     for (let i = 0; i < 400; i++) insert.run('z'.repeat(300))
-    // The transaction was large enough to push modified pages into the file.
-    expect(fs.contents(FILE)).not.toEqual(before)
+    // Only a spill of modified pages out of the cache syncs the journal before the commit.
+    expect(fs.calls).toContain('sync')
     db.exec('rollback')
     expect(fs.contents(FILE)).toEqual(before)
     expect(fs.files.has(JOURNAL)).toBe(false)
@@ -145,11 +146,11 @@ describe('a crash at any file call of a commit', () => {
     db.exec('pragma cache_size = 4')
     const points: Array<Map<string, { bytes: Uint8Array, length: number }>> = []
     fs.hook = () => { points.push(fs.snapshot()) }
-    fill(db, 60)
+    fill(db, 300, 300)
     fs.hook = () => {}
     points.push(fs.snapshot())
     db.close()
-    expect(points.length).toBeGreaterThan(20)
+    expect(points.length).toBeGreaterThan(12)
     const seen = new Set<number>()
     for (const point of points) {
       fs.restore(point)
@@ -158,7 +159,7 @@ describe('a crash at any file call of a commit', () => {
       seen.add(count(recovered))
       recovered.close()
     }
-    expect([...seen].sort((a, b) => a - b)).toEqual([40, 100])
+    expect([...seen].sort((a, b) => a - b)).toEqual([40, 340])
   })
 })
 

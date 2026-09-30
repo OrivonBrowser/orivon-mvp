@@ -68,13 +68,11 @@ export function orivonSqliteFiles (): SqliteFiles {
       const target = confined(path)
       if (mode === 'read') return wrap(guardedSync(() => fs.open(target, 'r')))
       if (mode === 'readwrite') return wrap(guardedSync(() => fs.open(target, 'r+')))
-      // A file SQLite must create is opened for reading and writing without truncation: 'wx+' creates it, 'r+' takes an existing one.
-      if (mode === 'create-exclusive' || !exists(path)) {
-        try {
-          return wrap(guardedSync(() => fs.open(target, 'wx+')))
-        } catch (error) {
-          if (mode === 'create-exclusive' || (error as { code?: string }).code !== 'EEXIST') throw error
-        }
+      // A file SQLite may create is opened for reading and writing without truncation: 'wx+' creates it, and 'r+' takes one that exists.
+      try {
+        return wrap(guardedSync(() => fs.open(target, 'wx+')))
+      } catch (error) {
+        if (mode === 'create-exclusive' || (error as { code?: string }).code !== 'EEXIST') throw error
       }
       return wrap(guardedSync(() => fs.open(target, 'r+')))
     },

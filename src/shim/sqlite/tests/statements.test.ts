@@ -1,8 +1,9 @@
 // The statement surface, each case run against Node's own node:sqlite and this
 // module on the same input: results and errors must be the same.
 
-import { DatabaseSync as NodeDatabaseSync } from 'node:sqlite'
+import { DatabaseSync as NodeDatabaseSync, constants as nodeConstants } from 'node:sqlite'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { constants } from '../constants.js'
 import { DatabaseSync } from '../database.js'
 import { loadTestEngine } from './support/engine.js'
 
@@ -182,6 +183,10 @@ describe('the connection', () => {
     db[Symbol.dispose]()
     expect(db.isOpen).toBe(false)
   })
+})
+
+it('constants are Node\'s, value for value', () => {
+  expect({ ...constants }).toEqual({ ...nodeConstants })
 })
 
 describe('members not built refuse by name', () => {
