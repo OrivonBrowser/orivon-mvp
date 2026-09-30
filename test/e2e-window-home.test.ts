@@ -10,7 +10,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { pressKey } from './e2e-helpers.js'
 import { closeElectron, assertNoElectronSurvivors, mainOutput } from './launch-electron.mjs'
 import { html, launchShell, startServer, visit, type FixtureServer } from './qa-helpers.js'
-import { ABSENCE_SETTLE_MS, activeTabInfo, delay, evaluateRetrying, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, activeTabInfo, delay, evaluateRetrying, findViewShowing, popoverShown, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 90_000
@@ -19,7 +19,7 @@ let server: FixtureServer
 beforeAll(async () => {
   server = await startServer((request, response) => {
     const name = (request.url ?? '/').replace(/^\//, '') || 'root'
-    html(response, `<!doctype html><meta charset="utf-8"><title>Page ${name}</title><body style="font:16px sans-serif;margin:32px"><h1>Page ${name}</h1>`)
+    html(response, `<!doctype html><meta charset="utf-8"><title>Page ${name}</title><body style="font:16px sans-serif;margin:32px"><h1>Page ${name}</h1><p><a id="link" href="/elsewhere">A link</a></p>`)
   })
 })
 
@@ -283,6 +283,56 @@ it('a kiosk fills the screen with the given address, no chrome, and runs only wh
     await pressKey(app, '/a', 'T', ['control'])
     await delay(ABSENCE_SETTLE_MS)
     expect(await tabIds(chrome)).toHaveLength(1)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+const crashedSession = JSON.stringify({ version: 1, clean: false, windows: [{ bounds: { x: 20, y: 20, width: 900, height: 600 }, maximized: false, active: 0, tabs: [{ url: 'https://saved.example/', title: 'Saved', pinned: false }] }] })
+
+it('a kiosk leaves the saved session alone and offers none back, even after a crash', async () => {
+  const { app, chrome } = await launchShell({
+    args: ['--orivon-kiosk', `${server.origin}/a`],
+    seedProfile: async (dir) => {
+      await mkdir(dir, { recursive: true })
+      await writeFile(join(dir, 'session.json'), crashedSession)
+    }
+  })
+  let dir = ''
+  try {
+    expect((await waitForTab(chrome, { address: `${server.origin}/a` })).ok).toBe(true)
+    dir = await userDataOf(app)
+    // Past the moment the offer would appear, and the recorder's first write.
+    await delay(ABSENCE_SETTLE_MS + 1500)
+    expect(await popoverShown(app, 'overlay=restore')).toBe(false)
+    expect(app.windows().some((w) => w.url().includes('overlay=restore'))).toBe(false)
+  } finally {
+    // Kept so the file can be read once the app has quit, which is when a session would be written.
+    await closeElectron(app, { keepProfile: true })
+  }
+  try {
+    expect(await readFile(join(dir, 'session.json'), 'utf8')).toBe(crashedSession)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}, TEST_TIMEOUT_MS)
+
+it('a kiosk\'s link menu offers no other tab, window or private session', async () => {
+  const { app, chrome } = await launchShell({ args: ['--orivon-kiosk', `${server.origin}/a`] })
+  try {
+    expect((await waitForTab(chrome, { address: `${server.origin}/a` })).ok).toBe(true)
+    expect(await waitFor(() => findViewShowing(app, chrome, `${server.origin}/a`) !== undefined)).toBe(true)
+    const page = findViewShowing(app, chrome, `${server.origin}/a`) as Page
+    await page.waitForSelector('#link')
+    await app.evaluate(({ Menu }) => {
+      Menu.prototype.popup = function () { (globalThis as { __menu?: unknown }).__menu = this }
+    })
+    await page.click('#link', { button: 'right' })
+    expect(await waitFor(async () => await app.evaluate(() => (globalThis as { __menu?: unknown }).__menu !== undefined))).toBe(true)
+    const labels = await app.evaluate(() => ((globalThis as { __menu?: { items: Array<{ label: string }> } }).__menu?.items ?? []).map((item) => item.label))
+    expect(labels).toContain('Copy Link Address')
+    expect(labels.filter((label) => label.startsWith('Open '))).toEqual([])
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

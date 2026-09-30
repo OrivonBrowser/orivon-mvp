@@ -53,6 +53,8 @@ export interface OverlayHandler {
   /** Untrusted: the page sends anything, so validate every field and run only listed commands. */
   request: (command: unknown) => unknown
   closed?: (reason: OverlayCloseReason) => void
+  /** Runs once when the window is gone, whether or not the overlay was open: the place to drop a subscription to anything that outlives the window. */
+  disposed?: () => void
 }
 
 /** `ShellWindow.overlays`. */
@@ -66,5 +68,9 @@ export interface OverlayHost {
   send: (name: string, event: unknown) => void
 }
 
-/** What a page's first `ready` call is answered with: the show result it has not seen yet, if a show is waiting. */
-export type OverlayReady = { shown: false } | { shown: true, payload: unknown }
+/**
+ * What a page's first `ready` call is answered with: the show result it has not seen yet, if a show is waiting,
+ * and the events sent while it loaded. The page takes the show first, then the events, so an event is never
+ * seen by a page that has not yet been told what it is showing.
+ */
+export type OverlayReady = ({ shown: false } | { shown: true, payload: unknown }) & { events?: unknown[] }

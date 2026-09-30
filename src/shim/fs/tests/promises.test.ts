@@ -165,7 +165,7 @@ describe('fs.promises', () => {
     const { promises } = await import('../promises.js')
     const { OrivonShimError } = await import('../../errors.js')
     const rec = promises as unknown as Record<string, () => unknown>
-    expect(() => rec.watch).not.toThrow()
-    expect(() => rec.watch!()).toThrow(OrivonShimError)
+    expect(() => rec.cp).not.toThrow()
+    expect(() => rec.cp!()).toThrow(OrivonShimError)
   })
 })

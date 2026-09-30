@@ -313,6 +313,8 @@ it('shows in the main menu what would come back, under History, and nothing when
     menu = await openMenu()
     const row = menu.locator('.menu-row', { hasText: 'Reopen closed tab' })
     expect(await row.textContent()).toContain('page invoice')
+    // The hint goes under the label: the shortcut keeps its column.
+    expect(await row.locator('.menu-keys').textContent()).toBe('Ctrl+Shift+T')
     await shoot(menu, 'reopen-menu-hint')
     await closeMenu(menu)
 

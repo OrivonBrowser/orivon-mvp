@@ -29,7 +29,10 @@ describe('isAddressList', () => {
 describe('the start-up and page-content settings', () => {
   it('start closed to a launch that restores nothing, with Home off and spell checking on', () => {
     expect(SETTINGS['startup.mode']).toMatchObject({ kind: 'enum', default: 'newTab' })
-    expect(SETTINGS['startup.pages']).toMatchObject({ kind: 'text', default: '', maxLength: 4096 })
+    expect(SETTINGS['startup.pages']).toMatchObject({ kind: 'text', default: '', maxLength: MAX_LISTED_ADDRESSES * 2049 })
+    // Eight addresses at the field's own limit fit, so a list the page offered is one main keeps.
+    const longest = Array.from({ length: MAX_LISTED_ADDRESSES }, (_, n) => `https://a${String(n)}.example/${'p'.repeat(2048 - 'https://a0.example/'.length)}`).join('\n')
+    expect(validateSetting(SETTINGS['startup.pages'], longest)).toBe(longest)
     expect(SETTINGS['home.url']).toMatchObject({ kind: 'text', default: '', maxLength: 2048 })
     expect(SETTINGS['toolbar.home']).toMatchObject({ kind: 'bool', default: false })
     expect(SETTINGS['spellcheck.enabled']).toMatchObject({ kind: 'bool', default: true })

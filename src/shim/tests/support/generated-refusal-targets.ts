@@ -50,9 +50,39 @@ export const REFUSAL_TARGETS: readonly RefusalTarget[] = [
   generic('worker_threads', 'polyfills/worker-threads.js', 'polyfills/generated/worker-threads.ts'),
   generic('vm', 'polyfills/vm.js', 'polyfills/generated/vm.ts'),
   generic('module', 'polyfills/module.js', 'polyfills/generated/module.ts'),
+  generic('async_hooks', 'polyfills/async-hooks.js', 'polyfills/generated/async-hooks.ts'),
+  generic('diagnostics_channel', 'polyfills/diagnostics-channel.js', 'polyfills/generated/diagnostics-channel.ts'),
+  generic('perf_hooks', 'polyfills/perf-hooks.js', 'polyfills/generated/perf-hooks.ts'),
+  generic('process', 'polyfills/process.js', 'polyfills/generated/process.ts'),
+  generic('console', 'polyfills/console.js', 'polyfills/generated/console.ts'),
+  {
+    specifier: 'tty',
+    sourceModule: 'polyfills/tty.js',
+    generatedFile: 'polyfills/generated/tty.ts',
+    classifyModule: 'polyfills/tty.js',
+    classifyImportName: 'otherTtyMember',
+    classifyExpr: 'otherTtyMember'
+  },
+  {
+    specifier: 'readline',
+    sourceModule: 'polyfills/readline.js',
+    generatedFile: 'polyfills/generated/readline.ts',
+    classifyModule: 'polyfills/readline.js',
+    classifyImportName: 'otherReadlineMember',
+    classifyExpr: 'otherReadlineMember'
+  },
+  {
+    specifier: 'http2',
+    sourceModule: 'polyfills/http2.js',
+    generatedFile: 'polyfills/generated/http2.ts',
+    classifyModule: 'polyfills/http2.js',
+    classifyImportName: 'otherHttp2Member',
+    classifyExpr: 'otherHttp2Member'
+  },
   generic('child_process', 'child-process/index.js', 'child-process/generated/child-process.ts'),
   generic('wasi', 'wasi/node-wasi.js', 'wasi/generated/wasi.ts'),
   generic('dgram', 'net/dgram.js', 'net/generated/dgram.ts'),
+  generic('sqlite', 'sqlite/index.js', 'sqlite/generated/sqlite.ts'),
   {
     specifier: 'net',
     sourceModule: 'net/net.js',

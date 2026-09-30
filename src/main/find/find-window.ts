@@ -164,7 +164,9 @@ export function createFindWindow (win: OverlayWindow): FindWindow {
     handler: {
       show: async (payload) => await show(payload),
       request,
-      closed
+      closed,
+      // The subscription reaches past this window: it is dropped when the window goes, open bar or not.
+      disposed: () => { unsubscribe() }
     },
     result,
     loading,

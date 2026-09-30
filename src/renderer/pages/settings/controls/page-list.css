@@ -47,7 +47,9 @@
 
 .page-list-add { display: flex; align-items: center; gap: 8px; }
 .page-list-add .text { flex: 1 1 auto; min-width: 0; max-width: none; }
-.page-list .link-btn { justify-self: start; }
+.page-list-add .btn { height: 32px; flex: none; }
+/* The link's text lines up with the field's edge, not with its own padding. */
+.page-list .link-btn { justify-self: start; margin-left: -6px; }
 .page-list .link-btn[disabled] { opacity: 0.5; cursor: default; text-decoration: none; }
 
 .page-list .empty-state.compact {

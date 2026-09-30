@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createOverlay, mountPage, shownPayload } from '../overlay/kit.js'
+import { createOverlay, mountPage, readyEvents, shownPayload } from '../overlay/kit.js'
 import type { Overlay, OverlayBridge, OverlayPage } from '../overlay/kit.js'
 
 const root = { id: 'root' } as unknown as HTMLElement
@@ -95,6 +95,24 @@ describe('createOverlay', () => {
     off()
     b.emit({ type: 'event', event: 3 })
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands the events a ready reply carried to the page\'s listeners, in order, and not to one that unsubscribed', () => {
+    const b = bridge()
+    const kept = vi.fn(); const dropped = vi.fn()
+    const o = createOverlay(b.bridge)
+    o.onEvent(kept)
+    o.onEvent(dropped)()
+    o.replay(['first', 'second'])
+    expect(kept.mock.calls).toEqual([['first'], ['second']])
+    expect(dropped).not.toHaveBeenCalled()
+  })
+
+  it('reads the events of a ready reply, and none from any other shape', () => {
+    expect(readyEvents({ shown: true, payload: 1, events: ['a', 2] })).toEqual(['a', 2])
+    expect(readyEvents({ shown: false })).toEqual([])
+    expect(readyEvents({ events: 'nope' })).toEqual([])
+    expect(readyEvents(undefined)).toEqual([])
   })
 
   it('closes as a request', () => {

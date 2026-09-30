@@ -29,19 +29,39 @@ export function pathToFileURL (path: string): URL {
   return url
 }
 
-export interface Url {
-  protocol: string | null
-  slashes: boolean | null
-  auth: string | null
-  host: string | null
-  port: string | null
-  hostname: string | null
-  hash: string | null
-  search: string | null
-  query: string | ParsedUrlQuery | null
-  pathname: string | null
-  path: string | null
-  href: string
+/** Node's legacy Url object: `url.parse` returns one, and `parseurl` builds its own with `new url.Url()`. */
+export class Url {
+  protocol: string | null = null
+  slashes: boolean | null = null
+  auth: string | null = null
+  host: string | null = null
+  port: string | null = null
+  hostname: string | null = null
+  hash: string | null = null
+  search: string | null = null
+  query: string | ParsedUrlQuery | null = null
+  pathname: string | null = null
+  path: string | null = null
+  href = ''
+
+  parse (input: string, parseQueryString = false, slashesDenoteHost = false): this {
+    return Object.assign(this, parse(input, parseQueryString, slashesDenoteHost))
+  }
+
+  format (): string { return format(this) }
+  resolve (relative: string): string { return resolve(this.href, relative) }
+  resolveObject (relative: string): Url { return parse(this.resolve(relative)) }
+
+  /** Sets `port` and `hostname` from `host`, leaving `host` itself, as Node's does. */
+  parseHost (): void {
+    let host = this.host ?? ''
+    const match = /:\d*$/.exec(host)
+    if (match !== null) {
+      if (match[0] !== ':') this.port = match[0].slice(1)
+      host = host.slice(0, match.index)
+    }
+    if (host !== '') this.hostname = host
+  }
 }
 
 const SLASHED_PROTOCOLS = new Set(['http:', 'https:', 'ftp:', 'gopher:', 'file:', 'ws:', 'wss:'])
@@ -54,6 +74,7 @@ function splitAt (text: string, marker: string): [string, string | null] {
 
 /** Node's legacy url.parse, over the same field rules. */
 export function parse (input: string, parseQueryString = false, slashesDenoteHost = false): Url {
+  if (typeof input !== 'string') throw nodeTypeError('ERR_INVALID_ARG_TYPE', `The "url" argument must be of type string. Received ${typeof input}`)
   let [rest, hash] = splitAt(input.trim(), '#')
   let search: string | null
   ;[rest, search] = splitAt(rest, '?')
@@ -84,7 +105,7 @@ export function parse (input: string, parseQueryString = false, slashesDenoteHos
   const query = parseQueryString ? parseQuery(queryText ?? '') : queryText
   if (parseQueryString && search === null) search = ''
   const path = pathname === null && search === null ? null : (pathname ?? '') + (search ?? '')
-  const url: Url = { protocol, slashes: slashes ? true : null, auth, host, port, hostname, hash, search, query, pathname, path, href: '' }
+  const url = Object.assign(new Url(), { protocol, slashes: slashes ? true : null, auth, host, port, hostname, hash, search, query, pathname, path })
   url.href = format(url)
   return url
 }
@@ -129,4 +150,4 @@ export function resolve (from: string, to: string): string {
 // A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
 export * from './generated/url.js'
 
-export default nodeModule('url', { URL, URLSearchParams, fileURLToPath, format, parse, pathToFileURL, resolve })
+export default nodeModule('url', { URL, URLSearchParams, Url, fileURLToPath, format, parse, pathToFileURL, resolve })

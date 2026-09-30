@@ -54,6 +54,14 @@ function parseListenArgs (args: readonly unknown[]): ParsedListen {
   }
 }
 
+/** What `listen` failed with, as Node words it: a taken port reads `listen EADDRINUSE: address already in use 127.0.0.1:9000`, which a program greps for. */
+function listenError (error: unknown, host: string | undefined, port: number): ReturnType<typeof toNodeError> {
+  const address = host ?? '0.0.0.0'
+  const mapped = toNodeError(error, { syscall: 'listen', address, port })
+  if (mapped.code === 'EADDRINUSE') mapped.message = `listen EADDRINUSE: address already in use ${address}:${String(port)}`
+  return mapped
+}
+
 function refuseHost (host: string): Error {
   return refuseShim('net.Server#listen(host)', 'unimplemented',
     `orivon.net.listen binds loopback or every interface, never one other address, so binding '${host}' ` +
@@ -111,7 +119,7 @@ export class Server extends EventEmitter {
     }, (error: unknown) => {
       this.listenPending = false
       if (this.closing) { this.emitCloseOnce(); return }
-      this.emit('error', toNodeError(error, { syscall: 'listen', port }))
+      this.emit('error', listenError(error, host, port))
     })
     return this
   }

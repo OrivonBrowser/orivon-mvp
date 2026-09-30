@@ -10,6 +10,10 @@ export interface PageToolDeps {
   writeFile: (path: string, data: Uint8Array) => Promise<void>
   rename: (from: string, to: string) => Promise<void>
   remove: (path: string) => Promise<void>
+  /** The scale factor of the screen a window is on. */
+  displayScale: (window: BaseWindow | undefined) => number
+  /** Shows a saved file in the system's file manager. */
+  reveal: (path: string) => void
   /** Puts a PNG on the clipboard as an image. */
   copyImage: (png: Uint8Array) => Promise<void>
   now: () => Date

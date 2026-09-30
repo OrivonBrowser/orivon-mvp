@@ -6,12 +6,13 @@ continue from it. `tab-snapshot.ts` says what is written down about a tab, `clos
 `closed-tabs.ts` are the stack and what fills it, `reopen.ts` brings an entry back and words the menu hint,
 `session-types.ts` and `session-store.ts` are the file and its one reader, `session-recorder.ts` and
 `session-hook.ts` write the open windows down, and `restore.ts` and `open-snapshot.ts` open saved windows
-and tabs again (`fillTabs`, `restoreWindows`, `seedClosedStack`).
+and tabs again (`fillTabs`, `optionsFor`, `seedClosedStack`).
 
 **What it depends on.** `electron` (`session-hook.ts`, and `WebContents` in `tab-snapshot.ts`);
 [`../shell/`](../shell/) (types of tabs, windows and hooks; `tab-lifecycle.ts`);
 [`../storage/`](../storage/) (the debounced write); [`../browsing/omnibox.ts`](../browsing/omnibox.ts)
-(the one rule for which addresses a tab may open); [`../pages/internal-pages.ts`](../pages/internal-pages.ts).
+(the one rule for which addresses a tab may open); [`../window-state/placement.ts`](../window-state/placement.ts)
+(where a saved window may open on the displays there are now); [`../pages/internal-pages.ts`](../pages/internal-pages.ts).
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code. Not `src/main/sessions/`, which
 is about what an Electron `Session` may do and is unrelated.

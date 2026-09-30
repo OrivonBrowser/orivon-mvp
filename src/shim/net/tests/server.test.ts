@@ -89,6 +89,14 @@ describe('net.Server -- listening/error/address/close', () => {
     expect((await error).code).toBe('denied')
   })
 
+  it('a port that is taken surfaces as Node\'s EADDRINUSE error, with the message a program greps for', async () => {
+    const taken = Object.assign(new Error('no free port in the granted range'), { name: 'OrivonError', code: 'limit', platformCode: 'EADDRINUSE' })
+    const server = new Server(async () => { throw taken })
+    const error = new Promise<Error & { code?: string, errno?: number, syscall?: string, address?: string, port?: number }>((resolve) => server.once('error', resolve))
+    server.listen(9000, '127.0.0.1')
+    expect(await error).toMatchObject({ code: 'EADDRINUSE', errno: -98, syscall: 'listen', address: '127.0.0.1', port: 9000, message: 'listen EADDRINUSE: address already in use 127.0.0.1:9000' })
+  })
+
   it('close() closes the underlying TcpServer handle -- the broker tears every derived accepted socket down from there (handle-contracts.md\'s TcpServer section), not from this wrapper', async () => {
     const fake = createFakeTcpServer()
     const server = new Server(async () => fake.server)

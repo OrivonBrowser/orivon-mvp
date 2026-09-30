@@ -259,3 +259,13 @@ see in the PR itself.
 | Row-by-row verification against the code (eleven agents, one or two sub-tables each, plus one for the rows a merge on `main` changed) | Every row of Tables 1, 2, 3 and 5 and the Table 8 corrections, at `802cae01` | Roughly one row in four corrected before merge: overstated "works" claims, counts off by one or two, substitutes nobody had measured, and rows the loopback scope and HTTP server on `main` had made wrong |
 | Coverage check against 1,156 needs from scans of 80 Electron apps, 56 Node apps and the ports' own ledger (an agent) | The assembled rows | Five needs had no row, now added |
 | `/code-review` at medium effort | The pull request | Three findings: a stale cross-reference to the resolved A148 and a Table 4 paragraph that did not mention the new rows, both fixed; a claim that rows 12 and 13 never existed was wrong (both were deleted when resolved) |
+
+### `stream/b1-tabs-tools`: tab state, closed tabs and sessions, start-up, find, page tools, page menus, tab search, crashed tabs, the overlay host (2026-09-30)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Code review by area, by Opus agents, each finding then attacked by a second agent trying to refute it | The branch against `main`, split into the overlay host, tabs with sessions and start-up, page tools, and the chrome and Settings pages | 32 findings, all confirmed. Each was fixed with a test before merge, one in part (a kiosk's own `window.open`, `docs/open-questions.md` A319) |
+| A designer's review of screenshots of every new surface, light and dark, at 1280 and 700 pixels wide | The strip with pinned, audible, muted, crashed and loading tabs, the menus, find bar, tab search, sheets, toasts, cards, the restore bar, Settings and a private window | 22 findings, all confirmed, on contrast, alignment, overflow and lifetimes; all fixed or answered (one proposed surface change was declined after a screenshot showed it was not needed) |
+| The whole end-to-end suite in chunks, with the unit suite and every guard | The merged branch | One regression and one crash, both fixed with a test; the rest green, or held by ports another process owned |
+
+In all, 54 findings, 54 confirmed, none refuted.

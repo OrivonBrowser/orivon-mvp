@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { baseName, downloadName, formatFor, isSavableDocument, safeFileName, screenshotName } from '../file-names.js'
+import { baseName, downloadName, formatFor, isSavableDocument, safeFileName, screenshotName, withExtension } from '../file-names.js'
 
 describe('safeFileName', () => {
   it('keeps an ordinary title and adds the extension', () => {
@@ -78,5 +78,28 @@ describe('downloadName', () => {
     expect(downloadName('https://a.example/files/My%20Doc.pdf?x=1')).toBe('My Doc.pdf')
     expect(downloadName('https://a.example/')).toBe('page.bin')
     expect(downloadName('nonsense')).toBe('download.bin')
+  })
+})
+
+describe('downloadName: the extension comes from the page, so it is checked', () => {
+  it('keeps a plain extension', () => {
+    expect(downloadName('https://a.example/files/report.final.PDF')).toBe('report.final.PDF')
+  })
+
+  it('uses bin for an extension that holds a separator, a control character or too many characters', () => {
+    expect(downloadName('https://a.example/x.a%2Fb%00c')).toBe('x.bin')
+    expect(downloadName('https://a.example/x.a%5Cb')).toBe('x.bin')
+    expect(downloadName(`https://a.example/x.${'a'.repeat(17)}`)).toBe('x.bin')
+    expect(downloadName(`https://a.example/x.${'a'.repeat(16)}`)).toBe(`x.${'a'.repeat(16)}`)
+  })
+})
+
+describe('withExtension', () => {
+  it('adds the extension to a name with none, and leaves one that has any', () => {
+    expect(withExtension('/out/report', 'pdf')).toBe('/out/report.pdf')
+    expect(withExtension('/out/report.', 'pdf')).toBe('/out/report.pdf')
+    expect(withExtension('/out/report.PDF', 'pdf')).toBe('/out/report.PDF')
+    expect(withExtension('/out/archive.v2', 'png')).toBe('/out/archive.v2')
+    expect(withExtension('C:\\out\\report', 'png')).toBe('C:\\out\\report.png')
   })
 })

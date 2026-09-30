@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { captureFullPage, captureVisible, fullPageAvailable, fullPageClip, MAX_FULL_PAGE_PIXELS } from '../screenshot.js'
+import { captureFullPage, captureVisible, densityOf, fullPageAvailable, fullPageClip, MAX_FULL_PAGE_AREA, MAX_FULL_PAGE_PIXELS } from '../screenshot.js'
 import type { CaptureContents } from '../screenshot.js'
 
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
@@ -11,13 +11,15 @@ function contents (commands: Commands = {}, extra: Partial<CaptureContents> = {}
   const calls: Array<[string, unknown]> = []
   const table: Commands = {
     'Page.getLayoutMetrics': { cssContentSize: { width: 1280, height: 3000 } },
-    'Runtime.evaluate': { result: { value: 1 } },
+    // A page can answer this with anything: nothing here may depend on it.
+    'Runtime.evaluate': { result: { value: 0.001 } },
     'Page.captureScreenshot': { data: Buffer.from(png).toString('base64') },
     ...commands
   }
   return {
     calls,
     capturePage: async () => ({ toPNG: () => png, isEmpty: () => false }),
+    getZoomFactor: () => 1,
     isDevToolsOpened: () => false,
     isCrashed: () => false,
     debugger: {
@@ -50,6 +52,31 @@ describe('fullPageClip', () => {
     expect(fullPageClip({ width: 10, height: 10 }, Number.NaN)).toMatchObject({ height: 10 })
     expect(fullPageClip({ width: 10, height: 10 }, 0)).toMatchObject({ height: 10 })
   })
+
+  it('cuts a very wide page as well as a tall one', () => {
+    expect(fullPageClip({ width: 500_000, height: 100 }, 1)).toEqual({ width: MAX_FULL_PAGE_PIXELS, height: 100, truncated: true })
+    expect(fullPageClip({ width: 500_000, height: 100 }, 2)).toEqual({ width: MAX_FULL_PAGE_PIXELS / 2, height: 100, truncated: true })
+  })
+
+  it('keeps the whole picture under a total number of device pixels', () => {
+    const clip = fullPageClip({ width: 16_000, height: 16_000 }, 1)
+    expect(clip.truncated).toBe(true)
+    expect(clip.width * clip.height).toBeLessThanOrEqual(MAX_FULL_PAGE_AREA)
+  })
+
+  it('keeps a density outside what a screen and a zoom can make inside it, so a tiny one does not lift the limit', () => {
+    expect(fullPageClip({ width: 800, height: 1_000_000 }, 0.001).height).toBeLessThanOrEqual(4 * MAX_FULL_PAGE_PIXELS)
+    expect(fullPageClip({ width: 800, height: 40_000 }, 1000)).toEqual({ width: 800, height: 1250, truncated: true })
+  })
+})
+
+describe('densityOf', () => {
+  it('is the page zoom on the screen\'s scale, kept to a sane range', () => {
+    expect(densityOf({ getZoomFactor: () => 1.25 }, 2)).toBe(2.5)
+    expect(densityOf({ getZoomFactor: () => Number.NaN }, 2)).toBe(2)
+    expect(densityOf({ getZoomFactor: () => 50 }, 4)).toBe(8)
+    expect(densityOf({ getZoomFactor: () => 0.1 }, 1)).toBe(0.25)
+  })
 })
 
 describe('fullPageAvailable', () => {
@@ -69,6 +96,14 @@ describe('captureFullPage', () => {
     expect(wc.calls.at(-1)).toEqual(['Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width: 1280, height: 3000, scale: 1 } }])
     expect(wc.debugger.attach).toHaveBeenCalledWith('1.3')
     expect(wc.debugger.detach).toHaveBeenCalledTimes(1)
+  })
+
+  it('takes the density from the window and the zoom, not from the page', async () => {
+    const wc = contents({ 'Page.getLayoutMetrics': { cssContentSize: { width: 800, height: 40_000 } } }, { getZoomFactor: () => 1 })
+    const shot = await captureFullPage(wc, 2)
+    expect(shot.truncated).toBe(true)
+    expect(wc.calls.at(-1)?.[1]).toMatchObject({ clip: { height: MAX_FULL_PAGE_PIXELS / 2 } })
+    expect(wc.calls.map(([method]) => method)).not.toContain('Runtime.evaluate')
   })
 
   it('reports a cut page', async () => {

@@ -24,7 +24,28 @@ describe('savePdf', () => {
     expect([...deps.files.keys()]).toEqual(['/out/report.pdf'])
     expect(deps.files.get('/out/report.pdf')).toEqual(pdf)
     expect(toasts()).toEqual(['savingPdf', 'saved'])
-    expect(show).toHaveBeenLastCalledWith('toast', undefined, { code: 'saved', name: 'report.pdf' })
+    expect(show).toHaveBeenLastCalledWith('toast', undefined, { code: 'saved', name: 'report.pdf', revealPath: '/out/report.pdf' })
+  })
+
+  it('adds .pdf to a name typed without an extension', async () => {
+    const { window } = fakeWindow()
+    const deps = fakeDeps('/out/report')
+    const { wc, title } = page()
+    await savePdf(window, { wc, title }, deps)
+    expect([...deps.files.keys()]).toEqual(['/out/report.pdf'])
+  })
+
+  it('says the PDF failed when the tab closed while the dialog was open', async () => {
+    const { window, toasts } = fakeWindow()
+    const deps = fakeDeps('/out/report.pdf')
+    const { wc, title } = page({ isDestroyed: () => true })
+    await savePdf(window, { wc, title }, deps)
+    expect(wc.printToPDF).not.toHaveBeenCalled()
+    expect(toasts()).toEqual(['pdfFailed'])
+    const throwing = page({ isCrashed: () => { throw new Error('Object has been destroyed') } })
+    vi.spyOn(console, 'error').mockImplementationOnce(() => {})
+    await savePdf(window, throwing, deps)
+    expect(toasts()).toEqual(['pdfFailed', 'pdfFailed'])
   })
 
   it('writes nothing and shows nothing when the person cancels', async () => {

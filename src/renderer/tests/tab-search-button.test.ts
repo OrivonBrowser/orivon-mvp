@@ -16,7 +16,7 @@ interface FakeButton {
   addEventListener: (type: string, listener: () => void) => void
 }
 
-function setup (platform: string): { button: FakeButton, row: { append: ReturnType<typeof vi.fn> }, act: ReturnType<typeof vi.fn> } {
+function setup (platform: string, keys: string[] | null = ['Ctrl', 'Shift', 'A']): { button: FakeButton, row: { append: ReturnType<typeof vi.fn> }, act: ReturnType<typeof vi.fn> } {
   const button: FakeButton = {
     id: '',
     type: '',
@@ -39,7 +39,9 @@ function setup (platform: string): { button: FakeButton, row: { append: ReturnTy
   })
   const act = vi.fn()
   const ctx = { shell: { act }, anchorFor: () => ({ x: 1, y: 2, width: 28, height: 28 }) } as unknown as ChromeContext
-  createTabSearchButton().init(ctx)
+  const module = createTabSearchButton()
+  module.init(ctx)
+  module.render?.({ shortcutKeys: { 'nav.home': null, 'tab.search': keys } } as never, ctx)
   return { button, row, act }
 }
 
@@ -60,7 +62,12 @@ describe('the tab search button', () => {
   })
 
   it('writes the key the Mac way on a Mac', () => {
-    expect(setup('darwin').button.title).toBe('Search tabs (⌘⇧A)')
+    expect(setup('darwin', ['Cmd', 'Shift', 'A']).button.title).toBe('Search tabs (⌘⇧A)')
+  })
+
+  it('names the binding that runs now, and none once it is cleared', () => {
+    expect(setup('linux', ['Ctrl', 'Alt', 'K']).button.title).toBe('Search tabs (Ctrl+Alt+K)')
+    expect(setup('linux', null).button.title).toBe('Search tabs')
   })
 
   it('toggles the overlay under itself on a click', () => {

@@ -12,7 +12,7 @@ export interface Match {
 }
 
 /** Fewer letters than this in order are noise: one letter would match nearly everything. */
-const MIN_SUBSEQUENCE = 2
+const MIN_SUBSEQUENCE = 3
 const WORD_BASE = 4000
 const SUBSTRING_BASE = 3000
 const ADDRESS_BASE = 2000
@@ -106,6 +106,8 @@ export function score (query: string, text: string): Match | null {
 }
 
 export interface RowMatch {
+  /** True when a word matched only as letters in order, which is the weakest kind of hit. */
+  readonly loose: boolean
   readonly score: number
   readonly titleRanges: readonly Range[]
   readonly hostRanges: readonly Range[]
@@ -117,10 +119,11 @@ export interface RowMatch {
  */
 export function matchRow (query: string, title: string, host: string): RowMatch | null {
   const words = query.split(/\s+/).filter((word) => word !== '')
-  if (words.length === 0) return { score: 0, titleRanges: [], hostRanges: [] }
+  if (words.length === 0) return { score: 0, loose: false, titleRanges: [], hostRanges: [] }
   const titleFolded = foldWithMap(title)
   const hostFolded = foldWithMap(host)
   let total = 0
+  let loose = false
   const titleRanges: Range[] = []
   const hostRanges: Range[] = []
   for (const word of words) {
@@ -129,11 +132,12 @@ export function matchRow (query: string, title: string, host: string): RowMatch 
     const inHost = matchFolded(hostFolded, needle)
     const address = inHost !== null && inHost.kind !== 'subsequence' ? { score: ADDRESS_BASE - Math.min(inHost.ranges[0]?.[0] ?? 0, POSITION_CAP), ranges: inHost.ranges } : null
     if (inTitle === null && address === null) return null
+    if (address === null && inTitle?.kind === 'subsequence') loose = true
     total += Math.max(inTitle?.score ?? 0, address?.score ?? 0)
     if (inTitle !== null) titleRanges.push(...inTitle.ranges)
     if (address !== null) hostRanges.push(...address.ranges)
   }
-  return { score: total, titleRanges: merge(titleRanges), hostRanges: merge(hostRanges) }
+  return { score: total, loose, titleRanges: merge(titleRanges), hostRanges: merge(hostRanges) }
 }
 
 /** The text cut at `ranges`, for drawing the hits: each piece says whether it is one. */

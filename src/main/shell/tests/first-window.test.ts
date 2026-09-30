@@ -95,9 +95,22 @@ describe('firstWindowOptions', () => {
       expect(plan.maximized).toBe(true)
       expect(plan.first).toBeDefined()
       expect(open).not.toHaveBeenCalled()
-      plan.after?.()
+      const first = { isDestroyed: () => false, focus: vi.fn() }
+      plan.after?.(first as never)
       expect(open).toHaveBeenCalledTimes(1)
       expect(open.mock.calls[0]?.[0]).toMatchObject({ place: { x: 300, y: 200, width: 700, height: 500 }, maximized: false })
+    })
+
+    it('opens the later windows without focus and gives the first window the focus once they are shown', () => {
+      const open = vi.fn()
+      const plan = firstWindowOptions({ services: services({ mode: 'continue', previous, saved, closed: new ClosedStack() }), isPrivate: false, argv: [], displays: [display], openWindow: open })
+      const first = { isDestroyed: () => false, focus: vi.fn() }
+      plan.after?.(first as never)
+      const options = open.mock.calls[0]?.[0] as { inactive?: boolean, shown?: () => void }
+      expect(options.inactive).toBe(true)
+      expect(first.focus).not.toHaveBeenCalled()
+      options.shown?.()
+      expect(first.focus).toHaveBeenCalledTimes(1)
     })
 
     it('has no `after` when there is no other window, or nowhere to open it', () => {

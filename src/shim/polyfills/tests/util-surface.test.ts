@@ -42,6 +42,15 @@ describe('the util package\'s members', () => {
     expect(inspect({ a: 1, b: [1, 2] })).toContain('a: 1')
   })
 
+  it('types.isProxy, isExternal and isModuleNamespaceObject answer instead of throwing', async () => {
+    expect(types.isProxy(new Proxy({}, {}))).toBe(false)
+    expect(types.isProxy({})).toBe(false)
+    expect(types.isExternal({})).toBe(false)
+    expect(types.isModuleNamespaceObject(await import('node:path'))).toBe(true)
+    expect(types.isModuleNamespaceObject({})).toBe(false)
+    expect(types.isModuleNamespaceObject(null)).toBe(false)
+  })
+
   it('types answers', () => {
     expect(types.isPromise(Promise.resolve())).toBe(true)
     expect(types.isUint8Array(new Uint8Array(1))).toBe(true)

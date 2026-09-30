@@ -107,8 +107,18 @@ function renderShortcut (control: Extract<Control, { type: 'shortcut' }>, state:
       shortcut.keys === null ? h('span', { className: 'muted', textContent: 'Not set' }) : caps(shortcut.keys),
       shortcut.aliases.length === 0 ? null : h('span', { className: 'muted also' }, 'Also ', ...shortcut.aliases.map((alias) => caps(alias))),
       button('Change', () => { void shortcuts.record(control.id) }),
-      shortcut.keys === null ? null : button('Clear', () => { void shortcuts.clear(control.id) }),
+      clearButton(shortcut.keys === null, button('Clear', () => { void shortcuts.clear(control.id) })),
       shortcut.isDefault ? null : button('Reset', () => { void shortcuts.reset(control.id) })))
+}
+
+/** A shortcut with no keys has nothing to clear, but keeps the button's room so Change stays in one column down the list. */
+function clearButton (nothingToClear: boolean, button: HTMLElement): HTMLElement {
+  if (!nothingToClear) return button
+  button.setAttribute('disabled', '')
+  button.setAttribute('aria-hidden', 'true')
+  button.tabIndex = -1
+  button.style.visibility = 'hidden'
+  return button
 }
 
 export function renderRow (row: Row, state: SettingsState): HTMLElement {

@@ -228,6 +228,16 @@ addons built outside the repository run against the WASI and addon hosts in opt-
 same way: `ORIVON_WASIP2_STD_PROGRAM`, `ORIVON_WASIP2_TOKIO_PROGRAM` and `ORIVON_NAPI_RS_ADDON`,
 each test's header naming what to build.
 
+[`e2e-the-lounge-real.test.ts`](../../test/e2e-the-lounge-real.test.ts) runs The Lounge's upstream server,
+unmodified, in a forked Worker of an app (the real consent prompt, the launcher creating the account with
+upstream's own command, the server on `127.0.0.1:9000`, its page in a `<webview>`) against
+[`irc-fake-server.mjs`](../../test/irc-fake-server.mjs): a network connect, messages both ways, a link opening
+a tab, the scrollback read back from SQLite after a relaunch on the same profile, and a second tab finding the
+port held. It skips unless `orivon-ports` (`ORIVON_PORTS_ROOT`, default the sibling checkout) holds the
+built app, and unless the build is the ordinary one (`ORIVON_ORDINARY_BUILD=1`), as `e2e-freetube-real`
+does; it binds 9000 and 6667. The server's release check may reach `api.github.com` from the main process
+(`--host-resolver-rules` does not cover it); no assertion depends on the answer.
+
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
 pull request (see §How to run above).

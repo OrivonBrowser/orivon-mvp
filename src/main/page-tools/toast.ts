@@ -29,12 +29,13 @@ export const TOAST_TEXT = {
   saveFailed: { text: 'Could not save this page', tone: 'error' },
   cannotSave: { text: 'This page cannot be saved', tone: 'error' },
   printFailed: { text: 'Could not print this page', tone: 'error' },
-  noPrinter: { text: 'No printer found', tone: 'error', action: { label: 'Save as PDF', run: 'page.pdf' } },
+  noPrinter: { text: 'No printer found', tone: 'info', action: { label: 'Save as PDF', run: 'page.pdf' } },
   copied: { text: 'Screenshot copied', tone: 'ok' },
   copyFailed: { text: 'Could not copy the screenshot', tone: 'error' },
   shotFailed: { text: 'Could not take the screenshot', tone: 'error' },
   longPage: { text: 'Saved the first part of a very long page', tone: 'ok' },
-  noVideo: { text: 'No video to pop out on this page', tone: 'info' }
+  noVideo: { text: 'No video to pop out on this page', tone: 'info' },
+  noSource: { text: 'The source of this page cannot be shown', tone: 'info' }
 } as const satisfies Record<string, ToastText>
 
 export type ToastCode = keyof typeof TOAST_TEXT
@@ -44,27 +45,39 @@ export const isToastCode = (value: unknown): value is ToastCode => typeof value 
 /** How long a toast that is not sticky stays. */
 export const TOAST_MS = 3000
 
+/** How long a toast that offers something to do stays: long enough to reach it by keyboard or a slow pointer. */
+export const TOAST_ACTION_MS = 8000
+
+/** The label of the link a saved file's toast carries, which shows the file in its folder. */
+export const REVEAL_LABEL = 'Show in folder'
+
 /** The command a code's link runs, if it has one. */
 export function toastAction (code: ToastCode): CommandId | undefined {
   const entry: ToastText = TOAST_TEXT[code]
   return entry.action?.run
 }
 
-export function toastView (code: ToastCode, name?: string): ToastView {
+export function toastView (code: ToastCode, name?: string, reveals = false): ToastView {
   const entry: ToastText = TOAST_TEXT[code]
+  const action = entry.action?.label ?? (reveals ? REVEAL_LABEL : undefined)
   return {
     text: entry.text,
     tone: entry.tone,
     sticky: entry.sticky === true,
     ...(name === undefined ? {} : { name }),
-    ...(entry.action === undefined ? {} : { action: entry.action.label })
+    ...(action === undefined ? {} : { action })
   }
 }
 
-/** Shows `code` over the page, replacing whatever toast is up. Never throws: a message is not worth failing the work it reports. */
-export function showToast (window: ShellWindow, code: ToastCode, name?: string): void {
+/** Shows `code` over the page, replacing whatever toast is up. `revealPath` is the file a saved toast offers to show
+ * in its folder. Never throws: a message is not worth failing the work it reports. */
+export function showToast (window: ShellWindow, code: ToastCode, name?: string, revealPath?: string): void {
   try {
-    window.overlays.show('toast', undefined, { code, ...(name === undefined ? {} : { name }) })
+    window.overlays.show('toast', undefined, {
+      code,
+      ...(name === undefined ? {} : { name }),
+      ...(revealPath === undefined ? {} : { revealPath })
+    })
   } catch (error) {
     console.error('[page-tools] could not show a toast', error)
   }

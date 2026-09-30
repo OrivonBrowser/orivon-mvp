@@ -163,3 +163,27 @@ future reader will actually hit them, not just here:
 `dns` is unchanged by this approval: still a broker-capability question
 (`k-rpc-socket` needs real `dns.lookup`), not a package this review could answer, and not
 addressed in this lane.
+
+## Later additions
+
+A dependency added after the review above gets one row here, with the same columns, and the
+alternatives it beat.
+
+| Package | Provides | Version | License | `.wasm` | Last publish | Maintenance | Pure JS or WebAssembly | Own transitive deps | `check:natives` |
+|---|---|---|---|---|---|---|---|---|---|
+| `@sqlite.org/sqlite-wasm` | `node:sqlite` (`src/shim/sqlite/`) | 3.53.4-build1, pinned exactly | Apache-2.0 (SQLite itself is public domain) | `sqlite3.wasm`, 868,907 bytes (403,423 gzipped) | 2026-09-08 | Published by the SQLite project's own WebAssembly effort, one release per SQLite release | WebAssembly plus JavaScript glue | 0 | Pass |
+
+**Why this package rather than `sql.js` or `wa-sqlite`.** `node:sqlite`'s `DatabaseSync` is
+synchronous and a database must be a real file with page-level I/O, so each commit is durable
+and a large database is never rewritten whole. `@sqlite.org/sqlite-wasm` is the official build:
+its C API is synchronous and it exposes a JavaScript VFS interface (`sqlite3.vfs.installVfs`,
+the `sqlite3_vfs` and `sqlite3_io_methods` struct bindings) over which the shim's VFS is
+written. `sql.js` keeps its database in a private in-memory filesystem and persists by exporting
+the whole image, so every commit would rewrite the file. `wa-sqlite` has a VFS interface too,
+but its API is shaped as promises, which a synchronous `DatabaseSync` cannot wait on.
+
+**The pin is exact** because the shim leans on the package's internals: `tests/engine-surface.test.ts`
+checks every member `engine-types.ts` names, and fails by name on an upgrade that drops one. The
+package's `node` export condition selects a build only Node can run; a bundle for an app must
+resolve it with the `browser` or `import` condition.
+

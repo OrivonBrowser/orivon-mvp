@@ -37,16 +37,38 @@ declare global {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 
-export function createOverlay (bridge: OverlayBridge): Overlay {
+/** An overlay that can also be handed events main held while the page loaded, which arrive with the first show. */
+export interface ReplayableOverlay extends Overlay {
+  replay: (events: readonly unknown[]) => void
+}
+
+export function createOverlay (bridge: OverlayBridge): ReplayableOverlay {
+  const listeners = new Set<(event: unknown) => void>()
   return {
     name: bridge.name,
     platform: bridge.platform,
     request: async <T>(command: unknown): Promise<T> => await bridge.request(command) as T,
-    onEvent: (listener) => bridge.onEvent((message) => {
-      if (isRecord(message) && message['type'] === 'event') listener(message['event'])
-    }),
+    onEvent: (listener) => {
+      listeners.add(listener)
+      const unsubscribe = bridge.onEvent((message) => {
+        if (isRecord(message) && message['type'] === 'event') listener(message['event'])
+      })
+      return () => { listeners.delete(listener); unsubscribe() }
+    },
+    replay: (events) => {
+      for (const event of events) {
+        for (const listener of [...listeners]) {
+          try { listener(event) } catch (error) { console.error(`[overlay] "${bridge.name}" failed on a held event`, error) }
+        }
+      }
+    },
     close: () => { bridge.close('request') }
   }
+}
+
+/** The events a `ready` reply carries, in the order they were sent. */
+export function readyEvents (reply: unknown): unknown[] {
+  return isRecord(reply) && Array.isArray(reply['events']) ? reply['events'] : []
 }
 
 /** The payload of a `{ type: 'show', payload }` message, or of a `ready` reply that carries a waiting show. */

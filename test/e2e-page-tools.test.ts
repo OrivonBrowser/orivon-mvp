@@ -114,6 +114,12 @@ async function toastText (app: App): Promise<string | null> {
 
 const waitForToast = async (app: App, text: string): Promise<boolean> => await waitFor(async () => (await toastText(app))?.startsWith(text) === true)
 
+/** An overlay's page once Playwright lists it: the host can report the view shown a moment before `app.windows()` does. */
+async function overlayPage (app: App, name: string): Promise<Page> {
+  expect(await waitFor(() => app.windows().some((w) => w.url().includes(`overlay=${name}`)))).toBe(true)
+  return app.windows().find((w) => w.url().includes(`overlay=${name}`)) as Page
+}
+
 async function menuPage (app: App, chrome: Page): Promise<Page> {
   await chrome.click('#menu')
   expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
@@ -165,7 +171,7 @@ async function shoot (app: App, page: Page, name: string): Promise<void> {
 it('Ctrl+S saves the page complete, or as one .mhtml file by its extension, and names it in a toast', async () => {
   const { app, chrome } = await launched(`${origin}/`)
   try {
-    // The file name comes from the tab's title, which arrives after the address.
+    // The suggested name comes from the title, which arrives after the address.
     expect((await waitForTab(chrome, { title: 'Fixture: page tools' })).ok).toBe(true)
     const html = join(outDir, 'page.html')
     await stubSaveDialog(app, html)
@@ -316,7 +322,7 @@ it('with a printer, print is called with backgrounds on and the system dialog', 
   }
 }, TEST_TIMEOUT_MS)
 
-it('the toast never takes focus and is gone after three seconds', async () => {
+it('the toast never takes focus, and a saved one that offers to show the file stays eight seconds', async () => {
   const { app } = await launched(`${origin}/`)
   try {
     await stubSaveDialog(app, join(outDir, 'toast.html'))
@@ -324,9 +330,13 @@ it('the toast never takes focus and is gone after three seconds', async () => {
     expect(await waitForToast(app, 'Saved')).toBe(true)
     const role = await (toastPage(app) as Page).locator('.toast').getAttribute('role')
     expect(role).toBe('status')
+    // The link that shows the saved file in its folder (never pressed here: it would open a file manager) and a way to dismiss.
+    expect(await (toastPage(app) as Page).locator('.toast .link-btn').textContent()).toBe('Show in folder')
+    expect(await (toastPage(app) as Page).locator('.toast .toast-dismiss').getAttribute('aria-label')).toBe('Dismiss')
     const shownAt = Date.now()
-    expect(await waitFor(async () => !(await popoverShown(app, 'overlay=toast')), 6000)).toBe(true)
-    expect(Date.now() - shownAt).toBeGreaterThan(2000)
+    expect(await waitFor(async () => !(await popoverShown(app, 'overlay=toast')), 12_000)).toBe(true)
+    // Longer than a toast with nothing to do, which goes after three seconds.
+    expect(Date.now() - shownAt).toBeGreaterThan(6000)
   } finally {
     await closeElectron(app)
   }
@@ -339,7 +349,7 @@ it('Ctrl+Shift+S opens the sheet; the visible area is saved at the page\'s own w
     const view = await evaluateRetrying(site, () => ({ width: innerWidth, height: innerHeight, page: document.documentElement.scrollHeight }))
     await pressKey(app, origin, 'S', ['control', 'shift'])
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
-    const sheet = app.windows().find((w) => w.url().includes('overlay=screenshot')) as Page
+    const sheet = await overlayPage(app, 'screenshot')
     await sheet.waitForSelector('.shot')
     expect(await sheet.locator('h1.sheet-title').innerText()).toBe('Take a screenshot')
     expect(await sheet.locator('.btn.primary').innerText()).toBe('Copy')
@@ -357,7 +367,7 @@ it('Ctrl+Shift+S opens the sheet; the visible area is saved at the page\'s own w
 
     await pressKey(app, origin, 'S', ['control', 'shift'])
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
-    const again = app.windows().find((w) => w.url().includes('overlay=screenshot')) as Page
+    const again = await overlayPage(app, 'screenshot')
     await again.waitForSelector('.shot')
     await again.getByRole('button', { name: 'Full page' }).click()
     expect(await again.getByRole('button', { name: 'Full page' }).getAttribute('aria-pressed')).toBe('true')
@@ -389,7 +399,7 @@ it('Copy puts the picture on the clipboard, Escape and the shortcut close the sh
     }, origin)
     await pressKey(app, origin, 'S', ['control', 'shift'])
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
-    const sheet = app.windows().find((w) => w.url().includes('overlay=screenshot')) as Page
+    const sheet = await overlayPage(app, 'screenshot')
     await sheet.waitForSelector('.shot')
     const full = sheet.getByRole('button', { name: 'Full page' })
     expect(await full.isDisabled()).toBe(true)
@@ -408,7 +418,7 @@ it('Copy puts the picture on the clipboard, Escape and the shortcut close the sh
 
     await pressKey(app, origin, 'S', ['control', 'shift'])
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
-    const third = app.windows().find((w) => w.url().includes('overlay=screenshot')) as Page
+    const third = await overlayPage(app, 'screenshot')
     await third.waitForSelector('.shot')
     await third.getByRole('button', { name: 'Copy' }).click()
     expect(await waitForToast(app, 'Screenshot copied')).toBe(true)
@@ -428,7 +438,7 @@ it('the sheet is operated from the keyboard: the arrows choose the area and Ente
     })
     await pressKey(app, origin, 'S', ['control', 'shift'])
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
-    const sheet = app.windows().find((w) => w.url().includes('overlay=screenshot')) as Page
+    const sheet = await overlayPage(app, 'screenshot')
     await sheet.waitForSelector('.shot')
     await sheet.getByRole('button', { name: 'Visible area' }).focus()
     await sheet.keyboard.press('ArrowRight')

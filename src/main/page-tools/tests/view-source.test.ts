@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { openViewSource } from '../view-source.js'
+import { canViewSource, openViewSource } from '../view-source.js'
 import type { SourceTabs } from '../view-source.js'
 
 function tabs (record: Record<string, unknown> | null = { partition: undefined, internalPage: null, isDashboardTab: false }, active: string | null = 'b'): SourceTabs & { openTrusted: ReturnType<typeof vi.fn>, moveTab: ReturnType<typeof vi.fn> } {
@@ -41,5 +41,19 @@ describe('openViewSource', () => {
     manager.openTrusted.mockReturnValue(undefined)
     expect(openViewSource(manager, 'https://a.example/')).toBe(false)
     expect(manager.moveTab).not.toHaveBeenCalled()
+  })
+})
+
+describe('canViewSource', () => {
+  const plain = { partition: undefined, internalPage: null, isDashboardTab: false }
+
+  it('is true for a web page in an ordinary tab, and false for anything openViewSource refuses', () => {
+    expect(canViewSource(plain, 'https://a.example/')).toBe(true)
+    expect(canViewSource({ ...plain, partition: 'persist:app' }, 'https://a.example/')).toBe(false)
+    expect(canViewSource({ ...plain, internalPage: 'history' }, 'https://a.example/')).toBe(false)
+    expect(canViewSource({ ...plain, isDashboardTab: true }, 'https://a.example/')).toBe(false)
+    expect(canViewSource(undefined, 'https://a.example/')).toBe(false)
+    expect(canViewSource(plain, 'file:///etc/passwd')).toBe(false)
+    expect(canViewSource(plain, 'orivon://settings/')).toBe(false)
   })
 })

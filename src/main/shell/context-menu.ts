@@ -10,6 +10,7 @@ import {
   DEFAULT_CONTEXT, editableGroup, imageGroup, linkGroup, mediaGroup, pageGroup, selectionGroup, spellingGroup
 } from './context-menu-groups.js'
 import type { ContextMenuActions, ContextMenuContext, MenuParams } from './context-menu-groups.js'
+import { togglePictureInPictureAt } from '../page-tools/pip.js'
 import { searchUrlFor } from '../browsing/search-engines.js'
 
 export type { ContextMenuActions, ContextMenuContext } from './context-menu-groups.js'
@@ -49,6 +50,9 @@ export function contextMenuTemplate (
 
 export interface ContextMenuHost {
   readonly window: BaseWindow
+  /** A kiosk opens no tab, window or private session from a menu: there is no strip to reach them, and a second
+   * browser would bring the chrome the kiosk hides. */
+  readonly kiosk?: boolean
   openInNewTab: (url: string) => void
   openInSplit?: (url: string) => void
   openInWindow?: (url: string) => void
@@ -57,7 +61,7 @@ export interface ContextMenuHost {
   /** Opens an address in a tab put in front: what a search of the selection does. */
   openInFront?: (url: string) => void
   /** Present for a tab's menu and absent for the chrome's, whose menu holds only edit items. `bare`: an internal page or the new-tab page. */
-  readonly page?: { readonly bare: () => boolean }
+  readonly page?: { readonly bare: () => boolean, readonly viewSource?: () => boolean }
   /** What the menu reads: the search engine and the spelling switch. Absent in tests. */
   readonly services?: Pick<ShellServices, 'settings'>
   /** Runs a command on the window: Save, Print, Screenshot, View Source, Picture in Picture. */
@@ -75,7 +79,9 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
   // and a call on a destroyed webContents throws in the main process.
   const onTab = (act: () => void) => () => { if (!wc.isDestroyed()) act() }
   const settings = host.services?.settings
-  const { openInSplit, openInWindow, openInPrivate, openInFront, runCommand, pasteAndGo } = host
+  const kiosk = host.kiosk === true
+  const { runCommand, pasteAndGo } = host
+  const [openInSplit, openInWindow, openInPrivate, openInFront] = kiosk ? [] : [host.openInSplit, host.openInWindow, host.openInPrivate, host.openInFront]
   const actions: ContextMenuActions = {
     cut: onTab(() => { wc.cut() }),
     copy: onTab(() => { wc.copy() }),
@@ -85,7 +91,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     redo: onTab(() => { wc.redo() }),
     pasteAndMatchStyle: onTab(() => { wc.pasteAndMatchStyle() }),
     copyText: (text) => { clipboard.writeText(text) },
-    openInNewTab: host.openInNewTab,
+    ...(kiosk ? {} : { openInNewTab: host.openInNewTab }),
     ...(openInSplit === undefined ? {} : { openInSplit }),
     ...(openInWindow === undefined ? {} : { openInWindow }),
     ...(openInPrivate === undefined ? {} : { openInPrivate }),
@@ -109,15 +115,22 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     }
     actions.replaceMisspelling = (word) => { onTab(() => { wc.replaceMisspelling(word) })() }
     actions.addToDictionary = (word) => { onTab(() => { wc.session.addWordToSpellCheckerDictionary(word) })() }
-    if (runCommand !== undefined) actions.run = runCommand
+    if (runCommand !== undefined) {
+      actions.run = runCommand
+      // The video clicked, else the page's main one.
+      actions.pipAt = (x, y) => {
+        void togglePictureInPictureAt(params.frame, x, y).then((done) => { if (!done) runCommand('page.pip') })
+      }
+    }
     context.bare = host.page.bare()
+    context.viewSource = host.page.viewSource?.() ?? true
     if (settings !== undefined) {
       context.spellcheckOn = settings.get('spellcheck.enabled')
       context.engineLabel = engineLabelFor(settings.get('search.engine'))
       actions.toggleSpellcheck = () => { settings.set('spellcheck.enabled', !context.spellcheckOn) }
-      actions.search = (query) => {
-        const url = searchUrlFor(settings.get('search.engine'), settings.get('search.customUrl'), query)
-        ;(openInFront ?? host.openInNewTab)(url)
+      const open = openInFront ?? (kiosk ? undefined : host.openInNewTab)
+      if (open !== undefined) {
+        actions.search = (query) => { open(searchUrlFor(settings.get('search.engine'), settings.get('search.customUrl'), query)) }
       }
     }
   }

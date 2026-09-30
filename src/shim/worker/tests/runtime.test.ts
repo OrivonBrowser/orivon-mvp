@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { hasJspi, jspiWebAssembly } from '../../wasi/tests/support/jspi.js'
+import { napiAddon } from '../../addon/tests/support/napi-addons.js'
 import { echoProgram, failingProgram, reportWrittenProgram, trappingProgram } from '../../wasi/tests/support/programs.js'
 import { instantiateFrom, tourFixture } from '../../wasi-p2/tests/support/component-fixture.js'
 import { type OrivonServer, serveOrivon } from '../orivon-server.js'
@@ -189,6 +190,109 @@ describe('runFork', () => {
     expect(parent.posts).toContainEqual({ type: 'ipc', message: { echo: { hello: 1 }, argv: ['node', '/child.js', 'a'], mode: 'test' } })
   })
 
+  it('sends console output to the parent as stdout and stderr, and keeps the Worker\'s own console', async () => {
+    const scope = fakeScope()
+    const own: string[] = []
+    const record = (name: string) => (...args: unknown[]) => { own.push(`${name}:${args.join(' ')}`) }
+    const console = { log: record('log'), info: record('info'), debug: record('debug'), warn: record('warn'), error: record('error'), trace: record('trace') }
+    Object.assign(scope, { console })
+    const parent = fakeParent()
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      console.log('listening on %s:%d', '127.0.0.1', 9000)
+      console.info({ a: 1 })
+      console.warn('careful')
+      console.error(new Error('boom').message, 7)
+    })
+    expect(output(parent, 'stdout')).toBe("listening on 127.0.0.1:9000\n{ a: 1 }\n")
+    expect(output(parent, 'stderr')).toBe('careful\nboom 7\n')
+    expect(own).toEqual(['log:listening on %s:%d 127.0.0.1 9000', 'info:[object Object]', 'warn:careful', 'error:boom 7'])
+  })
+
+  it('routes every console method through process.stdout.write and process.stderr.write, looked up as each call happens', async () => {
+    const scope = fakeScope()
+    const own: string[] = []
+    const console: Record<string, unknown> = { log: (...args: unknown[]) => own.push(`log:${args.join(' ')}`) }
+    Object.assign(scope, { console })
+    const parent = fakeParent()
+    const patched: string[] = []
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const methods = console as Record<string, (...args: unknown[]) => void>
+      methods.dir?.({ a: { b: { c: 1 } } }, { depth: 0 })
+      methods.table?.([{ a: 1 }])
+      methods.assert?.(false, 'nope')
+      methods.group?.('outer')
+      methods.log?.('inside')
+      methods.groupEnd?.()
+      methods.count?.('hits')
+      const proc = scope.process as unknown as { stdout: { write: (chunk: string) => boolean } }
+      const real = proc.stdout.write
+      proc.stdout.write = (chunk: string) => { patched.push(chunk); return true }
+      methods.log?.('patched')
+      proc.stdout.write = real
+    })
+    expect(patched).toEqual(['patched\n'])
+    expect(output(parent, 'stdout')).toBe([
+      '{ a: [Object] }',
+      '┌─────────┬───┐',
+      '│ (index) │ a │',
+      '├─────────┼───┤',
+      '│ 0       │ 1 │',
+      '└─────────┴───┘',
+      'outer',
+      '  inside',
+      'hits: 1',
+      ''
+    ].join('\n'))
+    expect(output(parent, 'stderr')).toBe('Assertion failed: nope\n')
+    expect(own).toEqual(['log:inside', 'log:patched'])
+  })
+
+  it('installs a global require that esbuild\'s __require finds: a builtin by name, MODULE_NOT_FOUND for any other bare name', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    let seen: { path: unknown, code: unknown } | undefined
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const require = (scope as unknown as { require: (id: string) => unknown }).require
+      let code: unknown
+      try { require('bufferutil') } catch (error) { code = (error as { code?: string }).code }
+      seen = { path: typeof (require('path') as { join: unknown }).join, code }
+    })
+    expect(seen).toEqual({ path: 'function', code: 'MODULE_NOT_FOUND' })
+  })
+
+  it('loads a .node path through the global require as its WebAssembly addon, as module.createRequire does', async () => {
+    const addon = napiAddon()
+    class FakeRequest {
+      status = 0
+      response: ArrayBuffer | null = null
+      responseType = ''
+      #url = ''
+      open (_method: string, url: string): void { this.#url = url }
+      overrideMimeType (): void {}
+      send (): void {
+        const found = new URL(this.#url).pathname === '/orivon/app/native/addon.node.wasm'
+        this.status = found ? 200 : 404
+        this.response = found ? addon.slice().buffer : null
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeRequest)
+    vi.stubGlobal('location', { origin: 'https://app.test' })
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const scope = fakeScope()
+    const parent = fakeParent()
+    let answer: unknown
+    let resolved: unknown
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const require = (scope as unknown as { require: ((id: string) => { answer: unknown }) & { resolve: (id: string) => string } }).require
+      answer = require('./native/addon.node').answer
+      resolved = require.resolve('./native/addon.node')
+    })
+    write.mockRestore()
+    vi.unstubAllGlobals()
+    expect(answer).toBe(42)
+    expect(resolved).toBe('/orivon/app/native/addon.node')
+  })
+
   it('holds a message sent while the module loads, and delivers it once the module has run', async () => {
     const scope = fakeScope()
     const parent = fakeParent()
@@ -217,12 +321,39 @@ describe('runFork', () => {
     expect(parent.posts).toContainEqual({ type: 'ipc', message: { configuredWith: 'config' } })
   })
 
-  it('ends on its own with code 0 once the parent disconnects and nothing is pending, after beforeExit', async () => {
+  it('reports the Node version a child claims, since a package run there reads process.versions.node', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    let seen: { version: string, versions: Record<string, string>, release: { name: string } } | undefined
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      seen = scope.process as unknown as typeof seen
+    })
+    expect(seen?.versions['node']).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(seen?.version).toBe(`v${seen?.versions['node'] ?? ''}`)
+    expect(seen?.release.name).toBe('node')
+  })
+
+  it('ends on its own with code 0, after beforeExit, when nothing is pending and nothing listens on the channel, as a Node child does', async () => {
     const scope = fakeScope()
     const parent = fakeParent()
     const seen: string[] = []
     await runFork(forkStart(await orivonPort()), parent, scope, async () => {
       const proc = scope.process as unknown as { on: (event: string, listener: (code: unknown) => void) => void }
+      proc.on('beforeExit', () => seen.push('beforeExit'))
+      proc.on('exit', () => seen.push('exit'))
+    })
+    await vi.waitFor(() => { expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 0, signal: null }) })
+    expect(seen).toEqual(['beforeExit', 'exit'])
+    expect(scope.closed()).toBe(true)
+  })
+
+  it('stays alive while a \'message\' listener holds the channel, and ends once the parent disconnects', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    const seen: string[] = []
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const proc = scope.process as unknown as { on: (event: string, listener: (code: unknown) => void) => void }
+      proc.on('message', () => {})
       proc.on('beforeExit', () => seen.push('beforeExit'))
       proc.on('exit', () => seen.push('exit'))
     })
@@ -232,6 +363,22 @@ describe('runFork', () => {
     await vi.waitFor(() => { expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 0, signal: null }) })
     expect(seen).toEqual(['beforeExit', 'exit'])
     expect(scope.closed()).toBe(true)
+  })
+
+  it('lets go of the channel when the last \'message\' listener is removed', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const proc = scope.process as unknown as { on: (event: string, listener: () => void) => void, off: (event: string, listener: () => void) => void }
+      const listener = (): void => {}
+      proc.on('message', listener)
+      proc.on('disconnect', listener)
+      proc.off('message', listener)
+      setTimeout(() => { proc.off('disconnect', listener) }, 10)
+    })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(parent.posts.some((post) => post.type === 'exit')).toBe(false)
+    await vi.waitFor(() => { expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 0, signal: null }) })
   })
 
   it('stays alive after disconnecting while a timer is pending, and ends when it fires', async () => {

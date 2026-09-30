@@ -76,18 +76,22 @@ describe('createOverlayView', () => {
     expect((state.contents?.['ipc'] as { handle: ReturnType<typeof vi.fn> }).handle).toHaveBeenCalledTimes(1)
   })
 
-  it('hands the new webContents to the caller before its page loads', () => {
-    const onCreated = vi.fn()
-    createOverlayView({ ...spec(), onCreated })
-    expect(onCreated).toHaveBeenCalledWith(state.contents)
-    expect((state.contents?.['loadURL'] as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]).toBeGreaterThan(onCreated.mock.invocationCallOrder[0] as number)
-  })
-
   it('reports blur and focus to the host', () => {
     const s = spec()
     createOverlayView(s)
     const on = state.contents?.['on'] as ReturnType<typeof vi.fn>
     expect(on.mock.calls.map(([event]) => event)).toEqual(expect.arrayContaining(['blur', 'focus']))
+  })
+
+  it('reports a blur after the native call that raised it has returned', async () => {
+    const onBlur = vi.fn()
+    createOverlayView({ ...spec(), onBlur })
+    const on = state.contents?.['on'] as ReturnType<typeof vi.fn>
+    const raise = on.mock.calls.find(([event]) => event === 'blur')?.[1] as () => void
+    raise()
+    expect(onBlur).not.toHaveBeenCalled()
+    await new Promise((resolve) => { setImmediate(resolve) })
+    expect(onBlur).toHaveBeenCalledTimes(1)
   })
 
   it('reports a renderer that died to the host', () => {

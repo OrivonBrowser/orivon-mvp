@@ -5,6 +5,7 @@
 // bump, or a new module-map.ts specifier).
 
 import { readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { SHIM_MODULE_MAP } from '../module-map.js'
@@ -19,7 +20,8 @@ interface RawExports { nodeVersion: string, modules: Record<string, { functions:
 async function collectFreshExports (): Promise<RawExports> {
   const modules: RawExports['modules'] = {}
   for (const specifier of NODE_SPECIFIERS) {
-    const mod = await import(/* @vite-ignore */ `node:${specifier}`) as Record<string, unknown>
+    // require(), not import(): an ES namespace adds `default`, which no CommonJS consumer reads as a member.
+    const mod = createRequire(import.meta.url)(`node:${specifier}`) as Record<string, unknown>
     const keys = Object.keys(mod).sort()
     modules[specifier] = {
       functions: keys.filter((key) => typeof mod[key] === 'function'),

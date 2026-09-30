@@ -171,7 +171,7 @@ function boot (runtime: Runtime): void {
     // filesystem itself has to announce.
     shell.profiles.startWatching()
     app.once('will-quit', () => { shell.profiles.stopWatching() })
-    shell.commands.bind({ services: shell, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
+    shell.commands.bind({ services: shell, openWindow: (options) => { createShellWindow(ctx, shell, options) }, displays: () => screen.getAllDisplays(), quit: () => { app.quit() } })
     installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
     installZoom(app, shell.windows, shell.zoom)
     installSpellcheck(app, shell.windows, shell.settings)
@@ -213,8 +213,9 @@ function boot (runtime: Runtime): void {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
         const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
-        afterFirst = plan.after
-        createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
+        const after = plan.after
+        afterFirst = after === undefined ? undefined : () => { after(firstWindow) }
       } finally {
         markStarted()
       }

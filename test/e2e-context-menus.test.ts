@@ -23,6 +23,8 @@ const SHOTS = process.env['ORIVON_SHOTS_DIR']
 let server: Server
 let origin = ''
 let hits = 0
+/** Requests to /pwned: what a script that ran from pasted text would leave behind. */
+let pwned = 0
 let scratch = ''
 
 beforeAll(async () => {
@@ -34,6 +36,7 @@ beforeAll(async () => {
       return
     }
     response.setHeader('content-type', 'text/html')
+    if (request.url === '/pwned') pwned += 1
     if (request.url === '/') {
       hits += 1
       response.end(`<!doctype html><title>Fixture</title><body style="margin:0">
@@ -253,15 +256,22 @@ it('gives the address bar Paste and Go, which submits the clipboard text as type
   }
 }, TEST_TIMEOUT_MS)
 
-it('does nothing when Paste and Go finds text that is not an address it may load', async () => {
+it('never runs a script pasted into Paste and Go, and leaves the tab on a page that cannot run it', async () => {
   const { app, chrome } = await launched()
   try {
     await visit(app, chrome, '/')
-    await app.evaluate(({ clipboard }) => { clipboard.readText = async () => 'javascript:alert(1)' }, undefined)
+    pwned = 0
+    await app.evaluate(({ clipboard }, url) => { clipboard.readText = async () => `javascript:fetch('${url}')` }, `${origin}/pwned`)
     await rightClick(app, chrome, '#address')
     await choose(app, 'Paste and Go')
     await new Promise((resolve) => setTimeout(resolve, 1_500))
-    expect((await tabUrls(app)).some((url) => url.startsWith('javascript:'))).toBe(false)
+    // Nothing ran: a script that had would have reached this server.
+    expect(pwned).toBe(0)
+    const urls = await tabUrls(app)
+    expect(urls.some((url) => url.startsWith('javascript:'))).toBe(false)
+    // The refused text leaves the tab on a blank page, or where it was: never on one that took the text for an address.
+    const pages = urls.filter((url) => /^(https?:|about:|javascript:)/.test(url))
+    expect(pages.every((url) => url === 'about:blank' || url.startsWith(origin)), pages.join(' ')).toBe(true)
   } finally {
     await closeElectron(app)
   }

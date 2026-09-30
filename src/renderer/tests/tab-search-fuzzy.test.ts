@@ -44,9 +44,10 @@ describe('score', () => {
     expect(score('a', 'beta')?.kind).toBe('substring')
   })
 
-  it('needs at least two letters to match by order alone', () => {
-    expect(score('ao', 'alpha report')).not.toBeNull()
-    expect(score('xy', 'alpha')).toBeNull()
+  it('needs at least three letters to match by order alone', () => {
+    expect(score('aor', 'alpha report')).not.toBeNull()
+    expect(score('ao', 'alpha report')).toBeNull()
+    expect(score('xyz', 'alpha')).toBeNull()
   })
 
   it('matches everything, with no ranges, for an empty query', () => {
@@ -82,8 +83,14 @@ describe('matchRow', () => {
     expect(matchRow('alpha gamma', 'Alpha report', '')).toBeNull()
   })
 
+  it('says when a word matched only as letters in order', () => {
+    expect(matchRow('bta', 'Beta', 'x')?.loose).toBe(true)
+    expect(matchRow('bet', 'Beta', 'x')?.loose).toBe(false)
+    expect(matchRow('bta', 'Notes', 'beta.example')?.loose ?? false).toBe(false)
+  })
+
   it('matches everything for a blank query', () => {
-    expect(matchRow('  ', 'x', 'y')).toEqual({ score: 0, titleRanges: [], hostRanges: [] })
+    expect(matchRow('  ', 'x', 'y')).toEqual({ score: 0, loose: false, titleRanges: [], hostRanges: [] })
   })
 })
 

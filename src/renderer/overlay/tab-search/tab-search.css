@@ -59,9 +59,13 @@ body[data-overlay='tab-search'] .item-meta {
   gap: 4px;
   overflow: visible;
 }
-body[data-overlay='tab-search'] .ts-state { display: inline-flex; color: var(--wink-dim); }
-body[data-overlay='tab-search'] .ts-state svg { width: 12px; height: 12px; }
-body[data-overlay='tab-search'] .ts-ago { color: var(--wink-dim); }
+/* Each mark sits in a 24px box like the close button, so the marks, the chip and the close line up in one column. */
+body[data-overlay='tab-search'] .ts-state { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; color: var(--wink-dim); }
+body[data-overlay='tab-search'] .ts-state svg { width: 16px; height: 16px; }
+/* A hit is tinted as well as weightier: bold alone does not show on the selected row's own tint. */
+body[data-overlay='tab-search'] mark { background: color-mix(in srgb, var(--waccent-text) 18%, transparent); color: inherit; font-weight: 600; border-radius: 2px; }
+/* A closed row has no close button; it keeps that column empty so its time ends where an open row's marks do. */
+body[data-overlay='tab-search'] .ts-ago { color: var(--wink-dim); margin-right: 28px; }
 
 body[data-overlay='tab-search'] .ts-close { width: 24px; height: 24px; opacity: 0; }
 body[data-overlay='tab-search'] .listbox-item:hover .ts-close,

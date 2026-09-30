@@ -2,7 +2,7 @@
 // accepted. The store validates against this and the Settings page is told
 // this, so the page cannot offer a value the store would refuse and a file
 // edited by hand cannot make one up.
-import { isAddressList, isEmptyOrAddress } from './address-checks.js'
+import { isAddressList, isEmptyOrAddress, MAX_LISTED_ADDRESSES } from './address-checks.js'
 import { isEmptyOrAbsolutePath } from './path-checks.js'
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
@@ -53,7 +53,8 @@ const SPECS = {
   'developer.dock': { kind: 'enum', options: ['right', 'bottom', 'undocked'], default: 'right' },
   // What a launch opens: the new-tab page, the last session, or a list of pages (one address per line, at most eight).
   'startup.mode': { kind: 'enum', options: ['newTab', 'continue', 'pages'], default: 'newTab' },
-  'startup.pages': { kind: 'text', default: '', maxLength: 4096, check: isAddressList },
+  // Room for the most addresses at their longest (2048 each), one per line.
+  'startup.pages': { kind: 'text', default: '', maxLength: MAX_LISTED_ADDRESSES * 2049, check: isAddressList },
   // Empty means the new-tab page.
   'home.url': { kind: 'text', default: '', maxLength: 2048, check: isEmptyOrAddress },
   'toolbar.home': { kind: 'bool', default: false },

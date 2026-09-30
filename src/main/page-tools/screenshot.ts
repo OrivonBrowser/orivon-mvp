@@ -3,11 +3,17 @@
 // every outcome, so a page the person later opens developer tools on is never found already claimed.
 import { withTimeout } from './with-timeout.js'
 
-/** Taller than this many device pixels and the capture is cut: larger images fail to encode. */
+/** Taller or wider than this many device pixels and the capture is cut: larger images fail to encode. */
 export const MAX_FULL_PAGE_PIXELS = 16_384
+/** The most device pixels a full-page picture holds in all: a page that is both tall and wide is cut before the bitmap gets huge. */
+export const MAX_FULL_PAGE_AREA = 64_000_000
+/** The pixel density is measured on this side, never asked of the page, and kept to what a screen and a zoom can make. */
+const MIN_DENSITY = 0.25
+const MAX_DENSITY = 8
 
 export interface CaptureContents {
   capturePage: () => Promise<{ toPNG: () => Uint8Array, isEmpty: () => boolean }>
+  getZoomFactor: () => number
   isDevToolsOpened: () => boolean
   isCrashed: () => boolean
   readonly debugger: {
@@ -31,12 +37,25 @@ const RETRY_WAIT_MS = 300
 /** The debugger is one claim per page: developer tools hold it, so a full-page capture has to wait for them to close. */
 export const fullPageAvailable = (wc: Pick<CaptureContents, 'isDevToolsOpened' | 'isCrashed'>): boolean => !wc.isDevToolsOpened() && !wc.isCrashed()
 
-/** The size to capture, in CSS pixels, cut so the picture is at most `MAX_FULL_PAGE_PIXELS` tall at the page's pixel density. */
+/**
+ * The size to capture, in CSS pixels, cut so the picture is at most `MAX_FULL_PAGE_PIXELS` on a side and
+ * `MAX_FULL_PAGE_AREA` in all, at the pixel density of the page.
+ */
 export function fullPageClip (content: { width: number, height: number }, density: number): { width: number, height: number, truncated: boolean } {
-  const scale = Number.isFinite(density) && density > 0 ? density : 1
-  const limit = Math.max(1, Math.floor(MAX_FULL_PAGE_PIXELS / scale))
-  const height = Math.max(1, Math.ceil(content.height))
-  return { width: Math.max(1, Math.ceil(content.width)), height: Math.min(height, limit), truncated: height > limit }
+  const scale = Number.isFinite(density) && density > 0 ? Math.min(MAX_DENSITY, Math.max(MIN_DENSITY, density)) : 1
+  const side = Math.max(1, Math.floor(MAX_FULL_PAGE_PIXELS / scale))
+  const wanted = { width: Math.max(1, Math.ceil(content.width)), height: Math.max(1, Math.ceil(content.height)) }
+  const width = Math.min(wanted.width, side)
+  const tallest = Math.max(1, Math.min(side, Math.floor(MAX_FULL_PAGE_AREA / (width * scale * scale))))
+  const height = Math.min(wanted.height, tallest)
+  return { width, height, truncated: height < wanted.height || width < wanted.width }
+}
+
+/** Device pixels per CSS pixel of the page: the page's zoom on this screen's scale, both known here. */
+export function densityOf (wc: Pick<CaptureContents, 'getZoomFactor'>, displayScale: number): number {
+  const zoom = wc.getZoomFactor()
+  const density = (Number.isFinite(zoom) && zoom > 0 ? zoom : 1) * (Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1)
+  return Math.min(MAX_DENSITY, Math.max(MIN_DENSITY, density))
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
@@ -57,7 +76,8 @@ export async function captureVisible (wc: CaptureContents, wait: (ms: number) =>
   throw failure
 }
 
-export async function captureFullPage (wc: CaptureContents): Promise<Shot> {
+/** `displayScale` is the scale factor of the screen the window is on. */
+export async function captureFullPage (wc: CaptureContents, displayScale = 1): Promise<Shot> {
   if (!fullPageAvailable(wc)) throw new Error('the page cannot be captured whole while developer tools are open')
   wc.debugger.attach('1.3')
   try {
@@ -68,9 +88,7 @@ export async function captureFullPage (wc: CaptureContents): Promise<Shot> {
     const metrics = await send('Page.getLayoutMetrics')
     const size = isRecord(metrics['cssContentSize']) ? metrics['cssContentSize'] : metrics['contentSize']
     if (!isRecord(size) || typeof size['width'] !== 'number' || typeof size['height'] !== 'number') throw new Error('the page reported no size')
-    const probe = await send('Runtime.evaluate', { expression: 'window.devicePixelRatio', returnByValue: true })
-    const value = isRecord(probe['result']) ? probe['result']['value'] : undefined
-    const clip = fullPageClip({ width: size['width'], height: size['height'] }, typeof value === 'number' ? value : 1)
+    const clip = fullPageClip({ width: size['width'], height: size['height'] }, densityOf(wc, displayScale))
     const shot = await send('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: true,

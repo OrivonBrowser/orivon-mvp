@@ -1,5 +1,6 @@
 import type { ShellState } from '../../main/shell/tabs.js'
 import { homeIcon } from '../pages/shared/icons.js'
+import { formatKeys } from '../overlay/menu/keys.js'
 import type { ChromeContext, ChromeModule } from './context.js'
 
 /** The Home button, right of Reload; shown only while `toolbar.home` is on. A click loads the home page here; a
@@ -22,7 +23,7 @@ export function createHomeButton (): ChromeModule {
         icon: homeIcon,
         onClick: (_el, event) => { open(ctx, event.ctrlKey || event.metaKey) }
       })
-      home.title = 'Home (Alt+Home)'
+      home.title = 'Home'
       home.hidden = true
       // A middle press would start Chromium's autoscroll before the release that opens the tab.
       home.addEventListener('mousedown', (event) => { if (event.button === 1) event.preventDefault() })
@@ -34,7 +35,10 @@ export function createHomeButton (): ChromeModule {
       button = home
     },
     render: (state: ShellState) => {
-      if (button !== undefined) button.hidden = !state.homeButton
-    }
+      if (button === undefined) return
+      button.hidden = !state.homeButton
+      // The binding can be changed in Settings, so the tooltip names the one that runs now.
+      const keys = state.shortcutKeys['nav.home']
+      button.title = keys === null ? 'Home' : `Home (${formatKeys(keys, document.documentElement.dataset['platform'] ?? '')})`    }
   }
 }

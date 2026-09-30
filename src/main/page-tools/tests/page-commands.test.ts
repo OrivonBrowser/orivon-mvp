@@ -58,6 +58,13 @@ describe('the page commands', () => {
     expect(openTrusted).toHaveBeenCalledWith('view-source:https://a.example/')
   })
 
+  it('view source says so when the page has no source to show, instead of doing nothing', async () => {
+    const { window, openTrusted, toasts } = windowWith(live({ getURL: () => 'orivon://settings/' }))
+    await viewSourceCommand(window)
+    expect(openTrusted).not.toHaveBeenCalled()
+    expect(toasts()).toEqual(['noSource'])
+  })
+
   it('picture in picture says there is no video when no frame has one', async () => {
     const { window, toasts } = windowWith(live({ mainFrame: { framesInSubtree: [{ executeJavaScript: async () => false }] } }))
     await pipCommand(window)

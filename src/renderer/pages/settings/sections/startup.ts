@@ -33,8 +33,12 @@ export const startup: Section = {
     },
     {
       id: 'home-url',
-      label: 'Home page',
-      help: 'The page the Home button and Alt+Home open. Leave empty for the new tab page.',
+      label: 'Address',
+      helpFor: (state) => {
+        const keys = state.shortcuts.rows.find((row) => row.id === 'nav.home')?.keys ?? null
+        const who = keys === null ? 'the Home button opens' : `the Home button and ${keys.join('+')} open`
+        return `The page ${who}. Leave empty for the new tab page.`
+      },
       keywords: ['homepage', 'home', 'start', 'start page', 'address', 'url'],
       group: 'Home page',
       control: { type: 'text', key: 'home.url', placeholder: 'New tab page', problem: 'Enter a web address, like https://example.com' }

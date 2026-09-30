@@ -2,7 +2,7 @@
 // focus and goes away by itself. It carries no data, so the page can ask for two things and nothing else.
 import type { OverlayDef } from '../overlays/overlay-types.js'
 import { restoreWindows, takeOffStack } from './startup-open.js'
-import type { Displays } from './startup-open.js'
+import type { Displays } from '../session-restore/restore.js'
 import { usableWindows } from './startup-plan.js'
 
 export const RESTORE_OVERLAY = 'restore'
@@ -34,7 +34,7 @@ export function restoreOverlayFor (deps: RestoreDeps): OverlayDef {
           stop()
           timer = setTimeout(close, OFFER_SHOWN_MS)
           timer.unref()
-          return undefined
+          return { keys: services.shortcuts.keysOf('tab.reopen') }
         },
         request: (command) => {
           const type = typeof command === 'object' && command !== null ? (command as { type?: unknown }).type : undefined
@@ -42,8 +42,8 @@ export function restoreOverlayFor (deps: RestoreDeps): OverlayDef {
           if (type !== 'restore' || restored) return undefined
           restored = true
           close()
-          const windows = usableWindows(services.session.previous())
-          takeOffStack(services.closedTabs, windows)
+          // Only what Reopen has not already brought back: a second copy of a window is worse than none.
+          const windows = takeOffStack(services.closedTabs, usableWindows(services.session.previous()))
           restoreWindows(windows, (options) => { services.commands.openWindow(options) }, deps.displays())
           return undefined
         },

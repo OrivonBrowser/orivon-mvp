@@ -2,7 +2,7 @@
 // view's overlay, mounts it, tells it about each show, reports the content
 // height so main can size the view, and closes on Escape.
 import { h } from '../pages/shared/dom.js'
-import { createOverlay, mountPage, shownPayload } from './kit.js'
+import { createOverlay, mountPage, readyEvents, shownPayload } from './kit.js'
 import { OVERLAY_PAGES } from './pages.js'
 
 const content = document.getElementById('content')
@@ -49,5 +49,7 @@ if (bridge === undefined) {
   void bridge.ready().then((reply) => {
     const show = shownPayload(reply, 'ready')
     if (show !== null) mounted.shown(show.payload)
+    // After the show: a page that starts its state afresh on a show must not lose what arrived while it loaded.
+    overlay.replay(readyEvents(reply))
   }).catch(() => {})
 }
