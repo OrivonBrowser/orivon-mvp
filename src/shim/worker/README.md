@@ -70,9 +70,11 @@ loader's builtin table statically holds most of the shim, which makes `runtime.g
 roughly five times larger than it was without it; every child pays that parse, a spawned WASI
 program included.
 
-**A forked child's `console` methods also write to its stdout and stderr** (`routeConsole`), so
-the parent's `child.stdout` and `child.stderr` see them; the Worker's own console still gets every
-call.
+**A forked child's console is a `Console` over its `process.stdout` and `process.stderr`**
+(`routeConsole`, [`../polyfills/console-class.ts`](../polyfills/console-class.ts)), as Node's is: every
+method (`dir`, `table`, `assert`, `group`, `time*`, `count*` as well as `log` and `error`) reaches the
+parent's `child.stdout` and `child.stderr`, and a program that patches either `write` sees the output.
+The Worker's own console still gets every call.
 
 **`early-globals.ts` must stay the runtime's first import.** Polyfills in the bundle read
 `process` while they load; in a tab the preload installs it first, and in a Worker this module does.

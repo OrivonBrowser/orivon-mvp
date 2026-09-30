@@ -7,8 +7,8 @@
 
 import { Buffer } from 'buffer'
 import { Readable } from 'stream'
-import { format } from 'util'
 import { installGlobals } from '../globals.js'
+import { Console } from '../polyfills/console-class.js'
 import { createRequire } from '../polyfills/module.js'
 import type { GlobalsTarget, ShimProcess } from '../globals-types.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
@@ -153,31 +153,34 @@ export function setupChildProcess (scope: ForkScope, parent: ParentChannel, star
   return { proc, liveness, write, end, crash }
 }
 
-const STDOUT_METHODS = ['log', 'info', 'debug'] as const
-const STDERR_METHODS = ['warn', 'error', 'trace'] as const
+const CONSOLE_METHODS = ['log', 'info', 'debug', 'dirxml', 'warn', 'error', 'trace', 'dir', 'table', 'assert', 'count', 'countReset', 'group', 'groupCollapsed', 'groupEnd', 'time', 'timeEnd', 'timeLog'] as const
 
 /**
- * A forked child's console writes to its stdout and stderr, which its parent reads as
- * `child.stdout`. The Worker's own console still gets every call too, so a developer's
- * devtools keep showing them.
+ * A forked child's console is a `Console` over its `process.stdout` and `process.stderr`, as
+ * Node's is, so its output reaches `child.stdout` and a program that patches either `write`
+ * sees it. The Worker's own console still gets every call too, so a developer's devtools keep
+ * showing them.
  */
-function routeConsole (target: Record<string, unknown> | undefined, write: ChildProcessSetup['write']): void {
+function routeConsole (target: Record<string, unknown> | undefined, proc: BaseProcess): void {
   if (target === undefined) return
-  const route = (name: string, stream: StreamName): void => {
+  const streams = {
+    stdout: { write: (chunk: string, callback?: () => void) => proc.stdout.write(chunk, callback as never) },
+    stderr: { write: (chunk: string, callback?: () => void) => proc.stderr.write(chunk, callback as never) }
+  }
+  const child = new Console(streams) as unknown as Record<string, (...args: unknown[]) => void>
+  for (const name of CONSOLE_METHODS) {
     const original = target[name]
-    if (typeof original !== 'function') return
     target[name] = (...args: unknown[]): void => {
-      ;(original as (...rest: unknown[]) => void).apply(target, args)
-      write(stream)(`${format(...args)}\n`)
+      if (typeof original === 'function') (original as (...rest: unknown[]) => void).apply(target, args)
+      child[name]!(...args)
     }
   }
-  for (const name of STDOUT_METHODS) route(name, 'stdout')
-  for (const name of STDERR_METHODS) route(name, 'stderr')
+  target.Console ??= Console
 }
 
 export async function runFork (start: ForkStart, parent: ParentChannel, scope: ForkScope, load: (url: string) => Promise<unknown>): Promise<void> {
-  const { proc: baseProc, liveness, crash, write } = setupChildProcess(scope, parent, start)
-  routeConsole(scope.console, write)
+  const { proc: baseProc, liveness, crash } = setupChildProcess(scope, parent, start)
+  routeConsole(scope.console, baseProc)
   const proc = baseProc as ForkProcess
   ;(scope as unknown as Record<symbol, Liveness>)[FORK_LIVENESS_SYMBOL] = liveness
   proc.connected = true

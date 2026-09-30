@@ -208,6 +208,45 @@ describe('runFork', () => {
     expect(own).toEqual(['log:listening on %s:%d 127.0.0.1 9000', 'info:[object Object]', 'warn:careful', 'error:boom 7'])
   })
 
+  it('routes every console method through process.stdout.write and process.stderr.write, looked up as each call happens', async () => {
+    const scope = fakeScope()
+    const own: string[] = []
+    const console: Record<string, unknown> = { log: (...args: unknown[]) => own.push(`log:${args.join(' ')}`) }
+    Object.assign(scope, { console })
+    const parent = fakeParent()
+    const patched: string[] = []
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const methods = console as Record<string, (...args: unknown[]) => void>
+      methods.dir?.({ a: { b: { c: 1 } } }, { depth: 0 })
+      methods.table?.([{ a: 1 }])
+      methods.assert?.(false, 'nope')
+      methods.group?.('outer')
+      methods.log?.('inside')
+      methods.groupEnd?.()
+      methods.count?.('hits')
+      const proc = scope.process as unknown as { stdout: { write: (chunk: string) => boolean } }
+      const real = proc.stdout.write
+      proc.stdout.write = (chunk: string) => { patched.push(chunk); return true }
+      methods.log?.('patched')
+      proc.stdout.write = real
+    })
+    expect(patched).toEqual(['patched\n'])
+    expect(output(parent, 'stdout')).toBe([
+      '{ a: [Object] }',
+      '┌─────────┬───┐',
+      '│ (index) │ a │',
+      '├─────────┼───┤',
+      '│ 0       │ 1 │',
+      '└─────────┴───┘',
+      'outer',
+      '  inside',
+      'hits: 1',
+      ''
+    ].join('\n'))
+    expect(output(parent, 'stderr')).toBe('Assertion failed: nope\n')
+    expect(own).toEqual(['log:inside', 'log:patched'])
+  })
+
   it('installs a global require that esbuild\'s __require finds: a builtin by name, MODULE_NOT_FOUND for any other bare name', async () => {
     const scope = fakeScope()
     const parent = fakeParent()

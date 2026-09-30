@@ -11,7 +11,6 @@ import { nodeModuleRefusal } from '../module-proxy.js'
 
 const classify = (prop: string) => nodeModuleRefusal('console', prop)
 
-export const Console = refusingExport('Console', classify)
 export const context = refusingExport('context', classify)
 export const createTask = refusingExport('createTask', classify)
 export const profile = refusingExport('profile', classify)

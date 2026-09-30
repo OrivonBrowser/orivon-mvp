@@ -1,8 +1,10 @@
 // `console` module target (module-map.ts): the global console itself, as
 // Node's `require('console') === console`. Each named export forwards to the
 // global at call time, so a console the runtime or the app has since patched
-// is the one that answers. `Console` (a console over given streams) refuses
-// by name.
+// is the one that answers. `Console` is a console over given streams
+// (console-class.ts).
+
+export { Console } from './console-class.js'
 
 type ConsoleMethod = (...args: unknown[]) => void
 

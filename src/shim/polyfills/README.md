@@ -7,7 +7,7 @@ hand-written `assert`, `querystring`, `string_decoder`, `timers`, `url` and `str
 `worker_threads` (`Worker` over [`../child-process/`](../child-process/)'s Web Worker runtime,
 `isMainThread`/`parentPort`/`workerData` read at evaluation time) and `vm`
 (code run in the page's own context), and the modules a server's dependency graph asks for as it
-loads: `tty`, `readline`, `http2`, `diagnostics_channel`, `async_hooks`, `perf_hooks`, `console` and `process`.
+loads: `tty`, `readline`, `http2`, `diagnostics_channel`, `async_hooks`, `perf_hooks`, `console` (with a real `Console` class over any writable streams) and `process`.
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../errors.ts`](../errors.ts),
 [`../unimplemented.ts`](../unimplemented.ts) and [`../virtual-root.ts`](../virtual-root.ts)
