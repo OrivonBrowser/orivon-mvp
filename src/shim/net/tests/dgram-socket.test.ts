@@ -166,8 +166,10 @@ describe('dgram.Socket over a fake UdpSocket', () => {
       return second.socket
     })
 
+    // A loopback address asks for the local scope, which has no narrower
+    // scope to fall back to, so the denial reaches the app.
     const denial = new Promise<Error & { code?: string }>((resolve) => socket.once('error', resolve))
-    socket.bind(6881)
+    socket.bind(6881, '127.0.0.1')
     expect((await denial).code).toBe('denied')
 
     // The path this protects is the ordinary one once the grant prompt exists:

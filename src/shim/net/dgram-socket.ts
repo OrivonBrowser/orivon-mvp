@@ -28,6 +28,8 @@ import { isIP } from './isip.js'
 import { validatePort } from './args.js'
 import { lookup } from './dns.js'
 import { refuseShim } from '../errors.js'
+import { openAtScope, scopeForHost } from '../bind-scope.js'
+import type { BindScope } from '../../contracts/index.js'
 // One of the eight approved core-polyfill packages (module-map.ts) --
 // imported directly rather than relying on a global `Buffer`. bencode
 // (underneath bittorrent-dht) calls Buffer.isBuffer() on what a 'message'
@@ -35,7 +37,7 @@ import { refuseShim } from '../errors.js'
 // check silently.
 import { Buffer } from 'buffer'
 
-export type UdpBindFn = (opts: { port: number }) => Promise<UdpSocket>
+export type UdpBindFn = (opts: { port: number, scope: BindScope }) => Promise<UdpSocket>
 /** Resolves a send's hostname to an IPv4 literal; dns.lookup unless a test supplies one. */
 export type UdpLookupFn = (hostname: string) => Promise<string>
 
@@ -150,12 +152,21 @@ export class Socket extends EventEmitter {
     const callback = typeof rest[rest.length - 1] === 'function' ? rest.pop() as () => void : undefined
     const first = rest[0]
     const port = typeof first === 'object' && first !== null ? (first as { port?: number }).port ?? 0 : (typeof first === 'number' ? first : 0)
+    const address = typeof first === 'object' && first !== null ? (first as { address?: unknown }).address : rest[1]
+    // Node reads a falsy address as "every interface".
+    const wanted = scopeForHost(typeof address === 'string' && address !== '' ? address : undefined)
+    if (wanted === undefined) {
+      throw refuseShim('dgram.Socket#bind(address)', 'unimplemented',
+        `orivon.net.udpBind binds loopback or every interface, never one other address, so binding '${String(address)}' ` +
+        'cannot be honoured, and binding wider than asked would expose to the network a socket the app meant to ' +
+        'keep narrower. Pass \'127.0.0.1\' for this device only, or omit the address or pass \'0.0.0.0\' for every interface.')
+    }
     if (callback !== undefined) this.once('listening', callback)
 
     // Async-IIFE-wrapped for the same reason net/socket.ts's connect()
     // is: `this.bindFn` can throw synchronously (getOrivon() does), and
     // every other failure here surfaces through 'error', never a throw.
-    const promise = (async () => this.bindFn({ port }))()
+    const promise = (async () => await openAtScope((scope) => this.bindFn({ port, scope }), wanted))()
     this.bindPromise = promise
     promise.then((handle) => {
       if (this.closing) { handle.close().catch(() => {}); return }

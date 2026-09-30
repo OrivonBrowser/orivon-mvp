@@ -8,7 +8,7 @@
 
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../../contracts/handles.js'
-import type { CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
+import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
 import type {
   CallSiteMethods, MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
@@ -467,8 +467,8 @@ export function installOrivon (
     net: Object.freeze({
       connect: guarded(netConnectImpl),
       connectSecure: guarded(netConnectSecureImpl),
-      udpBind: guarded(async (opts: { port: number }) => buildUdpSocket(await callRevived(bridge.netUdpBind(opts)))),
-      listen: guarded(async (opts: { port: number }) => buildServer(await callRevived(bridge.netListen(opts)))),
+      udpBind: guarded(async (opts: { port: number, scope?: BindScope }) => buildUdpSocket(await callRevived(bridge.netUdpBind(opts)))),
+      listen: guarded(async (opts: { port: number, scope?: BindScope }) => buildServer(await callRevived(bridge.netListen(opts)))),
       lookup: guarded(async (opts: { hostname: string }) => await callRevived(bridge.netLookup(opts)))
     })
   }

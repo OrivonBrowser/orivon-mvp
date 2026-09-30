@@ -5,9 +5,10 @@
 // accept ONE pending connection -- see `pump` for how that stays true once
 // an EventEmitter is layered on top.
 //
-// HOST IS NOT A CAPABILITY orivon.net.listen HAS: the broker always binds
-// every interface. A host meaning "every interface" is accepted; any other,
-// loopback included, refuses by name -- README.md's Design notes say why.
+// HOST IS NOT A PARAMETER orivon.net.listen HAS, only a scope: loopback or
+// every interface (../bind-scope.ts). A loopback host or one meaning "every
+// interface" is honoured; any other refuses by name -- README.md's Design
+// notes say why.
 
 import { EventEmitter } from 'events'
 import type { TcpServer, TcpSocket } from '../../contracts/handles.js'
@@ -15,13 +16,12 @@ import { Socket, type SocketOptions } from './socket.js'
 import { codedError, toNodeError } from '../node-errors.js'
 import { validatePort } from './args.js'
 import { refuseShim } from '../errors.js'
+import { openAtScope, scopeForHost } from '../bind-scope.js'
+import type { BindScope } from '../../contracts/index.js'
 
-export type NetListenFn = (opts: { port: number }) => Promise<TcpServer>
+export type NetListenFn = (opts: { port: number, scope: BindScope }) => Promise<TcpServer>
 
 export interface ServerOptions extends SocketOptions {}
-
-/** Every host spelling this shim can honour -- orivon.net.listen always binds every interface. */
-const ANY_INTERFACE_HOSTS = new Set([undefined, '0.0.0.0', '::', '::0', '0000:0000:0000:0000:0000:0000:0000:0000'])
 
 interface ParsedListen {
   readonly port: number
@@ -56,9 +56,9 @@ function parseListenArgs (args: readonly unknown[]): ParsedListen {
 
 function refuseHost (host: string): Error {
   return refuseShim('net.Server#listen(host)', 'unimplemented',
-    `orivon.net.listen has no host parameter and always binds every interface, so binding '${host}' alone ` +
+    `orivon.net.listen binds loopback or every interface, never one other address, so binding '${host}' ` +
     'cannot be honoured, and binding wider than asked would expose to the network a listener the app meant to ' +
-    'keep local. Omit the host, or pass \'0.0.0.0\', to bind every interface.')
+    'keep narrower. Pass \'127.0.0.1\' for this device only, or omit the host or pass \'0.0.0.0\' for every interface.')
 }
 
 export class Server extends EventEmitter {
@@ -89,7 +89,8 @@ export class Server extends EventEmitter {
       throw refuseShim('net.Server#listen(path)', 'not-applicable',
         `listening on the local IPC endpoint '${path}' is not available: orivon.net.listen opens TCP ports only.`)
     }
-    if (!ANY_INTERFACE_HOSTS.has(host)) throw refuseHost(host as string)
+    const wanted = scopeForHost(host)
+    if (wanted === undefined) throw refuseHost(host as string)
     if (this.handle !== null || this.listenPending) {
       throw codedError(Error, 'ERR_SERVER_ALREADY_LISTEN', 'Listen method has been called more than once without closing.')
     }
@@ -99,7 +100,7 @@ export class Server extends EventEmitter {
     this.closeEmitted = false
     // An async IIFE: getOrivon() throws SYNCHRONOUSLY before the preload has
     // run, and that must arrive as 'error', never a throw out of listen().
-    const promise = (async () => await this.doListen({ port }))()
+    const promise = (async () => await openAtScope((scope) => this.doListen({ port, scope }), wanted))()
     promise.then((handle) => {
       this.listenPending = false
       if (this.closing) { handle.close().catch(() => {}); this.emitCloseOnce(); return }

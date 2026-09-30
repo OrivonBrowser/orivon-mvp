@@ -8,6 +8,7 @@ import {
   addressOf, formatAddress, isIpv4Mapped, isUnspecified, reportedAddress, scopeOf, socketFailure
 } from './addresses.js'
 import { Pollable, Signal } from './io.js'
+import { openAtScope } from '../bind-scope.js'
 
 interface IncomingDatagram { data: Uint8Array, remoteAddress: IpSocketAddress }
 interface OutgoingDatagram { data: Uint8Array, remoteAddress?: IpSocketAddress }
@@ -137,7 +138,7 @@ export class UdpSocket {
     if (this.#state !== 'unbound') throw 'invalid-state'
     if (localAddress.tag !== this.#family || isIpv4Mapped(addressOf(localAddress))) throw 'invalid-argument'
     this.#state = 'bind-started'
-    this.#pending = this.#net.udpBind({ port: localAddress.val.port, scope: scopeOf(addressOf(localAddress)) }).then(
+    this.#pending = openAtScope((scope) => this.#net.udpBind({ port: localAddress.val.port, scope }), scopeOf(addressOf(localAddress))).then(
       (socket) => {
         // Dropped meanwhile: the port is let go rather than held until the child exits.
         if (this.#state === 'closed') void socket.close().catch(() => {})

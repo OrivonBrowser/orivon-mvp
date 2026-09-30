@@ -188,7 +188,7 @@ describe('net.Server#listen -- host handling', () => {
     expect(fake.pullCount()).toBe(1)
   })
 
-  it.each(['localhost', '::1'])('refuses %s by name too', (host) => {
+  it.each(['192.168.1.5', 'example.com', '127.0.0.2', '::ffff:127.0.0.1', ''])('refuses %j by name: the broker binds loopback or every interface, never one other address', (host) => {
     const server = new Server(async () => createFakeTcpServer().server)
     expect(() => server.listen(6881, host)).toThrow(OrivonShimError)
   })
@@ -198,12 +198,12 @@ describe('net.Server#listen -- host handling', () => {
     expect(() => server.listen('/tmp/app.sock')).toThrow(OrivonShimError)
   })
 
-  it('refuses a host it cannot honour (e.g. loopback-only) rather than silently binding wider than asked', async () => {
+  it('refuses a host it cannot honour rather than silently binding wider than asked', async () => {
     const fake = createFakeTcpServer()
     const server = new Server(async () => fake.server)
-    expect(() => server.listen(6881, '127.0.0.1')).toThrow(OrivonShimError)
+    expect(() => server.listen(6881, '192.168.1.5')).toThrow(OrivonShimError)
     try {
-      server.listen(6881, '127.0.0.1')
+      server.listen(6881, '192.168.1.5')
     } catch (error) {
       expect((error as OrivonShimError).reason).toBe('unimplemented')
     }
