@@ -23,6 +23,7 @@ export interface MainPageCallbacks {
   readonly onCancel: () => void
   readonly onOpenWeb3: () => void
   readonly onOpenData: () => void
+  readonly onOpenCertificate: () => void
   readonly onOpenAllSites: () => void
   readonly onManageExtensions: () => void
   readonly onReload: () => void
@@ -105,6 +106,18 @@ export function renderMainPage (
   connectionRow.append(connectionText, chevronIcon())
   connectionRow.addEventListener('click', callbacks.onOpenWeb3)
   container.append(connectionRow)
+
+  // The certificate only exists for a page that came over https.
+  if (info.origin.startsWith('https://')) {
+    const certificateRow = document.createElement('button')
+    certificateRow.type = 'button'
+    certificateRow.className = 'nav-row certificate-row'
+    const certificateLabel = document.createElement('span')
+    certificateLabel.textContent = 'Certificate'
+    certificateRow.append(certificateLabel, chevronIcon())
+    certificateRow.addEventListener('click', callbacks.onOpenCertificate)
+    container.append(certificateRow)
+  }
 
   if (trust?.name !== undefined) {
     const nameLine = document.createElement('p')

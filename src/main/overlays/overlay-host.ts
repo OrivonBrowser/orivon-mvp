@@ -197,6 +197,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     }
     if (reason === 'blur') slot.lastBlurCloseAt = Date.now()
     try { slot.handler?.closed?.(reason) } catch (error) { console.error('[overlay] closed hook failed', error) }
+    // The hook may have shown this overlay again (the next of a queue): its view and focus are in use now.
+    if (slot.open) return
     if (slot.def.keep === 'fresh' || disposed) {
       view?.destroy()
       slot.view = null

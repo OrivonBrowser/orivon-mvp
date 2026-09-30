@@ -192,6 +192,21 @@ describe('createOverlayHost: closeOn', () => {
     expect(closed).toHaveBeenLastCalledWith('request')
   })
 
+  it('keeps the view and the open state of an overlay that its own closed hook showed again', () => {
+    let again = (): void => {}
+    const { host } = setup([def('a', {}, { closed: () => { again() } })])
+    again = () => { host.show('a', ANCHOR, { next: true }) }
+    host.show('a', ANCHOR)
+    views[0]?.spec.port.close('request')
+    expect(host.isOpen('a')).toBe(true)
+    expect(views).toHaveLength(1)
+    expect(views[0]?.destroyed).toBe(false)
+    again = () => {}
+    views[0]?.spec.port.close('request')
+    expect(host.isOpen('a')).toBe(false)
+    expect(views[0]?.destroyed).toBe(true)
+  })
+
   it('an overlay closes itself through its OverlayWindow', () => {
     let close = (): void => {}
     const { host } = setup([def('a', { attach: (win) => { close = win.close; return { request: () => undefined } } })])

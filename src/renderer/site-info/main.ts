@@ -23,6 +23,7 @@ interface OrivonSiteInfo {
   reload: () => Promise<void>
   openAllSites: () => Promise<void>
   openExtensions: () => Promise<void>
+  openCertificate: () => Promise<void>
   reportHeight: (height: number) => void
   initialPage: 'main' | 'web3'
   origin: string | null
@@ -96,6 +97,7 @@ function renderCurrent (): void {
       onCancel: () => { staged.clear(); pendingStaleCapabilities = new Set(); renderCurrent() },
       onOpenWeb3: () => { void openWeb3() },
       onOpenData: () => { void openData() },
+      onOpenCertificate: () => { void bridge.openCertificate() },
       onOpenAllSites: () => { void bridge.openAllSites() },
       onManageExtensions: () => { void bridge.openExtensions() },
       onReload: () => { void bridge.reload() }

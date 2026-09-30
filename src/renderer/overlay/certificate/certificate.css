@@ -1,0 +1,19 @@
+/* The certificate viewer: a title, one tab per certificate, a two-column list of its fields and the buttons. */
+
+body[data-overlay='certificate'] .cert { padding: 16px 18px; }
+body[data-overlay='certificate'] .sheet-title { margin: 0 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-overlay='certificate'] .tabs { overflow-x: auto; scrollbar-width: none; }
+body[data-overlay='certificate'] .tab-btn { flex: 0 1 auto; min-width: 0; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-overlay='certificate'] .cert-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 16px; margin: 14px 0 6px; }
+body[data-overlay='certificate'] .cert-grid dt { color: var(--wink-dim); font-weight: 500; }
+body[data-overlay='certificate'] .cert-grid dd { margin: 0; overflow-wrap: anywhere; }
+body[data-overlay='certificate'] .cert-party { display: flex; flex-direction: column; }
+body[data-overlay='certificate'] .cert-name { color: var(--wink-strong); font-weight: 500; }
+body[data-overlay='certificate'] .cert-org { color: var(--wink-dim); font-size: 12px; }
+body[data-overlay='certificate'] .cert-mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+body[data-overlay='certificate'] .cert-bad { color: var(--wdanger-text); }
+body[data-overlay='certificate'] .cert-actions { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 10px; }
+body[data-overlay='certificate'] .cert-actions .link-btn { margin-left: -6px; }
+body[data-overlay='certificate'] .cert-status { color: var(--wink-dim); font-size: 12px; }
+body[data-overlay='certificate'] .empty-state { margin: 4px 0 8px; }
+body[data-overlay='certificate'] .empty-state p { margin: 0; }

@@ -5,6 +5,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import { commandById } from '../shortcuts/commands.js'
 import { bookmarksBarShown } from './bookmarks-bar/bar-visibility.js'
+import { certificateAvailable } from '../auth/certificate-open.js'
 import { qrAvailable } from '../qr/qr-open.js'
 import { hintFor } from '../session-restore/reopen.js'
 import type { WindowContext } from './window-context.js'
@@ -22,7 +23,8 @@ export type MenuEntry = '-' | CommandId
 
 /** Commands that do nothing on some pages; the menu greys their row there. */
 const UNAVAILABLE: Partial<Record<CommandId, (ctx: WindowContext) => boolean>> = {
-  'page.qr': ({ window }) => !qrAvailable(window)
+  'page.qr': ({ window }) => !qrAvailable(window),
+  'site.certificate': ({ window }) => !certificateAvailable(window)
 }
 
 export const MENU_LAYOUT: readonly MenuEntry[] = [
@@ -60,6 +62,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
     'page.qr',
     'page.viewSource',
     'site.shortcut',
+    'site.certificate',
     { check: 'window.alwaysOnTop', on: ({ window }) => window.window.isAlwaysOnTop() },
     'privacy.clearData',
     'devtools.toggle',

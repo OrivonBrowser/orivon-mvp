@@ -84,7 +84,7 @@ export const COMMANDS = [
   { id: 'page.viewSource', label: 'View page source', category: 'tools', default: 'Mod+U', yieldToApp: true },
   { id: 'share.copyLink', label: 'Copy link', category: 'tools', pending: true },
   { id: 'share.email', label: 'Email link', category: 'tools', pending: true },
-  { id: 'site.certificate', label: 'View certificate', category: 'tools', pending: true },
+  { id: 'site.certificate', label: 'View certificate', category: 'tools' },
   { id: 'site.shortcut', label: 'Create shortcut', category: 'tools', pending: true },
   { id: 'page.screenshot', label: 'Take a screenshot', category: 'tools', default: 'Mod+Shift+S', yieldToApp: true },
   { id: 'page.qr', label: 'Create QR code for this page', category: 'tools' },
