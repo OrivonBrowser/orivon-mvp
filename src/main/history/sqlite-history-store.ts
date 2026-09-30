@@ -12,11 +12,12 @@ import { DebouncedWriter } from '../storage/debounced-writer.js'
 import { MAX_TITLE_LENGTH, MAX_URL_LENGTH } from './history-store.js'
 import type { HistoryEntry, HistoryImportRow, HistoryQuery, HistoryStore, HistorySuggestion } from './history-store.js'
 import { dropFtsIndex, migrate, rebuildFtsIndex, rollback } from './history-schema.js'
-import { faviconsForHosts, pruneHostFavicons, setHostFavicon } from './history-favicons.js'
+import { faviconsForHosts, prepareFaviconStatements, pruneHostFavicons, setHostFavicon, withFavicons } from './history-favicons.js'
+import { deletePagesByIds, MAX_IDS, pagesByIds, prepareIdStatements } from './history-ids.js'
 import { importHistoryRows } from './history-import.js'
 import { FTS_DENSITY_LIMIT, listPages, prepareListStatements } from './history-list.js'
 import type { ListStatements } from './history-list.js'
-import { listPagesOrdered } from './history-order.js'
+import { listPagesOrdered, prepareOrderStatements } from './history-order.js'
 import { markPageTyped, suggestPages } from './history-suggest.js'
 
 const WRITE_DELAY_MS = 500
@@ -90,6 +91,9 @@ export class SqliteHistoryStore implements HistoryStore {
       // Forgotten addresses are overwritten, not only unlisted: what a person clears should not sit readable in the file.
       this.db.exec('PRAGMA secure_delete = ON')
       migrate(this.db)
+      prepareFaviconStatements(this.db)
+      prepareOrderStatements(this.db)
+      prepareIdStatements(this.db)
       this.statements = {
         findPage: this.db.prepare('SELECT id FROM pages WHERE url = ?'),
         insertPage: this.db.prepare('INSERT INTO pages (url, title, last_visit, visit_count) VALUES (?, ?, ?, 1)'),
@@ -218,7 +222,7 @@ export class SqliteHistoryStore implements HistoryStore {
 
   list (query: HistoryQuery = {}): HistoryEntry[] {
     this.drain()
-    return listPages(this.statements.list, this.limits.searchDensityLimit, query)
+    return withFavicons(this.db, listPages(this.statements.list, this.limits.searchDensityLimit, query))
   }
 
   suggest (text: string, limit: number): HistorySuggestion[] {
@@ -242,6 +246,11 @@ export class SqliteHistoryStore implements HistoryStore {
     return listPagesOrdered(this.db, query)
   }
 
+  pagesByIds (ids: readonly number[]): HistoryEntry[] {
+    this.drain()
+    return pagesByIds(this.db, ids)
+  }
+
   importPages (rows: readonly HistoryImportRow[]): number {
     this.drain()
     return importHistoryRows(this.db, rows)
@@ -257,6 +266,17 @@ export class SqliteHistoryStore implements HistoryStore {
     const total = (this.statements.count.get() as { n: number }).n
     this.deleteRows(1, Math.max(total - 1, 0), () => {
       this.statements.remove.run(id)
+      pruneHostFavicons(this.db)
+    })
+    this.dropLog()
+  }
+
+  removeMany (ids: readonly number[]): void {
+    this.drain()
+    const wanted = Math.min(ids.length, MAX_IDS)
+    const total = (this.statements.count.get() as { n: number }).n
+    this.deleteRows(wanted, Math.max(total - wanted, 0), () => {
+      deletePagesByIds(this.db, ids)
       pruneHostFavicons(this.db)
     })
     this.dropLog()

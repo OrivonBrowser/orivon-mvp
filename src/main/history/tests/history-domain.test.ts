@@ -5,8 +5,8 @@ import type { HistoryService } from '../history-service.js'
 
 const CALLER = {} as InternalCaller
 
-function setup (): { call: (command: unknown) => unknown, service: Record<'list' | 'remove' | 'removeRange' | 'clear' | 'status', ReturnType<typeof vi.fn>> } {
-  const service = { list: vi.fn(() => []), remove: vi.fn(), removeRange: vi.fn(), clear: vi.fn(), status: vi.fn(() => ({ remembering: true, problem: null, count: 0 })) }
+function setup (): { call: (command: unknown) => unknown, service: Record<'list' | 'listOrdered' | 'remove' | 'removeMany' | 'removeRange' | 'clear' | 'status', ReturnType<typeof vi.fn>> } {
+  const service = { list: vi.fn(() => []), listOrdered: vi.fn(() => []), remove: vi.fn(), removeMany: vi.fn(), removeRange: vi.fn(), clear: vi.fn(), status: vi.fn(() => ({ remembering: true, problem: null, count: 0 })) }
   const domain = historyDomain(service as unknown as HistoryService)
   return { call: (command) => domain.handle(command, CALLER), service }
 }
@@ -36,6 +36,32 @@ describe('the history domain', () => {
     expect(service.list).toHaveBeenLastCalledWith({})
     call({ type: 'list', limit: Number.NaN })
     expect(service.list).toHaveBeenLastCalledWith({})
+  })
+
+  it('lists most visited and by title from an offset, each checked, and most recent through the cursor', () => {
+    const { call, service } = setup()
+    call({ type: 'list', order: 'visits', offset: 100, search: 'x', limit: 50 })
+    expect(service.listOrdered).toHaveBeenLastCalledWith({ order: 'visits', offset: 100, search: 'x', limit: 50 })
+    call({ type: 'list', order: 'title', offset: 'lots' })
+    expect(service.listOrdered).toHaveBeenLastCalledWith({ order: 'title' })
+    call({ type: 'list', order: 'recent', after: { lastVisit: 4, id: 2 } })
+    expect(service.list).toHaveBeenLastCalledWith({ after: { lastVisit: 4, id: 2 } })
+    call({ type: 'list', order: 'DROP TABLE pages' })
+    expect(service.list).toHaveBeenLastCalledWith({})
+    expect(service.listOrdered).toHaveBeenCalledTimes(2)
+  })
+
+  it('forgets several pages at once, only for whole-number ids and at most 500', () => {
+    const { call, service } = setup()
+    expect(call({ type: 'removeMany', ids: [1, 2, 3] })).toEqual(expect.objectContaining({ ok: true }))
+    expect(service.removeMany).toHaveBeenLastCalledWith([1, 2, 3])
+    expect(call({ type: 'removeMany', ids: [1, 2.5] })).toBeUndefined()
+    expect(call({ type: 'removeMany', ids: ['1'] })).toBeUndefined()
+    expect(call({ type: 'removeMany', ids: 'all' })).toBeUndefined()
+    expect(call({ type: 'removeMany', ids: Array.from({ length: 501 }, (_, n) => n) })).toBeUndefined()
+    expect(call({ type: 'removeMany', ids: Array.from({ length: 500 }, (_, n) => n) })).toEqual(expect.objectContaining({ ok: true }))
+    expect(call({ type: 'removeMany', ids: [] })).toEqual(expect.objectContaining({ ok: true }))
+    expect(service.removeMany).toHaveBeenCalledTimes(2)
   })
 
   it('forgets a page by a whole-number id only', () => {

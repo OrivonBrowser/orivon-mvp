@@ -8,7 +8,9 @@ the History page and the importer read and write through the same database,
 `open-history.ts` opens that file and falls back to the null store when it cannot be used,
 `history-service.ts` applies the person's two settings (whether to remember, and for how long),
 `attach-history.ts` and `install-history.ts` write down each page a tab reaches, and
-`history-domain.ts` is what the History page may ask.
+`history-ids.ts` and `history-actions.ts` what it may do to rows it names by id (open, copy, forget,
+bring back a closed tab), `favicon-host.ts` the key an icon is kept under, and `history-domain.ts` what the
+History page may ask.
 
 **What it depends on.** `node:sqlite` (Node's own, so no native package: Rule 8); `electron` (the
 recorder, on `WebContents`); [`../settings/`](../settings/) (the two settings);
@@ -42,8 +44,22 @@ second per tab, and past 100,000 pages the ones visited longest ago go. A write 
 page) is reported and dropped rather than raised: it happens inside event handlers, where a throw ends the browser.
 
 **Icons live in a table of their own, by host.** An icon is shared by every page of its site, and it is forgotten
-in the same transaction that forgets the site's last page (`remove`, `removeRange`, `clear` each prune), so clearing
-history leaves no list of sites behind.
+in the same transaction that forgets the site's last page (`remove`, `removeMany`, `removeRange`, `clear` each prune),
+so clearing history leaves no list of sites behind. An icon passes the same image check as a bookmark's, is kept only
+up to 48,000 characters, and at most 2,000 sites keep one (the ones refreshed longest ago go). The prune asks, for
+each icon, whether any page address starts with `scheme://host/` or `scheme://host:` through the `url` index, so its
+cost follows the number of icons and not the number of pages (2 ms for 1,500 icons over 100,000 pages). Tabs offer
+their icon on every state push, so `HistoryService` remembers what it last offered per host and forgets that
+whenever pages are forgotten.
+
+**Most visited and by title page by offset.** They have no cursor a `list` call could continue from, so `listOrdered`
+takes an `offset` (capped at 100,000) and breaks every tie by id, which keeps a page boundary from repeating or
+skipping a page. A page with no title sorts last by title. A page of 50 from offset 50 of 100,000 pages took 8 ms
+by visits and 10 ms by title, so no index is kept for either order. A search in either order is the `LIKE` match
+`list` falls back to.
+
+**Ids and icons travel as one JSON array** (`json_each`), so the statements that look up or forget rows by id or
+icons by host are prepared once, in the constructor, whatever the number of ids.
 
 **Forgetting overwrites.** `secure_delete` is on, and clearing or removing a range empties the write-ahead log (and
 clearing rewrites the file), so an address a person cleared is not left readable in it. That is not a claim about

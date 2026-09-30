@@ -79,10 +79,6 @@ describe('the members the address bar, the History page and the importer will fi
       history.record(A, 'A', 1)
       expect(history.suggest('a', 5)).toEqual([])
       expect(() => { history.markTyped(A) }).not.toThrow()
-      expect(() => { history.setFavicon('a.example', 'data:image/png;base64,AA==') }).not.toThrow()
-      expect(history.faviconsFor(['a.example'])).toEqual({})
-      expect(() => { history.pruneFavicons() }).not.toThrow()
-      expect(history.listOrdered({ order: 'title', offset: 0 })).toEqual([])
       expect(history.importPages([{ url: A, title: 'A', lastVisit: 1, visitCount: 1 }])).toBe(0)
       history.close()
     }

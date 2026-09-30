@@ -6,6 +6,7 @@ import type { SettingsStore } from '../settings/settings-store.js'
 import type { HistoryEntry, HistoryImportRow, HistoryQuery, HistoryStore, HistorySuggestion } from './history-store.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const MAX_OFFERED_ICONS = 500
 
 export interface HistoryStatus {
   /** Whether new visits are being remembered. */
@@ -25,6 +26,8 @@ export type HistoryChange = 'titled' | 'entries'
 
 export class HistoryService {
   private readonly listeners = new Set<(change: HistoryChange) => void>()
+  /** The last icon offered per host. Anything that forgets pages forgets this too, so a site visited again gets its icon back. */
+  private readonly offeredIcons = new Map<string, string>()
 
   constructor (
     private readonly store: HistoryStore,
@@ -74,8 +77,11 @@ export class HistoryService {
     this.store.markTyped(url)
   }
 
+  /** Tabs report their icon on every state push, so an icon already kept is not offered to the store again. */
   setFavicon (host: string, dataUrl: string): void {
-    if (!this.remembering) return
+    if (!this.remembering || this.offeredIcons.get(host) === dataUrl) return
+    if (this.offeredIcons.size >= MAX_OFFERED_ICONS) this.offeredIcons.clear()
+    this.offeredIcons.set(host, dataUrl)
     this.store.setFavicon(host, dataUrl)
   }
 
@@ -85,6 +91,11 @@ export class HistoryService {
 
   pruneFavicons (): void {
     this.store.pruneFavicons()
+    this.offeredIcons.clear()
+  }
+
+  pagesByIds (ids: readonly number[]): HistoryEntry[] {
+    return this.store.pagesByIds(ids)
   }
 
   /** The person chose to bring these in, so they are kept whether or not new visits are being remembered. */
@@ -96,16 +107,25 @@ export class HistoryService {
 
   remove (id: number): void {
     this.store.remove(id)
+    this.offeredIcons.clear()
+    this.notify('entries')
+  }
+
+  removeMany (ids: readonly number[]): void {
+    this.store.removeMany(ids)
+    this.offeredIcons.clear()
     this.notify('entries')
   }
 
   removeRange (from: number, to: number): void {
     this.store.removeRange(from, to)
+    this.offeredIcons.clear()
     this.notify('entries')
   }
 
   clear (): void {
     this.store.clear()
+    this.offeredIcons.clear()
     this.notify('entries')
   }
 
@@ -116,6 +136,7 @@ export class HistoryService {
     // Run at start, where a failure would end the browser on every start and leave no way into Settings to clear it.
     try {
       this.store.removeRange(0, this.now() - Number(days) * DAY_MS)
+      this.offeredIcons.clear()
       this.notify('entries')
     } catch (error) {
       console.error('[orivon] history could not be pruned:', error)

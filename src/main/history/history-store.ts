@@ -10,7 +10,7 @@ export interface HistoryEntry {
   /** Milliseconds since the epoch. */
   readonly lastVisit: number
   readonly visitCount: number
-  /** The site's icon as a data URL; absent until the listing that fills it, null when the site has none. */
+  /** The site's icon as a data URL; absent when the site has none or the listing did not look. */
   readonly favicon?: string | null
 }
 
@@ -66,11 +66,15 @@ export interface HistoryStore {
   pruneFavicons: () => void
   /** Like `list`, in `query.order` and from `query.offset`, each entry with its `favicon`. */
   listOrdered: (query?: HistoryQuery) => HistoryEntry[]
+  /** The pages with these ids, in the order given, for acting on rows a page named by id. */
+  pagesByIds: (ids: readonly number[]) => HistoryEntry[]
   /** Adds pages from another browser; answers how many were kept. */
   importPages: (rows: readonly HistoryImportRow[]) => number
   count: () => number
   /** Forgets a page and all its visits. */
   remove: (id: number) => void
+  /** Forgets each of these pages, in one write. */
+  removeMany: (ids: readonly number[]) => void
   /** Forgets the visits made between the two times, and the pages that have none left. */
   removeRange: (from: number, to: number) => void
   clear: () => void
@@ -96,9 +100,11 @@ export class NullHistoryStore implements HistoryStore {
   faviconsFor (): Record<string, string> { return {} }
   pruneFavicons (): void {}
   listOrdered (): HistoryEntry[] { return [] }
+  pagesByIds (): HistoryEntry[] { return [] }
   importPages (): number { return 0 }
   count (): number { return 0 }
   remove (): void {}
+  removeMany (): void {}
   removeRange (): void {}
   clear (): void {}
   flush (): void {}

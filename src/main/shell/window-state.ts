@@ -6,6 +6,7 @@
 import type { BaseWindow, WebContentsView } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { STATE_CHANNEL } from '../channels.js'
+import { faviconHost } from '../history/favicon-host.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
 import type { HtmlFullscreen } from './fullscreen.js'
 import { readStateParts, watchStateParts } from './shell-state-parts.js'
@@ -36,7 +37,13 @@ export interface WindowState {
 
 export function createWindowState (deps: WindowStateDeps): WindowState {
   const { win, chrome, tabs, services, context, fullscreen, layout, bookmarksBarShown, overlays, closeSiteInfo } = deps
-  const { bookmarks } = services
+  const { bookmarks, history } = services
+
+  /** The icon of the site a tab shows, kept with its pages so the History page can draw it. */
+  function rememberIcon (address: string, icon: string): void {
+    const host = faviconHost(address)
+    if (host !== null) history.setFavicon(host, icon)
+  }
 
   /** Previous push's active tab, so pushState() can tell a genuine tab
    * SWITCH from the many other reasons state is pushed (a title, a favicon,
@@ -89,6 +96,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     // reflects it.
     for (const tab of state.tabs) {
       if (tab.favicon !== null) bookmarks.fillMissingFavicon(tab.url, tab.favicon)
+      if (tab.favicon !== null) rememberIcon(tab.displayUrl, tab.favicon)
     }
     const switched = state.activeTabId !== lastActiveTabId
     if (switched) {

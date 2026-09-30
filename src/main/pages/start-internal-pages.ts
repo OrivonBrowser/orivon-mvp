@@ -1,6 +1,6 @@
 // Brings the shell's own pages to life once the shared services exist: the
 // channel they speak on, and the changes they hear about while open.
-import { app, session } from 'electron'
+import { app, clipboard, session } from 'electron'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { extensionsDomain } from '../extensions/extensions-domain.js'
@@ -59,7 +59,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     settings: settingsDomain(services.settings),
     shortcuts: shortcutsDomain(services.shortcuts),
     startup: startupDomain(services.windows),
-    history: historyDomain(services.history),
+    history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyText: (text) => { clipboard.writeText(text) } }),
     profiles: profilesDomain(services.profiles),
     pages: pagesDomain(services.windows),
     extensions: extensionsDomain({
@@ -123,6 +123,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     services.internalPages.publish('history.changed', undefined, ['history'])
     if (change !== 'titled') services.internalPages.publish('privacy.changed', undefined, ['settings'])
   })
+  services.closedTabs.onChange(() => { services.internalPages.publish('history.closed', undefined, ['history']) })
   services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
   // Never fires in a private session: startTelemetry never runs there, and

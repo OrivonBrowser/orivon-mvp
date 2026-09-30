@@ -18,7 +18,54 @@ function setup (values: { 'history.remember'?: boolean, 'history.retentionDays'?
   return { service, store, clock, set: (key, value) => { settings[key] = value; for (const listener of listeners) listener({ key }) } }
 }
 
+const PNG = 'data:image/png;base64,iVBORw0KGgo='
+const GIF = 'data:image/gif;base64,R0lGODlhAQAB'
+
 describe('the history service', () => {
+  describe('site icons', () => {
+    it('keeps what a tab offers, and offers the store an icon again only when it changed', () => {
+      const { service, store } = setup()
+      const setFavicon = vi.spyOn(store, 'setFavicon')
+      service.setFavicon('a.example', PNG)
+      service.setFavicon('a.example', PNG)
+      service.setFavicon('a.example', GIF)
+      expect(setFavicon).toHaveBeenCalledTimes(2)
+      expect(service.faviconsFor(['a.example'])).toEqual({ 'a.example': GIF })
+    })
+
+    it('keeps nothing while history is off', () => {
+      const { service } = setup({ 'history.remember': false })
+      service.setFavicon('a.example', PNG)
+      expect(service.faviconsFor(['a.example'])).toEqual({})
+    })
+
+    it('are offered afresh after pages are forgotten, so a site visited again gets its icon back', () => {
+      const { service, store } = setup()
+      const setFavicon = vi.spyOn(store, 'setFavicon')
+      service.visit('https://a.example/', 'A')
+      service.setFavicon('a.example', PNG)
+      service.clear()
+      service.visit('https://a.example/', 'A')
+      service.setFavicon('a.example', PNG)
+      expect(setFavicon).toHaveBeenCalledTimes(2)
+      expect(service.faviconsFor(['a.example'])).toEqual({ 'a.example': PNG })
+    })
+  })
+
+  it('forgets several pages in one change, and finds pages by id', () => {
+    const { service } = setup()
+    service.visit('https://a.example/', 'A')
+    service.visit('https://b.example/', 'B')
+    service.visit('https://c.example/', 'C')
+    const changes: string[] = []
+    service.onChange((change) => { changes.push(change) })
+    const ids = service.list().map((entry) => entry.id)
+    expect(service.pagesByIds([ids[0] as number]).map((entry) => entry.title)).toEqual(['C'])
+    service.removeMany([ids[0] as number, ids[2] as number])
+    expect(service.list().map((entry) => entry.title)).toEqual(['B'])
+    expect(changes).toEqual(['entries'])
+  })
+
   it('writes down a visit at the time it happens, and a title later', () => {
     const { service, store, clock } = setup()
     service.visit('https://a.example/', '')
