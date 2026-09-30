@@ -227,7 +227,7 @@ export class HttpConnection {
     this.hold = true
     this.clearTimers()
     if (this.host.listenerCount('clientError') > 0) { this.raise('clientError', error, this.socket); return }
-    if (this.socket.bytesWritten === 0) this.socket.write(refusalFor(error.code))
+    if (this.res?._headerSent !== true && this.socket.bytesWritten === 0) this.socket.write(refusalFor(error.code))
     this.destroySoon()
   }
 

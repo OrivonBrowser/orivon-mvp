@@ -54,7 +54,6 @@ export class Server extends NetServer implements HttpServerHost {
   private readonly active = new Set<HttpConnection>()
   private closeRequested = false
   private closeIssued = false
-  private closeCallback: ((error?: Error) => void) | undefined
 
   constructor (listener?: RequestListener)
   constructor (options: HttpServerOptions, listener?: RequestListener)
@@ -105,9 +104,13 @@ export class Server extends NetServer implements HttpServerHost {
 
   /** Stops listening once the connections still answering a request are done; idle ones close now. */
   override close (callback?: (error?: Error) => void): this {
+    if (this.closeRequested && !this.closeIssued) {
+      if (callback !== undefined) this.once('close', () => callback())
+      return this
+    }
     if (!super.listening || this.closeRequested) return super.close(callback)
     this.closeRequested = true
-    this.closeCallback = callback
+    if (callback !== undefined) this.once('close', () => callback())
     this.closeIdleConnections()
     this.closeWhenDrained()
     return this
@@ -116,7 +119,7 @@ export class Server extends NetServer implements HttpServerHost {
   private closeWhenDrained (): void {
     if (!this.closeRequested || this.closeIssued || this.active.size > 0) return
     this.closeIssued = true
-    super.close(this.closeCallback)
+    super.close()
   }
 
   closeIdleConnections (): void {

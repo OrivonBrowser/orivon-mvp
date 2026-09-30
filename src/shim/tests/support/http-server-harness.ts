@@ -26,7 +26,7 @@ export async function startServer (handler?: Handler, options: HttpServerOptions
 export async function stopServers (): Promise<void> {
   for (const server of started.splice(0)) {
     server.closeAllConnections()
-    await new Promise<void>((resolve) => { server.close(() => resolve()) })
+    if (server.listening) await new Promise<void>((resolve) => { server.close(() => resolve()) })
   }
 }
 
