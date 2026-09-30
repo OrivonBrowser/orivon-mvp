@@ -115,7 +115,7 @@ describe('runnableIds', () => {
   it('holds every listed command at every depth, and the zoom row\'s four', async () => {
     const { ctx } = await setup()
     const ids = runnableIds(menuItems(ctx))
-    for (const id of ['tab.new', 'split.toggle', 'window.alwaysOnTop', 'zoom.in', 'zoom.out', 'zoom.reset', 'window.fullscreen']) expect(ids.has(id as never), id).toBe(true)
+    for (const id of ['tab.new', 'split.toggle', 'page.print', 'page.save', 'page.screenshot', 'page.pip', 'page.pdf', 'page.viewSource', 'window.alwaysOnTop', 'zoom.in', 'zoom.out', 'zoom.reset', 'window.fullscreen']) expect(ids.has(id as never), id).toBe(true)
     expect(ids.has('tab.close')).toBe(false)
   })
 

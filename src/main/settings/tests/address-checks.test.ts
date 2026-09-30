@@ -27,13 +27,12 @@ describe('isAddressList', () => {
 })
 
 describe('the start-up and page-content settings', () => {
-  it('start closed to a launch that restores nothing, with Home off and the page tools on', () => {
+  it('start closed to a launch that restores nothing, with Home off and spell checking on', () => {
     expect(SETTINGS['startup.mode']).toMatchObject({ kind: 'enum', default: 'newTab' })
     expect(SETTINGS['startup.pages']).toMatchObject({ kind: 'text', default: '', maxLength: 4096 })
     expect(SETTINGS['home.url']).toMatchObject({ kind: 'text', default: '', maxLength: 2048 })
     expect(SETTINGS['toolbar.home']).toMatchObject({ kind: 'bool', default: false })
     expect(SETTINGS['spellcheck.enabled']).toMatchObject({ kind: 'bool', default: true })
-    expect(SETTINGS['pdf.viewer']).toMatchObject({ kind: 'bool', default: true })
   })
 
   it('accept only the values the pages may offer', () => {

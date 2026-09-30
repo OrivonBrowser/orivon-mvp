@@ -47,7 +47,6 @@ const SPECS = {
   'home.url': { kind: 'text', default: '', maxLength: 2048, check: isEmptyOrAddress },
   'toolbar.home': { kind: 'bool', default: false },
   'spellcheck.enabled': { kind: 'bool', default: true },
-  'pdf.viewer': { kind: 'bool', default: true },
   'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' },
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
   'extensions.developerMode': { kind: 'bool', default: false }

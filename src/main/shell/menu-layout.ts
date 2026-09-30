@@ -27,8 +27,14 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   '-',
   { zoom: true },
   '-',
+  'page.print',
+  'page.save',
   { submenu: 'More tools', items: [
     'split.toggle',
+    'page.screenshot',
+    'page.pip',
+    'page.pdf',
+    'page.viewSource',
     { check: 'window.alwaysOnTop', on: ({ window }) => window.window.isAlwaysOnTop() },
     'devtools.toggle'
   ] },

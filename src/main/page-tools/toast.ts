@@ -1,0 +1,71 @@
+// The short messages the page tools show over the page, and the call that shows one. A message is
+// a code here so a caller cannot invent wording, and a file name travels beside its text, never inside it.
+import type { CommandId } from '../shortcuts/commands.js'
+import type { ShellWindow } from '../shell/window-registry.js'
+
+export type ToastTone = 'info' | 'ok' | 'error'
+
+/** What the toast page draws. `name` is drawn after `text`, truncated on its own. `action` is the label of a link that runs `run`. */
+export interface ToastView {
+  readonly text: string
+  readonly name?: string
+  readonly tone: ToastTone
+  /** Stays until replaced or closed: for work still going on. */
+  readonly sticky: boolean
+  readonly action?: string
+}
+
+interface ToastText {
+  readonly text: string
+  readonly tone: ToastTone
+  readonly sticky?: true
+  readonly action?: { readonly label: string, readonly run: CommandId }
+}
+
+export const TOAST_TEXT = {
+  savingPdf: { text: 'Saving PDF…', tone: 'info', sticky: true },
+  saved: { text: 'Saved', tone: 'ok' },
+  pdfFailed: { text: 'Could not save the PDF', tone: 'error' },
+  saveFailed: { text: 'Could not save this page', tone: 'error' },
+  cannotSave: { text: 'This page cannot be saved', tone: 'error' },
+  printFailed: { text: 'Could not print this page', tone: 'error' },
+  noPrinter: { text: 'No printer found', tone: 'error', action: { label: 'Save as PDF', run: 'page.pdf' } },
+  copied: { text: 'Screenshot copied', tone: 'ok' },
+  copyFailed: { text: 'Could not copy the screenshot', tone: 'error' },
+  shotFailed: { text: 'Could not take the screenshot', tone: 'error' },
+  longPage: { text: 'Saved the first part of a very long page', tone: 'ok' },
+  noVideo: { text: 'No video to pop out on this page', tone: 'info' }
+} as const satisfies Record<string, ToastText>
+
+export type ToastCode = keyof typeof TOAST_TEXT
+
+export const isToastCode = (value: unknown): value is ToastCode => typeof value === 'string' && Object.hasOwn(TOAST_TEXT, value)
+
+/** How long a toast that is not sticky stays. */
+export const TOAST_MS = 3000
+
+/** The command a code's link runs, if it has one. */
+export function toastAction (code: ToastCode): CommandId | undefined {
+  const entry: ToastText = TOAST_TEXT[code]
+  return entry.action?.run
+}
+
+export function toastView (code: ToastCode, name?: string): ToastView {
+  const entry: ToastText = TOAST_TEXT[code]
+  return {
+    text: entry.text,
+    tone: entry.tone,
+    sticky: entry.sticky === true,
+    ...(name === undefined ? {} : { name }),
+    ...(entry.action === undefined ? {} : { action: entry.action.label })
+  }
+}
+
+/** Shows `code` over the page, replacing whatever toast is up. Never throws: a message is not worth failing the work it reports. */
+export function showToast (window: ShellWindow, code: ToastCode, name?: string): void {
+  try {
+    window.overlays.show('toast', undefined, { code, ...(name === undefined ? {} : { name }) })
+  } catch (error) {
+    console.error('[page-tools] could not show a toast', error)
+  }
+}
