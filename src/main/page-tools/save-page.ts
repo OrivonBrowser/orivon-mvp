@@ -84,7 +84,7 @@ export async function savePage (window: ShellWindow, page: { wc: SaveContents, t
     let saved = true
     if (document) await withTimeout(wc.savePage(path, formatFor(path)), SAVE_MS, 'the page')
     else saved = await downloadTo(wc, url, path)
-    showToast(window, saved ? 'saved' : 'saveFailed', saved ? baseName(path) : undefined)
+    showToast(window, saved ? 'saved' : 'saveFailed', saved ? baseName(path) : undefined, saved ? path : undefined)
   } catch (error) {
     if (!(error instanceof TimedOut)) console.error('[page-tools] saving the page failed', error)
     showToast(window, 'saveFailed')

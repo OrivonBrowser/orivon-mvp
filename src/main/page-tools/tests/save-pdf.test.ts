@@ -24,7 +24,7 @@ describe('savePdf', () => {
     expect([...deps.files.keys()]).toEqual(['/out/report.pdf'])
     expect(deps.files.get('/out/report.pdf')).toEqual(pdf)
     expect(toasts()).toEqual(['savingPdf', 'saved'])
-    expect(show).toHaveBeenLastCalledWith('toast', undefined, { code: 'saved', name: 'report.pdf' })
+    expect(show).toHaveBeenLastCalledWith('toast', undefined, { code: 'saved', name: 'report.pdf', revealPath: '/out/report.pdf' })
   })
 
   it('writes nothing and shows nothing when the person cancels', async () => {

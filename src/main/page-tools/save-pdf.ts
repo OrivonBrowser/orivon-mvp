@@ -29,7 +29,7 @@ export async function savePdf (window: ShellWindow, page: { wc: PdfContents, tit
     const pdf = await withTimeout(page.wc.printToPDF({ printBackground: true, preferCSSPageSize: true }), PDF_MS, 'the page')
     await deps.writeFile(partial, pdf)
     await deps.rename(partial, path)
-    showToast(window, 'saved', baseName(path))
+    showToast(window, 'saved', baseName(path), path)
   } catch (error) {
     console.error('[page-tools] saving the PDF failed', error)
     await deps.remove(partial).catch(() => {})

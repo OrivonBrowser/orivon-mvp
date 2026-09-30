@@ -42,7 +42,7 @@ export async function takeScreenshot (window: ShellWindow, wc: CaptureContents, 
   try {
     await deps.writeFile(path, shot.png)
     if (shot.truncated) showToast(window, 'longPage')
-    else showToast(window, 'saved', baseName(path))
+    else showToast(window, 'saved', baseName(path), path)
   } catch (error) {
     console.error('[page-tools] writing the screenshot failed', error)
     showToast(window, 'shotFailed')

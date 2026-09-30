@@ -40,7 +40,7 @@ describe('savePage, a web page', () => {
       const wc = contents()
       await savePage(window, page(wc), fakeDeps(path))
       expect(wc.savePage).toHaveBeenCalledWith(path, format)
-      expect(show).toHaveBeenLastCalledWith('toast', undefined, { code: 'saved', name: path.split('/').pop() })
+      expect(show).toHaveBeenLastCalledWith('toast', undefined, { code: 'saved', name: path.split('/').pop(), revealPath: path })
     }
   })
 
@@ -96,7 +96,7 @@ describe('savePage, a file the tab shows', () => {
     expect(wc.savePage).not.toHaveBeenCalled()
     expect(wc.downloadURL).toHaveBeenCalledWith('https://a.example/doc.pdf')
     expect(((wc as unknown as { item: { setSavePath: ReturnType<typeof vi.fn> } }).item).setSavePath).toHaveBeenCalledWith('/out/doc.pdf')
-    expect(show).toHaveBeenLastCalledWith('toast', undefined, { code: 'saved', name: 'doc.pdf' })
+    expect(show).toHaveBeenLastCalledWith('toast', undefined, { code: 'saved', name: 'doc.pdf', revealPath: '/out/doc.pdf' })
     expect(wc.session.listenerCount('will-download')).toBe(0)
   })
 
