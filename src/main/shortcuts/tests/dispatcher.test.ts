@@ -69,7 +69,7 @@ describe('attachShortcuts', () => {
   it('leaves the chord of a reserved command to the page until its feature lands', async () => {
     const { press, run } = await setup()
 
-    const event = press(key('s', 'KeyS', { control: true }))
+    const event = press(key('A', 'KeyA', { control: true, shift: true }))
 
     expect(run).not.toHaveBeenCalled()
     expect(event.preventDefault).not.toHaveBeenCalled()

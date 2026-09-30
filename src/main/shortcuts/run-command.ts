@@ -13,6 +13,8 @@ import type { ShellServices } from '../shell/shell-services.js'
 import { reopenClosed } from '../session-restore/reopen.js'
 import { kioskAllows } from '../window-state/kiosk.js'
 import type { CommandId } from './commands.js'
+import { pdfCommand, pipCommand, printCommand, saveCommand, screenshotCommand, viewSourceCommand } from '../page-tools/page-commands.js'
+import { realDeps } from '../page-tools/real-deps.js'
 
 /** A new dependency of a command is a `ShellServices` member, never a field here. */
 export interface CommandDeps {
@@ -107,11 +109,11 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'app.quit': deps.quit(); return
     // Ids the tools work reserves: each does nothing until the feature that owns it replaces its line and drops `pending` on its COMMANDS row.
     case 'tab.search': return
-    case 'page.print': return
-    case 'page.pdf': return
-    case 'page.save': return
-    case 'page.viewSource': return
-    case 'page.screenshot': return
-    case 'page.pip': return
+    case 'page.print': void printCommand(target); return
+    case 'page.pdf': void pdfCommand(target, realDeps); return
+    case 'page.save': void saveCommand(target, realDeps); return
+    case 'page.viewSource': void viewSourceCommand(target); return
+    case 'page.screenshot': void screenshotCommand(target); return
+    case 'page.pip': void pipCommand(target); return
   }
 }

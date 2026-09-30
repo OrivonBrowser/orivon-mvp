@@ -5,6 +5,11 @@ import { runCommand } from '../run-command.js'
 import type { CommandDeps } from '../run-command.js'
 import type { ShellServices } from '../../shell/shell-services.js'
 import { ClosedStack } from '../../session-restore/closed-stack.js'
+import * as pageCommands from '../../page-tools/page-commands.js'
+
+// The page tools have tests of their own; here only that a key reaches them.
+vi.mock('../../page-tools/page-commands.js', () => Object.fromEntries(['print', 'pdf', 'save', 'viewSource', 'screenshot', 'pip'].map((name) => [`${name}Command`, vi.fn(async () => {})])))
+vi.mock('../../page-tools/real-deps.js', () => ({ realDeps: { real: true } }))
 
 interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
@@ -78,6 +83,18 @@ describe('the tab-state commands', () => {
 })
 
 describe('runCommand', () => {
+  it('hands each page command to the page tools, the ones that write with the real dependencies', () => {
+    const { target, deps } = harness([tab('a')], 'a')
+    const expected: Array<[Parameters<typeof runCommand>[0], keyof typeof pageCommands, boolean]> = [
+      ['page.print', 'printCommand', false], ['page.pdf', 'pdfCommand', true], ['page.save', 'saveCommand', true],
+      ['page.viewSource', 'viewSourceCommand', false], ['page.screenshot', 'screenshotCommand', false], ['page.pip', 'pipCommand', false]
+    ]
+    for (const [id, name, withDeps] of expected) {
+      runCommand(id, target, deps)
+      expect(pageCommands[name], id).toHaveBeenCalledWith(...(withDeps ? [target, { real: true }] : [target]))
+    }
+  })
+
   it('handles every command there is', () => {
     const { target, deps } = harness([tab('a')], 'a')
     for (const command of COMMANDS) expect(() => { runCommand(command.id, target, deps) }, command.id).not.toThrow()
