@@ -39,6 +39,15 @@ address implies (loopback is `local`, anything else `network`), but the broker b
 interface and requires the `network` grant for either today (ADR-0034): within the app's grant,
 but wider than a program binding loopback asked.
 
+**What a file call costs.** Every filesystem import is a round trip from the program's Worker to
+the page and the broker, a few milliseconds each, and the program has one thread, so it serves no
+socket while it waits. A program that makes a dozen file calls per operation is slow here in a
+way it is not natively. SQLite built for WASI is the common case: its default VFS there
+(`unix-dotfile`) takes a lock directory and re-reads the file header on every statement. A port
+whose program is the database's only user opens it with the `unix-none` VFS and
+`PRAGMA locking_mode = EXCLUSIVE`; one real program's start went from 809 s to 20 s with that
+change alone.
+
 ## Design notes
 
 **jco is never one of this repository's dependencies.** It could transpile a component at run
