@@ -13,6 +13,7 @@ import type { DevToolsGate } from '../devtools/devtools-service.js'
 import type { TabLifecycle } from './tab-lifecycle.js'
 import type { ShellServices } from './shell-services.js'
 import type { CommandId } from '../shortcuts/commands.js'
+import type { SiteKind } from '../site-settings/kinds.js'
 
 export interface TabState {
   id: string
@@ -77,6 +78,8 @@ export interface ShellState extends TabsSnapshot {
   bookmarksBar: boolean
   /** The active page's zoom, when it differs from what a site gets by default; otherwise null. */
   zoomPercent: number | null
+  /** What the active page was asked for and the answer it got, for the address bar's chip; empty when nothing was. */
+  siteAccess: ReadonlyArray<{ readonly kind: SiteKind, readonly state: 'allowed' | 'blocked', readonly label: string }>
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** Whether the toolbar shows the Home button (`toolbar.home`). */

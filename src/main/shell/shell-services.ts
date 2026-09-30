@@ -16,6 +16,7 @@ import { NullHistoryStore } from '../history/history-store.js'
 import { openHistory } from '../history/open-history.js'
 import { ProfilesService } from '../launch/profiles-service.js'
 import { memoryVault, type PasswordVault } from '../passwords/vault.js'
+import { SiteSettingsStore } from '../site-settings/site-settings-store.js'
 import type { Runtime } from '../launch/start-launch.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmOpenDevTools } from '../devtools/devtools-prompt.js'
@@ -59,6 +60,8 @@ export interface ShellServices {
   /** The open windows, kept in `session.json`; a private session writes nothing. */
   readonly session: SessionLog
   readonly settings: SettingsStore
+  /** What the person told each site it may do; a private session keeps it in memory. */
+  readonly siteSettings: SiteSettingsStore
   readonly shortcuts: ShortcutService
   readonly shortcutStore: ShortcutStore
   /** The floating preview a tab shows once dragged out of its strip, and the mark it leaves on whichever
@@ -118,6 +121,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     profiles: new ProfilesService(runtime, undefined, kiosk),
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
+    siteSettings: new SiteSettingsStore(runtime.isPrivate ? null : join(userDataPath, 'site-settings.json')),
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
     tearDrag: new TearDragController(() => windows.all()),

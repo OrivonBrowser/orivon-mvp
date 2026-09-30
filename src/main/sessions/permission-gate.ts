@@ -13,10 +13,10 @@ import { app, session, type Session, type WebContents } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { noteExclusiveAccess, type ExclusiveAccess } from '../shell/exclusive-access-notice.js'
 import { confirmExternalLink } from '../shell/external-link-prompt.js'
-import { askNotificationPermission } from '../shell/notification-prompt.js'
 import { windowShowing } from '../shell/showing-window.js'
 import { EXCLUSIVE_ACCESS, isAllowed } from './allowed-permissions.js'
 import { createExternalLinks } from './external-links.js'
+import { askSite } from '../site-settings/ask-site.js'
 import { NotificationDecisions } from './notification-decisions.js'
 import { siteAsks } from './site-asks.js'
 import { createSiteNotifications } from './site-notifications.js'
@@ -32,10 +32,19 @@ export function notificationDecisions (): NotificationDecisions {
 }
 
 const externalLinks = createExternalLinks({ windowShowing, confirm: confirmExternalLink })
-const siteNotifications = createSiteNotifications({
+let notificationsBlocked: () => boolean = () => false
+
+/** Whether `sites.notifications` is `block`; the per-site installer supplies it once the settings are loaded. */
+export function setNotificationsBlockedCheck (check: () => boolean): void {
+  notificationsBlocked = check
+}
+
+const siteNotifications = createSiteNotifications<object, WebContents>({
   decisions: { get: (origin) => notificationDecisions().get(origin), set: (origin, decision) => { notificationDecisions().set(origin, decision) } },
   windowShowing,
-  ask: askNotificationPermission
+  // The same prompt under the address bar every per-site question uses, so the answer is the person's and the page cannot time it.
+  ask: async (_window, _origin, tab) => await askSite(['notifications'], tab),
+  blockedByDefault: () => notificationsBlocked()
 })
 
 /** Answers a request that waits on the person. */

@@ -4,7 +4,7 @@ import { fakeTab } from './fake-tab.js'
 
 describe('tabPromptState', () => {
   it('starts with no prompt open, touched, and nothing dismissed', () => {
-    expect(tabPromptState(fakeTab())).toEqual({ prompting: false, touched: true, notificationsDismissed: false })
+    expect(tabPromptState(fakeTab())).toEqual({ prompting: false, touched: true, notificationsDismissed: false, loads: 0 })
   })
 
   it('is one state per tab, however often it is asked for', () => {

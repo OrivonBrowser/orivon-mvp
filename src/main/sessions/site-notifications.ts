@@ -10,22 +10,24 @@ import { tabPromptState, type PromptingTab } from './tab-prompts.js'
 /** "dismiss" is closing the question without choosing: no decision. */
 export type NotificationAnswer = NotificationDecision | 'dismiss'
 
-export interface SiteNotificationDeps<W> {
+export interface SiteNotificationDeps<W, T extends PromptingTab = PromptingTab> {
   decisions: {
     get: (origin: string) => NotificationDecision | undefined
     set: (origin: string, decision: NotificationDecision) => void
   }
   /** The window the tab is on screen in, or undefined for a background tab. */
   windowShowing: (tab: PromptingTab) => W | undefined
-  ask: (window: W, origin: string) => Promise<NotificationAnswer>
+  ask: (window: W, origin: string, tab: T) => Promise<NotificationAnswer>
+  /** `sites.notifications` is `block`: a site with no answer of its own is refused without being asked. */
+  blockedByDefault?: () => boolean
 }
 
-export interface SiteNotifications {
-  request: (tab: PromptingTab & { getURL: () => string }, details: { requestingUrl?: string | undefined, isMainFrame?: boolean | undefined }) => Promise<boolean>
+export interface SiteNotifications<T extends PromptingTab = PromptingTab> {
+  request: (tab: T & { getURL: () => string }, details: { requestingUrl?: string | undefined, isMainFrame?: boolean | undefined }) => Promise<boolean>
   check: (requestingOrigin: string, embeddingOrigin: string | undefined) => boolean
 }
 
-export function createSiteNotifications<W> (deps: SiteNotificationDeps<W>): SiteNotifications {
+export function createSiteNotifications<W, T extends PromptingTab = PromptingTab> (deps: SiteNotificationDeps<W, T>): SiteNotifications<T> {
   const allowed = (origin: string | null): boolean => origin !== null && deps.decisions.get(origin) === 'allow'
 
   return {
@@ -39,20 +41,25 @@ export function createSiteNotifications<W> (deps: SiteNotificationDeps<W>): Site
       const decided = deps.decisions.get(origin)
       if (decided !== undefined) return decided === 'allow'
 
+      if (deps.blockedByDefault?.() === true) return false
+
       const state = tabPromptState(tab)
       if (state.prompting || state.notificationsDismissed) return false
       const window = deps.windowShowing(tab)
       if (window === undefined) return false
 
       state.prompting = true
+      const loads = state.loads
       let answer: NotificationAnswer
       try {
-        answer = await deps.ask(window, origin)
+        answer = await deps.ask(window, origin, tab)
       } catch {
         answer = 'dismiss'
       } finally {
         state.prompting = false
       }
+      // The page was replaced while the question was open: the answer is about a page that is gone.
+      if (state.loads !== loads) return false
       if (answer === 'dismiss') {
         state.notificationsDismissed = true
         return false

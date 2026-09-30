@@ -19,6 +19,8 @@ export interface TabPromptState {
   touched: boolean
   /** "Not now" was the answer during this page load. */
   notificationsDismissed: boolean
+  /** How many page loads the tab has had: a question answered across a change of this was about another page. */
+  loads: number
 }
 
 /** Input the person has to make on purpose. Pointer movement, scrolling and
@@ -30,11 +32,11 @@ const states = new WeakMap<PromptingTab, TabPromptState>()
 export function tabPromptState (tab: PromptingTab): TabPromptState {
   const existing = states.get(tab)
   if (existing !== undefined) return existing
-  const state: TabPromptState = { prompting: false, touched: true, notificationsDismissed: false }
+  const state: TabPromptState = { prompting: false, touched: true, notificationsDismissed: false, loads: 0 }
   tab.on('input-event', (_event, input) => { if (INTERACTIONS.has(input.type)) state.touched = true })
   // Main frame only, and not for in-page (hash or history) navigations:
   // exactly a new page load.
-  tab.on('did-navigate', () => { state.notificationsDismissed = false })
+  tab.on('did-navigate', () => { state.notificationsDismissed = false; state.loads += 1 })
   states.set(tab, state)
   return state
 }
