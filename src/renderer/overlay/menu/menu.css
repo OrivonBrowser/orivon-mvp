@@ -22,6 +22,8 @@ body[data-overlay='menu'] .menu-row {
 body[data-overlay='menu'] .menu-row:hover { background: var(--whover); }
 body[data-overlay='menu'] .menu-row[aria-disabled='true'] { color: var(--wink-off); cursor: default; }
 body[data-overlay='menu'] .menu-row[aria-disabled='true']:hover { background: none; }
+/* The reason a row is off reads with the row, not brighter than it. */
+body[data-overlay='menu'] .menu-row[aria-disabled='true'] .menu-hint { color: var(--wink-off); }
 body[data-overlay='menu'] .menu-row:active:not([aria-disabled='true']) { background: color-mix(in srgb, var(--wink) 12%, transparent); }
 body[data-overlay='menu'] .menu-row:focus-visible,
 body[data-overlay='menu'] .zoom-btn:focus-visible {

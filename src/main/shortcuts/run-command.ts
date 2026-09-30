@@ -15,6 +15,9 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { reopenClosed } from '../session-restore/reopen.js'
 import { openQr } from '../qr/qr-open.js'
+import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
+import { realShareDeps } from '../os/share-runner.js'
+import { openShortcutSheet } from '../os/shortcut-open.js'
 import { TAB_SEARCH_OVERLAY } from '../tab-search/tab-search-overlay.js'
 import { dismissRestoreOffer } from '../startup/restore-offer.js'
 import { kioskAllows } from '../window-state/kiosk.js'
@@ -137,10 +140,10 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return
-    case 'share.copyLink': return
-    case 'share.email': return
+    case 'share.copyLink': copyLinkCommand(target, realShareDeps); return
+    case 'share.email': void emailLinkCommand(target, realShareDeps); return
     case 'site.certificate': return
-    case 'site.shortcut': return
+    case 'site.shortcut': openShortcutSheet(target, services); return
     case 'page.screenshot': void screenshotCommand(target); return
     case 'page.qr': openQr(target); return
     case 'page.pip': void pipCommand(target); return

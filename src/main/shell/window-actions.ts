@@ -4,6 +4,9 @@
 import { screen } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellActions } from '../ipc/ipc.js'
+import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
+import { realShareDeps } from '../os/share-runner.js'
+import { shareAddressFor } from '../os/share.js'
 import type { PermissionsPanel } from '../permissions/permissions-panel.js'
 import type { PopoverAnchor } from '../permissions/popover-view.js'
 import type { SiteInfoPanel } from '../permissions/site-info-panel.js'
@@ -70,6 +73,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     showTabMenu(window, tabMenuTemplate({
       ...flags,
       tabCount: all.length,
+      canShare: shareAddressFor(tab) !== undefined,
       inSplit: tab.splitWith !== null,
       splitPartners: partners.map((other) => ({ label: other.title === '' ? 'New Tab' : other.title, split: () => { tabs.splits.split(id, other.id, 'right') } })),
       otherWindows: others.map((other, position) => ({ label: windowLabel(other, position), move: () => { moveToWindow(entry, id, other) } }))
@@ -79,6 +83,8 @@ export function shellActions (parts: WindowParts): ShellActions {
       duplicate: () => { duplicateTab(tabs, id) },
       togglePin: () => { togglePin(tabs, id) },
       toggleMute: () => { toggleMute(tabs, id) },
+      copyLink: () => { copyLinkCommand(entry, realShareDeps, id) },
+      emailLink: () => { void emailLinkCommand(entry, realShareDeps, id) },
       moveToNewWindow: () => { moveToNewWindow(entry, id, openWindow, cascadeFrom(window.getBounds())) },
       separate: () => { tabs.splits.separate(id) },
       close: () => { tabs.closeTab(id) },

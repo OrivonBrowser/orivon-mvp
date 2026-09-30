@@ -2,6 +2,7 @@
 // per line in name order, and its page to src/renderer/overlay/pages.ts.
 import { findOverlay } from '../find/find-overlay.js'
 import { screenshotOverlay, toastOverlay } from '../page-tools/page-overlays.js'
+import { shortcutOverlay } from '../os/shortcut-real.js'
 import { qrOverlay } from '../qr/qr-real.js'
 import { sadTabOverlay } from '../sad-tab/sad-tab-overlay.js'
 import { bookmarkFolderOverlay } from '../shell/bookmarks-bar/folder-overlay.js'
@@ -20,6 +21,7 @@ export const OVERLAYS: readonly OverlayDef[] = [
   restoreOverlay,
   sadTabOverlay,
   screenshotOverlay,
+  shortcutOverlay,
   tabSearchOverlay,
   toastOverlay
 ]
