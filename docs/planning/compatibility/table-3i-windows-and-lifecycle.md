@@ -1,8 +1,8 @@
 # Table 3i: windows, lifecycle and the desktop around the app
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 The universe is the `window` operations a page can call (`open`, `close`, `focus`, `blur`, `resizeTo`, `resizeBy`, `moveTo`, `moveBy`, `screenX`), the Page Lifecycle events (`beforeunload`, `pagehide`, `unload`, `visibilitychange`, `freeze`, `resume`), the 35 shell shortcuts that have a default chord, the desktop integrations a packaged Electron app registers (tray, menu, dock, global shortcut, autostart, protocol handler, file association, badge), the start-up inputs a packager or a command line supplies, and the 30 `app` events in Electron 44's typings, and the lifecycle moments of an app (start, reload, hide, close, quit, crash, update, sign-in). [Table 2b](table-2b-electron.md) has the `electron` API for each, [Table 1b](table-1-capabilities.md) the authority, and counts of the form "N of 80" are open-source Electron apps scanned.
 

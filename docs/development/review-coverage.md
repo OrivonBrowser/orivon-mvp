@@ -259,3 +259,9 @@ see in the PR itself.
 | Row-by-row verification against the code (eleven agents, one or two sub-tables each, plus one for the rows a merge on `main` changed) | Every row of Tables 1, 2, 3 and 5 and the Table 8 corrections, at `802cae01` | Roughly one row in four corrected before merge: overstated "works" claims, counts off by one or two, substitutes nobody had measured, and rows the loopback scope and HTTP server on `main` had made wrong |
 | Coverage check against 1,156 needs from scans of 80 Electron apps, 56 Node apps and the ports' own ledger (an agent) | The assembled rows | Five needs had no row, now added |
 | `/code-review` at medium effort | The pull request | Three findings: a stale cross-reference to the resolved A148 and a Table 4 paragraph that did not mention the new rows, both fixed; a claim that rows 12 and 13 never existed was wrong (both were deleted when resolved) |
+
+### `stream/compat-readable`: the compatibility matrix in readable form (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at medium effort | The pull request | Two findings, both fixed: the page had lost the legend the detail pages rely on (status symbols, the four ways a gap shows, the "Web platform:" rows, the app-scan counts), and Table 1's Broker column pointed at `index.ts` alone although the broker is split. Its spot checks of summary rows against the detail pages (crypto, zlib, `Buffer`, `events`, `util`, `assert`, `process`, the Electron and Node counts) all matched |

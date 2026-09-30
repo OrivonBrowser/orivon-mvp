@@ -1,13 +1,14 @@
 # `docs/planning/compatibility/`
 
 The rows of the compatibility matrix's Tables 1, 2, 3 and 5, one file per sub-table.
-[`../compatibility-matrix.md`](../compatibility-matrix.md) is the entry: the legend, what each
-column means, how the tables are filled, an index with a tally per sub-table, and Tables 4, 6, 7
-and 8 whole.
+[`../compatibility-matrix.md`](../compatibility-matrix.md) holds the same tables in readable form,
+one row per topic, with the legend and Tables 4 to 8. These pages list every item one by one, each
+checked against the code, for looking up a single module, member, permission or protocol.
 
 These pages follow the rule the matrix follows ([`CLAUDE.md`](../../../CLAUDE.md) Rule 2), although
 they sit under `planning/`: each says what works today and nothing else. A row changes when the
-code does, in the same pull request, and a tally on the entry page changes with it.
+code does, in the same pull request, and so does the readable row that sums it up on the matrix
+page.
 
 | File | Table |
 |---|---|
