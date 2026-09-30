@@ -1,5 +1,6 @@
 // What a feature does when a window opens or closes, without window.ts naming it.
 // One line per hook in WINDOW_HOOKS, alphabetical.
+import { windowStateRecorder } from '../window-state/window-state-recorder.js'
 import type { WindowContext } from './window-context.js'
 import type { ShellWindowOptions } from './window-options.js'
 
@@ -11,7 +12,7 @@ export interface WindowHook {
   closing?: (ctx: WindowContext) => void
 }
 
-export const WINDOW_HOOKS: readonly WindowHook[] = []
+export const WINDOW_HOOKS: readonly WindowHook[] = [windowStateRecorder]
 
 /** A hook that throws is logged and skipped: a throw out of a window event would reach Electron's error dialog. */
 export function runWindowHooks (

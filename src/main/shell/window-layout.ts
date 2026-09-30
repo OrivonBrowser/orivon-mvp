@@ -16,6 +16,8 @@ export interface WindowLayoutDeps {
   /** The tab holding the whole window, if a page is in HTML fullscreen. */
   readonly fullscreenTabId: () => string | null
   readonly bookmarksBarShown: () => boolean
+  /** A kiosk window has no chrome: the page takes the whole window. */
+  readonly kiosk?: boolean
 }
 
 export interface WindowLayout {
@@ -24,15 +26,16 @@ export interface WindowLayout {
   tabBounds: () => Bounds
 }
 
-export function createWindowLayout ({ win, chrome, fullscreenTabId, bookmarksBarShown }: WindowLayoutDeps): WindowLayout {
+export function createWindowLayout ({ win, chrome, fullscreenTabId, bookmarksBarShown, kiosk = false }: WindowLayoutDeps): WindowLayout {
   function chromeHeight (): number {
+    if (kiosk) return 0
     return bookmarksBarShown() ? CHROME_HEIGHT : CHROME_TOP_ROWS
   }
 
   function layoutChrome (): void {
     if (win.isDestroyed()) return
     const bounds = win.getContentBounds()
-    chrome.setVisible(fullscreenTabId() === null)
+    chrome.setVisible(!kiosk && fullscreenTabId() === null)
     chrome.setBounds({ x: 0, y: 0, width: bounds.width, height: chromeHeight() })
   }
 

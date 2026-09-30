@@ -32,7 +32,8 @@
    which reads as oversized next to the bookmark toggle sitting right
    beside them -- owner, 2026-09-15. Parity across the row wins over
    quoting the reference exactly. */
-.navgroup .navbtn svg { width: 18px; height: 18px; }
+.navgroup .navbtn svg,
+.toolbar-slot .navbtn svg { width: 18px; height: 18px; }
 .navbtn:not(:disabled):hover {
   color: var(--wink);
 }

@@ -3,10 +3,12 @@
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
+import { goHome } from '../shell/home.js'
 import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
+import { kioskAllows } from '../window-state/kiosk.js'
 import type { CommandId } from './commands.js'
 
 /** A new dependency of a command is a `ShellServices` member, never a field here. */
@@ -19,6 +21,7 @@ export interface CommandDeps {
 export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDeps): void {
   const { tabs, window, chrome } = target
   const { services } = deps
+  if (services.kiosk && !kioskAllows(id)) return
   const { tabs: order, activeTabId } = tabs.getState()
   const active = order.find((tab) => tab.id === activeTabId)
   const goTo = (index: number): void => {
@@ -45,6 +48,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'nav.forward': if (active !== undefined) tabs.forward(active.id); return
     case 'nav.reload': if (active !== undefined) tabs.reload(active.id); return
     case 'nav.hardReload': tabs.activeWebContents()?.reloadIgnoringCache(); return
+    case 'nav.home': goHome(tabs, services.settings, { newTab: false }); return
     case 'nav.focusAddress':
       chrome.webContents.focus()
       chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'focusAddress' })
@@ -97,7 +101,6 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.closeRight': return
     case 'tab.search': return
     case 'nav.stop': return
-    case 'nav.home': return
     case 'find.open': return
     case 'find.next': return
     case 'find.previous': return

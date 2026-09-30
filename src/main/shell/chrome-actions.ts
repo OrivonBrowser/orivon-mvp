@@ -1,3 +1,4 @@
+import { homeOpen } from './actions/home-open.js'
 import { overlayClose, overlayToggle } from './actions/overlay.js'
 import type { WindowContext } from './window-context.js'
 
@@ -7,6 +8,7 @@ export type ChromeAction = (payload: unknown, ctx: WindowContext) => unknown
 
 /** One entry per action, alphabetical by name. */
 export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
+  'home.open': homeOpen,
   'overlay.close': overlayClose,
   'overlay.toggle': overlayToggle
 }

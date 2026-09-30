@@ -26,6 +26,7 @@ whichever window's strip it is dragged over. Split view: `split-model.ts` is the
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
 that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
 would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen.
+`first-window.ts` decides what a cold start opens (the window's last place, the addresses on the command line, a kiosk's page) and `home.ts` is what Home opens.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
 and notification questions the permission gate asks, the right-click menu for tabs and the

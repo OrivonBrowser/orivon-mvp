@@ -40,7 +40,7 @@ describe('the page-tools command rows', () => {
   it('marks every row without a feature behind it pending, and no other row', () => {
     const pending = COMMANDS.filter((def) => (def as CommandDef).pending === true).map((def) => def.id)
 
-    expect(pending).toEqual(ROWS.map(([id]) => id).filter((id) => id !== 'window.alwaysOnTop'))
+    expect(pending).toEqual(ROWS.map(([id]) => id).filter((id) => id !== 'window.alwaysOnTop' && id !== 'nav.home'))
   })
 
   it('gives find next and previous their function-key aliases', () => {

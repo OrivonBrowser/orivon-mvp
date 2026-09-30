@@ -8,9 +8,9 @@ const options = { maximized: true }
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('runWindowHooks', () => {
-  it('starts with no hook, so a window behaves as it did', () => {
-    expect(WINDOW_HOOKS).toEqual([])
-    expect(() => { runWindowHooks('opened', ctx, options) }).not.toThrow()
+  it('registers each hook once, by name', () => {
+    expect(WINDOW_HOOKS.map((hook) => hook.name)).toEqual(['window-state'])
+    expect(() => { runWindowHooks('opened', ctx, options, []) }).not.toThrow()
   })
 
   it('hands the opened phase the window and its options, and the closing phase the window', () => {

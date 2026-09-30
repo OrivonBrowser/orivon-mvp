@@ -21,10 +21,10 @@ export const startup: Section = {
     {
       id: 'home-url',
       label: 'Home page',
-      help: 'Where the Home button and Alt + Home go. Leave it empty for the new tab page.',
-      keywords: ['homepage', 'start page', 'address', 'url'],
+      help: 'The page the Home button and Alt+Home open. Leave empty for the new tab page.',
+      keywords: ['homepage', 'home', 'start', 'start page', 'address', 'url'],
       group: 'Home page',
-      control: { type: 'text', key: 'home.url', placeholder: 'New tab page', problem: 'That is not an address. It must start with https:// or http://.' }
+      control: { type: 'text', key: 'home.url', placeholder: 'New tab page', problem: 'Enter a web address, like https://example.com' }
     },
     {
       id: 'home-button',
