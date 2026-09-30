@@ -232,7 +232,11 @@ it('asks once per site, remembers the answer across a page load, and the chip ch
     // On disk, per site and kind.
     const file = join(await userDataOf(app), 'site-settings.json')
     expect(await waitFor(() => existsSync(file))).toBe(true)
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ version: 1, sites: { [origins.a]: { camera: 'allow' }, [origins.b]: { camera: 'allow' } } })
+    const onDisk = (): unknown => { try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null } }
+    const expected = { version: 1, sites: { [origins.a]: { camera: 'allow' }, [origins.b]: { camera: 'allow' } } }
+    // The store writes after a short delay, so the second answer reaches the file a moment after the first.
+    expect(await waitFor(() => JSON.stringify(onDisk()) === JSON.stringify(expected))).toBe(true)
+    expect(onDisk()).toEqual(expected)
 
     expect(await dialogsAsked(app)).toEqual([])
     expect(mainOutput(app)).not.toMatch(/\[site-asks\]/)

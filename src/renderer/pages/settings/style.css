@@ -205,3 +205,4 @@ kbd {
   user-select: all;
 }
 .row.wide .banner { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 12px; }
+.row.wide .banner[hidden] { display: none; }

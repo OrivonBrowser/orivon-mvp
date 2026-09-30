@@ -15,6 +15,7 @@ import type { FixtureServer } from './qa-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor } from './smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 150_000
+const SEAM = { ORIVON_TEST_PASSWORD_KEYRING: '1' }
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 
 const LOGIN = (action: string, extra = ''): string => `<!doctype html><title>Sign in</title><body style="font:16px sans-serif">${extra}
@@ -128,7 +129,7 @@ async function chooseFirst (app: App, chrome: Page): Promise<void> {
 }
 
 it('offers a sign-in for keeping only once it worked, then saves, fills, updates and forgets per site', async () => {
-  const { app, chrome } = await launchShell()
+  const { app, chrome } = await launchShell({ env: SEAM })
   try {
     // A refused sign-in is not offered: the next page asks for the password again.
     let view = await visit(app, chrome, `${site.origin}/login`)
@@ -315,7 +316,7 @@ it('offers a sign-in for keeping only once it worked, then saves, fills, updates
 }, TEST_TIMEOUT_MS)
 
 it('offers nothing in a private window', async () => {
-  const { app, chrome } = await launchShell({ args: ['--orivon-private'] })
+  const { app, chrome } = await launchShell({ env: SEAM, args: ['--orivon-private'] })
   try {
     const view = await visit(app, chrome, `${site.origin}/login`)
     await signIn(view, 'ada', 'pw-private')
