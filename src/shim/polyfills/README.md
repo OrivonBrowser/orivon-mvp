@@ -6,7 +6,8 @@ hand-written `assert`, `querystring`, `string_decoder`, `timers`, `url` and `str
 `module` (`createRequire` for a native addon's `.node` path, over [`../addon/`](../addon/)),
 `worker_threads` (`Worker` over [`../child-process/`](../child-process/)'s Web Worker runtime,
 `isMainThread`/`parentPort`/`workerData` read at evaluation time) and `vm`
-(code run in the page's own context).
+(code run in the page's own context), and the modules a server's dependency graph asks for as it
+loads: `tty`, `readline`, `http2`, `diagnostics_channel`, `async_hooks`, `perf_hooks` and `console`.
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../errors.ts`](../errors.ts),
 [`../unimplemented.ts`](../unimplemented.ts) and [`../virtual-root.ts`](../virtual-root.ts)
@@ -40,3 +41,24 @@ would be a `src/contracts/` change, not one here.
 thirty small pure-JS packages in any bundle importing `util`, which is every bundle using
 `stream`. The package reads `process.env.NODE_DEBUG` at load, so it needs the `process` global
 installed first. What `util.ts` replaces, and why: its header.
+
+**`tty`, `readline` and `http2` load and refuse by name.** An app has no terminal, so
+`tty.isatty()` is false for every descriptor and the stream classes refuse as *not-applicable*;
+`readline` has no member yet and each refuses as *unimplemented*. `http2` carries Node's real
+`constants` ([`http2-constants.generated.json`](http2-constants.generated.json), a snapshot of
+one Node version), which `http2-wrapper` and `undici` destructure as they evaluate; every
+function refuses as *not-built*, since `orivon.net` carries no HTTP/2 session, and a client
+falls back to HTTP/1.1 on the error.
+
+**`async_hooks` cannot follow an `await`.** A page has no per-continuation context, so
+[`async-hooks.ts`](async-hooks.ts) keeps one table of current stores. `AsyncLocalStorage#run`
+sets its store for the synchronous run of the callback, and `AsyncResource` captures the table
+when it is made and restores it in `runInAsyncScope` and `bind`: a callback bound inside `run`
+sees the store when it is called later, and a continuation after `await` or a timer that nothing
+bound sees `undefined`. `createHook` returns a hook that never fires, since no resource is
+reported; `express`'s `on-finished` wraps every response in an `AsyncResource` and needs no
+more. Provisional: what would settle it is the platform's `AsyncContext`, which no engine ships.
+
+**`diagnostics_channel` is real JavaScript** ([`diagnostics-channel.ts`](diagnostics-channel.ts)):
+one channel per name held by a `WeakRef`, `bindStore`/`runStores` over `AsyncLocalStorage`, and
+`tracingChannel`. A subscriber that throws surfaces on the next tick, as in Node.

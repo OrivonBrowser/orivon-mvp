@@ -189,6 +189,24 @@ describe('runFork', () => {
     expect(parent.posts).toContainEqual({ type: 'ipc', message: { echo: { hello: 1 }, argv: ['node', '/child.js', 'a'], mode: 'test' } })
   })
 
+  it('sends console output to the parent as stdout and stderr, and keeps the Worker\'s own console', async () => {
+    const scope = fakeScope()
+    const own: string[] = []
+    const record = (name: string) => (...args: unknown[]) => { own.push(`${name}:${args.join(' ')}`) }
+    const console = { log: record('log'), info: record('info'), debug: record('debug'), warn: record('warn'), error: record('error'), trace: record('trace') }
+    Object.assign(scope, { console })
+    const parent = fakeParent()
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      console.log('listening on %s:%d', '127.0.0.1', 9000)
+      console.info({ a: 1 })
+      console.warn('careful')
+      console.error(new Error('boom').message, 7)
+    })
+    expect(output(parent, 'stdout')).toBe("listening on 127.0.0.1:9000\n{ a: 1 }\n")
+    expect(output(parent, 'stderr')).toBe('careful\nboom 7\n')
+    expect(own).toEqual(['log:listening on %s:%d 127.0.0.1 9000', 'info:[object Object]', 'warn:careful', 'error:boom 7'])
+  })
+
   it('holds a message sent while the module loads, and delivers it once the module has run', async () => {
     const scope = fakeScope()
     const parent = fakeParent()

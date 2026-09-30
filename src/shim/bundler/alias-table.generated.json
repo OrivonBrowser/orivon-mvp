@@ -160,6 +160,41 @@
       "specifier": "assert",
       "kind": "local",
       "implementation": "./polyfills/assert.js"
+    },
+    {
+      "specifier": "tty",
+      "kind": "local",
+      "implementation": "./polyfills/tty.js"
+    },
+    {
+      "specifier": "readline",
+      "kind": "local",
+      "implementation": "./polyfills/readline.js"
+    },
+    {
+      "specifier": "http2",
+      "kind": "local",
+      "implementation": "./polyfills/http2.js"
+    },
+    {
+      "specifier": "diagnostics_channel",
+      "kind": "local",
+      "implementation": "./polyfills/diagnostics-channel.js"
+    },
+    {
+      "specifier": "async_hooks",
+      "kind": "local",
+      "implementation": "./polyfills/async-hooks.js"
+    },
+    {
+      "specifier": "perf_hooks",
+      "kind": "local",
+      "implementation": "./polyfills/perf-hooks.js"
+    },
+    {
+      "specifier": "console",
+      "kind": "local",
+      "implementation": "./polyfills/console.js"
     }
   ]
 }

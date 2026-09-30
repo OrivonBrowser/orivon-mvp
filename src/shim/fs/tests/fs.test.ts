@@ -578,8 +578,8 @@ describe('fs\'s other members -- named refusal instead of absence (A135), readin
     }
   })
 
-  it.each(['chmod', 'chmodSync', 'chown', 'chownSync'])(
-    'reading %s does not throw; calling it names it, reason not-applicable -- no POSIX permission model exists to set',
+  it.each(['chown', 'chownSync', 'fchown', 'lchown'])(
+    'reading %s does not throw; calling it names it, reason not-applicable -- no POSIX ownership model exists to set',
     async (member) => {
       installFakeOrivon()
       const fs = (await import('../fs.js')).default as unknown as Record<string, () => unknown>

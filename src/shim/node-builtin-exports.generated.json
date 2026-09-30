@@ -902,6 +902,116 @@
         "throws"
       ],
       "data": []
+    },
+    "tty": {
+      "functions": [
+        "ReadStream",
+        "WriteStream",
+        "isatty"
+      ],
+      "data": []
+    },
+    "readline": {
+      "functions": [
+        "Interface",
+        "clearLine",
+        "clearScreenDown",
+        "createInterface",
+        "cursorTo",
+        "emitKeypressEvents",
+        "moveCursor"
+      ],
+      "data": [
+        "promises"
+      ]
+    },
+    "http2": {
+      "functions": [
+        "Http2ServerRequest",
+        "Http2ServerResponse",
+        "connect",
+        "createSecureServer",
+        "createServer",
+        "getDefaultSettings",
+        "getPackedSettings",
+        "getUnpackedSettings",
+        "performServerHandshake"
+      ],
+      "data": [
+        "constants",
+        "sensitiveHeaders"
+      ]
+    },
+    "diagnostics_channel": {
+      "functions": [
+        "Channel",
+        "channel",
+        "hasSubscribers",
+        "subscribe",
+        "tracingChannel",
+        "unsubscribe"
+      ],
+      "data": []
+    },
+    "async_hooks": {
+      "functions": [
+        "AsyncLocalStorage",
+        "AsyncResource",
+        "createHook",
+        "executionAsyncId",
+        "executionAsyncResource",
+        "triggerAsyncId"
+      ],
+      "data": [
+        "asyncWrapProviders"
+      ]
+    },
+    "perf_hooks": {
+      "functions": [
+        "Performance",
+        "PerformanceEntry",
+        "PerformanceMark",
+        "PerformanceMeasure",
+        "PerformanceObserver",
+        "PerformanceObserverEntryList",
+        "PerformanceResourceTiming",
+        "createHistogram",
+        "monitorEventLoopDelay"
+      ],
+      "data": [
+        "constants",
+        "performance"
+      ]
+    },
+    "console": {
+      "functions": [
+        "Console",
+        "assert",
+        "clear",
+        "context",
+        "count",
+        "countReset",
+        "createTask",
+        "debug",
+        "dir",
+        "dirxml",
+        "error",
+        "group",
+        "groupCollapsed",
+        "groupEnd",
+        "info",
+        "log",
+        "profile",
+        "profileEnd",
+        "table",
+        "time",
+        "timeEnd",
+        "timeLog",
+        "timeStamp",
+        "trace",
+        "warn"
+      ],
+      "data": []
     }
   }
 }

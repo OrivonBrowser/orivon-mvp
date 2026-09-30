@@ -100,8 +100,8 @@ export async function doReaddir (path: PathLike, options: ReaddirOptions | strin
 
 export async function doStat (path: PathLike): Promise<NodeStats> {
   const confined = await confine(path, 'stat')
-  if (isRootPath(confined)) return toNodeStats(rootStat())
-  return toNodeStats(await guarded(async () => await getOrivon().fs.stat(confined)))
+  if (isRootPath(confined)) return toNodeStats(rootStat(), confined)
+  return toNodeStats(await guarded(async () => await getOrivon().fs.stat(confined)), confined)
 }
 
 /** `force` is Node's, not the broker's: it is applied here, by ignoring ENOENT, and never forwarded. */

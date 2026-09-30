@@ -23,7 +23,7 @@ import type { FileHandle } from '../../contracts/handles.js'
 import { getOrivon } from '../orivon-global.js'
 import { toNodeStats, type NodeStats } from './stats.js'
 import { encode } from '../encoding.js'
-import { confine, confineSync, fsError, guarded, type PathLike } from './paths.js'
+import { assertMode, confine, confineSync, fsError, guarded, type PathLike } from './paths.js'
 import { refuseShim } from '../errors.js'
 import {
   assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootDirectoryHandleSync, rootReadError, rootTruncateError, rootWriteError
@@ -123,11 +123,14 @@ export class NodeFileHandle {
   private readonly cursor: LocalCursor
   /** True only for the root-directory handle fs/root.ts builds -- read/write/truncate short-circuit before ever reaching `this.handle`'s own (unreachable in practice) versions of them, so their fabricated Node errno codes reach the caller unmangled by guarded()'s toNodeError, which only knows how to translate a real OrivonError. */
   private readonly isRoot: boolean
+  /** The confined path, which `stat()` derives `ino` from so it agrees with a stat of the same path. */
+  private readonly identity: string
 
-  private constructor (fd: number, handle: FileHandle, cursor: LocalCursor, isRoot = false) {
+  private constructor (fd: number, handle: FileHandle, cursor: LocalCursor, identity: string, isRoot = false) {
     this.fd = fd
     this.handle = handle
     this.cursor = cursor
+    this.identity = identity
     this.isRoot = isRoot
   }
 
@@ -138,7 +141,7 @@ export class NodeFileHandle {
     if (isRootPath(confined)) {
       assertRootOpenAllowed(flags)
       const fd = nextFd++
-      const wrapped = new NodeFileHandle(fd, rootDirectoryHandle(), new LocalCursor(0), true)
+      const wrapped = new NodeFileHandle(fd, rootDirectoryHandle(), new LocalCursor(0), confined, true)
       openByFd.set(fd, wrapped)
       return wrapped
     }
@@ -146,7 +149,7 @@ export class NodeFileHandle {
       const handle = await getOrivon().fs.open(confined, flags)
       const cursor = new LocalCursor(await initialCursor(handle, flags))
       const fd = nextFd++
-      const wrapped = new NodeFileHandle(fd, handle, cursor)
+      const wrapped = new NodeFileHandle(fd, handle, cursor, confined)
       openByFd.set(fd, wrapped)
       return wrapped
     })
@@ -169,7 +172,7 @@ export class NodeFileHandle {
     return { bytesWritten, buffer }
   }
 
-  async stat (): Promise<NodeStats> { return await guarded(async () => toNodeStats(await this.handle.stat())) }
+  async stat (): Promise<NodeStats> { return await guarded(async () => toNodeStats(await this.handle.stat(), this.identity)) }
 
   async truncate (length = 0): Promise<void> {
     if (this.isRoot) rootTruncateError()
@@ -188,6 +191,9 @@ export class NodeFileHandle {
 
   /** Real Node's FileHandle#datasync -- fdatasync, a lighter-weight sync. orivon.fs's FileHandle contract has one durability primitive, not two (handles.ts's own FileHandle doc), so this is the same call as sync() under a second name, matching what a ported dependency expects to find. */
   async datasync (): Promise<void> { await guarded(async () => { await this.handle.sync() }) }
+
+  /** No mode to set (permissions.ts): succeeds while the descriptor is open. */
+  async chmod (mode: unknown): Promise<void> { assertMode(mode) }
 
   async close (): Promise<void> {
     openByFd.delete(this.fd)
@@ -318,6 +324,17 @@ export function ftruncate (fd: number, ...args: readonly unknown[]): void {
   handle.truncate(length).then(() => callback(null), (error) => callback(error as Error))
 }
 
+export function fchmod (fd: number, mode: unknown, callback: NodeCallback<void>): void {
+  assertMode(mode)
+  if (!openByFd.has(fd)) { callback(badFdAsync(fd, 'fchmod')); return }
+  callback(null)
+}
+
+export function fchmodSync (fd: number, mode: unknown): void {
+  assertMode(mode)
+  if (!openByFdSync.has(fd)) throw badFdSync(fd, 'fchmod')
+}
+
 export function fsync (fd: number, callback: NodeCallback<void>): void {
   const handle = openByFd.get(fd)
   if (handle === undefined) { callback(badFdAsync(fd, 'fsync')); return }
@@ -357,11 +374,13 @@ class SyncNodeFileHandle {
   private readonly handle: SyncFileHandleWire
   private readonly cursor: SyncLocalCursor
   private readonly isRoot: boolean
+  private readonly identity: string
 
-  private constructor (fd: number, handle: SyncFileHandleWire, cursor: SyncLocalCursor, isRoot = false) {
+  private constructor (fd: number, handle: SyncFileHandleWire, cursor: SyncLocalCursor, identity: string, isRoot = false) {
     this.fd = fd
     this.handle = handle
     this.cursor = cursor
+    this.identity = identity
     this.isRoot = isRoot
   }
 
@@ -370,7 +389,7 @@ class SyncNodeFileHandle {
     if (isRootPath(confined)) {
       assertRootOpenAllowed(flags)
       const fd = nextFd++
-      const wrapped = new SyncNodeFileHandle(fd, rootDirectoryHandleSync(), new SyncLocalCursor(0), true)
+      const wrapped = new SyncNodeFileHandle(fd, rootDirectoryHandleSync(), new SyncLocalCursor(0), confined, true)
       openByFdSync.set(fd, wrapped)
       return wrapped
     }
@@ -378,7 +397,7 @@ class SyncNodeFileHandle {
       const handle = syncFs('fs.openSync').open(confined, flags)
       const cursor = new SyncLocalCursor(initialCursorSync(handle, flags))
       const fd = nextFd++
-      const wrapped = new SyncNodeFileHandle(fd, handle, cursor)
+      const wrapped = new SyncNodeFileHandle(fd, handle, cursor, confined)
       openByFdSync.set(fd, wrapped)
       return wrapped
     })
@@ -401,7 +420,7 @@ class SyncNodeFileHandle {
     return { bytesWritten, buffer }
   }
 
-  stat (): NodeStats { return guardedSync(() => toNodeStats(this.handle.stat())) }
+  stat (): NodeStats { return guardedSync(() => toNodeStats(this.handle.stat(), this.identity)) }
 
   close (): void {
     openByFdSync.delete(this.fd)

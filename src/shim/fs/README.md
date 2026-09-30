@@ -56,3 +56,19 @@ so [`root.ts`](root.ts) answers every call on it with Node's errors, checked aga
 Linux. `readdir` of the root is the one call it cannot answer and fails `EACCES`; closing that is
 a broker policy change (a read-only listing of the root), not a shim one. A directory fsync of the
 root is a no-op: a rename is only as durable as the broker's own `rename()` makes it.
+
+**`fs.Stats` carries Node's whole field set**, because libraries read it whole (`etag` checks
+for `ctime` and `ino`, and `express.static` throws without them). `orivon.fs` reports size, kind
+and mtime, so every other field is a fixed answer: `ino` is a 53-bit FNV-style hash of the
+confined path (stable for one path, different across paths); `dev` 1, `nlink` 1, `uid` and `gid`
+0, `rdev` 0; `mode` is a regular file `0o644` or a directory `0o755`; `blksize` 4096 and
+`blocks` counts 512-byte units of whole 4096-byte blocks; `atime`, `ctime` and `birthtime`
+follow `mtime`. The `is*` device predicates are false.
+
+**The `chmod` family succeeds after an existence check** ([`permissions.ts`](permissions.ts)):
+`chmod`, `chmodSync`, `lchmod`, `lchmodSync`, `fchmod`, `fchmodSync`, `fs.promises.chmod`,
+`fs.promises.lchmod` and `FileHandle#chmod`. The mode is validated as Node does and then not
+stored, because the confined fs has no mode to keep (`stat` reports the fixed one above); a
+missing path fails `ENOENT` and an unknown descriptor `EBADF`. `chmodSync` checks with
+`existsSync`, so it works on a page as well as in a Worker, and reads a path it may not open as
+missing. `chown` and its variants still refuse as *not-applicable*: no uid or gid exists to set.

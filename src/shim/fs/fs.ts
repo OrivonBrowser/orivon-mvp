@@ -18,16 +18,17 @@
 // every other *Sync export works only in a Worker (fs/core-sync.ts), else
 // refuses (fs/unsupported.ts) -- README.md's own Design notes has the detail.
 //
-// EVERY OTHER fs MEMBER (A135) names its gap: `chmod`/`chown` are
-// 'not-applicable' (no POSIX uid/gid/mode model), everything else is
-// 'unimplemented'.
+// EVERY OTHER fs MEMBER (A135) names its gap: `chown` is 'not-applicable'
+// (no POSIX uid/gid model), everything else is 'unimplemented'. The chmod
+// family succeeds after an existence check (fs/permissions.ts).
 
 import { type NodeStats } from './stats.js'
 import {
-  open, openHandle, openSync, close, closeSync, read, readSync, write, writeSync, fstat, fstatSync,
+  open, openHandle, openSync, close, closeSync, read, readSync, write, writeSync, fstat, fstatSync, fchmod, fchmodSync,
   ftruncate, fsync, type NodeCallback
 } from './handle.js'
 import { createReadStream, createWriteStream } from './streams.js'
+import { chmod, lchmod, chmodSyncWith } from './permissions.js'
 import { promises } from './promises.js'
 import { FS_CONSTANTS } from './constants.js'
 import { getOrivon } from '../orivon-global.js'
@@ -49,7 +50,8 @@ import { refusingProxy } from '../unimplemented.js'
 import { refuseShim } from '../errors.js'
 import { toNodeError } from '../node-errors.js'
 
-export { open, close, read, write, fstat, ftruncate, fsync, openSync, closeSync, readSync, writeSync, fstatSync } from './handle.js'
+export { open, close, read, write, fstat, ftruncate, fsync, openSync, closeSync, readSync, writeSync, fstatSync, fchmod, fchmodSync } from './handle.js'
+export { chmod, lchmod } from './permissions.js'
 export { createReadStream, createWriteStream } from './streams.js'
 export { promises } from './promises.js'
 // Named as well as on the default export below: a bundled `require('fs')`
@@ -292,14 +294,20 @@ export function access (path: PathLike, ...args: readonly unknown[]): void {
 
 export type { NodeStats }
 
-const POSIX_PERMISSION_MEMBERS = new Set(['chmod', 'chmodSync', 'chown', 'chownSync'])
+export function chmodSync (path: PathLike, mode: unknown): void {
+  chmodSyncWith(existsSync, path, mode)
+}
+
+export const lchmodSync = chmodSync
+
+const POSIX_PERMISSION_MEMBERS = new Set(['chown', 'chownSync', 'lchown', 'lchownSync', 'fchown', 'fchownSync'])
 
 export function otherFsMember (prop: string) {
   if (POSIX_PERMISSION_MEMBERS.has(prop)) {
     return refuseShim(
       `fs.${prop}`, 'not-applicable',
-      `fs.${prop} sets a POSIX permission/ownership bit -- this shim's confined fs has no uid, ` +
-      'gid or mode to set one on (compatibility-matrix.md Table 3).'
+      `fs.${prop} sets a POSIX ownership -- this shim's confined fs has no uid or ` +
+      'gid to set one on (compatibility-matrix.md Table 3).'
     )
   }
   return refuseShim(
@@ -318,6 +326,7 @@ export default refusingProxy({
   createReadStream, createWriteStream,
   statSync, lstatSync, mkdirSync, readdirSync, rmSync, rmdirSync, renameSync, existsSync, accessSync,
   appendFileSync, unlinkSync, copyFileSync, mkdtempSync, realpathSync, openSync, closeSync, readSync, writeSync, fstatSync,
+  chmod, chmodSync, lchmod, lchmodSync, fchmod, fchmodSync,
   // fs.constants is data (POSIX flag numbers), not a function -- a
   // throwing-function refusal (A169) would misreport its own type, so this
   // is a real object rather than routed through otherFsMember.

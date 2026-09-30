@@ -7,6 +7,7 @@
 
 import { Buffer } from 'buffer'
 import { Readable } from 'stream'
+import { format } from 'util'
 import { installGlobals } from '../globals.js'
 import type { GlobalsTarget, ShimProcess } from '../globals-types.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
@@ -24,6 +25,7 @@ export interface ForkScope extends GlobalsTarget {
   setInterval?: (handler: () => void, ms?: number, ...args: unknown[]) => unknown
   clearInterval?: (id: unknown) => void
   fetch?: (...args: never[]) => Promise<unknown>
+  console?: Record<string, unknown>
   close (): void
   addEventListener (type: 'error' | 'unhandledrejection', listener: (event: Event) => void): void
 }
@@ -137,8 +139,31 @@ export function setupChildProcess (scope: ForkScope, parent: ParentChannel, star
   return { proc, liveness, write, end, crash }
 }
 
+const STDOUT_METHODS = ['log', 'info', 'debug'] as const
+const STDERR_METHODS = ['warn', 'error', 'trace'] as const
+
+/**
+ * A forked child's console writes to its stdout and stderr, which its parent reads as
+ * `child.stdout`. The Worker's own console still gets every call too, so a developer's
+ * devtools keep showing them.
+ */
+function routeConsole (target: Record<string, unknown> | undefined, write: ChildProcessSetup['write']): void {
+  if (target === undefined) return
+  const route = (name: string, stream: StreamName): void => {
+    const original = target[name]
+    if (typeof original !== 'function') return
+    target[name] = (...args: unknown[]): void => {
+      ;(original as (...rest: unknown[]) => void).apply(target, args)
+      write(stream)(`${format(...args)}\n`)
+    }
+  }
+  for (const name of STDOUT_METHODS) route(name, 'stdout')
+  for (const name of STDERR_METHODS) route(name, 'stderr')
+}
+
 export async function runFork (start: ForkStart, parent: ParentChannel, scope: ForkScope, load: (url: string) => Promise<unknown>): Promise<void> {
-  const { proc: baseProc, liveness, crash } = setupChildProcess(scope, parent, start)
+  const { proc: baseProc, liveness, crash, write } = setupChildProcess(scope, parent, start)
+  routeConsole(scope.console, write)
   const proc = baseProc as ForkProcess
   // The IPC channel itself is a reason to stay alive, released only when it closes (closeChannel below).
   liveness.ref()

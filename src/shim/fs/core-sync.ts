@@ -28,15 +28,15 @@ import { join } from 'path'
 
 export function doStatSync (path: PathLike): NodeStats {
   const confined = confineSync(path, 'stat', 'fs.statSync')
-  if (isRootPath(confined)) return toNodeStats(rootStat())
-  return toNodeStats(guardedSync(() => syncFs('fs.statSync').stat(confined)))
+  if (isRootPath(confined)) return toNodeStats(rootStat(), confined)
+  return toNodeStats(guardedSync(() => syncFs('fs.statSync').stat(confined)), confined)
 }
 
 /** `lstat` and `stat` never differ here: orivon.fs resolves a symlink that stays inside the confined root transparently and denies one that would not (README.md's own "never reports a symlink as its own kind"), so there is no separate primitive for this to call. */
 export function doLstatSync (path: PathLike): NodeStats {
   const confined = confineSync(path, 'lstat', 'fs.lstatSync')
-  if (isRootPath(confined)) return toNodeStats(rootStat())
-  return toNodeStats(guardedSync(() => syncFs('fs.lstatSync').stat(confined)))
+  if (isRootPath(confined)) return toNodeStats(rootStat(), confined)
+  return toNodeStats(guardedSync(() => syncFs('fs.lstatSync').stat(confined)), confined)
 }
 
 export function doWriteFileSync (path: PathLike, data: unknown, options: WriteFileOptions | string | null | undefined): void {
