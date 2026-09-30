@@ -126,6 +126,12 @@ fetch, `orivon.*` call or open handle is pending, it emits
 `'beforeExit'`, then `'exit'`, and ends with code 0. Scheduling that must not keep it alive uses
 the unwrapped `setTimeout` that `trackScope` returns.
 
+**A child's timers are Node's objects** (`liveness.ts`): `setTimeout`, `setInterval` and `setImmediate`
+return a value with `ref`, `unref`, `hasRef`, `refresh` (timers) and `close`, which reports a number when
+asked, and `clearTimeout` takes the object or that number. A server library calls `refresh()` on its ping
+timer and `unref()` on a keep-alive, so a bare id would end the child with a `TypeError`. An unref'd timer
+does not keep the child alive.
+
 **A thread ends on its own the same way, minus the IPC channel** (`runtime-thread.ts`): what
 keeps it alive instead is a ref'd `parentPort` listener. `node-port.ts`'s wrapper calls back only
 on the 0-to-1 or 1-to-0 edge of "ref'd, started, and at least one `'message'`/`'messageerror'`
