@@ -7,6 +7,7 @@ import type { ShellActions } from '../ipc/ipc.js'
 import type { PermissionsPanel } from '../permissions/permissions-panel.js'
 import type { PopoverAnchor } from '../permissions/popover-view.js'
 import type { SiteInfoPanel } from '../permissions/site-info-panel.js'
+import { runChromeAction } from './chrome-actions.js'
 import type { MenuPanel } from './menu-panel.js'
 import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
@@ -98,6 +99,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       panels.siteInfo.toggle(anchor, origin, page)
     },
     runCommand: (id) => { services.commands.run(id, entry) },
+    act: (name, payload) => runChromeAction(name, payload, { window: entry, services }),
     openMenu: (anchor) => {
       panels.permissions.close()
       panels.siteInfo.close()
