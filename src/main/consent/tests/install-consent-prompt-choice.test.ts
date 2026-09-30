@@ -138,7 +138,7 @@ describe('createPerCapabilityConsentPrompt', () => {
     expect(showMessageBox.mock.calls[1]?.[0]).toMatchObject({ type: 'warning' })
   })
 
-  it('N2\'s disclosure: an injected extensionsOnSite reaches the overview screen', async () => {
+  it('extensions disclosure: an injected extensionsOnSite reaches the overview screen', async () => {
     const extensionsOnSite = vi.fn(async (origin: string) => origin === ORIGIN ? ['Ad Blocker'] : [])
     showMessageBox.mockResolvedValueOnce({ response: 0 }) // allow all
     await createPerCapabilityConsentPrompt(undefined, extensionsOnSite)(ORIGIN, manifest(), CAPABILITIES)

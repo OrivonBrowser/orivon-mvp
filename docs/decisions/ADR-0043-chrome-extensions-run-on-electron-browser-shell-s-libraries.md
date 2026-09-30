@@ -50,9 +50,10 @@ verifier Orivon supplies, which requires the developer's signature and the Web S
 The loaded copy's stripped permissions are forced by a measurement, not a preference
 (`docs/planning/spike-results/extension-netfetch-probe.json`): with either network permission
 present, Chromium proxies the session's URL loader, which bypasses `protocol.handle` and crashes
-the main process on the first `net.fetch` on that session, in 15 of 15 runs. Orivon calls
-`net.fetch` on the default session. What an extension loses there, Orivon serves from its own
-engine, on the one `webRequest` listener per event it owns.
+the main process on the first `net.fetch` on that session, in 10 of 10 runs without an embedder
+`webRequest` listener. Orivon calls `net.fetch` on the default session. What an extension loses
+there is to be served by Orivon's own request-filtering engine, on the one `webRequest` listener
+per event Orivon owns; not built yet.
 
 ## Consequences
 
@@ -64,8 +65,8 @@ engine, on the one `webRequest` listener per event it owns.
 - An action popup is a child `BrowserWindow`, as the library makes it.
 - `chrome.runtime.connectNative` fails with a clear error. Password managers that need a
   desktop program lose that feature.
-- Until Orivon's engine serves them, an extension's `declarativeNetRequest` and `webRequest`
-  rules do nothing, and the install prompt says so.
+- Until Orivon's request-filtering engine serves them, an extension's `declarativeNetRequest`
+  and `webRequest` rules do nothing, and the extension's details on `orivon://extensions` say so.
 
 ## Reversibility
 

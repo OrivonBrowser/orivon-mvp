@@ -43,8 +43,16 @@ export function wrapPort (raw: unknown): PortLike {
   return {
     postMessage: (message) => { port.postMessage(message) },
     // Assigning .onmessage (rather than addEventListener) implicitly starts
-    // the port per the WHATWG spec -- no separate port.start() needed.
-    onMessage: (listener) => { port.onmessage = (event) => { listener(event.data) } },
+    // the port per the WHATWG spec -- no separate port.start() needed. A
+    // port the broker transferred arrives in `event.ports`, never in the
+    // message (a MessagePortMain cannot be cloned there), and is set back
+    // on the message as `port`, where contracts/ipc.ts's AcceptedMessage has it.
+    onMessage: (listener) => {
+      port.onmessage = (event) => {
+        const [transferred] = event.ports
+        listener(transferred === undefined ? event.data : { ...(event.data as object), port: transferred })
+      }
+    },
     close: () => { port.close() }
   }
 }

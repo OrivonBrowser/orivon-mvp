@@ -8,11 +8,12 @@
 
 import { instantiateNapiModule, instantiateNapiModuleSync, type InstantiateOptions } from '@emnapi/core'
 import { getDefaultContext } from '@emnapi/runtime'
-import { refuseShim } from '../errors.js'
+import { OrivonShimError, refuseShim } from '../errors.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { type SyncWasiFs, createWasiHost, type WasiFs } from '../wasi/host.js'
 import { synchronousWasi } from '../wasi/instantiate.js'
 import { SYNCHRONOUS } from '../worker/sync-channel.js'
+import { importedMemory } from './imported-memory.js'
 import { addonPath, addonUrls, isWasm } from './resolve.js'
 
 /** Exports by the addon's path on the origin, however it was spelled when asked for. */
@@ -74,8 +75,49 @@ function assertLoadable (module: WebAssembly.Module, filename: string): void {
   }
 }
 
+type ImportObject = Record<string, Record<string, unknown>>
+
+/**
+ * The conventions a napi-rs build is loaded by, as its own loaders load it:
+ * Node-API reached from `env` beside its own namespaces, `env.memory`
+ * supplied at the size the build declares when it imports one, and each
+ * `__napi_register__*` export run before the module initializes.
+ */
+function napiRsConventions (bytes: Uint8Array, filename: string): Pick<InstantiateOptions, 'overwriteImports' | 'beforeInit'> {
+  const memory = memoryFor(bytes, filename)
+  return {
+    overwriteImports: (importObject: ImportObject) => {
+      importObject.env = { ...importObject.env, ...importObject.napi, ...importObject.emnapi, ...(memory === undefined ? {} : { memory }) }
+      return importObject
+    },
+    beforeInit: ({ instance }: { instance: WebAssembly.Instance }) => {
+      for (const [name, value] of Object.entries(instance.exports)) {
+        if (name.startsWith('__napi_register__') && typeof value === 'function') (value as () => void)()
+      }
+    }
+  } as Pick<InstantiateOptions, 'overwriteImports' | 'beforeInit'>
+}
+
+/** 1 GiB: a build declaring more initial memory than this refuses rather than claiming it on the calling thread. napi-rs's own loaders start at 256 MiB. */
+const MAX_INITIAL_PAGES = 16_384
+
+/** The memory a build imports, at the size it declares; one this loader cannot supply refuses by name. */
+function memoryFor (bytes: Uint8Array, filename: string): WebAssembly.Memory | undefined {
+  const limits = importedMemory(bytes)
+  if (limits === undefined) return undefined
+  if (limits.shared) throw refuseShim('process.dlopen', 'not-built', `${filename} imports a shared memory, as a threaded build does; build it for wasm32-wasip1`)
+  if (limits.memory64) throw dlopenError(filename, 'its WebAssembly build imports a 64-bit memory, which this loader does not supply')
+  if (limits.initial > MAX_INITIAL_PAGES) throw dlopenError(filename, `its WebAssembly build declares ${limits.initial} pages of memory, more than the ${MAX_INITIAL_PAGES} an addon may start with`)
+  try {
+    return new WebAssembly.Memory({ initial: limits.initial, maximum: limits.maximum ?? 65_536 })
+  } catch (error) {
+    if (error instanceof RangeError) throw dlopenError(filename, `its WebAssembly build declares ${limits.initial} pages of memory, more than can be allocated`)
+    throw error
+  }
+}
+
 /** Addon output goes where Node's does: the process's stdout and stderr, a forked child's pipes included. */
-function options (filename: string): InstantiateOptions {
+function options (filename: string, bytes: Uint8Array): InstantiateOptions {
   const proc = (globalThis as { process?: ShimProcess }).process
   const env = proc?.env ?? {}
   const write = (stream: WritableStdio | undefined) => (bytes: Uint8Array): void => { stream?.write?.(bytes) }
@@ -89,7 +131,13 @@ function options (filename: string): InstantiateOptions {
     ...(proc?.stdout?.write === undefined ? {} : { syncStdout: write(proc.stdout) }),
     ...(proc?.stderr?.write === undefined ? {} : { syncStderr: write(proc.stderr) })
   })
-  return { context: getDefaultContext(), filename, wasi: synchronousWasi(host), asyncWorkPoolSize: 0 }
+  return { context: getDefaultContext(), filename, wasi: synchronousWasi(host), asyncWorkPoolSize: 0, ...napiRsConventions(bytes, filename) }
+}
+
+/** A failure while the build instantiates or registers (a trap in its code included) is ERR_DLOPEN_FAILED, as Node's dlopen reports one. */
+function instantiationFailure (filename: string, error: unknown): Error {
+  if (error instanceof OrivonShimError || (error as { code?: unknown } | null)?.code === 'ERR_DLOPEN_FAILED') return error as Error
+  return dlopenError(filename, `its WebAssembly build failed while loading: ${String((error as Error)?.message ?? error)}`)
 }
 
 function keyOf (filename: string, origin: string): string {
@@ -115,9 +163,14 @@ export function loadAddon (filename: string, origin: string = globalThis.locatio
       throw dlopenError(filename, `its WebAssembly build is not valid: ${String(error)}`)
     }
     assertLoadable(module, filename)
-    const { napiModule } = instantiateNapiModuleSync(module, options(filename))
-    loaded.set(key, napiModule.exports)
-    return napiModule.exports
+    let exports: unknown
+    try {
+      exports = instantiateNapiModuleSync(module, options(filename, bytes)).napiModule.exports
+    } catch (error) {
+      throw instantiationFailure(filename, error)
+    }
+    loaded.set(key, exports)
+    return exports
   }
   throw notFound(filename, origin)
 }
@@ -137,8 +190,13 @@ async function preload (filename: string, key: string, origin: string): Promise<
     assertLoadable(module, filename)
     // A synchronous load may have finished while this one was compiling: the first instance stays.
     if (loaded.has(key)) return
-    const { napiModule } = await instantiateNapiModule(module, options(filename))
-    if (!loaded.has(key)) loaded.set(key, napiModule.exports)
+    let exports: unknown
+    try {
+      exports = (await instantiateNapiModule(module, options(filename, bytes))).napiModule.exports
+    } catch (error) {
+      throw instantiationFailure(filename, error)
+    }
+    if (!loaded.has(key)) loaded.set(key, exports)
     return
   }
   throw notFound(filename, origin)

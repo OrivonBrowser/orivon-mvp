@@ -64,7 +64,7 @@ export interface SiteInfo {
   readonly consentGranularity: ConsentGranularity
   /**
    * Names of enabled installed extensions whose host access covers this
-   * origin (N2's disclosure, docs/planning/extensions-exploration.md) --
+   * origin (the extensions disclosure, docs/planning/extensions-exploration.md) --
    * plain pass-through, never computed here: only the caller
    * (site-info-controller.ts) has `ctx.extensions`, so this file stays
    * broker/I/O-free (this file's own header) and just carries the value

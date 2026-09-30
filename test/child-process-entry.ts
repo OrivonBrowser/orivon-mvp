@@ -2,6 +2,7 @@
 // app's page script: it drives `child_process` the way ported Node code does.
 
 import { execFile, fork, spawn } from 'child_process'
+import { Worker } from 'worker_threads'
 
 export interface ChildProcessResults {
   readonly echo: { events: string[], stdout: string }
@@ -9,6 +10,8 @@ export interface ChildProcessResults {
   readonly missing: { code?: string }
   readonly forked: { reply?: unknown, fileText?: string, exitCode?: number | null }
   readonly killed: { events: string[] }
+  readonly component: { events: string[], stdout: string, stderr: string, fileText?: string }
+  readonly thread: { portReply?: string, workerReply?: unknown, fileText?: string, terminatedWith?: number, sawFromPage?: number | undefined, afterThreadWrote?: number }
   readonly error?: string
 }
 
@@ -63,12 +66,51 @@ async function run (): Promise<ChildProcessResults> {
   await new Promise((resolve) => killedChild.once('spawn', resolve))
   killedChild.kill()
 
+  progress.push('component')
+  const componentChild = spawn('/bin/tour', [])
+  componentChild.on('error', (error: Error) => progress.push(`component error ${error.message}`))
+  let componentOut = ''
+  let componentErr = ''
+  componentChild.stdout?.on('data', (chunk: { toString: () => string }) => { componentOut += chunk.toString() })
+  componentChild.stderr?.on('data', (chunk: { toString: () => string }) => { componentErr += chunk.toString() })
+  const componentEvents = track(componentChild)
+  componentChild.stdin?.end('from a component\n')
+  const componentFinished = await componentEvents
+  const written = await orivon.fs.readFile('from-component.txt').catch(() => undefined)
+
+  progress.push('thread')
+  const sharedBuffer = new SharedArrayBuffer(4)
+  const sharedView = new Int32Array(sharedBuffer)
+  Atomics.store(sharedView, 0, 111)
+  const thread = new Worker('/thread.js', { workerData: { text: 'written by a thread', sab: sharedBuffer } })
+  const channel = new MessageChannel()
+  const portReply = new Promise<string>((resolve) => { channel.port1.onmessage = (event: MessageEvent) => resolve(event.data as string) })
+  const workerReply = new Promise((resolve) => thread.once('message', resolve))
+  // Node's ambient worker_threads types want its own MessagePort in the transfer list, not the DOM one a bundled app actually has.
+  ;(thread.postMessage as (value: unknown, transferList: readonly unknown[]) => void)({ ping: 'hi from the page', port: channel.port2 }, [channel.port2])
+  const [threadPortReply, threadWorkerReply] = await Promise.all([portReply, workerReply])
+  const threadFileText = new TextDecoder().decode(await orivon.fs.readFile('from-thread.txt'))
+  // The thread already wrote 222 into the SAME memory before it replied: real shared memory
+  // reads it back here, a copy never would.
+  const afterThreadWrote = Atomics.load(sharedView, 0)
+  const terminatedWith = await thread.terminate()
+  progress.push('thread done')
+
   return {
+    component: { events: componentFinished, stdout: componentOut, stderr: componentErr, ...(written === undefined ? {} : { fileText: new TextDecoder().decode(written) }) },
     echo: { events: await echoEvents, stdout },
     native: await failure('/bin/native'),
     missing: await failure('git'),
     forked: { reply, fileText, exitCode },
-    killed: { events: await killedEvents }
+    killed: { events: await killedEvents },
+    thread: {
+      portReply: threadPortReply,
+      workerReply: threadWorkerReply,
+      fileText: threadFileText,
+      terminatedWith,
+      sawFromPage: (threadWorkerReply as { sawFromPage?: number }).sawFromPage,
+      afterThreadWrote
+    }
   }
 }
 

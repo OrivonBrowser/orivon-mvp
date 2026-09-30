@@ -18,6 +18,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
   `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
   popups and options pages work on every website and on apps holding permissions, whose `window.orivon` refuses extension code.
+- **Google's sign-in pages are shown a Firefox identity**, since Google rejects this browser as "not secure"; the
+  request headers, `navigator.userAgent` and the missing `navigator.userAgentData` agree on `accounts.google.com`
+  and `accounts.youtube.com` alone. Not yet confirmed against a real account.
+- **An app's child processes outlive the tab that started them** while another tab of the app is open,
+  and end with its last page: they run in a hidden host of the app's own, with the app's grants
+  (ADR-0046).
+- **`worker_threads.Worker` runs a thread** in a Web Worker, with `parentPort`, `workerData`,
+  message ports and `terminate()`, from the page or from a forked child.
+- **A forked child or thread of a cross-origin isolated app can call every `fs` `*Sync` method**
+  and `spawnSync`/`execSync`/`execFileSync`; the page keeps `readFileSync` and `existsSync`.
+- **A CommonJS `require()` of a Node module the shim lacks a member of names the gap** when called,
+  instead of `undefined is not a function`.
+- **Extensions that capture a tab's audio work**, Volume Master among them: `chrome.offscreen`, `chrome.tabCapture`
+  and `chrome.runtime.getContexts`. A capture needs the extension's toolbar button on that tab, and the tab is
+  heard only through the extension while captured.
+- **A middle click or ctrl+click opens a link in a background tab**, and a shift+click opens it in a new window,
+  a private one from a private window.
+- **Settings, History and Profiles update live** when a permission, a visit, cleared data or a profile changes
+  anywhere, in any window or profile.
+- **Tearing a tab off shows where its window will open.** A preview of the page follows the pointer; letting go
+  over the page or outside every window opens the window there, in front and at once. Over another window's
+  strip a line marks where the tab will land. On Linux X11 a middle click on the strip's empty end opens a tab.
+- **Settings and History have a new look**, shared with Profiles and Private: Settings' sections are grouped
+  in a sidebar with icons and its search; History marks each site and heads each day with a rule.
+- **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` or a folder; `orivon://extensions` says who
+  updates each one. Content scripts, workers, toolbar buttons, popups and options pages work on every website and on
+  apps holding permissions, whose `window.orivon` refuses extension code; blocking rules come next.
+- **`worker_threads` and `vm` import**: `worker_threads` answers as Node's main thread does, and
+  `vm` runs code in the page's own context; starting a thread, or a context of its own, refuses
+  by name.
+- **A `.eth` name is shown as `ipfs://<name>`** wherever an address or origin is shown; typing or
+  linking either `ipfs://<name>` or `ipns://<name>` opens the name's own, unchanged origin
+  (ADR-0038).
+- **A spawned program can open sockets**: `spawn` runs a WASI 0.2 component from the jco output
+  shipped beside it, its files and sockets reaching `orivon.fs` and `orivon.net` under the app's
+  grants (ADR-0040). A Rust program built for `wasm32-wasip2` runs, whether it blocks on `std::net`
+  or runs tokio.
 - **A Settings page, and the browser features a person lives in.** `orivon://settings` has a section for
   everything Orivon implements: appearance (theme, bookmarks bar, page zoom), search, tabs and windows,
   profiles, privacy and data, the apps that hold permissions, the Ethereum light client, remappable
@@ -101,6 +138,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A burst of short-lived sockets no longer brings the browser down.** The broker's socket streams no longer go
+  through Node's `Duplex.toWeb`, whose teardown could throw where nothing could catch it.
+- **A program a forked child spawns can use the app's files and network.** Every `orivon.*` call from it failed
+  before, which a WASI program saw as an I/O error on its first file call.
+- **A WASI program that listens on an IPv6 address no longer aborts when it reads its own address.** A
+  listener reports the address it bound, and every reported address is of the socket's own family.
+- **A middle, ctrl, shift or ctrl+shift click on a link no longer closes the browser.**
+- **An extension's sandbox page gets no extension APIs**, as in Chrome, so untrusted code an extension runs there
+  cannot act with the extension's permissions.
+- **New tabs, internal pages, the window and every toolbar panel open in the theme's colour**, with no white
+  flash, and the main menu opens without being rebuilt.
+- **An extension's popup closes** on a click elsewhere in Orivon, a tab switch, a navigation, a window move or
+  Escape, and opens in the theme's colour.
+- **An extension popup's first `chrome.*` call no longer fails** with "unknown extension context", and Electron
+  no longer warns that a permission Orivon serves is unknown.
+- **A crash while bookmarks or a profile are being saved leaves the previous file whole.**
+- **A second start with no window open shows a window only once it is drawn**, on its new-tab page
+  when no address was given.
+- **History search answers at once on a long history**, whether most pages match or almost none do.
+- **A private window keeps the keyboard shortcuts** of the profile that opened it.
+- **Settings, History, Profiles and a private window's first page load under `npm run dev`**; they were blank.
+- **The main menu shows every entry with no scroll bar**, and a new split shows both panes painted at once.
+- **A `.eth` or `ipfs://` site can be framed only by a page of its own origin**, so another site cannot
+  lay it under its own page to steer the person's clicks; an app granted `web.embed` for it still shows it.
+- **A native addon built with napi-rs loads**: its WebAssembly build gets Node-API and memory the way
+  napi-rs's own loaders provide them, which a real napi-rs 3 addon needs.
+- **An app that listens for TCP connections receives them**: the broker now hands each accepted
+  connection's port over by transfer alone, which Electron requires.
 - **The toolbar no longer creates a session partition for every website visited.**
 - **An OIDC sign-in that leaves an app's tab and returns can complete.**
 - **Entering fullscreen keeps the page's keyboard focus.**
@@ -127,6 +192,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **`.eth` pages keep their gateways through a lost race, a cooldown and a hostile answer**: the
   verifier host no longer crashes on a 999 status or stalls on a 101, and every run certificate
   parses.
+
+### Security
+
+- **A site's permissions work only from a page that committed in that site's own session**: a page
+  a link or redirect reached before its tab moved, a page an app shows or a web context is `denied`.
+  A grant or revoke never strands an open page; a site's handles close when its last tab goes.
+- **The file picker needs a click or key press**, names the site, opens once per site at a time, and
+  refuses the browser's own data, the home folder, disk roots and system folders.
+- **`orivon.net` refuses to open sockets or resolve names while a system proxy applies** (T20).
+- **Consent dialogs belong to the tab that asked**: shown over its window, dropped if it left, one
+  at a time per site, lists capped; `app.requestGrant` does not re-ask what the person declined.
+- **An fs quota holds against sparse positional writes**, an app's files sit in their own root apart
+  from its code, and a widened curve list, quota or socket count asks again.
+- **The verifier caps the memory one page can hold**, dials CCIP-Read at a checked address on
+  port 443, validates and caps its IPNS records, checks its host's messages, and stamps shown
+  pages.
+- **Packaged builds turn off RunAsNode, NODE_OPTIONS and `--inspect`**, encrypt cookies and check
+  `app.asar`; the address bar hides userinfo, and a `magnet:` link must parse before it leaves.
 
 ### Resolved
 

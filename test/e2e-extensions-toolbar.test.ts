@@ -31,7 +31,7 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, launchElectron, mainOutput } from './launch-electron.mjs'
 import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { closeElectronApp, runPhase } from './e2e-helpers.js'
 import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
@@ -221,6 +221,12 @@ it('shows a real extension\'s browser action, its popup runs, and its chrome.tab
         const popupTitleAfter = await evaluateRetrying(popup, () => document.title).catch(() => undefined)
         check('the popup\'s own renderer survives openOptionsPage()', popupTitleAfter === 'Action Popup', String(popupTitleAfter))
       }
+
+      // The fixture's service worker ran the extension preload: a preload
+      // that throws in the worker's preload realm leaves every worker
+      // without the library's chrome.* and prints this line.
+      const output = mainOutput(app)
+      check('the extension preload loaded in every frame and worker', !output.includes('Unable to load preload script'), output.slice(output.indexOf('Unable to load preload script'), output.indexOf('Unable to load preload script') + 400))
     } finally {
       if (app !== undefined) await closeElectronApp(app)
     }

@@ -56,7 +56,7 @@ describe('createServerRelay -- backpressure survives the trip (the property this
 })
 
 describe('createServerRelay -- delivering an accepted connection', () => {
-  it('sends an AcceptedMessage tagged with the SERVER\'s handleId, carrying the accepted socket\'s own descriptor fields', async () => {
+  it('sends an AcceptedMessage tagged with the SERVER\'s handleId, carrying the accepted socket\'s own descriptor fields and never the port itself, which fails to clone', async () => {
     const fake = fakeTcpServer()
     const port = fakePort()
     const transport = fakeMultiTransport()
@@ -75,8 +75,7 @@ describe('createServerRelay -- delivering an accepted connection', () => {
       remoteAddress: socket.remoteAddress,
       remotePort: socket.remotePort,
       localAddress: socket.localAddress,
-      localPort: socket.localPort,
-      port: transport.pairs[0]?.pair.port2
+      localPort: socket.localPort
     }])
   })
 

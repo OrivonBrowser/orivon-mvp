@@ -3,7 +3,7 @@
 // navigate fix pushed that file over Rule 2's 500-line limit. These are
 // wire-format types with no logic of their own; tabs.ts re-exports them so
 // every existing `from './tabs.js'` import keeps working unchanged.
-import type { BaseWindow, View, WebContentsView } from 'electron'
+import type { BaseWindow, LoadURLOptions, View, WebContents, WebContentsView } from 'electron'
 import type { FrameState } from './split-controller.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { Bookmark } from '../browsing/bookmarks.js'
@@ -81,6 +81,9 @@ export interface TabShell {
   readonly window: BaseWindow
   /** A tab's page entered or left HTML fullscreen. */
   htmlFullscreenChanged: (id: string, entered: boolean) => void
+  /** The tab currently holding the whole window, if any (`HtmlFullscreen.tabId`, ../fullscreen.ts):
+   * the one place that state lives. Absent in tests that never raise HTML fullscreen. */
+  fullscreenTabId?: () => string | null
   /** The URL that searches for a query, under the chosen search engine. Absent in tests: the default engine. */
   searchUrl?: (query: string) => string
   /** Where a tab opened as one of the shell's own pages is recorded. Absent in tests. */
@@ -93,6 +96,11 @@ export interface TabShell {
    * reported (tab-lifecycle.ts). Absent in tests: nothing outside the tab
    * collection hears about them. */
   tabLifecycle?: TabLifecycle
+  /** Opens `url` as the only tab of a brand new window in this same process
+   * -- so a private window's new window is private too (window.ts makes
+   * every window the same way, from the same `services`). Absent in tests.
+   * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. */
+  openWindow?: (url: string, loadOptions?: LoadURLOptions) => WebContents
 }
 
 /** The view behind two panes: the divider, and an outline round the pane the person is in. */
@@ -133,9 +141,22 @@ export interface TabViewHost {
   emitState: () => void
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
   forgetTab: (id: string) => void
-  openTab: (url: string) => void
-  /** Makes Chromium's own popup webContents, already in `partition`, a tab. */
-  adoptPopup: (view: WebContentsView, partition: string | undefined) => void
+  /** `active` false leaves the tab strip's current tab in front: a middle
+   * click or a plain ctrl+click, from popups.ts's `windowOpenHandler`. `loadOptions` -- see
+   * popups.ts's `loadOptionsFor`'s own doc. Returns the new (or, at the tab ceiling, the existing
+   * active) tab's webContents, so a no-guest popup open can adopt a correctly-partitioned,
+   * sanitized tab instead of building its own unpartitioned view. */
+  openTab: (url: string, active?: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
+  /** Makes Chromium's own popup webContents, already in `partition`, a tab.
+   * `active` -- see `openTab`'s own doc. */
+  adoptPopup: (view: WebContentsView, partition: string | undefined, active?: boolean) => void
+  /** A same-origin blob: URL in `partition` (the opener's own) -- popups.ts's own doc.
+   * `active`/`loadOptions` -- see `openTab`'s own doc. */
+  openBlobTab: (url: string, partition: string | undefined, active?: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
+  /** `url` in a new window instead of this one -- a shift-click (popups.ts's `windowOpenHandler`).
+   * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. Undefined when the shell has none
+   * (tests): the caller opens an ordinary tab here instead. */
+  openWindow: (url: string, loadOptions?: LoadURLOptions) => WebContents | undefined
   atCapacity: () => boolean
   htmlFullscreenChanged: (id: string, entered: boolean) => void
   /** The window is closing: nothing more is made or shown for it. */

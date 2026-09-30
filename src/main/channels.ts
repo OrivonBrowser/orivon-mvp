@@ -96,6 +96,12 @@ export const INTERNAL_COMMAND_CHANNEL = 'orivon-internal:command'
 /** The main menu popover's own WebContentsView -> main: what it lists, and which entry was chosen. See ./ipc/menu-ipc.ts. */
 export const MENU_COMMAND_CHANNEL = 'orivon-menu:command'
 
+/** Main -> the menu popover's own WebContentsView: it was just shown again. The
+ * menu is kept warm (shell/popover-view.ts's `warm`) rather than reloaded on
+ * every open, so this is what tells its already-loaded page to re-fetch its
+ * list and reset its own state (scroll position, keyboard focus). */
+export const MENU_SHOWN_CHANNEL = 'orivon-menu:shown'
+
 /** The split backdrop's own view -> main: the divider being dragged or reset. See ./shell/split-frame.ts. */
 export const SPLIT_FRAME_CHANNEL = 'orivon-split:command'
 
@@ -104,3 +110,65 @@ export const SPLIT_STATE_CHANNEL = 'orivon-split:state'
 
 /** Main -> an internal page: `{ topic, payload }`, for changes made elsewhere while the page is open. */
 export const INTERNAL_EVENT_CHANNEL = 'orivon-internal:event'
+
+/** Main -> an extension service worker, once it first reaches 'running':
+ * asks whether the library's own chrome.tabs/chrome.windows/chrome.action
+ * actually arrived (extension-sw-preload-recovery.ts's own header). The
+ * worker's own preload (src/preload/extension-sw-verify.ts) answers on
+ * EXTENSION_SW_HEALTH_REPLY_CHANNEL below -- both names live here, rather
+ * than in main/extensions/, so the preload script can name them without
+ * importing anything under src/main/ but this file (src/preload/README.md's
+ * own rule). */
+export const EXTENSION_SW_HEALTH_CHECK_CHANNEL = 'orivon-extension-sw-health-check'
+
+/** Extension service worker -> main: the boolean answer to the check above. */
+export const EXTENSION_SW_HEALTH_REPLY_CHANNEL = 'orivon-extension-sw-health-reply'
+
+/**
+ * An app tab -> main: ask for a connection to this app's child host
+ * (ADR-0046), fire-and-forget like MANIFEST_HINT_CHANNEL above -- main
+ * derives the origin from `event.senderFrame` itself, refuses a tab that is
+ * not a registered app, and delivers the port on
+ * `CHILD_HOST_PORT_CHANNEL` below rather than as this call's own reply,
+ * since a `MessagePortMain` cannot cross as an `ipcRenderer.invoke` result.
+ * See `src/main/children/`.
+ */
+export const CHILD_HOST_CONNECT_CHANNEL = 'orivon-children:connect'
+
+/** Main -> the requesting app tab, one-way: delivers the page's own end of
+ * the `MessageChannelMain` a child-host connection uses, via
+ * `WebFrameMain.postMessage` -- `PORT_CHANNEL`'s own pattern, a separate
+ * channel since this one carries no handle id to tag the delivery with. */
+export const CHILD_HOST_PORT_CHANNEL = 'orivon-children:page-port'
+
+/** Main -> the hidden child host itself (never a page): delivers one page's
+ * own end of the per-page `MessageChannelMain` (`src/main/children/
+ * child-host.ts`'s `postPagePort`), over `WebFrameMain.postMessage` on the
+ * host's own `mainFrame` -- the host's preload (`src/preload/child-host.ts`)
+ * is the only listener. */
+export const CHILD_HOST_PAGE_CHANNEL = 'orivon-children:host-page'
+
+/** The hidden child host's own preload -> main, fire-and-forget, once its
+ * `orivon` and its `ChildHost` relay both exist: `child-host.ts`'s `build()`
+ * waits for this (bounded) before ever handing a page a port, so a preload
+ * that threw partway through (the sandboxed-bundling faults `src/preload/
+ * README.md` measures) is caught and its host closed, never left running
+ * with no `orivon:child-host:page` listener at all (W2). */
+export const CHILD_HOST_READY_CHANNEL = 'orivon-children:host-ready'
+
+/** A `chrome-extension://` frame's own preload (the vendored library's
+ * `preload.ts`) -> main, synchronous (`ipcRenderer.sendSync`/
+ * `event.returnValue`): is THIS frame one of its own extension's manifest
+ * `sandbox.pages`? Real Chrome gives such a page no `chrome.*` at all
+ * (extensions put untrusted code there precisely because it cannot reach
+ * extension APIs); this is what the preload asks, before deciding whether
+ * to inject any, so a sandboxed page's own document_start script never
+ * sees one even briefly. Main derives the answer entirely from
+ * `event.senderFrame`'s own URL (never a payload) --
+ * `src/main/extensions/extension-host.ts`. The literal string is
+ * duplicated in `vendor/electron-chrome-extensions/src/preload.ts` rather
+ * than imported: `vendor/` may not depend on anything under `src/`
+ * (`src/main/extensions/README.md`'s own boundary), the same reason that
+ * file's `extension-host.ts` duplicates `EXTENSIONS_DEFAULT_PARTITION`
+ * instead of importing it. */
+export const EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL = 'orivon-extensions:sandbox-page-query'

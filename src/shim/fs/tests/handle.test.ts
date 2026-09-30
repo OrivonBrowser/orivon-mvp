@@ -201,6 +201,35 @@ describe('the callback open/read/write/close family', () => {
     expect(bytesWritten).toBe(4)
   })
 
+  // Node's other fs.write form -- write-file-atomic's sync path and loggers
+  // are the common callers; before this fix, a string reached the broker
+  // as `data` and was rejected (`isFsHandleWriteParams` requires a
+  // Uint8Array), so this threw instead of writing.
+  it('write(fd, string[, position[, encoding]], callback): the string form, not just buffer', async () => {
+    const fake = installFakeOrivon()
+    const fs = await import('../handle.js')
+    const fd = await new Promise<number>((resolve, reject) => {
+      fs.open('piece-0', 'w+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+    })
+    const bytesWritten = await new Promise<number>((resolve, reject) => {
+      fs.write(fd, 'hello\n', (err, n) => (err !== null ? reject(err) : resolve(n)))
+    })
+    expect(bytesWritten).toBe(6)
+    expect(new TextDecoder().decode(fake.bytes())).toBe('hello\n')
+  })
+
+  it('write(fd, string, position, encoding, callback): position and encoding both honoured', async () => {
+    const fake = installFakeOrivon(new Uint8Array([0, 0, 0]))
+    const fs = await import('../handle.js')
+    const fd = await new Promise<number>((resolve, reject) => {
+      fs.open('piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+    })
+    await new Promise<void>((resolve, reject) => {
+      fs.write(fd, '68656c6c6f', 1, 'hex', (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect([...fake.bytes()]).toEqual([0, 0x68, 0x65, 0x6c, 0x6c, 0x6f])
+  })
+
   it('fstat/ftruncate/fsync route through the open handle', async () => {
     installFakeOrivon(new Uint8Array([1, 2, 3]))
     const fs = await import('../handle.js')
@@ -274,5 +303,103 @@ describe('the callback open/read/write/close family', () => {
       })
       expect(error.code).toBe('EBADF')
     })
+  })
+})
+
+// openByFd (fs.open/fs.promises.open) and openByFdSync (fs.openSync) are
+// two separate tables (this file's own `openByFdSync` doc comment says why
+// they were not unified even though the broker itself could address the
+// same handle either way) -- an fd real in one family must still fail
+// EBADF, not silently succeed or hang, when handed to the other family, and
+// the message must name which family actually holds it.
+describe('the *Sync fd family (openSync/readSync/writeSync/fstatSync/closeSync)', () => {
+  const SYNCHRONOUS = Symbol.for('orivon.synchronous')
+
+  /** Both families' `open` on the same fake orivon, so a single test can open through either one. */
+  function installBothFamilies (bytes: Uint8Array): void {
+    ;(globalThis as GlobalWithOrivon & Record<symbol, unknown>).orivon = {
+      fs: { open: async () => createFakeFileHandle(bytes).handle },
+      [SYNCHRONOUS]: {
+        fs: {
+          open: () => ({
+            read: ({ position, length }: { position: number, length: number }) => bytes.subarray(position, Math.min(position + length, bytes.length)),
+            write: ({ position, data }: { position: number, data: Uint8Array }) => { bytes.set(data, position); return data.length },
+            stat: () => ({ size: bytes.length, isFile: true, isDirectory: false, mtimeMs: 0 }),
+            truncate: () => {},
+            sync: () => {},
+            close: () => {}
+          })
+        }
+      }
+    } as unknown as Orivon
+  }
+
+  it('openSync/readSync/writeSync/fstatSync/closeSync round-trip over the synchronous twin, on their own table', async () => {
+    installBothFamilies(new Uint8Array([1, 2, 3]))
+    const fs = await import('../handle.js')
+    const fd = fs.openSync('x', 'r+')
+    expect(typeof fd).toBe('number')
+    const buffer = new Uint8Array(3)
+    expect(fs.readSync(fd, buffer, 0, 3, 0)).toBe(3)
+    expect([...buffer]).toEqual([1, 2, 3])
+    expect(fs.writeSync(fd, new Uint8Array([9]), 0, 1, 0)).toBe(1)
+    expect(fs.fstatSync(fd).size).toBe(3)
+    expect(() => fs.closeSync(fd)).not.toThrow()
+  })
+
+  // write-file-atomic's own sync path (and loggers generally) call this
+  // form; before this fix the string reached `handle.write` as a Buffer
+  // argument in the wrong position, so it threw instead of writing.
+  it('writeSync(fd, string[, position[, encoding]]): the string form, not just buffer', async () => {
+    installBothFamilies(new Uint8Array(5))
+    const fs = await import('../handle.js')
+    const fd = fs.openSync('x', 'r+')
+    expect(fs.writeSync(fd, 'hello')).toBe(5)
+    const readBack = new Uint8Array(5)
+    expect(fs.readSync(fd, readBack, 0, 5, 0)).toBe(5)
+    expect(new TextDecoder().decode(readBack)).toBe('hello')
+  })
+
+  it('an fd opened by fs.open fails EBADF over fs.closeSync, naming fs.open as the family that actually holds it', async () => {
+    installBothFamilies(new Uint8Array(0))
+    const fs = await import('../handle.js')
+    const fd = await new Promise<number>((resolve, reject) => {
+      fs.open('piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+    })
+    let caught: (Error & { code?: string }) | undefined
+    try { fs.closeSync(fd) } catch (error) { caught = error as Error & { code?: string } }
+    expect(caught?.code).toBe('EBADF')
+    expect(caught?.message).toMatch(/fs\.open\b/)
+  })
+
+  it('an fd opened by fs.openSync fails EBADF over the callback fs.close, naming fs.openSync as the family that actually holds it', async () => {
+    installBothFamilies(new Uint8Array(0))
+    const fs = await import('../handle.js')
+    const fd = fs.openSync('x', 'r+')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.close(fd, (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('EBADF')
+    expect(error.message).toMatch(/fs\.openSync/)
+  })
+
+  it('an fd opened by fs.openSync fails EBADF over fs.read/fs.write/fs.fstat too, naming fs.openSync', async () => {
+    installBothFamilies(new Uint8Array(1))
+    const fs = await import('../handle.js')
+    const fd = fs.openSync('x', 'r+')
+    const buffer = new Uint8Array(1)
+    const readError = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.read(fd, buffer, 0, 1, 0, (err) => resolve(err as Error & { code?: string }))
+    })
+    const writeError = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.write(fd, buffer, (err) => resolve(err as Error & { code?: string }))
+    })
+    const statError = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.fstat(fd, (err) => resolve(err as Error & { code?: string }))
+    })
+    for (const error of [readError, writeError, statError]) {
+      expect(error.code).toBe('EBADF')
+      expect(error.message).toMatch(/fs\.openSync/)
+    }
   })
 })

@@ -48,6 +48,10 @@ describe('GRANTED_ORIGIN_CSP_FILTER', () => {
   it('includes object, alongside mainFrame/subFrame, so a nested <object>/<embed> document reaches the handler', () => {
     expect(GRANTED_ORIGIN_CSP_FILTER.types).toEqual(expect.arrayContaining(['mainFrame', 'subFrame', 'object']))
   })
+
+  it('includes script, so a worker\'s own script response reaches the handler', () => {
+    expect(GRANTED_ORIGIN_CSP_FILTER.types).toEqual(expect.arrayContaining(['script']))
+  })
 })
 
 describe('withAppendedCsp', () => {
@@ -96,6 +100,15 @@ describe('documentOriginOf', () => {
   it('is null when the URL cannot be parsed', () => {
     expect(documentOriginOf(details({ url: 'not a url' }))).toBeNull()
   })
+
+  // `http://localhost.` (a trailing dot) and `http://localhost` parse to two
+  // DIFFERENT `new URL(...).origin` strings but the SAME `originFromUrl` --
+  // and it is `originFromUrl` the broker and `tab-view.ts`'s
+  // `partitionForTarget` both use to key this origin's grants and partition,
+  // so the dotted spelling must name the same origin as the canonical one.
+  it('names the trailing-dot spelling of an origin by its canonical form', () => {
+    expect(documentOriginOf(details({ url: 'http://localhost.:8874/' }))).toBe('http://localhost:8874')
+  })
 })
 
 describe('defaultSessionGrantedOriginCsp -- the default session\'s one handler for every granted-without-install origin', () => {
@@ -114,12 +127,12 @@ describe('defaultSessionGrantedOriginCsp -- the default session\'s one handler f
     expect(second.responseHeaders['Content-Security-Policy']).toEqual(["default-src 'none'"])
   })
 
-  it('leaves every non-document response untouched, and never asks the broker or the grant read at all', async () => {
+  it('leaves a response type that could never be a document or a worker script untouched, and never asks the broker or the grant read at all', async () => {
     served.clear()
     liveCspHeaderFor.mockClear()
     const hasGrantsSync = vi.fn(() => true)
     const handler = defaultSessionGrantedOriginCsp({ app: { hasGrantsSync, manifest: vi.fn() } } as unknown as Broker)
-    for (const resourceType of ['script', 'xhr', 'image', 'stylesheet', 'other'] as const) {
+    for (const resourceType of ['xhr', 'image', 'stylesheet'] as const) {
       expect(await handler(details({ resourceType, url: `${ORIGIN}/app.js` }), SEED)).toBe(SEED)
     }
     expect(liveCspHeaderFor).not.toHaveBeenCalled()
@@ -132,11 +145,13 @@ describe('defaultSessionGrantedOriginCsp -- the default session\'s one handler f
     expect(await handler(details({}), SEED)).toBe(SEED)
   })
 
-  it('leaves a cache-served origin untouched even when it also holds a grant -- its CSP is set inside the protocol.handle response instead (A110)', async () => {
+  it('gives a cache-served origin\'s document in the default session the policy too, when it holds a grant -- a navigation into it commits here before the tab\'s partition swap, and that document must not run with the app\'s grants and no policy', async () => {
     served.add(ORIGIN)
     try {
+      liveCspHeaderFor.mockResolvedValueOnce(CSP)
       const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true }))
-      expect(await handler(details({}), SEED)).toBe(SEED)
+      const result = await handler(details({}), SEED)
+      expect(result.responseHeaders['Content-Security-Policy']).toEqual([CSP])
     } finally {
       served.clear()
     }
@@ -172,6 +187,44 @@ describe('defaultSessionGrantedOriginCsp -- the default session\'s one handler f
     const result = await handler(details({}), SEED)
     expect(result.responseHeaders['Content-Security-Policy']).toEqual([CSP])
     expect(result.responseHeaders['cross-origin-opener-policy']).toBeUndefined()
+  })
+
+  // A dedicated/shared worker's top-level script has no resourceType of its
+  // own in Electron's webRequest API -- it arrives classified as 'script'
+  // or, on some platform/version combinations, 'other' -- so EITHER, from
+  // the granted origin, still needs the document's own CSP: that policy is
+  // the only thing standing between the worker and running code the
+  // manifest's `script-src`/`connect-src` never allowed.
+  it('gives a granted origin\'s worker script (classified as script or other) the same policy a document gets', async () => {
+    served.clear()
+    const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true }))
+    for (const resourceType of ['script', 'other'] as const) {
+      liveCspHeaderFor.mockResolvedValueOnce(CSP)
+      const result = await handler(details({ resourceType, url: `${ORIGIN}/worker.js` }), SEED)
+      expect(result.responseHeaders['Content-Security-Policy']).toEqual([CSP])
+    }
+  })
+
+  // The two isolation headers stay on documents only -- see
+  // defaultSessionGrantedOriginCsp's own doc for why.
+  it('never adds the isolation headers to a worker script response, even when the manifest asks for isolation', async () => {
+    served.clear()
+    liveCspHeaderFor.mockResolvedValueOnce(CSP)
+    const handler = defaultSessionGrantedOriginCsp(brokerWith({ hasGrant: true, isolated: true }))
+    const result = await handler(details({ resourceType: 'script', url: `${ORIGIN}/worker.js` }), SEED)
+    expect(result.responseHeaders['Content-Security-Policy']).toEqual([CSP])
+    expect(result.responseHeaders['cross-origin-opener-policy']).toBeUndefined()
+    expect(result.responseHeaders['cross-origin-embedder-policy']).toBeUndefined()
+  })
+
+  it('gives the trailing-dot spelling of a granted origin the same CSP as the canonical one, reading the grant under the canonical origin', async () => {
+    served.clear()
+    liveCspHeaderFor.mockResolvedValueOnce(CSP)
+    const hasGrantsSync = vi.fn((origin: string) => origin === 'http://localhost:8874')
+    const handler = defaultSessionGrantedOriginCsp({ app: { hasGrantsSync, manifest: async () => ({}) } } as unknown as Broker)
+    const result = await handler(details({ url: 'http://localhost.:8874/' }), SEED)
+    expect(hasGrantsSync).toHaveBeenCalledWith('http://localhost:8874')
+    expect(result.responseHeaders['Content-Security-Policy']).toEqual([CSP])
   })
 
   it('lets a failed CSP read reject -- the owner (../sessions/web-request-owner.ts) is what catches it and passes the response through unmodified, not this function', async () => {

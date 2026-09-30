@@ -10,7 +10,8 @@ import { createRequire } from '../../polyfills/module.js'
 import { createRealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { Errno } from '../../wasi/errno.js'
 import { SYNCHRONOUS } from '../../worker/sync-channel.js'
-import { commandAddon, fileAddon, napiAddon, threadedAddon } from './support/napi-addons.js'
+import { importedMemory } from '../imported-memory.js'
+import { commandAddon, fileAddon, napiAddon, napiRsShapedAddon, threadedAddon } from './support/napi-addons.js'
 import { dlopen, loadAddon, preloadAddon } from '../index.js'
 import { addonUrls } from '../resolve.js'
 
@@ -89,6 +90,39 @@ describe('loadAddon', () => {
   it('refuses a threaded build by name, since it needs Workers sharing its memory', () => {
     serveSync({ '/lib/threaded.wasm': threadedAddon() })
     expect(() => loadAddon('/lib/threaded.node')).toThrow(OrivonShimError)
+  })
+})
+
+describe('a build shaped as napi-rs makes one', () => {
+  it('loads with Node-API from env, its imported memory at the size it declares, and its registrations run first', () => {
+    serveSync({ '/lib/rs.wasm': napiRsShapedAddon() })
+    expect((loadAddon('/lib/rs.node') as { marked: number }).marked).toBe(7)
+  })
+
+  it('refuses a build importing a shared memory as a threaded one, and names a declared memory too large to allocate', () => {
+    serveSync({ '/lib/shared.wasm': napiRsShapedAddon({ initial: 3, maximum: 16, shared: true }), '/lib/huge.wasm': napiRsShapedAddon() })
+    expect(() => loadAddon('/lib/shared.node')).toThrow(/shared memory, as a threaded build does/)
+    vi.spyOn(WebAssembly, 'Memory').mockImplementation(function () { throw new RangeError('out of memory') })
+    expect(() => loadAddon('/lib/huge.node')).toThrow(expect.objectContaining({ code: 'ERR_DLOPEN_FAILED', message: expect.stringMatching(/declares 3 pages of memory/) }))
+  })
+
+  it('refuses a build declaring more initial memory than an addon may start with, before allocating any', () => {
+    serveSync({ '/lib/greedy.wasm': napiRsShapedAddon({ initial: 20_000, maximum: 65_536 }) })
+    const memory = vi.spyOn(WebAssembly, 'Memory')
+    expect(() => loadAddon('/lib/greedy.node')).toThrow(expect.objectContaining({ code: 'ERR_DLOPEN_FAILED', message: expect.stringMatching(/declares 20000 pages/) }))
+    expect(memory).not.toHaveBeenCalled()
+  })
+
+  it('reports a registration that traps as ERR_DLOPEN_FAILED, as every other load failure is', async () => {
+    serveSync({ '/lib/panics.wasm': napiRsShapedAddon(undefined, true) })
+    expect(() => loadAddon('/lib/panics.node')).toThrow(expect.objectContaining({ code: 'ERR_DLOPEN_FAILED', message: expect.stringMatching(/failed while loading/) }))
+    vi.stubGlobal('fetch', async () => new Response(napiRsShapedAddon(undefined, true)))
+    await expect(preloadAddon('/lib/panics-async.node')).rejects.toMatchObject({ code: 'ERR_DLOPEN_FAILED' })
+  })
+
+  it('reads an imported memory\'s limits off the binary, past other imports', () => {
+    expect(importedMemory(napiRsShapedAddon())).toEqual({ initial: 3, maximum: 16, shared: false, memory64: false })
+    expect(importedMemory(napiAddon())).toBeUndefined()
   })
 })
 

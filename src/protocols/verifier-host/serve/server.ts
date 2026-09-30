@@ -23,11 +23,83 @@ import type { Sites } from './sites.js'
 export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
 
 /**
+ * The most ONE partition's requests hold at once on the buffer-then-send
+ * path below. A file's chunks are views into blocks the cache already owns,
+ * so buffering one costs little beyond holding those references -- but a
+ * page that opens many requests before reading any of them queues one
+ * pending response per socket, and `MAX_BUFFERED_BYTES` alone only bounds
+ * ONE of those, never their sum. Four files' worth covers ordinary
+ * concurrent tabs on one site; past it, THAT site's own further requests are
+ * refused with `503` rather than added to the pile -- never another site's,
+ * which is exactly what one shared, unpartitioned budget would cost every
+ * OTHER `.eth`/`ipfs://` page the moment one page opened enough requests
+ * and never read them.
+ */
+const MAX_PARTITION_BUFFERED_BYTES = 4 * MAX_BUFFERED_BYTES
+
+/**
+ * The most every partition's requests hold at once, combined -- a backstop
+ * against many partitions each spending up to their own share at the same
+ * time, not a limit any single well-behaved partition should ever reach on
+ * its own.
+ */
+const MAX_TOTAL_BUFFERED_BYTES = 16 * MAX_BUFFERED_BYTES
+
+/**
+ * How long a buffered response's reservation may be held waiting for the
+ * client to take it, counted from the first byte written to the socket.
+ * Nothing here bounds how long a *read* connection may take -- only an
+ * unread one, which is what spends the shared budget for nothing: 30s is
+ * far past any ordinary page's own read of a same-machine loopback
+ * response, and short enough that a page opening several `.eth` popups and
+ * never reading any of them frees each partition's share within one such
+ * page's own lifetime, rather than however long the tab stays open.
+ */
+export const BUFFERED_RESPONSE_DEADLINE_MS = 30_000
+
+/**
+ * Buffered bytes held right now, kept per partition (the same key
+ * `sites.ts` mounts by) so one page's unread requests cost only that
+ * page's own budget, plus a combined total across every partition. A
+ * request with no partition (`partitionOf` returning undefined) shares one
+ * bucket, keyed by the empty string, which no real partition ever is.
+ */
+class BufferBudget {
+  private readonly perPartition = new Map<string, number>()
+  private total = 0
+
+  /** True and reserved if both this partition's own budget and the global
+   * backstop have room; false and unchanged otherwise. */
+  reserve (partition: string | undefined, length: number): boolean {
+    const key = partition ?? ''
+    const current = this.perPartition.get(key) ?? 0
+    if (current + length > MAX_PARTITION_BUFFERED_BYTES || this.total + length > MAX_TOTAL_BUFFERED_BYTES) return false
+    this.perPartition.set(key, current + length)
+    this.total += length
+    return true
+  }
+
+  release (partition: string | undefined, length: number): void {
+    const key = partition ?? ''
+    const remaining = (this.perPartition.get(key) ?? 0) - length
+    if (remaining > 0) this.perPartition.set(key, remaining)
+    else this.perPartition.delete(key)
+    this.total -= length
+  }
+}
+
+/**
  * Every response says the page came from the public internet, whatever
  * loopback address served it, so a protocol's page never gains a local page's
  * reach once Chromium enforces Local Network Access (A252).
  */
 const PUBLIC_ADDRESS_CSP = 'treat-as-public-address'
+
+/** Served content, and the error page shown in its place, may be framed only by their own origin: nothing else has a reason to embed either. Chromium ignores frame-ancestors on a redirect with no body, so redirectTo does not send it. */
+const FRAME_ANCESTORS_SELF_CSP = "frame-ancestors 'self'"
+
+/** Every served-content response's CSP, whether it carries a body or answers a 304: a cached copy from before this existed must not keep revalidating under its old headers. */
+const SERVED_CONTENT_CSP = `${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`
 
 /** A host with no port or the default one: every other port would be another origin for the same name. */
 const HOST = /^([\x21-\x39\x3b-\x7e]+)(?::443)?$/
@@ -76,7 +148,7 @@ function sendError (res: ServerResponse, shown: string, error: unknown): void {
   const { status, html } = renderErrorPage(failure, shown, detail)
   const headers: Record<string, string> = {
     'content-type': 'text/html; charset=utf-8',
-    'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}`,
+    'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`,
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff'
   }
@@ -84,10 +156,15 @@ function sendError (res: ServerResponse, shown: string, error: unknown): void {
   res.writeHead(status, headers).end(html)
 }
 
-async function collect (body: AsyncIterable<Uint8Array>): Promise<Buffer> {
+/**
+ * Every chunk a body yields, held as the view it already is: never copied
+ * into one fresh buffer, so buffering a file some other request already
+ * verified costs only the references, not another `length` bytes.
+ */
+async function collect (body: AsyncIterable<Uint8Array>): Promise<Uint8Array[]> {
   const chunks: Uint8Array[] = []
   for await (const chunk of body) chunks.push(chunk)
-  return Buffer.concat(chunks)
+  return chunks
 }
 
 /** True once the socket can take more, false if the client went away first: a closed socket never drains. */
@@ -105,10 +182,50 @@ async function drained (res: ServerResponse): Promise<boolean> {
   })
 }
 
-async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number): Promise<void> {
+/** Writes chunks to the socket in order, waiting out backpressure between
+ * them; stops early, without error, once the client is gone. Takes either
+ * an already-collected array or the body's own async generator. */
+async function writeChunks (res: ServerResponse, chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>): Promise<void> {
+  for await (const chunk of chunks) {
+    if (res.destroyed) break
+    if (!res.write(chunk) && !await drained(res)) break
+  }
+  res.end()
+}
+
+/**
+ * `writeChunks`, but with a flat deadline on top: a client that has not
+ * finished taking the response by then never gets to keep the reservation
+ * `sendBody` holds for it, whatever progress it made before the deadline.
+ */
+async function writeBufferedChunks (res: ServerResponse, chunks: Uint8Array[], deadlineMs: number): Promise<void> {
+  const timer = setTimeout(() => {
+    res.destroy(new Error('the client did not finish reading this response within the deadline'))
+  }, deadlineMs)
+  timer.unref()
+  try {
+    await writeChunks(res, chunks)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number): Promise<void> {
   if (length <= MAX_BUFFERED_BYTES) {
-    const bytes = await collect(file.body)
-    res.writeHead(status, headers).end(bytes)
+    if (!budget.reserve(partition, length)) {
+      res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
+      return
+    }
+    try {
+      // Read (and, in doing so, verify) the whole body before anything is
+      // written, so a failure past this point is still caught below and
+      // turned into an error page rather than left as a half-sent document.
+      const chunks = await collect(file.body)
+      res.writeHead(status, headers)
+      await writeBufferedChunks(res, chunks, bufferedResponseDeadlineMs)
+    } finally {
+      budget.release(partition, length)
+    }
     return
   }
   // Too large to hold: stream it, and cut the connection on a failure, so
@@ -116,14 +233,14 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
   // loop early ends the body's generator, which releases its blocks.
   res.writeHead(status, headers)
   try {
-    for await (const chunk of file.body) {
-      if (res.destroyed) break
-      if (!res.write(chunk) && !await drained(res)) break
-    }
-    res.end()
+    await writeChunks(res, file.body)
   } catch (error) {
     res.destroy(error instanceof Error ? error : new Error(String(error)))
   }
+}
+
+function redirectTo (res: ServerResponse, origin: string, path: string, search: string): void {
+  res.writeHead(301, { location: `${origin}${path}${search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
 }
 
 /**
@@ -138,16 +255,22 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
     const decoded = decodeURIComponent(written)
     // Any page can send one of these, and a protocol's parser may be slow on a long string.
     if (decoded.length > MAX_ADDRESS_NAME) throw new ResolutionError('invalid-name', `${scheme}:// names are at most ${String(MAX_ADDRESS_NAME)} characters`)
+    // A top-level-domain name already has its own origin: send it straight there, never through this scheme's own resolution.
+    const named = registry.addresses.nameOrigin(decoded)
+    if (named !== undefined) {
+      redirectTo(res, named, path, url.search)
+      return
+    }
     const name = registry.canonicalName(scheme, decoded)
     const origin = registry.addresses.originFor(scheme, name)
     if (origin === undefined) throw new ResolutionError('unsupported', `${scheme}://${name} is too long, or not lowercase, to be a host of its own`)
-    res.writeHead(301, { location: `${origin}${path}${url.search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
+    redirectTo(res, origin, path, url.search)
   } catch (error) {
     sendError(res, shown, error instanceof URIError ? new ResolutionError('invalid-name', `${shown} is not a valid address`) : error)
   }
 }
 
-async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
@@ -173,8 +296,9 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
   res.once('close', () => { left.abort(new Error('the client went away')) })
   let file: GatheredFile
   let root: string
+  const partition = partitionOf(req, host)
   try {
-    const { site } = await sites.get(host, partitionOf(req, host))
+    const { site } = await sites.get(host, partition)
     root = site.root.cid
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.
@@ -185,7 +309,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
     }
     // Before any file is opened: an unchanged root answers with no gateway asked.
     if (req.headers['if-none-match'] === etag) {
-      res.writeHead(304, { etag, 'cache-control': 'no-cache' }).end()
+      res.writeHead(304, { etag, 'cache-control': 'no-cache', 'content-security-policy': SERVED_CONTENT_CSP }).end()
       return
     }
     file = await site.open(url.pathname, undefined, left.signal)
@@ -199,7 +323,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       'accept-ranges': 'bytes',
       // Revalidated every time: a name can point elsewhere tomorrow, and the root CID says whether it has.
       'cache-control': 'no-cache',
-      'content-security-policy': PUBLIC_ADDRESS_CSP,
+      'content-security-policy': SERVED_CONTENT_CSP,
       etag
     }
     const range = parseRange(req.headers.range ?? null, file.size)
@@ -216,17 +340,21 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       res.writeHead(status, headers).end()
       return
     }
-    await sendBody(res, status, headers, file, length)
+    await sendBody(res, status, headers, file, length, budget, partition, bufferedResponseDeadlineMs)
   } catch (error) {
     if (res.headersSent) res.destroy()
     else sendError(res, shown, error)
   }
 }
 
-export function createVerifierServer (registry: ProtocolRegistry, sites: Sites, certificate: RunCertificate): Server {
+/** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
+export function createVerifierServer (registry: ProtocolRegistry, sites: Sites, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS): Server {
+  // One budget for every request this server ever handles, not one per
+  // request: it is what lets it track every partition's own share, and their combined total.
+  const budget = new BufferBudget()
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
     // A rejection left unobserved would end the host process, and with it every protocol's page.
-    handle(registry, sites, req, res).catch((error: unknown) => {
+    handle(registry, sites, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
       console.error('[verifier] request failed:', error)
       if (res.headersSent) res.destroy()
       else res.writeHead(500, { 'content-type': 'text/plain' }).end('the verifier failed on this request')

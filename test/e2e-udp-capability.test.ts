@@ -221,6 +221,7 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
       listen: listenTcp,
       resolve: resolveHost,
       resolveLookup,
+      proxyConfigured: async () => false,
       now: () => Date.now(),
       fs: fsStub,
       pickPath: async () => { throw new Error('userSelected is not exercised by this test') },

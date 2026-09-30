@@ -192,7 +192,7 @@ export function renderMainPage (
     container.append(picks)
   }
 
-  // N2's disclosure (docs/planning/extensions-exploration.md): which
+  // The extensions disclosure (docs/planning/extensions-exploration.md): which
   // installed extensions' host access also reaches this origin. Hidden
   // when empty -- an ordinary site with no extensions installed shows
   // nothing here, matching every other optional section on this page.

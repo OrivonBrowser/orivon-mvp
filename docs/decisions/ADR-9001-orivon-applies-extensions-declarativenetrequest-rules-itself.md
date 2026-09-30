@@ -1,4 +1,4 @@
-# ADR-0046: Orivon applies extensions' `declarativeNetRequest` rules itself, with Firefox's matcher
+# ADR-9001: Orivon applies extensions' `declarativeNetRequest` rules itself, with Firefox's matcher
 
 - **Status:** accepted
 - **Date:** 2026-09-29

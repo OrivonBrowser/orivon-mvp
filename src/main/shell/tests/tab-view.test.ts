@@ -9,8 +9,9 @@ import type { Broker } from '../../../broker/broker-contracts.js'
 // a webContents with a working `.on` -- watchAppTab()'s own reportAppFailures
 // wiring calls it at construction, whatever additionalArguments it got.
 vi.mock('electron', () => ({
-  WebContentsView: vi.fn().mockImplementation(function (this: { webContents: unknown }) {
+  WebContentsView: vi.fn().mockImplementation(function (this: { webContents: unknown, setBackgroundColor: unknown }) {
     this.webContents = { on: vi.fn() }
+    this.setBackgroundColor = vi.fn()
   })
 }))
 
@@ -185,5 +186,21 @@ describe('appTabFlagChanged -- a registered app and an ordinary site can share a
   it('never reads as a flag change for a target with no derivable origin', () => {
     const view = makeTabView('preload.js', undefined, appTabArgsFor(APP, registeredApp))
     expect(appTabFlagChanged('about:blank', view, registeredApp)).toBe(false)
+  })
+})
+
+// createTab() (tabs.ts) attaches a tab's view to screen BEFORE loadURL, so
+// whatever this view's background defaults to (Electron: opaque white) is
+// what actually paints first. Only the shell's own pages get a background
+// here -- see makeTabView's own doc.
+describe('makeTabView: an explicit backgroundColor is set on the view before it is ever shown', () => {
+  it('sets it when the caller passes one (the dashboard / an internal page)', () => {
+    const view = makeTabView('preload.js', undefined, undefined, { backgroundColor: '#0d0e14' })
+    expect((view as unknown as { setBackgroundColor: (c: string) => void }).setBackgroundColor).toHaveBeenCalledWith('#0d0e14')
+  })
+
+  it('leaves an ordinary tab (no colour passed) at Electron\'s own default', () => {
+    const view = makeTabView('preload.js', undefined, undefined)
+    expect((view as unknown as { setBackgroundColor: (c: string) => void }).setBackgroundColor).not.toHaveBeenCalled()
   })
 })

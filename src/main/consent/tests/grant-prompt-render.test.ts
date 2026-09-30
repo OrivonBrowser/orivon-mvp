@@ -128,6 +128,16 @@ describe('describeGrantRequest', () => {
     expect(content.title).toBe(ORIGIN)
     expect(content.detail).toContain(manifest.name)
   })
+
+  // macOS drops the dialog's title (A127) -- the origin must still be
+  // readable in the body every platform actually shows.
+  it('names the origin in the body too, not only in the title', () => {
+    const manifest = manifestWith({ fs: {} })
+
+    const content = describeGrantRequest(ORIGIN, manifest, 'fs', [])
+
+    expect(content.detail).toContain(ORIGIN)
+  })
 })
 
 // ADR-0034: `tcp.listen.local`/`udp.bind.local` read differently from their
@@ -243,6 +253,10 @@ describe('formatOriginForDisplay -- the last three labels, owner decision 2026-0
     expect(formatOriginForDisplay(`https://${cid}.ipfs.orivon`)).toBe(`ipfs://${cid}`)
     expect(formatOriginForDisplay('https://docs-ipfs-tech.ipns.orivon')).toBe('ipns://docs.ipfs.tech')
     expect(formatOriginForDisplay('https://a-b-c-example-com.ipns.orivon')).toBe('ipns://...c.example.com')
+  })
+
+  it('shows a .eth origin under its ipfs display scheme', () => {
+    expect(formatOriginForDisplay('https://vitalik.eth')).toBe('ipfs://vitalik.eth')
   })
 
   it('elides a subdomain-prefix confusable to exactly its last three labels, so the reassuring prefix does not survive alone', () => {

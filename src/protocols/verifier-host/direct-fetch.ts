@@ -23,6 +23,15 @@ export interface DirectFetchOptions {
   readonly maxSocketsPerOrigin?: number
   /** How long the connection may carry no bytes, before or after the headers. */
   readonly idleTimeoutMs?: number
+  /** Off by default: a GET/HEAD-only fetch never sends a body a caller did
+   * not ask to send. A caller with a real POST need (CCIP-Read's form with
+   * no `{data}` in its URL) opts in, and must pass `init.body` as a string. */
+  readonly allowPost?: boolean
+  /** Off by default: a gateway fetch never expects a redirect and refuses
+   * one outright. A caller that must follow a redirect itself (CCIP-Read,
+   * whose resolver contract can hand back a 3xx) opts in and gets the 3xx
+   * response back, `location` header included, instead of a refusal. */
+  readonly allowRedirect?: boolean
 }
 
 /** The pinned address answered with a valid certificate for the name, and
@@ -76,10 +85,10 @@ function dialable (address: string, fixture: boolean): boolean {
 }
 
 /** Why an answer from the gateway is refused, or undefined to accept it. */
-function refusalOf (status: number, encoding: string | undefined): string | undefined {
+function refusalOf (status: number, encoding: string | undefined, allowRedirect: boolean): string | undefined {
   // `new Response` throws a RangeError for any other status.
   if (status < 200 || status > 599) return `direct fetch got status ${String(status)}, outside 200-599`
-  if (status >= 300 && status < 400) return `direct fetch got a ${String(status)} redirect, which it never follows`
+  if (!allowRedirect && status >= 300 && status < 400) return `direct fetch got a ${String(status)} redirect, which it never follows`
   if (encoding !== undefined && encoding.toLowerCase() !== 'identity') return `asked for accept-encoding: identity but got content-encoding: ${encoding}`
   return undefined
 }
@@ -116,26 +125,32 @@ function pinnedLookup (hostname: string, addresses: readonly string[]): (askedHo
 
 /**
  * A direct connection to one of `addresses`, for `url`'s hostname and path
- * -- GET or HEAD only, no redirect ever followed (matches
- * `egress.ts`'s `allowlisted`, which wraps the ordinary path this exists
- * alongside). TLS still verifies the certificate against `url`'s real
- * hostname (`servername`, and no `rejectUnauthorized` override), so a
- * pinned address that cannot present a valid certificate for that name
- * fails exactly as it would over a normal connection.
+ * -- GET or HEAD only, unless `allowPost` opts a caller into a string-bodied
+ * POST as well (CCIP-Read's form with no `{data}` in its URL); no redirect
+ * ever followed (matches `egress.ts`'s `allowlisted`, which wraps the
+ * ordinary path this exists alongside). TLS still verifies the certificate
+ * against `url`'s real hostname (`servername`, and no `rejectUnauthorized`
+ * override), so a pinned address that cannot present a valid certificate for
+ * that name fails exactly as it would over a normal connection.
  */
 export function createDirectFetch (options: DirectFetchOptions = {}): DirectFetch {
   const maxSockets = options.maxSocketsPerOrigin ?? DEFAULT_MAX_SOCKETS_PER_ORIGIN
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS
   const fixture = options.fixture !== undefined
+  const allowPost = options.allowPost ?? false
+  const allowRedirect = options.allowRedirect ?? false
   return async (url, init, addresses) => {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:') throw new Error(`direct fetch only reaches https, not ${parsed.protocol}`)
     if (parsed.port !== '' && !fixture) throw new Error(`direct fetch only reaches port 443, not ${parsed.port}`)
     const method = (init?.method ?? 'GET').toUpperCase()
-    if (method !== 'GET' && method !== 'HEAD') throw new Error(`direct fetch only supports GET/HEAD, not ${method}`)
+    const allowed = allowPost ? 'GET/HEAD/POST' : 'GET/HEAD'
+    if (method !== 'GET' && method !== 'HEAD' && !(allowPost && method === 'POST')) throw new Error(`direct fetch only supports ${allowed}, not ${method}`)
     if (addresses.length === 0) throw new Error('direct fetch given no pinned address')
     const refused = addresses.find((address) => !dialable(address, fixture))
     if (refused !== undefined) throw new Error(`direct fetch refuses to dial ${refused}: not a canonical public unicast address`)
+    const requestBody = method === 'POST' ? init?.body : undefined
+    if (method === 'POST' && typeof requestBody !== 'string') throw new Error('direct fetch only sends a POST body given as a string')
 
     const requestOptions: RequestOptions = {
       method,
@@ -161,7 +176,7 @@ export function createDirectFetch (options: DirectFetchOptions = {}): DirectFetc
       const req = httpsRequest(requestOptions, (res) => {
         // Anything thrown in here would be uncaught, and end the verifier host.
         try {
-          const refusal = refusalOf(res.statusCode ?? 0, res.headers['content-encoding'])
+          const refusal = refusalOf(res.statusCode ?? 0, res.headers['content-encoding'], allowRedirect)
           if (refusal !== undefined) {
             res.resume() // drain so the socket returns to the agent's pool
             fail(new DirectAnswerRefused(refusal))
@@ -188,7 +203,7 @@ export function createDirectFetch (options: DirectFetchOptions = {}): DirectFetc
       req.on('error', fail)
       // The last word: whatever ended the request without an answer or an error.
       req.once('close', () => { fail(new Error(`direct fetch to ${parsed.hostname} closed without an answer`)) })
-      req.end()
+      req.end(requestBody)
     })
   }
 }

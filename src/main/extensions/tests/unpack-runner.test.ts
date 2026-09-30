@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import AdmZip from 'adm-zip'
-import { checkZipEntryPath, MAX_UNPACK_ENTRIES, unpackZip } from '../unpack-runner.js'
+import { checkZipEntryPath, MAX_UNPACK_ENTRIES, unpackZip, writeFolderCopy } from '../unpack-runner.js'
+
+async function withTempDir (fn: (dir: string) => void): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), 'orivon-unpack-test-'))
+  try {
+    fn(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
 
 // checkZipEntryPath takes the mode ALREADY shifted down (unpack-runner.ts's
 // own `entry.header.attr >>> 16`), so these are plain Unix mode values.
@@ -97,4 +106,67 @@ describe('unpackZip', () => {
       rmSync(root, { recursive: true, force: true })
     }
   }, 20_000)
+})
+
+describe('writeFolderCopy', () => {
+  it('refuses a source folder containing a symlink, before copying anything', async () => {
+    await withTempDir((root) => {
+      const source = join(root, 'source')
+      mkdirSync(source, { recursive: true })
+      writeFileSync(join(source, 'manifest.json'), '{}')
+      const outsideTarget = join(root, 'outside-secret')
+      writeFileSync(outsideTarget, 'not part of the extension')
+      symlinkSync(outsideTarget, join(source, 'root'))
+      const target = join(root, 'extensions', 'slot', '1.0.0')
+
+      expect(() => writeFolderCopy(source, target, '{}')).toThrow(/symlink entries are refused/)
+      expect(existsSync(target)).toBe(false)
+      expect(readFileSync(outsideTarget, 'utf8')).toBe('not part of the extension')
+    })
+  })
+
+  it('refuses a symlinked manifest.json rather than writing through it', async () => {
+    await withTempDir((root) => {
+      const source = join(root, 'source')
+      mkdirSync(source, { recursive: true })
+      const realManifest = join(root, 'real-manifest.json')
+      writeFileSync(realManifest, '{"name":"real"}')
+      symlinkSync(realManifest, join(source, 'manifest.json'))
+      const target = join(root, 'extensions', 'slot', '1.0.0')
+
+      expect(() => writeFolderCopy(source, target, '{"name":"loaded"}')).toThrow(/symlink entries are refused/)
+      expect(existsSync(target)).toBe(false)
+      expect(readFileSync(realManifest, 'utf8')).toBe('{"name":"real"}')
+    })
+  })
+
+  it('refuses a symlink nested in a subdirectory too', async () => {
+    await withTempDir((root) => {
+      const source = join(root, 'source')
+      mkdirSync(join(source, 'assets'), { recursive: true })
+      writeFileSync(join(source, 'manifest.json'), '{}')
+      const outsideTarget = join(root, 'outside-secret-2')
+      writeFileSync(outsideTarget, 'not part of the extension')
+      symlinkSync(outsideTarget, join(source, 'assets', 'linked.js'))
+      const target = join(root, 'extensions', 'slot', '1.0.0')
+
+      expect(() => writeFolderCopy(source, target, '{}')).toThrow(/symlink entries are refused/)
+      expect(existsSync(target)).toBe(false)
+    })
+  })
+
+  it('copies an ordinary folder\'s contents and writes the given manifest over its own', async () => {
+    await withTempDir((root) => {
+      const source = join(root, 'source')
+      mkdirSync(source, { recursive: true })
+      writeFileSync(join(source, 'manifest.json'), '{"name":"original"}')
+      writeFileSync(join(source, 'content.js'), 'console.log(1)')
+      const target = join(root, 'extensions', 'slot', '1.0.0')
+
+      writeFolderCopy(source, target, '{"name":"loaded"}')
+
+      expect(readFileSync(join(target, 'manifest.json'), 'utf8')).toBe('{"name":"loaded"}')
+      expect(readFileSync(join(target, 'content.js'), 'utf8')).toBe('console.log(1)')
+    })
+  })
 })

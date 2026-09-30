@@ -1,7 +1,7 @@
 import { Menu, MenuItem, nativeImage } from 'electron'
-import { ExtensionContext } from '../context'
+import type { ExtensionContext } from '../context'
 import { PopupView } from '../popup'
-import { ExtensionEvent } from '../router'
+import type { ExtensionEvent } from '../router'
 import {
   getExtensionUrl,
   getExtensionManifest,
@@ -18,6 +18,21 @@ const d = debug('electron-chrome-extensions:browserAction')
 // upstream makes here is removed. ADR-0041 gives Orivon exactly one call
 // site for that API (src/main/pages/internal-session.ts, before ready);
 // 'crx' is registered there instead, with the same privileges.
+
+// Orivon patch (UPSTREAM.md, patch 33): an optional hook, the same shape as
+// router.ts's own setEventListenerFilter/setMessageSenderIdCheck, called
+// from activateClick below with the tab the toolbar action was just
+// clicked on. chrome.tabCapture.getMediaStreamId requires this -- Chrome
+// refuses to capture a tab the extension was never invoked on ("Extension
+// has not been invoked for the current page"), and nothing in this library
+// tracked that at all before this. Set once, before the first activation
+// (extension-host.ts).
+type TabCaptureInvocationRecorder = (extensionId: string, tab: Electron.WebContents) => void
+let gTabCaptureInvocationRecorder: TabCaptureInvocationRecorder | undefined
+
+export function setTabCaptureInvocationRecorder(recorder: TabCaptureInvocationRecorder): void {
+  gTabCaptureInvocationRecorder = recorder
+}
 
 interface ExtensionAction {
   color?: string
@@ -70,7 +85,15 @@ interface ExtensionActionStore extends Partial<ExtensionAction> {
 
 export class BrowserActionAPI {
   private actionMap = new Map</* extensionId */ string, ExtensionActionStore>()
-  private popup?: PopupView
+  // Orivon patch: `| undefined` added (exactOptionalPropertyTypes) --
+  // activateClick assigns `undefined` here, which the bare `?:` form
+  // refuses.
+  private popup?: PopupView | undefined
+  // Orivon patch (UPSTREAM.md, patch 33): the tab `this.popup` was opened
+  // for -- getOpenPopup() below is chrome.runtime.getContexts()'s only way
+  // to report a POPUP context's tabId, since PopupView itself carries no
+  // tab of its own.
+  private popupTabId?: number | undefined
 
   private observers: Set<Electron.WebContents> = new Set()
   private queuedUpdate: boolean = false
@@ -225,9 +248,15 @@ export class BrowserActionAPI {
           const tabId = url.searchParams.get('tabId')
 
           const fragments = url.pathname.split('/')
-          const extensionId = fragments[1]
-          const imageSize = parseInt(fragments[2], 10)
-          const resizeType = parseInt(fragments[3], 10) || ResizeType.Up
+          // Orivon patch: `?? ''` on all three -- root tsconfig's
+          // noUncheckedIndexedAccess (vendor/tsconfig.json does not set it)
+          // types an array read as possibly `undefined`; a genuinely short
+          // pathname behaves exactly as before (no matching extension/icon
+          // found, or NaN into parseInt, same as an `undefined` argument
+          // gave previously).
+          const extensionId = fragments[1] ?? ''
+          const imageSize = parseInt(fragments[2] ?? '', 10)
+          const resizeType = parseInt(fragments[3] ?? '', 10) || ResizeType.Up
 
           const sessionExtensions = this.ctx.session.extensions || this.ctx.session
           const extension = sessionExtensions.getExtension(extensionId)
@@ -316,6 +345,17 @@ export class BrowserActionAPI {
     this.onUpdate()
   }
 
+  // Orivon patch (UPSTREAM.md, patch 32): chrome.runtime.getContexts()'s
+  // POPUP entry, for the one extension whose popup is currently open --
+  // Chrome allows only one open popup at a time session-wide, matching
+  // `this.popup` already being a single field, not a map.
+  getOpenPopup(): { extensionId: string; webContents: Electron.WebContents; tabId: number } | undefined {
+    if (!this.popup || this.popup.isDestroyed() || this.popupTabId === undefined) return undefined
+    const webContents = this.popup.browserWindow?.webContents
+    if (webContents === undefined) return undefined
+    return { extensionId: this.popup.extensionId, webContents, tabId: this.popupTabId }
+  }
+
   private getPopupUrl(extensionId: string, tabId: number) {
     const action = this.getAction(extensionId)
     const tabPopupValue = action.tabs[tabId]?.popup
@@ -329,19 +369,26 @@ export class BrowserActionAPI {
       popupPath = actionPopupValue
     }
 
+    if (!popupPath) return undefined
+
+    // Orivon patch: only a URL under THIS extension's own
+    // chrome-extension://<extensionId>/ origin is ever returned -- a
+    // relative popup path (the common case: default_popup/setPopup almost
+    // always set one) resolves against that origin exactly as before, but
+    // an ABSOLUTE popupPath naming a different origin (file:, data:, an
+    // http(s) page, or another extension's chrome-extension://<id>/) is now
+    // refused instead of resolved and returned as-is. PopupView.load()
+    // hands whatever this returns straight to a main-process loadURL, with
+    // no pass through extension-url-policy.ts at all -- before this patch,
+    // any extension whose page called chrome.action.setPopup could point
+    // its own toolbar button at an arbitrary URL of its choosing.
     let url: string | undefined
-
-    // Allow absolute URLs
     try {
-      url = popupPath && new URL(popupPath).href
+      const resolved = new URL(popupPath, `chrome-extension://${extensionId}/`)
+      if (resolved.protocol === 'chrome-extension:' && resolved.hostname === extensionId) {
+        url = resolved.href
+      }
     } catch {}
-
-    // Fallback to relative path
-    if (!url) {
-      try {
-        url = popupPath && new URL(popupPath, `chrome-extension://${extensionId}`).href
-      } catch {}
-    }
 
     return url
   }
@@ -363,7 +410,10 @@ export class BrowserActionAPI {
       const tabsInfo: { [key: string]: any } = {}
 
       for (const tabId of Object.keys(tabs)) {
-        const { icon, ...rest } = tabs[tabId]
+        // Orivon patch: `?? {}` -- noUncheckedIndexedAccess, tabId is
+        // always one of this same object's own keys, so this fallback
+        // never actually applies.
+        const { icon, ...rest } = tabs[tabId] ?? {}
         tabsInfo[tabId] = rest
       }
 
@@ -378,8 +428,35 @@ export class BrowserActionAPI {
     return { activeTabId: activeTab?.id, actions }
   }
 
-  private activate({ type, sender }: ExtensionEvent, details: ActivateDetails) {
+  // Orivon patch (UPSTREAM.md, patch 33):
+  // `browser-action.ts`'s own chrome-view preload (`injectBrowserAction`'s
+  // `activate()`) calls this EXCLUSIVELY through `crx-msg-remote` -- no
+  // extension code, real Chrome or otherwise, is ever meant to reach this
+  // handler at all. `event.extension` is the verified signal for which
+  // channel a call arrived on: `router.ts`'s `onRemoteMessage` always
+  // passes `extensionId: undefined` (so `event.extension` is undefined for
+  // EVERY remote call, `setRemoteMessageSenderCheck`'s own
+  // `isFromChromeView` gate is what makes that path trustworthy), while
+  // `onRouterMessage` (local `crx-msg`) resolves it from the caller's own
+  // VERIFIED extension id. Before this fix, a plain extension page could
+  // call `browserAction.activate` directly over `crx-msg` with a
+  // `details.extensionId`/`details.tabId` of its own choosing -- fields
+  // inside the RPC payload, never checked against the caller's real
+  // identity -- and open another extension's popup, or fire
+  // `browserAction.onClicked` for a tab it has no access to. Refusing
+  // every LOCAL call outright closes that route entirely, and is also
+  // exactly why `activateClick`'s own invocation recording below only ever
+  // runs for a call that reaches here at all: `chrome.action.openPopup()`
+  // (no click, no gesture) calls `activateClick` directly, bypassing this
+  // handler -- see `openPopup`'s own doc for why that call must still open
+  // the popup but never record an invocation.
+  private activate({ type, sender, extension }: ExtensionEvent, details: ActivateDetails) {
     if (type != 'frame') return
+    if (extension !== undefined) {
+      throw new Error(
+        `browserAction.activate refused: '${extension.id}' called it directly, not through a real toolbar click.`,
+      )
+    }
     const { eventType, extensionId, tabId } = details
 
     d(
@@ -388,7 +465,10 @@ export class BrowserActionAPI {
 
     switch (eventType) {
       case 'click':
-        this.activateClick(details)
+        // `true`: this call only ever reaches here once the guard above
+        // has confirmed it came from the real chrome view over
+        // crx-msg-remote, i.e. a genuine toolbar click.
+        this.activateClick(details, true)
         break
       case 'contextmenu':
         this.activateContextMenu(details)
@@ -398,13 +478,14 @@ export class BrowserActionAPI {
     }
   }
 
-  private activateClick(details: ActivateDetails) {
+  private activateClick(details: ActivateDetails, recordInvocation: boolean = false) {
     const { extensionId, tabId, anchorRect, alignment } = details
 
     if (this.popup) {
       const toggleExtension = !this.popup.isDestroyed() && this.popup.extensionId === extensionId
       this.popup.destroy()
       this.popup = undefined
+      this.popupTabId = undefined
       if (toggleExtension) {
         d('skipping activate to close popup')
         return
@@ -415,6 +496,15 @@ export class BrowserActionAPI {
       tabId >= 0 ? this.ctx.store.getTabById(tabId) : this.ctx.store.getActiveTabOfCurrentWindow()
     if (!tab) {
       throw new Error(`Unable to get active tab`)
+    }
+
+    // Orivon patch (UPSTREAM.md, patch 33): a real toolbar click IS
+    // an invocation, whether or not it opens a popup -- both branches below
+    // count. `recordInvocation` is false for `openPopup`'s own call (no
+    // click, no gesture -- see its own doc) and true only for the one
+    // caller that already proved this is a real click (`activate`, above).
+    if (recordInvocation) {
+      gTabCaptureInvocationRecorder?.(extensionId, tab)
     }
 
     const popupUrl = this.getPopupUrl(extensionId, tab.id)
@@ -433,6 +523,7 @@ export class BrowserActionAPI {
         anchorRect,
         alignment,
       })
+      this.popupTabId = tab.id
 
       d(`opened popup: ${popupUrl}`)
 
@@ -507,6 +598,13 @@ export class BrowserActionAPI {
     })
   }
 
+  // chrome.action.openPopup() is a real, legitimate extension API
+  // (no toolbar click, no gesture, callable from a service worker) --
+  // refusing it is not the fix. What it must never do is count as a
+  // tabCapture invocation: `activateClick` below is called directly,
+  // skipping `activate`'s own remote-only guard, with NO `recordInvocation`
+  // argument (defaults false), the same call shape `activate` itself uses
+  // only once it has confirmed a real click.
   private openPopup = (event: ExtensionEvent, options?: chrome.action.OpenPopupOptions) => {
     const window =
       typeof options?.windowId === 'number'
@@ -520,7 +618,10 @@ export class BrowserActionAPI {
     const activeTab = this.ctx.store.getActiveTabFromWindow(window)
     if (!activeTab) return
 
-    const [width] = window.getSize()
+    // Orivon patch: `?? 0` -- noUncheckedIndexedAccess types a
+    // destructured array element as possibly undefined; getSize() always
+    // returns a 2-element tuple, so this fallback never actually applies.
+    const [width = 0] = window.getSize()
     const anchorSize = 64
 
     this.activateClick({

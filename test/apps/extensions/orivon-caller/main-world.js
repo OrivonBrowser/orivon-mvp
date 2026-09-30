@@ -41,19 +41,21 @@
   }
 
   if (location.pathname === '/orivon-fixture/sourceurl') {
-    // Bypass 3's own worked case: a `//# sourceURL=...` comment on a STRING
-    // passed to setTimeout claims a page URL for code that is really the
-    // extension's own -- main-world-socket.ts's isPage check must never
-    // read scriptNameOrSourceURL for page attribution (README.md's Design
-    // notes), so this must still refuse. String-eval'd code runs in the
+    // A `//# sourceURL=...` comment on a STRING passed to setTimeout claims
+    // a page URL for code that is really the extension's own: the plain
+    // form sets the script name, the `x(<url>:1:1)` form also forges a page
+    // eval origin. main-world-socket.ts's isPage reads neither (README.md's
+    // Design notes), so both must refuse. String-eval'd code runs in the
     // global scope, not this IIFE's closure -- everything it needs is
     // inlined rather than reaching for report()/outcomeOf() above.
-    setTimeout(
-      "window.orivon.app.manifest().then(function () { document.documentElement.setAttribute('data-orivon-sourceurl', 'allowed') }, " +
-      "function (e) { document.documentElement.setAttribute('data-orivon-sourceurl', (e && typeof e === 'object' && typeof e.code === 'string') ? e.code : String(e)) })\n" +
-      '//# sourceURL=' + location.origin + '/spoofed-page.js',
+    const spoof = (attribute, sourceURL) => setTimeout(
+      "window.orivon.app.manifest().then(function () { document.documentElement.setAttribute('" + attribute + "', 'allowed') }, " +
+      "function (e) { document.documentElement.setAttribute('" + attribute + "', (e && typeof e === 'object' && typeof e.code === 'string') ? e.code : String(e)) })\n" +
+      '//# sourceURL=' + sourceURL,
       20
     )
+    spoof('data-orivon-sourceurl', location.origin + '/spoofed-page.js')
+    spoof('data-orivon-sourceurl-eval-origin', 'x(' + location.origin + '/spoofed-page.js:1:1)')
     return
   }
 
@@ -80,6 +82,29 @@
       Object.defineProperty(Error, 'stackTraceLimit', { value: 0, writable: false, configurable: false })
     } catch (error) { /* already unconfigurable; the effect is the same */ }
     void call('tamper-extension')
+    return
+  }
+
+  if (location.pathname === '/orivon-fixture/callsite') {
+    // Tries to replace CallSite.prototype.getFileName at document_start so
+    // every frame would claim the page's own script. V8 defines those
+    // methods non-writable and non-configurable, so the strict-mode
+    // assignment throws and the extension's own frame still names it.
+    const previous = Error.prepareStackTrace
+    Error.prepareStackTrace = (_error, callSites) => callSites
+    const callSite = new Error().stack[0]
+    Error.prepareStackTrace = previous
+    const patched = (function () {
+      'use strict'
+      try {
+        Object.getPrototypeOf(callSite).getFileName = function () { return location.origin + '/page.js' }
+        return 'replaced'
+      } catch (error) {
+        return 'refused'
+      }
+    })()
+    report('callsite-patch', patched)
+    void call('callsite-extension')
     return
   }
 

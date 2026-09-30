@@ -20,4 +20,7 @@ export const setImmediate = current('setImmediate')
 export const clearImmediate = current('clearImmediate')
 export { promises }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/timers.js'
+
 export default nodeModule('timers', { setTimeout, clearTimeout, setInterval, clearInterval, setImmediate, clearImmediate, promises })

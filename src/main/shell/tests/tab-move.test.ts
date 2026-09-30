@@ -16,7 +16,7 @@ interface FakeContents extends EventEmitter {
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
 }
-interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn> }
+interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn> }
 const createdViews: RecordedView[] = []
 
 function makeFakeWebContents (): FakeContents {
@@ -37,12 +37,13 @@ vi.mock('electron', () => ({
   WebContentsView: vi.fn().mockImplementation(function (this: RecordedView) {
     this.webContents = makeFakeWebContents()
     this.setBounds = vi.fn()
+    this.setBackgroundColor = vi.fn()
     createdViews.push(this)
   })
 }))
 
 const { TabManager } = await import('../tabs.js')
-const { dropTab, moveToNewWindow, moveToWindow } = await import('../tab-move.js')
+const { crossWindowTargetFor, dropTab, moveToNewWindow, moveToWindow } = await import('../tab-move.js')
 
 beforeEach(() => { createdViews.length = 0 })
 
@@ -153,6 +154,18 @@ describe('a tab moved to a new window', () => {
     expect(ids(from.manager)).toHaveLength(1)
   })
 
+  it('shows the new window at once: a moved tab is already rendered, nothing here is worth waiting on', () => {
+    const from = side()
+    from.manager.createTab('https://a.example/')
+    const tab = from.manager.createTab('https://b.example/')
+    const fresh = side()
+    const openWindow = vi.fn((options: { first?: (tabs: InstanceType<typeof TabManager>) => void }) => { options.first?.(fresh.manager) })
+
+    moveToNewWindow(from.entry, tab, openWindow)
+
+    expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ instant: true }))
+  })
+
   it('opens on a new tab when the tab has gone by the time the window is ready', () => {
     const from = side()
     from.manager.createTab('https://a.example/')
@@ -212,5 +225,30 @@ describe('a tab let go where windows overlap', () => {
 
     expect(ids(newer.manager)).toEqual([moved])
     expect(ids(older.manager)).toEqual([])
+  })
+})
+
+describe('crossWindowTargetFor', () => {
+  it('names no window when the point is over no strip but the dragged tab\'s own', () => {
+    const bounds = { x: 0, y: 0, width: 800, height: 600 }
+    const [from, other] = [side(), side()]
+    for (const each of [from, other]) (each.entry.window as unknown as { getBounds: () => typeof bounds }).getBounds = () => bounds
+    expect(crossWindowTargetFor(from.entry, { x: 300, y: 500 }, [other.entry, from.entry], 80)).toBeNull()
+  })
+
+  it('names the window and the index a drop right now would use -- the same formula dropTab itself applies', () => {
+    const bounds = { x: 100, y: 100, width: 800, height: 600 }
+    const [from, target] = [side(), side()]
+    for (const each of [from, target]) (each.entry.window as unknown as { getBounds: () => typeof bounds }).getBounds = () => bounds
+    target.manager.createTab('https://a.example/')
+    target.manager.createTab('https://b.example/')
+    const moved = from.manager.createTab('https://c.example/')
+
+    const found = crossWindowTargetFor(from.entry, { x: 300, y: 110 }, [target.entry, from.entry], 80)
+    expect(found).toEqual({ window: target.entry, index: Math.round(((300 - bounds.x) / bounds.width) * 2) })
+
+    // dropTab, given the exact same point, lands the tab at that same index.
+    dropTab(from.entry, moved, { x: 300, y: 110 }, [target.entry, from.entry], vi.fn(), 80)
+    expect(ids(target.manager).indexOf(moved)).toBe(found?.index)
   })
 })

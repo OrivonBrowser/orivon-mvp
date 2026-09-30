@@ -2,9 +2,9 @@
 
 **What lives here.** Every grant decision this browser makes, in three layers per feature:
 `install-consent.ts`, `request-grant.ts` and `update-outcomes.ts` decide;
-`grant-prompt-render.ts` (with `grant-prompt-connect.ts`, `grant-prompt-origin.ts` and
-`grant-prompt-choice.ts`) turns a decision into words; the three `*-prompt.ts` files show those
-words in a native dialog. `grant-level.ts` is the one place a Level 4 site's summary loses its
+`grant-prompt-render.ts` (with `grant-prompt-connect.ts`, `grant-prompt-origin.ts`,
+`grant-prompt-choice.ts` and `grant-prompt-extensions.ts`) turns a decision into words; the three
+`*-prompt.ts` files show those words in a native dialog. `grant-level.ts` is the one place a Level 4 site's summary loses its
 warning (`ADR-0037`). `grant-changed-capabilities.ts` is the one place accepted capabilities
 become `broker.grant()` calls. `request-grant-subsystem.ts` wires `request-grant.ts` into the
 running app.
@@ -22,7 +22,7 @@ running app.
 origin), [`../dev/score-levels.ts`](../dev/score-levels.ts) (wired in at
 `../install/app-install-subsystem.ts` and `./request-grant-subsystem.ts`),
 [`../extensions/site-reach-runner.ts`](../extensions/site-reach-runner.ts)'s
-`extensionNamesForOrigin` (N2's disclosure, wired in at the same two places), and the top-level
+`extensionNamesForOrigin` (the extensions disclosure, wired in at the same two places), and the top-level
 `registry.ts`.
 
 **What it must never import.** `electron`, in every file except the three `*-prompt.ts`. The
@@ -37,8 +37,8 @@ survive an engine change; the three `*-prompt.ts` files are tied to Electron's `
 
 ## Design notes
 
-**[`grant-prompt-render.ts`](grant-prompt-render.ts)'s extensions-on-site line is words only;
-the list it renders is computed nowhere in this file.** N2's disclosure
+**[`grant-prompt-extensions.ts`](grant-prompt-extensions.ts)'s extensions-on-site line is words
+only; the list it renders is computed in none of the wording files.** The extensions disclosure
 (`docs/planning/extensions-exploration.md`) needs `ctx.extensions` and a manifest read off disk
 (`../extensions/site-reach-runner.ts`), neither of which this directory's decision files may
 touch (this file's own header). `describeGrantRequest`/`describeInstallConsent` take the already-
@@ -47,6 +47,18 @@ renders unchanged; `./request-grant-prompt.ts` and `./install-consent-prompt.ts`
 `(origin) => Promise<readonly string[]>` and fetch it once per prompt, the same injection shape
 `levelOverrideFor` already uses for ADR-0037. The real function is wired in at
 `./request-grant-subsystem.ts` and `../install/app-install-subsystem.ts`, never here.
+
+**[`request-grant.ts`](request-grant.ts)'s `DialogCaller`: the tab that asked is a pair of
+closures, never an Electron object.** Every dialog here is bound to the tab whose page triggered
+it -- parented to that tab's window, shown only while the tab is still alive and on the origin
+that asked, and re-checked once more when the person answers, since a dialog can be up for up to
+120 seconds (A153) and the page is free to navigate or close in that window. `window()`/`stillOn()`
+carry that state across the Electron boundary as plain functions so `request-grant.ts`,
+`install-consent.ts` and `update-outcomes.ts` can all reason about it without importing `electron`
+themselves; the three `*-prompt.ts` files build the real closures from a live `WebContents`, and
+`../../broker/transport/ipc.ts` and `../install/manifest-hint.ts` build them again independently,
+at the two places an Electron sender frame actually exists, rather than sharing one Electron-typed
+helper across a boundary neither side should depend on.
 
 **Every pattern is rendered from the parsed form, never a second guess at the raw string.**
 Patterns go through `hostSpecKind` and `parsePattern`

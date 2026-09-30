@@ -159,7 +159,7 @@ it('Phase 2: a real fs grant lets a real page build, list, stat, rename and dele
     try {
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
-        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+        const beforeGrant = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
         // The grant, through the production dev-only route (queue item 0.3),
         // exercised inside THIS launched app's own main process -- see
@@ -176,6 +176,13 @@ it('Phase 2: a real fs grant lets a real page build, list, stat, rename and dele
           grantOutcome.installed ? undefined : 'globalThis.__orivonDevGrant was not a function in the main process'
         )
         if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
+
+        // The dev-only hook lands on the broker directly, and a grant moves no
+        // document: a granted network-served origin runs in the default session
+        // (ADR-0044), where this document already committed FIXTURE_ORIGIN,
+        // attributed (src/main/sessions/session-attribution.ts), so the calls
+        // below run from this same document.
+        const view = beforeGrant
 
         // (a) BUILD A REAL NESTED TREE ON REAL DISK, then list, stat, rename
         // and delete it -- one evaluate() so every step runs against the

@@ -71,9 +71,10 @@ const IMPORT_STATEMENT = /^import\b/
  * and documented as throwaway -- the same exclusion, for the same reason, that
  * scripts/check-size.mjs makes.
  *
- * `vendor/` is third-party source kept verbatim; Rule 1 is Orivon's own
- * authoring style, and upstream's comments are not held to it, the same
- * reasoning scripts/check-size.mjs uses for the same directory.
+ * `vendor/` is third-party source kept in its upstream shape, patched as its
+ * UPSTREAM.md lists; Rule 1 is Orivon's own authoring style, and upstream's
+ * comments are not held to it, the same reasoning scripts/check-size.mjs
+ * uses for the same directory.
  */
 const EXEMPT_DIRECTORY = /^(src\/contracts|spike|vendor)\//
 

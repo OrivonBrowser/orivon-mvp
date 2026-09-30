@@ -210,6 +210,36 @@ describe('udpBind -- every datagram is authorised on the way out', () => {
     expect(send).toHaveBeenCalledTimes(2)
   })
 
+  // A304: authorisedSend reuses checkConnect, so A82's reserved-port
+  // carve-out (reserved-ports.ts) applies to udp.send exactly as it does to
+  // tcp.connect. A wildcard grant is not itself a naming of a reserved
+  // port, so it does not survive that carve-out even though it would
+  // otherwise authorise every host and port -- capability-api.md's own P2P
+  // example (`udp.send: ["*:*"]`) cannot reach port 53, and a component
+  // doing its own DNS-over-UDP times out with no error anywhere (A87). Not
+  // a defect: A304 asks the owner whether that is the intended shape.
+  it('a wildcard grant still cannot reach a reserved port (A304): port named, not just host', async () => {
+    const send = vi.fn(async () => ({ sent: true as const }))
+    const broker = await boundBroker(baseDeps({ bind: async () => okUdpSocket({ send }) }))
+    await broker.grant(APP, 'udp.send', ['*:*'])
+    const socket = await broker.net.udpBind(APP, { port: 6881 })
+
+    const outcome = await socket.send(datagram({ address: '1.1.1.1', port: 53 }))
+
+    expect(outcome).toEqual({ sent: false, code: 'denied' })
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('naming the reserved port exactly reaches it -- host and port are each their own question', async () => {
+    const send = vi.fn(async () => ({ sent: true as const }))
+    const broker = await boundBroker(baseDeps({ bind: async () => okUdpSocket({ send }) }))
+    await broker.grant(APP, 'udp.send', ['*:53'])
+    const socket = await broker.net.udpBind(APP, { port: 6881 })
+
+    expect(await socket.send(datagram({ address: '1.1.1.1', port: 53 }))).toEqual({ sent: true })
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ address: '1.1.1.1', port: 53 }))
+  })
+
   // A87: the caller's only way to report a rejection is to error the app's
   // WritableStream, which errors it permanently. Nothing here may reject.
   it('reports a resolver failure as a value rather than rejecting', async () => {

@@ -1,4 +1,4 @@
-// The host-access decision chrome.cookies and chrome.tabs both gate on now
+// The host-access decision chrome.cookies and chrome.tabs both gate on
 // (README.md's Design notes): whether a loaded extension's OWN manifest
 // covers a given URL. Reuses readExtensionManifest's hostPermissions
 // extraction (broker/policy/extension-manifest.ts) so a loaded extension's

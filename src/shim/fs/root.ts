@@ -16,6 +16,7 @@
 
 import { normalize } from 'path'
 import type { FileHandle, FileStat } from '../../contracts/handles.js'
+import type { SyncFileHandleWire } from './sync-orivon.js'
 import { fsError } from './paths.js'
 
 /** `.`, `./`, `a/..`, `./a/..`, ... -- any relative path whose POSIX-normalised form names the current directory itself. Never true for an absolute path or a real traversal outside it (`../x` normalises to `../x`, not `.`). */
@@ -37,7 +38,7 @@ export function rootReaddirError (): never {
   throw fsError('EACCES', "permission denied (orivon.fs cannot list the app's root directory itself; list a folder inside it)", 'scandir')
 }
 
-/** rm/unlink/rename of the root: it is where the app's files live, and nothing may remove or move it. */
+/** rm/rmdir/unlink/rename of the root: it is where the app's files live, and nothing may remove or move it. */
 export function rootNotRemovableError (syscall: string): never {
   throw fsError('EACCES', "permission denied (the app's root directory cannot be removed or moved)", syscall)
 }
@@ -81,6 +82,18 @@ export function rootDirectoryHandle (): FileHandle {
     stat: async (): Promise<FileStat> => ROOT_STAT,
     truncate: async () => rootTruncateError(),
     sync: async () => {}
+  }
+}
+
+/** rootDirectoryHandle's synchronous twin, for fs/handle.ts's SyncNodeFileHandle -- same three outcomes, called rather than awaited. */
+export function rootDirectoryHandleSync (): SyncFileHandleWire {
+  return {
+    read: () => rootReadError(),
+    write: () => rootWriteError(),
+    stat: (): FileStat => ROOT_STAT,
+    truncate: () => rootTruncateError(),
+    sync: () => {},
+    close: () => {}
   }
 }
 

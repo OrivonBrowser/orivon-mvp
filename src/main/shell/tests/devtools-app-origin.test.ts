@@ -28,9 +28,9 @@ describe('appOrigin', () => {
     expect(appOrigin(originFromUrl, contents)).toBeNull()
   })
 
-  // The finding this guards: `contents.opener.url` throws for an
-  // already-destroyed opener WebContents (Electron) -- that must read as
-  // "no opener", never propagate and crash the whole DevTools prompt.
+  // `contents.opener.url` throws for an already-destroyed opener
+  // WebContents (Electron) -- that must read as "no opener", never
+  // propagate and crash the whole DevTools prompt.
   it('treats a destroyed opener (reading .url throws) the same as no opener at all', () => {
     const contents = {
       getURL: () => 'about:blank',

@@ -8,6 +8,8 @@
 // pointer in main-world-socket.ts's header for why a pure top-level copy
 // exists here rather than an export from that file.
 import vm from 'node:vm'
+import { readdirSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import { LIMITS, fakeBridge, fakeSocketBridgeResult } from './main-world-socket.test-helpers.js'
@@ -23,9 +25,6 @@ import { LIMITS, fakeBridge, fakeSocketBridgeResult } from './main-world-socket.
 const someOwn = Array.prototype.some
 const indexOfOwn = String.prototype.indexOf
 const startsWithOwn = String.prototype.startsWith
-const lastIndexOfOwn = String.prototype.lastIndexOf
-const sliceOwn = String.prototype.slice
-const execOwn = RegExp.prototype.exec
 const applyOwn = Reflect.apply
 function hasSource (text: unknown, needles: readonly string[]): boolean {
   return typeof text === 'string' && applyOwn(someOwn, needles, [(needle: string) => applyOwn(indexOfOwn, text, [needle]) !== -1])
@@ -34,31 +33,14 @@ interface CallerFrame { fileName?: string, scriptNameOrSourceURL?: string, evalO
 function callerIsRefused (frames: readonly CallerFrame[]): boolean {
   const isExtension = (f: CallerFrame): boolean =>
     hasSource(f.fileName, ['chrome-extension://']) || hasSource(f.scriptNameOrSourceURL, ['chrome-extension://']) || hasSource(f.evalOrigin, ['chrome-extension://'])
-  // Page attribution uses ONLY the frame's real script URL (fileName), or
-  // an eval origin whose INNERMOST script URL starts with a page prefix --
-  // never scriptNameOrSourceURL, which a `//# sourceURL=...` comment lets
-  // string-compiled extension code spoof to any value it likes (README.md's
-  // Design notes). STARTS-WITH, not contains: unlike extension detection
-  // above, a spoofed prefix elsewhere in the string must not count.
+  // Page attribution uses ONLY a real script's URL (fileName) -- never
+  // scriptNameOrSourceURL or an eval origin: a `//# sourceURL=...` comment
+  // on string-compiled code rewrites both, at any depth of a nested eval
+  // (README.md's Design notes). STARTS-WITH, not contains: unlike extension
+  // detection above, a spoofed prefix elsewhere in the string must not count.
   const startsWithAny = (text: unknown, prefixes: readonly string[]): boolean =>
     typeof text === 'string' && applyOwn(someOwn, prefixes, [(prefix: string) => applyOwn(startsWithOwn, text, [prefix])])
-  // V8 shapes a (possibly nested) eval origin as "eval at <fn> (eval at
-  // <fn> (URL:line:col))" -- parens nest left to right, so the LAST '('
-  // up to its next ')' is always the innermost, real-script URL, however
-  // many eval layers deep.
-  const innermostEvalScriptUrl = (evalOrigin: string): string | undefined => {
-    const openIndex = applyOwn(lastIndexOfOwn, evalOrigin, ['('])
-    if (openIndex === -1) return undefined
-    const closeIndex = applyOwn(indexOfOwn, evalOrigin, [')', openIndex])
-    if (closeIndex === -1) return undefined
-    const match = applyOwn(execOwn, /^(.*):\d+:\d+$/, [applyOwn(sliceOwn, evalOrigin, [openIndex + 1, closeIndex])])
-    return match === null ? undefined : match[1]
-  }
-  const isPage = (f: CallerFrame): boolean => {
-    const p = ['http://', 'https://', 'blob:http://', 'blob:https://']
-    if (startsWithAny(f.fileName, p)) return true
-    return typeof f.evalOrigin === 'string' && startsWithAny(innermostEvalScriptUrl(f.evalOrigin), p)
-  }
+  const isPage = (f: CallerFrame): boolean => startsWithAny(f.fileName, ['http://', 'https://', 'blob:http://', 'blob:https://'])
   if (applyOwn(someOwn, frames, [isExtension])) return true
   return !applyOwn(someOwn, frames, [isPage])
 }
@@ -110,7 +92,8 @@ describe('callerIsRefused (pure decision rule)', () => {
   it('allows a page frame (http:)', () => { expect(callerIsRefused([PAGE_HTTP])).toBe(false) })
   it('allows a page frame (https:)', () => { expect(callerIsRefused([PAGE_HTTPS])).toBe(false) })
   it('allows a page frame (blob: with an https: inner origin)', () => { expect(callerIsRefused([PAGE_BLOB_HTTPS])).toBe(false) })
-  it('allows a page eval origin', () => { expect(callerIsRefused([PAGE_EVAL])).toBe(false) })
+  it('refuses a page eval origin with no real page frame: eval-origin text can be forged', () => { expect(callerIsRefused([PAGE_EVAL])).toBe(true) })
+  it('allows a page eval called from a real page frame', () => { expect(callerIsRefused([PAGE_EVAL, PAGE_HTTPS])).toBe(false) })
   it('refuses an extension frame named by fileName', () => { expect(callerIsRefused([EXTENSION_FILE])).toBe(true) })
   it('refuses an extension frame named by scriptNameOrSourceURL', () => { expect(callerIsRefused([EXTENSION_SCRIPT_URL])).toBe(true) })
   it('refuses an extension eval origin', () => { expect(callerIsRefused([EXTENSION_EVAL])).toBe(true) })
@@ -124,11 +107,8 @@ describe('callerIsRefused (pure decision rule)', () => {
     expect(callerIsRefused([OPAQUE, PAGE_HTTPS, OPAQUE])).toBe(false)
   })
 
-  // Bypass: a spoofable name (scriptNameOrSourceURL) counted as page code --
-  // `//# sourceURL=https://...` on string-compiled extension code has no
-  // real fileName and no eval origin, so before the fix this frame alone
-  // made isPage() true. Fixed: page attribution never reads
-  // scriptNameOrSourceURL.
+  // `//# sourceURL=https://...` on string-compiled code sets its script
+  // name AND replaces its eval origin; it never gives it a fileName.
   const SOURCEURL_SPOOFED_ONLY = { scriptNameOrSourceURL: 'https://example.test/a.js' }
   it('refuses a frame whose ONLY page-looking field is scriptNameOrSourceURL (a sourceURL-comment spoof)', () => {
     expect(callerIsRefused([SOURCEURL_SPOOFED_ONLY])).toBe(true)
@@ -137,9 +117,19 @@ describe('callerIsRefused (pure decision rule)', () => {
     expect(callerIsRefused([OPAQUE, SOURCEURL_SPOOFED_ONLY])).toBe(true)
   })
 
+  // What V8 reports for `new Function(body + '//# sourceURL=x(https://example.test/a.js:1:1)')`,
+  // and for a plain `new Function` compiled inside code carrying
+  // `//# sourceURL=https://example.test/a.js:1:1`: text identical to a real page eval's.
+  const SOURCEURL_EVAL_ORIGIN_SPOOF = { evalOrigin: 'x(https://example.test/a.js:1:1)', scriptNameOrSourceURL: 'x(https://example.test/a.js:1:1)' }
+  const SOURCEURL_NESTED_EVAL_ORIGIN_SPOOF = { evalOrigin: 'eval at <anonymous> (https://example.test/a.js:1:1)' }
+  it('refuses an eval origin a sourceURL comment forged', () => {
+    expect(callerIsRefused([SOURCEURL_EVAL_ORIGIN_SPOOF])).toBe(true)
+    expect(callerIsRefused([SOURCEURL_NESTED_EVAL_ORIGIN_SPOOF])).toBe(true)
+  })
   const NESTED_PAGE_EVAL = { evalOrigin: 'eval at innerEval (eval at <anonymous> (https://example.test/app.js:4:2))' }
-  it('allows a nested eval origin whose INNERMOST script URL is the page (parens nest left to right)', () => {
-    expect(callerIsRefused([NESTED_PAGE_EVAL])).toBe(false)
+  it('refuses a nested page eval origin alone, and allows it under a real page frame', () => {
+    expect(callerIsRefused([NESTED_PAGE_EVAL])).toBe(true)
+    expect(callerIsRefused([NESTED_PAGE_EVAL, PAGE_HTTPS])).toBe(false)
   })
   const NESTED_EXTENSION_EVAL_OUTER_PAGE = { evalOrigin: 'eval at <anonymous> (https://example.test/app.js:1:1)', scriptNameOrSourceURL: 'chrome-extension://abcdefghijklmnop/content.js' }
   it('an extension scriptNameOrSourceURL still refuses even when evalOrigin alone would read as page (extension detection is unaffected by the isPage fix)', () => {
@@ -190,6 +180,23 @@ describe('installOrivon: real caller attribution', () => {
     await expect(orivon.app.manifest()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
   })
 
+  it('with attributeCallers false, a caller with no page frame is answered: the child host\'s own install, which never enters a main world', async () => {
+    const target: Record<string, unknown> = {}
+    installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target, false)
+    const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
+    await expect(orivon.app.manifest()).resolves.toEqual({ orivonApiVersion: 0 })
+  })
+
+  it('only the child host\'s preload switches attribution off, and the main-world install passes no such argument', () => {
+    const read = (file: string): string => readFileSync(resolve(process.cwd(), 'src/preload', file), 'utf8')
+    const sources = (readdirSync(resolve(process.cwd(), 'src/preload'), { recursive: true, encoding: 'utf8' }))
+      .filter((name) => name.endsWith('.ts') && !name.includes('tests/'))
+    const switchedOff = sources.filter((name) => /installOrivon\([\s\S]*?,\s*target,\s*false\)/.test(read(name)))
+    expect(switchedOff).toEqual(['child-host.ts'])
+    // The serialised main-world call hands installOrivon its bridge and limits and nothing else.
+    expect(read('surface/orivon.ts')).toMatch(/func: installOrivon,\s*args: \[bridge, \{[^}]*\}\]/)
+  })
+
   it('fs.readFileSync (the one synchronous method) throws synchronously on refusal, never a rejection', () => {
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(fakeSocketBridgeResult(), undefined, () => ({ id: '', ok: true, result: new Uint8Array() })), LIMITS, target)
@@ -213,6 +220,29 @@ describe('installOrivon: real caller attribution', () => {
     const result = await new Promise((resolve, reject) => { setTimeout(() => { bound().then(resolve, reject) }, 0) })
       .catch((e: unknown) => e)
     expect(result).toMatchObject({ name: 'OrivonError', code: 'denied' })
+  })
+
+  // The whole route an extension's main-world script has: string-compiled
+  // code whose sourceURL comment forges a page eval origin, run later by a
+  // timer so no extension frame is left on the stack.
+  it('string-compiled code with a forged sourceURL, run by a timer, is refused at any eval depth', async () => {
+    const target: Record<string, unknown> = {}
+    installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
+    const scope = globalThis as { orivonForgeProbe?: unknown }
+    scope.orivonForgeProbe = target.orivon
+    try {
+      const forged = [
+        new Function('return orivonForgeProbe.app.manifest() //# sourceURL=x(https://orivon-test.example/app.js:1:1)'),
+        new Function('return new Function("return orivonForgeProbe.app.manifest()")() //# sourceURL=https://orivon-test.example/app.js:1:1')
+      ] as Array<() => Promise<unknown>>
+      for (const fn of forged) {
+        const result = await new Promise((resolve, reject) => { setTimeout(() => { fn().then(resolve, reject) }, 0) })
+          .catch((e: unknown) => e)
+        expect(result).toMatchObject({ name: 'OrivonError', code: 'denied' })
+      }
+    } finally {
+      delete scope.orivonForgeProbe
+    }
   })
 
   it('internal callers reach the unwrapped implementation directly, never refused: net.connect via the internal-net slot', async () => {

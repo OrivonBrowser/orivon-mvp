@@ -14,7 +14,7 @@ import { notificationDecisions } from '../sessions/permission-gate.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
 import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { localDdocFor } from '../dev/local-ddoc.js'
-import { rendererEntryUrl } from './renderer-entry.js'
+import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import { lockNavigation } from './lock-navigation.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabManager, type Bounds } from './tabs.js'
@@ -29,10 +29,13 @@ import type { ShellWindow } from './window-registry.js'
 import { HtmlFullscreen } from './fullscreen.js'
 import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
-import { devModeEnabled } from '../dev/dev-mode.js'
+import { chromeContextMenuHost } from './chrome-context-menu.js'
 import type { ShellWindowOptions } from './window-options.js'
 import { showIntro } from './intro-view.js'
-import { createWindowFrame, showWhenReady } from './window-frame.js'
+import { createWindowFrame, showWhenReady, windowBackgroundColor } from './window-frame.js'
+import { recordViewBackground } from './view-background-test-hook.js'
+import { onThemeUpdated } from './theme-colors.js'
+import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
 import { searchUrlFor } from '../browsing/search-engines.js'
 import { SHELL_PARTITION } from './shell-session.js'
@@ -53,23 +56,28 @@ const CHROME_HEIGHT = CHROME_TOP_ROWS + BOOKMARKS_BAR_HEIGHT
 
 /** The new-tab page's own URL: the dev server's nested path, or the built file. */
 export function resolveDashboardUrl (): string {
-  return rendererEntryUrl(import.meta.dirname, process.env['ELECTRON_RENDERER_URL'], '/newtab/', '../renderer/newtab/index.html')
+  return rendererEntryUrl(import.meta.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/newtab/', '../renderer/newtab/index.html')
 }
 
 /** One shell window. `services` are what every window of this process shares;
  * `intro`: the process's first window on a launch that opens on the welcome
  * screen (./intro-state.ts). */
 export function createShellWindow (ctx: SubsystemContext, services: ShellServices, options: ShellWindowOptions = {}): BaseWindow {
-  const { intro, first, place } = options
+  const { intro, first, place, firstOfLaunch, instant } = options
   const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate)
   const { win } = frame
 
-  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
+  const devServerUrl = validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL'])
   // The chrome's own resolved URL -- computed before construction so both
   // the preload's expected-URL argument and the load target name the exact
   // same string, the pattern `--orivon-newtab-url` already establishes
   // below for the dashboard.
   const chromeUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/', '../renderer/index.html')
+  // Which strip-drag mode the chrome uses for the empty tail after the
+  // new-tab button (drag-mode.ts's own doc: a real caption click there is
+  // eaten by Chromium's window-event filter under X11, so Linux drives it
+  // from JS instead; everywhere else the native drag region still works).
+  const dragMode = dragModeFor(process.platform, process.env, app.commandLine.getSwitchValue('ozone-platform'))
 
   const chrome = new WebContentsView({
     webPreferences: {
@@ -79,10 +87,26 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       sandbox: true,
       nodeIntegration: false,
       webSecurity: true,
-      additionalArguments: [`--orivon-shell-url=${chromeUrl}`]
+      additionalArguments: [`--orivon-shell-url=${chromeUrl}`, `--orivon-drag-mode=${dragMode}`]
     }
   })
+  // Set BEFORE addChildView: a freshly created WebContentsView defaults to
+  // an opaque white, painted the instant it is attached -- the SAME white
+  // flash tab-view.ts and popover-view.ts fix, for the same reason (this
+  // view is attached ahead of its own first paint). The window's own
+  // background (createWindowFrame's `background()`) covers a torn-off
+  // window shown `instant` before either view exists; it does not cover
+  // THIS view's own separate surface once attached. Kept live across an OS
+  // theme change while the window stays open (theme-colors.ts's
+  // `onThemeUpdated` below), the same pattern window-frame.ts already uses
+  // for the window's own background and title-bar overlay.
+  const chromeBackground = windowBackgroundColor(services.profiles.isPrivate)
+  chrome.setBackgroundColor(chromeBackground)
+  recordViewBackground(chrome.webContents.id, chromeBackground)
   win.contentView.addChildView(chrome)
+  function applyChromeBackgroundForTheme (): void { chrome.setBackgroundColor(windowBackgroundColor(services.profiles.isPrivate)) }
+  const unregisterChromeThemeListener = onThemeUpdated(applyChromeBackgroundForTheme)
+  win.on('closed', () => { unregisterChromeThemeListener() })
   // The chrome preload is unconditionally privileged (src/preload/shell.ts
   // gates on this same URL, ipc.ts's isFromChrome checks it a second time
   // on every call) -- a view holding it must never end up attached to a
@@ -190,11 +214,21 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const tabs = new TabManager(win.contentView, tabBounds, lastTabClosed, dashboardUrl, ctx, {
     window: win,
     htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) },
+    fullscreenTabId: () => fullscreen.tabId,
     searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query),
     internalPages: services.internalPages,
     devtools: services.devtools,
     backdrop: splitFrame,
-    tabLifecycle: services.tabLifecycle
+    tabLifecycle: services.tabLifecycle,
+    // Recurses into this same function for the new window, so it is made from
+    // the same `services` -- a private window's `services.profiles.isPrivate`
+    // stays true for whatever it opens (a shift-click, popups.ts).
+    openWindow: (url, loadOptions) => {
+      let contents
+      createShellWindow(ctx, services, { first: (newTabs) => { contents = newTabs.liveWebContents(newTabs.createTab(url, undefined, loadOptions)) } })
+      if (contents === undefined) throw new Error('openWindow: the new window made no tab')
+      return contents
+    }
   })
 
   // Queue item 4.4: the all-sites popup reads/revokes through this one
@@ -327,13 +361,10 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     const loaded = chrome.webContents.getURL()
     if (loaded !== chromeUrl) console.error(`[window] the chrome loaded ${loaded}, not ${chromeUrl}; its commands will be refused`)
   })
-  // The address bar's Cut/Copy/Paste: the same menu a tab gets. Inspect on
-  // the chrome's own page goes through DevToolsService like every other
-  // opener, so the developer.tools setting and the tracked-open set both
-  // apply to it too; devModeEnabled() keeps it out of reach outside dev mode.
+  // The address bar's Cut/Copy/Paste: the same menu a tab gets, plus Inspect
+  // where chrome-context-menu.ts's gate allows it.
   chrome.webContents.on('context-menu', (_event, params) => {
-    const canInspect = devModeEnabled() && services.devtools?.allowed(chrome.webContents) === true
-    showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, ...(canInspect ? { inspect: (x: number, y: number) => { services.devtools?.inspect(chrome.webContents, win, x, y) } } : {}) })
+    showContextMenu(chrome.webContents, params, chromeContextMenuHost(services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }))
   })
 
   // Queue item 4.4's permissions surface, now a panel inside this window
@@ -357,7 +388,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       siteInfoPanel.close()
       permissionsPanel.toggle(siteInfoMemory.anchor ?? { x: 0, y: chromeHeight(), width: 0, height: 0 }, siteInfoMemory.origin)
     },
-    // N2's disclosure's own "Manage" link (docs/planning/extensions-
+    // The extensions disclosure's own "Manage" link (docs/planning/extensions-
     // exploration.md): the same close-then-navigate shape as the row
     // above, but to a real page (`tabs.openInternal`, `../pages/pages-
     // domain.ts`'s own mechanism for one internal page linking to another)
@@ -420,7 +451,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // After the first tab, so the view stacks above it.
   if (intro !== undefined) showIntro(win, tabs, intro)
 
-  showWhenReady(frame)
+  showWhenReady(frame, { firstOfLaunch, instant })
 
   return win
 }

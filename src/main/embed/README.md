@@ -13,8 +13,11 @@ host, and answers `EMBED_SCRIPT_CHANNEL`, the one thing a shown page's preload
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`broker-contracts.ts`
 types, `policy/embed-origin.ts`'s document gate, `policy/address.ts`'s address classes, `policy/origin.ts`, `grants/origin-hash.ts`);
-[`../dev/dev-mode.ts`](../dev/dev-mode.ts) (DevTools in a guest, developer mode only); the
-top-level `channels.ts` and `registry.ts`.
+[`../dev/dev-mode.ts`](../dev/dev-mode.ts) (DevTools in a guest, developer mode only);
+[`../../protocols/builtin.ts`](../../protocols/builtin.ts) (which hostnames route to the
+verifier) and [`../verifier/partition.ts`](../verifier/partition.ts) (the same partition-stamp
+rule the default session applies, reused rather than copied -- it imports nothing itself, so
+this stays clear of `electron` and `src/loader/`); the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule),
 and nothing under [`../../loader/`](../../loader/): a shown page is another site's document,
@@ -23,6 +26,19 @@ never a pinned bundle, and nothing about serving one applies to it.
 **Owner stream.** `shell`; ADR-0039.
 
 ## Design notes
+
+**`did-attach-webview` learns which app a guest belongs to from the guest's own `session`, not
+from re-reading the embedder's top frame.** `will-attach-webview` picks the guest's partition
+through `partitionReady(appOrigin)`, which records `appOrigin` against that partition's `Session`
+object the first time it configures it. `did-attach-webview` gets no origin of its own, only the
+new guest `WebContents`; it looks `guest.session` up in that same map. This works only because
+Electron hands back the SAME `Session` object from `session.fromPartition(partition)` and from
+the attached guest's own `webContents.session` -- proven, not assumed, by
+[`../../../test/e2e-embed.test.ts`](../../../test/e2e-embed.test.ts)'s `inEmbedPartition` check,
+which is also this design's regression guard. Keying on the guest's session rather than queuing
+origins per embedder needs no ordering assumption at all: two `<webview>`s attaching on the same
+or different tabs, in any order or interleaving, each resolve to the app whose grant configured
+the partition they actually ended up in.
 
 **Attached through `app.on('web-contents-created')`, not in `tab-view.ts`'s per-view wiring.**
 The same reason [`../sessions/permission-gate.ts`](../sessions/permission-gate.ts) attaches

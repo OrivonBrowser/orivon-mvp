@@ -10,6 +10,7 @@ import type { Effect, Op, SyncWasiFs } from './effects.js'
 import { PathError } from './fds.js'
 import type { SyncSink } from './preview1/family.js'
 import { isTermination } from './termination.js'
+import { delay } from './time.js'
 
 type Outcome = { readonly value: unknown } | { readonly error: unknown }
 
@@ -37,17 +38,6 @@ function methodOf (target: unknown, name: string): Method {
 /** A value that arrives after the program was stopped: an opened file is closed rather than leaked. */
 function closeLate (value: unknown): void {
   void (value as { close?: () => Promise<void> }).close?.().catch(() => {})
-}
-
-/** setTimeout's largest delay; a longer wait is taken in slices of this. */
-const MAX_TIMER_MS = 2 ** 31 - 1
-
-/** A pause; zero yields once to the event loop. */
-async function delay (ms: number): Promise<void> {
-  for (let left = ms; left > 0; left -= MAX_TIMER_MS) {
-    await new Promise((resolve) => setTimeout(resolve, Math.min(left, MAX_TIMER_MS)))
-  }
-  if (ms <= 0) await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 /** A program's file call: a revoked grant stops the program, since one retrying against a root that is gone would spin. */

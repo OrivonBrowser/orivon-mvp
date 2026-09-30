@@ -1,5 +1,6 @@
 import { app, BaseWindow, dialog, nativeTheme, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
+import { openUrlsOnSecondLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
@@ -9,7 +10,7 @@ import { startInternalPages } from './pages/start-internal-pages.js'
 import { installShortcuts } from './shortcuts/install-shortcuts.js'
 import { installZoom } from './zoom/install-zoom.js'
 import { installHistory } from './history/install-history.js'
-import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
@@ -143,6 +144,14 @@ function boot (runtime: Runtime): void {
     // (extensionsSubsystem.afterReady already constructed it, above) and
     // hands its icon requests the chrome view's own session.
     attachExtensionShell(ctx, shell, session.fromPartition(SHELL_PARTITION))
+    // Published here, not by a subsystem: every subsystem's afterReady ran
+    // during runAfterReady above, before shell.windows existed to answer
+    // this at all (registry.ts's own doc on ctx.windowForSender). A consent
+    // dialog resolves this LAZILY, well after this line runs, so publishing
+    // it late is safe -- see requestGrantSubsystem.ts and manifest-hint.ts
+    // for the thunks that read ctx.windowForSender only when a real dialog
+    // is about to show one.
+    publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
     await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])
@@ -151,6 +160,11 @@ function boot (runtime: Runtime): void {
     configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient') })
     shell.history.prune()
     startInternalPages(shell, ctx)
+    // Another profile's own process can rename, add, remove or start one --
+    // profiles-watcher.ts's own header on why this is the one store the
+    // filesystem itself has to announce.
+    shell.profiles.startWatching()
+    app.once('will-quit', () => { shell.profiles.stopWatching() })
     shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, profiles: shell.profiles, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
     installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
     installZoom(app, shell.windows, shell.zoom)
@@ -165,22 +179,32 @@ function boot (runtime: Runtime): void {
       setTimeout(() => { sweepPrivateDirs(); runtime.profiles.sweepDeleted() }, SWEEP_DELAY_MS).unref()
     }
     opener = (urls) => {
-      if (shell.windows.focused() === undefined) createShellWindow(ctx, shell)
-      const target = shell.windows.focused()
-      if (target === undefined) return
-      if (target.window.isMinimized()) target.window.restore()
-      target.window.show()
-      target.window.focus()
-      for (const url of urls) target.tabs.createTab(url)
+      openUrlsOnSecondLaunch(shell.windows.focused(), urls, (options) => { createShellWindow(ctx, shell, options) })
     }
-    markStarted()
+    // Marked started only once the first window exists, never before: a
+    // second launch arriving in the gap while this one is still choosing its
+    // first window's options (planIntro's await, below) would otherwise run
+    // the opener with no window open, creating one of its own -- two windows
+    // for one launch. The `finally` marks it started even if that throws,
+    // so a startup failure (already fatal via the unhandledRejection handler
+    // above) does not also strand every second launch queued behind it.
     if (runtime.isPrivate) {
-      // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
-      createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') } })
+      try {
+        // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
+        // firstOfLaunch: true -- the ONLY createShellWindow call ORIVON_WINDOW_NO_FOCUS=1 may leave
+        // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
+        createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') }, firstOfLaunch: true })
+      } finally {
+        markStarted()
+      }
     } else {
-      // Only this first window can open on the welcome screen: the macOS
-      // 'activate' below recreates a window in a process that has already shown it.
-      createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')) })
+      try {
+        // Only this first window can open on the welcome screen: the macOS
+        // 'activate' below recreates a window in a process that has already shown it.
+        createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
+      } finally {
+        markStarted()
+      }
       app.on('activate', () => {
         if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
       })

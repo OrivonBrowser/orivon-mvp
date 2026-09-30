@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
-import { writeFileAtomic } from '../../../broker/grants/node-ledger-storage.js'
+import { writeFileAtomic } from '../../../broker/adapters/atomic-write.js'
 import type { DnrRule, DnrStaticRuleset } from './types.js'
 
 export interface DnrRuleResource {

@@ -3,13 +3,14 @@
 // ran -- the extension keeps Electron's own partial
 // chrome.tabs/chrome.windows/chrome.action instead of
 // electron-chrome-extensions'. docs/open-questions.md A289 has the full
-// account. Two distinct causes, both handled by the same one-time reload:
-// under `--no-sandbox`, NO 'service-worker'-type session preload ever runs,
-// for any worker, reproduced 100%; sandboxed, the preload does run, but a
-// freshly loaded extension's first worker still races its registration and
-// misses every time (measured: 20/20 cold starts of a fixture extension,
-// 4/4 of four real ones) -- recovered every time by the reload below (0
-// failures after, same measurements).
+// account. Two distinct causes: under `--no-sandbox`, NO
+// 'service-worker'-type session preload ever runs, for any worker,
+// reproduced 100% -- the reload below cannot recover this one (A289).
+// Sandboxed, the preload does run, but a freshly loaded extension's first
+// worker still races its registration and misses every time (measured:
+// 20/20 cold starts of a fixture extension, 4/4 of four real ones) -- this
+// is the case the one-time reload below recovers, every time (0 failures
+// after, same measurements).
 //
 // The check is MAIN-INITIATED, not worker-announced: the worker's own
 // preload (src/preload/extension-sw-verify.ts) installs a plain
@@ -20,13 +21,10 @@
 // injection this check exists to verify: under `--no-sandbox`, where that
 // injection never runs at all, the worker's own report would never arrive
 // either, for the same root cause.
-// This file's own exports reach src/preload/extension-sw-verify.ts, a
-// PRELOAD script -- see README.md's Design notes for why this file must
-// import nothing beyond `electron`'s ambient types (below).
+// Its exports reach a PRELOAD script (src/preload/extension-sw-verify.ts):
+// README.md's Design notes say why it imports only `electron`'s types.
 import type { Session, ServiceWorkerMain } from 'electron'
-
-export const EXTENSION_SW_HEALTH_CHECK_CHANNEL = 'orivon-extension-sw-health-check'
-export const EXTENSION_SW_HEALTH_REPLY_CHANNEL = 'orivon-extension-sw-health-reply'
+import { EXTENSION_SW_HEALTH_CHECK_CHANNEL, EXTENSION_SW_HEALTH_REPLY_CHANNEL } from '../channels.js'
 
 /** How long main waits for a worker's reply before treating it the same as
  * an explicit "not ok" -- a worker that never replies is exactly as
@@ -118,18 +116,28 @@ export function watchForMissedServiceWorkerPreload (
     checked.add(event.versionId)
 
     const scope = worker.scope
+    // Logged, never left to become an unhandled rejection: a failed
+    // loadExtension() inside handleUnhealthyWorker would otherwise reach
+    // main/index.ts's own `process.on('unhandledRejection', ...)`, which
+    // exits the whole process for one worker's failed recovery attempt.
+    const runRecovery = (): void => {
+      recovery.handleUnhealthyWorker(scope).catch((error: unknown) => {
+        console.error(`[extensions] failed to recover ${scope}'s service worker:`, error)
+      })
+    }
+
     let settled = false
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
-      void recovery.handleUnhealthyWorker(scope)
+      runRecovery()
     }, HEALTH_REPLY_TIMEOUT_MS)
 
     worker.ipc.once(EXTENSION_SW_HEALTH_REPLY_CHANNEL, (_event, ok: boolean) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      if (!ok) void recovery.handleUnhealthyWorker(scope)
+      if (!ok) runRecovery()
     })
 
     try {

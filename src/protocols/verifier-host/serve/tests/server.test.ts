@@ -129,13 +129,16 @@ describe('the .eth loopback server', () => {
     expect(reply.headers.etag).toBe(`"${ROOT}"`)
     expect(reply.headers['cache-control']).toBe('no-cache')
     expect(reply.headers['x-content-type-options']).toBe('nosniff')
-    expect(reply.headers['content-security-policy']).toBe('treat-as-public-address')
+    expect(reply.headers['content-security-policy']).toBe("treat-as-public-address; frame-ancestors 'self'")
   })
 
-  it('answers a matching validator with 304 before opening anything', async () => {
+  it('answers a matching validator with 304 before opening anything, carrying the same CSP a full reply would', async () => {
     opened.length = 0
-    expect((await get('/app.js', { headers: { 'if-none-match': `"${ROOT}"` } })).status).toBe(304)
+    const reply = await get('/app.js', { headers: { 'if-none-match': `"${ROOT}"` } })
+    expect(reply.status).toBe(304)
     expect(opened).toEqual([])
+    // A copy cached from before this CSP existed must not keep revalidating under its old headers.
+    expect(reply.headers['content-security-policy']).toBe("treat-as-public-address; frame-ancestors 'self'")
   })
 
   it('serves a request pinned to the current root, and refuses one pinned to another', async () => {
@@ -222,7 +225,7 @@ describe('the .eth loopback server', () => {
   it('shows the not-found page, which can run and load nothing, for a missing path or name', async () => {
     for (const reply of [await get('/missing.js'), await get('/', { host: 'nobody.eth' })]) {
       expect(reply.status).toBe(404)
-      expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address")
+      expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address; frame-ancestors 'self'")
       expect(reply.body.toString()).toContain('Nothing here')
     }
   })
@@ -255,6 +258,7 @@ describe('the loopback server, for an address scheme', () => {
     expect(reply.status).toBe(301)
     expect(reply.headers.location).toBe(`https://${ROOT}.ipfs.orivon/docs/a.html?x=1`)
     expect(reply.headers['cache-control']).toBe('no-store')
+    expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address")
     expect((await get(`/${ROOT}`, { host: 'ipfs.orivon' })).headers.location).toBe(`https://${ROOT}.ipfs.orivon/`)
   })
 
@@ -266,7 +270,7 @@ describe('the loopback server, for an address scheme', () => {
   it('shows the invalid-name page, naming the address as written, for one that does not parse', async () => {
     const reply = await get('/not-a-cid/', { host: 'ipfs.orivon' })
     expect(reply.status).toBe(400)
-    expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address")
+    expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address; frame-ancestors 'self'")
     expect(reply.body.toString()).toContain('ipfs://not-a-cid')
   })
 
@@ -297,5 +301,11 @@ describe('the loopback server, for an address scheme', () => {
   it('refuses a host under the address suffix that no protocol serves', async () => {
     expect((await get('/', { host: `${ROOT}.nope.orivon` })).status).toBe(421)
     expect((await get('/', { host: 'example.com' })).status).toBe(421)
+  })
+
+  it('sends a top-level-domain name written under an address scheme straight to its own origin', async () => {
+    const reply = await get('/vitalik.eth/p?q=1', { host: 'ipns.orivon' })
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe('https://vitalik.eth/p?q=1')
   })
 })

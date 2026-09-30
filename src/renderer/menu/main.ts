@@ -6,6 +6,7 @@ interface OrivonMenu {
   items: () => Promise<readonly MenuItemView[]>
   run: (id: string) => void
   reportHeight: (height: number) => void
+  onShow: (listener: () => void) => () => void
 }
 
 declare global {
@@ -40,19 +41,42 @@ function entry (item: MenuItemView): HTMLElement {
   return li
 }
 
-void menu.items().then((items) => {
+// Main keeps this popover's own view alive across opens rather than reload
+// it each time (shell/popover-view.ts's `warm`), so `refresh()` -- not just
+// the module's own first run below -- is also what a reopen (`onShow`) uses
+// to pick up a list that changed while it was last open (a remapped
+// shortcut) and to drop whatever scroll/focus state the last open left.
+const refresh = async (): Promise<void> => {
+  const items = await menu.items()
   list.replaceChildren(...items.map(entry))
-  // The list is short and fixed: its height is the document's.
-  menu.reportHeight(Math.ceil(document.documentElement.scrollHeight))
-  list.querySelector<HTMLButtonElement>('.item')?.focus()
-})
+  list.scrollTop = 0
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  // `list`'s own scrollHeight is its full, unclipped content height whatever
+  // the popup's CURRENT size already is (style.css's `.items { overflow-y:
+  // auto }` is what makes that true); `document.documentElement`'s is not --
+  // once the document itself never scrolls (style.css's `overflow: hidden`,
+  // for the popup's own rounded corners), it reports only what already fits,
+  // which is exactly the wrong number to ask main to grow the popup to.
+  const inset = list.getBoundingClientRect().top + (parseFloat(getComputedStyle(list).marginBottom) || 0)
+  menu.reportHeight(Math.ceil(list.scrollHeight + inset))
+  // No entry starts focused: opened by a mouse click (the only way today),
+  // a highlighted "New tab" reads as already chosen, not merely first.
+  // Arrow keys still reach the first or last entry on their very first
+  // press (the `at === -1` branch below), and Enter works on whichever
+  // entry that leaves focused, natively.
+}
 
-// Arrow keys move through the entries, as in any menu.
+void refresh()
+menu.onShow(() => { void refresh() })
+
+// Arrow keys move through the entries, as in any menu, from nothing
+// highlighted as much as from one already reached.
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
   const buttons = [...list.querySelectorAll<HTMLButtonElement>('.item')]
   const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
-  const next = event.key === 'ArrowDown' ? (at + 1) % buttons.length : (at - 1 + buttons.length) % buttons.length
+  const down = event.key === 'ArrowDown'
+  const next = at === -1 ? (down ? 0 : buttons.length - 1) : down ? (at + 1) % buttons.length : (at - 1 + buttons.length) % buttons.length
   buttons[next]?.focus()
   event.preventDefault()
 })

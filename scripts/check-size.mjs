@@ -46,10 +46,10 @@ const DECLARATION_FILE = /\.d\.ts$/
  *     will be deleted once reviewed. Confirmed (2026-09-03) that excluding it
  *     changes nothing about whether the guard currently passes: nothing under
  *     spike/ is over either limit today, checked file by file.
- *   - `vendor/`: third-party source kept verbatim (each package's own
- *     UPSTREAM.md records the patches). Rule 2 is Orivon's own authoring
- *     style; it was never upstream's, and reformatting a vendored file to
- *     fit it would make future patches harder to diff against the original.
+ *   - `vendor/`: third-party source kept in its upstream shape, patched as
+ *     its UPSTREAM.md lists. Rule 2 is Orivon's own authoring style; it was
+ *     never upstream's, and reformatting a vendored file to fit it would
+ *     make future patches harder to diff against the original.
  */
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'out', 'dist', 'build', 'release', 'coverage', 'spike', 'vendor'])
 

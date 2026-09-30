@@ -50,15 +50,19 @@ export type SiteInfoCommand =
   | { type: 'clearBrowserData' }
   | { type: 'reload' }
   | { type: 'openAllSites' }
-  /** N2's disclosure's own "Manage" link (docs/planning/extensions-
+  /** The extensions disclosure's own "Manage" link (docs/planning/extensions-
    * exploration.md): opens `orivon://extensions` the same way `openAllSites`
    * opens the all-sites panel. */
   | { type: 'openExtensions' }
   /** Same contract as ./permissions-ipc.ts's own `contentHeight`. */
   | { type: 'contentHeight'; height: number }
 
-function isFromSiteInfoWindow (event: IpcMainInvokeEvent, siteInfoWebContents: WebContents): boolean {
-  return event.senderFrame !== null && event.senderFrame === siteInfoWebContents.mainFrame
+/** Identity alone is not enough (open-questions.md A269), the same reason
+ * ./permissions-ipc.ts's own `isFromPermissionsPanel` checks the URL too --
+ * see that function's doc. `popupUrl` is the address this popup was created
+ * with, which `lock-navigation.ts` refuses to ever change. */
+function isFromSiteInfoWindow (event: IpcMainInvokeEvent, siteInfoWebContents: WebContents, popupUrl: string): boolean {
+  return event.senderFrame !== null && event.senderFrame === siteInfoWebContents.mainFrame && event.senderFrame.url === popupUrl
 }
 
 async function collectSiteData (
@@ -86,6 +90,7 @@ async function collectSiteData (
 
 export function registerSiteInfoIpc (
   siteInfoWebContents: WebContents,
+  popupUrl: string,
   controller: SiteInfoController,
   origin: string,
   userDataPath: string,
@@ -101,7 +106,7 @@ export function registerSiteInfoIpc (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
   ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult> => {
-    if (!isFromSiteInfoWindow(event, siteInfoWebContents)) return
+    if (!isFromSiteInfoWindow(event, siteInfoWebContents, popupUrl)) return
 
     switch (command.type) {
       case 'get':

@@ -10,8 +10,11 @@ import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { createChildWorker } from '../worker/launch.js'
 import { serveOrivon } from '../worker/orivon-server.js'
 import type { ToWorker } from '../worker/protocol.js'
+import type { HostStart } from '../worker/host-protocol.js'
 import { ChildProcess, type StdioMode } from './child.js'
 import { loadProgram, spawnError } from './program.js'
+import { createRemoteWorker, hasChildHost } from './host-client.js'
+import { runSpawnSync, type SpawnSyncRequest } from './spawn-sync.js'
 
 export type StdioOption = StdioMode | 'ipc' | 'overlapped' | null | undefined
 
@@ -33,6 +36,20 @@ export interface SpawnOptions {
 
 function invalidArg (name: string, expected: string, value: unknown): TypeError {
   return codedError(TypeError, 'ERR_INVALID_ARG_TYPE', `The "${name}" argument must be ${expected}. Received ${typeof value}`)
+}
+
+/**
+ * `command`'s own two argument errors, real Node's own (measured) for
+ * `spawn`, `spawnSync` and `execFileSync` alike. Exported so
+ * child-process/index.ts's `spawnSyncCore` can throw these synchronously,
+ * on the calling thread, before ever building the sync-channel request --
+ * a bad argument caught only inside `spawn-sync.ts`'s `runSpawnSync` (over
+ * on the OTHER side of that channel) would come back as `result.error`
+ * instead, since nothing there can throw back onto this thread's own stack.
+ */
+export function validateCommand (command: unknown): asserts command is string {
+  if (typeof command !== 'string') throw invalidArg('file', 'of type string', command)
+  if (command.length === 0) throw codedError(TypeError, 'ERR_INVALID_ARG_VALUE', "The argument 'file' cannot be empty. Received ''")
 }
 
 /** Node's stdio forms, to three modes plus whether an IPC channel was asked for. */
@@ -71,20 +88,79 @@ export function applyLifetime (child: ChildProcess, options: SpawnOptions): void
   }
 }
 
-/** Starts the Worker. The start message goes first, then whatever was written to the child meanwhile. */
-export function launch (child: ChildProcess, name: string, start: (orivon: MessagePort) => ToWorker): void {
+/**
+ * Starts the child: through an app's own child host if one exists for this
+ * page (ADR-0046), or a same-process Worker otherwise -- `ChildProcess`
+ * itself never knows which (`child.attach()` takes a `WorkerLike` either
+ * way). `hasChildHost()` (F1/W7) is a plain structural check -- the
+ * preload's bridge either exists on this document already or it never
+ * will -- so there is nothing left to await or time out on before choosing
+ * a path.
+ *
+ * `hostStart` is what a host-routed child sends across the extra hop --
+ * never a precompiled program, which does not survive it (ADR-0046's
+ * Context). `localStart` builds the real start message for a same-process
+ * Worker, and may do async work a host-routed child skips entirely (a
+ * spawn's own program compile, moved to the host instead).
+ * `extraTransfer` carries a thread's own `parentPort` and any
+ * `transferList` the app asked for on the LOCAL path only; spawn and fork
+ * pass none, and a host-routed child never carries one (only a thread ever
+ * needed it, and a thread never routes through the host -- ADR-0046's
+ * Decision). `viaHost` lets a caller that must never route through the
+ * host (a thread) say so; every other caller takes the default.
+ */
+export async function launchChild (
+  child: ChildProcess,
+  name: string,
+  hostStart: HostStart,
+  localStart: () => Promise<Omit<ToWorker, 'orivon'>> | Omit<ToWorker, 'orivon'>,
+  extraTransfer: readonly Transferable[] = [],
+  viaHost = true
+): Promise<void> {
+  if (child.stopped) return
+  if (viaHost && hasChildHost()) {
+    child.attach(createRemoteWorker(hostStart), { dispose: async () => {} })
+    return
+  }
+
+  let base: Omit<ToWorker, 'orivon'>
+  try {
+    base = await localStart()
+  } catch (error) {
+    child.fail(error as Error)
+    return
+  }
+  if (child.stopped) return
+
   let worker: Worker
   let server: ReturnType<typeof serveOrivon>
   const channel = new MessageChannel()
   try {
     worker = createChildWorker(name)
-    server = serveOrivon(channel.port1, getOrivon())
+    // A Worker's own spawnSync/execSync/execFileSync (SPAWN_SYNC,
+    // worker/sync-channel.ts): served on THIS thread, over the SAME spawn()
+    // every other child goes through -- never a synchronous call from the
+    // thread that serves it (worker/README.md's rule; only the Worker that
+    // asked blocks, over the sync channel).
+    server = serveOrivon(
+      channel.port1, getOrivon(),
+      async (payload, registerChild) => await runSpawnSync(spawn, payload as SpawnSyncRequest, registerChild)
+    )
   } catch (error) {
     // A page whose CSP refuses the Worker, or that has no orivon: a spawn failure, reported as one.
     child.fail(Object.assign(new Error(`the child cannot start: ${String((error as Error)?.message ?? error)}`), { code: 'ENOEXEC', errno: -8 }))
     return
   }
-  worker.postMessage(start(channel.port2), [channel.port2])
+  try {
+    worker.postMessage({ ...base, orivon: channel.port2 } as ToWorker, [channel.port2, ...extraTransfer])
+  } catch (error) {
+    // Neither leaked: nothing else will ever terminate this Worker or dispose this server once
+    // `child.fail()` has already reported the start as never having happened.
+    worker.terminate()
+    void server.dispose()
+    child.fail(error as Error)
+    return
+  }
   child.attach(worker, server)
 }
 
@@ -102,21 +178,17 @@ async function start (child: ChildProcess, command: string, args: readonly strin
     child.fail(spawnError('ENOENT', command, args, `cwd ${options.cwd ?? ''} is outside the app's files`))
     return
   }
-  let module: WebAssembly.Module
-  try {
-    module = await loadProgram(command, args)
-  } catch (error) {
-    child.fail(error as Error)
-    return
-  }
-  if (child.stopped) return
   const env = environmentOf(options.env)
-  launch(child, `child_process ${command}`, (orivon) => ({ type: 'spawn', module, args: child.spawnargs, env, preopens, orivon }))
+  await launchChild(
+    child,
+    `child_process ${command}`,
+    { type: 'spawn', command, args: child.spawnargs, env, preopens },
+    async () => ({ type: 'spawn', program: await loadProgram(command, args), args: child.spawnargs, env, preopens })
+  )
 }
 
 export function spawn (command: string, argsOrOptions?: readonly string[] | SpawnOptions, maybeOptions?: SpawnOptions): ChildProcess {
-  if (typeof command !== 'string') throw invalidArg('file', 'of type string', command)
-  if (command.length === 0) throw codedError(TypeError, 'ERR_INVALID_ARG_VALUE', "The argument 'file' cannot be empty. Received ''")
+  validateCommand(command)
   const args = Array.isArray(argsOrOptions) ? argsOrOptions as readonly string[] : []
   const options: SpawnOptions = (Array.isArray(argsOrOptions) || argsOrOptions === undefined || argsOrOptions === null ? maybeOptions : argsOrOptions as SpawnOptions) ?? {}
   if (options.shell !== undefined && options.shell !== false) {

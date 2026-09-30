@@ -4,7 +4,7 @@ import type { HostConfig } from '../../../protocols/verifier-host/protocol.js'
 import { HostSupervisor } from '../host-supervisor.js'
 import type { HostProcess, SupervisorEvents } from '../host-supervisor.js'
 
-const CONFIG: HostConfig = { port: 1, lightClient: undefined, gateways: ['https://g.example'], unproxiedGateways: [], ipnsNameServices: [], dnsOverHttps: [], ipnsSequences: {} }
+const CONFIG: HostConfig = { port: 1, lightClient: undefined, gateways: ['https://g.example'], unproxiedGateways: [], ccipDirect: false, ipnsNameServices: [], dnsOverHttps: [], ipnsSequences: {} }
 
 class FakeHost extends EventEmitter implements HostProcess {
   readonly sent: unknown[] = []
@@ -51,10 +51,32 @@ describe('HostSupervisor', () => {
     supervisor.start()
     hosts[0]?.answer({ type: 'listening', fingerprint: 'sha256/x' })
     hosts[0]?.answer({ type: 'status', status: { state: 'syncing', since: 1 } })
-    hosts[0]?.answer({ type: 'checkpoint', root: '0xab', timestamp: 5 })
+    const root = `0x${'ab'.repeat(32)}`
+    hosts[0]?.answer({ type: 'checkpoint', root, timestamp: 5 })
     hosts[0]?.answer({ type: 'ipns-sequence', key: 'k51', sequence: '7' })
     hosts[0]?.answer({ type: 'failed', stage: 'listen', message: 'EADDRINUSE' })
-    expect(log).toEqual(['listening sha256/x', 'status syncing', 'checkpoint 0xab 5', 'ipns k51 7', 'down the verifier host could not listen on its port: EADDRINUSE'])
+    expect(log).toEqual(['listening sha256/x', 'status syncing', `checkpoint ${root} 5`, 'ipns k51 7', 'down the verifier host could not listen on its port: EADDRINUSE'])
+  })
+
+  it('drops a message that is not one of the shapes the host may ever post, instead of acting on it', () => {
+    const { supervisor, hosts, log } = harness()
+    supervisor.start()
+    hosts[0]?.answer({ type: 'listening', fingerprint: 42 }) // wrong type for the field
+    hosts[0]?.answer({ type: 'checkpoint', root: 'not-a-block-root', timestamp: 5 })
+    hosts[0]?.answer({ type: 'ipns-sequence', key: 'k1', sequence: 'not-decimal' })
+    hosts[0]?.answer({ type: 'something-else' })
+    hosts[0]?.answer('just a string')
+    expect(log).toEqual([])
+  })
+
+  it('rejects a reply whose value is not the shape its own request kind promises', async () => {
+    const { supervisor, hosts } = harness()
+    supervisor.start()
+    const reply = supervisor.request({ kind: 'status' })
+    const sent = hosts[0]?.sent[1] as { id: number }
+    // 'status' promises a LightClientState, never a SiteProvenance -- this looks like one, but for the wrong request.
+    hosts[0]?.answer({ type: 'reply', id: sent.id, ok: true, value: { host: 'x.eth', resolver: 'ens', root: { kind: 'ipfs', cid: 'bafy' }, pointers: [], ddoc: { status: 'met', refusals: [] }, mountedAt: 1 } })
+    await expect(reply).rejects.toThrow(/status.*not one/)
   })
 
   it('matches replies to requests', async () => {

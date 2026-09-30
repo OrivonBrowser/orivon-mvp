@@ -19,7 +19,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build-ordinary.mjs",
-    "start": "electron-vite preview",
+    "start": "node scripts/build-ordinary.mjs && electron-vite preview --skipBuild",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p vendor/tsconfig.json",
     "test": "vitest run",
     "check:natives": "node scripts/check-no-native-modules.mjs",
@@ -58,7 +58,7 @@
     "os-browserify": "^0.3.0",
     "pako": "^3.0.1",
     "path-browserify": "^1.0.1",
-    "pbf": "4.0.2",
+    "pbf": "^4.0.2",
     "stream-browserify": "^3.0.0",
     "tldts": "7.4.16",
     "util": "^0.12.5",

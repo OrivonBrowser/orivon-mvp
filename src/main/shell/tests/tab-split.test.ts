@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemContext } from '../../registry.js'
 import { GAP, MARGIN } from '../split-model.js'
+import { HtmlFullscreen } from '../fullscreen.js'
 
 // A tab manager over fake views, with a content view that keeps the order its
 // children were added in: what matters in a split is which views are on screen,
@@ -17,7 +18,7 @@ interface FakeContents extends EventEmitter {
   close: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
 }
-interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, name: string }
+interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn>, name: string }
 const createdViews: RecordedView[] = []
 
 function makeFakeWebContents (): FakeContents {
@@ -39,6 +40,7 @@ vi.mock('electron', () => ({
   WebContentsView: vi.fn().mockImplementation(function (this: RecordedView) {
     this.webContents = makeFakeWebContents()
     this.setBounds = vi.fn()
+    this.setBackgroundColor = vi.fn()
     this.name = `view-${String(createdViews.length)}`
     createdViews.push(this)
   })
@@ -53,27 +55,60 @@ const AREA = { x: 0, y: 100, width: 1000, height: 600 }
 interface Rig {
   manager: InstanceType<typeof TabManager>
   children: unknown[]
+  contentView: { addChildView: ReturnType<typeof vi.fn>, removeChildView: ReturnType<typeof vi.fn> }
   area: { current: typeof AREA }
   backdrop: { view: { name: string, setBounds: ReturnType<typeof vi.fn> }, update: ReturnType<typeof vi.fn> }
   fullscreen: (id: string, entered: boolean) => void
+  /** `HtmlFullscreen.tabId` itself (../fullscreen.ts), read the same way window.ts does: the one
+   * place this rig's `fullscreen()` helper and `manager`'s own layout both ultimately read from. */
+  fullscreenTabId: () => string | null
   onEmpty: ReturnType<typeof vi.fn>
 }
 
 function rig (): Rig {
   const children: unknown[] = []
+  // Electron 44's own `View`: re-adding a child already there reorders it to
+  // the top instead of appending a duplicate; a fresh one goes at `index`,
+  // the end by default (see pane-host.test.ts's identical fake).
   const contentView = {
-    addChildView: vi.fn((view: unknown) => { children.push(view) }),
+    addChildView: vi.fn((view: unknown, index?: number) => {
+      const at = children.indexOf(view)
+      if (at !== -1) children.splice(at, 1)
+      if (at !== -1 || index === undefined) children.push(view)
+      else children.splice(Math.min(index, children.length), 0, view)
+    }),
     removeChildView: vi.fn((view: unknown) => { const at = children.indexOf(view); if (at !== -1) children.splice(at, 1) })
   }
   const area = { current: AREA }
   const backdrop = { view: { name: 'backdrop', setBounds: vi.fn() }, update: vi.fn() }
   const onEmpty = vi.fn()
-  const manager = new TabManager(contentView as never, () => area.current, onEmpty, 'http://localhost:5999/newtab/', {} as SubsystemContext, {
+  let manager!: InstanceType<typeof TabManager>
+  // Wired the same way window.ts wires HtmlFullscreen and TabManager together,
+  // so this rig cannot drift from what the shell really does.
+  const htmlFullscreen = new HtmlFullscreen({
+    relayout: () => { manager.layout() },
+    exitTab: () => {},
+    leaveWindowFullscreen: () => {},
+    showNotice: () => {},
+    hideNotice: () => {}
+  })
+  manager = new TabManager(contentView as never, () => area.current, onEmpty, 'http://localhost:5999/newtab/', {} as SubsystemContext, {
     window: { isDestroyed: () => false } as never,
-    htmlFullscreenChanged: vi.fn(),
+    htmlFullscreenChanged: (id, entered) => { htmlFullscreen.changed(id, entered, manager.getState().activeTabId) },
+    fullscreenTabId: () => htmlFullscreen.tabId,
     backdrop: backdrop as never
   })
-  return { manager, children, area, backdrop, onEmpty, fullscreen: (id, entered) => { (manager as unknown as { viewHost: { htmlFullscreenChanged: (id: string, entered: boolean) => void } }).viewHost.htmlFullscreenChanged(id, entered) } }
+  manager.onStateChange((state) => { htmlFullscreen.tabsChanged(state.activeTabId, (id) => state.tabs.some((tab) => tab.id === id)) })
+  return {
+    manager,
+    children,
+    contentView,
+    area,
+    backdrop,
+    onEmpty,
+    fullscreen: (id, entered) => { (manager as unknown as { viewHost: { htmlFullscreenChanged: (id: string, entered: boolean) => void } }).viewHost.htmlFullscreenChanged(id, entered) },
+    fullscreenTabId: () => htmlFullscreen.tabId
+  }
 }
 
 const ids = (manager: InstanceType<typeof TabManager>): string[] => manager.getState().tabs.map((tab) => tab.id)
@@ -96,6 +131,22 @@ describe('two tabs in a split', () => {
     expect(backdrop.view.setBounds).toHaveBeenLastCalledWith(AREA)
     expect(backdrop.update).toHaveBeenLastCalledWith(expect.objectContaining({ orientation: 'row', active: 'b' }))
     expect(manager.getState().activeTabId).toBe(b)
+  })
+
+  it('never detaches the pane already on screen just because the backdrop is appearing beside it', () => {
+    // The first split: `b` is already shown alone (createTab activated it)
+    // when the split adds the backdrop and `a` beside it. A stray
+    // removeChildView on `b` here would be the exact bug that left a first
+    // split's surviving pane briefly unpainted.
+    const { manager, contentView } = rig()
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    const viewB = createdViews[1] as RecordedView
+    contentView.removeChildView.mockClear()
+
+    manager.splits.split(a, b, 'right')
+
+    expect(contentView.removeChildView).not.toHaveBeenCalledWith(viewB)
   })
 
   it('sit side by side in the strip, and each knows the other', () => {
@@ -398,6 +449,49 @@ describe('a page that holds the window', () => {
 
     fullscreen(a, false)
     manager.layout()
+    expect(names(children)).toEqual([(createdViews[1] as RecordedView).name])
+  })
+
+  it('agrees with HtmlFullscreen once told, and never shows a stale fullscreen tab', () => {
+    const { manager, children, fullscreen, fullscreenTabId } = rig()
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    manager.activateTab(a)
+    fullscreen(a, true)
+    expect(fullscreenTabId()).toBe(a)
+    expect(names(children)).toEqual([(createdViews[0] as RecordedView).name])
+
+    manager.activateTab(b)
+
+    expect(names(children)).toEqual([(createdViews[1] as RecordedView).name])
+    expect(fullscreenTabId()).toBeNull()
+  })
+
+  it('never shows a tab full-screen once it stops being the tab in front, even before HtmlFullscreen is told', () => {
+    // No onStateChange wiring here, unlike rig(): this manager's plan has to
+    // stay right on its own the moment activeId moves, since nothing ever
+    // calls HtmlFullscreen.tabsChanged() to correct it for this test.
+    const children: unknown[] = []
+    const contentView = {
+      addChildView: vi.fn((view: unknown) => { children.push(view) }),
+      removeChildView: vi.fn((view: unknown) => { const at = children.indexOf(view); if (at !== -1) children.splice(at, 1) })
+    }
+    const htmlFullscreen = new HtmlFullscreen({ relayout: vi.fn(), exitTab: vi.fn(), leaveWindowFullscreen: vi.fn(), showNotice: vi.fn(), hideNotice: vi.fn() })
+    const manager = new TabManager(contentView as never, () => AREA, vi.fn(), 'http://localhost:5999/newtab/', {} as SubsystemContext, {
+      window: { isDestroyed: () => false } as never,
+      htmlFullscreenChanged: vi.fn(),
+      fullscreenTabId: () => htmlFullscreen.tabId
+    })
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    manager.activateTab(a)
+    htmlFullscreen.changed(a, true, a)
+    manager.layout()
+    expect(names(children)).toEqual([(createdViews[0] as RecordedView).name])
+
+    manager.activateTab(b)
+
+    expect(htmlFullscreen.tabId).toBe(a)
     expect(names(children)).toEqual([(createdViews[1] as RecordedView).name])
   })
 })

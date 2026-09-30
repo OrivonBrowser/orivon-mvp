@@ -64,6 +64,15 @@
    convenient. `readFileSync` is the one call a ported app cannot do without at startup; the
    blocking cost is bounded and visible there, and a chatty use of it is the app's own cost
    to pay, not a reason to widen the exception further.
+
+   > **Widened once since, at the shim, not at the contract** (`ADR-0016`'s amendment). In a
+   > Worker (a forked child or a `worker_threads` thread) of a cross-origin isolated app, the
+   > shim offers every path-based `fs` `*Sync` call over the same shared-memory channel
+   > `readFileSync` already used there as its deferred route B -- a page that blocks freezes
+   > the tab, which is what this rule guards against, but a Worker that blocks freezes no
+   > page. `orivon.fs` itself still has exactly one synchronous member; nothing was added to
+   > the contract to widen it. Elsewhere -- the page, or a Worker with no
+   > `SharedArrayBuffer` -- every one of those calls still refuses by name.
 3. **Handles, not ambient authority.** `connect()` returns a handle; later operations
    reference the handle. Capability is checked once, at acquisition. This avoids TOCTOU and
    avoids re-authorising on every call.
@@ -227,7 +236,10 @@ installation.
 unrestricted network access, and the grant prompt must say so in plain words
 (*"connect to any computer on the internet"*), not hide it behind a pattern string. This is a
 real property of P2P software, and understating it would be the kind of dishonesty the trust
-indicator exists to prevent.
+indicator exists to prevent. A wildcard never reaches a reserved port (A82: DNS, mail, SMB, RDP,
+IRC and the like), and a wildcard host is declarable only as `*:*`: a P2P program that resolves
+names itself names its resolver, as in `udp.send: ["*:*", "1.1.1.1:53"]`, and a refused datagram
+is dropped without an error (A87, A304).
 
 ## v0 surface
 
@@ -260,7 +272,8 @@ orivon.fs.writeFile(path, data)      // => Promise<void>
 orivon.fs.readFileSync(path)         // => Uint8Array  the one synchronous call (ADR-0016); genuinely blocks
 orivon.fs.open(path, flags)          // => Promise<FileHandle>
 orivon.fs.mkdir / readdir / stat / rm / rename
-orivon.fs.userSelected(opts)         // => OS file picker; user's choice IS the consent
+orivon.fs.userSelected(opts)         // => OS file picker; user's choice IS the consent; needs a
+                                      //   user activation, and some folders are refused
 
 // --- identity: app keys (silent, per-origin) ---
 orivon.id.publicKey({ curve })       // => Promise<Uint8Array>   derived per origin, no prompt
@@ -426,7 +439,7 @@ spellings of one of them are two different identities, permanently.
   Otherwise renaming an identity, or merely changing its case, destroys the npub with nothing to
   restore from.
 
-`window.nostr` semantics: injected in ordinary tabs; first `getPublicKey()` per site triggers
+`window.nostr` semantics, once named identities are built (they are not: A111): injected in ordinary tabs; first `getPublicKey()` per site triggers
 the connect prompt; after connecting, signing is silent for that site (per-event prompts would
 make Nostr unusable). Presence of `window.nostr` is fingerprintable, as it is of every NIP-07
 extension; the *data* is what sits behind consent (`security-model.md` T16).
@@ -468,6 +481,11 @@ justification, first becomes possible.
 ### Rules that apply to every app, signed included
 - `fs` is confined to the app's files directory. `..` traversal is rejected. Outside access
   exists only via `fs.userSelected`.
+- `fs.userSelected` opens a picker only during a user activation in the calling page (a click or
+  key press a moment before, as the web's own pickers require); called without one, it rejects
+  `denied` and shows nothing. The picker refuses a folder that is the browser's own data
+  directory, lies inside it or contains it, a filesystem root, or the home folder itself: it says
+  why, and the call resolves as a cancellation.
 - `net` requires manifest-declared patterns, surfaced verbatim in the grant prompt.
 - `id` app keys derive per origin silently; **named identities** are cross-origin only through
   the explicit connect prompt. In both modes the seed is never exposed and raw key export is

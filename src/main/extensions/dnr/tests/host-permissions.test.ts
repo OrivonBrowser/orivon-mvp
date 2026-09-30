@@ -16,11 +16,16 @@ describe('createHostAccessChecker', () => {
   })
 
   // src/main/extensions/README.md's "allowFileAccess is never true" entry:
-  // no extension ever gets file access, so file: is never covered here,
-  // even by <all_urls>, which Chrome's own match-pattern grammar (this
-  // file's own matcher) does include.
+  // no extension ever gets file access, so file: is never covered here.
+  // The shared matcher's <all_urls> already leaves it out; this checker
+  // also refuses it for an explicit file pattern.
   it('never covers a file: request URL, even with <all_urls>', () => {
     const check = createHostAccessChecker(['<all_urls>'])
+    expect(check(new URL('file:///etc/passwd'), null)).toBe(false)
+  })
+
+  it('never covers a file: request URL, even with an explicit file pattern', () => {
+    const check = createHostAccessChecker(['file:///*'])
     expect(check(new URL('file:///etc/passwd'), null)).toBe(false)
   })
 

@@ -1,7 +1,9 @@
 import { exposeOrivon } from './surface/orivon.js'
 import { exposeFetchRoute } from './expose-fetch-route.js'
 import { exposeShimGlobals } from './expose-shim-globals.js'
+import { exposeChildHostConnect } from './expose-child-host-connect.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
+import { hideUserAgentDataOnSignInHosts } from './sign-in-identity.js'
 
 /**
  * What every ordinary tab gets: `window.orivon` and everything that depends
@@ -14,7 +16,15 @@ import { installManifestHintWatcher } from './manifest-hint.js'
  */
 export function exposeOrdinaryTabSurface (): void {
   if (location.protocol === 'chrome-extension:') return
+  // Google's sign-in hosts are shown Firefox's identity, which has no
+  // navigator.userAgentData -- ./sign-in-identity.ts.
+  hideUserAgentDataOnSignInHosts()
   exposeOrivon()
+  // ADR-0046: lets a real app tab's page reach its app's child host, gated
+  // on the app-tab flag. Must run AFTER exposeOrivon() and BEFORE
+  // exposeFetchRoute(): its entries take their page-caller check from the
+  // internal-net slot the first creates and the second releases.
+  exposeChildHostConnect()
   // ADR-0017: routes this tab's own fetch(), XMLHttpRequest and
   // EventSource through orivon.net for a registered app's granted hosts.
   // Must run AFTER exposeOrivon() -- it depends on window.orivon already

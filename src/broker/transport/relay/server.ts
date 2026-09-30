@@ -1,8 +1,7 @@
 import type { OrivonErrorCode } from '../../../contracts/errors.js'
-import type { AcceptedMessage, BrokerToRendererMessage } from '../../../contracts/ipc.js'
 import { LIMITS } from '../../../contracts/index.js'
 import type { FailableTcpServer } from '../../handles/handle-contracts.js'
-import type { ControlEvent, PortLike, PortTransport, TcpServerDescriptor } from './port-transport.js'
+import type { ControlEvent, PortLike, PortMessageOnTheWire, PortTransport, TcpServerDescriptor } from './port-transport.js'
 import { createAcceptPump } from './accept-pump.js'
 import { createSocketRelay } from './socket.js'
 import { deliverPort } from './deliver-port.js'
@@ -15,9 +14,8 @@ import { fail, isOrivonErrorLike } from '../../errors.js'
 // AcceptedMessage): each accepted socket gets its OWN fresh port pair, wired
 // through the SAME createSocketRelay a dialled connection uses
 // (code-guidelines.md Rule 3 -- an accepted socket and a dialled one are the
-// same thing once accepted), delivered on the SERVER's port with `port`
-// named in an explicit transfer list, exactly as AcceptedMessage's own doc
-// (contracts/ipc.ts) requires.
+// same thing once accepted), delivered on the SERVER's port with the new
+// port in the transfer list alone, never inside the message.
 //
 // UNCONDITIONAL TEARDOWN ON UNLINK, matching ./datagram.ts's asymmetry
 // with ./socket.ts, not ./socket.ts's own conditional branch: a
@@ -60,9 +58,8 @@ export function createServerRelay (options: ServerRelayOptions): ServerRelay {
     // `handleTable.release` (`server.close`'s own body, capabilities/net.ts).
     // `pump.stop()` cancelling `server.connections` cannot substitute -- that
     // stream is hand-rolled with no `cancel` algorithm, so cancelling it is a
-    // spec no-op against the real listener (unlike a `Duplex.toWeb` socket,
-    // where cancelling the reader destroys the duplex as a side effect,
-    // A84). Calling `server.close()` unconditionally here -- on every path
+    // spec no-op against the real listener (unlike a socket's own stream,
+    // whose cancel destroys the socket as a side effect, A84). Calling `server.close()` unconditionally here -- on every path
     // that reaches `cleanup`, an abandoned port with the handle still live,
     // or `server.onUnlink`/`server.closed` having already released it
     // moments ago -- is safe because `close()` is idempotent
@@ -97,7 +94,7 @@ export function createServerRelay (options: ServerRelayOptions): ServerRelay {
   // Same guard as every other relay's own `send`: a real MessagePortMain can
   // be closed out from under this, and there is nowhere further to report a
   // throw to from a message-dispatch or teardown path.
-  function send (message: BrokerToRendererMessage, transfer?: readonly unknown[]): void {
+  function send (message: PortMessageOnTheWire, transfer?: readonly unknown[]): void {
     try {
       port.postMessage(message, transfer)
     } catch (caught) {
@@ -121,23 +118,17 @@ export function createServerRelay (options: ServerRelayOptions): ServerRelay {
       createSocketRelay({
         origin, socket, port: pair.port1, registry: transport.registry, readWindowBytes, writeWindowBytes
       })
-      const accepted: AcceptedMessage = {
+      // The port travels in the transfer list alone: a MessagePortMain inside
+      // the message fails to clone, and the connection would never arrive.
+      // The preload's wrapPort sets it back on the message as `port`.
+      const accepted: PortMessageOnTheWire = {
         kind: 'accepted',
         handleId: server.id,
         socketId: socket.id,
         remoteAddress: socket.remoteAddress,
         remotePort: socket.remotePort,
         localAddress: socket.localAddress,
-        localPort: socket.localPort,
-        // A167's own flagged narrowing, restated here where it is actually
-        // hit: contracts/ipc.ts types `port` as the DOM `MessagePort` the
-        // RENDERER receives, matching the type's own name
-        // (BrokerToRendererMessage). This side holds the real
-        // MessagePortMain that ./port-transport.ts's own PortPair.port2
-        // already types as `unknown` for exactly this reason -- there is no
-        // narrower type this file could give it without importing `electron`
-        // into a structurally-typed module. See open-questions.md A167/A185.
-        port: pair.port2 as MessagePort
+        localPort: socket.localPort
       }
       send(accepted, [pair.port2])
     }

@@ -77,10 +77,10 @@ describe('routePopup -- which window.open()/target=_blank calls keep their opene
   })
 })
 
-// ADR-0044 stopped a held grant, on its own, from putting an origin in its
-// own partition -- a granted, network-served app and an ordinary site both
-// now commonly carry `partition: undefined`, so `targetPartition ===
-// opener.partition` alone can no longer tell them apart. `isApp` is the
+// A held grant alone puts no origin in its own partition (ADR-0044) -- a
+// granted, network-served app and an ordinary site both commonly carry
+// `partition: undefined`, so `targetPartition === opener.partition` alone
+// cannot tell them apart. `isApp` is the
 // arm that catches this: README.md's Design notes.
 describe('routePopup -- isApp: a granted or cache-served origin never keeps an opener from a different origin', () => {
   const isGrantedApp = (url: string): boolean => url.startsWith(APP)

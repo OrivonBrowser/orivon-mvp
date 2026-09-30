@@ -1,7 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { appRootDirectoryName } from '../../../loader/index.js'
 import { cleanOrphanedAppPartitions, orphanedGrantOrigins } from '../orphaned-app-partitions.js'
 
 describe('orphanedGrantOrigins (pure selection)', () => {
@@ -25,8 +26,8 @@ describe('orphanedGrantOrigins (pure selection)', () => {
 
   // The selection is built ONLY from the given origin list -- it never
   // scans a directory, so an `app-*` partition whose origin is unknown
-  // (not in `apps` at all) can never appear here, matching the finding's
-  // "never touch an app-* directory whose origin is unknown."
+  // (not in `apps` at all) can never appear here: nothing touches a
+  // directory this list does not name.
   it('names only origins actually present in the given list -- nothing is inferred', () => {
     expect(orphanedGrantOrigins([{ origin: 'https://only-this-one.example' }], () => false, NO_PINS)).toEqual(['https://only-this-one.example'])
   })
@@ -122,5 +123,39 @@ describe('cleanOrphanedAppPartitions', () => {
     const retry = vi.fn(() => ({ clearData: async () => {} }))
     await cleanOrphanedAppPartitions(dir, apps, () => false, NO_PINS, retry)
     expect(retry).toHaveBeenCalledTimes(1)
+  })
+
+  // An installed app's directory on disk is what makes it installed --
+  // whatever its pin.json says, or fails to say. isCacheServed false (this
+  // run never restored serving for it) and NO_PINS (its pin was unreadable,
+  // or listPinnedOrigins itself failed) both look exactly like a genuine
+  // pre-ADR-0044 orphan; only the on-disk app directory tells them apart.
+  it('never touches an installed app\'s partition, even when its pin is unreadable and isCacheServed is false for it', async () => {
+    const origin = 'https://installed.example'
+    mkdirSync(join(dir, 'apps', appRootDirectoryName(origin)), { recursive: true })
+    const apps = [{ origin }]
+    const sessionFor = vi.fn(() => ({ clearData: async () => {} }))
+
+    await cleanOrphanedAppPartitions(dir, apps, () => false, NO_PINS, sessionFor)
+
+    expect(sessionFor).not.toHaveBeenCalled()
+    expect(JSON.parse(readFileSync(join(dir, 'orphaned-app-partitions-cleaned.json'), 'utf8'))).toMatchObject({ done: true })
+  })
+
+  it('aborts the whole cleanup, and writes no marker, when the apps directory cannot be stat-ed for a reason other than not existing', async () => {
+    const origin = 'https://granted.example'
+    const appsDir = join(dir, 'apps')
+    mkdirSync(appsDir, { recursive: true })
+    chmodSync(appsDir, 0o000)
+    const sessionFor = vi.fn(() => ({ clearData: async () => {} }))
+
+    try {
+      await cleanOrphanedAppPartitions(dir, [{ origin }], () => false, NO_PINS, sessionFor)
+    } finally {
+      chmodSync(appsDir, 0o755)
+    }
+
+    expect(sessionFor).not.toHaveBeenCalled()
+    expect(() => readFileSync(join(dir, 'orphaned-app-partitions-cleaned.json'), 'utf8')).toThrow()
   })
 })

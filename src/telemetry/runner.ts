@@ -90,6 +90,27 @@ const realClock = (): number => Date.now()
  *  instance the running subsystem is checkpointing, not a stale copy. */
 let runningStore: TelemetryStore | undefined
 
+/**
+ * The Settings Usage section's live-update source. Module-scoped, not on
+ * `runningStore` itself: `startInternalPages` (main/pages/start-internal-
+ * pages.ts) subscribes as soon as the process starts, which can be before
+ * `startTelemetry` below has finished loading the real store (its own
+ * `afterReady` is deliberately not awaited) -- a listener attached to
+ * whichever store existed at subscribe time would silently miss every send
+ * that happens after the real one replaces it.
+ */
+const changeListeners = new Set<() => void>()
+
+function notifyChanged (): void {
+  for (const listener of changeListeners) listener()
+}
+
+/** Returns the unsubscribe. Never fires in a private session: `startTelemetry` never runs there, and `decideConsent` is unreachable via telemetry-domain.ts's own `isPrivate` guard. */
+export function onTelemetryChanged (listener: () => void): () => void {
+  changeListeners.add(listener)
+  return () => { changeListeners.delete(listener) }
+}
+
 async function loadedStore (app: App): Promise<TelemetryStore> {
   if (runningStore !== undefined) return runningStore
   const store = new TelemetryStore(telemetryFilePath(app))
@@ -189,7 +210,12 @@ async function startTelemetry (app: App): Promise<void> {
       )
       transport = result.transport
       store.setHistoryState(result.history)
-      if (result.sent) await store.checkpoint()
+      if (result.sent) {
+        await store.checkpoint()
+        // The Settings "what has been sent" page reads getSentHistory(app)
+        // below; a real send is the one moment that answer actually changes.
+        notifyChanged()
+      }
     } finally {
       sendInFlight = false
     }
@@ -232,6 +258,9 @@ export async function decideConsent (app: App, optionId: DisclosureChoiceId): Pr
   const option = DISCLOSURE_OPTIONS.find((candidate) => candidate.id === optionId)
   if (option === undefined) throw new Error(`telemetry: unknown disclosure option id ${JSON.stringify(optionId)}`)
   await (await loadedStore(app)).setConsentState(applyDisclosureChoice(option))
+  // A second open Settings window's Usage section held the old consent; the
+  // tab that made this choice already redraws itself without waiting for it.
+  notifyChanged()
 }
 
 export async function setCountry (app: App, country: string): Promise<void> {

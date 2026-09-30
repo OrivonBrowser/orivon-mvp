@@ -93,7 +93,7 @@ it('lists installed extensions with their updater sentence, toggles one off, rem
 
     // Both fixtures are listed with their name and version; their updater
     // sentence shows once Details is opened, and is never hidden behind a
-    // second toggle inside it (the owner's requirement).
+    // second toggle inside it.
     for (const entry of [contentMarker, networkPerms]) {
       if (entry.source.kind !== 'unpacked') throw new Error('the fixtures are expected to be unpacked installs')
       const sourceFolder = entry.source.from

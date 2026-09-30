@@ -268,3 +268,47 @@ export function originFromSenderFrame (frame: SenderFrameLike | null | undefined
 
   return derived
 }
+
+/**
+ * A frame's origin is not the whole story: the frame must also be the top
+ * frame of the WebContents making the call (never a subframe, an embed
+ * guest, or a web-context document speaking for a top-level origin it does
+ * not run as), and that WebContents must be ATTRIBUTED to `origin` -- the
+ * second question `attributed` answers, injected because deciding it needs
+ * facts this policy layer never reaches for itself (README.md's "what this
+ * must never import"): the loader's bundle cache, and a per-document record
+ * of what a document's session was found to be AT ITS OWN COMMIT.
+ *
+ * Attribution is decided once, when a document commits, not re-decided
+ * under a live document on every call -- see
+ * `../../main/sessions/session-attribution.ts` for the three-way rule
+ * `attributed` implements (a cache-served origin checked live and
+ * strictly; an already-committed document's own recorded answer; a live
+ * check as the fallback when no record exists yet) and that directory's
+ * README for why it is shaped this way. This is what lets an already-open,
+ * already-attributed document survive a change to which session `origin`
+ * belongs in NEXT (its pinned copy going away; a grant or a revoke changes
+ * no session, ADR-0044) -- it keeps calling successfully until it next
+ * navigates, rather than being denied everything the instant the change
+ * lands underneath it.
+ *
+ * A document can still commit `origin` while sitting in the wrong session:
+ * a non-typed navigation (a link, a redirect, a script, back/forward) lands
+ * in whatever session the view already had, and only a later
+ * `did-navigate` handler moves it -- so a broker call made in the gap
+ * between the two is refused as `origin` from a session `origin` does not
+ * own (its grants, its cached bundle, another origin's cookies), and stays
+ * refused through that WebContents even after the swap, since the swap
+ * replaces the view (a fresh WebContents) rather than fixing this one's
+ * record.
+ */
+export function isAttributedSession (
+  senderFrame: unknown,
+  sender: { readonly mainFrame: unknown } | undefined,
+  origin: string,
+  attributed: (sender: unknown, origin: string) => boolean
+): boolean {
+  if (sender === undefined || senderFrame === null) return false
+  if (senderFrame !== sender.mainFrame) return false
+  return attributed(sender, origin)
+}

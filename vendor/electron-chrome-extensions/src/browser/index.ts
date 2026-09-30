@@ -21,6 +21,9 @@ import { checkLicense, License } from './license'
 import { readLoadedExtensionManifest } from './manifest'
 import { PermissionsAPI } from './api/permissions'
 import { resolvePartition } from './partition'
+// Orivon patch (UPSTREAM.md, patches 32-33)
+import { OffscreenAPI } from './api/offscreen'
+import { TabCaptureAPI } from './api/tab-capture'
 
 function checkVersion() {
   const electronVersion = process.versions.electron
@@ -138,6 +141,8 @@ export class ElectronChromeExtensions extends EventEmitter {
     tabs: TabsAPI
     webNavigation: WebNavigationAPI
     windows: WindowsAPI
+    offscreen: OffscreenAPI
+    tabCapture: TabCaptureAPI
   }
 
   constructor(opts: ChromeExtensionOptions) {
@@ -155,7 +160,7 @@ export class ElectronChromeExtensions extends EventEmitter {
     sessionMap.set(session, this)
 
     const router = new ExtensionRouter(session)
-    const store = new ExtensionStore(impl)
+    const store = new ExtensionStore(impl, session)
 
     this.ctx = {
       emit: this.emit.bind(this),
@@ -164,17 +169,25 @@ export class ElectronChromeExtensions extends EventEmitter {
       store,
     }
 
+    // Orivon patch (UPSTREAM.md, patches 32-33): offscreen and browserAction
+    // built first -- runtime.getContexts() (patch 32) reads both, and
+    // tabCapture (patch 33) reads offscreen, for its own POPUP/
+    // OFFSCREEN_DOCUMENT contexts and capture consumer respectively.
+    const offscreen = new OffscreenAPI(this.ctx)
+    const browserAction = new BrowserActionAPI(this.ctx)
     this.api = {
-      browserAction: new BrowserActionAPI(this.ctx),
+      browserAction,
       contextMenus: new ContextMenusAPI(this.ctx),
       commands: new CommandsAPI(this.ctx),
       cookies: new CookiesAPI(this.ctx),
       notifications: new NotificationsAPI(this.ctx),
       permissions: new PermissionsAPI(this.ctx),
-      runtime: new RuntimeAPI(this.ctx),
+      runtime: new RuntimeAPI(this.ctx, offscreen, browserAction),
       tabs: new TabsAPI(this.ctx),
       webNavigation: new WebNavigationAPI(this.ctx),
       windows: new WindowsAPI(this.ctx),
+      offscreen,
+      tabCapture: new TabCaptureAPI(this.ctx, offscreen),
     }
 
     this.listenForExtensions()
@@ -272,6 +285,12 @@ export class ElectronChromeExtensions extends EventEmitter {
     if (this.ctx.store.tabs.has(tab)) {
       this.api.tabs.onActivated(tab.id)
     }
+  }
+
+  /** Notify extension system that no tracked tab is active in `window`
+   * right now -- ExtensionStore.clearActiveTab's own doc. */
+  clearActiveTab(window: Electron.BaseWindow) {
+    this.ctx.store.clearActiveTab(window)
   }
 
   /**

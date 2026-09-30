@@ -458,6 +458,10 @@ export const injectExtensionAPIs = () => {
       },
 
       notifications: {
+        // Orivon patch: matches api/notifications.ts's own new `permission:
+        // 'notifications'` handler option, the same belt-and-suspenders
+        // shape `cookies` (above) already uses.
+        shouldInject: () => Array.isArray(manifest.permissions) && manifest.permissions.includes('notifications'),
         factory: (base) => {
           return {
             ...base,
@@ -523,6 +527,9 @@ export const injectExtensionAPIs = () => {
             },
             openOptionsPage: invokeExtension('runtime.openOptionsPage'),
             sendNativeMessage: invokeExtension('runtime.sendNativeMessage'),
+            // Orivon patch (UPSTREAM.md, patch 32): absent from Electron's
+            // own native chrome.runtime -- see api/runtime.ts's own doc.
+            getContexts: invokeExtension('runtime.getContexts'),
           }
         },
       },
@@ -649,6 +656,35 @@ export const injectExtensionAPIs = () => {
             testMatchOutcome: invokeExtension('declarativeNetRequest.testMatchOutcome'),
             isRegexSupported: invokeExtension('declarativeNetRequest.isRegexSupported'),
             onRuleMatchedDebug: new ExtensionEvent('declarativeNetRequest.onRuleMatchedDebug'),
+          }
+        },
+      },
+
+      // Orivon patch (UPSTREAM.md, patch 32): real implementations, gated
+      // the same way cookies/webNavigation/notifications already are --
+      // shouldInject on the manifest permission, actual enforcement in
+      // router.ts's own `permission` handler option server-side.
+      offscreen: {
+        shouldInject: () => Array.isArray(manifest.permissions) && manifest.permissions.includes('offscreen'),
+        factory: (base) => {
+          return {
+            ...base,
+            createDocument: invokeExtension('offscreen.createDocument'),
+            closeDocument: invokeExtension('offscreen.closeDocument'),
+            hasDocument: invokeExtension('offscreen.hasDocument'),
+          }
+        },
+      },
+
+      // Orivon patch (UPSTREAM.md, patch 33)
+      tabCapture: {
+        shouldInject: () => Array.isArray(manifest.permissions) && manifest.permissions.includes('tabCapture'),
+        factory: (base) => {
+          return {
+            ...base,
+            getMediaStreamId: invokeExtension('tabCapture.getMediaStreamId'),
+            getCapturedTabs: invokeExtension('tabCapture.getCapturedTabs'),
+            onStatusChanged: new ExtensionEvent('tabCapture.onStatusChanged'),
           }
         },
       },

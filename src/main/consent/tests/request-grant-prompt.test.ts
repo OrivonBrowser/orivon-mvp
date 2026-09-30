@@ -101,7 +101,7 @@ describe('createGrantPrompt', () => {
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'question', message: 'Unlimited network access' }))
   })
 
-  it('N2\'s disclosure: defaults to naming no extensions, so every pre-existing call above is unaffected', async () => {
+  it('extensions disclosure: defaults to naming no extensions, so every pre-existing call above is unaffected', async () => {
     showMessageBox.mockResolvedValueOnce({ response: 1 })
     const consent = createGrantPrompt(brokerWithManifest(manifestWith({ fs: {} })))
 
@@ -112,7 +112,7 @@ describe('createGrantPrompt', () => {
     }))
   })
 
-  it('N2\'s disclosure: an injected extensionsOnSite is fetched for the origin and rendered into detail', async () => {
+  it('extensions disclosure: an injected extensionsOnSite is fetched for the origin and rendered into detail', async () => {
     showMessageBox.mockResolvedValueOnce({ response: 1 })
     const extensionsOnSite = vi.fn(async (origin: string) => origin === ORIGIN ? ['Ad Blocker'] : [])
     const consent = createGrantPrompt(brokerWithManifest(manifestWith({ fs: {} })), undefined, extensionsOnSite)
@@ -123,5 +123,36 @@ describe('createGrantPrompt', () => {
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
       detail: expect.stringContaining('Extensions that can also act on this site: Ad Blocker.')
     }))
+  })
+
+  // Task: a dialog for a caller that has already left is never shown.
+  it('never shows a dialog when the caller has already left the origin', async () => {
+    const consent = createGrantPrompt(brokerWithManifest(manifestWith({ fs: {} })))
+    const caller = { window: () => undefined, stillOn: () => false }
+
+    const result = await consent(ORIGIN, 'fs', [], caller)
+
+    expect(result).toBe(false)
+    expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('parents the dialog to the window the caller resolves, when one is given', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const fakeWindow = { id: 'the-tabs-window' }
+    const caller = { window: () => fakeWindow, stillOn: () => true }
+
+    await createGrantPrompt(brokerWithManifest(manifestWith({ fs: {} })))(ORIGIN, 'fs', [], caller)
+
+    expect(showMessageBox).toHaveBeenCalledWith(fakeWindow, expect.objectContaining({ title: ORIGIN }))
+  })
+
+  it('shows unparented when the caller resolves no window, exactly as before this parameter existed', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const caller = { window: () => undefined, stillOn: () => true }
+
+    await createGrantPrompt(brokerWithManifest(manifestWith({ fs: {} })))(ORIGIN, 'fs', [], caller)
+
+    expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ title: ORIGIN }))
+    expect(showMessageBox.mock.calls[0]).toHaveLength(1)
   })
 })

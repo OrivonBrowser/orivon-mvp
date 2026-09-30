@@ -202,3 +202,6 @@ Stated here rather than discovered later. All of these are real and none is a bu
 
 Use it, fork it, build on it. If you distribute a modified version, or let others
 use one over a network, its complete source goes out under the same licence.
+
+[`vendor/`](vendor/) holds third-party code under its own licences, beside each package:
+GPL-3.0, MIT and BSD-3-Clause.

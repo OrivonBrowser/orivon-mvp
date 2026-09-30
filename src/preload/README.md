@@ -1,7 +1,8 @@
 # `src/preload/`: the privilege boundary
 
-**What lives here.** Nine preload scripts at nine privilege levels (`app.ts`, `shell.ts`, `newtab.ts`,
-`permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts`, `internal.ts` and `embed.ts`), the
+**What lives here.** Eleven preload scripts at eleven privilege levels (`app.ts`, `shell.ts`, `newtab.ts`,
+`permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts`, `internal.ts`, `embed.ts`,
+`child-host.ts` and `extension-api.ts`), the
 app-tab wiring they share (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`,
 `page-buffer.ts`, `ordinary-tab.ts`), and
 `orivon-error.ts`, the plain-object error shape [`surface/`](surface/) and [`ports/`](ports/)
@@ -18,7 +19,11 @@ entirely.
 [`src/contracts/`](../contracts/) for types, and, from `expose-shim-globals.ts` only,
 [`src/shim/globals.ts`](../shim/globals.ts): the one shim file with no `electron` import and no
 free identifier, so it can run in a preload and go to `contextBridge.executeInMainWorld`
-unchanged (A151).
+unchanged (A151). `child-host.ts` imports [`src/shim/worker/host.ts`](../shim/worker/host.ts)
+(ADR-0046): the one other shim file this directory reaches into, since the host runs that
+logic itself rather than exposing anything to a main world. `extension-api.ts` also imports
+[`../../vendor/electron-chrome-extensions/src/preload.js`](../../vendor/electron-chrome-extensions/src/preload.js)
+unmodified, so [`vendor/`](../../vendor/) is a dependency of this directory too.
 
 **What it must never import.** [`src/broker/`](../broker/): a preload runs in the renderer
 process, where broker logic would fail or, worse, appear to work. Nothing under `src/main/`,
@@ -39,8 +44,11 @@ across this boundary.
 | `internal.ts` | only a tab the shell opened as one of its own pages (`src/main/pages/`: Settings, History, ...) | `orivonInternal`: one `request(domain, command)` and one `onEvent`, after checking the document's scheme and host against the page the shell named; `src/main/pages/internal-ipc.ts` decides on every call what the page may reach |
 | `site-info.ts` | only the per-site popup (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info, switches, picked paths and browser data |
 | `embed.ts` | only a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest; ADR-0039) | Nothing on `window`: runs the script set with `orivon.web.setEmbedScript` before the page's own code, handing it `orivonEmbed` |
+| `child-host.ts` | only the hidden child host (`src/main/children/child-host.ts`; ADR-0046), and only at its own `/.well-known/orivon/child-host` document | Nothing on `window`: builds `orivon` in this isolated world alone and runs `src/shim/worker/host.ts`'s relay over the ports main connects |
 | `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrdinaryTabSurface()` as `app.ts` |
-| `expose-fetch-route.ts`, `expose-shim-globals.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, and `process`, `global`, `setImmediate`, `clearImmediate` and `Buffer` |
+| `expose-fetch-route.ts`, `expose-shim-globals.ts`, `expose-child-host-connect.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, `process`/`global`/`setImmediate`/`clearImmediate`/`Buffer`, and (ADR-0046) a registered-symbol bridge (`start`/`send`/`kill` closures, never the raw port -- T17) letting the page reach its app's child host with no new global; each closure applies `window.orivon`'s own page-caller check (ADR-0045), so an extension's script in the page cannot start, message or kill the app's children |
+| `extension-api.ts` | registered as both a `'frame'` and a `'service-worker'` preload on the default session (`src/main/extensions/extension-host.ts`'s `createExtensionHost`, wired from `extensions-subsystem.ts`); injects `chrome.*` only on a `chrome-extension:` page or a `chrome-extension:`-scoped service worker (its URL read from the worker's main world: a worker's preload realm has no `location`), nothing elsewhere | `chrome.*` (`vendor/electron-chrome-extensions`'s `injectExtensionAPIs`), plus a health check that reloads a worker whose first `chrome.*` injection missed (`extension-sw-preload-recovery.ts`, A289) |
+| `vendor/electron-chrome-web-store/src/renderer/chrome-web-store.preload.ts` (not under this directory) | registered as a `'frame'` preload on the default session (`src/main/extensions/store-runner.ts`'s `startWebStore`); runs only on the top frame at exactly `https://chromewebstore.google.com` | `chrome.webstorePrivate`, and the `chrome.runtime`/`chrome.management` extras the store page's own script expects |
 
 `shell.ts`, `permissions.ts`, `site-info.ts`, `menu.ts`, `split-frame.ts` and `newtab.ts` each check
 `location.href` against the URL main passed them (`--orivon-shell-url` and its siblings) before exposing
@@ -94,3 +102,23 @@ delete it. Two other routes were measured and rejected:
 
 **The routed path's shared slot, its numbers and its divergences from a browser** (which
 ADR-0017 requires be written down) are in [`routed/README.md`](routed/README.md)'s Design notes.
+
+**[`child-host.ts`](child-host.ts) is the one preload whose build needs
+`wrapSandboxedPreloadBody`** (`electron.vite.config.ts`, applied to the child host's preload, the one that bundles shim code; every other preload's output is left as built). It
+alone pulls in `../shim/child-process/child.ts`, whose `stream` import brings in a bundled
+`readable-stream`, whose own `require('buffer')`/`require('util')` resolve through
+`shimNodeSpecifiers` to the shim's polyfills -- landing a real, unwrapped top-level `Buffer`
+declaration in the bundle, which collides with Electron's own sandboxed preload environment
+(measured: it binds `Buffer` as one of the function parameters the preload's own body runs
+inside). `wrapSandboxedPreloadBody`'s own doc comment has the fix.
+
+**[`child-host.ts`](child-host.ts) patches `process.nextTick` before ever calling into `host.js`.**
+Electron's sandboxed preload gives a real, but partial, `process` (measured: `versions`,
+`platform`, `env`; no `nextTick`), unlike a page or a Worker, where this repository's own shim
+installs a complete one. ES imports are hoisted, so `host.js`'s own module graph has already
+evaluated by the time this file's patch line runs -- harmless here, since nothing in that graph
+calls `process.nextTick` at module-evaluation time, only later, deep inside `readable-stream`'s
+`Readable`/`Writable` internals, reached once a spawnSync's own stdout/stderr piping or close
+path actually runs. The patch only has to land before THAT, which every line below the import
+already satisfies. Unpatched, that call throws `TypeError: process.nextTick is not a function`,
+wire-carried back to spawnSync's own caller as an unexplained spawn failure.

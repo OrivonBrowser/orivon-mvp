@@ -77,7 +77,7 @@ have to be rewritten? It is a measure of where care is worth spending.
 | [`src/protocols/ipfs/`](src/protocols/ipfs/) | IPFS: `ipfs://` and `ipns://` addresses, and loading content from trustless gateways, every block hashed against its CID | **No** |
 | [`src/protocols/verifier-host/`](src/protocols/verifier-host/) | The utility process that runs every protocol's providers, including the light client, and serves their pages on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` (one narrow, gated exception: `dns-fallback.ts`'s direct connection to a gateway a resolver appears to be lying about) |
 | [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
-| [`vendor/`](vendor/) | Third-party source kept in its upstream shape, each with an `UPSTREAM.md` listing Orivon's patches: electron-browser-shell's Chrome-extension libraries (`ADR-0043`) and Firefox's `declarativeNetRequest` matcher (`ADR-0046`) | The extension libraries **entirely**; the matcher **no**, it is plain JavaScript |
+| [`vendor/`](vendor/) | Third-party source kept in its upstream shape, each with an `UPSTREAM.md` listing Orivon's patches: electron-browser-shell's Chrome-extension libraries (`ADR-0043`) and Firefox's `declarativeNetRequest` matcher (`ADR-9001`) | The extension libraries **entirely**; the matcher **no**, it is plain JavaScript |
 | [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
 
 Every directory carries a `README.md` saying what it depends on and what it must never import.
@@ -109,7 +109,12 @@ that never included it.
 ([`ADR-0030`](docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)). A light
 client proves what the name points to, the content comes from IPFS with every block hashed
 against its CID, and a verifier on loopback serves only bytes that passed. From there the page is
-an ordinary one: the same hint, the same one dialog, the same pin, which also records the CID.
+an ordinary one: the same hint, the same one dialog, the same pin, which also records the CID. The
+address bar and every other surface that shows an origin show it as `ipfs://<name>`, since the
+content it loads is always IPFS content in this build
+([`ADR-0038`](docs/decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md));
+typing or linking either `ipfs://<name>` or `ipns://<name>` opens the name's own
+`https://<name>.eth` origin, unchanged.
 
 **An `ipfs://` or `ipns://` address is shown as itself and served over HTTPS**
 ([`ADR-0038`](docs/decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md)).

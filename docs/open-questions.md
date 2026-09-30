@@ -1158,13 +1158,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing until a real app reaches either limit
 
-### A262: The direct gateway route trusts a proxy check made at the verifier host's start **[OWNER]**
+### A262: The verifier host's direct routes trust a proxy check made at its start **[OWNER]**
 
-- **Question:** Should the direct route check for a proxy when it is taken, not only when the
-  verifier host starts?
+- **Question:** Should the direct gateway route and CCIP-Read's pinned dial check for a proxy when
+  taken, not only when the verifier host starts?
 - **Why it matters:** a proxy turned on mid-run (a VPN, a corporate network, Tor through a proxy)
   is not seen until the host restarts; until then a failing gateway whose system address disagrees
-  with DNS-over-HTTPS is reached directly, from the person's real address (T40).
+  with DNS-over-HTTPS (T40), and every CCIP-Read query (T31), is reached from the real address.
 - **Options:** the host asks main (`app.resolveProxy`) at decision time, one round trip on a rare
   path (rec.); main pushes proxy changes into the host; keep the snapshot and say so.
 - **Who decides:** owner
@@ -1389,55 +1389,71 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A284: Served `.eth`/`ipfs://` content sends no `frame-ancestors` **[OWNER]**
-
-- **Question:** Served content can be framed by any page (clickjacking a dApp), and static
-  content cannot set its own header.
-- **Why it matters:** a page under an origin the user trusts (a `.eth` name, an IPFS gateway
-  response) can be embedded and manipulated by any other page that frames it.
-- **Options:** `frame-ancestors 'self'` by default (rec.; breaks embedding by other origins);
-  `'none'`; leave it as the web does today and document the gap.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A285: CCIP-Read egress validates a resolved hostname, then fetches the hostname again **[OWNER]**
-
-- **Question:** `urlRefusal` resolves a CCIP gateway hostname and checks every address against
-  T12, but `requestOne` then fetches the ORIGINAL url string, which resolves again -- a
-  DNS-rebinding TOCTOU `direct-fetch.ts`'s `pinnedLookup` already avoids on the sibling path.
-- **Why it matters:** a `.eth` name's own resolver contract controls the CCIP gateway url, so a
-  short-TTL rebind could point the verifier-host process at an internal address.
-- **Options:** reuse `pinnedLookup` for CCIP's POST/redirect-following path (rec.; a real change,
-  since CCIP needs a body and its own redirect loop, unlike `createDirectFetch`'s GET/HEAD-only
-  shape); accept the residual, narrowed by the existing `https`-only rule.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A286: A TTL-0 name can still rebind between the embed check and the connection **[OWNER]**
-
-- **Question:** A `"*"`-admitted document whose host is a name is resolved through the guest
-  session's own `resolveHost`, refused unless every address is public unicast. A name that
-  answers differently once Chromium actually connects still reaches it.
-- **Why it matters:** the same class of residual A196 accepts for `connectSecure`'s own wildcard
-  -- sharing the guest session's host cache narrows the window, it does not close it, since no
-  cancellable webRequest event carries the connected address.
-- **Options:** accept the residual, narrowed as it is (rec.); close it fully only if Electron
-  exposes a cancellable event carrying the connected address.
-- **Who decides:** owner
-- **Blocks:** nothing
 
 ### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
 
-- **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs.
-  Sandboxed it runs, though a fresh extension's first worker races it and misses every time
-  (20/20 fixture, 4/4 real) -- the reload already in place recovers every miss. `--no-sandbox`
-  was a Playwright default, not Orivon's/the kernel's; a restricted-namespace AppImage/deb would.
+- **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs. Sandboxed it
+  runs, though a fresh extension's first worker races it and misses every time (20/20 fixture, 4/4 real)
+  -- the reload in place recovers every miss. `--no-sandbox` was a Playwright default, not Orivon's/the
+  kernel's; an AppImage on a namespace-restricted machine would; a `.deb` installs the setuid helper.
 - **Why it matters:** there, every worker keeps Electron's native, partial `chrome.tabs`/`windows`
   permanently, with no reload able to fix it.
 - **Options:** confirm real packaged-launch flags on such a machine (rec., unresearched); warn and
   run with partial APIs; refuse to load extensions when unsandboxed.
 - **Who decides:** research first
 - **Blocks:** extensions build plan package 4's MV3 service-worker API surface
+
+### A291: The packaged app carries no licence texts for its bundled code **[OWNER]**
+
+- **Question:** The packaged app (`out/**` plus `package.json`) bundles vendored and npm code
+  with no licence texts anywhere in it. Does the package ship any?
+- **Why it matters:** `vendor/`'s GPL-3.0, MIT and BSD-3-Clause code, and every npm dependency's
+  own licence, reach a person's machine with nothing beside them once packaged.
+- **Options:** a generated third-party notices file shipped in the package (rec.); the licence
+  texts shipped beside each bundle instead.
+- **Who decides:** owner
+- **Blocks:** the first public release
+
+### A292: A middle click on the empty tab strip does nothing off Linux X11 **[RESEARCH]**
+
+- **Question:** Can a middle click on the strip's empty end open a tab on Windows, macOS and native Wayland?
+- **Why it matters:** there the end stays a native drag region, which gives the page no click at all; on
+  Linux X11 the shell handles it itself (`d-0195`) and loses nothing a person sees.
+- **Options:** Windows' `hookWindowMessage` for a middle click in the caption area (rec., untested); accept it
+  on macOS and Wayland, where the window manager owns the drag.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A293: Moving the window by the strip's end on X11 bypasses the window manager **[OWNER]**
+
+- **Question:** Is a window move done by the shell good enough where the window manager's own was before?
+- **Why it matters:** `d-0195` moves the window itself so the strip's end can take a middle click. It
+  maximizes at a top edge and takes half a screen at a side, but a window manager's own tiling previews,
+  quarter tiles and keyboard moves no longer start from there.
+- **Options:** keep it (rec.); go back to the native drag region and lose the middle click there.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A294: History shows no favicons and cannot be sorted **[AI-REC]**
+
+- **Question:** Should History keep a favicon per site and sort by visits or title as well as by time?
+- **Why it matters:** each row shows a letter or a protocol badge because the store keeps no icon, and its
+  paging runs on (last visit, id), so another order needs an index and a schema step the store does not have.
+- **Options:** add both with the store's first migration, when people ask for them (rec.); add them now.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A304: A82's reserved-port carve-out blocks a P2P app's own DNS-over-UDP **[OWNER]**
+
+- **Question:** `udp.send` reuses `checkConnect`, so a wildcard never reaches port 53 (A82), and a
+  manifest declares a wildcard host only as `*:*`. A program's own resolver works only when the
+  manifest names it (`1.1.1.1:53`); otherwise each query is dropped silently (A87).
+- **Why it matters:** correct as built, but a trap an app author cannot see, and `authorisedSend`
+  reusing `checkConnect` was never a logged decision.
+- **Options:** name the resolver's `host:53` (rec., no change); accept `*:53` as a declarable
+  pattern; exempt `udp.send` from A82; drop port 53 from `RESERVED_PORTS`.
+- **Who decides:** owner
+- **Blocks:** nothing; a manifest can name its resolver today
 
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
@@ -1508,5 +1524,71 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   address-bar click flake has a bounded retry.
 - **Options:** close as not worth pursuing (rec.); probe the untried causes (the `<video>`
   element, a raw CDP client).
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A295: A `<webview>`'s own `webpreferences` attribute may reach a shown page **[AI-REC]**
+
+- **Question:** If Electron parses a `<webview>`'s `webpreferences` attribute into `webPreferences`
+  before `will-attach-webview`, deleting `params.webpreferences` in `hardenGuest` stops nothing, and
+  a key it does not set itself (`experimentalFeatures`, say) reaches a `web.embed` guest. Does it?
+- **Why it matters:** a shown page is another site's document; every preference it runs with
+  should be the shell's choice, never the embedding app's. No escalation through it is known.
+- **Options:** measure it in an e2e and, if the attribute gets through, build the guest's
+  `webPreferences` from an allowlist rather than overriding named keys (rec.); leave it as it is.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A298: A keyboard command or context-menu click does not count as invoking an extension **[AI-REC]**
+
+- **Question:** Chrome grants activeTab, and so `chrome.tabCapture`, on a command or context-menu click as well as
+  the toolbar button; this build records only the toolbar button (`d-0204`). Record the other two?
+- **Why it matters:** an extension started by its keyboard shortcut is refused a capture Chrome would allow.
+- **Options:** record the invocation from `chrome.commands` and `contextMenus.onClicked` too (rec.); leave it.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A299: Developer mode is switched on by an environment variable **[OWNER]**
+
+- **Question:** Should developer mode be reachable only from the browser's own UI, or stay an
+  environment switch (`ORIVON_DEV_ORIGINS=1`) read at launch?
+- **Why it matters:** it routes loopback and developer `.eth` names, grants without install for
+  them, enables the Level 4 override (T39) and DevTools in shown pages; anything that sets a
+  launch's environment (a desktop shortcut, a same-user process) can turn it on. No page can.
+- **Options:** a Settings switch read at launch, with the variable honoured only in an unpackaged
+  build (rec.); keep the variable and say so (today, T13c).
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A300: The verifier host has Node and no sandbox **[AI-REC]**
+
+- **Question:** Should the untrusted parsers T34 names run in a sandboxed process with no Node?
+- **Why it matters:** T34 keeps a parser bug out of main, but the host is a Node utility process:
+  a bug exploited there reads and writes the person's files and reaches the network as they can.
+- **Options:** move UnixFS, dag-pb, IPNS, CCIP answers and the light client's WebAssembly into a
+  sandboxed process that only computes, keeping I/O in a thin host (rec.); keep one host and say so
+  (today).
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A301: One `orivon.fs` call has no byte cap **[AI-REC]**
+
+- **Question:** Should a single `orivon.fs` read, write or whole-file read be capped in bytes?
+- **Why it matters:** a granted app can make main hold a whole file (up to Node's 2 GiB `readFile`
+  limit) or a large write at once, stalling every tab; a read's allocation is already clamped to
+  what the file holds. A cap is a `src/contracts/` change (`LIMITS`).
+- **Options:** `LIMITS.fsCallBytes` (256 MiB), `'limit'` past it, big files through handles (rec.);
+  leave it bounded by the file and the quota.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A303: `chrome.tabs.query` still answers a `chrome-extension://<id>//sandbox.html` request **[AI-REC]**
+
+- **Question:** A doubled-slash spelling of a sandbox page gets the sandbox CSP, an opaque origin and no
+  injected `chrome.*` from the vendored library, yet `chrome.tabs.query({})` still returns real tab data there
+  (measured through `WebFrameMain.executeJavaScript`, `test/e2e-extensions-sandbox-page.test.ts`). What answers?
+- **Why it matters:** code in a sandbox page reached by that spelling can still read the person's open tabs.
+- **Options:** redirect every non-canonical `chrome-extension://` path to its canonical form before it loads,
+  then confirm the query is refused (rec.); find the Electron native binding that answers and patch it; leave it.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing

@@ -1,28 +1,8 @@
-// Ambient types for the five vendored electron-chrome-extensions entry
-// points extension-host.ts and extensions-dnr.ts/dnr-api.ts need the
-// RUNTIME VALUE of: the ElectronChromeExtensions class
-// (src/browser/index.ts), the partition and router sender-check/
-// permission-check/event-filter setters (src/browser/partition.ts,
-// src/browser/router.ts), and the cookies/tabs host-access setters
-// (src/browser/api/cookies.ts, src/browser/api/tabs.ts).
-//
-// Importing those files' real paths pulls their whole tree (electron-vite
-// serves this out/main/index.js on that same bundle) into THIS project's
-// stricter tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes,
-// noImplicitOverride) -- measured, ~66 diagnostics across 16 files that
-// satisfy vendor/tsconfig.json's own, deliberately looser settings
-// (ADR-0043: "its TypeScript checks under vendor/tsconfig.json"). Patching
-// every one would mean reformatting most of the vendored tree, the opposite
-// of what ADR-0043 asks for.
-//
-// electron.vite.config.ts's `main.resolve.alias` maps the five virtual
-// specifiers below to the real vendor files for BUNDLING (Rollup follows
-// the alias to the real source and compiles it in, same as any other
-// import); nothing here changes at runtime. For TYPE CHECKING, tsc cannot
-// resolve a virtual specifier to any real file, so it falls back to this
-// ambient declaration instead of opening the real one -- the boundary this
-// file exists to draw. Kept intentionally narrow: only the members
-// extension-host.ts actually calls.
+// Ambient types for the five virtual electron-chrome-extensions specifiers
+// extension-host.ts imports the RUNTIME VALUE of -- src/main/extensions/
+// README.md's Design notes say why this boundary exists and how
+// electron.vite.config.ts's alias resolves each one for bundling. Kept
+// intentionally narrow: only the members extension-host.ts actually calls.
 declare module 'orivon:crx-extensions' {
   namespace ElectronChromeExtensionsNS {
     interface CreateTabDetails {
@@ -48,7 +28,7 @@ declare module 'orivon:crx-extensions' {
       navigateTab?(tab: Electron.WebContents, url: string): void | Promise<void>
     }
     interface Options extends Impl {
-      license: 'GPL-3.0' | 'Patron-License-2025-10-08'
+      license: 'GPL-3.0' | 'Patron-License-2020-11-19'
       session?: Electron.Session
       preloadPath?: string
     }
@@ -61,11 +41,28 @@ declare module 'orivon:crx-extensions' {
     addTab (tab: Electron.WebContents, window: Electron.BaseWindow): void
     removeTab (tab: Electron.WebContents): void
     selectTab (tab: Electron.WebContents): void
-    /** UPSTREAM.md patch 21: this session's ExtensionRouter, for registering
+    /** Tells the library no tracked tab is the visible one in `window` right
+     * now -- ExtensionStore.clearActiveTab's own doc. */
+    clearActiveTab (window: Electron.BaseWindow): void
+    /** Fires once a browserAction popup's own BrowserWindow exists, before
+     * its page has loaded (browser-action.ts's own activateClick, right
+     * after `new PopupView(...)`) -- the only member of this class
+     * extension-host.ts listens for, so it is kept to that one event name.
+     * `parent`/`destroy`/`isDestroyed` added alongside `browserWindow` --
+     * PopupView's own public shape -- so extension-host.ts can close the
+     * popup when the PARENT window regains focus, not only when the
+     * popup's own `blur` fires. */
+    on (event: 'browser-action-popup-created', listener: (popup: {
+      browserWindow?: { webContents: Electron.WebContents }
+      parent?: Electron.BaseWindow
+      isDestroyed (): boolean
+      destroy (): void
+    }) => void): void
+    /** UPSTREAM.md patch 43: this session's ExtensionRouter, for registering
      * an additional main-side API handler the same way this library's own
      * API classes do. */
     getRouter (): ExtensionRouterHandle
-    /** UPSTREAM.md patch 22: sets `extensionId`'s badge text for `tabId`
+    /** UPSTREAM.md patch 44: sets `extensionId`'s badge text for `tabId`
      * directly from main, bypassing the `crx-msg` path a real
      * `chrome.action.setBadgeText` call takes. */
     setBadgeText (extensionId: string, tabId: number, text: string): void
@@ -107,7 +104,7 @@ declare module 'orivon:crx-extensions-router' {
   type MessageEvent = FrameMessageEvent | ServiceWorkerMessageEvent
   export function setMessageSenderIdCheck (check: (event: MessageEvent, claimedExtensionId: string | undefined) => boolean): void
 
-  /** UPSTREAM.md patch 15: overrides the manifest-permission check
+  /** UPSTREAM.md patch 43: overrides the manifest-permission check
    * `onExtensionMessage` runs for a handler registered with `permission`
    * set, answering from `extensionId`'s ORIGINAL permission record instead
    * of the (stripped) loaded manifest's own `permissions` list. */
@@ -116,6 +113,13 @@ declare module 'orivon:crx-extensions-router' {
   export function setEventListenerFilter (
     filter: ((extensionId: string, eventName: string, args: readonly unknown[]) => readonly unknown[] | undefined) | undefined
   ): void
+
+  /** True if `url`'s own path matches one of `pages` (an extension's
+   * manifest `sandbox.pages`) -- router.ts's own matcher, reused by
+   * extension-host.ts's preload-time sandbox-page query so the two ask the
+   * identical question. `platform` defaults to `process.platform`;
+   * router.ts's own doc says why win32/darwin match case-insensitively. */
+  export function isSandboxPageUrl (pages: readonly string[] | undefined, url: string, platform?: NodeJS.Platform): boolean
 }
 
 declare module 'orivon:crx-extensions-cookies' {
@@ -129,4 +133,37 @@ declare module 'orivon:crx-extensions-cookies' {
 
 declare module 'orivon:crx-extensions-tabs' {
   export function setTabUrlAccessCheck (check: (manifest: unknown, url: string | undefined) => boolean): void
+  /** Gates chrome.tabs.insertCSS: host access only, never satisfied by the
+   * `tabs` permission alone (that one only ever governs url/title/
+   * favIconUrl visibility). */
+  export function setTabHostAccessCheck (check: (manifest: unknown, url: string | undefined) => boolean): void
+}
+
+declare module 'orivon:crx-extensions-browser-action' {
+  /** Called from activateClick with the tab a toolbar click just happened
+   * on -- tab-capture.ts's own activeTab-style invocation check
+   * (extension-tab-invocation.ts is the real ledger this ends up in). The
+   * real WebContents, not just its id: extension-host.ts's own wiring
+   * attaches the navigation/destroy listeners that clear the grant. */
+  export function setTabCaptureInvocationRecorder (recorder: (extensionId: string, tab: Electron.WebContents) => void): void
+}
+
+declare module 'orivon:crx-extensions-tab-capture' {
+  export function setTabCaptureInvocationCheck (check: (extensionId: string, tabId: number) => boolean): void
+  /** True refuses the capture outright -- a granted app's own tab
+   * (extension-host.ts wires this to `broker.app.hasGrantsSync`, the same
+   * predicate shell-services.ts's own DevTools prompt uses). */
+  export function setTabCaptureAppRefusalCheck (check: (tab: Electron.WebContents) => boolean): void
+  /** Called once per successful getMediaStreamId, so permission-gate.ts's
+   * own 'media' carve-out (tab-capture-grants.ts) knows to allow it, for
+   * this exact (extensionId, targetTabId) pair -- never extension alone, so
+   * one tab's redemption never marks a different tab the same extension is
+   * also capturing. */
+  export function setTabCaptureGrantRecorder (recorder: (extensionId: string, targetTabId: number) => void): void
+  /** True once permission-gate.ts has actually allowed a 'media' request
+   * for this exact (extensionId, targetTabId) pair
+   * (tab-capture-grants.ts's wasTabCaptureGrantConsumed) -- the real "did a
+   * capture actually start for THIS tab" signal the safety net in
+   * tab-capture.ts checks once, at the minted id's own validity window. */
+  export function setTabCaptureConsumedCheck (check: (extensionId: string, targetTabId: number) => boolean): void
 }

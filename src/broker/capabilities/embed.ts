@@ -68,5 +68,10 @@ export function createEmbedCapability ({ handleTable, ledger, canonical }: Embed
     else scripts.set(key, opts.source)
   }
 
-  return { originsSync, scriptSync, attach, setScript }
+  /** See this method's own doc (embed-contracts.ts). */
+  function forgetScript (key: string): void {
+    scripts.delete(key)
+  }
+
+  return { originsSync, scriptSync, attach, setScript, forgetScript }
 }

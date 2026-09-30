@@ -1,5 +1,5 @@
-import { ipcRenderer } from 'electron'
-import { EXTENSION_SW_HEALTH_CHECK_CHANNEL, EXTENSION_SW_HEALTH_REPLY_CHANNEL } from '../main/extensions/extension-sw-preload-recovery.js'
+import { contextBridge, ipcRenderer } from 'electron'
+import { EXTENSION_SW_HEALTH_CHECK_CHANNEL, EXTENSION_SW_HEALTH_REPLY_CHANNEL } from '../main/channels.js'
 
 // Called from src/preload/extension-api.ts, right after
 // vendor/electron-chrome-extensions/src/preload.ts's own injection code has
@@ -14,11 +14,17 @@ import { EXTENSION_SW_HEALTH_CHECK_CHANNEL, EXTENSION_SW_HEALTH_REPLY_CHANNEL } 
 // A 'service-worker' session preload also runs in an ordinary website's own
 // worker (measured, docs/planning/spike-results/extension-real-probe.json)
 // -- gated on the worker's own scope so this listener is never installed
-// there, where `chrome` never exists.
+// there, where `chrome` never exists. The preload realm has no `location`:
+// the scope is read from the worker's main world.
 export function installServiceWorkerPreloadHealthCheck (): void {
-  const workerSelf = globalThis as unknown as { location?: { href?: string } }
-  const scope = workerSelf.location?.href ?? ''
-  if (!scope.startsWith('chrome-extension://')) return
+  if (process.type !== 'service-worker') return
+  let scope: unknown
+  try {
+    scope = contextBridge.executeInMainWorld({ func: () => self.location.href })
+  } catch {
+    return
+  }
+  if (typeof scope !== 'string' || !scope.startsWith('chrome-extension://')) return
 
   ipcRenderer.on(EXTENSION_SW_HEALTH_CHECK_CHANNEL, () => {
     const injectedChrome = (globalThis as { chrome?: { tabs?: { create?: unknown } } }).chrome

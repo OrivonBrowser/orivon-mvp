@@ -4,6 +4,7 @@
 // apps, so this is also where a new one is made. A private window is started here too.
 import { internalBridge } from '../shared/bridge.js'
 import { h, replaceChildren } from '../shared/dom.js'
+import { profilesIcon } from '../shared/icons.js'
 
 const bridge = internalBridge()
 
@@ -56,7 +57,7 @@ async function act (command: object): Promise<void> {
 
 function swatches (selected: string, choose: (color: string) => void): HTMLElement {
   const buttons = reply.colors.map((color) => {
-    const button = h('button', { className: color === selected ? 'swatch selected' : 'swatch', type: 'button', title: color, onclick: () => { choose(color) } }, h('span', { className: 'dot' }))
+    const button = h('button', { className: color === selected ? 'swatch selected' : 'swatch', type: 'button', title: color, onclick: () => { choose(color) } }, h('span', { className: 'dot mark' }))
     button.dataset['color'] = color
     button.setAttribute('role', 'radio')
     button.setAttribute('aria-checked', String(color === selected))
@@ -77,13 +78,13 @@ function card (row: Row): HTMLElement {
       armed = true
       remove.textContent = 'Click again to delete'
       remove.classList.add('armed')
-      setTimeout(() => { armed = false; remove.textContent = 'Delete'; remove.classList.remove('armed') }, 4000)
+      setTimeout(() => { armed = false; remove.textContent = 'Delete'; remove.classList.remove('armed'); reloadUnlessBusy() }, 4000)
       return
     }
     void act({ type: 'remove', id: row.id })
   })
   const status = row.current ? 'This window' : row.running ? 'Open' : ''
-  const chip = h('span', { className: 'chip', textContent: row.name.slice(0, 1).toUpperCase() })
+  const chip = h('span', { className: 'chip mark', textContent: row.name.slice(0, 1).toUpperCase() })
   chip.dataset['color'] = row.color
   return h('article', { className: 'card profile', id: `profile-${row.id}` },
     h('div', { className: 'head' }, chip, name, status === '' ? null : h('span', { className: 'status', textContent: status })),
@@ -116,7 +117,7 @@ function render (): void {
 document.getElementById('app')?.append(
   h('main', { className: 'page' },
     h('header', { className: 'top' },
-      h('h1', { textContent: 'Profiles' }),
+      h('div', { className: 'top-title' }, profilesIcon(), h('h1', { textContent: 'Profiles' })),
       h('button', { className: 'btn', type: 'button', textContent: 'New private window', onclick: () => { void request({ type: 'newPrivate' }) } })),
     problem,
     list,
@@ -124,4 +125,25 @@ document.getElementById('app')?.append(
 
 // Coming back to the tab shows who is open now.
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void load() })
+
+// A rename, a colour, a new or deleted profile -- made here, in Settings, in
+// another Profiles tab or in another profile's process. `load` redraws every
+// row, which would overwrite a keystroke the `change` event has not sent yet
+// and disarm a Delete waiting for its second click, so while either is in
+// progress the reload waits until it ends.
+let reloadPending = false
+function reloadUnlessBusy (): void {
+  if (!reloadPending) return
+  const editing = document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'text'
+  if (editing || document.querySelector('.armed') !== null) return
+  reloadPending = false
+  void load()
+}
+bridge.onEvent((topic) => {
+  if (topic !== 'profiles.changed') return
+  reloadPending = true
+  reloadUnlessBusy()
+})
+document.addEventListener('focusout', () => { setTimeout(reloadUnlessBusy) })
+
 void load()

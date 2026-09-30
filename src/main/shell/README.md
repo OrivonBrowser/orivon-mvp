@@ -4,13 +4,19 @@
 active tab's `WebContentsView` below, or the two panes of a split. A process holds any number of these
 windows: `shell-services.ts` is what they share, and `window-registry.ts` is how a page's IPC finds the
 window holding it. `window-frame.ts` is the native window itself and `window-options.ts` says how a new one
-opens. `tabs.ts` owns the tab collection, with `tab-view.ts`, `tab-types.ts` and `tab-factory.ts` as its
-parts. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
-same page, `tab-menu.ts` is its right-click menu, and `window-actions.ts` is what the chrome's buttons and
-menus ask of their window. Split view: `split-model.ts` is the arithmetic and the groups of joined tabs,
-`split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in that order,
-`split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab would split the
-page. `intro-state.ts` and `intro-view.ts` are the welcome screen.
+opens. `tabs.ts` owns the tab collection, with `tab-view.ts`, `tab-types.ts`, `tab-factory.ts` and
+`tab-parking.ts` as its parts, and `tab-origin-liveness.ts` as `tab-view.ts`'s own per-origin
+live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
+same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
+worked out, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
+menu, and `window-actions.ts` is what the chrome's buttons and menus ask of their window. `drag-mode.ts`
+decides whether the empty tail of the strip is native OS drag content or JS-driven (Linux/X11 only);
+`window-move.ts` is the arithmetic a manual window move and its Aero-snap-style edge release use.
+`tear-drag.ts` is the floating preview a tab shows once torn out of its strip, and the mark it leaves on
+whichever window's strip it is dragged over. Split view: `split-model.ts` is the arithmetic and the groups
+of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
+that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
+would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
 and notification questions the permission gate asks, the right-click menu for tabs and the
@@ -33,7 +39,11 @@ new-tab dashboard (a tab that happens to navigate to `file://`), stay on
 The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows (the
 names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a key that does
 not work), and `menu-panel.ts` is the popover that shows it, built on
-[`../permissions/popover-view.ts`](../permissions/popover-view.ts) like the two other toolbar popups.
+[`../permissions/popover-view.ts`](../permissions/popover-view.ts) like the two other toolbar
+popups -- the one caller that passes `warm: true`, since it takes no per-open argument the other
+two do. `theme-colors.ts` is the pre-paint background colour every view here that is attached
+ahead of its own first paint needs (a fact more than one of them shares); `view-background-
+test-hook.ts` is the e2e-only record of what each was actually set to.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types);
@@ -45,12 +55,14 @@ not work), and `menu-panel.ts` is the popover that shows it, built on
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
 `permission-gate.ts`'s notification store, handed to the permissions panel),
 [`../dev/`](../dev/) (the developer-mode flag, the score-level override, the local resolvers),
-[`../verifier/`](../verifier/), plus the top-level `channels.ts` and `registry.ts`.
+[`../verifier/`](../verifier/), the stores and services a window reads ([`../settings/`](../settings/),
+[`../history/`](../history/), [`../zoom/`](../zoom/), [`../devtools/`](../devtools/),
+[`../pages/`](../pages/), [`../launch/`](../launch/)), plus the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).
-Locally: [`tab-view.ts`](tab-view.ts) and [`tab-types.ts`](tab-types.ts) must never import
-[`tabs.ts`](tabs.ts); they were split out of it so the pure parts have no `TabManager` state to
-depend on.
+Locally: [`tab-view.ts`](tab-view.ts), [`tab-types.ts`](tab-types.ts) and
+[`tab-parking.ts`](tab-parking.ts) must never import [`tabs.ts`](tabs.ts); they were split out of
+it so the pure parts have no `TabManager` state to depend on.
 
 **Durable or tied to Electron.** Tied to Electron throughout: every file here exists to drive
 `BaseWindow`, `WebContentsView` or `dialog`.
@@ -105,10 +117,19 @@ survivor has the whole area. A page holds the window in HTML fullscreen only whi
 front, and a tab that closes or is left has no claim on it. `forgetTab()` takes the record out before it
 closes the view, because closing announces its own end at once and that call must find nothing to do.
 
-**[`tab-view.ts`](tab-view.ts): a view leaving an app's partition is parked, not closed.** A
+**[`tab-parking.ts`](tab-parking.ts): a view leaving an app's partition is parked, not closed.** A
 page's `sessionStorage` lives in its view, not its partition (measured in Electron 44), so a
 fresh view would break an OIDC login that keeps its state there while the provider has the tab.
 Only app partitions are parked; the open-web side of a swap still loses its history.
+
+**[`tab-origin-liveness.ts`](tab-origin-liveness.ts): how many live tabs sit at each origin is
+tracked module-wide, not per `TabManager`.** Two windows' tabs on the same origin share one broker
+origin table (`../../broker/broker-contracts.ts`'s `dropOrigin`), so a per-window count would let
+one window's tab close tear down handles a tab in another window still holds. `tab-view.ts`'s
+`wireView()` calls into it from the `did-navigate` and `'destroyed'` handlers, where a document's
+count moves; both run unconditionally, ahead of the handlers' own `shown()` gate, because a
+parked or background view's navigation changes this count
+exactly as a visible one's does.
 
 **[`tabs.ts`](tabs.ts): `TabManager`'s `ctx`.** `ctx.broker` decides the `fetch()`-routing flag
 at every `makeTabView` call (`ADR-0017`) and may be `undefined`, in which case the flag is never
@@ -127,7 +148,7 @@ pinned bundle is served (`ADR-0007`). A popup's app-tab flag follows its own URL
 opener's.
 
 **`routePopup`'s `isApp` catches a gap `targetPartition === opener.partition` alone cannot see.**
-`ADR-0044` stopped a held grant from putting an origin in its own partition, so a granted,
+A held grant alone puts no origin in its own partition (`ADR-0044`), so a granted,
 network-served app and an ordinary site both commonly carry `partition: undefined` -- the two
 would otherwise look identical to the partition comparison above, adopting a popup from any site
 straight into a granted app's own window with `window.opener` intact. `isApp` (`routePopup`'s own
@@ -135,8 +156,24 @@ arg, `popupTargetIsApp` in `tab-view.ts`) checks the thing the partition check c
 grant or cache-served status, regardless of what partition either side happens to be on. It only
 fires across a real origin change -- an app opening a popup to itself is unaffected.
 
+**The same `isApp` question is asked again on did-navigate, not only at `routePopup` time.**
+`routePopup` only ever sees the URL window.open() was given; a same-origin popup that later moves
+ITSELF (`w.location = ...`) into a different, granted or cache-served app never goes through
+`routePopup` again. `tab-view.ts`'s did-navigate handler re-asks `popupTargetIsApp` of the
+committed URL (`openerCutNeeded`), and rebuilds the view when it answers yes and the opener's own
+origin differs -- even when the partition string is not actually changing (two granted,
+network-served apps both carry `partition: undefined`), since a freshly built WebContents is the
+only thing that drops `window.opener` at all. This is also the one case `keepsOpenerSession`
+exempts: the opener link is exactly what must not survive here.
+
 **[`leave-page-prompt.ts`](leave-page-prompt.ts): closing a tab never asks.** `closeTab()`
 closes the webContents without running `beforeunload` (A231).
 
 **[`user-agent.ts`](user-agent.ts): the string, not the brand list.** `navigator.userAgentData`
-still lists Chromium rather than Google Chrome, and Electron has no API to change it.
+lists Chromium rather than Google Chrome, and Electron has no API to change it. Google's sign-in
+hosts (`accounts.google.com`, `accounts.youtube.com`) reject that, so on those two hosts alone the
+browser presents as Firefox, which has no `navigator.userAgentData` and sends no `Sec-CH-UA*`
+headers: [`sign-in-identity-headers.ts`](sign-in-identity-headers.ts) rewrites the request headers,
+[`sign-in-identity-tab.ts`](sign-in-identity-tab.ts) swaps `navigator.userAgent`, and
+`../../preload/sign-in-identity.ts` deletes `navigator.userAgentData` at document start. The
+preload runs in a tab's main frame only, so a sign-in page in another site's iframe keeps it.

@@ -2,11 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { createManifestHintListener, registerManifestHintIpc } from '../manifest-hint.js'
 import type { InstallApp, IpcMainOnLike } from '../manifest-hint.js'
 import { MANIFEST_HINT_CHANNEL } from '../../channels.js'
-import { APP, frameFor, NO_FRAME, OTHER } from '../../../broker/transport/tests/ipc.test-helpers.js'
+import { APP, APP_SESSION, attributedFrom, DEFAULT_SESSION, frameFor, NO_FRAME, OTHER } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import { createTokenBucketLimiter } from '../../../broker/transport/token-bucket.js'
 import type { LoadResult } from '../../../loader/index.js'
 
 const REJECTED: LoadResult = { outcome: 'rejected', reason: 'unused' }
+
+/** The shape of the `DialogCaller` the real listener always builds and passes as `installApp`'s third argument -- asserted structurally, since its two closures are fresh per call. */
+const ANY_CALLER = expect.objectContaining({ window: expect.any(Function), stillOn: expect.any(Function) })
 
 /** The published `ctx.installApp`, spied. This listener takes that one
  * function rather than `AppInstallDeps`, so these tests assert at the seam
@@ -61,7 +64,39 @@ describe('createManifestHintListener', () => {
     // The FRAME's origin is what reaches the install path; the reported
     // href is passed through untouched for installFromHint's own
     // same-origin check to judge.
-    expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`)
+    expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`, ANY_CALLER)
+  })
+
+  describe('session-bound attribution', () => {
+    it('ignores a hint from a sender in the default session when the origin belongs in an isolated one', async () => {
+      const installApp = fakeInstallApp()
+      const listener = createManifestHintListener(installApp, undefined, attributedFrom(() => APP_SESSION))
+
+      listener(frameFor(APP, DEFAULT_SESSION), `${APP}/manifest.json`)
+      await flush()
+
+      expect(installApp).not.toHaveBeenCalled()
+    })
+
+    it('accepts a hint from a sender already in the session its origin belongs in', async () => {
+      const installApp = fakeInstallApp()
+      const listener = createManifestHintListener(installApp, undefined, attributedFrom(() => APP_SESSION))
+
+      listener(frameFor(APP, APP_SESSION), `${APP}/manifest.json`)
+      await flush()
+
+      expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`, ANY_CALLER)
+    })
+
+    it('never checks the session when no attributed predicate is injected', async () => {
+      const installApp = fakeInstallApp()
+      const listener = createManifestHintListener(installApp)
+
+      listener(frameFor(APP, DEFAULT_SESSION), `${APP}/manifest.json`)
+      await flush()
+
+      expect(installApp).toHaveBeenCalledWith(APP, `${APP}/manifest.json`, ANY_CALLER)
+    })
   })
 
   it('rate-limits a repeated hint for the SAME origin, without starving a DIFFERENT origin', async () => {
@@ -96,8 +131,8 @@ describe('createManifestHintListener', () => {
     const PIN = { schema: 1 as const, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: '1.0.0', pinnedAt: 0 }
     const MANIFEST = { orivonApiVersion: 0 as const, id: 'app.test', name: 'Test', version: '1.0.0', entry: 'index.html', capabilities: {} }
 
-    function reportingTab (): { reload: ReturnType<typeof vi.fn<() => void>>, isDestroyed: () => boolean } {
-      return { reload: vi.fn<() => void>(), isDestroyed: () => false }
+    function reportingTab (): { reload: ReturnType<typeof vi.fn<() => void>>, isDestroyed: () => boolean, mainFrame: null, session: unknown } {
+      return { reload: vi.fn<() => void>(), isDestroyed: () => false, mainFrame: null, session: undefined }
     }
 
     it('reloads once after an install that newly registered the app, so the tab is rebuilt with its app-tab flag', async () => {
@@ -124,7 +159,7 @@ describe('createManifestHintListener', () => {
 
     it('does not reload a tab that was closed while the install ran', async () => {
       const installApp = vi.fn<InstallApp>(async () => ({ outcome: 'installed', canonicalOrigin: APP, manifest: MANIFEST, pin: PIN, newlyRegistered: true }))
-      const sender = { reload: vi.fn<() => void>(), isDestroyed: () => true }
+      const sender = { reload: vi.fn<() => void>(), isDestroyed: () => true, mainFrame: null, session: undefined }
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
       createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)

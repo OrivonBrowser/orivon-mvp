@@ -13,11 +13,14 @@
 // `transparent: true` window, which the shell's is not, by design. A
 // separate view sized to the popup needs none of that.
 
-import { WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
+import { app, WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
 import { join } from 'node:path'
-import { rendererEntryUrl } from '../shell/renderer-entry.js'
+import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
 import { SHELL_PARTITION } from '../shell/shell-session.js'
+import { onThemeUpdated, resolveThemeColor } from '../shell/theme-colors.js'
+import type { ThemeColorPair } from '../shell/theme-colors.js'
+import { recordPopoverShown, recordViewBackground } from '../shell/view-background-test-hook.js'
 
 const WIDTH = 380
 const MAX_HEIGHT = 460
@@ -70,63 +73,114 @@ export interface PopoverSpec {
   readonly align: PopoverAlign
   /**
    * Registers whatever `PERMISSIONS_COMMAND_CHANNEL`-shaped IPC this popup
-   * owns for its (freshly created) `webContents`, wired to resize via
-   * `onContentHeight`. Returns the teardown `close()` runs -- typically
-   * `ipcMain.removeHandler`. Called once per `open()`, matching the
-   * channel's own once-per-open lifecycle (`ipcMain.handle` throws if
-   * registered twice).
+   * owns for its `webContents`, wired to resize via `onContentHeight`.
+   * `url` is the exact address this popup was loaded at (`lockNavigation`
+   * already refuses any other), so the registered handler can check it the
+   * same way `../ipc/ipc.ts`'s own `isFromChrome` checks the chrome view's
+   * URL alongside its identity. Returns the teardown `close()` runs when the
+   * popup is actually destroyed -- typically `ipcMain.removeHandler`. Called
+   * once per fresh `WebContentsView` (once ever for a `warm` popup, once per
+   * open otherwise), matching the channel's own lifecycle (`ipcMain.handle`
+   * throws if registered twice).
    */
-  readonly registerIpc: (webContents: WebContents, onContentHeight: (height: number) => void) => () => void
+  readonly registerIpc: (webContents: WebContents, url: string, onContentHeight: (height: number) => void) => () => void
+  /** The largest this popup may grow to before its own content scrolls,
+   * independent of `room` below (which still applies on top of this): a
+   * fixed cap for a popup whose list can run long (permissions, site-info),
+   * or `Number.POSITIVE_INFINITY` for one that should simply show all of its
+   * content -- the menu -- so only the window's own height ever makes it
+   * scroll. Defaults to `MAX_HEIGHT`, the fixed cap a popup that does not set this field gets. */
+  readonly maxHeight?: number
+  /** This popup's own `--wbg` token, literally, both themes -- what the view
+   * is painted BEFORE its own page has loaded that CSS, so nothing white
+   * shows in the gap (a freshly created `WebContentsView` defaults to an
+   * opaque white). Resolved against the live `nativeTheme` at construction,
+   * and again on every OS/app theme change while a `warm` popup's view stays
+   * alive past that change (see `warm`'s own doc). */
+  readonly background: ThemeColorPair
+  /**
+   * Keeps ONE `WebContentsView` for this popup's whole window lifetime
+   * instead of building and destroying one on every open: `toggle()` only
+   * attaches/detaches it, never re-navigates it. Only safe for a popup whose
+   * content takes no per-open argument (`extraArgs` below is ignored for a
+   * `warm` popup's own construction, since a warm view is built once, before
+   * any `toggle()` call ever supplies one) -- the main menu is the only
+   * caller today; permissions and site-info both need a different origin's
+   * data on each open and stay on the ordinary create/destroy path.
+   * NOT built at construction: every window would otherwise carry a hidden
+   * renderer process nobody may ever open (`npm run smoke`'s own two-window
+   * count, and every e2e launch, measures exactly this). `prewarm()` on the
+   * returned `PopoverView` builds it on demand instead -- the caller decides
+   * when that is worth doing (menu-panel.ts: the toolbar button's own hover/
+   * focus). A `toggle()` reaching a still-unbuilt warm popup builds it then,
+   * the same as any other click. `onShow` is how a warm popup's own page is
+   * told to refresh, since its document is never reloaded.
+   */
+  readonly warm?: boolean
+  /** Called every time the popup becomes visible, warm or not, after it is
+   * attached and sized -- a warm popup's page is never reloaded, so this is
+   * the only way to tell it to re-fetch and reset its own state (scroll
+   * position, keyboard focus) on each open, the way a fresh popup's own
+   * first load already does simply by starting over. */
+  readonly onShow?: (webContents: WebContents) => void
 }
 
 export interface PopoverView {
-  /** `extraArgs` are appended after the url argument verbatim, e.g. `--orivon-focus-origin=...` or `--orivon-site-info-page=web3`. */
+  /** `extraArgs` are appended after the url argument verbatim, e.g. `--orivon-focus-origin=...` or `--orivon-site-info-page=web3`. Ignored by a `warm` popup, which takes no per-open argument. */
   toggle: (anchor: PopoverAnchor, extraArgs: readonly string[]) => void
   close: () => void
   isOpen: () => boolean
+  /** Builds a `warm` popup's view now, if it is not already built -- a no-op
+   * for a non-`warm` popup (nothing to build ahead of an open it always pays
+   * for) and a no-op if already built. Idempotent: safe to call from a hover
+   * handler that can fire more than once. */
+  prewarm: () => void
 }
 
-function popoverBounds (win: BaseWindow, anchor: PopoverAnchor, align: PopoverAlign, contentHeight: number): Electron.Rectangle {
+/** Exported for its own unit tests (popover-view.test.ts): pure geometry, no view or IPC involved. */
+export function popoverBounds (win: BaseWindow, anchor: PopoverAnchor, align: PopoverAlign, contentHeight: number, maxHeight: number): Electron.Rectangle {
   const { width: winWidth, height: winHeight } = win.getContentBounds()
 
   const preferredX = align === 'right' ? anchor.x + anchor.width - WIDTH : anchor.x
   const x = Math.round(Math.min(Math.max(preferredX, EDGE), Math.max(EDGE, winWidth - WIDTH - EDGE)))
   const y = Math.round(anchor.y + anchor.height + GAP)
 
-  // Sized to its content, then bounded twice: by MAX_HEIGHT so a long list
-  // does not become a full-height slab, and by the room actually left below
-  // the toolbar so it is never cut off by the window edge. Past either, the
+  // Sized to its content, then bounded twice: by the popup's own maxHeight
+  // (a fixed cap for one whose list can run long, or unbounded for one that
+  // should simply show everything), and by the room actually left below the
+  // toolbar so it is never cut off by the window edge. Past either, the
   // list scrolls inside the popup.
   const room = winHeight - y - EDGE
-  const height = Math.round(Math.max(MIN_HEIGHT, Math.min(contentHeight, MAX_HEIGHT, room)))
+  const height = Math.round(Math.max(MIN_HEIGHT, Math.min(contentHeight, maxHeight, room)))
   return { x, y, width: Math.min(WIDTH, winWidth - EDGE * 2), height }
 }
 
 export function createPopoverView (win: BaseWindow, contentView: View, spec: PopoverSpec): PopoverView {
-  let view: WebContentsView | null = null
+  const maxHeight = spec.maxHeight ?? MAX_HEIGHT
+
+  /** The view currently attached to `contentView`, or null while hidden/closed. */
+  let shown: WebContentsView | null = null
+  /** Set only for a `warm` popup: the one view built for this window's whole
+   * lifetime, kept even while `shown` is null. */
+  let warmView: WebContentsView | null = null
+  /** This popup's own toolbar-icon position, as of the last `show()` -- read
+   * by the content-height resize callback below, which a `warm` popup
+   * registers once but must still size against whichever anchor the CURRENT
+   * show used, not the one its view happened to be built under. */
+  let currentAnchor: PopoverAnchor | null = null
   let removeIpc: (() => void) | null = null
   let lastClosedAt = 0
 
-  function close (): void {
-    if (view === null) return
-    const closing = view
-    const closingIpc = removeIpc
-    // Cleared BEFORE the teardown below, not after: closing the webContents
-    // can fire its own 'blur' synchronously, which re-enters this function.
-    // Without this the second pass would remove an already-removed child and
-    // call close() on a destroyed webContents, and an uncaught throw in a
-    // main-process callback takes the whole browser down (the same failure
-    // class tabs.ts's own 'destroyed' guard exists for).
-    view = null
-    removeIpc = null
-    lastClosedAt = Date.now()
-    closingIpc?.()
-    contentView.removeChildView(closing)
-    if (!closing.webContents.isDestroyed()) closing.webContents.close()
+  function currentBackground (): string {
+    return resolveThemeColor(spec.background)
   }
 
-  function open (anchor: PopoverAnchor, extraArgs: readonly string[]): void {
-    const url = rendererEntryUrl(spec.dirname, process.env['ELECTRON_RENDERER_URL'], spec.entryPath, spec.fallbackHtml)
+  /** Builds one `WebContentsView`, loads it, and wires everything that does
+   * not depend on whether it is shown yet: background, navigation lockdown,
+   * the command channel, and the blur-closes-it behaviour. Shared by a fresh
+   * (non-`warm`) open and a `warm` popup's own one-time construction. */
+  function construct (extraArgs: readonly string[]): WebContentsView {
+    const url = rendererEntryUrl(spec.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), spec.entryPath, spec.fallbackHtml)
 
     const popup = new WebContentsView({
       webPreferences: {
@@ -139,49 +193,116 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
         webSecurity: true
       }
     })
-    view = popup
+    // Set BEFORE this view is ever attached, so the first frame Electron
+    // composites for it is already this popup's own theme colour, not the
+    // default opaque white a fresh WebContentsView otherwise shows for
+    // however long the page takes to load its own `background: var(--wbg)`.
+    const color = currentBackground()
+    popup.setBackgroundColor(color)
+    recordViewBackground(popup.webContents.id, color)
     // The popup's preload (`spec.preloadRelPath`) is privileged in exactly
     // the chrome view's own way, gated on the identical `location.href ===
     // expectedUrl` pattern -- a view holding it must never end up attached
     // to a document other than `url`. Locked before the load, as every
     // caller does (lock-navigation.ts says why that is safe).
     lockNavigation(popup.webContents, url)
+    popup.setBorderRadius(CORNER_RADIUS)
 
+    removeIpc = spec.registerIpc(popup.webContents, url, (contentHeight) => {
+      // Guarded on `shown === popup`: a height reported by a popup that is
+      // hidden (or, for a non-warm popup, already destroyed) must not resize
+      // whatever replaced it. `currentAnchor` is null exactly when `shown` is,
+      // so the second check only matters for the type-checker.
+      if (shown !== popup || currentAnchor === null || popup.webContents.isDestroyed()) return
+      popup.setBounds(popoverBounds(win, currentAnchor, spec.align, contentHeight, maxHeight))
+    })
+    // Click-away dismissal, the one behaviour that makes this feel like a
+    // toolbar popup rather than a stuck overlay.
+    popup.webContents.on('blur', () => { if (shown === popup) hide() })
+    void popup.webContents.loadURL(url)
+    return popup
+  }
+
+  function ensureWarmView (): WebContentsView {
+    if (warmView === null || warmView.webContents.isDestroyed()) warmView = construct([])
+    return warmView
+  }
+
+  function show (anchor: PopoverAnchor, extraArgs: readonly string[]): void {
+    const popup = spec.warm === true ? ensureWarmView() : construct(extraArgs)
+    currentAnchor = anchor
+    shown = popup
     // Added last, so it renders above the active tab's view. Tab switches
-    // and clicks into the page both blur this webContents, which closes the
+    // and clicks into the page both blur this webContents, which hides the
     // popup below -- so it can never be left stranded under a view that was
     // attached after it.
     contentView.addChildView(popup)
-    popup.setBorderRadius(CORNER_RADIUS)
-    popup.setBounds(popoverBounds(win, anchor, spec.align, INITIAL_HEIGHT))
+    popup.setBounds(popoverBounds(win, anchor, spec.align, INITIAL_HEIGHT, maxHeight))
+    recordPopoverShown(popup.webContents.id, true)
+    spec.onShow?.(popup.webContents)
+    if (popup.webContents.isDestroyed()) return
+    // Focus is taken explicitly: a view that never held focus can never
+    // blur, and the popup would then stay open forever. A `warm` popup past
+    // its first show has already finished loading and can be focused at
+    // once; a popup still loading (every non-warm open, and a warm popup's
+    // very first show) is focused once its page is actually ready to take it.
+    if (popup.webContents.isLoading()) {
+      popup.webContents.once('did-finish-load', () => {
+        if (shown === popup && !popup.webContents.isDestroyed()) popup.webContents.focus()
+      })
+    } else {
+      popup.webContents.focus()
+    }
+  }
 
-    removeIpc = spec.registerIpc(popup.webContents, (contentHeight) => {
-      // Guarded on `view === popup`: a height reported by a popup that has
-      // already been dismissed must not resize the one that replaced it.
-      if (view !== popup || popup.webContents.isDestroyed()) return
-      popup.setBounds(popoverBounds(win, anchor, spec.align, contentHeight))
-    })
-    void popup.webContents.loadURL(url)
+  function hide (): void {
+    if (shown === null) return
+    const popup = shown
+    contentView.removeChildView(popup)
+    recordPopoverShown(popup.webContents.id, false)
+    shown = null
+    currentAnchor = null
+    lastClosedAt = Date.now()
+    // A `warm` popup's view survives being hidden -- only the window closing
+    // (below) ever destroys it.
+    if (spec.warm === true) return
+    removeIpc?.()
+    removeIpc = null
+    if (!popup.webContents.isDestroyed()) popup.webContents.close()
+  }
 
-    // Click-away dismissal, the one behaviour that makes this feel like a
-    // toolbar popup rather than a stuck overlay. Focus is taken explicitly
-    // once the page is ready: a view that never held focus can never blur,
-    // and the popup would then stay open forever.
-    popup.webContents.once('did-finish-load', () => {
-      if (view === popup && !popup.webContents.isDestroyed()) popup.webContents.focus()
+  if (spec.warm === true) {
+    // A `warm` view lives past any number of OS/app theme changes; a
+    // non-warm popup instead picks up the current theme fresh on every
+    // `construct()` call, so it needs no listener of its own here.
+    // Registered through theme-colors.ts's `onThemeUpdated`, not a
+    // `nativeTheme.on('updated', ...)` of its own -- see window.ts's own
+    // comment on the same call for why (one process-wide EventEmitter, one
+    // direct listener per window/popover otherwise).
+    const applyBackgroundForTheme = (): void => {
+      if (warmView === null || warmView.webContents.isDestroyed()) return
+      const color = currentBackground()
+      warmView.setBackgroundColor(color)
+      recordViewBackground(warmView.webContents.id, color)
+    }
+    const unregisterThemeListener = onThemeUpdated(applyBackgroundForTheme)
+    win.on('closed', () => {
+      unregisterThemeListener()
+      removeIpc?.()
+      if (warmView !== null && !warmView.webContents.isDestroyed()) warmView.webContents.close()
     })
-    popup.webContents.on('blur', () => { if (view === popup) close() })
   }
 
   return {
     toggle (anchor, extraArgs) {
-      if (view !== null) { close(); return }
+      if (shown !== null) { hide(); return }
       // See REOPEN_DEBOUNCE_MS's own doc: a toggle arriving just after our
-      // own blur-triggered close is that close's echo, not fresh intent.
+      // own blur-triggered hide is that hide's echo, not fresh intent.
       if (Date.now() - lastClosedAt < REOPEN_DEBOUNCE_MS) return
-      open(anchor, extraArgs)
+      show(anchor, extraArgs)
     },
-    close,
-    isOpen: () => view !== null
+    close: hide,
+    isOpen: () => shown !== null,
+    prewarm () { if (spec.warm === true) ensureWarmView() }
   }
 }

@@ -26,7 +26,8 @@ export interface ExecError extends Error {
 }
 
 const PROMISIFY_CUSTOM = Symbol.for('nodejs.util.promisify.custom')
-const DEFAULT_MAX_BUFFER = 1024 * 1024
+/** Also spawnSync/execSync/execFileSync's own default (child-process/index.ts): one number, shared rather than reinvented per surface. */
+export const DEFAULT_MAX_BUFFER = 1024 * 1024
 
 function parseArguments (rest: unknown[]): { args: string[], options: ExecOptions, callback: ExecCallback | undefined } {
   const callback = typeof rest[rest.length - 1] === 'function' ? rest.pop() as ExecCallback : undefined

@@ -1,6 +1,7 @@
-import { app, Extension, Notification } from 'electron'
-import { ExtensionContext } from '../context'
-import { ExtensionEvent } from '../router'
+import { app, Notification } from 'electron'
+import type { Extension } from 'electron'
+import type { ExtensionContext } from '../context'
+import type { ExtensionEvent } from '../router'
 import { validateExtensionResource } from './common'
 
 enum TemplateType {
@@ -50,11 +51,17 @@ export class NotificationsAPI {
 
   constructor(private ctx: ExtensionContext) {
     const handle = this.ctx.router.apiHandler()
-    handle('notifications.clear', this.clear)
-    handle('notifications.create', this.create)
-    handle('notifications.getAll', this.getAll)
-    handle('notifications.getPermissionLevel', this.getPermissionLevel)
-    handle('notifications.update', this.update)
+    // Orivon patch: all five now declare `permission: 'notifications'`
+    // (router.ts's own `permission` handler option) -- unset, any loaded
+    // extension could raise OS notifications regardless of its declared
+    // permissions. The renderer's own `notifications` factory gets a
+    // matching `shouldInject` (UPSTREAM.md), the same shape `cookies` and
+    // `webNavigation` already use.
+    handle('notifications.clear', this.clear, { permission: 'notifications' })
+    handle('notifications.create', this.create, { permission: 'notifications' })
+    handle('notifications.getAll', this.getAll, { permission: 'notifications' })
+    handle('notifications.getPermissionLevel', this.getPermissionLevel, { permission: 'notifications' })
+    handle('notifications.update', this.update, { permission: 'notifications' })
 
     const sessionExtensions = ctx.session.extensions || ctx.session
     sessionExtensions.on('extension-unloaded', (event, extension) => {
@@ -126,7 +133,12 @@ export class NotificationsAPI {
       icon,
       urgency: getUrgency(opts.priority),
       timeoutType: opts.requireInteraction ? 'never' : 'default',
-    })
+      // Orivon patch: cast -- root tsconfig's exactOptionalPropertyTypes
+      // (vendor/tsconfig.json does not set it) refuses `silent`/`icon`
+      // typed `T | undefined` for an optional field declared `field?: T`;
+      // Electron's own constructor treats an explicit `undefined` the same
+      // as the field being absent, so this changes no behaviour.
+    } as Electron.NotificationConstructorOptions)
 
     this.registry.set(notificationId, notification)
 

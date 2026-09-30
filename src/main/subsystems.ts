@@ -23,12 +23,15 @@
 // Which stream owns which entry: docs/development/parallel-work.md.
 import type { Subsystem } from './registry.js'
 import { permissionGateSubsystem } from './sessions/permission-gate.js'
+import { sessionAttributionSubsystem } from './sessions/session-attribution.js'
 import { verifierSubsystem } from './verifier/verifier-subsystem.js'
+import { signInIdentitySubsystem } from './shell/sign-in-identity-headers.js'
 import { extensionsSubsystem } from './extensions/extensions-subsystem.js'
 import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
 import { devGrantSubsystem } from './dev/dev-grant.js'
 import { requestGrantSubsystem } from './consent/request-grant-subsystem.js'
 import { embedSubsystem } from './embed/embed-subsystem.js'
+import { childrenSubsystem } from './children/children-subsystem.js'
 import { loaderSubsystem } from '../loader/subsystem.js'
 import { appInstallSubsystem } from './install/app-install-subsystem.js'
 import { manifestHintSubsystem } from './install/manifest-hint.js'
@@ -42,15 +45,22 @@ export const subsystems: Subsystem[] = [
   // neither ctx.broker nor ctx.loader, so it has no ordering constraint
   // from either of those -- only this one, self-imposed.
   permissionGateSubsystem, // security -> src/main/permission-gate.ts
+  // Publishes ctx.senderAttributed -> src/main/sessions/session-attribution.ts.
+  // Reads neither ctx.broker nor ctx.loader (its closure reads ctx.broker
+  // lazily, once a real request needs it), but must stay ABOVE
+  // brokerIpcSubsystem: that subsystem reads ctx.senderAttributed itself.
+  sessionAttributionSubsystem,
   verifierSubsystem, // .eth names: resolver rules, certificate check, verifier host -> src/main/verifier/. Reads neither ctx.broker nor ctx.loader.
+  signInIdentitySubsystem, // Firefox request headers on Google's sign-in hosts -> src/main/shell/sign-in-identity-headers.ts. Reads neither ctx.broker nor ctx.loader.
   // extensions -> src/main/extensions/. Listed here, before anything else
   // touches session.defaultSession (extensions/README.md's Design notes).
   // Reads neither ctx.broker nor ctx.loader.
   extensionsSubsystem,
-  brokerIpcSubsystem, // build step 2: broker -> src/broker/. Writes ctx.broker -- anything reading it must be listed below this line.
+  brokerIpcSubsystem, // build step 2: broker -> src/broker/. Writes ctx.broker -- anything reading it must be listed below this line. Reads ctx.senderAttributed -- must stay below sessionAttributionSubsystem.
   devGrantSubsystem, // queue item 0.3: dev-only grant hook -> src/main/dev-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   requestGrantSubsystem, // queue item 4.1: app.requestGrant's mechanism -> src/main/request-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   embedSubsystem, // ADR-0039: pages an app shows inside itself -> src/main/embed/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
+  childrenSubsystem, // ADR-0046: the hidden child host each app's spawn/fork/thread runs in -> src/main/children/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   // build step 3: shim      -> src/shim/
   loaderSubsystem, // build step 4: loader -> src/loader/
   appInstallSubsystem, // queue item S4-4: install-time consent -> src/main/app-install.ts. Reads ctx.broker AND ctx.loader -- must stay below both brokerIpcSubsystem and loaderSubsystem.

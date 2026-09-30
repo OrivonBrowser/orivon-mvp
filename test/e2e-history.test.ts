@@ -207,3 +207,99 @@ it('clears what Clear browsing data is asked to, and nothing else', async () => 
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+const PAGE_SIZE = 100
+
+it('a push keeps "Show more" expanded and the scroll position on an already-open page', async () => {
+  const { app, chrome } = await launched(async (dir) => {
+    await mkdir(dir, { recursive: true })
+    const seeded = new SqliteHistoryStore(join(dir, 'history.db'))
+    // Recent (well inside the default 90-day retention prune runs at
+    // launch), oldest first so the newest (highest number) sorts to the top
+    // -- more than one page, so "Show more" has something to do.
+    const now = Date.now()
+    for (let i = 0; i < PAGE_SIZE + 20; i++) seeded.record(`${origin}/seed-${String(i)}`, `Seed ${String(i)}`, now - (PAGE_SIZE + 20 - i) * 1000)
+    seeded.close()
+  })
+  try {
+    const history = await openHistoryPage(app, chrome)
+    expect(await waitFor(async () => (await titles(history)).length === PAGE_SIZE)).toBe(true)
+    await history.click('.more button')
+    expect(await waitFor(async () => (await titles(history)).length === PAGE_SIZE + 20)).toBe(true)
+    await history.evaluate(() => { window.scrollTo(0, 400) })
+    expect(await waitFor(async () => await history.evaluate(() => window.scrollY) === 400)).toBe(true)
+
+    // A NEW tab: opening History made it the active one, and typing into
+    // chrome's own address bar navigates whichever tab is active -- without
+    // this, the visit would replace the History page itself.
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { newTab: () => void } }).orivonShell.newTab() })
+    await visit(chrome, `${origin}/while-open`)
+
+    // Catches the new page without a reopen: "Show more" is still expanded to
+    // at least the SAME depth it was (reloaded a page at a time, so it lands
+    // on the next PAGE_SIZE boundary at or past the old depth plus the new
+    // entry -- 121 here, never silently collapsed back to one page), and the
+    // scroll position survives the reload underneath it.
+    //
+    // BOTH AT ONCE, not two separate waits: the pre-push state already has
+    // 120 entries, so a wait on length alone would resolve before the push's
+    // own reload ever ran; the new entry, being newest, appears in the first
+    // (100-entry) partial render the multi-page catch-up produces on its way
+    // to 121, so a wait on its presence alone could resolve before that
+    // reload finishes growing past 120. Only the settled state has both.
+    const finalLength = PAGE_SIZE + 21
+    expect(await waitFor(async () => {
+      const rows = await titles(history)
+      return rows.length === finalLength && rows.includes('Page /while-open')
+    })).toBe(true)
+    expect(await history.evaluate(() => window.scrollY)).toBe(400)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('"Show more" survives a push past 500 loaded entries -- history-store.ts\'s MAX_PAGE_SIZE', async () => {
+  const { app, chrome } = await launched(async (dir) => {
+    await mkdir(dir, { recursive: true })
+    const seeded = new SqliteHistoryStore(join(dir, 'history.db'))
+    const now = Date.now()
+    const total = 700
+    for (let i = 0; i < total; i++) seeded.record(`${origin}/deep-${String(i)}`, `Deep ${String(i)}`, now - (total - i) * 1000)
+    seeded.close()
+  })
+  try {
+    const history = await openHistoryPage(app, chrome)
+    expect(await waitFor(async () => (await titles(history)).length === PAGE_SIZE)).toBe(true)
+    // Five clicks: 100 (already loaded) + 5*100 = 600, past history-store.ts's
+    // own MAX_PAGE_SIZE (500) -- asking main for 600 in one request would be
+    // clamped to 500 and read as "nothing more".
+    for (let i = 0; i < 5; i++) {
+      await history.click('.more button')
+      const expected = PAGE_SIZE * (i + 2)
+      expect(await waitFor(async () => (await titles(history)).length === expected)).toBe(true)
+    }
+    expect(await history.locator('.more button').isHidden()).toBe(false)
+
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { newTab: () => void } }).orivonShell.newTab() })
+    await visit(chrome, `${origin}/past-500`)
+
+    // The regression: `more` used to read false here (the reply was clamped
+    // to 500, not the 600 asked for), hiding "Show more" for good.
+    //
+    // BOTH AT ONCE: the pre-push state already has 600 entries, so a wait on
+    // length alone would resolve before the push's own reload ever ran; the
+    // new entry, being newest, appears in the first (100-entry) partial
+    // render the multi-page catch-up produces on its way back up to 600, so
+    // a wait on its presence alone could resolve mid-catch-up. Only the
+    // settled state has both.
+    expect(await waitFor(async () => {
+      const rows = await titles(history)
+      return rows.length === 600 && rows.includes('Page /past-500')
+    })).toBe(true)
+    expect(await history.locator('.more button').isHidden()).toBe(false)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)

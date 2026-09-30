@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { uptime } from 'node:os'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { DEFAULT_PROFILE_ID, PROFILE_ID } from './launch-context.js'
 import { copyPublicSeed } from './public-seed.js'
 import { bootTimeMs, isPidRecordAlive, processIsAlive } from './pid-liveness.js'
@@ -50,6 +51,17 @@ export class ProfileStore {
     private readonly isAlive: (pid: number) => boolean = processIsAlive,
     private readonly uptimeSec: () => number = uptime
   ) {}
+
+  /** The directory every profile's `profile.json` sits under, directly for
+   * the default profile or one level down in `profiles/<id>/` for any
+   * other -- the SAME value regardless of which profile's process reads it
+   * (start-launch.ts captures it before a non-default launch redirects
+   * `app.getPath('userData')` to its own directory). What
+   * `./profiles-watcher.js`'s `watchProfiles` watches: the one root every
+   * profile process's own writes are visible under. */
+  get registryDir (): string {
+    return this.home
+  }
 
   /** The directory of a profile, or null for an id that could not be one: no path is built from anything else. */
   dirOf (id: string): string | null {
@@ -190,6 +202,6 @@ export class ProfileStore {
   }
 
   private write (dir: string, profile: Profile): void {
-    writeFileSync(join(dir, PROFILE_FILE), JSON.stringify({ version: FILE_VERSION, name: profile.name, color: profile.color, created: profile.created }, null, 2))
+    writeFileAtomic(join(dir, PROFILE_FILE), JSON.stringify({ version: FILE_VERSION, name: profile.name, color: profile.color, created: profile.created }, null, 2))
   }
 }

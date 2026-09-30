@@ -128,6 +128,9 @@ export function match (actual: string, expected: RegExp, message?: Message): voi
 }
 
 export function failAssertion (message: Message = 'Failed'): never { return fail(message, 'Failed', { operator: 'fail' }) }
+// Node's real name for this one is `fail` -- taken here by the internal
+// helper above, so the public name is exported under an alias instead.
+export { failAssertion as fail }
 
 const members = {
   AssertionError, ok, equal, notEqual, strictEqual, notStrictEqual, deepEqual, notDeepEqual, deepStrictEqual,
@@ -141,6 +144,9 @@ const strict = Object.assign((value: unknown, message?: Message) => { ok(value, 
 
 const assert = Object.assign((value: unknown, message?: Message) => { ok(value, message) }, members, { strict })
 Object.assign(strict, { strict })
+
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/assert.js'
 
 export default nodeModule('assert', assert)
 export { strict }

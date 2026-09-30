@@ -3,7 +3,7 @@
 // CHECK handler is synchronous, so it answers from memory and never waits on
 // disk. Disposable: plain JSON under userData, tied to nothing but Node.
 import { readFileSync } from 'node:fs'
-import { writeFileAtomic } from '../../broker/grants/node-ledger-storage.js'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 
 export type NotificationDecision = 'allow' | 'block'

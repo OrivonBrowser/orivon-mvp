@@ -50,7 +50,7 @@ export function getLoggedMatches(extensionId: string, tabId: number | undefined)
 /** `declarativeNetRequest.setExtensionActionOptions`'s persistent toggle,
  * per extension, and the per-(extension,tab) count it drives. `dnr-api.ts`
  * renders this count as the extension's toolbar badge (through
- * `ElectronChromeExtensions.setBadgeText`, UPSTREAM.md patch 22) whenever it
+ * `ElectronChromeExtensions.setBadgeText`, UPSTREAM.md patch 44) whenever it
  * changes -- on a rule match (`incrementActionCount`, below) and on a fresh
  * navigation (`resetActionCountForTab`, below, Chrome's own "a new page
  * starts a new count").

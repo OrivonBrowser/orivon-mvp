@@ -18,6 +18,7 @@
 | [`http/`](http/) | `http` and `https`, over `net/`'s real socket |
 | [`polyfills/`](polyfills/) | The core polyfills |
 | [`wasi/`](wasi/) | A WASI preview1 host over `orivon.fs`, and Node's `wasi` module over it |
+| [`wasi-p2/`](wasi-p2/) | A WASI 0.2 host over `orivon.fs` and `orivon.net`, for a component `spawn` runs from jco's output |
 | [`worker/`](worker/) | What a child needs to run in a Web Worker, its `orivon.*` calls carried to the page |
 | [`child-process/`](child-process/) | Node's `child_process` over those Workers |
 | [`addon/`](addon/) | Native addons, loaded as their WebAssembly builds through emnapi |
@@ -80,6 +81,25 @@ member throws a named `OrivonShimError` when **called**, never when read, so fea
 of real Node for almost all of this surface. A member Node exposes as **data** (`fs.constants`,
 `dns.promises`) must be listed in `refusingProxy`'s `known` with a real value; a throwing stand-in
 would lie about its type.
+
+**The same refusal reaches a bundled CommonJS `require()` too (A287).** The proxy above only
+guards the *default* export; a bundler's CJS interop can hand `require()` the module's ESM
+*namespace* instead (esbuild does), where an unbuilt member was plain `undefined`. Each covered
+local module target re-exports a generated file, `<its own folder>/generated/<name>.ts`
+(alongside the module it stands in for, rather than pooled elsewhere, so a reader already in
+that folder sees both halves) -- one named export per Node function/class member the module does
+not provide itself, throwing the identical `OrivonShimError` its own classify function already
+throws for that name. An explicit export of the same name in the hand-written module shadows the
+generated one, so a member this shim later builds drops its stand-in on the next regeneration. A
+member Node exposes as data gets no stand-in there either (same reason as above), and is listed
+in that file's `DATA_GAPS` instead. [`node-builtin-exports.ts`](node-builtin-exports.ts) is the
+checked-in list of what real Node exports per module-map.ts specifier -- compared against, never
+against a live `require()` (CI's Node version is not guaranteed to be the one it was written
+from). [`tests/generated-refusals.test.ts`](tests/generated-refusals.test.ts) freshness-checks
+every generated file and rewrites them with `ORIVON_WRITE_SHIM_REFUSALS=1`.
+[`tests/support/generated-refusal-targets.ts`](tests/support/generated-refusal-targets.ts) lists
+which local targets this covers, and why the subpath rows (`fs/promises` and the like) do not
+yet have one.
 
 **Why a second error class.** A Node-stdlib gap and an Electron desktop-shell gap are different
 situations for a porting developer (code-guidelines Rule 3), so this package has its own

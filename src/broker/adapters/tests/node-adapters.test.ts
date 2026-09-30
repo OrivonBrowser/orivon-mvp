@@ -250,12 +250,58 @@ describe('listenTcp against a real TCP client', () => {
     expect(error.code).toBe('ECONNRESET')
   })
 
+  it('a peer that resets a still-queued connection is dropped from the queue and never crashes the process', async () => {
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const first = await connectClient(listened.localPort)
+    const second = await connectClient(listened.localPort)
+    // Give the server's 'connection' handler a tick to queue both -- nothing
+    // has called accept() yet, so both land in the internal queue with no
+    // listener beyond the one this fix adds.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    let crashed: unknown = null
+    const onUncaught = (error: unknown): void => { if (crashed === null) crashed = error }
+    process.on('uncaughtException', onUncaught)
+
+    first.resetAndDestroy()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    process.removeListener('uncaughtException', onUncaught)
+    if (crashed !== null) throw crashed
+
+    // The reset connection must also be gone from the queue, not merely
+    // survived: the next accept() serves the connection still alive, not the
+    // one just torn down.
+    const accepted = await listened.accept()
+    expect(accepted?.remotePort).toBe(second.localPort)
+
+    second.destroy()
+    await listened.destroy('closed')
+  })
+
   it('rejects a listen with no free port in the granted range', async () => {
     const first = await listenTcp([{ lo: 30020, hi: 30020 }], neverAborts())
 
     await expect(listenTcp([{ lo: 30020, hi: 30020 }], neverAborts())).rejects.toMatchObject({ code: 'limit' })
 
     await first.destroy('closed')
+  })
+
+  // Correct behaviour, not a bug (ADR-0034): an ephemeral (port 0) listen is
+  // confined to the app's granted range the same as an explicit one, so a
+  // program that listens twice on a single-port grant -- once ephemeral,
+  // once naming that same port -- collides with itself. `platformCode`
+  // pins the genuine EADDRINUSE `../socket-streams.ts`'s WASI-facing
+  // counterpart (`../../../shim/wasi-p2/addresses.ts`'s socketErrorCode)
+  // maps to `address-in-use`, already proven by
+  // `shim/wasi-p2/tests/sockets.test.ts`'s own listen-failure case.
+  it('an ephemeral listen and an explicit one on a single-port grant collide with the real EADDRINUSE', async () => {
+    const range = [{ lo: 30021, hi: 30021 }]
+    const ephemeral = await listenTcp(range, neverAborts())
+
+    await expect(listenTcp(range, neverAborts())).rejects.toMatchObject({ code: 'limit', platformCode: 'EADDRINUSE' })
+
+    await ephemeral.destroy('closed')
   })
 })
 
@@ -275,6 +321,7 @@ describe('net.listen end to end: a real accepted connection, a real denial, a re
       listen: listenTcp,
       resolve: async () => [],
       resolveLookup: async () => [],
+      proxyConfigured: async () => false,
       now: () => Date.now(),
       fs: nodeFs('/tmp/orivon-listen-e2e-unused'),
       keychain: { getSeed: async () => { throw new Error('not used by this test') } },

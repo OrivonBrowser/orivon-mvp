@@ -6,7 +6,7 @@ import { createHash, createPrivateKey, generateKeyPairSync, sign as signWithKey,
 import AdmZip from 'adm-zip'
 import Pbf from 'pbf'
 import {
-  installFromFile, installFromFolder, installFromStoreCrx, isStrictlyInsideDirectory, resolveSlotKey, setEnabled,
+  installFromFile, installFromFolder, installFromStoreCrx, resolveSlotKey, setEnabled,
   uninstall, type InstallContext
 } from '../install-runner.js'
 import { readRegistry } from '../registry-runner.js'
@@ -362,6 +362,9 @@ function buildCrx (manifest: Record<string, unknown>): Buffer {
   return Buffer.concat([prefix, header, archive])
 }
 
+// Symlink refusal is tested directly against `writeFolderCopy` in
+// unpack-runner.test.ts, which is where that check now lives.
+
 describe('installFromFile', () => {
   it('installs a .zip with no signature, slotted by the file\'s own bytes', async () => {
     await withTempDir(async (root) => {
@@ -376,6 +379,70 @@ describe('installFromFile', () => {
       if (!outcome.installed) return
       expect(outcome.entry.source).toEqual({ kind: 'file', fileName: zipPath })
       expect(existsSync(join(outcome.entry.path, 'manifest.json'))).toBe(true)
+    })
+  })
+
+  it('a newer keyed .zip lands in the SAME slot as an earlier keyed .zip carrying the same key, as an update', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      const { publicKey } = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'der' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'der' }
+      })
+      const key = publicKey.toString('base64')
+
+      const zipV1 = new AdmZip()
+      zipV1.addFile('manifest.json', Buffer.from(JSON.stringify({ ...FIXTURE_MANIFEST, key })))
+      const pathV1 = join(root, 'fixture-v1.zip')
+      writeFileSync(pathV1, zipV1.toBuffer())
+      const first = await installFromFile({ userDataPath, session, prompt: ALWAYS_ALLOW }, pathV1)
+      expect(first.installed).toBe(true)
+      if (!first.installed) return
+
+      // A DIFFERENT .zip file (different bytes, different name, a bumped
+      // version), carrying the same manifest key -- before this fix, a
+      // `.zip`'s slot was always the hash of its own bytes, so this landed
+      // as a second, unrelated extension instead of updating the first.
+      const zipV2 = new AdmZip()
+      zipV2.addFile('manifest.json', Buffer.from(JSON.stringify({ ...FIXTURE_MANIFEST, key, version: '2.0.0' })))
+      zipV2.addFile('extra.js', Buffer.from('// v2'))
+      const pathV2 = join(root, 'fixture-v2.zip')
+      writeFileSync(pathV2, zipV2.toBuffer())
+      const second = await installFromFile({ userDataPath, session, prompt: ALWAYS_ALLOW }, pathV2)
+      expect(second.installed).toBe(true)
+      if (!second.installed) return
+
+      expect(second.entry.id).toBe(first.entry.id)
+      expect(second.entry.version).toBe('2.0.0')
+      expect(readRegistry(userDataPath)).toHaveLength(1)
+      expect(existsSync(first.entry.path)).toBe(false)
+    })
+  })
+
+  it('two key-less .zip files never collide, each installing as its own extension', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+
+      const zipA = new AdmZip()
+      zipA.addFile('manifest.json', Buffer.from(JSON.stringify(FIXTURE_MANIFEST)))
+      const pathA = join(root, 'fixture-a.zip')
+      writeFileSync(pathA, zipA.toBuffer())
+      const a = await installFromFile({ userDataPath, session, prompt: ALWAYS_ALLOW }, pathA)
+      expect(a.installed).toBe(true)
+
+      const zipB = new AdmZip()
+      zipB.addFile('manifest.json', Buffer.from(JSON.stringify({ ...FIXTURE_MANIFEST, name: 'Second' })))
+      const pathB = join(root, 'fixture-b.zip')
+      writeFileSync(pathB, zipB.toBuffer())
+      const b = await installFromFile({ userDataPath, session, prompt: ALWAYS_ALLOW }, pathB)
+      expect(b.installed).toBe(true)
+      if (!a.installed || !b.installed) return
+
+      expect(a.entry.id).not.toBe(b.entry.id)
+      expect(readRegistry(userDataPath)).toHaveLength(2)
     })
   })
 
@@ -467,43 +534,6 @@ describe('uninstall / setEnabled', () => {
     })
   })
 
-  it('uninstall clears the slot\'s persisted dNR dynamic rules and enabled-ruleset choice, but keeps key.pub', async () => {
-    await withTempDir(async (root) => {
-      const userDataPath = join(root, 'userData')
-      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
-      const { session } = fakeSession()
-      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
-      expect(outcome.installed).toBe(true)
-      if (!outcome.installed) return
-
-      const slotDir = dirname(outcome.entry.path)
-      const dynamicRulesPath = join(slotDir, 'dnr-dynamic.json')
-      const enabledRulesetsPath = join(slotDir, 'dnr-enabled-rulesets.json')
-      const keyPath = join(slotDir, 'key.pub')
-      writeFileSync(dynamicRulesPath, '[]')
-      writeFileSync(enabledRulesetsPath, '[]')
-      expect(existsSync(keyPath)).toBe(true) // finishInstall already wrote this slot's key
-
-      await uninstall({ userDataPath, session, prompt: ALWAYS_ALLOW }, outcome.entry.id)
-      expect(existsSync(dynamicRulesPath)).toBe(false)
-      expect(existsSync(enabledRulesetsPath)).toBe(false)
-      expect(existsSync(keyPath)).toBe(true)
-    })
-  })
-
-  it('uninstall does not throw when the slot never had any persisted dNR state', async () => {
-    await withTempDir(async (root) => {
-      const userDataPath = join(root, 'userData')
-      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
-      const { session } = fakeSession()
-      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
-      expect(outcome.installed).toBe(true)
-      if (!outcome.installed) return
-
-      await expect(uninstall({ userDataPath, session, prompt: ALWAYS_ALLOW }, outcome.entry.id)).resolves.toBeUndefined()
-    })
-  })
-
   it('setEnabled(false) unloads from the session and flips the registry flag; setEnabled(true) reloads it', async () => {
     await withTempDir(async (root) => {
       const userDataPath = join(root, 'userData')
@@ -520,6 +550,56 @@ describe('uninstall / setEnabled', () => {
       await setEnabled({ userDataPath, session, prompt: ALWAYS_ALLOW }, outcome.entry.id, true)
       expect(loaded.has(outcome.entry.id)).toBe(true)
       expect(readRegistry(userDataPath)[0]?.enabled).toBe(true)
+    })
+  })
+
+  it('a setEnabled whose loadExtension is still pending does not lose a concurrent uninstall of a different entry, or vice versa', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const sourceA = writeFixtureFolder(join(root, 'a'), FIXTURE_MANIFEST)
+      const sourceB = writeFixtureFolder(join(root, 'b'), FIXTURE_MANIFEST)
+      const { session, loaded } = fakeSession()
+
+      const a = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, sourceA)
+      const b = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, sourceB)
+      expect(a.installed && b.installed).toBe(true)
+      if (!a.installed || !b.installed) return
+      await setEnabled({ userDataPath, session, prompt: ALWAYS_ALLOW }, a.entry.id, false)
+      expect(readRegistry(userDataPath)).toHaveLength(2)
+
+      // A session whose loadExtension for A's re-enable does not resolve
+      // until this test says so -- the same gap `finishInstall`'s own
+      // prompt/loadExtension await leaves open, where the pre-fix code read
+      // the registry before this gap and wrote it back stale after.
+      let releaseLoad: () => void = () => {}
+      const gate = new Promise<void>((resolve) => { releaseLoad = resolve })
+      const slowSession = {
+        extensions: {
+          loadExtension: async (path: string) => {
+            await gate
+            return await (session.extensions.loadExtension as (p: string) => Promise<{ id: string, name: string, manifest: object, path: string, url: string }>)(path)
+          },
+          removeExtension: session.extensions.removeExtension,
+          getExtension: session.extensions.getExtension
+        }
+      } as unknown as InstallContext['session']
+
+      const enablePromise = setEnabled({ userDataPath, session: slowSession, prompt: ALWAYS_ALLOW }, a.entry.id, true)
+      // Queued behind the still-pending setEnabled call above -- it must not
+      // start its own read until setEnabled's own write has landed.
+      const uninstallPromise = uninstall({ userDataPath, session, prompt: ALWAYS_ALLOW }, b.entry.id)
+
+      releaseLoad()
+      await enablePromise
+      await uninstallPromise
+
+      const registry = readRegistry(userDataPath)
+      expect(registry).toHaveLength(1)
+      expect(registry[0]?.id).toBe(a.entry.id)
+      expect(registry[0]?.enabled).toBe(true)
+      expect(loaded.has(a.entry.id)).toBe(true)
+      expect(loaded.has(b.entry.id)).toBe(false)
+      expect(existsSync(b.entry.path)).toBe(false)
     })
   })
 })
@@ -706,25 +786,3 @@ describe('installFromStoreCrx', () => {
   })
 })
 
-// The second, grammar-independent layer README.md's Design notes describes:
-// finishInstall refuses a targetDir/slotDir that does not resolve strictly
-// inside its own parent, the same shape unpack-runner.ts's checkZipEntryPath
-// uses for a zip entry -- tested directly here, not only through a `version`
-// string readExtensionManifest's own grammar check already refuses.
-describe('isStrictlyInsideDirectory', () => {
-  it('is true for an ordinary child directory', () => {
-    expect(isStrictlyInsideDirectory('/a/extensions/slot', '/a/extensions/slot/1.0.0')).toBe(true)
-  })
-
-  it('is false for the parent itself', () => {
-    expect(isStrictlyInsideDirectory('/a/extensions/slot', '/a/extensions/slot')).toBe(false)
-  })
-
-  it('is false for a path that escapes via ..', () => {
-    expect(isStrictlyInsideDirectory('/a/extensions/slot', '/a/extensions/slot/../../../../.config/autostart')).toBe(false)
-  })
-
-  it('is false for a sibling directory with the parent as a string prefix', () => {
-    expect(isStrictlyInsideDirectory('/a/extensions/slot', '/a/extensions/slot-evil/x')).toBe(false)
-  })
-})

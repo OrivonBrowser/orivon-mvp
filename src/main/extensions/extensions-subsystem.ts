@@ -14,6 +14,7 @@ import { readRegistry } from './registry-runner.js'
 import { installFromFile, installFromFolder, setEnabled, uninstall, type InstallContext, type InstallOutcome } from './install-runner.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
 import { createExtensionHost } from './extension-host.js'
+import { installExtensionPermissionWarningFilter } from './extension-known-permissions.js'
 import { startWebStore } from './store-runner.js'
 import { installStoreTestHook } from './store-test-hook.js'
 import { installExtensionsInstallTestHook } from './extensions-install-test-hook.js'
@@ -68,6 +69,10 @@ async function loadEnabledExtensions (userDataPath: string): Promise<void> {
 export const extensionsSubsystem: Subsystem = {
   name: 'extensions',
   afterReady: async (ctx: SubsystemContext) => {
+    // Before the first loadExtension() below (and before install-runner.ts's
+    // later ones): extension-known-permissions.ts's own doc says why.
+    installExtensionPermissionWarningFilter()
+
     // ONE '../', not two: main is bundled into a single out/main/index.js
     // (electron.vite.config.ts), so import.meta.dirname is out/main/ for
     // every file's code regardless of its original src/ nesting -- the same

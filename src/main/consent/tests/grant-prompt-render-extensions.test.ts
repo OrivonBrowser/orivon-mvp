@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { describeGrantRequest, describeInstallConsent } from '../grant-prompt-render.js'
 import { manifestWith } from '../../../broker/tests/index.test-helpers.js'
 
-// N2's disclosure (docs/planning/extensions-exploration.md, "disclose where
+// The extensions disclosure (docs/planning/extensions-exploration.md, "disclose where
 // it matters"): the one line `describeGrantRequest` and `describeInstallConsent`
 // gain when an extension's host access also covers the origin being decided
 // about. In its own sibling file for the same reason grant-prompt-render-
@@ -12,7 +12,7 @@ import { manifestWith } from '../../../broker/tests/index.test-helpers.js'
 
 const ORIGIN = 'https://app.example'
 
-describe('describeGrantRequest -- extensionsOnSite (N2)', () => {
+describe('describeGrantRequest -- extensionsOnSite', () => {
   it('adds no extensions line when none reach the site (no regression, empty default)', () => {
     const manifest = manifestWith({ fs: {} })
 
@@ -42,7 +42,7 @@ describe('describeGrantRequest -- extensionsOnSite (N2)', () => {
   })
 })
 
-describe('describeInstallConsent -- extensionsOnSite (N2)', () => {
+describe('describeInstallConsent -- extensionsOnSite', () => {
   it('the extensions line sits after the capability rows, before the closing origin', () => {
     const manifest = manifestWith({ fs: { quotaBytes: 1024 } })
 

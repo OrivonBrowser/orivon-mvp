@@ -1,8 +1,8 @@
 // Main-side handlers for chrome.declarativeNetRequest, registered on the
-// same ExtensionRouter the library's own APIs use (UPSTREAM.md patch 21's
+// same ExtensionRouter the library's own APIs use (UPSTREAM.md patch 43's
 // `getRouter()`), reached from the renderer's real `invokeExtension`
-// calls (`vendor/electron-chrome-extensions/src/renderer/index.ts`, same
-// patch's `declarativeNetRequest` factory). `setPermissionCheck` (patch 21)
+// calls (`vendor/electron-chrome-extensions/src/renderer/index.ts`, patch 10's
+// `declarativeNetRequest` factory). `setPermissionCheck` (patch 43)
 // is what lets `{ permission: 'declarativeNetRequest' }` below gate on the
 // ORIGINAL permission Orivon recorded in `registry.ts`'s `StrippedRecord`,
 // since the loaded manifest no longer has it.
@@ -31,7 +31,7 @@ const DNR_PERMISSION = 'declarativeNetRequest'
 const DNR_HOST_ACCESS_PERMISSION = 'declarativeNetRequestWithHostAccess'
 
 /** The one method `registerDnrApiHandlers`'s badge wiring needs from
- * `ElectronChromeExtensions` (`setBadgeText`, UPSTREAM.md patch 22) --
+ * `ElectronChromeExtensions` (`setBadgeText`, UPSTREAM.md patch 44) --
  * narrowed to this rather than importing the whole ambient class type, so
  * a test can fake it with a plain object instead of a real extension host. */
 export interface BadgeHost {

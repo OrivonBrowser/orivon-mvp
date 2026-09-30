@@ -22,9 +22,16 @@ const { ExtensionRouter, setMessageSenderIdCheck } = await import(
   '../../../../vendor/electron-chrome-extensions/src/browser/router.js'
 )
 
+// getExtension defaults to an already-registered extension: these tests
+// are about the sender-id check gating addListener/removeListener, not
+// about UPSTREAM.md patch 38's own registration-race wait -- a session
+// whose extension was never registered would make onAddListener wait
+// (bounded, but still asynchronously) before ever reaching the (mocked)
+// addListener call these tests assert on synchronously. The one test that
+// specifically wants "not registered" overrides this explicitly.
 function fakeSession (): Session {
   return {
-    extensions: { on: vi.fn(), getExtension: vi.fn() },
+    extensions: { on: vi.fn(), getExtension: vi.fn(() => ({ id: 'stub-extension', manifest: {} })) },
     serviceWorkers: { on: vi.fn() }
   } as unknown as Session
 }
@@ -32,6 +39,24 @@ function fakeSession (): Session {
 function frameEvent (session: Session): any {
   return { type: 'frame', sender: { session, once: vi.fn() }, senderFrame: null }
 }
+
+describe('crx-add-listener never throws synchronously out of the ipcMain.on listener', () => {
+  it('for an extension no longer registered in the session, even when the sender names its own real id', () => {
+    const session = fakeSession()
+    const router = new ExtensionRouter(session)
+    setMessageSenderIdCheck(() => true) // sender-id check passes; getExtension itself refuses below
+    ;(session.extensions as any).getExtension = vi.fn(() => null)
+
+    const id = 'a'.repeat(32)
+    const event = { type: 'frame', sender: { session, once: vi.fn() }, senderFrame: { url: `chrome-extension://${id}/page.html` } }
+
+    // router.addListener itself still throws (unchanged) -- the ipcMain.on
+    // handler around it is what must never let that escape.
+    expect(() => router.addListener({ type: 'frame', extensionId: id, host: event.sender as any }, id, 'tabs.onUpdated')).toThrow(/not registered/)
+    expect(() => onHandlers.get('crx-add-listener')!(event, id, 'tabs.onUpdated')).not.toThrow()
+    expect(() => onHandlers.get('crx-remove-listener')!(event, id, 'tabs.onUpdated')).not.toThrow()
+  })
+})
 
 describe('crx-add-listener / crx-remove-listener sender-id check (UPSTREAM.md patch 9)', () => {
   it('refuses crx-add-listener when the sender-id check refuses the claimed extension', () => {

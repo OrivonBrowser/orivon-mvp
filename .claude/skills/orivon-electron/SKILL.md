@@ -425,7 +425,8 @@ down correctly.
 - **Sandboxed, a newly loaded extension's first worker still misses the preload**, every time;
   `src/main/extensions/extension-sw-preload-recovery.ts` checks each worker and reloads once.
 - **`net.fetch` on a session that holds an extension declaring `webRequest` or
-  `declarativeNetRequest` segfaults the main process** (Electron 44, 15 of 15 runs). Orivon strips
-  both from every extension copy it loads (`ADR-0043`).
+  `declarativeNetRequest` segfaults the main process** (Electron 44, 10 of 10 runs without an
+  embedder `webRequest` listener). Orivon strips both from every extension copy it loads
+  (`ADR-0043`).
 - **Any embedder `session.webRequest` listener silences extensions' own `webRequest` and
   `declarativeNetRequest`**, and static dNR rules never apply at all.

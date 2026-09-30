@@ -84,4 +84,53 @@ describe('the history service', () => {
     service.clear()
     expect(store.count()).toBe(0)
   })
+
+  describe('onChange', () => {
+    it('fires for a visit, a title, a removal, a range and a clear', () => {
+      const { service } = setup()
+      let calls = 0
+      service.onChange(() => { calls += 1 })
+
+      service.visit('https://a.example/', '')
+      service.titled('https://a.example/', 'A')
+      service.remove(1)
+      service.removeRange(0, 1)
+      service.clear()
+
+      expect(calls).toBe(5)
+    })
+
+    it('never fires for a visit or a title while history is off', () => {
+      const { service } = setup({ 'history.remember': false })
+      let calls = 0
+      service.onChange(() => { calls += 1 })
+
+      service.visit('https://a.example/', '')
+      service.titled('https://a.example/', 'A')
+
+      expect(calls).toBe(0)
+    })
+
+    it('fires once prune() actually removes something older than the retention window', () => {
+      const { service, store, clock } = setup({ 'history.retentionDays': '30' })
+      store.record('https://old.example/', 'Old', clock.now - 40 * DAY)
+      let calls = 0
+      service.onChange(() => { calls += 1 })
+
+      service.prune()
+
+      expect(calls).toBe(1)
+    })
+
+    it('stops firing once the listener unsubscribes', () => {
+      const { service } = setup()
+      let calls = 0
+      const off = service.onChange(() => { calls += 1 })
+      off()
+
+      service.visit('https://a.example/', '')
+
+      expect(calls).toBe(0)
+    })
+  })
 })

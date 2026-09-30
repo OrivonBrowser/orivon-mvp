@@ -10,7 +10,7 @@ import { Readable, Writable } from 'stream'
 import { codedError } from '../node-errors.js'
 import { lineSink } from '../wasi/stdio.js'
 import type { OrivonServer } from '../worker/orivon-server.js'
-import type { FromWorker, StreamName, ToWorker } from '../worker/protocol.js'
+import type { FromWorker, StreamName, ToWorker, WorkerLike } from '../worker/protocol.js'
 
 export type StdioMode = 'pipe' | 'ignore' | 'inherit'
 
@@ -69,7 +69,7 @@ export class ChildProcess extends EventEmitter {
   killed = false
   connected: boolean
   readonly #options: ChildOptions
-  #worker: Worker | undefined
+  #worker: WorkerLike | undefined
   #server: OrivonServer | undefined
   #queued: ToWorker[] = []
   #ended = false
@@ -89,13 +89,19 @@ export class ChildProcess extends EventEmitter {
     this.stderr = stderrMode === 'pipe' ? new OutputStream() : null
     this.stdio = [this.stdin, this.stdout, this.stderr]
     this.#inherit = { stdout: lineSink((line) => console.log(line)), stderr: lineSink((line) => console.error(line)) }
+    // Node's own spawn/fork assign `pid` synchronously, before either ever
+    // returns (measured; shim finding 9) -- `attach()` used to be where this
+    // happened, which was fine while launching was itself synchronous, but a
+    // host-routed child's own `attach()` now runs at least a microtask (and,
+    // on a slow first connection, much longer) after `spawn()`/`fork()`
+    // already handed the caller this object with `pid` still unset.
+    this.pid = nextPid++
   }
 
   /** The Worker is running the child: flush what was written before it existed. */
-  attach (worker: Worker, server: OrivonServer): void {
+  attach (worker: WorkerLike, server: OrivonServer): void {
     this.#worker = worker
     this.#server = server
-    this.pid = nextPid++
     worker.onmessage = (event: MessageEvent<FromWorker>) => { this.#receive(event.data) }
     worker.onerror = (event) => {
       event.preventDefault()
@@ -179,10 +185,26 @@ export class ChildProcess extends EventEmitter {
     if (message.type === 'started') { this.#started = true; this.emit('spawn') }
     else if (message.type === 'output') this.#output(message.stream, message.data)
     else if (message.type === 'ipc') this.emit('message', message.message)
+    // No child_process listener names this: it exists so worker_threads.Worker (thread.ts), which wraps a ChildProcess, can relay an uncaught error as its own 'error' event.
+    else if (message.type === 'crash') this.emit('crash', message.error)
     else if (message.type === 'disconnect' && this.connected) { this.connected = false; this.emit('disconnect') }
     else if (message.type === 'failed') {
-      this.emit('error', Object.assign(new Error(message.error.message), { code: message.error.code ?? 'ENOEXEC' }))
-      this.#finish(-8, null, false)
+      const err = message.error
+      // Shim finding 14: a host-routed spawn used to lose everything but
+      // name/message/code/reason, so `catch (e) { e.errno }` and friends
+      // read `undefined` where the local path (and Node) has the real
+      // value, and every host-routed failure reported -8 even for one
+      // Node (and the local path) report as ENOENT's -2.
+      this.emit('error', Object.assign(
+        new Error(err.message),
+        { code: err.code ?? 'ENOEXEC' },
+        err.reason === undefined ? {} : { reason: err.reason },
+        err.errno === undefined ? {} : { errno: err.errno },
+        err.syscall === undefined ? {} : { syscall: err.syscall },
+        err.path === undefined ? {} : { path: err.path },
+        err.spawnargs === undefined ? {} : { spawnargs: err.spawnargs }
+      ))
+      this.#finish(err.errno ?? -8, null, false)
     } else if (message.type === 'exit') this.#finish(message.code, message.signal, true)
   }
 

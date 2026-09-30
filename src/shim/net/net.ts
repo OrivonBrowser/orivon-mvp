@@ -15,6 +15,8 @@ import { refuseShim } from '../errors.js'
 export { Socket } from './socket.js'
 export { Server } from './server.js'
 export { isIP, isIPv4, isIPv6 } from './isip.js'
+// Node's net.Stream is a legacy alias for net.Socket, not a separate class.
+export { Socket as Stream } from './socket.js'
 
 const connect = createConnectFactory((opts) => getOrivon().net.connect(opts))
 const createServer = createServerFactory((opts) => getOrivon().net.listen(opts))
@@ -23,7 +25,7 @@ export { connect, createServer }
 export const createConnection = connect
 
 /** A135: every OTHER net member -- `getDefaultAutoSelectFamily`, ... -- is real Node net surface this shim has not implemented and has not decided whether it will (compatibility-matrix.md Table 3). `connect`/`createServer`/`Socket`/`Server` above are the decided, built surface; this is everything else. */
-function otherNetMember (prop: string) {
+export function otherNetMember (prop: string) {
   return refuseShim(
     `net.${prop}`, 'unimplemented',
     `net.${prop} is real Node net surface this shim has not implemented and has not decided ` +
@@ -31,9 +33,13 @@ function otherNetMember (prop: string) {
   )
 }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs
+// (esbuild's CJS interop hands require() the namespace, not this default).
+export * from './generated/net.js'
+
 // A135: anything else read off this default export (a bundled CJS
 // `require('net')`'s own shape) names the gap instead of reading `undefined`.
 export default refusingProxy(
-  { connect, createConnection: connect, Socket, createServer, Server, isIP, isIPv4, isIPv6 },
+  { connect, createConnection: connect, Socket, Stream: Socket, createServer, Server, isIP, isIPv4, isIPv6 },
   otherNetMember
 )

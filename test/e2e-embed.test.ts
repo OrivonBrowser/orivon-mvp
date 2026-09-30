@@ -209,6 +209,10 @@ it(
         check('element.send() reaches the page script, which answers over sendToHost (pong 42)', pong === 42, JSON.stringify(pong))
 
         // ---- (3) the shown page: sandboxed, no orivon.*, no Node, no popups, in the app's own embed partition.
+        // `inEmbedPartition` below is also the proof embed-host.ts's did-attach-webview pairing
+        // relies on: session.fromPartition(partition) must be the SAME Session object Electron
+        // gives the attached guest's own webContents.session, so looking a guest's session up in
+        // the Session -> appOrigin map set in partitionReady finds the app that configured it.
         const inside = await evaluateRetrying(view, async () => {
           const el = (window as unknown as { __orivonE2eView: WebviewLike }).__orivonE2eView
           return await el.executeJavaScript(

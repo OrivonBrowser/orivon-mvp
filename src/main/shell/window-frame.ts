@@ -10,17 +10,28 @@
 import { app, BaseWindow, nativeTheme, screen } from 'electron'
 import { join } from 'node:path'
 import type { Placement } from './window-options.js'
+import { onThemeUpdated } from './theme-colors.js'
 
 // Kept in sync with src/renderer/style.css's --wchrome/--wink tokens --
 // same dual-source-of-truth pattern as window.ts's CHROME_HEIGHT. The overlay
 // is native-drawn chrome outside the renderer's DOM, so CSS alone can't
-// theme it; nativeTheme.on('updated') below re-applies these on a
-// live OS theme change.
+// theme it; `onThemeUpdated` below re-applies these on a live OS theme
+// change.
 const OVERLAY_DARK = { color: '#1e1f24', symbolColor: '#e6e7e8' }
 const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
 // A private window is tinted (src/renderer/style.css's `data-private`), so it is never taken for the person's own.
 const OVERLAY_PRIVATE_DARK = { color: '#251c36', symbolColor: '#e6e7e8' }
 const OVERLAY_PRIVATE_LIGHT = { color: '#d8cfe8', symbolColor: '#202124' }
+
+// The window's own background, same values as the overlay's `color` above
+// (== src/renderer/style.css's --wchrome for each theme/private combination)
+// -- Electron paints this the instant the window is created, before either
+// view has a pixel to show, so it is what a tear-off (shown at once, see
+// `instant` below) shows instead of a flash of white.
+const BACKGROUND_DARK = OVERLAY_DARK.color
+const BACKGROUND_LIGHT = OVERLAY_LIGHT.color
+const BACKGROUND_PRIVATE_DARK = OVERLAY_PRIVATE_DARK.color
+const BACKGROUND_PRIVATE_LIGHT = OVERLAY_PRIVATE_LIGHT.color
 
 /** Height of the native overlay: the tab row's height, in src/renderer/style.css too. */
 const OVERLAY_HEIGHT = 36
@@ -40,12 +51,24 @@ export interface WindowFrame {
   readonly initialBounds: { x: number, y: number, width: number, height: number }
 }
 
+/** The window's own background colour for the current OS/app theme -- exported
+ * so window.ts can paint the chrome view (its own WebContentsView, a separate
+ * surface from the BaseWindow's own background) the SAME colour before it has
+ * a pixel of its own to show, one home for the fact rather than a second copy
+ * of these constants there. */
+export function windowBackgroundColor (isPrivate: boolean): string {
+  return isPrivate
+    ? (nativeTheme.shouldUseDarkColors ? BACKGROUND_PRIVATE_DARK : BACKGROUND_PRIVATE_LIGHT)
+    : (nativeTheme.shouldUseDarkColors ? BACKGROUND_DARK : BACKGROUND_LIGHT)
+}
+
 /** `dirname`: the calling module's own `import.meta.dirname`, from which a run
  * from source finds the repo's build/icon.png (out/main -> ../../build). */
 export function createWindowFrame (dirname: string, place: Placement = {}, isPrivate = false): WindowFrame {
   const overlay = (): { color: string, symbolColor: string } => isPrivate
     ? (nativeTheme.shouldUseDarkColors ? OVERLAY_PRIVATE_DARK : OVERLAY_PRIVATE_LIGHT)
     : (nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT)
+  const background = (): string => windowBackgroundColor(isPrivate)
   // Hands the app icon to the window. GNOME's dock does not read it -- the
   // icon shown for a running window comes from matching the window's WM_CLASS
   // ("orivon") against a .desktop entry's Icon=/StartupWMClass, and this
@@ -83,6 +106,7 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
     ...initialBounds,
     show: false,
     icon: iconPath,
+    backgroundColor: background(),
     titleBarStyle: 'hidden',
     titleBarOverlay: { ...initialOverlay, height: OVERLAY_HEIGHT },
     // Matches orivon-browser-v2's own tab-row-height traffic-light
@@ -96,22 +120,35 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   // the native buttons freeze at whatever theme was active on launch.
   // macOS ignores the call entirely (trafficLightPosition covers it), so
   // skip it there rather than call a method on a platform it doesn't
-  // apply to. `nativeTheme` is a singleton shared by every window this
-  // process ever creates -- the listener is removed on 'closed', or a later
-  // theme change would call setTitleBarOverlay on an already-destroyed
-  // window.
+  // apply to. Registered through theme-colors.ts's `onThemeUpdated`, not a
+  // `nativeTheme.on('updated', ...)` of its own -- `nativeTheme` is one
+  // process-wide EventEmitter, and one direct listener per window would
+  // print `MaxListenersExceededWarning [NativeTheme]` from the 4th window
+  // on. Unregistered on 'closed', or a later theme change would call
+  // setTitleBarOverlay on an already-destroyed window.
   function applyOverlayForTheme (): void {
+    win.setBackgroundColor(background())
     if (process.platform === 'darwin') return
     win.setTitleBarOverlay(overlay())
   }
-  nativeTheme.on('updated', applyOverlayForTheme)
-  win.on('closed', () => { nativeTheme.removeListener('updated', applyOverlayForTheme) })
+  const unregisterOverlayThemeListener = onThemeUpdated(applyOverlayForTheme)
+  win.on('closed', () => { unregisterOverlayThemeListener() })
 
   return { win, initialBounds }
 }
 
+export interface ShowOptions {
+  /** This is the launch's own first window (window-options.ts's own doc on `ShellWindowOptions.firstOfLaunch`)
+   * -- the only window `ORIVON_WINDOW_NO_FOCUS=1` may show inactive. Every other window always takes focus. */
+  firstOfLaunch?: boolean | undefined
+  /** Shows the window at once instead of racing `ready-to-show` against the fallback timer -- for a window
+   * whose content (a moved tab) is already rendered elsewhere, so nothing here is worth waiting on. */
+  instant?: boolean | undefined
+}
+
 /** Shows the window once it can paint, and once only. */
-export function showWhenReady ({ win, initialBounds }: WindowFrame): void {
+export function showWhenReady ({ win, initialBounds }: WindowFrame, options: ShowOptions = {}): void {
+  const skipFocus = NO_FOCUS && options.firstOfLaunch === true
   // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
   // typed event union; BaseWindow's own doc doesn't enumerate it either.
   // Verified empirically that it fires on BaseWindow all the same -- a
@@ -129,12 +166,14 @@ export function showWhenReady ({ win, initialBounds }: WindowFrame): void {
   function showOnce (): void {
     if (shown || win.isDestroyed()) return
     shown = true
-    if (NO_FOCUS) {
+    if (skipFocus) {
       // The one thing a real launch under a virtual display CAN check --
       // there is no window manager there to take OS focus FROM, so
       // isFocused() cannot tell showInactive() apart from show(). See
       // test/e2e-window-no-focus.test.ts, which asserts this line runs
-      // instead. Do not remove as "stray debug output".
+      // instead. Do not remove as "stray debug output". Only the launch's
+      // first window can reach this branch (`skipFocus` above) -- a second
+      // window opened under the same switch still takes focus.
       console.log('[window] ORIVON_WINDOW_NO_FOCUS=1 -- showInactive()')
       win.showInactive()
     } else {
@@ -148,6 +187,14 @@ export function showWhenReady ({ win, initialBounds }: WindowFrame): void {
     // the window is mapped is honoured. Harmless where the first size
     // already stuck -- it sets what is already set.
     win.setBounds(initialBounds)
+  }
+  // A tear-off or a moved-tab window's content is already rendered
+  // somewhere (the tab it is given), so there is nothing worth racing
+  // `ready-to-show` for -- and the background colour set above, not a
+  // wait, is what keeps it from flashing white in the meantime.
+  if (options.instant === true) {
+    showOnce()
+    return
   }
   ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
     .once('ready-to-show', showOnce)

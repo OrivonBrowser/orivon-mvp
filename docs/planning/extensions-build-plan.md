@@ -36,12 +36,13 @@
 - Any extension declaring `webRequest` or `declarativeNetRequest` makes Chromium proxy the
   session's URL loader, which bypasses `protocol.handle` (measured) and **crashes the main
   process on the first `net.fetch` on that session** (`extension-netfetch-probe.json`: SIGSEGV
-  in 15 of 15 runs, every permission shape, default session and partitions alike; an embedder
-  `webRequest` listener installed before the load avoided it in 3 runs, which is an observation,
-  not a guarantee). Orivon calls `net.fetch` on the default session. So Orivon **owns each
-  session's `webRequest`**, strips every `webRequest*` and `declarativeNetRequest*` permission
-  (required and optional) from the manifest copy it loads, and serves those APIs from its own
-  engine through the service-worker preload: a stub that stores rules from package 4, the real
+  in 10 of 10 runs without an embedder `webRequest` listener, every permission shape, default
+  session and partitions alike; an embedder `webRequest` listener installed before the load
+  avoided it in 3 of 3 runs, which is an observation, not a guarantee). Orivon calls `net.fetch`
+  on the default session. So Orivon **owns each session's `webRequest`**, strips every
+  `webRequest*` and `declarativeNetRequest*` permission (required and optional) from the
+  manifest copy it loads, and serves those APIs from its own request-filtering engine through
+  the service-worker preload: a stub that stores rules from package 4, the real
   matcher in package 8. The loader also refuses to load anything before Orivon's own listener
   is on the session, as a second line.
 - Real extensions end to end (`spike-results/extension-real-probe.json`: uBOL Lite 2026.926,

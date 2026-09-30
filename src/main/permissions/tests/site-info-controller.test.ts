@@ -18,7 +18,7 @@ function ctxWith (broker: Broker | undefined, loader?: Loader, extensions?: Exte
   return { broker, loader, extensions } as unknown as SubsystemContext
 }
 
-/** Only `list` is ever called (N2's disclosure reads no other method of
+/** Only `list` is ever called (the extensions disclosure reads no other method of
  * `ExtensionsApi`) -- every other member is unused here on purpose. */
 function fakeExtensions (entries: readonly InstalledExtension[]): ExtensionsApi {
   return { list: () => entries } as unknown as ExtensionsApi
@@ -229,7 +229,7 @@ describe('createSiteInfoController -- siteTrustFor', () => {
   })
 })
 
-describe('createSiteInfoController -- extensionsOnSite (N2\'s disclosure)', () => {
+describe('createSiteInfoController -- extensionsOnSite (the extensions disclosure)', () => {
   let dir: string
   beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-site-info-ext-')) })
   afterEach(async () => { await rm(dir, { recursive: true, force: true }) })

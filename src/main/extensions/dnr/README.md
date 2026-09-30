@@ -20,7 +20,7 @@ folder and to persist dynamic rules and enabled-ruleset choices, and `../install
 `dnr-engine.ts` is a thin, typed orchestration layer over it, not a second implementation.
 
 **What it depends on.** `vendor/firefox-dnr/` (the engine); `node:fs`, `node:path` and
-`../../../broker/grants/node-ledger-storage.js`'s `writeFileAtomic` (`dnr-runner.ts` only, for
+`../../../broker/adapters/atomic-write.js`'s `writeFileAtomic` (`dnr-runner.ts` only, for
 its own disk I/O); `../../../broker/policy/extension-host-patterns.ts`'s `matchesAnyHostPattern`
 (`host-permissions.ts` only, pure and Electron-free itself). Otherwise pure TypeScript (`URL`,
 `Map`, `Set` -- no third-party package). `node:*` is a runtime dependency, not an Electron one:

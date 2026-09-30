@@ -3,7 +3,8 @@
 **What lives here.** The per-origin ledger of manifests and grants, its persistence across
 restarts, and the origin hash that names an origin's storage on disk.
 
-**What it depends on.** [`src/contracts/`](../../contracts/), [`../policy/`](../policy/), and
+**What it depends on.** [`src/contracts/`](../../contracts/), [`../policy/`](../policy/),
+[`../adapters/atomic-write.ts`](../adapters/atomic-write.ts), and
 `node:fs`/`node:path`/`node:crypto`.
 
 **What it must never import.** `electron`, [`../handles/`](../handles/) or
@@ -23,9 +24,12 @@ both, apart, so the narrowing happens in one place: the capability entry points.
 
 ## Design notes
 
-**Two storage roots.** `ledger-storage.ts`'s real implementation keeps the ledger under its own
-`grants/` root, but the `fs` capability's files live under the loader's `apps/<hash>/files`
-(`../adapters/node-fs-adapter.ts`'s `nodeFs`). App removal has to clear both.
+**Three storage roots.** `ledger-storage.ts`'s real implementation keeps the ledger under its own
+`grants/` root; the `fs` capability's files live under their own `app-data/<hash>/files`
+(`./origin-hash.ts`'s `appDataRoot`, consulted by `../adapters/node-fs-adapter.ts`'s `nodeFs`),
+separate from the loader's own `apps/<hash>` state (pinned code, staging, `pin.json`) so a pin
+re-verify and an app's declared quota govern two disjoint trees (T13b). App removal has to clear
+all three.
 
 **`LedgerStorage` is synchronous, unlike `LoaderStorage`, on purpose.** Callers invoke
 `Broker.registerApp` without awaiting it, which is safe only because nothing inside it yields;

@@ -1,7 +1,9 @@
 // Between the address a person reads and the URL a page is served at:
 // `ipfs://<cid>/docs/` is served at `https://<cid>.ipfs.orivon/docs/`, and a
-// `.eth` name is its own host. Pure string work over the descriptors, so the
-// shell needs no protocol's code to route or show one. Rationale: README.md.
+// `.eth` name is its own host, shown under its protocol's display scheme
+// (`ipfs://<name>` for `.eth`) when it declares one. Pure string work over
+// the descriptors, so the shell needs no protocol's code to route or show
+// one. Rationale: README.md.
 
 import { ADDRESS_SUFFIX } from './protocol.js'
 import type { ProtocolDescriptor } from './protocol.js'
@@ -48,10 +50,24 @@ function hostLabels (host: string): string[] {
 export class ProtocolAddresses {
   private readonly schemes: ReadonlySet<string>
   private readonly topLevelDomains: ReadonlySet<string>
+  private readonly displaySchemesByTld: ReadonlyMap<string, string>
 
   constructor (protocols: readonly ProtocolDescriptor[]) {
     this.schemes = new Set(protocols.flatMap((p) => p.schemes))
     this.topLevelDomains = new Set(protocols.flatMap((p) => p.topLevelDomains))
+    const displaySchemesByTld = new Map<string, string>()
+    for (const protocol of protocols) {
+      if (protocol.displayScheme === undefined) continue
+      // A typo here would show a name with no scheme at all, silently: refuse it at startup instead.
+      if (!this.schemes.has(protocol.displayScheme)) throw new Error(`protocol ${protocol.id}: displayScheme ${protocol.displayScheme} is not a scheme any given protocol serves`)
+      for (const tld of protocol.topLevelDomains) displaySchemesByTld.set(tld, protocol.displayScheme)
+    }
+    this.displaySchemesByTld = displaySchemesByTld
+  }
+
+  /** The scheme a served name is shown with: its own for an address, its protocol's display scheme for a top-level-domain name, if it declares one. */
+  private shownScheme (served: ServedName): string | undefined {
+    return served.namespace.endsWith(':') ? served.namespace.slice(0, -1) : this.displaySchemesByTld.get(served.namespace.slice(1))
   }
 
   /** Whether `scheme`, lowercase and without its colon, is a protocol's address scheme. */
@@ -95,10 +111,17 @@ export class ProtocolAddresses {
     return label === undefined ? undefined : `https://${label}.${scheme}.${ADDRESS_SUFFIX}`
   }
 
+  /** `vitalik.eth` is a top-level-domain name's own origin; undefined for any other name. */
+  nameOrigin (name: string): string | undefined {
+    const served = this.servedName(name)
+    return served?.namespace.startsWith('.') === true ? `https://${served.name}` : undefined
+  }
+
   /**
-   * A typed or linked `ipfs://<name>/<path>`, as the URL to load: the
-   * scheme's endpoint, which redirects to the origin of the name's canonical
-   * spelling. Undefined for any input that is not a registered scheme's address.
+   * A typed or linked `ipfs://<name>/<path>`, as the URL to load: a
+   * top-level-domain name's own origin, or else the scheme's endpoint, which
+   * redirects to the origin of the name's canonical spelling. Undefined for
+   * any input that is not a registered scheme's address.
    */
   servedUrl (input: string): string | undefined {
     const match = ADDRESS.exec(input.trim())
@@ -106,8 +129,9 @@ export class ProtocolAddresses {
     const [, scheme = '', name = '', rest = ''] = match
     if (!this.schemes.has(scheme.toLowerCase()) || !ADDRESS_NAME.test(name)) return undefined
     const path = rest.startsWith('/') ? rest : `/${rest}`
+    const origin = this.nameOrigin(name) ?? `https://${scheme.toLowerCase()}.${ADDRESS_SUFFIX}/${name}`
     try {
-      return new URL(`https://${scheme.toLowerCase()}.${ADDRESS_SUFFIX}/${name}${path}`).toString()
+      return new URL(`${origin}${path}`).toString()
     } catch {
       return undefined
     }
@@ -121,10 +145,20 @@ export class ProtocolAddresses {
     } catch {
       return url
     }
-    if (parsed.protocol !== 'https:' || parsed.port !== '' || parsed.username !== '' || parsed.password !== '') return url
+    // Userinfo shown verbatim lets `https://accounts.google.com@evil.example/`
+    // read, at a glance, as the first host -- stripped from what this returns
+    // whatever else it does with the URL below. Only the display text changes:
+    // nothing here touches the URL a tab actually navigates or reloads.
+    if (parsed.username !== '' || parsed.password !== '') {
+      parsed.username = ''
+      parsed.password = ''
+      url = parsed.href
+    }
+    if (parsed.protocol !== 'https:' || parsed.port !== '') return url
     const tail = `${parsed.search}${parsed.hash}`
     const served = this.servedName(parsed.hostname)
-    if (served?.namespace.endsWith(':') === true) return `${served.namespace}//${served.name}${parsed.pathname}${tail}`
+    const shown = served === undefined ? undefined : this.shownScheme(served)
+    if (served !== undefined && shown !== undefined) return `${shown}://${served.name}${parsed.pathname}${tail}`
     const scheme = this.schemeEndpoint(parsed.hostname)
     const endpoint = /^\/([^/]+)(\/.*)?$/.exec(parsed.pathname)
     if (scheme === undefined || endpoint === null) return url
@@ -142,6 +176,7 @@ export class ProtocolAddresses {
     }
     if (parsed.protocol !== 'https:' || parsed.port !== '') return origin
     const served = this.servedName(parsed.hostname)
-    return served?.namespace.endsWith(':') === true ? `${served.namespace}//${served.name}` : origin
+    const shown = served === undefined ? undefined : this.shownScheme(served)
+    return served === undefined || shown === undefined ? origin : `${shown}://${served.name}`
   }
 }

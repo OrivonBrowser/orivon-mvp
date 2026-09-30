@@ -232,8 +232,10 @@ detail the implementation turns on.
   ([platform page](https://doc.rust-lang.org/rustc/platform-support/wasm32-wasip2.html),
   [std net dispatcher](https://github.com/rust-lang/rust/blob/master/library/std/src/sys/net/connection/mod.rs)).
   `wasm32-wasip1` cannot spawn threads or dial; `wasm32-wasip1-threads` has threads and no
-  networking. So a Rust program that blocks on `TcpStream` compiles to wasip2 and runs against a
-  `wasi:sockets` host; whether a tokio program does is not verified here.
+  networking. So a Rust program compiles to wasip2 and runs against a `wasi:sockets` host, blocking
+  on `TcpStream` or on tokio's current-thread runtime over mio: both run against Orivon's host
+  (`src/shim/wasi-p2/tests/std-program.test.ts` and `tokio-program.test.ts`). tokio refuses its
+  `net` feature on WebAssembly unless built with `--cfg tokio_unstable`.
 - **Go**: `GOOS=wasip1` and `GOOS=js` share a fake `net` "intended to allow tests of other
   packages to pass"; there is no `wasip2` port (issue open, backlog). TinyGo supports wasip2, and
   whether its separate `net` port dials real sockets there is not stated
@@ -278,7 +280,7 @@ Table 5. "Runs today" means L0 covers it and no work here is needed.
 | Tuta, Notesnook, Logseq, TriliumNext, Joplin (SQLite or SQLCipher in main) | `wa-sqlite` / `sql.js` / `sqlite3-multiple-ciphers` builds exist | L0, plus a **`wa-sqlite` VFS over `orivon.fs`** written once for the cluster (wa-sqlite is believed to ship Asyncify and JSPI builds that allow an async VFS; **unverified here**) | Cheapest real win adjacent to this work; a bridge-side adapter, not a host |
 | Ente Photos (ML N-API, ffmpeg), Joplin (ONNX) | `onnxruntime-web`, `ffmpeg.wasm` | L0 single-threaded; **L3 for their threaded builds** | L3 is what makes these fast enough |
 | Firefly (`@iota/sdk` N-API) | Upstream publishes a wasm-bindgen SDK build (**unverified here**) | L0 in the bridge | Recon first |
-| Zingo PC (`zingolib` Rust N-API, tokio, TLS to lightwalletd) | None published | Would need upstream to build wasip2 without tokio | Not a target through WASM |
+| Zingo PC (`zingolib` Rust N-API, tokio, TLS to lightwalletd) | None published | Would need an upstream wasip2 build on tokio's current-thread runtime, and an addon that opens sockets, which Orivon does not load yet | Not a target through WASM |
 | Session, Signal (native protocol cores) | None published | n/a | Not a target, as listed |
 | Qt-for-WebAssembly builds (Monero GUI is Qt, an official wasm build is **not known** to exist) | Emscripten sockets over WebSocket | L2 adapter (§5.8) + L3 | A spike, not a claim |
 | Bisq, Sparrow (JavaFX), Wasabi (.NET), Electrum (PyQt) | Runtime-in-WASM only | L4 | **Not reachable** (§3.6) |

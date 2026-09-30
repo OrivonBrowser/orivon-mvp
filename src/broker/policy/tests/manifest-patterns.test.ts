@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Capabilities } from '../../../contracts/index.js'
-import { patternSetFromCapabilities, withoutSwitchedOffCapabilities } from '../manifest-patterns.js'
+import { patternSetFromCapabilities, widensInvisibleLimits, withoutSwitchedOffCapabilities } from '../manifest-patterns.js'
 
 // update.ts's PatternSet convention (its own header): a capability KIND
 // present with an EMPTY array means "requested, carries no patterns" (fs,
@@ -145,5 +145,38 @@ describe('withoutSwitchedOffCapabilities', () => {
   it('drops nothing when nothing is declined', () => {
     const declared = { 'tcp.connect': ['api.example.com:443'] }
     expect(withoutSwitchedOffCapabilities(declared, {}, [])).toEqual(declared)
+  })
+})
+
+// The three fields patternSetFromCapabilities can only mark as present, never
+// carry a value for -- id.curves, fs.quotaBytes, net.concurrentSockets -- so
+// decideUpdate's own PatternSet-based widening check cannot see one of them
+// grow. widensInvisibleLimits is the separate check loader/index.ts folds
+// in alongside decideUpdate for exactly that reason.
+describe('widensInvisibleLimits', () => {
+  it('is true when a new curve is added to id.curves', () => {
+    expect(widensInvisibleLimits({ id: { curves: ['secp256k1'] } }, { id: { curves: ['secp256k1', 'P-256'] } })).toBe(true)
+  })
+
+  it('is false when id.curves is unchanged or shrinks', () => {
+    expect(widensInvisibleLimits({ id: { curves: ['secp256k1', 'P-256'] } }, { id: { curves: ['secp256k1', 'P-256'] } })).toBe(false)
+    expect(widensInvisibleLimits({ id: { curves: ['secp256k1', 'P-256'] } }, { id: { curves: ['secp256k1'] } })).toBe(false)
+  })
+
+  it('is true when fs.quotaBytes grows', () => {
+    expect(widensInvisibleLimits({ fs: { quotaBytes: 1024 } }, { fs: { quotaBytes: 2048 } })).toBe(true)
+  })
+
+  it('is false when fs.quotaBytes shrinks, or was never declared (unlimited)', () => {
+    expect(widensInvisibleLimits({ fs: { quotaBytes: 2048 } }, { fs: { quotaBytes: 1024 } })).toBe(false)
+    expect(widensInvisibleLimits({ fs: {} }, { fs: { quotaBytes: Number.MAX_SAFE_INTEGER } })).toBe(false)
+  })
+
+  it('is true when net.concurrentSockets grows past the default', () => {
+    expect(widensInvisibleLimits({ net: {} }, { net: { concurrentSockets: 100_000 } })).toBe(true)
+  })
+
+  it('is false for a fresh manifest with none of the three fields declared', () => {
+    expect(widensInvisibleLimits(undefined, {})).toBe(false)
   })
 })

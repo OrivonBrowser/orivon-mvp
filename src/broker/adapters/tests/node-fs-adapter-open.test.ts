@@ -2,7 +2,7 @@ import { statSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { nodeFs } from '../node-fs-adapter.js'
 
 // `nodeFs(...).open` -- the real fd-backed half of orivon.fs.open
@@ -72,6 +72,35 @@ describe('nodeFs(...).open -- positional read/write, no implicit cursor', () => 
     const back = await opened.read({ position: 0, length: 10 })
 
     expect(back.byteLength).toBe(0)
+    await opened.destroy('closed')
+  })
+
+  it('allocates only what the file can return, not the raw `length` a caller asks for', async () => {
+    // A page names `length`, never bytes of its own -- there is nothing an
+    // app can send here to make this allocation large; only a NUMBER far
+    // past what the file actually holds. Clamping it before `Buffer.alloc`
+    // (not after) is the fix: allocating the full amount and only then
+    // discovering how much of it was real would have already paid the cost
+    // this exists to avoid.
+    const fs = await tempRoot()
+    const path = join(fs.rootFor(APP), 'small.bin')
+    const opened = await fs.open(path, 'w+')
+    await opened.write({ position: 0, data: new Uint8Array([1, 2, 3]) })
+
+    const requested: number[] = []
+    const realAlloc = Buffer.alloc.bind(Buffer)
+    const spy = vi.spyOn(Buffer, 'alloc').mockImplementation(((size: number, ...rest: unknown[]) => {
+      requested.push(size)
+      return realAlloc(size, ...(rest as []))
+    }) as typeof Buffer.alloc)
+    try {
+      const HUGE = 2 ** 31 - 1
+      const back = await opened.read({ position: 0, length: HUGE })
+      expect(Array.from(back)).toEqual([1, 2, 3])
+      expect(requested).toEqual([3]) // clamped to the file's own 3 bytes, never HUGE
+    } finally {
+      spy.mockRestore()
+    }
     await opened.destroy('closed')
   })
 })

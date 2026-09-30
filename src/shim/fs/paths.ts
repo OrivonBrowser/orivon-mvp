@@ -9,6 +9,7 @@ import { isAbsolute, normalize } from 'path'
 import { getOrivon } from '../orivon-global.js'
 import { toNodeError } from '../node-errors.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
+import { syncFs } from './sync-orivon.js'
 
 export type PathLike = string | Uint8Array | URL
 
@@ -20,7 +21,9 @@ export interface NodeFsError extends Error {
 }
 
 /** Linux values, as Node reports them on the platform the broker runs on. */
-const ERRNO: Readonly<Record<string, number>> = { ENOENT: -2, EBADF: -9, EACCES: -13, EEXIST: -17, EISDIR: -21, EINVAL: -22 }
+const ERRNO: Readonly<Record<string, number>> = {
+  ENOENT: -2, EBADF: -9, EACCES: -13, EEXIST: -17, ENOTDIR: -20, EISDIR: -21, EINVAL: -22, ENOTEMPTY: -39
+}
 
 /** A Node-shaped fs error: `EISDIR: illegal operation on a directory, read`, with `code`, `errno`, `syscall` and, when there is one, `path`. */
 export function fsError (code: string, description: string, syscall: string, path?: string): NodeFsError {
@@ -77,10 +80,11 @@ export function toConfinedPath (path: PathLike, syscall: string): string {
   throw fsError('EACCES', `permission denied (outside this app's files, which live under ${VIRTUAL_ROOT})`, syscall, text)
 }
 
-const TMPDIR_CONFINED = VIRTUAL_TMPDIR.slice(VIRTUAL_ROOT.length + 1)
+export const TMPDIR_CONFINED = VIRTUAL_TMPDIR.slice(VIRTUAL_ROOT.length + 1)
 let tmpdirReady: Promise<void> | undefined
+let tmpdirReadySync = false
 
-function isInTmpdir (path: PathLike): boolean {
+export function isInTmpdir (path: PathLike): boolean {
   const resolved = normalized(pathText(path))
   return resolved === VIRTUAL_TMPDIR || resolved.startsWith(`${VIRTUAL_TMPDIR}/`)
 }
@@ -96,6 +100,28 @@ export async function confine (path: PathLike, syscall: string): Promise<string>
   if (isInTmpdir(path)) {
     tmpdirReady ??= getOrivon().fs.mkdir(TMPDIR_CONFINED, { recursive: true }).catch(() => { tmpdirReady = undefined })
     await tmpdirReady
+  }
+  return confined
+}
+
+/**
+ * confine's synchronous twin, over the Worker's synchronous fs twin instead
+ * of a Promise: every path-based *Sync export (fs/core-sync.ts, and
+ * fs/handle.ts's SyncNodeFileHandle.open) calls this, not toConfinedPath
+ * directly, so a tmpdir path made through any of them gets the same
+ * first-use bootstrap the async do*() functions get from confine() above --
+ * `api` names the call for `syncFs`'s own refusal outside a Worker, where
+ * the mkdir attempt below throws and is swallowed the same "best effort" way.
+ */
+export function confineSync (path: PathLike, syscall: string, api: string): string {
+  const confined = toConfinedPath(path, syscall)
+  if (!tmpdirReadySync && isInTmpdir(path)) {
+    try {
+      syncFs(api).mkdir(TMPDIR_CONFINED, { recursive: true })
+      tmpdirReadySync = true
+    } catch {
+      // Best effort, same as confine()'s async twin: the call that needed the directory reports its own failure, and the next one tries again.
+    }
   }
   return confined
 }

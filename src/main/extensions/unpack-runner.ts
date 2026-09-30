@@ -1,12 +1,13 @@
-// Extracts a `.zip`/unpacked-`.crx` archive into a fresh directory under
-// `<userData>/extensions/` -- I/O (`-runner.ts`, src/main/README.md's
-// suffix rule), called by install-runner.ts. checkZipEntryPath below is the
-// pure half: every path decision an untrusted zip entry can influence,
-// factored out so it is unit-testable without touching a real filesystem.
+// Materializes an extension's loaded copy on disk, from a `.zip`/unpacked-
+// `.crx` archive OR an unpacked folder, under `<userData>/extensions/` --
+// I/O (`-runner.ts`, src/main/README.md's suffix rule), called by
+// install-runner.ts. checkZipEntryPath below is the pure half: every path
+// decision an untrusted zip entry can influence, factored out so it is
+// unit-testable without touching a real filesystem.
 
 import AdmZip from 'adm-zip'
-import { mkdirSync, renameSync, rmSync } from 'node:fs'
-import { dirname, resolve, sep as pathSep } from 'node:path'
+import { cpSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve, sep as pathSep } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
 /** Generous for any real extension, bounded so a zip bomb's entry count or
@@ -65,7 +66,7 @@ export interface UnpackedZip {
  * would leave a half-written folder behind, so the whole archive is
  * validated first, then written to `<targetDir>.tmp-<random>` and renamed
  * into place, the same write-then-rename shape
- * `src/broker/grants/node-ledger-storage.ts`'s `writeFileAtomic` uses for
+ * `src/broker/adapters/atomic-write.ts`'s `writeFileAtomic` uses for
  * the identical reason: a reader (the extensions subsystem, on the next
  * boot) must only ever see the old state or the new one, never a partial
  * write caught mid-extraction by a crash.
@@ -102,4 +103,76 @@ export function unpackZip (zipBytes: Buffer, targetDir: string): UnpackedZip {
     throw error
   }
   return { path: targetDir }
+}
+
+/** True when `raw` is a plain object, never an array or `null` --
+ * `manifest.json`'s own top-level shape, whichever way it was read
+ * (straight off disk, or out of an archive's own bytes below). */
+export function readManifestObject (raw: unknown, context: string): Record<string, unknown> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(`${context}: manifest.json is not an object`)
+  }
+  return raw as Record<string, unknown>
+}
+
+/** `manifest.json`'s bytes read straight out of a zip archive, without
+ * extracting anything else to disk -- install-runner.ts's `.crx`/`.zip`
+ * paths both need to read the manifest BEFORE they know the final
+ * `<slot>/<version>/` target directory `unpackZip` writes to. */
+export function peekManifest (archive: Buffer): Record<string, unknown> {
+  const zip = new AdmZip(archive)
+  const entry = zip.getEntry('manifest.json')
+  if (entry === null) throw new Error('archive has no manifest.json')
+  const parsed: unknown = JSON.parse(entry.getData().toString('utf8'))
+  return readManifestObject(parsed, 'archive')
+}
+
+export function writeManifestOver (dir: string, manifestJson: string): void {
+  writeFileSync(join(dir, 'manifest.json'), manifestJson)
+}
+
+/**
+ * Refuses `dir` (recursively) if any entry is a symlink, or is neither a
+ * regular file nor a directory -- `cpSync`'s own `recursive` copy follows a
+ * symlink wherever it points, including outside `dir` entirely, and
+ * Electron's `loadExtension` follows one just as happily once the copy
+ * lands under `chrome-extension://<id>/`; unlike this file's own
+ * `checkZipEntryPath`, which only ever sees the archive's own declared
+ * entries, this walks the real filesystem, so a symlink planted by
+ * something else that ran before this install started is refused too.
+ * Every entry is checked before anything is copied, matching
+ * `checkZipEntryPath`'s own error shape.
+ */
+function assertNoSymlinks (dir: string): void {
+  for (const name of readdirSync(dir)) {
+    const entryPath = join(dir, name)
+    const stat = lstatSync(entryPath)
+    if (stat.isSymbolicLink()) throw new Error(`refused unpacked entry: ${entryPath}: symlink entries are refused`)
+    if (stat.isDirectory()) {
+      assertNoSymlinks(entryPath)
+    } else if (!stat.isFile()) {
+      throw new Error(`refused unpacked entry: ${entryPath}: not a regular file or directory`)
+    }
+  }
+}
+
+/** Writes `sourceDir`'s contents to `targetDir`, tmp-directory-then-rename
+ * like `unpackZip` above: a copy that dies partway must never leave
+ * `targetDir` half-written for the next boot to load. `manifestJson`
+ * replaces whatever `manifest.json` the source folder had.
+ * `assertNoSymlinks` runs before any byte is copied, the same validate-
+ * everything-first-then-write order `unpackZip` uses. */
+export function writeFolderCopy (sourceDir: string, targetDir: string, manifestJson: string): void {
+  assertNoSymlinks(sourceDir)
+  mkdirSync(dirname(targetDir), { recursive: true })
+  const tmpDir = `${targetDir}.tmp-${randomBytes(6).toString('hex')}`
+  try {
+    cpSync(sourceDir, tmpDir, { recursive: true })
+    assertNoSymlinks(tmpDir) // the source can change between the check above and the copy
+    writeManifestOver(tmpDir, manifestJson)
+    renameSync(tmpDir, targetDir)
+  } catch (error) {
+    rmSync(tmpDir, { recursive: true, force: true })
+    throw error
+  }
 }

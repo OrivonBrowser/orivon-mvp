@@ -26,7 +26,9 @@ export type {
 export function installOrivon (
   bridge: MainWorldBridge,
   limits: OrivonLimits,
-  target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown }
+  target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown },
+  /** False only where the object never enters a main world (the child host's preload): there is no page frame to attribute a call to, and no script but the preload's own can reach it. README.md's Design notes. */
+  attributeCallers = true
 ): void {
   /** Builds a REAL `Error`, unlike ../orivon-error.ts's isolated-world twin -- see README.md's Design notes for why, and why this file cannot import that one either way. */
   function toOrivonError (
@@ -324,8 +326,7 @@ export function installOrivon (
   const { defineProperty: defineOwn, getOwnPropertyDescriptor: ownDescriptor, apply: applyOwn, getPrototypeOf: getProtoOf } = Reflect
   const mapOwn = Array.prototype.map
   const someOwn = Array.prototype.some
-  const { indexOf: indexOfOwn, startsWith: startsWithOwn, lastIndexOf: lastIndexOfOwn, slice: sliceOwn } = String.prototype
-  const execOwn = RegExp.prototype.exec
+  const { indexOf: indexOfOwn, startsWith: startsWithOwn } = String.prototype
   function hasSource (text: unknown, needles: readonly string[]): boolean {
     return typeof text === 'string' && applyOwn(someOwn, needles, [(needle: string) => applyOwn(indexOfOwn, text, [needle]) !== -1])
   }
@@ -334,23 +335,10 @@ export function installOrivon (
   function callerIsRefused (frames: readonly CallerFrame[]): boolean {
     const isExtension = (f: CallerFrame): boolean =>
       hasSource(f.fileName, ['chrome-extension://']) || hasSource(f.scriptNameOrSourceURL, ['chrome-extension://']) || hasSource(f.evalOrigin, ['chrome-extension://'])
-    // fileName/eval-origin only, STARTS-WITH -- never scriptNameOrSourceURL (spoofable via `//# sourceURL=...`). README.md's Design notes.
+    // A real script's fileName only, STARTS-WITH -- never scriptNameOrSourceURL or an eval origin, both of which a `//# sourceURL=...` comment rewrites. README.md's Design notes.
     const startsWithAny = (text: unknown, prefixes: readonly string[]): boolean =>
       typeof text === 'string' && applyOwn(someOwn, prefixes, [(prefix: string) => applyOwn(startsWithOwn, text, [prefix])])
-    // V8 nests a repeated eval origin left to right -- the LAST '(' up to its next ')' is always the innermost, real-script URL.
-    const innermostEvalScriptUrl = (evalOrigin: string): string | undefined => {
-      const openIndex = applyOwn(lastIndexOfOwn, evalOrigin, ['('])
-      if (openIndex === -1) return undefined
-      const closeIndex = applyOwn(indexOfOwn, evalOrigin, [')', openIndex])
-      if (closeIndex === -1) return undefined
-      const match = applyOwn(execOwn, /^(.*):\d+:\d+$/, [applyOwn(sliceOwn, evalOrigin, [openIndex + 1, closeIndex])])
-      return match === null ? undefined : match[1]
-    }
-    const isPage = (f: CallerFrame): boolean => {
-      const p = ['http://', 'https://', 'blob:http://', 'blob:https://']
-      if (startsWithAny(f.fileName, p)) return true
-      return typeof f.evalOrigin === 'string' && startsWithAny(innermostEvalScriptUrl(f.evalOrigin), p)
-    }
+    const isPage = (f: CallerFrame): boolean => startsWithAny(f.fileName, ['http://', 'https://', 'blob:http://', 'blob:https://'])
     if (applyOwn(someOwn, frames, [isExtension])) return true
     return !applyOwn(someOwn, frames, [isPage])
   }
@@ -413,6 +401,7 @@ export function installOrivon (
   function refusal (): Error & { code: OrivonErrorCode } { return toOrivonError('denied', { message: "orivon: refused -- the caller could not be attributed to this page's own script" }) }
   /** Wraps one page-callable leaf: `sync` (`fs.readFileSync` alone) throws on refusal, matching its own never-a-Promise shape; every other method rejects. Internal callers reach `fn` directly (`netConnectImpl` below), never through `wrapped`. */
   function guarded<F extends (...args: never[]) => unknown> (fn: F, sync = false): F {
+    if (!attributeCallers) return fn
     function wrapped (...args: unknown[]): unknown {
       const captured = captureCaller(wrapped)
       if (captured.tampered || callerIsRefused(captured.frames)) {

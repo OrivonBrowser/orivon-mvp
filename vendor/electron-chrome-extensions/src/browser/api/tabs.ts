@@ -34,7 +34,7 @@ const SENSITIVE_TAB_FIELDS = ['url', 'pendingUrl', 'title', 'favIconUrl'] as con
  * SENSITIVE_TAB_FIELDS removed -- never a mutation in place, since
  * `details` can be the shared `tabDetailsCache` entry every extension's
  * call reads from. */
-function filterTabDetails(
+export function filterTabDetails(
   event: ExtensionEvent,
   details: Partial<chrome.tabs.Tab> | undefined,
 ): Partial<chrome.tabs.Tab> | undefined {
@@ -43,6 +43,22 @@ function filterTabDetails(
   const filtered = { ...details }
   for (const field of SENSITIVE_TAB_FIELDS) delete (filtered as any)[field]
   return filtered
+}
+
+/**
+ * Orivon patch: a second, stricter predicate for chrome.tabs.insertCSS --
+ * Chrome only allows a CSS injection into a tab the extension has HOST
+ * access to (a matching host_permissions entry), never merely the `tabs`
+ * permission on its own (that permission only ever governs the four
+ * SENSITIVE_TAB_FIELDS above). Unset, insertCSS runs for any extension
+ * regardless of permissions. Set once, before the first insertCSS call
+ * (extension-host.ts).
+ */
+type TabHostAccessCheck = (manifest: unknown, url: string | undefined) => boolean
+let gTabHostAccessCheck: TabHostAccessCheck | undefined
+
+export function setTabHostAccessCheck(check: TabHostAccessCheck): void {
+  gTabHostAccessCheck = check
 }
 
 export class TabsAPI {
@@ -67,7 +83,21 @@ export class TabsAPI {
     this.ctx.store.on('tab-added', this.observeTab.bind(this))
   }
 
+  /** Every webContents this instance has already attached its own
+   * update/favicon/destroyed listeners to -- 'tab-added' fires again for
+   * the SAME webContents when a tab is handed to another window (takeTab/
+   * giveTab) or a one-tab window's view is replaced (removeTab then addTab
+   * of the same object, extension-host.ts's own doc on `trackedTabs`);
+   * without this guard, observeTab would attach a second, independent
+   * listener set the 'destroyed' handler below never cleans up (it only
+   * fires once, on the FIRST set, and only when the webContents is
+   * actually destroyed -- never on the intervening remove+re-add). */
+  private observedTabs = new WeakSet<TabContents>()
+
   private observeTab(tab: TabContents) {
+    if (this.observedTabs.has(tab)) return
+    this.observedTabs.add(tab)
+
     const tabId = tab.id
 
     const updateEvents = [
@@ -107,6 +137,7 @@ export class TabsAPI {
         tab.off(eventName as any, updateHandler)
       })
       tab.off('page-favicon-updated', faviconHandler)
+      this.observedTabs.delete(tab)
 
       this.ctx.store.removeTab(tab)
       this.onRemoved(tabId)
@@ -203,6 +234,13 @@ export class TabsAPI {
   private insertCSS(event: ExtensionEvent, tabId: number, details: chrome.tabs.InjectDetails) {
     const tab = this.ctx.store.getTabById(tabId)
     if (!tab) return
+
+    // Orivon patch: host access only -- the `tabs` permission alone (which
+    // gTabUrlAccessCheck above also accepts) never authorizes an injection,
+    // only visibility of url/title/favIconUrl (Chrome's own rule).
+    if (gTabHostAccessCheck && !gTabHostAccessCheck(event.extension.manifest, tab.getURL())) {
+      throw new Error('tabs.insertCSS requires host access to the tab\'s URL')
+    }
 
     // TODO: move to webFrame in renderer?
     if (details.code) {

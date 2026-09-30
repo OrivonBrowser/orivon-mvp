@@ -3,7 +3,7 @@
 // whether an extension's declared host_permissions/permissions/
 // content_scripts[].matches (extension-manifest.ts's own `hostPatterns`)
 // cover a given URL. `src/main/extensions/README.md`'s Design notes says
-// where this is wired in: chrome.cookies and chrome.tabs both gate on it now.
+// where this is wired in: chrome.cookies and chrome.tabs both gate on it.
 //
 // Pure (this directory's own README): no electron, no Node I/O. Refuses an
 // unparsable pattern or URL rather than guessing -- this file's own stance
@@ -24,14 +24,13 @@ function parsePattern (pattern: string): ParsedPattern | undefined {
   return { scheme: match[1] ?? '', host: match[2] ?? '', path: match[3] ?? '' }
 }
 
-/** Schemes Chrome's own `<all_urls>` covers -- ws/wss and every other
- * scheme are deliberately excluded, the same allowlist-not-denylist stance
- * `origin.ts`'s `ORIGIN_BEARING_SCHEMES` documents for itself. Chrome's own
- * grammar, kept faithfully, `file` included -- a caller needing Orivon's
- * own narrower "no extension ever gets file access" rule applies it on top
- * of this matcher instead (`../../main/extensions/README.md`'s
- * "allowFileAccess is never true" entry names both callers that do). */
-const ALL_URLS_SCHEMES = new Set(['http', 'https', 'file', 'ftp'])
+/** Schemes Chrome's own `<all_urls>` covers -- `file` is deliberately left
+ * out, along with ws/wss and every other scheme (the same allowlist-not-
+ * denylist stance `origin.ts`'s `ORIGIN_BEARING_SCHEMES` documents for
+ * itself): no installed extension is ever granted file access, so a `file`
+ * URL, such as the dashboard's own install-path URL, must stay outside what
+ * an `<all_urls>` extension can see. */
+const ALL_URLS_SCHEMES = new Set(['http', 'https', 'ftp'])
 
 function schemeMatches (patternScheme: string, urlScheme: string, isAllUrls: boolean): boolean {
   if (isAllUrls) return ALL_URLS_SCHEMES.has(urlScheme)
@@ -49,20 +48,36 @@ function hostMatches (patternHost: string, urlHost: string): boolean {
   return patternHost.toLowerCase() === lowerUrlHost
 }
 
-/** `glob`'s `*` wildcards, translated to a regex that matches the whole
- * string -- every other regex-special character is escaped literally
- * first, so a path segment is never itself read as a pattern. `?` is one of
- * those: a match-pattern path matches the URL's path plus its query string
- * literally, with `*` the only wildcard (MDN's match-pattern reference), so
- * a `?` in a pattern must stay a literal character rather than become
- * regex's own "zero-or-one" quantifier on whatever precedes it. */
-function globToRegExp (glob: string): RegExp {
-  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
-  return new RegExp(`^${escaped}$`)
+/** `glob`'s `*` wildcards matched against `text` in linear time: no other
+ * character is a wildcard (MDN's match-pattern reference says `*` is the
+ * only one -- a `?` in a pattern stays the literal query-string separator
+ * it usually is, never regex's "zero-or-one" quantifier), so this never
+ * builds a regex at all. Split on `*`: the first piece must prefix `text`,
+ * the last must suffix it, and every piece between is found with a single
+ * forward `indexOf` scan that never backtracks -- unlike `.*` chained
+ * through `RegExp`, whose backtracking on a pattern with many `*`s against
+ * a long, mostly-matching `text` is exponential in the number of `*`s. */
+function globMatches (glob: string, text: string): boolean {
+  const parts = glob.split('*')
+  if (parts.length === 1) return glob === text
+  const first = parts[0] as string
+  const last = parts[parts.length - 1] as string
+  if (!text.startsWith(first) || !text.endsWith(last)) return false
+  const suffixStart = text.length - last.length
+  let pos = first.length
+  if (pos > suffixStart) return false
+  for (let i = 1; i < parts.length - 1; i++) {
+    const piece = parts[i] as string
+    if (piece.length === 0) continue
+    const found = text.indexOf(piece, pos)
+    if (found === -1 || found + piece.length > suffixStart) return false
+    pos = found + piece.length
+  }
+  return true
 }
 
 function pathMatches (patternPath: string, urlPath: string): boolean {
-  return globToRegExp(patternPath).test(urlPath)
+  return globMatches(patternPath, urlPath)
 }
 
 /** True when `pattern` (Chrome match-pattern grammar, or `<all_urls>`)

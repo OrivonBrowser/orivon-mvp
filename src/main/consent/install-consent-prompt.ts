@@ -14,13 +14,19 @@
 // own doc below for the staged sequence this builds instead.
 
 import { dialog } from 'electron'
-import type { MessageBoxOptions } from 'electron'
+import type { BaseWindow, MessageBoxOptions } from 'electron'
 import { describeInstallConsent } from './grant-prompt-render.js'
 import { describeCapabilityChoice } from './grant-prompt-choice.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from './install-consent.js'
 import type { CapabilityKind } from '../../contracts/index.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
+import type { DialogCaller } from './request-grant.js'
+
+/** The window to parent a dialog to, given a `DialogCaller`, or undefined for neither -- one place for the cast every `create*Prompt` below needs from `DialogCaller.window()`'s deliberately opaque `unknown` back to a real Electron type. */
+function parentWindowOf (caller?: DialogCaller): BaseWindow | undefined {
+  return caller?.window() as BaseWindow | undefined
+}
 
 /** `levelOverrideFor` defaults to never overriding, so an unwired caller
  * (and every existing test) keeps warning exactly as before -- the real
@@ -29,7 +35,7 @@ import type { ScoreLevel } from '../../trust/website-level.js'
 type LevelOverrideFor = (origin: string) => ScoreLevel | undefined
 const NO_OVERRIDE: LevelOverrideFor = () => undefined
 
-/** N2's disclosure (docs/planning/extensions-exploration.md) -- the same
+/** The extensions disclosure (docs/planning/extensions-exploration.md) -- the same
  * shape `./request-grant-prompt.ts`'s own `createGrantPrompt` takes, wired
  * to the real `../extensions/site-reach-runner.js` at the same place
  * (`../install/app-install-subsystem.ts`), and defaults to always naming
@@ -39,8 +45,14 @@ const NO_EXTENSIONS: ExtensionsOnSite = async () => []
 
 /** Builds the real InstallConsentPrompt ./app-install-subsystem.ts wires in. */
 export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE, extensionsOnSite: ExtensionsOnSite = NO_EXTENSIONS): InstallConsentPrompt {
-  return async (origin, manifest, capabilities, held = []) => {
+  return async (origin, manifest, capabilities, held = [], caller) => {
     const names = await extensionsOnSite(origin)
+    // The tab that reported this hint may already have navigated away, or
+    // closed, by the time this actually runs (the lookup above included) --
+    // never show a dialog for a page the person is no longer looking at
+    // (request-grant.ts's own `DialogCaller` doc).
+    if (caller !== undefined && !caller.stillOn(origin)) return false
+
     const content = describeInstallConsent(origin, manifest, capabilities, held, levelOverrideFor(origin), names)
     const options: MessageBoxOptions = {
       type: content.warning ? 'warning' : 'question',
@@ -51,7 +63,8 @@ export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor =
       message: content.message,
       detail: content.detail
     }
-    const { response } = await dialog.showMessageBox(options)
+    const parent = parentWindowOf(caller)
+    const { response } = parent === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options)
     return response === 0
   }
 }
@@ -81,11 +94,17 @@ const DENY_ALL = 2
  * whatever this SAME sequence already decided for the others.
  */
 export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE, extensionsOnSite: ExtensionsOnSite = NO_EXTENSIONS): PerCapabilityConsentPrompt {
-  return async (origin, manifest, capabilities) => {
+  return async (origin, manifest, capabilities, caller) => {
     const level = levelOverrideFor(origin)
     const names = await extensionsOnSite(origin)
+    // Checked before the FIRST screen of this staged sequence, after the
+    // lookup above -- the whole sequence never starts for a page the person
+    // is no longer looking at.
+    if (caller !== undefined && !caller.stillOn(origin)) return []
+
+    const parent = parentWindowOf(caller)
     const overviewContent = describeInstallConsent(origin, manifest, capabilities, [], level, names)
-    const overview = await dialog.showMessageBox({
+    const overviewOptions: MessageBoxOptions = {
       type: overviewContent.warning ? 'warning' : 'question',
       buttons: OVERVIEW_BUTTONS,
       defaultId: DENY_ALL,
@@ -93,7 +112,8 @@ export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrid
       title: overviewContent.title,
       message: overviewContent.message,
       detail: overviewContent.detail
-    })
+    }
+    const overview = parent === undefined ? await dialog.showMessageBox(overviewOptions) : await dialog.showMessageBox(parent, overviewOptions)
     if (overview.response === ALLOW_ALL) return capabilities
     if (overview.response === DENY_ALL) return []
 
@@ -102,8 +122,12 @@ export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrid
     for (let index = 0; index < capabilities.length; index += 1) {
       const capability = capabilities[index]
       if (capability === undefined) continue // unreachable: index stays within capabilities.length
+      // Re-checked before EACH screen: the person can close or navigate the
+      // tab partway through this multi-screen sequence, not only before it
+      // started.
+      if (caller !== undefined && !caller.stillOn(origin)) return []
       const screen = describeCapabilityChoice(origin, manifest, declared, capabilities, index, decided, level)
-      const choice = await dialog.showMessageBox({
+      const screenOptions: MessageBoxOptions = {
         type: screen.warning ? 'warning' : 'question',
         buttons: ['Allow', 'Deny'],
         defaultId: 1,
@@ -111,7 +135,8 @@ export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrid
         title: screen.title,
         message: screen.message,
         detail: screen.detail
-      })
+      }
+      const choice = parent === undefined ? await dialog.showMessageBox(screenOptions) : await dialog.showMessageBox(parent, screenOptions)
       decided.set(capability, choice.response === 0)
     }
     return capabilities.filter((capability) => decided.get(capability) === true)

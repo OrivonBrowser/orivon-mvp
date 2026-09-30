@@ -9,12 +9,19 @@
 // covered without remembering to wire it.
 
 import { app, session as electronSession } from 'electron'
-import type { Session, WebContents } from 'electron'
+import type { Session, WebContents, WebFrameMain } from 'electron'
 import { join } from 'node:path'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { requestPartition, withPartition } from '../verifier/partition.js'
 import { embedPartitionFor, guestRequestAllowed, hardenGuest } from './embed-guard.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
+
+/** Spelled again, not imported: `content-root.ts` lives under `src/loader/`,
+ * which this directory's README forbids depending on -- a shown page is
+ * another site's document, never a pinned bundle. */
+const PARTITION_HEADER = 'x-orivon-partition'
 
 export interface EmbedHost {
   /** The app origin that shows guest `webContentsId`, or undefined for anything that is not a live guest. */
@@ -27,33 +34,16 @@ function embedderOrigin (embedder: WebContents): string | null {
 }
 
 /**
- * The origin `will-attach-webview` admitted, carried to that SAME attach's
- * `did-attach-webview` -- which gets no origin of its own, only the new
- * guest `WebContents`, so it cannot re-derive one. Re-reading
- * `embedderOrigin(contents)` a second time there would trust whatever the
- * embedder's top frame shows AT THAT LATER INSTANT: if it navigated in
- * between, the guest would be hardened (partition, preload) under one
- * origin's grant and then attributed to and governed by another. Queued
- * per embedder, FIFO, because one tab may attach several `<webview>`s
- * whose will/did pairs are not guaranteed not to interleave. An attach
- * that never completes leaves its entry behind, so a new admission for a
- * different origin drops the older ones (the embedder has navigated away
- * from them), and the queue never holds more than `MAX_PENDING` entries.
+ * The app origin behind an embed partition's session, recorded once in
+ * `partitionReady` when the session is first configured. `did-attach-webview`
+ * reads it back from the attached guest's OWN `webContents.session` -- never
+ * from the embedder's top frame at that later instant, which may have
+ * navigated since `will-attach-webview` admitted it -- so a guest is
+ * attributed to the app whose grant hardened the partition it actually ended
+ * up in, order-independent of every other attach in flight on the same or
+ * another tab. See README.md's Design notes for why this holds.
  */
-const pendingEmbedderOrigins = new WeakMap<WebContents, string[]>()
-
-const MAX_PENDING = 32
-
-function queueEmbedderOrigin (embedder: WebContents, origin: string): void {
-  const queue = (pendingEmbedderOrigins.get(embedder) ?? []).filter((queued) => queued === origin)
-  queue.push(origin)
-  pendingEmbedderOrigins.set(embedder, queue.slice(-MAX_PENDING))
-}
-
-/** The next queued origin for `embedder`, or undefined if none is pending (no matching `will-attach-webview` admitted one). */
-function dequeueEmbedderOrigin (embedder: WebContents): string | undefined {
-  return pendingEmbedderOrigins.get(embedder)?.shift()
-}
+const embedSessionOrigins = new WeakMap<Session, string>()
 
 /**
  * `embedSession`'s own resolver, wrapped to `guestRequestAllowed`'s
@@ -87,6 +77,25 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       .then((allowed) => !allowed, () => true)
       .then((cancel) => { callback({ cancel }) })
   })
+  // A shown page reaches the verifier (a `.eth` name, an `ipfs://` address)
+  // the same ordinary way any tab does -- unlike an installed app's own
+  // partition, nothing here intercepts `https` with a `protocol.handle`,
+  // so no redirect-status quirk rules this out (main/verifier/README.md).
+  // Stamped with the SAME rule `installPartitionStamp` applies to the
+  // default session (main/verifier/verifier-subsystem.ts): whatever a page
+  // set on its own request is stripped, then replaced with its top-level
+  // page's own origin, never trusted from the request itself.
+  const routedUrls = BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `https://*.${suffix}/*`)
+  embedSession.webRequest.onBeforeSendHeaders({ urls: routedUrls }, (details, callback) => {
+    let frame: WebFrameMain | null | undefined
+    try {
+      frame = details.frame
+    } catch {
+      frame = undefined
+    }
+    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
+    callback({ requestHeaders: withPartition(details.requestHeaders, PARTITION_HEADER, partition) })
+  })
 }
 
 /** Installs the host: `will-attach-webview` and `did-attach-webview` on every WebContents from now on. */
@@ -98,7 +107,9 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
     const partition = embedPartitionFor(appOrigin)
     if (!configured.has(partition)) {
       configured.add(partition)
-      configureEmbedSession(electronSession.fromPartition(partition), appOrigin, broker)
+      const embedSession = electronSession.fromPartition(partition)
+      embedSessionOrigins.set(embedSession, appOrigin)
+      configureEmbedSession(embedSession, appOrigin, broker)
     }
     return partition
   }
@@ -129,11 +140,10 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
         event.preventDefault()
         return
       }
-      queueEmbedderOrigin(contents, appOrigin)
       hardenGuest(webPreferences, params, { preloadPath, partition: partitionReady(appOrigin), devTools: devModeEnabled() })
     })
     contents.on('did-attach-webview', (_attachEvent, guest) => {
-      const appOrigin = dequeueEmbedderOrigin(contents)
+      const appOrigin = embedSessionOrigins.get(guest.session)
       if (appOrigin === undefined) {
         if (!guest.isDestroyed()) guest.close()
         return
