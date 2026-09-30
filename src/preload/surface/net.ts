@@ -132,14 +132,16 @@ function buildBridgeResult (descriptor: SocketDescriptor, port: PortLike): MainW
 }
 
 /**
- * What `net.udpBind` and `net.listen` send: the port, and the scope only when
- * the app passed one, so the broker's own default applies to an omitted one.
- * Whatever the app passed is forwarded as it is, and the broker refuses a
- * scope that is neither 'local' nor 'network' as 'invalid'.
+ * What `net.udpBind` and `net.listen` send: the app's argument, without a
+ * `scope` key it left undefined, so the broker's own default applies to an
+ * omitted one. Whatever else the app passed, including something that is not
+ * an object at all, is forwarded as it is: the broker refuses a bad argument
+ * or a scope that is neither 'local' nor 'network' as 'invalid'.
  */
-function bindPayload (opts: { port: number, scope?: BindScope }): { port: number, scope?: BindScope } {
-  const { port, scope } = opts
-  return scope === undefined ? { port } : { port, scope }
+function bindPayload (opts: unknown): unknown {
+  if (typeof opts !== 'object' || opts === null || !('scope' in opts) || opts.scope !== undefined) return opts
+  const { scope: _omitted, ...rest } = opts
+  return rest
 }
 
 /**
