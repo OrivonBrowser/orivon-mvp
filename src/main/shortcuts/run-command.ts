@@ -7,6 +7,8 @@ import { closeOthers, closeToRight, duplicateTab, toggleMute, togglePin } from '
 import { toggleBookmarksBar } from '../shell/bookmarks-bar/bar-visibility.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
 import { goHome } from '../shell/home.js'
+import { OMNIBOX_MODULE } from '../omnibox/omnibox-names.js'
+import { sendChromeEvent } from '../shell/shell-events.js'
 import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
@@ -62,7 +64,10 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       chrome.webContents.focus()
       chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'focusAddress' })
       return
-    case 'nav.focusSearch': return
+    case 'nav.focusSearch':
+      chrome.webContents.focus()
+      sendChromeEvent(target, OMNIBOX_MODULE, { type: 'focusSearch' })
+      return
     case 'zoom.in': case 'zoom.out': case 'zoom.reset': {
       const origin = active === undefined ? null : originFromUrl(active.url)
       if (origin === null) return

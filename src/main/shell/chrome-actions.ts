@@ -1,4 +1,5 @@
 import { barFolder, barItems, barMenu, barMove, barOpen } from './bookmarks-bar/bar-actions.js'
+import { omniboxClose, omniboxPick, omniboxQuery, omniboxSelect } from '../omnibox/omnibox-actions.js'
 import { homeOpen } from './actions/home-open.js'
 import { overlayClose, overlayToggle } from './actions/overlay.js'
 import { tabMute } from './actions/tab-mute.js'
@@ -16,6 +17,10 @@ export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'bookmarks.move': barMove,
   'bookmarks.open': barOpen,
   'home.open': homeOpen,
+  'omnibox.close': omniboxClose,
+  'omnibox.pick': omniboxPick,
+  'omnibox.query': omniboxQuery,
+  'omnibox.select': omniboxSelect,
   'overlay.close': overlayClose,
   'overlay.toggle': overlayToggle,
   'tab.mute': tabMute

@@ -23,7 +23,8 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
 
 // Rows whose feature has landed: they run something now, so they carry no pending flag. One id a line.
 const LANDED: readonly string[] = [
-  'bookmarks.toggleBar'
+  'bookmarks.toggleBar',
+  'nav.focusSearch'
 ]
 
 const commandsIn = (entries: readonly MenuEntry[]): string[] => entries.flatMap((entry): string[] => {

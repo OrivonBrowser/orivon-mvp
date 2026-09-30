@@ -18,6 +18,14 @@ export const search: Section = {
       keywords: ['custom', 'own', 'url', 'template', 'searxng'],
       control: { type: 'text', key: 'search.customUrl', placeholder: 'https://search.example/?q=%s' },
       visible: (state) => state.value('search.engine') === 'custom'
+    },
+    {
+      id: 'address-bar-autocomplete',
+      label: 'Complete addresses as I type',
+      help: 'Suggestions come from your history, bookmarks and open tabs on this device.',
+      keywords: ['autocomplete', 'autofill', 'inline', 'suggestions', 'address bar', 'omnibox', 'history'],
+      control: { type: 'toggle', key: 'addressBar.autocomplete' },
+      group: 'Address bar'
     }
   ]
 }

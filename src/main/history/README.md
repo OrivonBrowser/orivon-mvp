@@ -41,6 +41,9 @@ first, so a list is never behind, and quitting flushes it (`DebouncedWriter.flus
 second per tab, and past 100,000 pages the ones visited longest ago go. A write that fails (a full disk, a damaged
 page) is reported and dropped rather than raised: it happens inside event handlers, where a throw ends the browser.
 
+**A typed address is counted behind its visit.** `markTyped` is queued like a visit, and one for a page not yet
+recorded waits up to a minute for it, since the visit is written after the page commits.
+
 **Icons live in a table of their own, by host.** An icon is shared by every page of its site, and it is forgotten
 in the same transaction that forgets the site's last page (`remove`, `removeRange`, `clear` each prune), so clearing
 history leaves no list of sites behind.

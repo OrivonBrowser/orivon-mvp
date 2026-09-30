@@ -73,11 +73,10 @@ describe('the history file schema', () => {
   })
 })
 
-describe('the members the address bar, the History page and the importer will fill', () => {
+describe('the members the History page and the importer will fill', () => {
   it('answer empty until their lane lands, on the file store and on the null store', () => {
     for (const history of [new SqliteHistoryStore(':memory:'), new NullHistoryStore()]) {
       history.record(A, 'A', 1)
-      expect(history.suggest('a', 5)).toEqual([])
       expect(() => { history.markTyped(A) }).not.toThrow()
       expect(() => { history.setFavicon('a.example', 'data:image/png;base64,AA==') }).not.toThrow()
       expect(history.faviconsFor(['a.example'])).toEqual({})
