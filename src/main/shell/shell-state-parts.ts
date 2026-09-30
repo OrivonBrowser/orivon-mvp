@@ -7,6 +7,7 @@ import { bookmarkedStatePart } from './bookmarks-bar/bar-state.js'
 import { addressBarStatePart } from './state/address-bar.js'
 import { homeStatePart } from './state/home.js'
 import { shortcutsStatePart } from './state/shortcuts.js'
+import { siteAccessStatePart } from './state/site-access.js'
 import type { ShellState, TabsSnapshot } from './tab-types.js'
 import type { WindowContext } from './window-context.js'
 
@@ -23,7 +24,8 @@ export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   addressBarStatePart,
   bookmarkedStatePart,
   homeStatePart,
-  shortcutsStatePart
+  shortcutsStatePart,
+  siteAccessStatePart
 ]
 
 /** What every part adds to a push, merged. A part that throws adds nothing to that push. */
