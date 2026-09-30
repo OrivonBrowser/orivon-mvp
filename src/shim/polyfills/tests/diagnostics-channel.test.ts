@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { describe, expect, it, vi } from 'vitest'
 import dc, { channel, hasSubscribers, subscribe, tracingChannel, unsubscribe } from '../diagnostics-channel.js'
 import { AsyncLocalStorage } from '../async-hooks.js'
+import { collectGarbage } from '../../tests/support/collect-garbage.js'
 
 const real = createRequire(import.meta.url)('node:diagnostics_channel') as typeof dc
 
@@ -96,5 +97,33 @@ describe('diagnostics_channel', () => {
 
   it('default export exposes the module surface', () => {
     for (const name of ['channel', 'hasSubscribers', 'subscribe', 'unsubscribe', 'tracingChannel', 'Channel']) expect(typeof (dc as unknown as Record<string, unknown>)[name]).toBe('function')
+  })
+
+  it('a subscribed channel survives garbage collection, and is released after the last unsubscribe', async () => {
+    const seen: unknown[] = []
+    const fn = (message: unknown): void => { seen.push(message) }
+    subscribe('test:gc-subscribed', fn)
+    const store = new AsyncLocalStorage<number>()
+    channel('test:gc-store').bindStore(store as never)
+    await collectGarbage()
+    channel('test:gc-subscribed').publish('kept')
+    expect(seen).toEqual(['kept'])
+    expect(hasSubscribers('test:gc-store')).toBe(true)
+    unsubscribe('test:gc-subscribed', fn)
+    const ref = new WeakRef(channel('test:gc-subscribed'))
+    await collectGarbage()
+    expect(ref.deref()).toBeUndefined()
+  })
+
+  it('tracePromise resolves a plain value and a foreign thenable as Node does', async () => {
+    const tc = tracingChannel('test:thenable')
+    const events: string[] = []
+    tc.subscribe({ start: () => events.push('start'), end: () => events.push('end'), asyncStart: () => events.push('asyncStart'), asyncEnd: () => events.push('asyncEnd'), error: () => events.push('error') })
+    await expect(tc.tracePromise((() => 42) as never)).resolves.toBe(42)
+    expect(events).toEqual(['start', 'end', 'asyncStart', 'asyncEnd'])
+    const thenable = { then: (resolve: (value: string) => void) => { resolve('later') } }
+    await expect(tc.tracePromise((() => thenable) as never)).resolves.toBe('later')
+    const rejecting = { then: (_resolve: unknown, reject: (error: Error) => void) => { reject(new Error('refused')) } }
+    await expect(tc.tracePromise((() => rejecting) as never)).rejects.toThrow('refused')
   })
 })

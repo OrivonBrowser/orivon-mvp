@@ -1,6 +1,7 @@
 // `diagnostics_channel` module target (module-map.ts): Node's named channels,
 // pure JavaScript. A channel is one object per name, held weakly so a name
-// nobody keeps a reference to is collected. A subscriber that throws does not
+// nobody keeps a reference to is collected, except while it has a subscriber
+// or a bound store, when it is held strongly. A subscriber that throws does not
 // stop the others: its error surfaces on the next tick as an uncaught one.
 
 import { nodeModule } from './module-proxy.js'
@@ -10,6 +11,8 @@ type Store = { run: (context: unknown, fn: () => unknown) => unknown }
 type Transform = (data: unknown) => unknown
 
 const channels = new Map<string | symbol, WeakRef<Channel>>()
+/** Channels with a subscriber or a bound store: nothing else references them, and they must stay reachable to publish. */
+const held = new Set<Channel>()
 
 function reportLater (error: unknown): void {
   globalThis.process.nextTick(() => { throw error })
@@ -43,12 +46,14 @@ export class Channel {
   subscribe (subscription: Subscriber): void {
     assertFunction(subscription, 'subscription')
     this.#subscribers = [...this.#subscribers, subscription]
+    this.#retain()
   }
 
   unsubscribe (subscription: Subscriber): boolean {
     const index = this.#subscribers.indexOf(subscription)
     if (index === -1) return false
     this.#subscribers = this.#subscribers.filter((_, i) => i !== index)
+    this.#retain()
     return true
   }
 
@@ -64,10 +69,18 @@ export class Channel {
 
   bindStore (store: Store, transform?: Transform): void {
     this.#stores.set(store, transform)
+    this.#retain()
   }
 
   unbindStore (store: Store): boolean {
-    return this.#stores.delete(store)
+    const removed = this.#stores.delete(store)
+    this.#retain()
+    return removed
+  }
+
+  #retain (): void {
+    if (this.hasSubscribers) held.add(this)
+    else held.delete(this)
   }
 
   /** Publishes `data`, then runs `fn` inside every bound store, each holding what its transform made of `data`. */
@@ -186,31 +199,31 @@ export class TracingChannel {
 
   tracePromise<R> (fn: (...args: never[]) => Promise<R>, context: TraceContext = {}, thisArg?: unknown, ...args: unknown[]): Promise<R> {
     if (!this.hasSubscribers) return (fn as (...rest: unknown[]) => Promise<R>).apply(thisArg, args)
+    const settle = (): void => {
+      this.asyncStart.publish(context)
+      this.asyncEnd.publish(context)
+    }
     return this.start.runStores(context, () => {
-      let promise: Promise<R>
       try {
-        promise = (fn as (...rest: unknown[]) => Promise<R>).apply(thisArg, args)
+        // A plain value or a thenable that is not a native promise is converted, as Node does.
+        const promise = Promise.resolve((fn as (...rest: unknown[]) => unknown).apply(thisArg, args)) as Promise<R>
+        return promise.then((result) => {
+          context.result = result
+          settle()
+          return result
+        }, (error: unknown) => {
+          context.error = error
+          this.error.publish(context)
+          settle()
+          throw error
+        })
       } catch (error) {
         context.error = error
         this.error.publish(context)
+        throw error
+      } finally {
         this.end.publish(context)
-        throw error
       }
-      this.end.publish(context)
-      const settle = (): void => {
-        this.asyncStart.publish(context)
-        this.asyncEnd.publish(context)
-      }
-      return promise.then((result) => {
-        context.result = result
-        settle()
-        return result
-      }, (error: unknown) => {
-        context.error = error
-        this.error.publish(context)
-        settle()
-        throw error
-      })
     })
   }
 
