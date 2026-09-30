@@ -90,8 +90,8 @@ const LISTENER_MANIFEST: Manifest = {
   version: '1.0.0',
   entry: 'index.html',
   assets: ['app.js', ...Object.keys(LISTENER_FILES).map((path) => path.slice(1))],
-  // The broker authorises every listen by the network grant today (ADR-0034), whatever scope is asked.
-  capabilities: { net: { tcp: { connect: [LISTENER_ADDRESS], listen: { network: [String(LISTENER_TARGET.port)] } } } }
+  // The component binds 127.0.0.1, which asks for the local scope, so the local grant is enough.
+  capabilities: { net: { tcp: { connect: [LISTENER_ADDRESS], listen: { local: [String(LISTENER_TARGET.port)] } } } }
 }
 
 afterAll(async () => {
@@ -181,12 +181,12 @@ it('spawns a WASI program and forks an app module in Workers, refuses a native p
 
     await runPhase('a component that listens', async (check) => {
       const html = '<!doctype html><html><head><title>component listener fixture</title><script src="/app.js"></script></head><body><h1>component listener fixture</h1></body></html>'
-      const served = await serveApp(app, LISTENER_ORIGIN, LISTENER_MANIFEST, 'tcp.listen.network', {
+      const served = await serveApp(app, LISTENER_ORIGIN, LISTENER_MANIFEST, 'tcp.listen.local', {
         '/index.html': new TextEncoder().encode(html),
         '/app.js': await bundleForApp(fileURLToPath(new URL('./child-process-listener-entry.ts', import.meta.url))),
         ...LISTENER_FILES
       }, [String(LISTENER_TARGET.port)], [{ capability: 'tcp.connect', patterns: [LISTENER_ADDRESS] }])
-      check('the listener fixture is granted tcp.listen.network and tcp.connect for one port, and registered', served.granted && served.registered, JSON.stringify(served))
+      check('the listener fixture is granted tcp.listen.local and tcp.connect for one port, and registered', served.granted && served.registered, JSON.stringify(served))
       const view = await navigateToFixture(app, `${LISTENER_ORIGIN}/`, 'component listener fixture')
       await waitForPageGlobal(view, 'componentListenerE2e')
       const port = LISTENER_TARGET.port

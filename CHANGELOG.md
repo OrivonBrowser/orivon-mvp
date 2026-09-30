@@ -13,6 +13,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **An app can show pages it serves itself**, each at an origin of its own, beside ordinary websites: a
+  `web.embed` local pattern (`http://*.localhost:<port>`), admitted only while the app holds a listener on
+  that port (ADR-0047).
+- **An app hears of a shown page's new window and download** (`orivon-popup`, `orivon-download` on the
+  `<webview>`); nothing opens and no file is kept. A shown page's link to another program is never offered to it.
+- **A listener can be loopback only.** `orivon.net.listen` and `udpBind` honour `scope`; `'local'`, the
+  default, binds `127.0.0.1`, and the shim maps a loopback host onto it (ADR-0034).
+- **`http.createServer` in the Node shim**, with `Server`, `ServerResponse` and `OutgoingMessage`, over
+  `orivon.net.listen`; `https.createServer` still refuses.
 - **Google's sign-in pages are shown a Firefox identity**, since Google rejects this browser as "not secure"; the
   request headers, `navigator.userAgent` and the missing `navigator.userAgentData` agree on `accounts.google.com`
   and `accounts.youtube.com` alone. Not yet confirmed against a real account.

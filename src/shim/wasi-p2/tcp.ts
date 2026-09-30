@@ -7,9 +7,10 @@
 import type { TcpServer, TcpSocket as OrivonTcpSocket } from '../../contracts/handles.js'
 import {
   type IpAddressFamily, type IpSocketAddress, type ResolvedNames, type SocketNet,
-  addressOf, isIpv4Mapped, isUnspecified, networkCode, reportedAddress, scopeOf, socketAddressOf, socketFailure
+  addressGot, addressOf, isIpv4Mapped, isUnspecified, networkCode, reportedAddress, scopeOf, socketAddressOf, socketFailure
 } from './addresses.js'
 import { InputStream, OutputStream, Pollable, Signal } from './io.js'
+import { openAtScope } from '../bind-scope.js'
 
 type State = 'unbound' | 'bind-started' | 'bound' | 'connect-started' | 'connected' | 'listen-started' | 'listening' | 'closed'
 type ShutdownType = 'receive' | 'send' | 'both'
@@ -145,7 +146,7 @@ export class TcpSocket {
   startListen (): void {
     this.#expect('bound')
     const local = this.#local as IpSocketAddress
-    this.#start(this.#context.net.listen({ port: local.val.port, scope: scopeOf(addressOf(local)) })
+    this.#start(openAtScope((scope) => this.#context.net.listen({ port: local.val.port, scope }), scopeOf(addressOf(local)))
       .then((server) => { this.#adopt(server, (kept) => { this.#server = kept }) }))
     this.#state = 'listen-started'
   }
@@ -197,7 +198,7 @@ export class TcpSocket {
 
   localAddress (): IpSocketAddress {
     if (this.#socket !== undefined) return reportedAddress(this.#socket.localAddress, this.#socket.localPort, this.#family)
-    if (this.#server !== undefined && this.#local !== undefined) return socketAddressOf(addressOf(this.#local), this.#server.localPort)
+    if (this.#server !== undefined && this.#local !== undefined) return socketAddressOf(addressGot(addressOf(this.#local), this.#server.localAddress), this.#server.localPort)
     if (this.#local !== undefined && this.#state !== 'unbound') return this.#local
     throw 'invalid-state'
   }

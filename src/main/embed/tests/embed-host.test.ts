@@ -40,22 +40,38 @@ vi.mock('electron', () => ({
 }))
 
 const { installEmbedHost } = await import('../embed-host.js')
+const { EMBED_EVENT_CHANNEL } = await import('../../channels.js')
 const { embedPartitionFor } = await import('../embed-guard.js')
+const { NOTICES_PER_SECOND } = await import('../embed-events.js')
 
-/** An embedder WebContents: a real EventEmitter (embed-host.ts attaches `will-attach-webview`/`did-attach-webview` to it) with a mutable top-frame URL. */
-function fakeEmbedder (url: string): EventEmitter & { mainFrame: { url: string } } {
-  return Object.assign(new EventEmitter(), { mainFrame: { url } })
+/** An embedder WebContents: a real EventEmitter (embed-host.ts attaches `will-attach-webview`/`did-attach-webview` to it) with a mutable top-frame URL and a frame that records what is sent to it. */
+function fakeEmbedder (url: string): EventEmitter & { mainFrame: { url: string, send: ReturnType<typeof vi.fn> }, destroyed: boolean } {
+  const embedder = Object.assign(new EventEmitter(), {
+    destroyed: false,
+    mainFrame: { url, send: vi.fn() },
+    getType: () => 'window',
+    isDestroyed: () => embedder.destroyed
+  })
+  return embedder
 }
 
 /** `session` is the guest's OWN Session object, the way Electron hands back whatever `webPreferences.partition` the attach actually used -- did-attach-webview reads origin from it, never from the embedder. */
-function fakeGuest (id: number, session: FakeSession): { id: number, session: FakeSession, isDestroyed: () => boolean, close: ReturnType<typeof vi.fn>, setWindowOpenHandler: ReturnType<typeof vi.fn>, once: ReturnType<typeof vi.fn> } {
-  return { id, session, isDestroyed: () => false, close: vi.fn(), setWindowOpenHandler: vi.fn(), once: vi.fn() }
+function fakeGuest (id: number, session: FakeSession, frameUrls: readonly string[] = []): { id: number, session: FakeSession, isDestroyed: () => boolean, close: ReturnType<typeof vi.fn>, setWindowOpenHandler: ReturnType<typeof vi.fn>, once: ReturnType<typeof vi.fn>, mainFrame: { framesInSubtree: Array<{ url: string }> } } {
+  return { id, session, isDestroyed: () => false, close: vi.fn(), setWindowOpenHandler: vi.fn(), once: vi.fn(), mainFrame: { framesInSubtree: frameUrls.map((url) => ({ url })) } }
 }
 
-function fakeBroker (origins: ReadonlySet<string>, attach: ReturnType<typeof vi.fn>): Broker {
+function fakeBroker (
+  origins: ReadonlySet<string>,
+  attach: ReturnType<typeof vi.fn>,
+  patterns: readonly string[] = ['*'],
+  holdsListenerSync: (origin: string, port: number) => boolean = () => false,
+  onListenerClosed: (listener: (origin: string, port: number) => void) => () => void = () => () => {}
+): Broker {
   return {
     embed: {
-      originsSync: (origin: string) => origins.has(origin) ? ['*'] : undefined,
+      originsSync: (origin: string) => origins.has(origin) ? patterns : undefined,
+      holdsListenerSync,
+      onListenerClosed,
       scriptSync: () => undefined,
       attach,
       setScript: async () => {}
@@ -311,5 +327,246 @@ describe('configureEmbedSession -- the verifier partition header is stripped and
     const session = attachAndGetSession(ORIGIN_A)
     const [filter] = session.webRequest.onBeforeSendHeaders.mock.calls[0] as [{ urls: string[] }]
     expect(filter.urls).toEqual(expect.arrayContaining(['https://*.eth/*']))
+  })
+})
+
+// ADR-0047: a local pattern's document is admitted only while the EMBEDDING
+// app holds a listener on the port -- the host asks the broker with the app
+// origin its partition was configured for, never with anything the request
+// carried.
+describe('configureEmbedSession -- a local pattern asks whether the embedding app holds the port', () => {
+  beforeEach(() => {
+    fakeApp.removeAllListeners()
+    sessionsByPartition.clear()
+  })
+
+  function localSession (holds: (origin: string, port: number) => boolean): FakeSession {
+    const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
+    installEmbedHost(fakeBroker(new Set([ORIGIN_A]), attach, ['http://*.localhost:8123'], holds), '/preload/embed.js')
+    const embedder = fakeEmbedder(`${ORIGIN_A}/tab`)
+    fakeApp.emit('web-contents-created', {}, embedder)
+    embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const [session] = sessionsByPartition.values()
+    if (session === undefined) throw new Error('no session was configured')
+    return session
+  }
+
+  type Listener = (details: { url: string, resourceType: string }, callback: (r: { cancel: boolean }) => void) => void
+
+  async function loadOutcome (session: FakeSession, url: string): Promise<{ cancel: boolean }> {
+    const onBeforeRequest = session.webRequest.onBeforeRequest.mock.calls[0]?.[0] as Listener
+    const callback = vi.fn()
+    onBeforeRequest({ url, resourceType: 'mainFrame' }, callback)
+    await new Promise((resolve) => { setImmediate(resolve) })
+    return callback.mock.calls[0]?.[0] as { cancel: boolean }
+  }
+
+  it('loads the page while the broker says the app holds the port, asking with the app origin, and resolves nothing', async () => {
+    const holds = vi.fn(() => true)
+    const session = localSession(holds)
+    expect(await loadOutcome(session, 'http://a.localhost:8123/')).toEqual({ cancel: false })
+    expect(holds).toHaveBeenCalledWith(ORIGIN_A, 8123)
+    expect(session.resolveHost).not.toHaveBeenCalled()
+  })
+
+  it('cancels the page once the broker says the app holds no such listener', async () => {
+    const session = localSession(() => false)
+    expect(await loadOutcome(session, 'http://a.localhost:8123/')).toEqual({ cancel: true })
+  })
+})
+
+// ADR-0047: what a shown page asks for reaches the app that shows it, and
+// nothing else happens. The wiring only -- embed-events.test.ts covers what
+// the notices contain.
+describe('installEmbedHost -- a shown page\'s popups and downloads are told to its app', () => {
+  beforeEach(() => {
+    fakeApp.removeAllListeners()
+    sessionsByPartition.clear()
+  })
+
+  type OpenHandler = (details: { url: string, frameName: string, disposition: string, referrer: { url: string }, postBody?: unknown }) => { action: string }
+  interface Downloading { getURLChain: () => string[], getFilename: () => string, getMimeType: () => string, getTotalBytes: () => number }
+
+  function attached (): { embedder: ReturnType<typeof fakeEmbedder>, guest: ReturnType<typeof fakeGuest>, session: FakeSession, handler: () => OpenHandler } {
+    const broker = fakeBroker(new Set([ORIGIN_A]), vi.fn(() => ({ release: vi.fn() })))
+    installEmbedHost(broker, '/preload/embed.js')
+    const embedder = fakeEmbedder(`${ORIGIN_A}/tab`)
+    fakeApp.emit('web-contents-created', {}, embedder)
+    embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const session = sessionsByPartition.get(embedPartitionFor(ORIGIN_A))
+    if (session === undefined) throw new Error('no session was configured')
+    const guest = fakeGuest(42, session)
+    embedder.emit('did-attach-webview', {}, guest)
+    return { embedder, guest, session, handler: () => guest.setWindowOpenHandler.mock.calls.at(-1)?.[0] as OpenHandler }
+  }
+
+  function willDownload (session: FakeSession): (event: { preventDefault: () => void }, item: Downloading, guest: { id: number }) => void {
+    const call = session.on.mock.calls.find(([name]) => name === 'will-download')
+    if (call === undefined) throw new Error('no will-download listener')
+    return call[1] as ReturnType<typeof willDownload>
+  }
+
+  const item = (over: Partial<Downloading> = {}): Downloading =>
+    ({ getURLChain: () => ['https://a.example/go', 'https://a.example/f.bin'], getFilename: () => 'f.bin', getMimeType: () => 'application/octet-stream', getTotalBytes: () => 9, ...over })
+
+  it('denies a guest\'s windows from the moment it exists, before it has attached', () => {
+    installEmbedHost(fakeBroker(new Set([ORIGIN_A]), vi.fn()), '/preload/embed.js')
+    const setWindowOpenHandler = vi.fn()
+    fakeApp.emit('web-contents-created', {}, Object.assign(new EventEmitter(), { getType: () => 'webview', setWindowOpenHandler }))
+    expect((setWindowOpenHandler.mock.calls[0]?.[0] as () => unknown)()).toEqual({ action: 'deny' })
+  })
+
+  it('denies the window and sends the embedder\'s main frame the popup, tagged with the guest\'s id', () => {
+    const { embedder, handler } = attached()
+    const outcome = handler()({ url: 'https://a.example/x', frameName: 'pane', disposition: 'foreground-tab', referrer: { url: 'https://a.example/' }, postBody: { data: [] } })
+    expect(outcome).toEqual({ action: 'deny' })
+    expect(embedder.mainFrame.send).toHaveBeenCalledExactlyOnceWith(EMBED_EVENT_CHANNEL, 42, 'orivon-popup', {
+      url: 'https://a.example/x', disposition: 'foreground-tab', frameName: 'pane', referrer: 'https://a.example/', method: 'POST'
+    })
+  })
+
+  it('cancels a download after reading the item, and sends the embedder the download', () => {
+    const { embedder, session } = attached()
+    const event = { preventDefault: vi.fn() }
+    const read = vi.fn(() => 'f.bin')
+    willDownload(session)(event, item({ getFilename: read }), { id: 42 })
+    expect(read.mock.invocationCallOrder[0]).toBeLessThan(event.preventDefault.mock.invocationCallOrder[0] as number)
+    expect(embedder.mainFrame.send).toHaveBeenCalledExactlyOnceWith(EMBED_EVENT_CHANNEL, 42, 'orivon-download', {
+      url: 'https://a.example/f.bin', filename: 'f.bin', mimeType: 'application/octet-stream', totalBytes: 9
+    })
+  })
+
+  it('cancels a download from a page it does not know, and tells nobody', () => {
+    const { embedder, session } = attached()
+    const event = { preventDefault: vi.fn() }
+    willDownload(session)(event, item(), { id: 999 })
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('tells nobody once the guest is gone, or the page holding it is', () => {
+    const { embedder, guest, handler } = attached()
+    const destroyed = guest.once.mock.calls.find(([name]) => name === 'destroyed')?.[1] as () => void
+    embedder.destroyed = true
+    handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } })
+    embedder.destroyed = false
+    destroyed()
+    handler()({ url: 'https://a.example/y', frameName: '', disposition: 'default', referrer: { url: '' } })
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('sends a page\'s first notices in a second and drops the flood after them, still denying every window', () => {
+    const { embedder, handler } = attached()
+    const outcomes = Array.from({ length: NOTICES_PER_SECOND + 10 }, () =>
+      handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } }))
+    expect(outcomes.every((outcome) => outcome.action === 'deny')).toBe(true)
+    expect(embedder.mainFrame.send).toHaveBeenCalledTimes(NOTICES_PER_SECOND)
+  })
+
+  it('cancels a download that names no page at all', () => {
+    const { embedder, session } = attached()
+    const event = { preventDefault: vi.fn() }
+    willDownload(session)(event, item(), undefined as unknown as { id: number })
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('still denies the window when the page\'s frame is gone between the check and the send', () => {
+    const { embedder, handler } = attached()
+    embedder.mainFrame.send.mockImplementation(() => { throw new Error('Render frame was disposed') })
+    expect(handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } })).toEqual({ action: 'deny' })
+  })
+
+  // The page that holds the element may have committed another origin while its guest lives; that
+  // document must not learn what the guest's page asked for.
+  it('drops a notice when the embedder\'s main frame is no longer the app origin that owns the guest, and still denies the window', () => {
+    const { embedder, handler } = attached()
+    embedder.mainFrame.url = `${ORIGIN_B}/elsewhere`
+    expect(handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } })).toEqual({ action: 'deny' })
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('drops a download notice the same way', () => {
+    const { embedder, session } = attached()
+    embedder.mainFrame.url = `${ORIGIN_B}/elsewhere`
+    const event = { preventDefault: vi.fn() }
+    willDownload(session)(event, item(), { id: 42 })
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('sends again once the main frame is back on the owning origin', () => {
+    const { embedder, handler } = attached()
+    embedder.mainFrame.url = `${ORIGIN_B}/elsewhere`
+    handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } })
+    embedder.mainFrame.url = `${ORIGIN_A}/tab`
+    handler()({ url: 'https://a.example/y', frameName: '', disposition: 'default', referrer: { url: '' } })
+    expect(embedder.mainFrame.send).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ADR-0047: the listener check gates loads, so a page already showing would
+// keep same-origin access to whatever binds the port after the app's
+// listener is gone. The host closes it, the way a revoked grant does.
+describe('installEmbedHost -- a shown local page does not outlive the app\'s listener', () => {
+  const PATTERNS = ['*', 'http://*.localhost:8123']
+
+  beforeEach(() => {
+    fakeApp.removeAllListeners()
+    sessionsByPartition.clear()
+  })
+
+  function setup (): { closed: (origin: string, port: number) => void, attachGuest: (id: number, origin: string, frames: readonly string[]) => ReturnType<typeof fakeGuest> } {
+    let closed: (origin: string, port: number) => void = () => {}
+    const broker = fakeBroker(new Set([ORIGIN_A, ORIGIN_B]), vi.fn(() => ({ release: vi.fn() })), PATTERNS, () => true, (listener) => { closed = listener; return () => {} })
+    installEmbedHost(broker, '/preload/embed.js')
+    return {
+      closed: (origin, port) => { closed(origin, port) },
+      attachGuest: (id, origin, frames) => {
+        const embedder = fakeEmbedder(`${origin}/tab`)
+        fakeApp.emit('web-contents-created', {}, embedder)
+        embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+        const session = sessionsByPartition.get(embedPartitionFor(origin))
+        if (session === undefined) throw new Error('no session was configured')
+        const guest = fakeGuest(id, session, frames)
+        embedder.emit('did-attach-webview', {}, guest)
+        return guest
+      }
+    }
+  }
+
+  it('closes a guest showing a page under the pattern on that port, and only that guest', () => {
+    const { closed, attachGuest } = setup()
+    const local = attachGuest(1, ORIGIN_A, ['http://a.localhost:8123/'])
+    const ordinary = attachGuest(2, ORIGIN_A, ['https://example.com/'])
+    const otherPort = attachGuest(3, ORIGIN_A, ['http://a.localhost:8124/'])
+    closed(ORIGIN_A, 8123)
+    expect(local.close).toHaveBeenCalledTimes(1)
+    expect(ordinary.close).not.toHaveBeenCalled()
+    expect(otherPort.close).not.toHaveBeenCalled()
+  })
+
+  it('closes a guest that shows the local page only in a frame inside its top page', () => {
+    const { closed, attachGuest } = setup()
+    const guest = attachGuest(1, ORIGIN_A, ['https://example.com/', 'http://b.localhost:8123/frame'])
+    closed(ORIGIN_A, 8123)
+    expect(guest.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves another app\'s guests alone, whatever they show', () => {
+    const { closed, attachGuest } = setup()
+    const theirs = attachGuest(1, ORIGIN_B, ['http://a.localhost:8123/'])
+    closed(ORIGIN_A, 8123)
+    expect(theirs.close).not.toHaveBeenCalled()
+  })
+
+  it('skips a guest already destroyed, and a guest whose frames cannot be read', () => {
+    const { closed, attachGuest } = setup()
+    const destroyed = attachGuest(1, ORIGIN_A, ['http://a.localhost:8123/'])
+    destroyed.isDestroyed = () => true
+    const unreadable = attachGuest(2, ORIGIN_A, [])
+    Object.defineProperty(unreadable, 'mainFrame', { get: () => { throw new Error('Render frame was disposed') } })
+    expect(() => { closed(ORIGIN_A, 8123) }).not.toThrow()
+    expect(destroyed.close).not.toHaveBeenCalled()
   })
 })

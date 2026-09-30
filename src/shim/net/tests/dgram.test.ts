@@ -4,15 +4,15 @@ import type { Orivon } from '../../../contracts/capability-api.js'
 
 type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
-function installFakeOrivon (): { udpBindCalls: Array<{ port: number }> } {
-  const udpBindCalls: Array<{ port: number }> = []
+function installFakeOrivon (): { udpBindCalls: Array<{ port: number, scope?: string }> } {
+  const udpBindCalls: Array<{ port: number, scope?: string }> = []
   const fake = createFakeUdpSocket()
   ;(globalThis as GlobalWithOrivon).orivon = {
     net: {
       connect: async () => { throw new Error('not used') },
       connectSecure: async () => { throw new Error('not used') },
       listen: async () => { throw new Error('not used') },
-      udpBind: async (opts: { port: number }) => { udpBindCalls.push(opts); return fake.socket }
+      udpBind: async (opts: { port: number, scope?: string }) => { udpBindCalls.push(opts); return fake.socket }
     }
   } as unknown as Orivon
   return { udpBindCalls }
@@ -30,7 +30,7 @@ describe('net/dgram.ts', () => {
     const socket = dgram.createSocket('udp4')
     socket.bind(6881)
     await vi.waitFor(() => expect(udpBindCalls).toHaveLength(1))
-    expect(udpBindCalls[0]).toEqual({ port: 6881 })
+    expect(udpBindCalls[0]).toEqual({ port: 6881, scope: 'network' })
   })
 
   it('createSocket accepts an optional message listener, matching real Node', async () => {

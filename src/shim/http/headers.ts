@@ -25,6 +25,14 @@ export class HeaderBag {
     this.byLowerName.set(name.toLowerCase(), { name, value })
   }
 
+  /** Adds a value to a name already set, keeping the first spelling of the name: one value stays a value, two become an array. */
+  append (name: string, value: HeaderValue): void {
+    const existing = this.byLowerName.get(name.toLowerCase())
+    if (existing === undefined) { this.set(name, value); return }
+    const joined = [...(Array.isArray(existing.value) ? existing.value as string[] : [String(existing.value)]), ...(Array.isArray(value) ? value as string[] : [String(value)])]
+    this.set(existing.name, joined)
+  }
+
   get (name: string): HeaderValue | undefined {
     return this.byLowerName.get(name.toLowerCase())?.value
   }

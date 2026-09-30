@@ -93,7 +93,10 @@ describe('watchProfiles', () => {
     // just the root-level one -- writeUntilSeen's own header on why this
     // retries the write instead of waiting a fixed amount first.
     expect(await writeUntilSeen(join(root, 'profiles', 'abc', 'profile.json'), calls)).toBe(true)
-  })
+  // waitForChange (2 s) and writeUntilSeen (8 s) may both run to their own
+  // ceilings on a loaded machine; the runner's 5 s default would end the test
+  // before either had decided.
+  }, 15_000)
 
   it('coalesces a burst of writes into far fewer calls than writes', async () => {
     const { calls } = watching()

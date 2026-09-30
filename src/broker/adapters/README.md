@@ -9,8 +9,9 @@ helper every store under `src/main/` and `src/broker/grants/` writes its small J
 through: a sync `writeFileAtomic` and an async `writeFileAtomicAsync`, both temp-file-then-rename.
 
 **What it depends on.** `node:net`, `node:tls`, `node:dgram`, `node:dns/promises`, `node:fs`,
-`node:fs/promises`, `node:stream`, [`../broker-contracts.ts`](../broker-contracts.ts) and
-[`../policy/connect.ts`](../policy/connect.ts).
+`node:fs/promises`, `node:stream`, [`../broker-contracts.ts`](../broker-contracts.ts),
+[`../policy/connect.ts`](../policy/connect.ts) and
+[`../policy/bind-scope.ts`](../policy/bind-scope.ts), for the address a scope binds.
 
 **What it must never import.** `electron`; this layer is the *Node* seam, not the Electron one
 ([`../transport/`](../transport/) is where Electron lives). Nothing here may make a policy
@@ -36,6 +37,10 @@ view's whole backing `ArrayBuffer`, so a view could hand the page bytes it never
 per-datagram floor enforces both the byte and the count bound (A86). `send` resolves a
 `SendOutcome` and never throws, since a rejection would error the app's `WritableStream` for good
 (A87). The code comments have the arithmetic.
+
+**The interface a bind opens follows its scope, and only `'network'` widens.** `listenTcp` and
+`bindUdp` take the scope the broker chose: `'local'` binds `127.0.0.1`, `'network'` binds
+`0.0.0.0`, and any other value binds loopback. `localAddress` reports what was actually bound.
 
 **Clean closes.** `destroySocket`'s drain deadline and the reason a file's `destroy` has none:
 `CLOSE_DRAIN_TIMEOUT_MS`'s doc in `node-adapters.ts`, `node-fs-adapter.ts`'s `openFile` doc, and

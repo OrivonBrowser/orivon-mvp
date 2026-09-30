@@ -92,7 +92,7 @@ to check either signal against.
 | `fullscreen` | 1(b) | A click; Escape in the browser process; "Press Esc to exit full screen" | `ADR-0025` |
 | `pointerLock` | 1(b) | A click; Escape in the browser process; "Press Esc to show your cursor" | `ADR-0026` |
 | `keyboardLock` | 1(b) | Acts only in fullscreen, which a click enters; holding Escape leaves; "Press and hold Esc to exit full screen" | `ADR-0026` |
-| `openExternal` | 2 | "Open *scheme* link with your system's default app?", every time | `ADR-0027` |
+| `openExternal` | 2 | "Open *scheme* link with your system's default app?", every time; never asked for a page an app shows in a `<webview>`, which is refused (`ADR-0047`) | `ADR-0027` |
 | `notifications` | 2 | "*site* wants to show notifications", once per site, remembered | `ADR-0028` |
 
 Which handler Electron routes each name to was measured, and each ADR records it. Two traps

@@ -1,4 +1,4 @@
-// Capability checking for `udp.bind` (and, when it is built, `tcp.listen`).
+// Capability checking for `udp.bind` and `tcp.listen`: whether one grant's ports cover a port.
 // The sibling of ./connect.ts -- see ./README.md, Design notes, for why the
 // two are separate functions rather than one with a mode flag.
 //

@@ -80,7 +80,7 @@ describe('listen -- the grant ledger decides', () => {
 
     await broker.net.listen(APP, { port: 30005 })
 
-    expect(listen).toHaveBeenCalledWith([{ lo: 30005, hi: 30005 }], expect.anything())
+    expect(listen).toHaveBeenCalledWith([{ lo: 30005, hi: 30005 }], expect.anything(), 'local')
   })
 
   it('hands the adapter every granted range for an ephemeral listen (port 0)', async () => {
@@ -89,7 +89,7 @@ describe('listen -- the grant ledger decides', () => {
 
     await broker.net.listen(APP, { port: 0 })
 
-    expect(listen).toHaveBeenCalledWith([{ lo: 30000, hi: 30010 }], expect.anything())
+    expect(listen).toHaveBeenCalledWith([{ lo: 30000, hi: 30010 }], expect.anything(), 'local')
   })
 
   it('tears the listener down rather than leaking it when the grant is revoked mid-listen', async () => {

@@ -3,13 +3,18 @@
 **What lives here.** ADR-0039's Electron half. `embed-guard.ts`: the decisions, with no
 `electron` import: what a `<webview>`'s preferences and attributes become whatever the app
 wrote, which `persist:embed-` partition its pages live in, and whether a document request
-inside a shown page may proceed under the app's live `web.embed` grant. `embed-host.ts`:
+inside a shown page may proceed under the app's live `web.embed` grant. `embed-events.ts`: what
+the app is told of a window a shown page asked for and a download it started (ADR-0047), built
+from what Electron reports, with no `electron` import. `embed-host.ts`:
 what Electron calls: `will-attach-webview` (refuse an app with no grant, rewrite the rest)
 and `did-attach-webview` (register the guest with the broker so a revoke closes it, deny its
-popups, forget it when it goes) on every `WebContents`, and each embed partition's session
-(no downloads, every document request judged fresh). `embed-subsystem.ts`: registers the
+popups and tell the app of each, forget it when it goes) on every `WebContents`, and each embed
+partition's session (every download cancelled and told to the app, every document request judged
+fresh). `embed-subsystem.ts`: registers the
 host, and answers `EMBED_SCRIPT_CHANNEL`, the one thing a shown page's preload
-(`src/preload/embed.ts`) asks: which script its app set with `orivon.web.setEmbedScript`.
+(`src/preload/embed.ts`) asks: which script its app set with `orivon.web.setEmbedScript`. A document under a local pattern
+(`http://*.localhost:<port>`, `ADR-0047`) loads only while `broker.embed.holdsListenerSync`
+says the embedding app itself holds a listener on that port; the guard resolves no name for it.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`broker-contracts.ts`
 types, `policy/embed-origin.ts`'s document gate, `policy/address.ts`'s address classes, `policy/origin.ts`, `grants/origin-hash.ts`);
@@ -23,7 +28,7 @@ this stays clear of `electron` and `src/loader/`); the top-level `channels.ts` a
 and nothing under [`../../loader/`](../../loader/): a shown page is another site's document,
 never a pinned bundle, and nothing about serving one applies to it.
 
-**Owner stream.** `shell`; ADR-0039.
+**Owner stream.** `shell`; ADR-0039, ADR-0047.
 
 ## Design notes
 
@@ -63,6 +68,19 @@ Electron 44; the element's `loadURL()` promise rejects instead, and
 [`../../../test/e2e-embed.test.ts`](../../../test/e2e-embed.test.ts) asserts exactly that. A
 `file:` URL is refused the same way: `onBeforeRequest` sees it, so no second gate is needed.
 
+**A local pattern is asked of the broker, with the app origin the partition was configured for.**
+`guestRequestAllowed` takes the question as a function (`listenerHeld`) and refuses when it is
+absent or throws, so a caller that forgets to wire it shows no local page rather than every one.
+The answer is read on every document load, so an app that closes its listener stops the next
+load at once. A page already showing would keep same-origin access to whatever binds the port
+next, so when the broker reports the app's last listener on a port closed
+(`broker.embed.onListenerClosed`), the host closes every guest of that app showing a local-pattern
+document on that port, in its top frame or any frame inside it (`showsLocalPageOn`), the way a
+revoked grant closes it. Every `.localhost` name is mapped to IPv4 loopback by the process-wide
+resolver rules (`../verifier/resolver-rules.ts`), the address the app's listener binds, so a server
+on `[::1]` cannot answer for it; no lookup happens, and nothing else on this computer can be
+reached by name through the pattern.
+
 **The script's identity comes from the sender, never the request.** `EMBED_SCRIPT_CHANNEL` is
 synchronous so the script runs before the page's own code, and its reply is decided from
 `event.sender` alone: a webview guest the host adopted, whose app still holds the grant. A
@@ -74,3 +92,37 @@ page under the grant in the same `HandleTable` a socket or an isolated context l
 `HandleTable.revoke`'s ordinary cascade closes it when the grant is withdrawn or narrowed. There
 is no second revocation mechanism to keep in step, and `LIMITS.embeds` is enforced where every
 other per-origin cap is.
+
+**A popup and a download reach the app as an event on its `<webview>`, sent from here and
+dispatched by the app page's preload.** `embed-host.ts` keeps `action: 'deny'` for every window and
+cancels every download after reading the item, then sends the embedder's main frame
+`EMBED_EVENT_CHANNEL` with the guest's id, the event name and the detail `embed-events.ts` built.
+[`../../preload/embed-event-relay.ts`](../../preload/embed-event-relay.ts) finds the `<webview>`
+whose `getWebContentsId()` matches and dispatches the event in the main world; an id no element
+matches is dropped. A notice is sent only while that main frame is still on the app origin that
+owns the guest; a page that committed another origin hears nothing. The embedder is recorded at `did-attach-webview`, and forgotten with the guest.
+Every field a shown page chooses is bounded: an address (`url`, `referrer`) past
+`LIMITS.embedEventUrlBytes`, and a `frameName`, `filename` or `mimeType` past `NOTICE_TEXT_BYTES`
+(4096 UTF-8 bytes), each arrives as `''`.
+
+**A shown page cannot flood its app with notices.** The page chooses when it asks for a window,
+and each notice may carry an address up to `LIMITS.embedEventUrlBytes`. Each guest gets a budget
+(`createNoticeBudget`): `NOTICES_PER_SECOND` notices in a second reach the app and the rest are
+dropped. The window is denied and the download cancelled either way.
+
+**`disablePopups` is turned off on every guest, and the window-open handler is set the moment
+the guest exists.** Chromium reports no popup at all while the guest's `disablePopups` is true,
+and Electron derives it from the element's own `allowpopups` attribute, which an app need not
+have written and `will-attach-webview`'s `params` can no longer change. `hardenGuest` sets it
+false on `webPreferences`; `installEmbedHost` denies every window from `web-contents-created`, so
+none is open to Electron's default (allow) in the moment before `did-attach-webview` installs the
+handler that tells the app.
+
+**A shown page's navigation to a scheme Chromium does not know is heard by the element and
+offered to nothing.** The element's `will-navigate` names the address. Chromium also asks the
+session for `openExternal`, and `../sessions/permission-gate.ts` refuses it for a `webview`
+without asking the person: a shown page reaches another program only through its app.
+
+**Chromium bounds an address before the shell sees it.** A `window.open` past 2 MiB reaches the
+shell as `about:blank#blocked`, so `LIMITS.embedEventUrlBytes` (the same size) is a bound the
+shell keeps whatever Chromium does, and an address reaches the app whole up to it.

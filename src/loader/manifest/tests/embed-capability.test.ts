@@ -1,5 +1,6 @@
-// capabilities.web.embed (ADR-0039): `origins` is required, each entry an
-// exact http(s) origin or the bare "*", and "*" stands alone. The same
+// capabilities.web.embed (ADR-0039, ADR-0047): `origins` is required, each
+// entry an exact http(s) origin, the bare "*" or a local pattern, in any
+// mix. The same
 // "accepted and rejected spellings" coverage web-capability.test.ts gives
 // capabilities.web.contexts, in its own file per that file's own header.
 
@@ -63,8 +64,14 @@ describe('capabilities.web.embed (ADR-0039)', () => {
     expect(rejection({ embed: { origins: [] } })).toContain('origins')
   })
 
-  it('rejects "*" beside an exact origin', () => {
-    expect(rejection({ embed: { origins: ['*', 'https://a.example'] } })).toContain('only entry')
+  it('accepts "*" beside an exact origin and a local pattern', () => {
+    const origins = ['*', 'http://192.168.1.5:8080', 'http://*.localhost:8123']
+    expect(parsed({ embed: { origins } }).embed?.origins).toEqual(origins)
+  })
+
+  it('accepts both spellings of a local pattern', () => {
+    const origins = ['http://*.localhost:8123', 'http://*.gateway.localhost:8124']
+    expect(parsed({ embed: { origins } }).embed?.origins).toEqual(origins)
   })
 
   it('rejects a bare host with no scheme', () => {
@@ -75,8 +82,22 @@ describe('capabilities.web.embed (ADR-0039)', () => {
     expect(rejection({ embed: { origins: ['file:///etc'] } })).toContain('http or https')
   })
 
-  it('rejects a wildcard host', () => {
-    expect(rejection({ embed: { origins: ['https://*.example.com'] } })).toContain('wildcard')
+  it('rejects a wildcard host, and says what a wildcard may be', () => {
+    const reason = rejection({ embed: { origins: ['https://*.example.com'] } })
+    expect(reason).toContain('wildcard')
+    expect(reason).toContain('http://*.localhost:<port>')
+  })
+
+  it.each([
+    'https://*.localhost:8123',
+    'http://*.localhost',
+    'http://*.localhost:80',
+    'http://a.*.localhost:8123',
+    'http://*.example.com:8123',
+    'http://*.LOCALHOST:8123',
+    'http://*.localhost:8123/'
+  ])('rejects a local pattern outside its grammar: %s', (pattern) => {
+    expect(rejection({ embed: { origins: [pattern] } })).toContain('origins[0]')
   })
 
   it('rejects a path, a query, a fragment and userinfo', () => {

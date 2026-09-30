@@ -3,6 +3,7 @@
 // validation Node performs synchronously before any socket exists.
 
 import { HeaderBag, type HeaderValue } from './headers.js'
+import { HTTP_TOKEN } from './header-tokens.js'
 import { codedError } from '../node-errors.js'
 import { validatePort } from '../net/args.js'
 
@@ -32,8 +33,6 @@ export interface ResolvedRequestOptions {
   readonly raw: Readonly<Record<string, unknown>>
 }
 
-/** Node's checkIsHttpToken. */
-const HTTP_TOKEN = /^[\^_`a-zA-Z\-0-9!#$%&'*+.|~]+$/
 /** Node's INVALID_PATH_REGEX: anything outside visible latin1 must be escaped. */
 const INVALID_PATH = /[^!-ÿ]/
 

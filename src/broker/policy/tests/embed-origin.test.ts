@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ANY_SITE, embedAdmissionKind, embedDocumentAllowed, embedOriginRejection } from '../embed-origin.js'
+import { ANY_SITE, embedAdmissionKind, embedDocumentAllowed, embedOriginRejection, parseLocalPattern } from '../embed-origin.js'
 
 // ADR-0039's two decisions: which strings a manifest may declare under
 // web.embed.origins, and which document a shown page may then load. The
@@ -155,5 +155,142 @@ describe('embedAdmissionKind -- HOW a document load is admitted', () => {
     for (const [url, patterns] of cases) {
       expect(embedDocumentAllowed(url, patterns)).toBe(embedAdmissionKind(url, patterns).kind !== 'refused')
     }
+  })
+})
+
+// ADR-0047's local pattern: `http://*.localhost:<port>` and
+// `http://*.<name>.localhost:<port>`. The grammar is fixed, and the pattern
+// admits only a page whose host is exactly one DNS label plus the suffix.
+describe('parseLocalPattern', () => {
+  it('reads the bare form', () => {
+    expect(parseLocalPattern('http://*.localhost:8123')).toEqual({ port: 8123, suffix: '.localhost' })
+  })
+
+  it('reads the named form, with one or several name labels', () => {
+    expect(parseLocalPattern('http://*.gateway.localhost:8123')).toEqual({ port: 8123, suffix: '.gateway.localhost' })
+    expect(parseLocalPattern('http://*.a-1.b2.localhost:65535')).toEqual({ port: 65535, suffix: '.a-1.b2.localhost' })
+  })
+
+  it('accepts the lowest port, 1024, and a 63-character name label', () => {
+    expect(parseLocalPattern('http://*.localhost:1024')?.port).toBe(1024)
+    const label = 'a'.repeat(63)
+    expect(parseLocalPattern(`http://*.${label}.localhost:8123`)?.suffix).toBe(`.${label}.localhost`)
+  })
+
+  it.each([
+    ['https', 'https://*.localhost:8123'],
+    ['no port', 'http://*.localhost'],
+    ['a port below 1024', 'http://*.localhost:1023'],
+    ['a port above 65535', 'http://*.localhost:65536'],
+    ['a leading zero in the port', 'http://*.localhost:08123'],
+    ['a path', 'http://*.localhost:8123/'],
+    ['a query', 'http://*.localhost:8123?x=1'],
+    ['a fragment', 'http://*.localhost:8123#x'],
+    ['userinfo', 'http://user@*.localhost:8123'],
+    ['upper case', 'http://*.LOCALHOST:8123'],
+    ['upper case in the name', 'http://*.Name.localhost:8123'],
+    ['a trailing dot', 'http://*.localhost.:8123'],
+    ['a wildcard that is not the leftmost label', 'http://a.*.localhost:8123'],
+    ['two wildcards', 'http://*.*.localhost:8123'],
+    ['a wildcard inside a label', 'http://a*.localhost:8123'],
+    ['no wildcard at all', 'http://a.localhost:8123'],
+    ['a host that is not a localhost name', 'http://*.example.com:8123'],
+    ['a name label with a leading hyphen', 'http://*.-a.localhost:8123'],
+    ['a name label with a trailing hyphen', 'http://*.a-.localhost:8123'],
+    ['a name label of 64 characters', `http://*.${'a'.repeat(64)}.localhost:8123`],
+    ['an empty name label', 'http://*..localhost:8123'],
+    ['an underscore in the name', 'http://*.a_b.localhost:8123'],
+    ['the wildcard alone', '*']
+  ])('rejects %s', (_label, pattern) => {
+    expect(parseLocalPattern(pattern)).toBeNull()
+  })
+})
+
+describe('embedOriginRejection -- the local pattern', () => {
+  it('rejects a wildcard over an address literal', () => {
+    expect(embedOriginRejection('http://*.127.0.0.1:8123')).not.toBeNull()
+  })
+
+  it.each([
+    'http://*.localhost:8123',
+    'http://*.gateway.localhost:8123',
+    'http://*.a.b.localhost:9000'
+  ])('accepts %s', (pattern) => {
+    expect(embedOriginRejection(pattern)).toBeNull()
+  })
+
+  it.each([
+    ['https', 'https://*.localhost:8123'],
+    ['no port', 'http://*.localhost'],
+    ['a port below 1024', 'http://*.localhost:80'],
+    ['a middle wildcard', 'http://a.*.localhost:8123'],
+    ['a wildcard under another domain', 'http://*.example.com:8123'],
+    ['a bare wildcard host', 'http://*:8123']
+  ])('still rejects %s as a wildcard host', (_label, pattern) => {
+    expect(embedOriginRejection(pattern)).toBe('wildcard-host')
+  })
+})
+
+describe('embedAdmissionKind -- the local pattern', () => {
+  const bare = ['http://*.localhost:8123']
+  const named = ['http://*.gateway.localhost:8123']
+
+  it('is "local", carrying the port, for one label under the suffix on that port', () => {
+    expect(embedAdmissionKind('http://a.localhost:8123/', bare)).toEqual({ kind: 'local', port: 8123 })
+    expect(embedAdmissionKind('http://site-1.gateway.localhost:8123/path?q#f', named)).toEqual({ kind: 'local', port: 8123 })
+  })
+
+  it('admits a label of 63 characters and refuses one of 64', () => {
+    expect(embedAdmissionKind(`http://${'a'.repeat(63)}.localhost:8123/`, bare)).toEqual({ kind: 'local', port: 8123 })
+    expect(embedAdmissionKind(`http://${'a'.repeat(64)}.localhost:8123/`, bare)).toEqual({ kind: 'refused' })
+  })
+
+  it('admits a blob: minted by a page under the pattern', () => {
+    expect(embedAdmissionKind('blob:http://a.localhost:8123/123e4567-e89b-12d3-a456-426614174000', bare))
+      .toEqual({ kind: 'local', port: 8123 })
+  })
+
+  it.each([
+    ['another port', 'http://a.localhost:8124/'],
+    ['no port', 'http://a.localhost/'],
+    ['https', 'https://a.localhost:8123/'],
+    ['the bare localhost name', 'http://localhost:8123/'],
+    ['two labels where * stands', 'http://a.b.localhost:8123/'],
+    ['an address literal', 'http://127.0.0.1:8123/'],
+    ['a trailing dot', 'http://a.localhost.:8123/'],
+    ['another domain', 'http://a.example.com:8123/']
+  ])('refuses %s under the bare form', (_label, url) => {
+    expect(embedAdmissionKind(url, bare)).toEqual({ kind: 'refused' })
+  })
+
+  it('refuses the name without a label under the named form', () => {
+    expect(embedAdmissionKind('http://gateway.localhost:8123/', named)).toEqual({ kind: 'refused' })
+  })
+
+  it('refuses the bare-form label under the named form, and the reverse', () => {
+    expect(embedAdmissionKind('http://a.localhost:8123/', named)).toEqual({ kind: 'refused' })
+    expect(embedAdmissionKind('http://a.gateway.localhost:8123/', bare)).toEqual({ kind: 'refused' })
+  })
+
+  it('lets an exact match win over the pattern', () => {
+    expect(embedAdmissionKind('http://a.localhost:8123/', ['http://*.localhost:8123', 'http://a.localhost:8123']))
+      .toEqual({ kind: 'exact' })
+  })
+
+  it('never lets "*" admit a localhost name, with or without the pattern beside it', () => {
+    expect(embedAdmissionKind('http://a.localhost:8123/', [ANY_SITE])).toEqual({ kind: 'refused' })
+    expect(embedAdmissionKind('http://a.localhost:9999/', [ANY_SITE, 'http://*.localhost:8123'])).toEqual({ kind: 'refused' })
+  })
+
+  it('admits a public site and a local one from one list holding "*" and the pattern', () => {
+    const both = [ANY_SITE, 'http://*.localhost:8123']
+    expect(embedAdmissionKind('https://example.com/', both)).toEqual({ kind: 'wildcard', hostname: 'example.com' })
+    expect(embedAdmissionKind('http://a.localhost:8123/', both)).toEqual({ kind: 'local', port: 8123 })
+    expect(embedAdmissionKind('http://127.0.0.1:8123/', both)).toEqual({ kind: 'refused' })
+  })
+
+  it('embedDocumentAllowed follows it', () => {
+    expect(embedDocumentAllowed('http://a.localhost:8123/', bare)).toBe(true)
+    expect(embedDocumentAllowed('http://a.localhost:8124/', bare)).toBe(false)
   })
 })
