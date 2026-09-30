@@ -370,21 +370,49 @@ export interface WebCapability {
  * partition, and kept across restarts, so a site the app shows can keep the
  * person signed in. The page's renderer is sandboxed, gets the shell's own
  * preload and never the app's, has no `orivon.*` and no path to the app's
- * grants, cannot open windows or download, and cannot itself embed. The
+ * grants, and cannot itself embed. A window it asks for never opens and a
+ * download it starts is cancelled; the app is told of each
+ * (`capability-api.ts`'s `EmbedPopup` and `EmbedDownload`, ADR-0047). The
  * app can read what those pages show and change it -- the element's own
  * methods already allow that -- so the prompt says exactly that, with a
  * warning, and a person who declines keeps every other grant.
  */
 export interface EmbedCapability {
   /**
-   * Which sites: exact `http://host[:port]` or `https://host[:port]`
-   * origins, compared exactly, or the single entry `"*"` for any site on the
-   * web. `"*"` never reaches an address literal outside public unicast or a
-   * `localhost` name (security-model.md T12); an origin named exactly may be
-   * one, and the person granting it sees that address. A page the app shows
-   * may load a document, in its top frame or a frame inside it, only from
-   * these origins; a subresource is the page's own business. A grant's
-   * `patterns` for `web.embed` are these strings.
+   * Which sites. Each entry is one of three things:
+   *
+   * - An exact `http://host[:port]` or `https://host[:port]` origin,
+   *   compared exactly. It may be a private address or a `localhost` name,
+   *   and the person granting it sees that address.
+   * - `"*"`, any site on the web. It never reaches an address literal
+   *   outside public unicast or a `localhost` name (security-model.md T12).
+   * - A local pattern (ADR-0047): `http://*.localhost:<port>` or
+   *   `http://*.<name>.localhost:<port>`. It names every origin with
+   *   exactly one label where `*` stands, on that port, and is how an app
+   *   shows pages it serves itself, each site at an origin of its own.
+   *
+   * A LOCAL PATTERN REACHES ONLY A LISTENER THIS APP ITSELF HOLDS on that
+   * port (`orivon.net.listen`, from its page, a worker or a child). While
+   * the app holds none there, a page under the pattern does not load, so
+   * the pattern never shows another program's server. Its grammar is fixed:
+   * `http` only, since nothing on this computer holds a certificate the
+   * browser trusts for a `localhost` name; a port written out, from 1024
+   * up; `*` as the leftmost label and the only one; and `<name>`, when
+   * present, one or more labels of lowercase letters, digits and hyphens.
+   *
+   * Sites under one `<name>.localhost` are different origins and still the
+   * same site: a cookie one of them sets for `<name>.localhost` reaches the
+   * others. The bare `*.localhost` form keeps each site's cookies apart,
+   * and is the one to use for sites that do not trust each other.
+   *
+   * `"*"` may be listed with other entries. Each adds what `"*"` does not
+   * reach: an exact origin is never resolved, so it may be on this computer
+   * or a private network, and a local pattern is this computer by
+   * definition.
+   *
+   * A page the app shows may load a document, in its top frame or a frame
+   * inside it, only from these origins; a subresource is the page's own
+   * business. A grant's `patterns` for `web.embed` are these strings.
    */
   readonly origins: readonly string[]
 }

@@ -146,6 +146,16 @@ export const LIMITS = {
   /** The largest script `orivon.web.setEmbedScript` accepts, in UTF-8 bytes. */
   embedScriptBytes: 4 * 1024 * 1024,
   /**
+   * The longest address an `orivon-popup` or `orivon-download` event carries
+   * (ADR-0047), in UTF-8 bytes; a longer one arrives as `''`. A shown page
+   * chooses these addresses, so the bound is what keeps one from handing
+   * the app an event of any size it likes. Sized to the longest address the
+   * engine beneath this build carries, which leaves room for a small file
+   * carried in a `data:` one. PROVISIONAL: AI-chosen, awaiting owner confirmation --
+   * `docs/open-questions.md` A305.
+   */
+  embedEventUrlBytes: 2 * 1024 * 1024,
+  /**
    * The largest plaintext `orivon.secrets.encrypt` accepts, in bytes
    * (ADR-0033). PROVISIONAL: AI-chosen, awaiting owner confirmation --
    * `docs/decisions/decision-log.md`. Sized for a wallet's seed material,

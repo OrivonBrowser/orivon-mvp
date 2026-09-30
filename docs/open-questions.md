@@ -1455,6 +1455,44 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing; a manifest can name its resolver today
 
+### A305: `web.embed`'s local pattern and its two events are AI-chosen shapes **[OWNER]**
+
+- **Question:** ADR-0047 lets a pattern's `*` stand for exactly one label, under a `localhost`
+  name only and reaching only the app's own listener; hands a shown page's popup and download to
+  the app as a notice with no window and no bytes; and caps an event's address at 2 MiB
+  (`LIMITS.embedEventUrlBytes`). Confirm them?
+- **Why it matters:** the pattern decides what a person is asked to grant, and the shapes are
+  `src/contracts/`, permanent once an app ships against them.
+- **Options:** confirm (rec.); let `*` span several labels; add a way to take a download's bytes.
+- **Who decides:** owner
+- **Blocks:** nothing; a real app reaching one of the three limits reopens it
+
+### A306: A shown page's link to a scheme Chromium does not know may raise the external-link prompt **[AI-REC]**
+
+- **Question:** The element's `will-navigate` names such a navigation, so an app can load an
+  address of its own for it (ADR-0047). Does the shell's own external-link prompt also appear,
+  asking a person about a link the app has already handled? Read from the permission gate, not
+  measured in a shown page.
+- **Why it matters:** an app that turns its own scheme's links into pages it serves would show a
+  prompt on every such link.
+- **Options:** measure it, then never offer a shown page's navigation to another program and
+  leave it to the app (rec.); keep the prompt.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A307: A shown page cannot reach a `.eth` name or an `ipfs://` address under `"*"` **[AI-REC]**
+
+- **Question:** The resolver rule answers a verifier-routed host with `127.0.0.1`, and `"*"`
+  refuses a name that resolves outside public unicast, so a shown page loads such a host only
+  when its origin is named exactly. Inferred from `embed-guard.ts`; the e2e covers another
+  mapped name, not a routed one. Should `"*"` admit the hosts the verifier serves?
+- **Why it matters:** the embed session is already stamped for the verifier, and a comment in
+  `embed-host.ts` says a shown page reaches it as any tab does.
+- **Options:** admit verifier-routed hosts under `"*"` and rewrite an `ipfs://` navigation in a
+  shown page as a tab's is (rec.); keep the refusal and correct the comment.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared
