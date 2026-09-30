@@ -249,3 +249,15 @@ export function arrowUpIcon (): SVGSVGElement {
 export function arrowDownIcon (): SVGSVGElement {
   return icon((el) => { el.append(path('M12 5v14', '2'), path('M19 12l-7 7-7-7', '2')) })
 }
+
+export function minusIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M5 12h14', '2')) })
+}
+
+/** Four corners: the full-screen control. */
+export function maximizeIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M8 3H5a2 2 0 0 0-2 2v3', '2'), path('M21 8V5a2 2 0 0 0-2-2h-3', '2'))
+    el.append(path('M3 16v3a2 2 0 0 0 2 2h3', '2'), path('M16 21h3a2 2 0 0 0 2-2v-3', '2'))
+  })
+}

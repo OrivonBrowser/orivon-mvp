@@ -252,7 +252,6 @@ export default defineConfig({
           permissions: resolve(root, 'src/preload/permissions.ts'),
           internal: resolve(root, 'src/preload/internal.ts'),
           'site-info': resolve(root, 'src/preload/site-info.ts'),
-          menu: resolve(root, 'src/preload/menu.ts'),
           overlay: resolve(root, 'src/preload/overlay.ts'),
           'split-frame': resolve(root, 'src/preload/split-frame.ts'),
           embed: resolve(root, 'src/preload/embed.ts'),
@@ -299,7 +298,6 @@ export default defineConfig({
           'page-private': resolve(root, 'src/renderer/pages/private/index.html'),
           'page-extensions': resolve(root, 'src/renderer/pages/extensions/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),
-          menu: resolve(root, 'src/renderer/menu/index.html'),
           overlay: resolve(root, 'src/renderer/overlay/index.html'),
           'split-frame': resolve(root, 'src/renderer/split-frame/index.html')
         }

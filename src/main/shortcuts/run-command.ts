@@ -84,6 +84,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'profiles.open': tabs.openInternal('profiles'); return
     case 'window.close': window.close(); return
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
+    case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
     case 'settings.open': tabs.openInternal('settings'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'app.quit': deps.quit(); return
@@ -92,7 +93,6 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'nav.stop': case 'nav.home':
     case 'find.open': case 'find.next': case 'find.previous':
     case 'page.print': case 'page.pdf': case 'page.save': case 'page.viewSource': case 'page.screenshot':
-    case 'window.alwaysOnTop':
       return
   }
 }

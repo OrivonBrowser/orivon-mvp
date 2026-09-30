@@ -11,7 +11,7 @@ const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://
 function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
   const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab', 'toggle', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
-  const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
+  const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
     window,
     chrome: { webContents: { focus: vi.fn(), send } },
@@ -29,7 +29,7 @@ function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindo
   const zoom = { step: vi.fn(), reset: vi.fn() }
   const devtools = { toggle: vi.fn() }
   const profiles = { openPrivate: vi.fn() }
-  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles } as unknown as ShellServices, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
+  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles } as unknown as ShellServices, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
 }
 
 describe('runCommand', () => {
@@ -135,6 +135,12 @@ describe('runCommand', () => {
     expect(calls['close']).toHaveBeenCalledTimes(1)
     expect(calls['setFullScreen']).toHaveBeenCalledWith(true)
     expect(calls['openInternal']).toHaveBeenCalledWith('settings')
+  })
+
+  it('keeps the window on top, and lets it go again', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('window.alwaysOnTop', target, deps)
+    expect(calls['setAlwaysOnTop']).toHaveBeenCalledWith(true)
   })
 
   it('zooms the site the active page is on, and does nothing where a page has no site', () => {

@@ -93,15 +93,6 @@ export const EMBED_SCRIPT_CHANNEL = 'orivon-embed:page-script'
  */
 export const INTERNAL_COMMAND_CHANNEL = 'orivon-internal:command'
 
-/** The main menu popover's own WebContentsView -> main: what it lists, and which entry was chosen. See ./ipc/menu-ipc.ts. */
-export const MENU_COMMAND_CHANNEL = 'orivon-menu:command'
-
-/** Main -> the menu popover's own WebContentsView: it was just shown again. The
- * menu is kept warm (shell/popover-view.ts's `warm`) rather than reloaded on
- * every open, so this is what tells its already-loaded page to re-fetch its
- * list and reset its own state (scroll position, keyboard focus). */
-export const MENU_SHOWN_CHANNEL = 'orivon-menu:shown'
-
 /** An overlay's own WebContentsView -> main: `{ type: 'ready' | 'request' | 'size' | 'close' }`. See ./overlays/overlay-ipc.ts. */
 export const OVERLAY_COMMAND_CHANNEL = 'orivon-overlay:command'
 

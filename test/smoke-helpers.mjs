@@ -46,14 +46,14 @@ export function findChrome (app) {
   return win
 }
 
-/** Every popup shell/popover-view.ts builds, by its own renderer entry --
- * never a real tab, so `tabViews()` below must never count one as one. A
- * `warm` popup (the main menu) is the reason this exclusion is needed at
+/** Every popup shell/popover-view.ts and the overlay host build, by its own
+ * renderer entry -- never a real tab, so `tabViews()` below must never count
+ * one as one. A `warm` overlay (the main menu) is the reason this exclusion is needed at
  * all: its webContents can outlive being closed (popoverShown's own doc), so
  * `app.windows()` keeps listing it long after a script that opened and
  * closed it would otherwise expect the "just the tabs" count to settle back
  * down. */
-const POPOVER_URL_PARTS = ['/menu/', '/overlay/', '/permissions/', '/site-info/']
+const POPOVER_URL_PARTS = ['/overlay/', '/permissions/', '/site-info/']
 
 /** Non-chrome, non-popover views, as Playwright pages -- lets a check read a
  * tab's OWN location rather than trusting the toolbar's rendering of it
@@ -149,10 +149,9 @@ export function findViewShowing (app, chrome, url) {
 }
 
 /**
- * Whether the popover whose URL contains `urlPart` (e.g. `/menu/`) is
+ * Whether the popover whose URL contains `urlPart` (e.g. `overlay=menu`) is
  * currently attached to the screen. NOT the same question as "does its
- * webContents exist" -- a `warm` popover (shell/popover-view.ts, the main
- * menu) keeps its webContents alive while hidden rather than destroying it,
+ * webContents exist" -- a `warm` popover (the main menu, an overlay) keeps its webContents alive while hidden rather than destroying it,
  * so `app.windows()` still lists it long after it closed. Reads the e2e-only
  * hook (shell/view-background-test-hook.ts's `recordPopoverShown`), present
  * only in a dev-grant-enabled build (`npm run test:e2e`'s own build step).
