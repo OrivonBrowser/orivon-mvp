@@ -14,6 +14,7 @@
 import type { EventEmitter } from 'events'
 import { Buffer } from 'buffer'
 import { concatBytes } from './parser.js'
+import { CONNECTION_CLOSE, CONNECTION_KEEP_ALIVE, CONNECTION_UPGRADE } from './header-tokens.js'
 import { HttpRequestParser, type ParsedRequestHead } from './request-parser.js'
 import type { IncomingMessage } from './message.js'
 import type { ServerResponse } from './server-response.js'
@@ -35,14 +36,11 @@ export interface HttpServerHost extends EventEmitter {
 
 /** Bytes held for a pipelined request before the socket is paused. */
 const BACKLOG_LIMIT = 64 * 1024
-const KEEP_ALIVE_TOKEN = /(?:^|\W)keep-alive(?:$|\W)/i
-const CLOSE_TOKEN = /(?:^|\W)close(?:$|\W)/i
-const UPGRADE_TOKEN = /(?:^|\W)upgrade(?:$|\W)/i
 type Timer = ReturnType<typeof setTimeout>
 
 function keepsConnectionAlive (head: ParsedRequestHead): boolean {
   const connection = String(head.headers.connection ?? '')
-  return head.httpVersion === '1.0' ? KEEP_ALIVE_TOKEN.test(connection) && !CLOSE_TOKEN.test(connection) : !CLOSE_TOKEN.test(connection)
+  return head.httpVersion === '1.0' ? CONNECTION_KEEP_ALIVE.test(connection) && !CONNECTION_CLOSE.test(connection) : !CONNECTION_CLOSE.test(connection)
 }
 
 function refusalFor (code: string | undefined): string {
@@ -56,9 +54,9 @@ export class HttpConnection {
   private res: ServerResponse | null = null
   private requestDone = false
   private responseFinished = false
-  private backlog: Uint8Array = new Uint8Array(0)
+  private backlog: Uint8Array[] = []
+  private backlogBytes = 0
   private hold = false
-  private pausedForBacklog = false
   private failed = false
   private upgraded = false
   private gone = false
@@ -74,23 +72,35 @@ export class HttpConnection {
     socket.on('timeout', this.onTimeout)
     socket.on('close', this.onClose)
     if (host.timeout > 0) socket.setTimeout(host.timeout)
+    this.startHeadersClock()
   }
 
   /** Not in the middle of a request, and not waiting to send a response. */
   get idle (): boolean {
-    return !this.gone && !this.upgraded && this.req === null && this.parser?.midMessage !== true && this.backlog.length === 0
+    return !this.gone && !this.upgraded && this.req === null && this.parser?.midMessage !== true && this.backlogBytes === 0
   }
+
+  /** Bytes read from the socket that belong to requests after the current one. Read by tests, through `kConnections`. */
+  get heldBytes (): number { return this.backlogBytes }
 
   closeIdle (): void { if (this.idle) this.socket.destroy() }
 
   private readonly onData = (chunk: Uint8Array): void => {
     if (this.gone || this.upgraded || this.failed) return
     if (this.hold) {
-      this.backlog = concatBytes(this.backlog, chunk)
-      if (this.backlog.length > BACKLOG_LIMIT && !this.pausedForBacklog) { this.pausedForBacklog = true; this.socket.pause() }
+      this.backlog.push(chunk)
+      this.backlogBytes += chunk.length
+      if (this.backlogFull) this.socket.pause()
       return
     }
     this.feed(chunk)
+  }
+
+  private get backlogFull (): boolean { return this.backlogBytes > BACKLOG_LIMIT }
+
+  /** A reader wants request bytes: read on, unless the bytes held for later requests are already over the cap. */
+  private readonly resumeUnlessFull = (): void => {
+    if (!this.backlogFull) this.socket.resume()
   }
 
   private feed (chunk: Uint8Array): void {
@@ -102,7 +112,9 @@ export class HttpConnection {
     parser.write(chunk)
     if (this.gone || this.upgraded || this.failed) return
     if (parser.finished) {
-      this.backlog = parser.takeRest()
+      const rest = parser.takeRest()
+      this.backlog = rest.length > 0 ? [rest] : []
+      this.backlogBytes = rest.length
       this.parser = null
       this.hold = true
       this.settle()
@@ -130,7 +142,7 @@ export class HttpConnection {
 
   private isUpgrade (head: ParsedRequestHead): boolean {
     if (head.method === 'CONNECT') return true
-    return head.headers.upgrade !== undefined && UPGRADE_TOKEN.test(String(head.headers.connection ?? '')) && this.host.listenerCount('upgrade') > 0
+    return head.headers.upgrade !== undefined && CONNECTION_UPGRADE.test(String(head.headers.connection ?? '')) && this.host.listenerCount('upgrade') > 0
   }
 
   private onHead (head: ParsedRequestHead): void {
@@ -138,6 +150,7 @@ export class HttpConnection {
     const { IncomingMessage: RequestClass, ServerResponse: ResponseClass } = this.host.requestClasses
     const req = new RequestClass(this.socket)
     req._setRequestHead(head)
+    req._onRead = this.resumeUnlessFull
     const res = new ResponseClass(req)
     res.shouldKeepAlive = keepsConnectionAlive(head)
     res._keepAliveTimeout = this.host.keepAliveTimeout
@@ -194,11 +207,17 @@ export class HttpConnection {
     this.responseFinished = false
     if (last || this.host.stopping) { this.hold = true; this.destroySoon(); return }
     this.hold = false
-    const pending = this.backlog
-    this.backlog = new Uint8Array(0)
-    if (this.pausedForBacklog) { this.pausedForBacklog = false; this.socket.resume() }
+    const pending = this.takeBacklog()
+    this.socket.resume()
     if (pending.length > 0) this.feed(pending)
     else this.armKeepAlive()
+  }
+
+  private takeBacklog (): Uint8Array {
+    const chunks = this.backlog
+    this.backlog = []
+    this.backlogBytes = 0
+    return chunks.length === 1 ? chunks[0] as Uint8Array : chunks.reduce(concatBytes, new Uint8Array(0))
   }
 
   private onUpgrade (head: ParsedRequestHead, rest: Uint8Array): void {
@@ -227,7 +246,8 @@ export class HttpConnection {
     this.hold = true
     this.clearTimers()
     if (this.host.listenerCount('clientError') > 0) { this.raise('clientError', error, this.socket); return }
-    if (this.res?._headerSent !== true && this.socket.bytesWritten === 0) this.socket.write(refusalFor(error.code))
+    // Node's test is whether the current response's head went out, not whether the connection ever wrote: a bad request behind a good one is still answered.
+    if (this.res?._headerSent !== true) this.socket.write(refusalFor(error.code))
     this.destroySoon()
   }
 
@@ -274,9 +294,14 @@ export class HttpConnection {
     socket.end(() => socket.destroy())
   }
 
+  /** Node measures the first request's headers from the connection's start, so a connection that never speaks is answered 408. */
+  private startHeadersClock (): void {
+    if (this.headersTimer === undefined && this.host.headersTimeout > 0) this.headersTimer = setTimeout(() => this.expire(), this.host.headersTimeout)
+  }
+
   private startRequestClock (): void {
     this.stopTimer('keepAliveTimer')
-    if (this.host.headersTimeout > 0) this.headersTimer = setTimeout(() => this.expire(), this.host.headersTimeout)
+    this.startHeadersClock()
     if (this.host.requestTimeout > 0) this.requestTimer = setTimeout(() => this.expire(), this.host.requestTimeout)
   }
 
