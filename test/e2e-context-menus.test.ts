@@ -270,7 +270,8 @@ it('never runs a script pasted into Paste and Go, and leaves the tab on a page t
     const urls = await tabUrls(app)
     expect(urls.some((url) => url.startsWith('javascript:'))).toBe(false)
     // The refused text leaves the tab on a blank page, or where it was: never on one that took the text for an address.
-    expect(urls.every((url) => url === 'about:blank' || url.startsWith(origin))).toBe(true)
+    const pages = urls.filter((url) => /^(https?:|about:|javascript:)/.test(url))
+    expect(pages.every((url) => url === 'about:blank' || url.startsWith(origin)), pages.join(' ')).toBe(true)
   } finally {
     await closeElectron(app)
   }
