@@ -17,23 +17,27 @@ const EVENT_NAMES: ReadonlySet<unknown> = new Set(['orivon-popup', 'orivon-downl
  * Written self-contained because only the function's source crosses.
  */
 function dispatchInMainWorld (guestId: number, name: string, detail: unknown): void {
-  const find = (root: ParentNode): Element | null => {
+  const matches = (element: Element): boolean => {
+    try {
+      return element.localName === 'webview' && (element as unknown as { getWebContentsId: () => number }).getWebContentsId() === guestId
+    } catch {
+      // Not attached yet: it cannot be the page a notice is about.
+      return false
+    }
+  }
+  // The document's own `<webview>`s first: nearly every app puts them there, and the deep walk visits every element.
+  const deep = (root: ParentNode): Element | null => {
     for (const element of Array.from(root.querySelectorAll('*'))) {
-      if (element.localName === 'webview') {
-        try {
-          if ((element as unknown as { getWebContentsId: () => number }).getWebContentsId() === guestId) return element
-        } catch {
-          // Not attached yet: it cannot be the page a notice is about.
-        }
-      }
+      if (matches(element)) return element
       if (element.shadowRoot !== null) {
-        const inner = find(element.shadowRoot)
+        const inner = deep(element.shadowRoot)
         if (inner !== null) return inner
       }
     }
     return null
   }
-  find(document)?.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }))
+  const target = Array.from(document.querySelectorAll('webview')).find(matches) ?? deep(document)
+  target?.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }))
 }
 
 /** Listens for the shell's notices; a notice no `<webview>` in this page matches is dropped. */
