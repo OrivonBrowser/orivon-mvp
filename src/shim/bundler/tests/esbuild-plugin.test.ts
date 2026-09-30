@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildAliasEntries } from '../../module-map.js'
 import { VIRTUAL_ROOT } from '../../virtual-root.js'
-import { orivonShimPlugin, shimAssets, virtualRoot } from '../esbuild-plugin.js'
+import { browserRule, orivonShimPlugin, packageOf, shimAssets, virtualRoot } from '../esbuild-plugin.js'
 
 const PLUGIN_PATH = fileURLToPath(new URL('../esbuild-plugin.ts', import.meta.url))
 let dir = ''
@@ -162,3 +162,53 @@ function spawnNode (script: string): { status: number | null, stdout: string, st
   const result = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', script], { encoding: 'utf8', cwd: dir, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } })
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
+
+describe('a package\'s browser field', () => {
+  // packageOf stops at the checkout's node_modules, so the fixture packages live there, apart from the real ones.
+  const fixtures = join(fileURLToPath(new URL('../../../../node_modules', import.meta.url)), `.orivon-plugin-fixtures-${Math.random().toString(36).slice(2)}`)
+  const write = (path: string, contents: string): void => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, contents) }
+  const info = (name: string, file: string): NonNullable<ReturnType<typeof packageOf>> => {
+    const found = packageOf(join(fixtures, name, file))
+    if (found === undefined) throw new Error(`no package for ${name}/${file}`)
+    return found
+  }
+  afterAll(() => { rmSync(fixtures, { recursive: true, force: true }) })
+
+  it('maps a main file named as a path, which a string-valued browser field replaces', () => {
+    write(join(fixtures, 'path-main', 'package.json'), JSON.stringify({ name: 'path-main', main: 'lib/index.js', browser: 'lib/browser.js' }))
+    write(join(fixtures, 'path-main', 'lib', 'index.js'), '')
+    write(join(fixtures, 'path-main', 'lib', 'browser.js'), '')
+    const found = info('path-main', 'lib/index.js')
+    expect(browserRule(found, join(fixtures, 'path-main', 'lib', 'index.js'))).toBe(join(fixtures, 'path-main', 'lib', 'browser.js'))
+    expect(browserRule(found, join(fixtures, 'path-main', 'lib', 'other.js'))).toBeUndefined()
+  })
+
+  it('reads a key as ./x, x, x.js or a module name, and a value as a path from the package', () => {
+    const base = join(fixtures, 'keys')
+    write(join(base, 'package.json'), JSON.stringify({
+      name: 'keys',
+      main: './main',
+      browser: { './lib/a.js': './lib/a-browser.js', 'lib/b': 'lib/b-browser.js', './lib/c': false, fs: false, crypto: 'crypto-browserify', './main': './main-browser.js' }
+    }))
+    for (const file of ['lib/a.js', 'lib/b.js', 'lib/c.js', 'main.js', 'crypto.js']) write(join(base, file), '')
+    const found = info('keys', 'main.js')
+    const at = (file: string): string => join(base, file)
+    expect(browserRule(found, at('lib/a.js'))).toBe(at('lib/a-browser.js'))
+    expect(browserRule(found, at('lib/b.js'))).toBe(at('lib/b-browser.js'))
+    expect(browserRule(found, at('lib/c.js'))).toBe(false)
+    expect(browserRule(found, at('main.js'))).toBe(at('main-browser.js'))
+    expect(browserRule(found, 'fs')).toBe(false)
+    expect(browserRule(found, 'crypto')).toBe('crypto-browserify')
+    expect(browserRule(found, at('crypto.js'))).toBeUndefined()
+  })
+
+  it('belongs to the package above a nested package.json that only sets the module type', () => {
+    const base = join(fixtures, 'typed')
+    write(join(base, 'package.json'), JSON.stringify({ name: 'typed', browser: { './dist/cjs/rng.js': './dist/cjs/rng-browser.js' } }))
+    write(join(base, 'dist', 'cjs', 'package.json'), JSON.stringify({ type: 'commonjs' }))
+    write(join(base, 'dist', 'cjs', 'rng.js'), '')
+    const found = info('typed', 'dist/cjs/rng.js')
+    expect(found.dir).toBe(base)
+    expect(browserRule(found, join(base, 'dist', 'cjs', 'rng.js'))).toBe(join(base, 'dist', 'cjs', 'rng-browser.js'))
+  })
+})

@@ -94,8 +94,9 @@ that is the shim's `crypto` again, and the cycle leaves `createHash` undefined. 
 and of the packages this checkout's `dependencies` reach, and for those only: the port's own
 packages, and this checkout's devDependencies, resolve as a Node bundle does. Provisional: it
 reimplements the part of esbuild's `browser` handling the shim's tree needs (a string that replaces
-`main`, `"./file": "./other"`, `"name": false`), and a published package would ship this tree
-already bundled.
+`main`, whether `main` is written `lib/index.js` or `./lib`; `"./file": "./other"` and `"lib/file": "lib/other"`,
+with or without an extension; `"name": false`), and a nested `package.json` with no `name` (only a `type`)
+belongs to the package above it. A published package would ship this tree already bundled.
 
 **A package row named like a builtin is asked for with a trailing slash** (`events/`). Under
 `platform: 'node'`, esbuild otherwise answers `events` with the builtin.

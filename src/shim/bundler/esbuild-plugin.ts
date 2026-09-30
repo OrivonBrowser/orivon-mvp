@@ -48,11 +48,15 @@ function packageRequest (name: string): string {
 }
 
 type BrowserEntries = readonly (readonly [string, string | false])[]
-interface PackageInfo { readonly dir: string, readonly main: string, readonly browser: BrowserEntries }
+export interface PackageInfo { readonly dir: string, readonly main: string, readonly browser: BrowserEntries }
 const packages = new Map<string, PackageInfo | undefined>()
 
-/** The package a file belongs to: its nearest package.json below the checkout's node_modules. */
-function packageOf (file: string): PackageInfo | undefined {
+/**
+ * The package a file belongs to: its nearest package.json that names a package, below the
+ * checkout's node_modules. A nested package.json that only sets `type` (uuid's `dist/cjs/`) is
+ * part of the package above it. Exported for the plugin's own tests.
+ */
+export function packageOf (file: string): PackageInfo | undefined {
   let dir = dirname(file)
   const visited: string[] = []
   for (;;) {
@@ -61,12 +65,14 @@ function packageOf (file: string): PackageInfo | undefined {
     visited.push(dir)
     if (existsSync(join(dir, 'package.json'))) {
       const json = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-      const main: string = typeof json.main === 'string' ? json.main : 'index.js'
-      const field = json.browser
-      const browser: BrowserEntries = typeof field === 'string' ? [[main, field]] : (typeof field === 'object' && field !== null ? Object.entries(field) : [])
-      const info: PackageInfo = { dir, main, browser }
-      for (const seen of visited) packages.set(seen, info)
-      return info
+      if (typeof json.name === 'string') {
+        const main: string = typeof json.main === 'string' ? json.main : 'index.js'
+        const field = json.browser
+        const browser: BrowserEntries = typeof field === 'string' ? [[main, field]] : (typeof field === 'object' && field !== null ? Object.entries(field) : [])
+        const info: PackageInfo = { dir, main, browser }
+        for (const seen of visited) packages.set(seen, info)
+        return info
+      }
     }
     const parent = dirname(dir)
     if (parent === dir || !dir.startsWith(CHECKOUT_ROOT)) {
@@ -82,10 +88,30 @@ function forms (path: string): string[] {
   return [path, `${path}.js`, `${path}.json`, join(path, 'index.js')]
 }
 
-/** What a package's `browser` field says about `wanted`: another file, `false` for empty, or undefined. */
-function browserRule (info: PackageInfo, wanted: string): string | false | undefined {
+const fileKeys = new Map<string, boolean>()
+
+/**
+ * Whether a `browser` key names a file of the package and not a module: `./x`, the package's own
+ * `main` however it is spelled, or a `lib/x` path that exists (with an extension or as a directory
+ * index). A bare name such as `crypto` is a module, even where a file of that name sits beside it.
+ */
+function isFileKey (info: PackageInfo, key: string): boolean {
+  if (key.startsWith('.') || isAbsolutePath(key)) return true
+  if (key.replace(/^\.\//, '') === info.main.replace(/^\.\//, '')) return true
+  if (!key.includes('/')) return false
+  const id = `${info.dir}\0${key}`
+  let known = fileKeys.get(id)
+  if (known === undefined) {
+    known = resolveFile(resolve(info.dir, key)) !== undefined
+    fileKeys.set(id, known)
+  }
+  return known
+}
+
+/** What a package's `browser` field says about `wanted`: another file, `false` for empty, or undefined. Exported for the plugin's own tests. */
+export function browserRule (info: PackageInfo, wanted: string): string | false | undefined {
   for (const [key, value] of info.browser) {
-    if (key.startsWith('.') || !key.includes('/') && key === info.main) {
+    if (isFileKey(info, key)) {
       if (forms(resolve(info.dir, key)).includes(wanted)) return value === false ? false : resolve(info.dir, value)
     } else if (key === wanted) {
       return value === false ? false : (value.startsWith('.') ? resolve(info.dir, value) : value)
