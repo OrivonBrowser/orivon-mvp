@@ -77,7 +77,10 @@ function loadExtensionIntoEngine(engine: DnrEngine, entry: InstalledExtension): 
   const dynamicRules = readDynamicRules(slotDir)
   if (dynamicRules.length > 0) {
     try {
-      engine.updateDynamicRules(entry.id, { addRules: dynamicRules })
+      // A recovery reload keeps the engine's rule manager, so the same
+      // rules may already be there: replaced, not added on top.
+      const held = engine.getDynamicRules(entry.id).map((rule) => rule.id)
+      engine.updateDynamicRules(entry.id, { removeRuleIds: held, addRules: dynamicRules })
     } catch (error) {
       console.error(`[dnr] ${entry.id}: persisted dynamic rules rejected, none loaded: ${String(error)}`)
     }
