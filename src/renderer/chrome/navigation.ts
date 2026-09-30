@@ -63,9 +63,15 @@ export function createNavigation (): ChromeModule {
     render,
     // A keyboard shortcut in main asks for the address bar.
     event: (payload) => {
-      if ((payload as { type?: string }).type === 'focusAddress') {
+      const event = payload as { type?: string, text?: unknown }
+      if (event.type === 'focusAddress') {
         addressInput?.focus()
         addressInput?.select()
+      }
+      // The clipboard replaces the field and is submitted exactly as typed text is.
+      if (event.type === 'pasteAndGo' && typeof event.text === 'string' && addressInput !== undefined) {
+        addressInput.value = event.text
+        addressInput.closest('form')?.requestSubmit()
       }
     }
   }

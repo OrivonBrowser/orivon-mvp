@@ -28,6 +28,7 @@ rather than editing here.
 | [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |
 | [`devtools/`](devtools/) | When developer tools may open on a page, and the question before they open on an app | which tools are open | `devtools-prompt.ts` only |
 | [`zoom/`](zoom/) | How large each site is shown, chosen per site and remembered | `zoom.json` on disk | `attach-zoom.ts` and `install-zoom.ts` only |
+| [`spellcheck/`](spellcheck/) | Spell checking in tabs, switched on or off by a setting | no: Chromium keeps the custom dictionary | `install-spellcheck.ts` only |
 | [`shortcuts/`](shortcuts/) | Which key runs which command, the rules for changing one, and the listener that runs them | `shortcuts.json` on disk | `dispatcher.ts`, `install-shortcuts.ts` and `app-menu.ts` only |
 | [`settings/`](settings/) | What the person set, validated, persisted and told to whoever listens | `settings.json` on disk | no |
 | [`storage/`](storage/) | The debounced, single-flight disk write every small persisted file shares | no | no |

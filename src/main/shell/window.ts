@@ -3,7 +3,7 @@
 // below it, whichever tab WebContentsView is active. See docs/architecture --
 // there is no shell doc, this file and its neighbours (tabs.ts, ipc.ts)
 // are the specification.
-import { app, WebContentsView, type BaseWindow } from 'electron'
+import { app, clipboard, WebContentsView, type BaseWindow } from 'electron'
 import { join } from 'node:path'
 import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import { lockNavigation } from './lock-navigation.js'
@@ -23,6 +23,8 @@ import { HtmlFullscreen } from './fullscreen.js'
 import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
 import { chromeContextMenuHost } from './chrome-context-menu.js'
+import { pasteAndGo } from './paste-and-go.js'
+import { sendChromeEvent } from './shell-events.js'
 import type { ShellWindowOptions } from './window-options.js'
 import { runWindowHooks } from './window-hooks.js'
 import { showIntro } from './intro-view.js'
@@ -227,7 +229,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // The address bar's Cut/Copy/Paste: the same menu a tab gets, plus Inspect
   // where chrome-context-menu.ts's gate allows it.
   chrome.webContents.on('context-menu', (_event, params) => {
-    showContextMenu(chrome.webContents, params, chromeContextMenuHost(services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }))
+    showContextMenu(chrome.webContents, params, chromeContextMenuHost(services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }, () => {
+      void pasteAndGo(() => clipboard.readText(), (text) => { sendChromeEvent(entry, 'navigation', { type: 'pasteAndGo', text }) })
+    }))
   })
 
   registerShellIpc(chrome.webContents, chromeUrl, tabs, services.bookmarks, panels.siteInfoController, shellActions({
