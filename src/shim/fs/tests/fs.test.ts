@@ -8,6 +8,7 @@ import type { Orivon } from '../../../contracts/capability-api.js'
 import type { FileStat } from '../../../contracts/handles.js'
 import { createFakeFileHandle } from '../../tests/support/fake-file-handle.js'
 import { PageBuffer } from '../../tests/support/page-buffer.js'
+import { VIRTUAL_ROOT } from '../../virtual-root.js'
 
 type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
@@ -262,16 +263,17 @@ describe('fs.readFileSync', () => {
   })
 })
 
-describe('every other synchronous export', () => {
-  it('throws a named ADR-0016 error rather than faking a sync capability the broker does not have', async () => {
+describe('every other synchronous export, on the page', () => {
+  it('throws a named error naming where it does work, rather than faking a sync capability the page does not have', async () => {
     installFakeOrivon()
     const fs = await import('../fs.js')
-    expect(() => fs.statSync('tmp')).toThrow(/ADR-0016/)
-    expect(() => fs.mkdirSync('x')).toThrow(/ADR-0016/)
-    expect(() => fs.writeFileSync('x', 'y')).toThrow(/ADR-0016/)
-    expect(() => fs.accessSync('x')).toThrow(/ADR-0016/)
-    expect(() => fs.appendFileSync('x', 'y')).toThrow(/ADR-0016/)
-    expect(() => fs.unlinkSync('x')).toThrow(/ADR-0016/)
+    expect(() => fs.statSync('tmp')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.mkdirSync('x')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.writeFileSync('x', 'y')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.accessSync('x')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.appendFileSync('x', 'y')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.unlinkSync('x')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => fs.realpathSync('x')).toThrow(/forked child or a worker_threads.Worker/)
   })
 })
 
@@ -338,6 +340,88 @@ describe('fs.unlink', () => {
       fs.unlink('x', (err) => (err !== null ? reject(err) : resolve()))
     })
     expect(rmCalls).toEqual([{ path: 'x', opts: undefined }])
+  })
+})
+
+describe('fs.rmdir', () => {
+  it('removes an empty directory with no recursive option -- unlike fs.rm, which fails on any directory without one', async () => {
+    const { stats, rmCalls } = installFakeOrivon()
+    stats.set('empty-dir', { size: 0, isFile: false, isDirectory: true, mtimeMs: 0 })
+    const fs = await import('../fs.js')
+    await new Promise<void>((resolve, reject) => {
+      fs.rmdir('empty-dir', (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect(rmCalls).toEqual([{ path: 'empty-dir', opts: { recursive: true } }])
+  })
+
+  it('is ENOTEMPTY for a non-empty directory, never asking rm to touch it without recursive', async () => {
+    const { stats, rmCalls } = installFakeOrivon()
+    stats.set('torrents', { size: 0, isFile: false, isDirectory: true, mtimeMs: 0 })
+    const fs = await import('../fs.js')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.rmdir('torrents', (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('ENOTEMPTY')
+    expect(rmCalls).toEqual([])
+  })
+
+  it('is ENOTDIR for a file', async () => {
+    const { stats } = installFakeOrivon()
+    stats.set('a-file', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    const fs = await import('../fs.js')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.rmdir('a-file', (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('ENOTDIR')
+  })
+
+  it('a missing path maps to a Node-shaped error, matching every other fs call', async () => {
+    installFakeOrivon()
+    const fs = await import('../fs.js')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.rmdir('missing', (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('notFound')
+  })
+
+  it('{ recursive: true } removes the tree, skipping every check', async () => {
+    const { rmCalls } = installFakeOrivon()
+    const fs = await import('../fs.js')
+    await new Promise<void>((resolve, reject) => {
+      fs.rmdir('a-tree', { recursive: true }, (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect(rmCalls).toEqual([{ path: 'a-tree', opts: { recursive: true } }])
+  })
+})
+
+describe('fs.realpath', () => {
+  it('resolves an existing path to its normalised absolute path under the virtual root', async () => {
+    const { stats } = installFakeOrivon()
+    stats.set('settings.json', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    const fs = await import('../fs.js')
+    const result = await new Promise<string | Buffer>((resolve, reject) => {
+      fs.realpath('settings.json', (err, path) => (err !== null ? reject(err) : resolve(path as string | Buffer)))
+    })
+    expect(result).toBe(`${VIRTUAL_ROOT}/settings.json`)
+  })
+
+  it('a missing path maps to a Node-shaped error', async () => {
+    installFakeOrivon()
+    const fs = await import('../fs.js')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.realpath('missing', (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('notFound')
+  })
+
+  it('.native answers the same way -- this shim keeps no cache for it to bypass', async () => {
+    const { stats } = installFakeOrivon()
+    stats.set('settings.json', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    const fs = await import('../fs.js')
+    const result = await new Promise<string | Buffer>((resolve, reject) => {
+      fs.realpath.native('settings.json', (err, path) => (err !== null ? reject(err) : resolve(path as string | Buffer)))
+    })
+    expect(result).toBe(`${VIRTUAL_ROOT}/settings.json`)
   })
 })
 

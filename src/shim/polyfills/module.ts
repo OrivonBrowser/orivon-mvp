@@ -30,4 +30,7 @@ export function createRequire (filename: string | URL): ShimRequire {
   return require
 }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/module.js'
+
 export default nodeModule('module', { createRequire, builtinModules, isBuiltin })

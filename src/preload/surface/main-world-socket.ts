@@ -26,7 +26,9 @@ export type {
 export function installOrivon (
   bridge: MainWorldBridge,
   limits: OrivonLimits,
-  target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown }
+  target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown },
+  /** False only where the object never enters a main world (the child host's preload): there is no page frame to attribute a call to, and no script but the preload's own can reach it. README.md's Design notes. */
+  attributeCallers = true
 ): void {
   /** Builds a REAL `Error`, unlike ../orivon-error.ts's isolated-world twin -- see README.md's Design notes for why, and why this file cannot import that one either way. */
   function toOrivonError (
@@ -399,6 +401,7 @@ export function installOrivon (
   function refusal (): Error & { code: OrivonErrorCode } { return toOrivonError('denied', { message: "orivon: refused -- the caller could not be attributed to this page's own script" }) }
   /** Wraps one page-callable leaf: `sync` (`fs.readFileSync` alone) throws on refusal, matching its own never-a-Promise shape; every other method rejects. Internal callers reach `fn` directly (`netConnectImpl` below), never through `wrapped`. */
   function guarded<F extends (...args: never[]) => unknown> (fn: F, sync = false): F {
+    if (!attributeCallers) return fn
     function wrapped (...args: unknown[]): unknown {
       const captured = captureCaller(wrapped)
       if (captured.tampered || callerIsRefused(captured.frames)) {

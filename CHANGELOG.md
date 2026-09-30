@@ -13,6 +13,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **An app's child processes outlive the tab that started them** while another tab of the app is open,
+  and end with its last page: they run in a hidden host of the app's own, with the app's grants
+  (ADR-0046).
+- **`worker_threads.Worker` runs a thread** in a Web Worker, with `parentPort`, `workerData`,
+  message ports and `terminate()`, from the page or from a forked child.
+- **A forked child or thread of a cross-origin isolated app can call every `fs` `*Sync` method**
+  and `spawnSync`/`execSync`/`execFileSync`; the page keeps `readFileSync` and `existsSync`.
+- **A CommonJS `require()` of a Node module the shim lacks a member of names the gap** when called,
+  instead of `undefined is not a function`.
 - **Extensions that capture a tab's audio work**, Volume Master among them: `chrome.offscreen`, `chrome.tabCapture`
   and `chrome.runtime.getContexts`. A capture needs the extension's toolbar button on that tab, and the tab is
   heard only through the extension while captured.
@@ -121,6 +130,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A burst of short-lived sockets no longer brings the browser down.** The broker's socket streams no longer go
+  through Node's `Duplex.toWeb`, whose teardown could throw where nothing could catch it.
+- **A program a forked child spawns can use the app's files and network.** Every `orivon.*` call from it failed
+  before, which a WASI program saw as an I/O error on its first file call.
+- **A WASI program that listens on an IPv6 address no longer aborts when it reads its own address.** A
+  listener reports the address it bound, and every reported address is of the socket's own family.
 - **A middle, ctrl, shift or ctrl+shift click on a link no longer closes the browser.**
 - **An extension's sandbox page gets no extension APIs**, as in Chrome, so untrusted code an extension runs there
   cannot act with the extension's permissions.

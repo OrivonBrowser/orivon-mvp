@@ -73,4 +73,7 @@ export function stringify (object: unknown, sep = '&', eq = '=', options: String
 export const decode = parse
 export const encode = stringify
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/querystring.js'
+
 export default nodeModule('querystring', { decode, encode, escape, parse, stringify, unescape })

@@ -1,8 +1,9 @@
 // createSocketRelay against a real local TCP server and a real dialTcp()/
-// Duplex.toWeb socket: proves that a clean end in both directions is
-// actually observed on a real socket (the peer's FIN ends the readable, the
-// app's write-end issues ours) and releases the handle, which the synthetic
-// streams in transport/relay/tests/socket.test.ts can only assume.
+// ../../../adapters/socket-streams.ts socket: proves that a clean end in
+// both directions is actually observed on a real socket (the peer's FIN
+// ends the readable, the app's write-end issues ours) and releases the
+// handle, which the synthetic streams in transport/relay/tests/socket.test.ts
+// can only assume.
 
 import { createServer, type Server, type Socket } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'

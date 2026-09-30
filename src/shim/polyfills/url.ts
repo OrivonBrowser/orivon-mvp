@@ -126,4 +126,7 @@ export function resolve (from: string, to: string): string {
   return (from.startsWith('/') ? pathname : pathname.slice(1)) + search + hash
 }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/url.js'
+
 export default nodeModule('url', { URL, URLSearchParams, fileURLToPath, format, parse, pathToFileURL, resolve })

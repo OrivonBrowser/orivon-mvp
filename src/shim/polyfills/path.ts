@@ -5,6 +5,9 @@
 import pathBrowserify from 'path-browserify'
 import { nodeModule } from './module-proxy.js'
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/path.js'
+
 export const {
   basename, delimiter, dirname, extname, format, isAbsolute, join, normalize, parse, relative, resolve, sep
 } = pathBrowserify

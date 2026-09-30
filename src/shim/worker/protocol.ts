@@ -31,11 +31,32 @@ export interface ForkStart {
   readonly orivon: MessagePort
 }
 
+/** Imports an app module as a `worker_threads` thread: Node's `process`, minus IPC, plus `parentPort` and `workerData`. */
+export interface ThreadStart {
+  readonly type: 'thread'
+  /** Absolute URL of the module; a blob Worker has no base URL of the app's. */
+  readonly url: string
+  readonly argv: readonly string[]
+  readonly env: Readonly<Record<string, string>>
+  readonly cwd: string
+  readonly threadId: number
+  readonly workerData: unknown
+  readonly name: string
+  /** The thread's end of a `MessageChannel` whose other end is the `Worker` instance. */
+  readonly parentPort: MessagePort
+  readonly orivon: MessagePort
+  /** Whether the matching `Worker` option was set: false routes that stream to the parent's own instead of piping it. */
+  readonly stdin: boolean
+  readonly stdout: boolean
+  readonly stderr: boolean
+}
+
 export type StreamName = 'stdout' | 'stderr'
 
 export type ToWorker =
   | SpawnStart
   | ForkStart
+  | ThreadStart
   | { readonly type: 'stdin', readonly data: Uint8Array }
   | { readonly type: 'stdin-end' }
   /** The page has taken the last chunk of `stream`: the Worker may send the next. */
@@ -47,6 +68,18 @@ export interface WireError {
   readonly name: string
   readonly message: string
   readonly code?: string
+  /** `SpawnError`'s own `reason` (../child-process/program.ts): the one other field a caller
+   * reads off a spawn failure (`ENOEXEC` for a native program names `'excluded'`) -- carried
+   * across the wire so a host-routed spawn's refusal reads the same as a local one's. */
+  readonly reason?: string
+  /** Node's own `errno`, `syscall`, `path` and `spawnargs` (shim finding 14) -- without these a
+   * host-routed spawn failure's `catch (e) { e.errno }` reads `undefined` where the local path
+   * (and Node) has the real value, and `ChildProcess.#finish` had nothing but a fixed -8 to
+   * report as the exit code, where the local path (and Node) reports ENOENT's real -2. */
+  readonly errno?: number
+  readonly syscall?: string
+  readonly path?: string
+  readonly spawnargs?: readonly string[]
 }
 
 export type FromWorker =
@@ -55,15 +88,41 @@ export type FromWorker =
   /** `signal` is set when the child did not end by returning or calling exit. */
   | { readonly type: 'exit', readonly code: number | null, readonly signal: string | null }
   | { readonly type: 'failed', readonly error: WireError }
+  /** An uncaught error or rejection, raw rather than a WireError: Chromium structured-clones an Error, which a worker_threads.Worker's 'error' event wants as itself, not a plain record. */
+  | { readonly type: 'crash', readonly error: unknown }
   | { readonly type: 'ipc', readonly message: unknown }
   | { readonly type: 'disconnect' }
 
+/**
+ * What `ChildProcess` (../child-process/child.ts) needs from whatever is
+ * actually running its child: the real, same-process `Worker` `launch.ts`
+ * makes, or a remote adapter over a child host's own port (ADR-0046,
+ * ../child-process/host-client.ts) -- `ChildProcess` itself never cares
+ * which. A real `Worker` already satisfies this structurally; a remote
+ * adapter can too, without a cast, since neither implements the rest of
+ * `Worker`'s own DOM surface.
+ */
+export interface WorkerLike {
+  onmessage: ((event: MessageEvent<FromWorker>) => void) | null
+  onerror: ((event: ErrorEvent) => void) | null
+  postMessage (message: ToWorker): void
+  terminate (): void
+}
+
 export function toWireError (error: unknown): WireError {
   if (typeof error !== 'object' || error === null) return { name: 'Error', message: String(error) }
-  const { name, message, code } = error as { name?: unknown, message?: unknown, code?: unknown }
+  const { name, message, code, reason, errno, syscall, path, spawnargs } = error as {
+    name?: unknown, message?: unknown, code?: unknown, reason?: unknown
+    errno?: unknown, syscall?: unknown, path?: unknown, spawnargs?: unknown
+  }
   return {
     name: typeof name === 'string' ? name : 'Error',
     message: typeof message === 'string' ? message : String(error),
-    ...(typeof code === 'string' ? { code } : {})
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(typeof reason === 'string' ? { reason } : {}),
+    ...(typeof errno === 'number' ? { errno } : {}),
+    ...(typeof syscall === 'string' ? { syscall } : {}),
+    ...(typeof path === 'string' ? { path } : {}),
+    ...(Array.isArray(spawnargs) ? { spawnargs: spawnargs.map(String) } : {})
   }
 }

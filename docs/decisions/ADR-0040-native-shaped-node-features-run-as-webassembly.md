@@ -1,6 +1,6 @@
 # ADR-0040: Native modules and child processes run as WebAssembly in the app's tab, never as machine code
 
-- **Status:** accepted, **amended 2026-09-28**: `spawn`, `fork` and the addon resolution are built, an addon reaches files from a forked child, and a spawned WASI 0.2 component opens sockets (see the Amendments at the end)
+- **Status:** accepted, **amended 2026-09-28**: `spawn`, `fork` and the addon resolution are built, an addon reaches files from a forked child, and a spawned WASI 0.2 component opens sockets; **amended 2026-09-29** by [ADR-0046](./ADR-0046-an-app-s-children-live-until-its-last-page-closes.md): a child's Worker runs in a hidden host of the app's own, not the page that started it (see the Amendments at the end)
 - **Date:** 2026-09-28
 - **Type:** architecture / security
 - **Decided by:** owner (the goal, and that it must keep every broker guard with no added risk);
@@ -145,3 +145,12 @@ instantiate a component, so jco transpiles it at the port's build and the port s
 beside the program; jco is not transpiled at run time, since its packages install native binaries
 (Rule 8). A socket connects by the name the program resolved, so the broker checks the host grant
 it checks for `net.connect(name)`. Like the preview1 host, this one adds no authority.
+
+## Amendment (2026-09-29): a child's Worker runs in a hidden host of the app's own
+
+[ADR-0046](./ADR-0046-an-app-s-children-live-until-its-last-page-closes.md) moves a child's Worker
+out of the page that started it and into a hidden host the shell keeps for the whole app: a child
+now outlives the page that started it while another page of the app is open, and ends only with the
+app's last page, never merely with the page that happened to start it. Everything else in this
+ADR's Decision and Consequences still holds: a child is still WebAssembly or JavaScript in a Web
+Worker, at the same broker allowance, never machine code.

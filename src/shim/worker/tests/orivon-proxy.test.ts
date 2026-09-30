@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createOrivonClient } from '../orivon-client.js'
-import { type OrivonServer, serveOrivon } from '../orivon-server.js'
+import { type OrivonServer, type RunSpawnSync, serveOrivon } from '../orivon-server.js'
 import { createChannelBuffer, decodeReply } from '../sync-channel.js'
 
 interface FakeHandle { id: string, closed: Promise<void>, close: () => Promise<void>, closedCount: () => number }
@@ -47,6 +47,22 @@ describe('calls', () => {
     const client = connect({ fs: {} })
     await expect(client.fs.missing()).rejects.toThrow(/orivon has no method fs.missing/)
     await expect(client.fs.toString()).rejects.toThrow(/orivon has no method fs.toString/)
+  })
+
+  it('serves its own orivon to a child of its own, so a call from that child reaches the page', async () => {
+    // A Worker that spawns a program serves the Worker's client as that program's orivon.
+    const inner = connect({ fs: { mkdir: async (path: string) => `made ${path}` } })
+    const nested = new MessageChannel()
+    const nestedServer = serveOrivon(nested.port1, inner)
+    try {
+      const grandchild = createOrivonClient(nested.port2) as unknown as { fs: { mkdir: Method, toString: Method } }
+      expect(await grandchild.fs.mkdir('/data')).toBe('made /data')
+      // The page's own-property check still decides: an inherited member is refused there.
+      await expect(grandchild.fs.toString()).rejects.toThrow(/orivon has no method fs.toString/)
+    } finally {
+      await nestedServer.dispose()
+      nested.port2.close()
+    }
   })
 
   it('refuses readFileSync by name without shared memory, and is never mistaken for a promise', async () => {
@@ -156,5 +172,79 @@ describe('synchronous calls', () => {
     server = serveOrivon(channel.port1, {})
     expect(() => { (channel?.port1.onmessage as (event: { data: unknown }) => void)({ data: { syncBuffer: new SharedArrayBuffer(16) } }) }).not.toThrow()
     expect(() => { (channel?.port1.onmessage as (event: { data: unknown }) => void)({ data: { syncBuffer: new ArrayBuffer(64) } }) }).not.toThrow()
+  })
+})
+
+/** spawnSync's own request kind (CallBody's spawnSync variant): answered by the runSpawnSync serveOrivon is given, never by an orivon.* path. */
+async function syncSpawnReply (runSpawnSync: RunSpawnSync, payload: unknown): Promise<unknown> {
+  channel = new MessageChannel()
+  server = serveOrivon(channel.port1, {}, runSpawnSync)
+  const buffer = createChannelBuffer()
+  const header = new Int32Array(buffer, 0, 4)
+  channel.port2.postMessage({ syncBuffer: buffer })
+  channel.port2.postMessage({ spawnSync: payload, id: 1, sync: true })
+  await vi.waitFor(() => { expect(Atomics.load(header, 0)).toBe(1) })
+  return decodeReply(new Uint8Array(buffer, 16, header[1]).slice())
+}
+
+describe('child_process\'s spawnSync request kind', () => {
+  it('is answered by the runSpawnSync serveOrivon was given, with its payload untouched', async () => {
+    const seen: unknown[] = []
+    const runSpawnSync = async (payload: unknown): Promise<unknown> => { seen.push(payload); return { pid: 1, status: 0, signal: null } }
+    expect(await syncSpawnReply(runSpawnSync, { command: '/bin/echo' })).toMatchObject({ ok: true, value: { pid: 1, status: 0, signal: null } })
+    expect(seen).toEqual([{ command: '/bin/echo' }])
+  })
+
+  it('is a named error, never silence, when no runSpawnSync was given to serve it', async () => {
+    channel = new MessageChannel()
+    server = serveOrivon(channel.port1, {})
+    const buffer = createChannelBuffer()
+    const header = new Int32Array(buffer, 0, 4)
+    channel.port2.postMessage({ syncBuffer: buffer })
+    channel.port2.postMessage({ spawnSync: {}, id: 1, sync: true })
+    await vi.waitFor(() => { expect(Atomics.load(header, 0)).toBe(1) })
+    expect(decodeReply(new Uint8Array(buffer, 16, header[1]).slice())).toMatchObject({ ok: false, error: { message: expect.stringContaining('child_process.spawnSync') } })
+  })
+
+  // The client's own SPAWN_SYNC-exposed function genuinely blocks (callSync,
+  // orivon-client.ts) -- calling it here, on the same thread that would have
+  // to answer it, would deadlock (this file's own syncReply/syncSpawnReply
+  // helpers exist to avoid exactly that). worker/tests/sync-channel.test.ts
+  // proves the client's blocking route end to end, in a real thread;
+  // child-process/tests/child-process.test.ts's runSpawnSync suite proves
+  // what the server side does with a spawnSync payload against real WASI
+  // programs.
+
+  // Finding 20: a Worker killed (or its page tab closed) while blocked in
+  // spawnSync used to leave its own grandchild running forever on this
+  // side -- nothing here ever asked it to stop. `registerChild` is how
+  // runSpawnSync now hands this server a way to.
+  it('dispose() kills a spawnSync grandchild still running when the Worker that asked for it goes away', async () => {
+    let killed = false
+    let started: (() => void) | undefined
+    const stillRunning = new Promise<void>((resolve) => { started = resolve })
+    const runSpawnSync: RunSpawnSync = async (_payload, registerChild) => {
+      registerChild((/* kill */) => { killed = true })
+      started?.()
+      return await new Promise(() => {}) // never resolves on its own -- only dispose() ends this test's own wait
+    }
+    channel = new MessageChannel()
+    server = serveOrivon(channel.port1, {}, runSpawnSync)
+    channel.port2.postMessage({ spawnSync: { command: '/bin/x' }, id: 1 })
+    await stillRunning
+    expect(killed).toBe(false)
+    await server.dispose()
+    expect(killed).toBe(true)
+  })
+
+  it('does not try to kill a spawnSync grandchild that already finished', async () => {
+    let killCalls = 0
+    const runSpawnSync: RunSpawnSync = async (_payload, registerChild) => {
+      registerChild(() => { killCalls++ })
+      return { pid: 1, status: 0, signal: null }
+    }
+    expect(await syncSpawnReply(runSpawnSync, { command: '/bin/x' })).toMatchObject({ ok: true })
+    await server?.dispose()
+    expect(killCalls).toBe(0)
   })
 })

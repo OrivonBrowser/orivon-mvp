@@ -8,6 +8,8 @@
 // pointer in main-world-socket.ts's header for why a pure top-level copy
 // exists here rather than an export from that file.
 import vm from 'node:vm'
+import { readdirSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import { LIMITS, fakeBridge, fakeSocketBridgeResult } from './main-world-socket.test-helpers.js'
@@ -176,6 +178,23 @@ describe('installOrivon: real caller attribution', () => {
     installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
     const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
     await expect(orivon.app.manifest()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
+  })
+
+  it('with attributeCallers false, a caller with no page frame is answered: the child host\'s own install, which never enters a main world', async () => {
+    const target: Record<string, unknown> = {}
+    installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target, false)
+    const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
+    await expect(orivon.app.manifest()).resolves.toEqual({ orivonApiVersion: 0 })
+  })
+
+  it('only the child host\'s preload switches attribution off, and the main-world install passes no such argument', () => {
+    const read = (file: string): string => readFileSync(resolve(process.cwd(), 'src/preload', file), 'utf8')
+    const sources = (readdirSync(resolve(process.cwd(), 'src/preload'), { recursive: true, encoding: 'utf8' }))
+      .filter((name) => name.endsWith('.ts') && !name.includes('tests/'))
+    const switchedOff = sources.filter((name) => /installOrivon\([\s\S]*?,\s*target,\s*false\)/.test(read(name)))
+    expect(switchedOff).toEqual(['child-host.ts'])
+    // The serialised main-world call hands installOrivon its bridge and limits and nothing else.
+    expect(read('surface/orivon.ts')).toMatch(/func: installOrivon,\s*args: \[bridge, \{[^}]*\}\]/)
   })
 
   it('fs.readFileSync (the one synchronous method) throws synchronously on refusal, never a rejection', () => {

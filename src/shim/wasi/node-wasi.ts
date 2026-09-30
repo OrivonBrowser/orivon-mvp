@@ -88,4 +88,7 @@ export class WASI {
   }
 }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/wasi.js'
+
 export default nodeModule('wasi', { WASI })

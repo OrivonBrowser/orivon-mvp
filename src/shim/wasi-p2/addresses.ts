@@ -66,9 +66,11 @@ export function addressOf (socket: IpSocketAddress): IpAddress {
   return socket.tag === 'ipv4' ? { tag: 'ipv4', val: socket.val.address } : { tag: 'ipv6', val: socket.val.address }
 }
 
-/** An address reported by orivon.net, as WASI's; an unparseable one reads as unspecified. */
+/** An address reported by orivon.net, as WASI's and always of `family`: an unparseable one, or one of the other family, reads as that family's unspecified address. */
 export function reportedAddress (text: string, port: number, family: IpAddressFamily): IpSocketAddress {
-  return socketAddressOf(parseAddress(text) ?? (family === 'ipv4' ? { tag: 'ipv4', val: [0, 0, 0, 0] } : { tag: 'ipv6', val: [0, 0, 0, 0, 0, 0, 0, 0] }), port)
+  const parsed = parseAddress(text)
+  if (parsed?.tag === family) return socketAddressOf(parsed, port)
+  return socketAddressOf(family === 'ipv4' ? { tag: 'ipv4', val: [0, 0, 0, 0] } : { tag: 'ipv6', val: [0, 0, 0, 0, 0, 0, 0, 0] }, port)
 }
 
 export function isUnspecified (address: IpAddress): boolean {

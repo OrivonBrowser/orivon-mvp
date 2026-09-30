@@ -1,6 +1,6 @@
 # ADR-0016: Synchronous file reads are permitted, and "everything is async" is narrowed to the network
 
-- **Status:** accepted
+- **Status:** accepted, **amended 2026-09-29 (see §Amendment)**
 - **Date:** 2026-09-09
 - **Type:** architecture
 - **Decided by:** owner
@@ -80,3 +80,28 @@ already written will notice.
 **High as to mechanism, low as to the promise.** Swapping route A for route B is invisible to
 apps. Withdrawing synchronous reads altogether would break every app that came to rely on them,
 so the decision to *have* them is the load-bearing half.
+
+## Amendment (2026-09-29)
+
+**In a Worker (a forked child or a `worker_threads` thread) of a cross-origin isolated app, every
+path-based `fs` `*Sync` call works**, over the shared-memory synchronous channel this ADR recorded
+as route B, the deferred escape hatch. `spawnSync`, `execSync` and `execFileSync` work there too,
+over a request kind of their own on the same channel. The page keeps exactly what it already had:
+`readFileSync` and `existsSync`, nothing more.
+
+The reason is the same freeze this ADR weighed, applied to where it actually lands: a page that
+blocks freezes the tab, which is why design rule 2 confines synchronous calls to one narrow
+exception. A Worker that blocks freezes no page -- it is not the thread anything is rendered on,
+and app code already expects a Worker to be able to do this (`Atomics.wait` on a
+`SharedArrayBuffer` is exactly how synchronous WebAssembly threads and tools like StackBlitz's
+WebContainers give Node code a blocking `fs` in an ordinary tab). Route B was deferred, not
+rejected, for wanting more than the problem then justified and for depending on cross-origin
+isolation this tree had not verified; both are now true. Elsewhere -- the page, or a Worker with no
+`SharedArrayBuffer` -- every one of these calls still refuses by name, since nothing there can
+block without freezing something that must not freeze.
+
+No contracts change: the Worker's synchronous twin (`Symbol.for('orivon.synchronous')`,
+`src/shim/worker/orivon-client.ts`) already makes any `orivon.*` call synchronously, and
+`spawnSync`'s request rides the same channel under its own registered symbol
+(`Symbol.for('orivon.spawnSync')`) rather than through `src/contracts/`, exactly as this ADR's own
+mechanism (`ipcRenderer.sendSync`) never appeared in the contract either.

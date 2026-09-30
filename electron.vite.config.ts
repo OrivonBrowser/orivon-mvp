@@ -1,11 +1,70 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { createRequire } from 'node:module'
+import { createRequire, isBuiltin } from 'node:module'
 import { defineConfig } from 'electron-vite'
 import { build, normalizePath, type Plugin } from 'vite'
 import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
+import { isShimSource } from './src/shim/is-shim-source.js'
 
-const root = dirname(fileURLToPath(import.meta.url))
+export const root = dirname(fileURLToPath(import.meta.url))
+
+/** True for a file under src/shim/ itself, never its own tests (which drive real `node:*`
+ * servers and disks): vitest.config.ts's own use of `isShimSource` applies the identical rule
+ * for the unit suite; kept as its own export here since electron-vite's preload build needs it
+ * too, and the two configs are not one bundle. */
+export function isShimImporter (importer: string | undefined): boolean {
+  return isShimSource(root, importer)
+}
+
+/** The Node modules a sandboxed preload's own `require` provides (Electron's sandboxed-preload
+ * docs); every other builtin a bundled package asks for fails there at load time. */
+const SANDBOX_PRELOAD_MODULES = new Set(['events', 'timers', 'url'])
+
+/** A polyfill package the shim pulls into a preload (readable-stream, for one) asks for Node
+ * builtins itself: those it could not `require` in a sandbox resolve through the shim's table too. */
+function isPackageImporter (importer: string | undefined): boolean {
+  return importer !== undefined && importer.replace(/\\/g, '/').includes('/node_modules/')
+}
+
+/** `specifier` (bare or `node:`-prefixed) stripped to the bare form module-map.ts's table keys on. */
+function bareSpecifier (specifier: string): string {
+  return specifier.startsWith('node:') ? specifier.slice('node:'.length) : specifier
+}
+
+/**
+ * The preload build has no aliasing of its own, unlike the renderer build's
+ * `resolve.alias` below -- so shim code bundled straight into a preload
+ * (`src/shim/worker/host.ts`'s own header says which, and why) needs a bare
+ * Node specifier resolved through the SAME table. `config` and `resolveId`
+ * split one job neither can do alone; see src/shim/worker/README.md's
+ * Design notes for why both exist.
+ */
+export function shimNodeSpecifiers (): Plugin {
+  const targets = new Map(buildAliasEntries().map((entry) => [entry.specifier, entry]))
+  const isOurs = (source: string, importer: string | undefined): boolean => {
+    const bare = bareSpecifier(source)
+    if (!targets.has(bare)) return false
+    return isShimImporter(importer) || (isPackageImporter(importer) && !SANDBOX_PRELOAD_MODULES.has(bare))
+  }
+
+  return {
+    name: 'orivon:shim-node-specifiers',
+    enforce: 'pre',
+    config (config) {
+      const build = { ...config.build, rollupOptions: { ...config.build?.rollupOptions } }
+      build.rollupOptions.external = (source: string, importer: string | undefined) =>
+        !isOurs(source, importer) && (source === 'electron' || source.startsWith('electron/') || isBuiltin(source))
+      config.build = build
+    },
+    async resolveId (source, importer, options) {
+      if (!isOurs(source, importer)) return null
+      const entry = targets.get(bareSpecifier(source))
+      if (entry === undefined) return null
+      const target = entry.kind === 'package' ? entry.implementation : resolve(root, 'src/shim', entry.implementation)
+      return await this.resolve(target, importer, { ...options, skipSelf: true })
+    }
+  }
+}
 
 /** The renderer's dev-only settings a standalone Vite server (an e2e test
  * driving `ELECTRON_RENDERER_URL` itself) shares with electron-vite, so the
@@ -26,6 +85,28 @@ export const rendererHmr = { host: rendererHost } as const
 /** The name src/preload/page-buffer.ts's installer reads the `buffer` package through. */
 export const BUFFER_PACKAGE_PLACEHOLDER = '__ORIVON_BUFFER_PACKAGE__'
 const PAGE_BUFFER_SOURCE = normalizePath(resolve(root, 'src/preload/page-buffer.ts'))
+
+/**
+ * Wraps a built preload's whole body in its own function scope. Electron's sandboxed preload
+ * loader runs a preload as the body of a function already binding `Buffer`, `process` and others
+ * as its own parameters -- measured: `vm.compileFunction(code, ['Buffer', ...])` throws the exact
+ * `SyntaxError: Identifier 'Buffer' has already been declared` a real launch does, for a bundled
+ * top-level `const`/`let`/`class` of the same name (`src/preload/README.md`'s Design notes has
+ * which preload and why). A nested function scope may shadow an outer parameter freely, so one
+ * more layer of function scope around the whole chunk defuses this for any such name, not just
+ * `Buffer`.
+ */
+export function wrapSandboxedPreloadBody (entries: ReadonlySet<string> = new Set(['child-host'])): Plugin {
+  return {
+    name: 'orivon:wrap-sandboxed-preload-body',
+    // Only the preloads that bundle shim code (today the child host's) need it; every other
+    // preload's output stays exactly what it was.
+    renderChunk (code, chunk) {
+      if (!entries.has(chunk.name)) return null
+      return { code: `(function () {\n${code}\n})();\n`, map: null }
+    }
+  }
+}
 
 /** One expression evaluating to the `buffer` package's exports: the copy the shim's own `buffer` module imports, bundled whole. */
 async function bufferPackageExpression (): Promise<string> {
@@ -140,7 +221,11 @@ export default defineConfig({
     // this just keeps the remaining, now-harmless calls from being noisy
     // in piped/CI output.
     logLevel: 'warn',
-    plugins: [pageBufferPackage()],
+    // shimNodeSpecifiers must resolve BEFORE Rollup's own externalization
+    // decides a bare Node specifier is a builtin with nothing to bundle --
+    // its own header has the full reasoning. Order after pageBufferPackage
+    // is not load-bearing (different id, `enforce: 'post'` besides).
+    plugins: [pageBufferPackage(), shimNodeSpecifiers(), wrapSandboxedPreloadBody()],
     build: {
       // CommonJS, which a sandboxed preload requires: it has no ESM context
       // and loads electron via require (see src/main/index.ts).
@@ -163,6 +248,7 @@ export default defineConfig({
           menu: resolve(root, 'src/preload/menu.ts'),
           'split-frame': resolve(root, 'src/preload/split-frame.ts'),
           embed: resolve(root, 'src/preload/embed.ts'),
+          'child-host': resolve(root, 'src/preload/child-host.ts'),
           'extension-api': resolve(root, 'src/preload/extension-api.ts'),
           'web-store': resolve(
             root,

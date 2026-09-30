@@ -2,6 +2,7 @@ import type { OrivonErrorCode } from '../../../contracts/errors.js'
 import type { WriteAbortMessage, WriteAckMessage, WriteEndMessage, WriteFailedMessage, WriteMessage } from '../../../contracts/ipc.js'
 import { CREDIT_COALESCE_BYTES, WRITE_HEARTBEAT_MS } from '../../../contracts/ipc.js'
 import { errnoOf } from '../../errors.js'
+import { WRITABLE_ALREADY_ENDED_CODE } from '../../adapters/socket-streams.js'
 
 // The WRITE half of the credit-window relay (contracts/ipc.ts,
 // handle-contracts.md's "Backpressure: a credit window"), run BACKWARDS
@@ -9,8 +10,8 @@ import { errnoOf } from '../../errors.js'
 // Pure and Electron-free like ./port-pump.ts -- `writable` is already a
 // real WHATWG WritableStream, `send` is injected. See
 // src/broker/README.md's "Design notes" for why there is no sequence
-// number, why the heartbeat exists, and the Duplex.toWeb close()
-// measurement the trap below is written around.
+// number, why the heartbeat exists, and the stalled-peer measurement the
+// trap below is written around.
 
 export interface PortSinkOptions {
   readonly handleId: string
@@ -83,17 +84,17 @@ function toWriteFailed (handleId: string, code: OrivonErrorCode, error?: unknown
 }
 
 /**
- * True for the write() rejection Node produces when OUR OWN writable
- * already ended on its own -- confirmed empirically (Node 24.11.1) as the
- * shape a peer FIN leaves behind under `allowHalfOpen: false`
- * (docs/open-questions.md A69): an AbortError carrying no real transport
- * errno. Distinct from a genuine transport failure (ECONNRESET, EPIPE, ...),
- * which always carries one.
+ * True for the write() rejection `../../adapters/socket-streams.ts` produces
+ * when OUR OWN writable already ended on its own -- the peer FIN leaves
+ * behind under `allowHalfOpen: false` (docs/open-questions.md A69). A
+ * dedicated code from that adapter's own up-front `socket.writable` check,
+ * not an inference from an error's `name`/`code` -- see that file's header.
+ * Distinct from a genuine transport failure (ECONNRESET, EPIPE, ...), which
+ * `mapSocketError` maps instead.
  */
 function isWritableAlreadyEnded (error: unknown): boolean {
   return typeof error === 'object' && error !== null &&
-    (error as { name?: unknown }).name === 'AbortError' &&
-    (error as { code?: unknown }).code === 'ABORT_ERR'
+    (error as { code?: unknown }).code === WRITABLE_ALREADY_ENDED_CODE
 }
 
 export function createPortSink (options: PortSinkOptions): PortSink {
@@ -169,11 +170,15 @@ export function createPortSink (options: PortSinkOptions): PortSink {
     if (!ending || pendingCount > 0 || ended) return
     ended = true
     clearHeartbeat()
-    // NEVER AWAIT THIS. Duplex.toWeb's close() (Node 24.11.1) does not
-    // settle until the whole duplex is destroyed -- after the readable side
-    // also ends -- not when this call's own FIN is flushed. Awaiting it
-    // would deadlock a peer that (correctly, per half-close) keeps reading
-    // after our FIN and waits for a reply before sending its own. A
+    // NEVER AWAIT THIS. ../../adapters/socket-streams.ts's close() settles
+    // once THIS side's own FIN is flushed -- it no longer waits on the
+    // readable side too, the way Duplex.toWeb's close() did -- but flushing
+    // still waits on the peer's receive window draining, with no deadline of
+    // its own (A84): a peer that stops reading leaves it pending
+    // indefinitely. Awaiting it here would block this whole handler on that
+    // stall; ../../adapters/node-adapters.ts's destroySocket is the one
+    // place a deadline eventually forces it (a SEPARATE `socket.end()` call,
+    // reached through the handle table's own teardown, not through here). A
     // rejection here still needs reporting -- the FIN may never have gone
     // out, and the app should not believe its half-close succeeded.
     writer.close().catch((error: unknown) => { send(toWriteFailed(handleId, mapError(error), error)) })

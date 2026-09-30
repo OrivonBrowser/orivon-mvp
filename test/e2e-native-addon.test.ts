@@ -19,6 +19,7 @@ import { bundleForApp, serveApp } from './pinned-app.js'
 import type { NativeAddonResults } from './native-addon-entry.js'
 import type { NativeAddonFileResults } from './native-addon-files-entry.js'
 import { fileAddon, napiAddon } from '../src/shim/addon/tests/support/napi-addons.js'
+import { echoProgram } from '../src/shim/wasi/tests/support/programs.js'
 import type { Manifest } from '../src/contracts/index.js'
 
 const ORIGIN = 'https://native-addon-e2e.orivon.test'
@@ -42,7 +43,7 @@ const ISOLATED_MANIFEST: Manifest = {
   name: 'native addon files e2e fixture',
   version: '1.0.0',
   entry: 'index.html',
-  assets: ['app.js', 'files-child.js', 'native/files.wasm'],
+  assets: ['app.js', 'files-child.js', 'native/files.wasm', 'bin/echo.wasm'],
   capabilities: { fs: { quotaBytes: 1_048_576 } },
   crossOriginIsolated: true
 }
@@ -85,7 +86,8 @@ it('loads native addons as their WebAssembly builds on the page and in a forked 
         '/index.html': new TextEncoder().encode(html),
         '/app.js': await bundleForApp(fileURLToPath(new URL('./native-addon-files-entry.ts', import.meta.url))),
         '/files-child.js': await bundleForApp(fileURLToPath(new URL('./native-addon-files-child.ts', import.meta.url)), 'esm'),
-        '/native/files.wasm': fileAddon()
+        '/native/files.wasm': fileAddon(),
+        '/bin/echo.wasm': echoProgram()
       })
       check('the isolated fixture is granted and registered for serving', served.granted && served.registered, JSON.stringify(served))
 
@@ -97,8 +99,17 @@ it('loads native addons as their WebAssembly builds on the page and in a forked 
       check('the page ran without throwing', results.error === undefined, detail)
       check('the fixture is cross-origin isolated', results.isolated === true, detail)
       check('on the page\'s main thread, the addon\'s file call refuses with NOSYS', results.pageOpenErrno === NOSYS, detail)
-      check('in a forked child, the addon read the file the page wrote', JSON.stringify(results.forked) === JSON.stringify({ openErrno: 0, content: 'written by the page', readFileSync: 'written by the page' }), detail)
+      const forked = results.forked as {
+        openErrno: number, content: string, readFileSync: string,
+        syncFs?: Record<string, { value?: unknown, error?: string }>,
+        echo?: { status: number | null, signal: string | null, stdout: string }
+      } | undefined
+      check('in a forked child, the addon read the file the page wrote', JSON.stringify({ openErrno: forked?.openErrno, content: forked?.content, readFileSync: forked?.readFileSync }) === JSON.stringify({ openErrno: 0, content: 'written by the page', readFileSync: 'written by the page' }), detail)
       check('and the file the addon wrote is there for the page', results.written === 'from addon', detail)
+      check('the forked child\'s mkdirSync/writeFileSync/statSync/readdirSync/renameSync/rmSync all blocked and succeeded (ADR-0016\'s Worker amendment)', JSON.stringify(forked?.syncFs) === JSON.stringify({
+        mkdir: { value: true }, write: { value: true }, stat: { value: 'blocking write'.length }, readdir: { value: ['notes.txt'] }, rename: { value: true }, rm: { value: true }
+      }), detail)
+      check('the forked child\'s spawnSync of the echo WASI program blocked and echoed its input back', JSON.stringify(forked?.echo) === JSON.stringify({ status: 0, signal: null, stdout: 'blocking spawnSync' }), detail)
     })
   } finally {
     await closeElectronApp(app)

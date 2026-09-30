@@ -109,8 +109,8 @@ the deadline `closed` never settles; without the hook the registry slot still wa
 
 **The relay acts on only some reasons, and this is load-bearing.** `'closed'` and
 `'sessionEnded'` flush, so the relay leaves them to settle through `closed`: tearing down at
-unlink cancels the read stream, which destroys the whole `Duplex.toWeb` socket and drops its
-write queue (8 MiB queued, 8 MiB lost, measured). `'revoked'`, `'aborted'` and `'failed'` destroy
+unlink cancels the read stream, which destroys the whole socket (`socket-streams.ts`) and drops
+its write queue (8 MiB queued, 8 MiB lost, measured). `'revoked'`, `'aborted'` and `'failed'` destroy
 the socket anyway, so teardown is immediate. The listener receives the `CloseReason`, not the
 code, because `'sessionEnded'` and `'revoked'` share code `'revoked'`. Pinned by
 `relay/tests/socket.test.ts` and `../adapters/tests/socket-drain.test.ts`.

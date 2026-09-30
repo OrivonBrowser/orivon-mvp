@@ -9,7 +9,6 @@
 import { lookup } from 'node:dns/promises'
 import { connect as netConnect, createServer } from 'node:net'
 import type { Server, Socket } from 'node:net'
-import { Duplex } from 'node:stream'
 import type { CloseReason } from '../handles/handle-contracts.js'
 import type { Dial, DialedSocket, Listen, ListenedServer } from '../broker-contracts.js'
 import type { PortRange } from '../policy/bind.js'
@@ -17,6 +16,7 @@ import { countPorts, portAt, randomStart } from './port-pick.js'
 import type { Resolver } from '../policy/connect.js'
 import { fail, isOrivonErrorLike } from '../errors.js'
 import type { LookupAddress } from '../../contracts/index.js'
+import { socketReadable, socketWritable } from './socket-streams.js'
 
 export { nodeFs } from './node-fs-adapter.js'
 
@@ -142,11 +142,13 @@ export const DIAL_TIMEOUT_MS = 30_000
 
 /**
  * One dial attempt. `readable`/`writable` are real WHATWG streams
- * (`node:stream`'s `Duplex.toWeb`) so `DialedSocket`'s type is honestly
- * satisfied -- `broker.net.connect` cannot type-check otherwise -- even
- * though nothing on the control channel forwards them to a renderer
- * directly (../transport/relay/port-pump.ts relays `readable`'s bytes over a
- * MessageChannelMain port instead; see ../transport/ipc.ts).
+ * (./socket-streams.ts's own hand-written adapter, not `node:stream`'s
+ * `Duplex.toWeb` -- see that file's header and README.md's Design notes for
+ * why) so `DialedSocket`'s type is honestly satisfied -- `broker.net.connect`
+ * cannot type-check otherwise -- even though nothing on the control channel
+ * forwards them to a renderer directly (../transport/relay/port-pump.ts
+ * relays `readable`'s bytes over a MessageChannelMain port instead; see
+ * ../transport/ipc.ts).
  */
 function dialOne (address: string, port: number, signal: AbortSignal): Promise<DialedSocket> {
   return new Promise((resolve, reject) => {
@@ -177,10 +179,9 @@ function dialOne (address: string, port: number, signal: AbortSignal): Promise<D
     })
     socket.once('connect', () => {
       settle()
-      const { readable, writable } = Duplex.toWeb(socket)
       resolve({
-        readable: readable as ReadableStream<Uint8Array>,
-        writable: writable as WritableStream<Uint8Array>,
+        readable: socketReadable(socket),
+        writable: socketWritable(socket),
         remoteAddress: socket.remoteAddress ?? address,
         remotePort: socket.remotePort ?? port,
         localAddress: socket.localAddress ?? '',
@@ -268,18 +269,17 @@ function outcomeFor (reason: CloseReason): { ok: true, value: null } | { ok: fal
 
 /**
  * Wraps a just-accepted raw socket the same way `dialOne` wraps a dialled
- * one -- same `Duplex.toWeb` construction, same `destroySocket` close table,
- * because an accepted connection and a dialled one are the same kind of
- * live TCP socket once established (handle-contracts.md's "TcpSocket"
+ * one -- same ./socket-streams.ts construction, same `destroySocket` close
+ * table, because an accepted connection and a dialled one are the same kind
+ * of live TCP socket once established (handle-contracts.md's "TcpSocket"
  * section draws no distinction). Sharing `DialedSocket` as the shape for
  * both, rather than a second near-identical interface, is Rule 3 applied to
  * the type as well as the function.
  */
 function wrapAccepted (socket: Socket): DialedSocket {
-  const { readable, writable } = Duplex.toWeb(socket)
   return {
-    readable: readable as ReadableStream<Uint8Array>,
-    writable: writable as WritableStream<Uint8Array>,
+    readable: socketReadable(socket),
+    writable: socketWritable(socket),
     remoteAddress: socket.remoteAddress ?? '',
     remotePort: socket.remotePort ?? 0,
     localAddress: socket.localAddress ?? '',
@@ -375,11 +375,32 @@ export const listenTcp: Listen = async (ranges: readonly PortRange[], signal) =>
     else socket.destroy()
   }
 
+  /**
+   * A queued connection carries no listener at all until `accept()` later
+   * hands it to `wrapAccepted`, whose own `socketReadable`/`socketWritable`
+   * attach theirs synchronously. Node's rule for `'error'` is to rethrow when
+   * an emitter has zero listeners for it, so a peer that resets a queued
+   * connection before `accept()` would otherwise reach `index.ts`'s
+   * `uncaughtException` policy and take the whole process down. This no-op
+   * listener absorbs that; `wrapAccepted`'s own listener joins it once the
+   * socket is actually accepted; and the matching `'close'` listener drops a
+   * torn-down connection out of `queue` so a later `accept()` never hands the
+   * app a dead socket.
+   */
+  function guardQueued (socket: Socket): void {
+    socket.on('error', () => {})
+    socket.once('close', () => {
+      const index = queue.indexOf(socket)
+      if (index !== -1) queue.splice(index, 1)
+    })
+  }
+
   bound.on('connection', (socket) => {
     if (destroyed) { resetIncoming(socket); return }
     const waiter = waiters.shift()
     if (waiter !== undefined) { waiter.resolve(wrapAccepted(socket)); return }
     if (queue.length >= LISTEN_ACCEPT_QUEUE_LIMIT) { resetIncoming(socket); return }
+    guardQueued(socket)
     queue.push(socket)
   })
   // The listening socket itself dying underneath us (EMFILE on a later

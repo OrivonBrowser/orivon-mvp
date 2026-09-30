@@ -124,6 +124,38 @@ export const EXTENSION_SW_HEALTH_CHECK_CHANNEL = 'orivon-extension-sw-health-che
 /** Extension service worker -> main: the boolean answer to the check above. */
 export const EXTENSION_SW_HEALTH_REPLY_CHANNEL = 'orivon-extension-sw-health-reply'
 
+/**
+ * An app tab -> main: ask for a connection to this app's child host
+ * (ADR-0046), fire-and-forget like MANIFEST_HINT_CHANNEL above -- main
+ * derives the origin from `event.senderFrame` itself, refuses a tab that is
+ * not a registered app, and delivers the port on
+ * `CHILD_HOST_PORT_CHANNEL` below rather than as this call's own reply,
+ * since a `MessagePortMain` cannot cross as an `ipcRenderer.invoke` result.
+ * See `src/main/children/`.
+ */
+export const CHILD_HOST_CONNECT_CHANNEL = 'orivon-children:connect'
+
+/** Main -> the requesting app tab, one-way: delivers the page's own end of
+ * the `MessageChannelMain` a child-host connection uses, via
+ * `WebFrameMain.postMessage` -- `PORT_CHANNEL`'s own pattern, a separate
+ * channel since this one carries no handle id to tag the delivery with. */
+export const CHILD_HOST_PORT_CHANNEL = 'orivon-children:page-port'
+
+/** Main -> the hidden child host itself (never a page): delivers one page's
+ * own end of the per-page `MessageChannelMain` (`src/main/children/
+ * child-host.ts`'s `postPagePort`), over `WebFrameMain.postMessage` on the
+ * host's own `mainFrame` -- the host's preload (`src/preload/child-host.ts`)
+ * is the only listener. */
+export const CHILD_HOST_PAGE_CHANNEL = 'orivon-children:host-page'
+
+/** The hidden child host's own preload -> main, fire-and-forget, once its
+ * `orivon` and its `ChildHost` relay both exist: `child-host.ts`'s `build()`
+ * waits for this (bounded) before ever handing a page a port, so a preload
+ * that threw partway through (the sandboxed-bundling faults `src/preload/
+ * README.md` measures) is caught and its host closed, never left running
+ * with no `orivon:child-host:page` listener at all (W2). */
+export const CHILD_HOST_READY_CHANNEL = 'orivon-children:host-ready'
+
 /** A `chrome-extension://` frame's own preload (the vendored library's
  * `preload.ts`) -> main, synchronous (`ipcRenderer.sendSync`/
  * `event.returnValue`): is THIS frame one of its own extension's manifest
