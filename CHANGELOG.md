@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **The compatibility matrix lists everything a ported app can need**, not only what ports have hit: every
+  Node builtin, every `electron` export, every `orivon.*` member, permission string and protocol stack has a
+  row, checked against the code, one sub-table per file under `docs/planning/compatibility/`.
 - **An app can show pages it serves itself**, each at an origin of its own, beside ordinary websites: a
   `web.embed` local pattern (`http://*.localhost:<port>`), admitted only while the app holds a listener on
   that port (ADR-0047).

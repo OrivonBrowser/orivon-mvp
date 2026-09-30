@@ -503,16 +503,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A148: `'unsafe-inline'` lets injected markup run script in app pages **[AI-REC]**
-
-- **Question:** Should the served bundle's `script-src` swap `'unsafe-inline'` for per-script
-  `sha256-` hashes computed from the pinned HTML at serve time (`src/loader/serve/csp.ts`)?
-- **Why it matters:** An app rendering fetched data as raw markup can run an injected `<script>`;
-  third-party reach is live (A143, ADR-0017), and no trust score can show this risk.
-- **Options:** add per-script hashes as low-priority security work (rec.); keep `'unsafe-inline'`.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A150: Wording of the reconsent, widening and rollback update dialogs **[AI-REC]**
 
 - **Question:** Is the text in `src/main/consent/grant-prompt-render.ts` right, including "Keep the
@@ -585,7 +575,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Question:** How should pin coverage (requests and bytes from the pin vs third-party hosts)
   affect the delivery ladder or what a person sees as the Web3 Score?
 - **Why it matters:** A two-file bundle that fetches thirty remote scripts sits on the same D2
-  rung as one that ships everything it runs (see A148). Today coverage is shown, never scored.
+  rung as one that ships everything it runs. Today coverage is shown, never scored.
 - **Options:** keep it evidence-only; lower or cap the rung below a coverage threshold; add a
   separate coverage grade (`src/trust/delivery-ladder.ts`).
 - **Who decides:** owner
@@ -1633,3 +1623,50 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   (`z-index`), or move the prism clear of the brand (rec.: the owner picks); leave it.
 - **Who decides:** owner
 - **Blocks:** nothing
+
+### A310: A member the shim lacks does not always refuse by name **[AI-REC]**
+
+- **Question:** Should every member a shim module or the `electron` package lacks refuse by name, as
+  `src/shim/README.md` and `src/shim-electron/README.md` say? Where nothing wraps it, a missing member reads
+  `undefined` or a data member reads as a function: `process` (61 of Node's 83 names), `app` (111 of 115), the
+  IPC objects, the unwrapped `stream` and `events` packages, 15 `dgram.Socket` members, the named exports of
+  `fs/promises` and `dns/promises`, `os.constants`, `zlib.constants`, `worker_threads.locks`.
+- **Why it matters:** a porter reads a bare `TypeError` deep in a dependency instead of a named gap.
+- **Options:** wrap each with `refusingProxy` or a generated stand-in and give data members real values (rec.);
+  state the gaps in the two READMEs instead.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A311: The shim accepts options it never reads **[AI-REC]**
+
+- **Question:** Should an option a shim function accepts and ignores refuse, warn once, or stay silent? Today
+  `http.request({ socketPath })` dials `localhost:80`, `tls.connect` drops `minVersion` and `ciphers`,
+  `readdir({ recursive })` lists one level, `publicEncrypt` ignores `oaepHash`, and `fs` calls ignore `mode`,
+  `flush` and `signal` (compatibility Tables 3c to 3e name each).
+- **Why it matters:** the result changes with no error, the hardest failure for a porter to find.
+- **Options:** refuse by name where the option changes the result, warn once where it does not (rec.); leave it.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A312: Pages and comments that promise more than the code does **[AI-REC]**
+
+- **Question:** Should each be rewritten to the code, or the code changed? `fs/unsupported.ts`: every `*Sync`
+  works in a Worker (22 refuse). `handles.ts`: a picked path persists (the picker opens every time).
+  `manifest.ts`: `id.curves` example `secp256k1` (answers `internal`). ADR-0040: a refused addon names its
+  substitute (it names the paths tried). ADR-0021: `process` keeps the platform's descriptor (a data property).
+  `src/shim/README.md`: a `node:` alias works in webpack (needs a plugin). `capability-api.md`: cites A82.
+- **Why it matters:** someone porting an app reads each as a promise.
+- **Options:** rewrite each page to the code (rec.); change the code where the page states the intent.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A313: No port consumes the Node shim **[OWNER]**
+
+- **Question:** Should a port bundle against the shim (the `module-map.ts` aliases and the page globals), or keep
+  bringing its own polyfills and empty stubs, as every port in `orivon-ports` does?
+- **Why it matters:** what the compatibility tables say the shim offers reaches no ported app, and a port's own
+  `crypto-browserify` or empty `fs` hides both the shim's gains and its gaps.
+- **Options:** publish the alias table and the globals entry as a preset each port's bundler loads (rec.); keep
+  per-port polyfills and describe the shim as for apps written for Orivon.
+- **Who decides:** owner
+- **Blocks:** how much of compatibility Tables 2 and 3 a port benefits from

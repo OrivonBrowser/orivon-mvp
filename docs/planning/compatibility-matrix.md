@@ -5,13 +5,20 @@ browser around them.** [`../architecture/app-compatibility.md`](../architecture/
 owns *why the tiers exist*; this file owns *what works today*. If they disagree, that one is the
 design and this one is stale.
 
-**Every live capability is complete Spec'd → Broker → Page, except `id.requestIdentity` and
-`protocols`**, the two unbuilt entries. `hid` and `subprocess` are excluded from v0.
+**This page is the entry; the rows of Tables 1, 2, 3 and 5 are in [`compatibility/`](compatibility/),
+one file per sub-table.** Each table below keeps its definition and an index with a tally per
+sub-table. Tables 4, 6, 7 and 8 are whole on this page.
+
+**Five contract entries have no implementation behind them:** `id.requestIdentity`, `protocols`,
+`media.camera` and `media.microphone`, `clipboard.read`, and reopening a picked path. Two more
+stop short of the page: `FileHandle.readable()`/`writable()`, and the `closed` promise of a file or
+folder handle. Every other member of `orivon.*` is built Spec'd → Broker → Page. `hid` and
+`subprocess` are excluded from v0.
 
 **An app qualifies by running in the Node environment, not by being JavaScript**
 ([`ADR-0036`](../decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)):
-WebAssembly runs in an app exactly as it runs in Node. Every gap below is a limit of this build,
-taken case by case as a real app reaches it, never a rule about which apps may exist.
+WebAssembly runs in an app exactly as it runs in Node. Every gap in these tables is a limit of this
+build, taken case by case as a real app reaches it, never a rule about which apps may exist.
 
 Two axes, and they fail in completely different ways:
 
@@ -21,99 +28,118 @@ Two axes, and they fail in completely different ways:
   allowed to do everything and crashes on line 1.
 
 **Table 3 is not a third axis.** It is an inventory over ground Table 2 already covers, at a
-finer grain: half its rows are Table 2's Node-stdlib family itemised, and closing one closes
-the other: the same item, listed twice, not two blockers. Its `Class` column says which rows
-are that duplication and which are genuinely elsewhere. **Completing Tables 1 and 2 closes
-every `dup` row automatically**; the `needs T1` and `outside` rows survive it, and the `outside`
-ones were never shim work.
+finer grain: many of its rows are Table 2's families itemised member by member, and closing one
+closes the other: the same item, listed twice, not two blockers. Its `Class` column says which rows
+are that duplication and which are genuinely elsewhere. **Completing Tables 1 and 2 closes every
+`dup` row automatically**; the `needs T1` and `outside` rows survive it, and the `outside` ones were
+never shim work.
 
----
+## How Tables 1 to 3 are filled
+
+A table that gains a row each time a port trips over something says "built" for what has been
+tried and nothing about the rest. These tables are filled the other way round. Each sub-table takes
+its rows from a list that exists whether or not any app has reached it, and gives every item of
+that list a row, or a named place in one.
+
+| Sub-table | The list it enumerates |
+|---|---|
+| 1a | every member of [`src/contracts/`](../../src/contracts/): methods, handles, capability kinds, limits, error codes, manifest fields |
+| 1b | fourteen classes of authority an app can need on a computer, from the network to updates |
+| 2a | Node 24's `builtinModules`: 72 specifiers |
+| 2b | the 48 value exports of `require('electron')` in Electron 44's typings, the classes they reach, and the `<webview>` element |
+| 2c, 2d | the helper packages apps reach Electron through; the providers a page expects injected |
+| 3a | Node 24's global names and every own member, event and environment key of `process` |
+| 3b | the module-scope names, `import.meta`, package conditions, the manifest's fields, the loader's MIME table and limits |
+| 3c to 3g | every export of the Node modules in that area, with the options and behaviours of each |
+| 3h | the CSP directives, response headers, storage kinds, worker kinds and frame kinds |
+| 3i | the page-lifecycle events, Electron's `app` lifecycle, window operations, the shell's own shortcuts |
+| 3j | every permission string and device hook in Electron's typings |
+| 3k | the transport primitives, and the protocol stacks built on them |
+| 5 | the native packages apps depend on, by family |
+
+A gap that has a row is an ordinary state. An item with no row is the defect, and
+[Table 6](#table-6-how-to-update-this) has the command that regenerates each list, so the two can
+be compared.
+
+**Status.** ✅ built | ⚠️ partial or differs | ❌ missing | 🚫 excluded by design | ➖ not
+applicable. `⚠️ differs` marks the dangerous case: the call runs without an error and behaves
+unlike Node or Electron.
+
+**How a gap shows to the app's code**, in the four phrases the rows use:
+
+- *refuses by name*: the member exists and throws a named `OrivonShimError` or `ElectronShimError`
+  when called. Feature detection (`typeof x === 'function'`) still says it is there.
+- *reads `undefined`*: the member is absent, and calling it is a bare `TypeError`.
+- *fails the build*: the app's bundler rejects the import.
+- *differs*: a result comes back, and it is not the one Node or Electron gives.
+
+**How often a need occurs.** A "Used by" figure, or "N of 80" and "N of 56" in a row, comes from a
+source-text search over 80 open-source Electron apps and over the server code of 56 Node apps that
+serve a web front end. Each is an upper bound from pattern matching. It says how common a need is,
+never that a given app runs.
 
 ## Table 1: the capability surface (authority)
 
+**What an app is allowed to do, and what nothing yet allows.** One file:
+[`compatibility/table-1-capabilities.md`](compatibility/table-1-capabilities.md). Table 1a holds
+the capabilities that exist; Table 1b holds every other authority an app can need on a computer,
+by class, with the gate's answer where a web API is the route and the layer an answer would land
+in where nothing is.
+
 **Spec'd** = in [`src/contracts/`](../../src/contracts/) | **Broker** = implemented in
-[`index.ts`](../../src/broker/index.ts) | **Page** = reachable from `window.orivon` |
-**Node shim** = a Node-shaped equivalent exists in [`src/shim/`](../../src/shim/)
+[`src/broker/`](../../src/broker/) and reachable from `createBroker` | **Page** = reachable from
+`window.orivon` | **Node shim** = a Node-shaped equivalent in [`src/shim/`](../../src/shim/).
+A cell holds ✅, ⚠️, ❌, 🚫 or ➖ as the legend above says; a row whose route is a web-platform API
+has ➖ in all four and a note that starts "Web platform:".
 
-✅ done | ❌ not there | ⚠️ partial or unsettled | 🚫 excluded by design | ➖ not applicable
+| Part | What it holds | Rows |
+|---|---|--:|
+| [1a](compatibility/table-1-capabilities.md#table-1a-what-orivon-offers) | Every member of `orivon.*`, every capability kind, the pattern grammars, every limit and error code, and the manifest fields that change what an app may do | 52 |
+| [1b](compatibility/table-1-capabilities.md#table-1b-authority-no-capability-covers) | Authority no capability covers. Network out | 25 |
+|  | Network in | 10 |
+|  | Name resolution and network state | 8 |
+|  | Files | 19 |
+|  | Processes and code | 10 |
+|  | Identity and secrets | 12 |
+|  | Devices | 13 |
+|  | System information | 11 |
+|  | Desktop integration | 15 |
+|  | Windows and embedding | 12 |
+|  | Lifetime | 6 |
+|  | Storage | 6 |
+|  | Updates and distribution | 6 |
+|  | Money and accounts | 4 |
 
-| Capability | Spec'd | Broker | Page | Node shim | Note |
-|---|:--:|:--:|:--:|:--:|---|
-| `net.connect` (TCP out) | ✅ | ✅ | ✅ | ✅ | Both stream halves wired, e2e-verified. A `localhost:<port>` pattern reaches `127.0.0.1` and `::1` at that port, never resolving the name (A215). Node shape in [`net/socket.ts`](../../src/shim/net/socket.ts) |
-| `net.connectSecure` (TLS out) | ✅ | ✅ | ✅ | ✅ | TLS terminated on the trusted side per [ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md), under the app's own Node TLS options (trust anchors, `rejectUnauthorized`, client certificate, SNI, ALPN), with the handshake reported on the socket. Node's `tls` module and `https`/`http` clients sit on top. No STARTTLS (A226) |
-| `net.udpBind` + send/recv | ✅ | ✅ | ✅ | ✅ | `scope` picks the interface as `net.listen`'s does ([ADR-0034](../decisions/ADR-0034-listening-is-local-unless-the-app-declares-the-network.md)). Node shape in [`net/dgram-socket.ts`](../../src/shim/net/dgram-socket.ts), which maps a `bind` address onto a scope and refuses one other address by name |
-| `net.listen` (TCP in) | ✅ | ✅ | ✅ | ✅ | Real accepted-socket handles, unsigned-app port rules and a revocation cascade. Each accepted socket's port is delivered over the server's own port (`AcceptedMessage`), in the transfer list, and the preload sets it back on the message; e2e in [`e2e-child-process.test.ts`](../../test/e2e-child-process.test.ts), where a page connects to a spawned component that listens. Node shape in [`net/server.ts`](../../src/shim/net/server.ts): a real `net.Server`/`createServer`. `scope` picks the interface ([ADR-0034](../decisions/ADR-0034-listening-is-local-unless-the-app-declares-the-network.md)): `'local'`, the default, binds `127.0.0.1` under a `.local` grant or a `.network` one, and `'network'` binds every interface under `.network` alone. The shim asks for `'local'` on a loopback host and for `'network'` otherwise, falling back to `'local'` when that is denied, and refuses any other single address by name |
-| `fs.readFile` / `writeFile` | ✅ | ✅ | ✅ | ✅ | Confined to the app dir. The quota counts disk usage (A216). Node shape in [`fs/fs.ts`](../../src/shim/fs/fs.ts), where every Node-shaped path (cwd, homedir, tmpdir, `userData`) is rooted at the virtual `/orivon/app` |
-| `fs.readFileSync` | ✅ | ✅ | ✅ | ✅ | [ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md), over `ipcRenderer.sendSync`. Grant check and path confinement are shared with the async path; **the per-origin in-flight budget is not** (A112). The shim maps its failures to Node errnos, and `existsSync` answers over it. Every other `fs` `*Sync` member works too, in a Worker of a cross-origin isolated app, over the Worker's own synchronous channel instead ([ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md)'s amendment; Table 3's `child_process` row) |
-| `fs.mkdir` / `readdir` / `stat` / `rm` / `rename` | ✅ | ✅ | ✅ | ✅ | |
-| `fs.open` (`FileHandle`) | ✅ | ✅ | ✅ | ✅ | Broker (`capabilities/fs.ts`'s `open`), dispatch and preload. Node shape (`fs/handle.ts`) is a Node-style cursor over the contract's explicit-position reads and writes, and `fs.createReadStream`/`createWriteStream` run over that same cursor. **One named limitation:** `readable()`/`writable()` are built in the broker but have no control-channel case and are not on `window.orivon` (A184), so a handle's own `FileHandle#createReadStream`/`createWriteStream` refuse loudly rather than fake a stream |
-| `fs.userSelected` (picker) | ✅ | ✅ | ✅ | ➖ | **The only route outside the app dir**, in both shapes. A file resolves through `fs.open`'s handle-scoped methods; a folder resolves a `DirectoryHandle` whose nine members travel over eight `fs.dir*` control-channel methods, with `fs.dirOpen` routed through the same `registerFileHandle` mechanism `fs.open` uses. The picker choice IS the consent; a picked path persists and is revocable from the settings list beside that app's other permissions. **Provisional:** `DirectoryHandle`'s own method set is not yet confirmed (A167 item 2, A195) |
-| `id.publicKey` / `sign` | ✅ | ✅ | ✅ | ➖ | Wired end to end. P-256 ECDSA only; secp256k1/Schnorr is the separate A44 question. The production keychain is real (ADR-0033) and a consent-made grant (empty `patterns`) now authorises whatever curves the registered manifest declares, proven against a real broker (`src/main/consent/tests/request-grant.test.ts`); the real-Electron e2e test still grants through the dev-only hook, not a real `requestGrant` dialog |
-| `secrets` (`available` / `encrypt` / `decrypt`) | ✅ | ✅ | ✅ | ➖ | ADR-0033. An origin-bound AES-256-GCM secret derived from the identity seed under its own salt, never the seed itself. `available()` is `false` with no grant or a session-only seed; `encrypt` then rejects `'unavailable'` rather than silently producing ciphertext that cannot survive a restart |
-| `id.requestIdentity` | ✅ | ❌ | ❌ | ➖ | Unbuilt, and nothing blocks it. `src/nostr/nip07.ts`'s real wiring calls this and cannot reach a page until it exists (A111) |
-| `app.manifest` / `grants` | ✅ | ✅ | ✅ | ➖ | Backs Electron's `app.*`; see Table 2 |
-| `app.requestGrant` | ✅ | ✅ | ✅ | ➖ | A control-channel case in [`ipc.ts`](../../src/broker/transport/ipc.ts) turns a page's call into `ctx.requestGrant(origin, request)`; accepting the dialog persists a real grant a later capability call uses, e2e-verified with refusal included. An origin must be registered as an app first, which is where install-time consent asks once for the whole declared set before the app's own code runs. A first-ever visit can still see an early call denied before that dialog resolves (A146, accepted as a known limitation) |
-| `web.context` (`orivon.web.openContext`) | ✅ | ✅ | ✅ | ➖ | An isolated, never-displayed document at an origin the manifest names exactly, and `evaluate` to run one script in it. No `orivon.*`, no preload, no cookies, and **no network of its own**: every request it makes is authorised against the *opening app's* own `https.connect` grant. Bounded by `LIMITS.webContexts`. The one capability a page cannot substitute for, because a web page cannot host a document at another site's origin -- an iframe there is that site's document, not the app's. Broker in [`capabilities/web.ts`](../../src/broker/capabilities/web.ts), page surface in [`surface/web.ts`](../../src/preload/surface/web.ts), e2e in [`e2e-web-context.test.ts`](../../test/e2e-web-context.test.ts) and [`e2e-web-context-network.test.ts`](../../test/e2e-web-context-network.test.ts). **Provisional:** [ADR-0019](../decisions/ADR-0019-an-app-may-run-code-at-an-origin-the-user-named.md) is still `proposed`; owner acceptance settles it |
-| `web.embed` (`<webview>`, `orivon.web.setEmbedScript`) | ✅ | ✅ | ✅ | ➖ | [ADR-0039](../decisions/ADR-0039-an-app-may-show-a-site-inside-its-own-page.md): a site shown inside the app's own page, in Electron's `<webview>` element, under one warning-level grant whose patterns are exact origins, `*` or a local pattern. The shown page runs in a `persist:` partition of the app's own, sandboxed, with the shell's preload and no `orivon.*`; it may load documents only from the granted origins, and `*` stops at private addresses (T12); the app's own script runs first in every page it shows, whatever that page's CSP. [ADR-0047](../decisions/ADR-0047-an-app-shows-pages-it-serves-itself-and-hears-a-shown-page-s-popups-and-downloads.md): a local pattern (`http://*.localhost:<port>`) shows pages the app serves itself, each at an origin of its own, admitted only while the app holds a listener on that port and closed when that listener closes, and `*` may be listed with other entries. A popup or a download from a shown page opens and keeps nothing, and the element fires `orivon-popup` or `orivon-download`; a link to another program's scheme is never offered outside the browser. The script reaches the top frame only, and no scheme of the app's own is answered in a shown page. Broker in [`capabilities/embed.ts`](../../src/broker/capabilities/embed.ts), shell in [`src/main/embed/`](../../src/main/embed/), guest preload [`preload/embed.ts`](../../src/preload/embed.ts), e2e in [`e2e-embed.test.ts`](../../test/e2e-embed.test.ts) |
-| `dns.lookup` (`orivon.net.lookup`) | ✅ | ✅ | ✅ | ✅ | The capability is `OrivonNet.lookup`; there is no separate `orivon.dns` namespace, and `dns.lookup` is the Node API it backs. Bounded by the host portions of the origin's held `tcp.connect` and `udp.send` patterns; `https.connect` does not authorise a lookup. Node shape in [`net/dns.ts`](../../src/shim/net/dns.ts) resolves `dns.lookup`/`dns.promises.lookup`, answering an IP literal and `localhost` itself with no capability call; every other `dns.*` member is a named refusal |
-| `protocols` (scheme routing) | ✅ | ❌ | ❌ | ➖ | Declared in the manifest and validated by the loader ([`manifest/capabilities.ts`](../../src/loader/manifest/capabilities.ts)), but **not a `CapabilityKind`** ([`manifest-patterns.ts`](../../src/broker/policy/manifest-patterns.ts)) and unimplemented on both sides: nothing registers a scheme with the shell, and how a routed URI would reach the app is unspecified |
-| `hid` / USB | 🚫 | 🚫 | 🚫 | 🚫 | Cut from v0 for every tier |
-| `subprocess` | 🚫 | 🚫 | 🚫 | 🚫 | Never a native process: one holds its user's whole authority, so no grant can bound it ([ADR-0040](../decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)). A child process is a WebAssembly program in the app's own tab instead (Table 3, `child_process`) |
+**Only prefixes of ✅ are legal** across Spec'd, Broker and Page: a call travels in that order, so a
+cell is never better than the one before it. Table 1a's own page states the rule in full, and
+what is proven end to end.
 
-**Only prefixes of ✅ are legal.** A call travels Spec'd → Broker → Page, so the valid shapes
-are ❌❌❌, ✅❌❌, ✅✅❌, ✅✅✅. Anything else is a defect or a mislabel: Broker ✅ with
-Spec'd ❌ means implementation ran ahead of the contract, which is what `ADR-0002` exists to
-prevent. Every row above is a legal prefix. `hid`/`subprocess` are 🚫 across all four columns,
-which is its own declared category (excluded by design), not a legality violation.
+## Table 2: the four adapter families
 
-**What is proven end to end, and what is proven one layer short.** A real Electron launch proves
-that `requestGrant` fires the dialog and that an accepted answer persists a grant a subsequent
-`net.connect` actually uses, including the out-of-manifest refusal. `net.listen` and `fs.open`
-have no real-Electron e2e test; their proof is unit tests over the real `installOrivon` wiring
-rather than a hand-built stub.
-
-No automated test drives the full chain "a real page, at a real public HTTPS origin, triggers the
-real install-time consent dialog and it works." `install-origin.ts`'s own T12/A46 guard means no
-hermetic test fixture's origin can pass `Loader.load()`'s public-unicast check, so every e2e test
-in this area substitutes one layer below that wall (a developer-only grant hook, or a direct call
-to the consent function itself), the same substitution `test/e2e-capability-boundary.test.ts`
-uses for the raw capability API. Each link is proven for real (a real broker's consent decision,
-a real dialog's wiring, a real IPC round trip); the chain through a real public origin is not
-something CI can reach, and that is a limit of CI rather than a gap in the mechanism.
-
-## Table 2: the four adapter families (shim families structure)
-
-An app never calls `orivon.*` directly unless it was written for Orivon. Something has to
-present a familiar interface on top. There are four such layers:
+An app never calls `orivon.*` directly unless it was written for Orivon. Something has to present a familiar interface on top. There are four such layers. Table 2a covers the Node stdlib family module by module, Table 2b the `electron` module export by export, Table 2c the packages that wrap Electron, and Table 2d the web-ecosystem providers.
 
 | Family | What it presents | Backed by | Status |
 |---|---|---|:--:|
-| **Node stdlib** | `net`, `dgram`, `fs`, `http`, `https`, `tls`, `Buffer`, `stream`... | `net.*`, `fs.*` | ✅ built: `net` (client and server), `dgram` and `fs` (including `FileHandle` and `fs` streams) over the capabilities, `tls` and Node's `http`/`https` clients over `net.connectSecure`, `http.createServer` over `net.Server`, `dns.lookup` over `orivon.net.lookup`, the eight core polyfill packages, hand-written `url`, `querystring`, `string_decoder`, `timers` and `assert`, `wasi` over a WASI preview1 host, and `child_process` over Web Workers, each also under its `node:` name and subpaths. **Named refusals, by design:** `net.Server#listen` and `dgram` `bind` on one address that is neither loopback nor every interface, `FileHandle#createReadStream`/`createWriteStream` (A184), `tls` STARTTLS and a prebuilt `secureContext` (A226), `https.createServer` (no TLS listener), WASI links, file times and sockets, and every other `dns.*`/`net.*` member this shim has not decided on |
-| **`electron` module** | `app`, `ipcRenderer`/`ipcMain`, `dialog` | `app.*`, `fs.userSelected` | ⚠️ partial, in [`src/shim-electron/`](../../src/shim-electron/) |
-| **Web ecosystem** | `window.nostr` (NIP-07); later `window.ethereum` | `id.*` | ✅ built ([`nip07.ts`](../../src/nostr/nip07.ts)), not wired into a page: it needs `id.requestIdentity` (A111) |
+| **Node stdlib** | The 72 specifiers of Node 24's `builtinModules`. [`module-map.ts`](../../src/shim/module-map.ts) maps 31 of them (`net`, `dgram`, `fs`, `http`, `https`, `tls`, `buffer`, `stream`...) and leaves 41 unmapped | `net.*`, `fs.*`, `orivon.net.lookup`, npm polyfill packages, hand-written modules, Web Workers, the web platform | ⚠️ partial: none of the 31 mapped modules has every Node 24 export behaving as Node's (28 partial, 3 differ), and the 41 unmapped ones are `❌ missing`. An unmapped specifier is left to the app's own bundler. A mapped module resolves under its `node:` name in Vite and in the esbuild plugin; webpack 5 needs a plugin that strips the scheme. **Named refusals, by design:** `net.Server#listen` and `dgram` `bind` on one address that is neither loopback nor every interface, `FileHandle#createReadStream`/`createWriteStream` (A184), `tls` STARTTLS and a prebuilt `secureContext` (A226), `https.createServer` (no TLS listener), WASI links, file times and sockets, and every other `dns.*`/`net.*` member the shim has not decided on. Table 2a has every module |
+| **`electron` module** | `app`, `ipcRenderer`/`ipcMain`, `dialog` | `app.*`, `fs.userSelected` | ⚠️ partial, in [`src/shim-electron/`](../../src/shim-electron/): of the 48 value exports of `require('electron')`, none is built; 4 are partial (`app`, `ipcMain`, `ipcRenderer`, `safeStorage`), 1 differs (`nativeTheme`), 18 refuse by name and 25 are absent. Table 2b has every export |
+| **Web ecosystem** | `window.nostr` (NIP-07), `window.ethereum` | `id.*` | ❌ missing: no page receives either. [`nip07.ts`](../../src/nostr/nip07.ts) builds the NIP-07 object against a stub signer, and wiring it into a page needs `id.requestIdentity` (A111). `window.ethereum` is not built. A wallet extension can inject one in a granted, network-served tab ([ADR-0044](../decisions/ADR-0044-a-grant-no-longer-gives-an-origin-its-own-session.md)). Table 2d has every provider |
 | **The app's own preload surface** | whatever that app's preload exposed -- `window.ftElectron` for FreeTube | any capability its calls happen to map to | ➖ **Not Orivon's to ship.** One file per ported app, living with the app |
 
-**The `electron` family** lives in its own package rather than folded into `src/shim/`:
-`app`, `dialog`, `safeStorage`, `ipcRenderer`/`ipcMain` and `BrowserWindow`/`Menu`/`Tray`,
-reconstructed or explicitly refused on top of `orivon.*`. A refusal and a gap are not the same cell:
+### How a port gets these families
 
-| Electron API | What backs it | This package |
-|---|---|---|
-| `app.getPath('userData')` | the app's own confined `fs` root | `app.ts`, built |
-| `app.getVersion()` | `orivon.app.manifest()` | `app.ts`, built |
-| `dialog.showOpenDialog` | `orivon.fs.userSelected` | `dialog.ts`: **refuses, as `'not-built'`, on a shape mismatch.** `showOpenDialog` returns raw host paths (`filePaths: string[]`), while `userSelected` resolves an opaque handle and deliberately never exposes a host path to app code (A187) |
-| `safeStorage.isAsyncEncryptionAvailable` / `encryptStringAsync` / `decryptStringAsync` | `orivon.secrets` (ADR-0033) | `safe-storage.ts`, built |
-| `safeStorage.isEncryptionAvailable` / `encryptString` / `decryptString` (the sync trio) | nothing; `orivon.secrets` is async-only | `safe-storage.ts`: `isEncryptionAvailable` answers `false` unconditionally (a ported app's own non-keyring fallback then takes over); `encryptString`/`decryptString` refuse, as `'not-built'` |
-| `ipcRenderer.invoke` / `ipcMain.handle`, `.on`/`.send` | a local in-sandbox message bus, no broker round-trip | `ipc.ts`, built |
-| `BrowserWindow`, `Menu`, `Tray` | nothing; desktop-shell surface | `desktop-shell.ts`, refuses by design, tested |
+The alias table [`module-map.ts`](../../src/shim/module-map.ts) and the [`src/shim-electron/`](../../src/shim-electron/) package are consumed by this repository's own renderer build ([`electron.vite.config.ts`](../../electron.vite.config.ts)). No package publishes them, `package.json` is private, and outside this repository's own builds the only bundler recipe that applies them is test support ([`shim-esbuild-plugin.ts`](../../src/shim/tests/support/shim-esbuild-plugin.ts)). The five ports in `orivon-ports` apply neither. Each bundles with its own polyfills or with empty stubs: FreeTube's build sets `resolve.fallback` to `false` for eleven modules (`fs`, `path`, `stream`, `crypto`, `http`, `https`, `zlib`, `url`, `net`, `tls`, `child_process`), all of which the shim maps; ASGARDEX uses `process/browser`, `stream-browserify`, `crypto-browserify` and `assert`, and empties `path`, `url`, `https`, `http`, `zlib` and `fs`; Element empties `fs`, `net`, `tls` and `crypto` and takes `events` and `util` from npm; AirGap Vault takes `path`, `stream`, `crypto`, `http`, `https` and `zlib` from `path-browserify`, `stream-browserify`, `crypto-browserify`, `stream-http`, `https-browserify` and `browserify-zlib`; The Lounge's client imports no builtin. No renderer of the five imports `electron`. So a port today ships its own polyfills, and a consumable form of the shim (a published alias table with the `installGlobals` entry) is not built. Whether a port should bundle against the shim instead is A313.
+
+| Sub-table | What it holds | Rows | ✅ | ⚠️ | ❌ | 🚫 | ➖ |
+|---|---|--:|--:|--:|--:|--:|--:|
+| [2a](compatibility/table-2a-node-modules.md) | Node's standard library, one row per builtin specifier, with a "Used by" column from the app scans | 60 | 0 | 31 | 29 | 0 | 0 |
+| [2b](compatibility/table-2b-electron.md) | The `electron` module, one row per export and per group of members, with a "Used by" column | 177 | 12 | 22 | 123 | 19 | 1 |
+| [2c](compatibility/table-2b-electron.md#table-2c-packages-that-wrap-electron) | Packages that wrap Electron (`electron-store`, `electron-updater`, `keytar` and others) | 28 | 1 | 9 | 18 | 0 | 0 |
+| [2d](compatibility/table-2b-electron.md#table-2d-web-ecosystem-providers) | Providers a page expects injected (`window.nostr`, `window.ethereum`, wallet discovery) and the app's own preload surface | 15 | 1 | 4 | 6 | 0 | 4 |
 
 ## Table 3: the runtime environment (ability)
 
 **What the app is capable of doing in the browser environment.** The capability-backed part is
-the small part. [`src/shim/`](../../src/shim/) holds `globals.ts`, `module-map.ts`, a
-hand-written `polyfills/util.ts` and the Node shapes, and [its README](../../src/shim/README.md) names
-the eight core polyfills (`Buffer`, `stream`, `events`, `path`, `os`, `crypto`, `zlib`, `util`)
-as owned by the `shim` stream, matching Table 2's `net, dgram, fs, Buffer, stream...`.
+the small part.
 
 **`Class` answers one question: if I complete Tables 1 and 2, is this row still open?**
 
@@ -125,50 +151,20 @@ as owned by the `shim` stream, matching Table 2's `net, dgram, fs, Buffer, strea
 - **`outside`**: **yes.** Neither table covers it. No Node module, `electron` call or web API
   expresses the problem, so no amount of shim work touches it.
 
-| Surface | Class | Needed by | Status | Where the answer comes from |
-|---|:--:|---|:--:|---|
-| `process`, `global`, `nextTick`, `setImmediate` | `dup` | everything | ✅ built | `shim/globals.ts`, installed on a registered app tab's window before its own scripts run. `process` answers what libraries read without claiming to be Node (A223); `setImmediate` is a `MessageChannel` task, free of timer clamping; an uncaught callback error reaches the page's own `reportError` |
-| `util` | `dup` | nearly every dependency tree (`inherits`, `promisify`, `inspect`, `types`) | ✅ built | The `util` package, with [`polyfills/util.ts`](../../src/shim/polyfills/util.ts) replacing what the package gets wrong or predates: `promisify`'s registry symbol, `inherits`, `isDeepStrictEqual`, `TextEncoder`/`TextDecoder` |
-| `Buffer`, `stream`, `events`, `path`, `os`, `crypto`, `zlib` | `dup` | everything | ✅ built | All eight core polyfill packages are installed, deliberately wider than the five with a confirmed caller, so a ported app does not stall on a missing module ([`shim-dependency-review.md`](shim-dependency-review.md)). `Buffer` is also a page global in registered app tabs (not workers or subframes), the same class `require('buffer')` returns. `zlib` has no brotli (A209) |
-| `url`, `querystring`, `string_decoder`, `timers`, `assert` | `dup` | ported apps' dependency trees | ✅ built | Hand-written in `src/shim/`. Every mapped module also resolves under its `node:` name, and `fs/promises`, `stream/promises`, `path/posix`, `util/types`, `dns/promises` and `timers/promises` are rows of [`module-map.ts`](../../src/shim/module-map.ts) of their own |
-| `net` / `dgram` / `fs` Node shapes | `dup` | every ported app | ✅ built, client and server | `net.connect`, `dgram`, `fs` (async and sync), `net.createServer`/`net.Server` and `fs.open`/`FileHandle` present real Node shapes over the capabilities, with Node's `errno`, `syscall` and codes on their errors, and `fs.createReadStream`/`createWriteStream` over the shim's own cursor. A loopback `listen` host binds loopback only, under the local grant (ADR-0034), and `http.createServer` runs over `net.Server` with keep-alive, chunked bodies both ways, pipelined requests, `Expect: 100-continue` and `upgrade`. Two narrow, named refusals: `net.Server#listen` on one address that is neither loopback nor every interface, and `FileHandle#createReadStream`/`createWriteStream` (A184, no page-reachable byte stream underneath). UDP and the TCP server are IPv4-only (A218) |
-| A standalone WASI program (`wasm32-wasip1`): Node's `wasi` module | `dup` | Rust, C, C++, Zig and TinyGo programs, and libraries built without JavaScript bindings | ✅ built, files only | [`src/shim/wasi/`](../../src/shim/wasi/): a preview1 host over `orivon.fs`, the program suspending on each file call through JSPI on the page's main thread ([ADR-0040](../decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)). Files, directories, clocks, randomness, arguments, environment and exit work; `start()` returns a promise and `preopens` name paths under the virtual root. Not served: links and file times (`orivon.fs` has neither), sockets (preview1 cannot dial; a WASI 0.2 component `spawn` runs can, per the `child_process` row), and listing the app root itself, which the broker refuses as it does for `fs`. 63 of the 72 preview1 conformance programs pass; the nine that fail need links or file times. E2e in [`e2e-wasi-host.test.ts`](../../test/e2e-wasi-host.test.ts) |
-| Synchronous `fs` (`readFileSync`, `existsSync`) | **`needs T1`** | ported apps, at startup | ✅ built | [ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md), over `ipcRenderer.sendSync`; `existsSync` answers over the same call. Design rule 2 narrows to network operations only. One filed gap: the sync path does not share the async path's per-origin fairness budget (A112). Every other `fs` `*Sync` member, including `realpathSync`, plus `child_process.spawnSync`/`execSync`/`execFileSync`, works too in a Worker (a forked child or a `worker_threads` thread) of a cross-origin isolated app, over the Worker's own synchronous channel ([ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md)'s amendment). `openSync`/`fs.open` keep separate file-descriptor tables; a cross-family fd fails EBADF, naming which family holds it |
-| `electron` module | `dup` | every tier-2 app | ⚠️ partial | [`src/shim-electron/`](../../src/shim-electron/): `app.*`/`ipcRenderer`/`ipcMain` work, `BrowserWindow`/`Menu`/`Tray` refuse by design, and `dialog.showOpenDialog` refuses on the host-path/opaque-handle mismatch (A187) |
-| HTTP client | `dup` | trackers, web seeds, any REST | ✅ built | The page's own `fetch()`, `XMLHttpRequest` and `EventSource` are routed through the capability for granted hosts ([`routed/fetch.ts`](../../src/preload/routed/fetch.ts), [`routed/xhr.ts`](../../src/preload/routed/xhr.ts), [`routed/eventsource.ts`](../../src/preload/routed/eventsource.ts)): redirects followed, responses streamed, requests queued at the socket allowance. A host the app was not granted takes the native API, CORS and all. Node's `http`/`https` clients sit on the same capability, with timeouts, abort signals, `Agent`, and `upgrade` and 1xx events. Neither webtorrent nor bittorrent-tracker uses Node's HTTP client (the tracker client calls `fetch`), and FreeTube is 32 `fetch` calls with zero Node builtins, so **routed `fetch` is the path both flagship candidates actually take**. Divergences from a browser are listed in [`src/preload/README.md`](../../src/preload/README.md); no keep-alive (A208) |
-| WebSocket client | `dup` | dapps, wallets (RPC subscriptions, price feeds, WalletConnect relays) | ✅ built | The page's own `WebSocket` is routed for granted hosts ([`routed/websocket.ts`](../../src/preload/routed/websocket.ts)): `wss:` over the secure-connect capability, `ws:` over TCP connect, an RFC 6455 client in the page, no `permessage-deflate`. An ungranted host keeps the native socket, which the served CSP refuses for any third-party host; workers and iframes keep the native socket (A211). A routed socket holds a socket-allowance slot while it is open (A240) |
-| TLS / `https` | **`needs T1`** | nearly every app | ✅ built | [ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md); `net.connectSecure` in the broker, wired through IPC to a real page. Orivon terminates the handshake on the trusted side, so a grant and a prompt can name the true hostname. Node's `tls` module is built over it and honours `ca`, `rejectUnauthorized`, `cert`/`key`/`pfx`, `servername`, ALPN and a custom `checkServerIdentity`; an option that unbinds the certificate from the host adds the resolve-once address check; STARTTLS cannot work (A226) |
-| `child_process` | `dup` | ported apps that spawn helpers or fork workers | ✅ built | [`src/shim/child-process/`](../../src/shim/child-process/): every child runs in a Web Worker, never as an OS process ([ADR-0040](../decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)). `spawn`, `execFile` and `exec` run a WASI program from the app's bundle (the command's path, or with `.wasm` added), or a WASI 0.2 component from the jco output shipped beside it, whose sockets reach `orivon.net` under the app's grants, a Rust program on tokio included ([`src/shim/wasi-p2/`](../../src/shim/wasi-p2/)); a native program refuses as `ENOEXEC`, a missing one is `ENOENT`. `fork` runs an app module with `process.send`, IPC and the page's `orivon.*`. `spawnSync`/`execSync`/`execFileSync` work in a Worker of a cross-origin isolated app, over a request kind of their own on its synchronous channel ([ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md)'s amendment) -- the grandchild runs on the serving side exactly as the async forms would there. Refused by name: `shell`, `uid`/`gid`, a foreign `execPath`. A spawned program has one thread: WASI 0.2 has none, so a program that starts threads runs once its port makes it single-threaded (a current-thread runtime, blocking work run inline; `d-0216`). A spawn or a forked child runs in the app's hidden child host and outlives the page that started it while another page of the app is open, ending only with the app's last page ([ADR-0046](../decisions/ADR-0046-an-app-s-children-live-until-its-last-page-closes.md), e2e in [`e2e-child-host.test.ts`](../../test/e2e-child-host.test.ts)). A `worker_threads` thread is not routed through the host: it stays a local Worker of whatever started it, keeping a `SharedArrayBuffer` or a shared `WebAssembly.Memory`/`Module` in `workerData` reachable. E2e in [`e2e-child-process.test.ts`](../../test/e2e-child-process.test.ts) |
-| `vm` | `dup` | template compilers and code loaders in ported apps' dependency trees | ⚠️ partial | [`polyfills/vm.ts`](../../src/shim/polyfills/vm.ts): `runInThisContext`, `Script#runInThisContext` and `compileFunction` run in the page's own context, as the served CSP's `'unsafe-eval'` already allows. A context of its own (`createContext`, `runInNewContext`, `runInContext`) needs a second realm and refuses by name |
-| The app's own preload surface (`window.<name>`) | `dup` | every app ported from Electron | ➖ per-app | Table 2's fourth family. Not in `src/` at all, and not in this repository: one file per app, in `orivon-ports` |
-| `worker_threads` | `dup` | validation-heavy work | ✅ built | [`polyfills/worker-threads.ts`](../../src/shim/polyfills/worker-threads.ts): `new Worker` runs an app module as a thread over the same Web Workers [`child_process.fork`](../../src/shim/child-process/) uses ([`child-process/thread.ts`](../../src/shim/child-process/thread.ts)), with `workerData`, `postMessage`, `terminate()`, `ref()`/`unref()` and Node's events; `isMainThread`, `threadId`, `parentPort`, `workerData` and `resourceLimits` read what the thread itself set. `MessageChannel`/`MessagePort` are Node-shaped over a web `MessagePort` ([`worker/node-port.ts`](../../src/shim/worker/node-port.ts)); `BroadcastChannel` is the platform's. Refused by name: `eval`, a thread started from inside a thread, `receiveMessageOnPort`, `moveMessagePortToContext`; `resourceLimits` is accepted and not enforced |
-| Background lifetime | **`outside`** | seeding, syncing, pinning | ⚠️ **unspecified** | Nothing in Node, `electron` or the web platform means "keep running once the tab is gone". Shell holds the process, contracts describe it, UI shows it. `scope.md` counts `backgroundSec` in the metric but nothing grants it. An app tab that is not the active one is hidden, and keeps Chromium's default throttling of hidden pages |
-| Ambient FS (`~/.bitcoin`) | **`outside`** | migrating an installed app | 🚫 excluded by design | A refusal, not a gap. `fs` is rooted; `userSelected` is a picker, not a mount. `src/shim-electron/app.ts`'s `getPath` enforces the identical boundary for any name but `'userData'` |
-| Secure seed storage (OS keyring, `safeStorage`) | **`dup`** | `orivon.id` surviving a restart, `window.nostr` behind it, `orivon.secrets` | ✅ built | [ADR-0003](../decisions/ADR-0003-local-first-storage.md) puts the identity seed behind Electron `safeStorage` and says **no app, ever** -- amended by [ADR-0033](../decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md) to add: an app may hold its own *derived*, origin-bound secret with a grant, never the seed. Production's `Keychain` ([`electron-keychain.ts`](../../src/main/keyring/electron-keychain.ts)) uses the async `safeStorage` trio; a keyring the async trio cannot reach (`isAsyncEncryptionAvailable()` false, or the selected backend is `basic_text`/`unknown`) yields a **session-only** seed, generated fresh and never written to disk in plaintext -- the file is also never overwritten once one exists but fails to decrypt ([`seed-store.ts`](../../src/main/keyring/seed-store.ts)). `orivon.secrets.available()` is exactly this signal, surfaced to an app so it can choose not to rely on persistence rather than lose data silently |
-| Desktop shell (tray, autostart, protocol handlers, hotkeys) | **`outside`** | Electron apps' outer half | ⚠️ partial | `BrowserWindow`/`Menu`/`Tray` are explicit, tested named refusals (`src/shim-electron/desktop-shell.ts`); autostart, protocol handlers and hotkeys are simply absent |
-| Secure context (`crypto.subtle`, `crypto.randomUUID`, service workers, `navigator.clipboard`) | **`outside`** | any app using WebCrypto or the async Clipboard API | ✅ on every path | An INSTALLED app's origin is really `https:` ([ADR-0007](../decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md)) and `127.0.0.1` is trustworthy by Chromium's own host rule, so both were always secure. The dev `.eth` path is plain `http:` on a non-loopback host, which Chromium does not trust however the name resolves; [`eth-resolver.ts`](../../src/main/dev/eth-resolver.ts) declares the mapped names secure so the same bundle behaves the same way under either entry URL. Dev-mode only, and only for names the resolver also mapped to loopback |
-| Clipboard write (`navigator.clipboard.writeText`) | **`outside`** | any app with a copy button | ✅ built | Allowed for every page by [`permission-gate.ts`](../../src/main/sessions/permission-gate.ts) ([ADR-0022](../decisions/ADR-0022-the-permission-gate-allows-clipboard-write.md)), bounded by the web platform's own transient-activation and document-focus rules rather than by a grant. Not a `CapabilityKind`: nothing is declared in a manifest and no row appears in either permissions popup |
-| Clipboard read (`navigator.clipboard.readText`/`read`, `deprecated-sync-clipboard-read`) | **`outside`** | paste buttons; AirGap Vault's "Paste from clipboard", one of its two ways to receive a transaction to sign | ⚠️ **unsettled** | Denied on both handlers of [`permission-gate.ts`](../../src/main/sessions/permission-gate.ts), on every page, and no manifest field or answer from the person can lift it: a yes would hand a page whatever was last copied anywhere on the machine, a password or a recovery phrase included. A paste the person makes (Ctrl+V, the right-click menu) needs no permission; only a page reading on its own is refused. Whether it is ever allowed is the open half of [A202](../open-questions.md). If it is, the shape is that entry's ground 2, a prompt naming the site, as notifications have ([ADR-0028](../decisions/ADR-0028-a-site-shows-notifications-only-after-the-person-allows-it.md)) |
-| File System Access, one file (`showOpenFilePicker`, `showSaveFilePicker`, a dropped file) | **`outside`** | any app that imports or exports a file | ✅ built | Allowed by [`permission-gate.ts`](../../src/main/sessions/permission-gate.ts) ([ADR-0024](../decisions/ADR-0024-the-permission-gate-allows-one-chosen-file.md)) for a single file the person picked or dropped, to read or to write. The person's choice of file is the consent, as for `fs.userSelected`. Not a `CapabilityKind`. Writing back to an opened file and reusing a stored handle go without the prompt Chrome shows ([A205](../open-questions.md)) |
-| File System Access, a folder (`showDirectoryPicker`, a dropped folder) | **`outside`** | web IDEs, photo organisers | 🚫 excluded by design | Refused on both handlers: a directory handle reaches every file beneath it, and Electron decides this synchronously, so there is no point at which to ask. An app written for Orivon has `fs.userSelected`'s folder shape instead. Whether a folder prompt is ever built is [A205](../open-questions.md) |
-| HTML fullscreen (`requestFullscreen`) | **`outside`** | video players, games | ✅ built | Allowed on every page from a click by [`permission-gate.ts`](../../src/main/sessions/permission-gate.ts) ([ADR-0025](../decisions/ADR-0025-the-permission-gate-allows-html-fullscreen.md)). The tab fills the window with the chrome hidden, "Press Esc to exit full screen" shows for four seconds, and Escape always leaves. Not a `CapabilityKind` |
-| Pointer lock (`requestPointerLock`) | **`outside`** | games, 3D viewers, remote desktops | ✅ built | Allowed on every page by [`permission-gate.ts`](../../src/main/sessions/permission-gate.ts) ([ADR-0026](../decisions/ADR-0026-the-permission-gate-allows-pointer-and-keyboard-lock.md)); Chromium still requires a click. Escape releases it, and "Press Esc to show your cursor" says so |
-| Keyboard lock (`navigator.keyboard.lock`) | **`outside`** | fullscreen games, remote desktops | ✅ built | Allowed on every page ([ADR-0026](../decisions/ADR-0026-the-permission-gate-allows-pointer-and-keyboard-lock.md)); it acts only in fullscreen. A page holding Escape gets a single press, holding Escape leaves fullscreen, and "Press and hold Esc to exit full screen" says so |
-| External protocol links (`mailto:`, `magnet:`, `bitcoin:`, ...) | **`outside`** | mail, torrent and payment links | ✅ built | Opened by the OS's default app only after the person allows it in a dialog naming the site and the URL, every time ([ADR-0027](../decisions/ADR-0027-an-external-link-opens-only-when-the-person-allows-it.md)). The browser's own schemes and known-dangerous OS handlers are never offered |
-| Notifications (`Notification.requestPermission`) | **`outside`** | chat, mail, transaction alerts | ✅ built | The site is asked once; Allow and Block are remembered per site and can be reset from the permissions panel ([ADR-0028](../decisions/ADR-0028-a-site-shows-notifications-only-after-the-person-allows-it.md)). An undecided site reads `Notification.permission === 'denied'`, measured (A243) |
-| Camera and microphone (`getUserMedia`) | **`outside`** | QR scanners, video calls, camera or microphone entropy; AirGap Vault's QR scan, its other way to receive a transaction to sign | ❌ missing | Denied on both handlers of [`permission-gate.ts`](../../src/main/sessions/permission-gate.ts), on every page, and no manifest field or answer from the person can lift it. A yes would take ground 2 of [A202](../open-questions.md)'s rule: a prompt naming the site and whether it wants the camera, the microphone or both, remembered per site and resettable from the permissions panel, as notifications are ([ADR-0028](../decisions/ADR-0028-a-site-shows-notifications-only-after-the-person-allows-it.md)). It also needs two things Chrome draws and the shell does not: an in-use indicator on the tab, and a reset that stops a stream already running. That Electron sends `media` to the request handler, which can wait on the person, with `mediaTypes` naming which device, comes from its typings and is not measured. Screen capture (`getDisplayMedia`) is refused too: no picker is built |
-| `window.open()` popups that keep `window.opener` | **`outside`** | OAuth and wallet sign-in | ✅ built | A popup the page can talk to becomes a tab in its opener's session ([`popups.ts`](../../src/main/shell/popups.ts)); `noopener` and links open ordinary tabs; a `blob:` URL the page minted opens; a popup into an isolated app opens in that app's own session. An open-web popup an app opens runs in the app's partition until its opener closes (A230) |
-| A sign-in that sends the tab away and back (OIDC, OAuth redirects) | **`outside`** | Matrix clients and any app behind an OIDC provider | ✅ built | A tab that leaves an app for a sign-in provider gets the app's own view back on return, with its `sessionStorage` and back history ([`tab-view.ts`](../../src/main/shell/tab-view.ts)'s `repartitionView()`; `test/e2e-session-storage-return.test.ts`). A form `POST` back across the app boundary still arrives as a `GET` (A233) |
-| `beforeunload` guard | **`outside`** | editors, forms with unsaved work | ✅ built | Asks Leave or Stay. The question blocks the main process while it is open, and closing a tab does not ask (A231) |
-| User-Agent | **`outside`** | sites and sign-in pages that check for Chrome | ✅ built | Every tab reports a plain Chrome User-Agent, with no `Electron/` or `orivon/` token |
-| Right-click menu | **`outside`** | copy, paste, open a link | ✅ built | In tabs and the address bar ([`context-menu.ts`](../../src/main/shell/context-menu.ts)) |
-| `prompt()` | **`outside`** | apps that ask for text this way | ❌ missing | Returns `null` at once: Electron draws no prompt dialog and offers no hook to supply one (A232) |
-| Code made at run time (`eval`, `new Function`, WebAssembly), `data:`/`blob:` URLs, blob workers and frames | **`outside`** | ajv, protobufjs, template compilers, wasm libraries, MSE video | ✅ built | An installed app's served CSP, and that of an app granted without installing, carries `'unsafe-eval'` and `'wasm-unsafe-eval'`, admits `data:`/`blob:` in `connect-src`, `img-src`, `font-src` and `media-src`, and sets `worker-src 'self' blob:` and `frame-src 'self' data: blob:`. A `*` `https.connect` grant admits any https subresource, each one re-authorised by the app's own handler ([`src/loader/README.md`](../../src/loader/README.md)) |
-| WebAssembly threads: `SharedArrayBuffer`, a shared `WebAssembly.Memory`, `Atomics.wait` in a worker | **`outside`** | a component built with threads (wasm-bindgen-rayon, Emscripten pthreads, Go's runtime with threads) | ✅ built | Chromium turns these on only for a cross-origin isolated page. A manifest declaring `crossOriginIsolated: true` gets its documents and workers served with `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`, on the installed path ([`serve/csp.ts`](../../src/loader/serve/csp.ts)) and the granted-without-install path ([`granted-origin-csp.ts`](../../src/main/install/granted-origin-csp.ts)); without the flag a page has no `SharedArrayBuffer` global, measured. Opt-in because an isolated page's popups lose `window.opener` and its cross-origin loads carry no credentials. E2e in [`e2e-wasm-threads.test.ts`](../../test/e2e-wasm-threads.test.ts). A worker still has no `orivon.*` of its own: a component that needs the network or the filesystem from a worker thread proxies through the page |
-| Installing a real built frontend (static-host redirects, extra manifest fields, large assets, client-side routes) | **`outside`** | every installed app | ✅ built | The loader follows a host's same-origin redirects (`/index.html` to `/`), ignores an unknown top-level manifest field such as `$schema`, `description`, `icons` or `homepage` with a warning, and takes assets up to 64 MiB in bundles up to 512 MiB, streamed to and from disk in constant memory, Range requests included. Reloading a client-side route serves the entry document. An unchanged app costs one conditional manifest request (a 304) an hour, and the interval survives a restart (A236). A capability revoked in the permissions panel is not asked for again at the next launch, and the app can still request it |
-| Delivery from a `.eth` name (IPFS content under an ENS name) | **`outside`** | apps published on IPFS rather than an HTTPS host | ✅ built | `https://<name>.eth` loads as an ordinary origin ([ADR-0030](../decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)): the Helios light client proves the contenthash (IPFS CID, IPNS key or DNSLink, CCIP-Read included), every block is hashed against its CID, and a failure is an error page, never unverified bytes. It installs through the same hint and dialog and runs from its pin with every server gone. Shown as `ipfs://<name>` wherever an address or origin is shown; both `ipfs://<name>` and `ipns://<name>` open it ([ADR-0038](../decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md)). Website Level 2 on the Web3 Score page. **Named limits:** no Swarm or Arweave, no internationalised names, and one keyless beacon API (A253) |
-| Delivery from an `ipfs://` or `ipns://` address | **`outside`** | IPFS content linked or shared by its address | ✅ built | Typed, linked or opened in a new window, shown as itself in the address bar and on every consent surface, and served at an ordinary https origin, `https://<cid>.ipfs.orivon` ([ADR-0038](../decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md)), every block checked as for a `.eth` name. `ipns://` takes an IPNS key or a DNSLink name. **Named limits:** an `ipfs://` subresource inside a page does not load (A260), and a new release under `ipfs://` is a new origin, so apps that keep grants ship under `ipns://` or `.eth` |
-| Native addon in the dep tree | **`outside`** | see Table 5 | ⚠️ partial | Loaded as its WebAssembly build ([`src/shim/addon/`](../../src/shim/addon/), [ADR-0040](../decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)): `process.dlopen` and `module.createRequire` take the `.node` path and load the build beside it through emnapi, a napi-rs build by napi-rs's own conventions (a real napi-rs 3 build's calls, async work and file reads pass). Its file calls work in a forked child of a cross-origin isolated app, and refuse with `NOSYS` on the page's main thread. Not yet through `process.dlopen`: sockets, and threaded builds. A napi-rs package's published WebAssembly build, which is threaded, runs without that loader: through the package's own browser loader, in an app whose manifest sets `crossOriginIsolated: true`. An addon with no WebAssembly build still needs a substitute (Table 5). E2e in [`e2e-native-addon.test.ts`](../../test/e2e-native-addon.test.ts), and opt-in for a published napi-rs package in [`e2e-napi-rs-package.test.ts`](../../test/e2e-napi-rs-package.test.ts) |
+| Sub-table | What it holds | Rows | ✅ | ⚠️ | ❌ | 🚫 | ➖ |
+|---|---|--:|--:|--:|--:|--:|--:|
+| [3a](compatibility/table-3a-globals-and-process.md) | Globals and `process`: every Node global, every `process` member, event and environment key, where the globals exist, timers, detection idioms | 107 | 23 | 45 | 34 | 3 | 2 |
+| [3b](compatibility/table-3b-modules-and-delivery.md) | Module system, bundling and delivery: `require` and `import.meta`, package conditions, aliases, the manifest, MIME types, limits, routing, the first visit, the delivery modes compared | 73 | 21 | 34 | 14 | 4 | 0 |
+| [3c](compatibility/table-3c-files.md) | Files: every `fs`, `fs.promises`, `FileHandle`, `Stats` and `fs.constants` member, `path`, `os`, path semantics and bounds | 98 | 7 | 56 | 34 | 1 | 0 |
+| [3d](compatibility/table-3d-network.md) | Network: `net`, `dgram`, `dns`, `tls`, `http`, `https`, `http2`, and the page's routed `fetch`, `XMLHttpRequest`, `EventSource`, `WebSocket` | 102 | 19 | 66 | 17 | 0 | 0 |
+| [3e](compatibility/table-3e-crypto-compression-buffers.md) | Crypto, compression and buffers: every `crypto` export and algorithm family, `zlib`, `Buffer` | 80 | 15 | 44 | 21 | 0 | 0 |
+| [3f](compatibility/table-3f-streams-events-utilities.md) | Streams, events, utilities, timers and `assert` | 38 | 2 | 25 | 11 | 0 | 0 |
+| [3g](compatibility/table-3g-running-code.md) | Running code: `child_process`, `worker_threads`, `cluster`, `vm`, `module`, WASI preview1 and 0.2, Node-API, WebAssembly engine features and toolchains | 135 | 14 | 93 | 23 | 5 | 0 |
+| [3h](compatibility/table-3h-the-page.md) | The page: origin, every CSP directive, response headers, cookies and storage, workers and frames, `navigator` | 69 | 19 | 36 | 2 | 6 | 6 |
+| [3i](compatibility/table-3i-windows-and-lifecycle.md) | Windows, lifecycle and the desktop around the app: the main process, windows and tabs, quit signals, throttling, background lifetime, shortcuts the browser takes, menus, dialogs, drag and drop, packaging assumptions | 63 | 6 | 26 | 23 | 8 | 0 |
+| [3j](compatibility/table-3j-permissions-devices-secrets.md) | Permissions, devices, identity and secrets: every permission string and device hook, WebAuthn, the keyring | 52 | 9 | 10 | 23 | 8 | 2 |
+| [3k](compatibility/table-3k-protocol-stacks.md), primitives | The network primitives a protocol can need | 58 | 14 | 27 | 14 | 3 | 0 |
+| [3k](compatibility/table-3k-protocol-stacks.md), stacks | Protocol stacks (peer-to-peer, blockchains, anonymity networks, messaging and mail, databases and services, home and media devices, sign-in), each with the primitives it needs | 163 | 67 | 60 | 34 | 2 | 0 |
 
 ## Table 4: open blockers, and the cheapest lever for each
 
@@ -187,34 +183,42 @@ open blockers are listed; a resolved one is deleted, not struck through.
 | 9 | `hid`/USB, the wallet cluster | `orivon.hid.*` + device chooser | Contracts + prompt UX + security argument |
 | 10 | A native addon's WebAssembly build that is threaded and loaded through `process.dlopen` rather than a napi-rs package's own loader | Threads as emnapi workers over `worker_threads`, once an addon build needs them. An addon that runs a network node runs that node as a WASI 0.2 component the app spawns and reaches over loopback, which works today (`d-0216`); an addon with no WebAssembly build: substitute per library (Table 5) | Shim work; threads need `crossOriginIsolated` |
 | 11 | Tier 3, no HTML frontend | Container + xpra ([doc](container-apps-opportunity.md)) | Parked; reopens `subprocess` in a narrow shape |
+| 14 | No port consumes the Node shim: the alias table and the page globals are this repository's own, so each port brings its own polyfills or empties the modules, and what Tables 2 and 3 say the shim offers reaches no ported app | A preset each port's bundler loads: the aliases of [`module-map.ts`](../../src/shim/module-map.ts), the `node:` handling webpack needs, and the globals entry | Shim + `orivon-ports`; A313 (owner) |
+| 15 | 41 of Node's 72 builtin specifiers have no alias row, so an import fails the build or yields an empty object ([Table 2a](compatibility/table-2a-node-modules.md)) | An alias row with an honest answer for each cheap one: `process` to the global, `assert/strict`, `sys`, `punycode`, `stream/web`, `stream/consumers`, `path/win32`, `constants`, `console`, `perf_hooks`, `diagnostics_channel`, and inert `tty`, `readline` and `cluster` stubs | Shim only |
+| 16 | A missing member does not always refuse by name: `process`, the `electron` package's `app` and IPC objects, the unwrapped `stream` and `events` packages, 15 `dgram.Socket` members, the subpath modules' named exports, and data members typed as functions | Wrap each with the refusal the other modules already use (`refusingProxy`, generated stand-ins), and give data members real values | Shim only; A310 |
+| 17 | Options a shim function accepts and never reads change the result with no error ([Tables 3c](compatibility/table-3c-files.md) to [3e](compatibility/table-3e-crypto-compression-buffers.md)) | Refuse by name where the option changes the result, warn once where it does not | Shim only; A311 |
+| 18 | Calls a ported Electron app makes at start-up throw: `app.on`, `app.requestSingleInstanceLock`, `app.commandLine.appendSwitch`, `Menu.setApplicationMenu`, `crashReporter.start`, `powerMonitor.on`, `new Tray` ([Table 2b](compatibility/table-2b-electron.md)) | Inert answers for lifecycle and desktop calls that mean nothing in a tab, refusals kept for calls whose result the app relies on | Shim only (`src/shim-electron/`) |
+| 19 | A peer on the local network is reachable only by an address literal written in the manifest: no LAN-scoped pattern ([Table 3k](compatibility/table-3k-protocol-stacks.md) ranks it first) | A local-network connect pattern, asked as its own grant | Contracts + broker policy + prompt UX |
+| 20 | No UDP multicast or broadcast: mDNS, SSDP, UPnP port mapping and LAN discovery cannot run | A multicast grant naming the group and port | Contracts + broker + adapters |
+| 21 | No TLS upgrade of an open socket (STARTTLS): PostgreSQL and MySQL with TLS, SMTP on 587, IMAP on 143, XMPP, LDAP | Upgrade a connected socket on the trusted side, with the grant check the upgrade needs | Contracts + broker; A226 |
+| 22 | `http2` has no alias row, so a gRPC client cannot load | An HTTP/2 client in the shim over `net.connectSecure`, whose `alpnProtocols` option can ask for `h2` | Shim only |
 
 Rows 1 and 2 are the top of the list: neither needs anything but the work itself or one
 confirmation. Row 6 sits behind them despite touching the metric, because it needs
-a decision before it is even build-shaped. **Unfiled:** rows 6 and 7, row 8's camera and
-microphone half, plus declarability (what a grant prompt can honestly say for runtime-chosen
-hosts) and per-syscall IPC cost on a chatty workload.
+a decision before it is even build-shaped. Rows 14 to 22 are the widest gaps the enumeration
+of Tables 1 to 3 exposed, listed after rows 1 to 11 rather than ranked among them; rows 15 to 18
+and 22 are shim work with no decision first. **Unfiled:** rows 6 and 7, row 8's camera and
+microphone half, rows 15, 18, 19, 20 and 22, plus declarability (what a grant prompt can honestly
+say for runtime-chosen hosts) and per-syscall IPC cost on a chatty workload.
 
 ## Table 5: the native-module question, per library
 
-*Could native binaries be preinstalled, bypassing Rule 8, to reach these?*
+*Which native packages have an answer on Orivon, and what each answer needs.* The rows, one per
+package, are in [`compatibility/table-5-native-modules.md`](compatibility/table-5-native-modules.md).
+Native machine code never runs for an app
+([ADR-0040](../decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)): an addon
+loads as its own WebAssembly build through [`src/shim/addon/`](../../src/shim/addon/), or the
+app's bundler swaps the package for a JavaScript or WebAssembly one that the table names.
 
-**The mechanical answer first.** App code runs with `sandbox: true, nodeIntegration: false`, and
-no native module runs for an app ([ADR-0040](../decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)).
-An addon whose WebAssembly build the app ships loads as that build (Table 3); for one with none,
-this table is the substitute per library.
-
-| Library | Why an app wants it | Renderer answer that exists today | Verdict |
-|---|---|---|---|
-| `better-sqlite3` | local relational store | `sql.js` / `wa-sqlite` (WASM SQLite) over `orivon.fs`, or IndexedDB | ✅ No capability needed. Slower; irrelevant at this scale |
-| `leveldown` / `classic-level` | key-value store | `browser-level` (IndexedDB), `memory-level`; the level ecosystem ships browser backends by design | ✅ No capability needed |
-| `secp256k1` bindings | ECDSA / Schnorr | `@noble/secp256k1`, pure JS and audited; plus `orivon.id.sign` for the user's key | ✅ No capability needed. ~10x slower, still thousands of ops/sec |
-| `node-datachannel` | WebRTC inside Node | the renderer has real `RTCPeerConnection` | ✅ Evaporates. `check-no-native-modules.mjs` names this exact chain as the threat; in a renderer it isn't one |
-| `node-usb` / `node-hid` | hardware wallets | nothing; it is physical device access | ❗ **Genuine.** But Rule 8 was never the blocker: it needs `orivon.hid.*`, a device chooser and a grant, which cost the same either way |
-
-**What the question is really pointing at is a real gap:** the missing thing is not permission
-to compile C++, it is **a place to run non-renderer code**. `ADR-0005` dissolved the "app
-backend", so all app code runs in the renderer. Preinstalled natives only pay off once something can
-load them on an app's behalf: `subprocess`, or the container path. Neither is built yet.
+| Family | Rows | ✅ | ⚠️ | ❌ | 🚫 |
+|---|--:|--:|--:|--:|--:|
+| Databases and storage | 14 | 0 | 12 | 2 | 0 |
+| Cryptography and secrets | 17 | 15 | 0 | 2 | 0 |
+| Compression and encoding | 14 | 10 | 4 | 0 | 0 |
+| Media, graphics, audio and machine learning | 17 | 7 | 9 | 1 | 0 |
+| System and devices | 29 | 3 | 5 | 12 | 9 |
+| Networking | 14 | 2 | 6 | 4 | 2 |
+| Build tools shipped at run time | 14 | 10 | 1 | 1 | 2 |
 
 ## Table 6: how to update this
 
@@ -226,6 +230,19 @@ Check the code, do not trust the tables above.
 | Table 1, Broker | `grep -n "async function" src/broker/index.ts`, **then** check the object returned by `createBroker`: a function that exists but isn't returned is not reachable. The broker is split: `net`'s five entry points (`connect`/`connectSecure`/`udpBind`/`listen`/`lookup`) live in `capabilities/net.ts`, `fs`'s nine (including `open`) in `capabilities/fs.ts`, and `id`'s two in `capabilities/id.ts`, each returned from its own factory and re-exported through `createBroker`'s own returned object, so check those files too, not just `index.ts` |
 | Table 1, Page | `grep -n "call('" src/preload/surface/orivon.ts`, plus `src/preload/surface/main-world-socket.ts` for what the main-world wrapper builds. A real-Electron e2e test is the strongest proof a real page can call it; where none exists, a test exercising the real `installOrivon` wiring rather than a hand-built stub is the fallback: weaker, but still a real dispatch/preload path, not just a file that exists |
 | Table 1, Node shim | `ls src/shim/` |
+| Table 1a, the list | Every `interface`, method and `type` in [`src/contracts/`](../../src/contracts/): `grep -nE "^export (interface\|type\|const)\|^  [a-zA-Z]+\??[(:]" src/contracts/*.ts`. `CapabilityKind` in `manifest.ts` and `LIMITS` in `limits.ts` are closed lists: count them |
+| Table 1b | No mechanical list. Walk the fourteen class headings and ask, for a new kind of app, which authority it needs that has no row. A row leaves 1b for 1a when a capability covers it |
+| Table 2a, the list | `node -p "require('module').builtinModules.join('\n')"` on the Node line Electron bundles (`ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron -p process.versions.node`). Every specifier has a row. A module's counts: `node -p "Object.keys(require('<m>')).length"` against the module's `generated/<name>.ts`, which lists each member that refuses |
+| Table 2b, the list | The `const` declarations of `namespace CrossProcessExports` and the classes of `namespace Main` in `node_modules/electron/electron.d.ts`. What the package exports: `grep -n "^export" src/shim-electron/index.ts`. A member that is not wrapped by `refusingProxy` reads `undefined` |
+| Table 2c, 2d | The helper packages in a port's `package.json`; [`src/nostr/`](../../src/nostr/) and the preload for providers |
+| Table 3a, the list | `node -p "Object.getOwnPropertyNames(globalThis).length"` and `node -p "Object.getOwnPropertyNames(process)"`; what the shim installs is [`globals.ts`](../../src/shim/globals.ts) and [`globals-types.ts`](../../src/shim/globals-types.ts) |
+| Table 3b | [`manifest.ts`](../../src/contracts/manifest.ts) for the fields, [`content-type.ts`](../../src/loader/serve/content-type.ts) for the MIME table, [`path.ts`](../../src/loader/serve/path.ts) for routing; module-system rows are measured by bundling a two-line entry with each bundler |
+| Tables 3c to 3g | As Table 2a, per module, then the module's own files under [`src/shim/`](../../src/shim/). An option that a function accepts and never reads is a `differs` row: grep the option name in the implementing file |
+| Table 3h | [`csp.ts`](../../src/loader/serve/csp.ts) and [`granted-origin-csp.ts`](../../src/main/install/granted-origin-csp.ts) for every directive; [`asset.ts`](../../src/loader/serve/asset.ts) for every header |
+| Table 3i | [`src/main/shell/`](../../src/main/shell/) and [`src/main/shortcuts/`](../../src/main/shortcuts/); a behaviour with no e2e test says "not measured" |
+| Table 3j, the list | The permission union of `setPermissionRequestHandler` in `electron.d.ts`, against [`permission-gate.ts`](../../src/main/sessions/permission-gate.ts): every string has a row |
+| Table 3k | The primitives are Table 1's network rows; a stack's status is the weakest primitive it needs |
+| Index tallies on this page | Count the rows of each sub-table by the status emoji in its status column (`Status`, `This package`, `On Orivon` or `Verdict`); the first emoji in the cell is the row's status. A tally that disagrees with its file is stale |
 | Table 2 | Node family: `src/shim/`. Electron family: `src/shim-electron/`. Web family: `src/nostr/`. Fourth family: not in this repository at all -- it is each app's own bridge, one file per app in `orivon-ports`, and a missing one is that app's gap, never Orivon's |
 | Table 3, Status | Mostly absence; verify by looking for the module, not for a mention of it |
 | Table 3, Class | Not observable in the tree; derived. `dup` if Table 2's families name the surface at all, `needs T1` if they do but Table 1 has no entry the adapter could be built on, `outside` if no Node/`electron`/web API expresses the problem. Re-derive the row when Table 1 or the shim README's declared scope changes, not when a status flips |
@@ -545,7 +562,7 @@ the reference set, and whether this build has it.
 | Password autofill | ❌ | Not found |
 | Password generator | ❌ | Not found |
 | Breach/leak check | ❌ | Not found |
-| Passkeys / WebAuthn | ❌ | No WebAuthn wiring; Electron/Chromium's own default may still apply, unadded to |
+| Passkeys / WebAuthn | ❌ | No code calls `app.configureWebAuthn`. Per Electron's typings, until it is called `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()` resolves `false` and platform-authenticator requests are not serviced. A roaming security key is not measured |
 | Platform authenticator (Windows Hello/Touch ID) | ❌ | Not found |
 | Security keys (FIDO2/U2F) | ❌ | Not found |
 | FedCM | ❌ | Not found |
@@ -587,8 +604,8 @@ the reference set, and whether this build has it.
 | Fingerprinting protection | ❌ | Beyond the generic per-origin isolation the capability model gives apps |
 | Do Not Track / Global Privacy Control | ❌ | Not found |
 | Safe Browsing / phishing & malware warnings | ❌ | Not found |
-| HTTPS-only / upgrade mode | ⚠️ | No general toggle, but apps and `.eth`/`ipfs://` origins are already served only over `https:` by construction |
-| Mixed-content blocking | ➖ | Chromium's own default applies |
+| HTTPS-only / upgrade mode | ⚠️ | No general toggle. An installed app and a production `.eth` or `ipfs://` origin are served over `https:` by construction. A loopback origin (`http://127.0.0.1:<port>`) in every build, and in developer mode a `http://<name>.eth` name, run over `http:` with their grants held for the session only. A page an app shows in a `<webview>` from its own loopback listener (`http://<site>.localhost:<port>/`) is `http:` as well |
+| Mixed-content blocking | ➖ | Chromium's own default applies to a page's native requests. A routed request from an app tab to a granted `http://` or `ws:` host is not blocked, because the manifest named that host and the person granted it |
 | Secure DNS / DoH (general browsing) | ❌ | `.eth` resolution uses fixed DoH resolvers internally; not a general per-site setting |
 | Certificate viewer | ❌ | `certificate-check.ts` pins Orivon's own verifier certificate, not a user-facing viewer |
 | Certificate error interstitial | ➖ | Chromium's own default applies |
@@ -613,8 +630,8 @@ the reference set, and whether this build has it.
 | USB (WebUSB) | ❌ | Device-permission handler refuses unconditionally |
 | Serial (Web Serial) | ❌ | Same device-permission denial |
 | HID (WebHID) | ❌ | Same denial; also excluded by design for apps (`hid` is 🚫) |
-| Bluetooth (Web Bluetooth) | ❌ | Same device-permission denial |
-| Sensors (motion/orientation/ambient light) | ❌ | Denied |
+| Bluetooth (Web Bluetooth) | ❌ | No `select-bluetooth-device` listener exists, and Electron's typings say every Bluetooth request is then cancelled (not measured). The device-permission handler does not cover Bluetooth |
+| Sensors (motion/orientation/ambient light) | ⚠️ | No Electron permission name exists for them, so the gate never decides; Chromium's default in this build applies (not measured) |
 | Pop-ups | ⚠️ | `window.open()` popups keeping `opener` are allowed and become a tab; no separate "block pop-ups" toggle |
 | Redirects | ➖ | Chromium's own default navigation handling applies |
 | Automatic downloads | ❌ | Not found |
@@ -624,15 +641,15 @@ the reference set, and whether this build has it.
 | Idle detection | ❌ | Denied |
 | Window management (multi-screen) | ❌ | Denied |
 | Storage access API (cross-site) | ❌ | Denied |
-| Payment handlers | ❌ | Denied, no UI |
+| Payment handlers | ⚠️ | No Electron permission name exists for them and no payment UI is built; Chromium's default in this build applies (not measured) |
 | JavaScript on/off per site | ❌ | Not found |
 | Images on/off per site | ❌ | Not found |
 | Sound per site | ❌ | Not found |
 | Zoom per site | ✅ | Remembered per origin (`src/main/zoom/`) |
-| Local fonts (Local Font Access API) | ❌ | Denied |
+| Local fonts (Local Font Access API) | ⚠️ | No Electron permission name exists for it; Chromium's default in this build applies (not measured) |
 | Screen/window sharing (`getDisplayMedia`) | ❌ | Left unset (Electron's own default refusal) |
-| Persistent storage (`navigator.storage.persist`) | ❌ | Denied |
-| AR/VR (WebXR) | ❌ | Denied |
+| Persistent storage (`navigator.storage.persist`) | ⚠️ | The permission gate does not decide it (Electron's typings have no such name), so the answer is Chromium's default in this build (not measured) |
+| AR/VR (WebXR) | ⚠️ | No Electron permission name exists for it; Chromium's default in this build applies (not measured) |
 | Fullscreen (`requestFullscreen`) | ✅ | Allowed from a click on every page (`ADR-0025`) |
 | Pointer lock | ✅ | Allowed, click-gated by Chromium (`ADR-0026`) |
 | Keyboard lock | ✅ | Allowed in fullscreen only (`ADR-0026`) |
@@ -668,7 +685,7 @@ the reference set, and whether this build has it.
 | Forced dark mode for light-only sites | ⚠️ | `appearance.theme` flips OS-level `prefers-color-scheme`; no forced repaint of a site with no dark styles |
 | Page fonts / minimum font size | ❌ | Not found |
 | Text encoding override | ❌ | Not found |
-| Alert / confirm / prompt dialogs | ➖ | Chromium's own default applies |
+| Alert / confirm / prompt dialogs | ⚠️ | `alert` and `confirm` open Electron's native message box (not measured) with no "prevent additional dialogs" checkbox (`safeDialogs` is off). `prompt()` returns `null` at once: Electron draws no prompt dialog and offers no hook to supply one (A232) |
 | Pinch zoom, smooth scrolling, autoscroll (middle-click drag on a page) | ➖ | Chromium's own default applies to page content |
 | Drag-and-drop of links/images/files into the page | ➖ | Chromium's own default applies |
 | Network / DNS / certificate error pages ("can't be reached") | ➖ | Chromium's own built-in interstitials apply |
@@ -703,26 +720,26 @@ the reference set, and whether this build has it.
 |---|---|---|
 | Notifications API | ✅ | See Site settings |
 | Push API | ❌ | No push-service wiring; Electron ships no default push backend |
-| Service workers | ➖ | Chromium's own default applies to ordinary web content; extension service workers are separate (Table 7) |
+| Service workers | ➖ | Chromium's own default applies to ordinary web content; extension service workers are separate (Table 7). On an installed app's origin the served policy allows `worker-src 'self' blob:`, and no `Service-Worker-Allowed` header is sent, so a worker's scope is its script's directory (not measured). No end-to-end test registers a service worker on an app origin |
 | Background sync | ❌ | Not found |
 | Periodic background sync | ❌ | Not found |
 | Badging API (`setAppBadge`) | ❌ | Not found |
 | Web Share API | ❌ | No OS share-sheet implementation |
-| Payment Request API | ❌ | Denied, no UI |
+| Payment Request API | ⚠️ | No Electron permission name exists for it and no payment UI is built; Chromium's default in this build applies (not measured) |
 | `registerProtocolHandler` | ❌ | Not found |
 | PWA install / standalone app windows | ❌ | Orivon's own "app" concept is unrelated to a `beforeinstallprompt` PWA path |
 | File handlers (web app file associations) | ❌ | Not found |
 | DRM / Widevine / EME | ❌ | No CDM wiring; the stock `electron` package ships without Widevine |
-| Proprietary codecs (H.264/AAC/HEVC) | ⚠️ | Depends on the Electron build used; the stock package is commonly built without them |
-| WebRTC | ➖ | Chromium's own default applies; media tracks depend on camera/microphone permission, denied by default |
+| Proprietary codecs (H.264/AAC/HEVC) | ⚠️ | The `libffmpeg.so` of Electron 44.0.0 decodes H.264, AAC, MP3, FLAC, Opus, Vorbis and PCM and demuxes MP4 and MOV, Matroska and WebM, Ogg, WAV, MP3, AAC and FLAC. It has no HEVC, AC-3, E-AC-3 or DTS decoder. HEVC through a platform hardware decoder is not measured |
+| WebRTC | ➖ | Chromium's own default applies. An app tab's WebRTC is not bounded by CSP or by grants and reaches STUN, TURN and peers with no grant (A41); media tracks depend on camera/microphone permission, denied by default |
 | WebGL / WebGPU | ➖ | Chromium's own default GPU-accelerated rendering applies |
-| WebXR | ❌ | Denied |
+| WebXR | ⚠️ | No Electron permission name exists for it; Chromium's default in this build applies (not measured) |
 | Geolocation provider | ❌ | Denied; Electron ships no geolocation API key by default |
-| Speech recognition | ❌ | Denied; also generally lacks a default backend without a Google API key |
+| Speech recognition | ⚠️ | No Electron permission name exists for it. Recognition needs the microphone, which the gate denies for every page (`media`), and Electron ships no recognition backend key (not measured) |
 | Speech synthesis | ➖ | Ungated; no browser-level UI uses it |
-| Web Bluetooth / USB / Serial / HID | ❌ | Device-permission handler denies all four |
+| Web Bluetooth / USB / Serial / HID | ❌ | USB, Serial and HID: the check handler denies `usb`, `serial` and `hid` and the device-permission handler answers `false`. Bluetooth: no `select-bluetooth-device` listener exists, and Electron's typings say every Bluetooth request is then cancelled (not measured); the device-permission handler does not cover Bluetooth |
 | Gamepad API | ➖ | Ungated; Chromium's own default applies |
-| Screen Wake Lock API | ❌ | Denied |
+| Screen Wake Lock API | ⚠️ | No Electron permission name exists for it, so no code denies it and Chromium's default in this build decides (not measured) |
 | EyeDropper API | ➖ | Ungated; Chromium's own default applies |
 | File System Access API (single file) | ✅ | See Site settings |
 | Clipboard API | ⚠️ | Write allowed, read denied |
@@ -805,4 +822,4 @@ the reference set, and whether this build has it.
 | External protocol links (`mailto:`, `magnet:`, `bitcoin:`, ...) | ✅ | Opened by the OS's default app only after a per-site, per-URL confirmation dialog (`ADR-0027`) |
 | `beforeunload` guard | ✅ | See Page content tools |
 | Right-click menu (chrome + page) | ✅ | See Context menus |
-| Custom, non-Electron User-Agent string | ✅ | Every tab reports one plain Chrome UA, the same string everywhere; no per-host override for a specific sign-in flow |
+| Custom, non-Electron User-Agent string | ✅ | Every tab reports one plain Chrome UA with no `Electron/` or `orivon/` token, except `accounts.google.com` and `accounts.youtube.com`, which are shown a Firefox identity and no `Sec-CH-UA*` headers (`src/main/shell/sign-in-identity.ts`) |
