@@ -48,6 +48,15 @@ describe('BookmarkStore as a tree', () => {
     expect(s.count()).toBe(0)
   })
 
+  it('answers has() from the file once it is loaded, even if it was asked before', async () => {
+    await writeFile(file, JSON.stringify({ version: 2, roots: { bar: [{ id: 'a', kind: 'url', title: 'A', url: 'https://a.example/', added: 1 }], other: [], reading: [] } }))
+    const s = store()
+
+    expect(s.has('https://a.example/')).toBe(false)
+    await s.load()
+    expect(s.has('https://a.example/')).toBe(true)
+  })
+
   it('counts a page in Other bookmarks as bookmarked, and one in the reading list as not', () => {
     const s = store()
     s.addUrl({ url: 'https://o.example/', title: 'O', parent: 'other' })

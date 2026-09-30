@@ -34,7 +34,7 @@ export async function runBookmarksJourney (ctx) {
   // ---- Bookmarks bar: star, appear, open, unstar ------------------------
   // Owner override, 2026-08-28 (scope.md, ADR-0003) -- not in the
   // original scope pass. Exercises the real path -- click -> IPC ->
-  // BookmarkStore -> pushed ShellState -> bookmarks-view.ts -- the same
+  // BookmarkStore -> pushed ShellState -> the chrome's bookmarks bar module -- the same
   // shape every other check in this file already holds tab commands to,
   // rather than calling window.orivonShell.addBookmark() directly.
   const parkedForBookmark = await navigateTo(urlFor('/a'), wantA)
@@ -93,11 +93,8 @@ export async function runBookmarksJourney (ctx) {
     await waitFor(() => bookmarksBarMatches(chrome, false))
   )
 
-  // ---- Bookmarks bar: remove directly from the bar, not just the toolbar
-  // Chrome bugfix round, 2026-08-28: the toolbar toggle was the only way
-  // to unstar a page (only reachable by returning to that exact page).
-  // bookmarks-view.ts now renders a remove button per item -- covers the
-  // path the star/open/unstar scenario above never touched.
+  // ---- Bookmarks bar: remove directly from the bar, not just the toolbar.
+  // Covers the path the star/open/unstar scenario above never touches.
   await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to re-star for the removal check')
   check(
     'the page is starred again, ready for the bar-side removal check',
@@ -144,13 +141,16 @@ export async function runBookmarksJourney (ctx) {
     // whatever tabs exist at that point, however many there are.
   }
 
-  const removeClicked = await clickChecked(
-    chrome,
-    `#bookmarks-list .bmitem[title="${urlFor('/a')}"] .remove`,
-    "the bookmarked item's remove button is clickable"
-  )
+  // The item's own right-click menu is the way to remove it from the bar: the native menu is held rather than shown.
+  await app.evaluate(({ Menu }) => { Menu.prototype.popup = function () { globalThis.__barMenu = this } })
+  await chrome.click(`#bookmarks-list .bmitem[title="${urlFor('/a')}"]`, { button: 'right' })
   check(
-    'clicking the remove button removes it from the bar without visiting the page',
-    removeClicked && await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    "the bookmarked item's right-click menu offers Delete",
+    await waitFor(() => app.evaluate(() => globalThis.__barMenu?.items.some((item) => item.label === 'Delete') === true))
+  )
+  await app.evaluate(() => { globalThis.__barMenu?.items.find((item) => item.label === 'Delete')?.click() })
+  check(
+    'choosing Delete removes it from the bar without visiting the page',
+    await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
   )
 }

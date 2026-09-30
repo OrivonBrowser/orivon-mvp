@@ -70,6 +70,7 @@ export class BookmarkStore {
     const modified = await stat(this.filePath).then((info) => info.mtimeMs, () => this.clock())
     const parsed = parseBookmarksFile(raw, { legacyAdded: Math.trunc(modified), newId: this.newId })
     this.tree = parsed.tree
+    this.addresses = null
     this.fileState = parsed.state
     if (parsed.state === 'legacy') this.writer.schedule()
   }
