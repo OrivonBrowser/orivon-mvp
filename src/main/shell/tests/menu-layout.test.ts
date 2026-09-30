@@ -67,12 +67,13 @@ describe('the main menu layout', () => {
     expect(items.find((item) => item.kind === 'submenu')).toMatchObject({ label: 'More tools' })
   })
 
-  it('lists Find in page with its key, just before More tools', async () => {
+  it('lists Find in page with its key, between Print and Save page as', async () => {
     const { ctx } = await setup()
     const items = menuItems(ctx)
     const at = items.findIndex((item) => item.kind === 'command' && item.id === 'find.open')
     expect(items[at]).toMatchObject({ label: 'Find in page', keys: ['Ctrl', 'F'] })
-    expect(items[at + 1]).toMatchObject({ kind: 'submenu', label: 'More tools' })
+    expect(items[at - 1]).toMatchObject({ label: 'Print' })
+    expect(items[at + 1]).toMatchObject({ label: 'Save page as' })
   })
 })
 

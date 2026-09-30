@@ -29,8 +29,8 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   '-',
   { zoom: true },
   '-',
-  'find.open',
   'page.print',
+  'find.open',
   'page.save',
   { submenu: 'More tools', items: [
     'split.toggle',
