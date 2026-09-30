@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRealDiskFs, type RealDiskFs } from '../../tests/support/real-disk-fs.js'
 import { hasJspi, jspiWebAssembly } from '../../wasi/tests/support/jspi.js'
+import { napiAddon } from '../../addon/tests/support/napi-addons.js'
 import { echoProgram, failingProgram, reportWrittenProgram, trappingProgram } from '../../wasi/tests/support/programs.js'
 import { instantiateFrom, tourFixture } from '../../wasi-p2/tests/support/component-fixture.js'
 import { type OrivonServer, serveOrivon } from '../orivon-server.js'
@@ -218,6 +219,39 @@ describe('runFork', () => {
       seen = { path: typeof (require('path') as { join: unknown }).join, code }
     })
     expect(seen).toEqual({ path: 'function', code: 'MODULE_NOT_FOUND' })
+  })
+
+  it('loads a .node path through the global require as its WebAssembly addon, as module.createRequire does', async () => {
+    const addon = napiAddon()
+    class FakeRequest {
+      status = 0
+      response: ArrayBuffer | null = null
+      responseType = ''
+      #url = ''
+      open (_method: string, url: string): void { this.#url = url }
+      overrideMimeType (): void {}
+      send (): void {
+        const found = new URL(this.#url).pathname === '/orivon/app/native/addon.node.wasm'
+        this.status = found ? 200 : 404
+        this.response = found ? addon.slice().buffer : null
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeRequest)
+    vi.stubGlobal('location', { origin: 'https://app.test' })
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const scope = fakeScope()
+    const parent = fakeParent()
+    let answer: unknown
+    let resolved: unknown
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const require = (scope as unknown as { require: ((id: string) => { answer: unknown }) & { resolve: (id: string) => string } }).require
+      answer = require('./native/addon.node').answer
+      resolved = require.resolve('./native/addon.node')
+    })
+    write.mockRestore()
+    vi.unstubAllGlobals()
+    expect(answer).toBe(42)
+    expect(resolved).toBe('/orivon/app/native/addon.node')
   })
 
   it('holds a message sent while the module loads, and delivers it once the module has run', async () => {

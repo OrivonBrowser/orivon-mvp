@@ -9,7 +9,7 @@ import { Buffer } from 'buffer'
 import { Readable } from 'stream'
 import { format } from 'util'
 import { installGlobals } from '../globals.js'
-import { createCjsRequire } from '../polyfills/cjs-loader.js'
+import { createRequire } from '../polyfills/module.js'
 import type { GlobalsTarget, ShimProcess } from '../globals-types.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
 import { Liveness, trackScope } from './liveness.js'
@@ -91,7 +91,7 @@ export function setupChildProcess (scope: ForkScope, parent: ParentChannel, star
   // esbuild's `__require` helper reads a global `require` when its call runs; the module
   // set-up runs before any of the app's code, so a bundle's dynamic require finds this one.
   if (scope.require === undefined) {
-    Object.defineProperty(scope, 'require', { value: createCjsRequire(`${start.cwd}/`), configurable: true, writable: true })
+    Object.defineProperty(scope, 'require', { value: createRequire(`${start.cwd}/`), configurable: true, writable: true })
   }
 
   const end = (code: number | null, signal: string | null = null): void => {
