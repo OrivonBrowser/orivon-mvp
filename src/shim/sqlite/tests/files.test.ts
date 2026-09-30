@@ -197,11 +197,13 @@ describe('a database larger than the page cache', () => {
     again.close()
   })
 
-  it('a sort that spills uses a temporary file, and removes it', () => {
+  it('a VACUUM that spills with file temporary storage uses a temporary file, and removes it', () => {
     const db = new DatabaseSync(DB)
-    fill(db, 2000, 400)
-    db.exec('pragma cache_size = 4; pragma temp_store = file')
-    db.prepare('select body from t order by body desc').all()
+    fill(db, 500, 400)
+    db.exec('pragma temp_store = file; pragma cache_size = 4')
+    fs.calls.length = 0
+    db.exec('vacuum')
+    expect(fs.calls.some((call) => call.startsWith('open:tmp/etilqs_'))).toBe(true)
     db.close()
     expect([...fs.files.keys()]).toEqual([FILE])
   })

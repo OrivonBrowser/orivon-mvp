@@ -191,8 +191,8 @@ export class DatabaseSync {
 
   function (): never { throw unbuilt('DatabaseSync.function', 'user-defined SQL functions are not built') }
   aggregate (): never { throw unbuilt('DatabaseSync.aggregate', 'user-defined aggregate functions are not built') }
-  createSession (): never { throw unbuilt('DatabaseSync.createSession', 'the engine is built without the session extension') }
-  applyChangeset (): never { throw unbuilt('DatabaseSync.applyChangeset', 'the engine is built without the session extension') }
+  createSession (): never { throw unbuilt('DatabaseSync.createSession', 'the package exposes no session API') }
+  applyChangeset (): never { throw unbuilt('DatabaseSync.applyChangeset', 'the package exposes no session API') }
   createTagStore (): never { throw unbuilt('DatabaseSync.createTagStore', 'SQL tag stores are not built') }
   loadExtension (): never { throw unbuilt('DatabaseSync.loadExtension', 'a native extension cannot be loaded into WebAssembly') }
   enableLoadExtension (): never { throw unbuilt('DatabaseSync.enableLoadExtension', 'a native extension cannot be loaded into WebAssembly') }
