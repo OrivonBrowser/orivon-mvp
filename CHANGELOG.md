@@ -18,12 +18,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   `require('assert')` is the function, and `fs.Stats` reports the modes of an app-private store. The Lounge's server runs on it.
 - **A Node web server's stack runs on the shim**: real `express` and `socket.io` on `http.createServer`, `fs.watch`, a run-time
   CommonJS `require` (also a forked child's global one), the full `fs.Stats`, `chmod`, and `tty`, `readline`, `http2`,
-  `diagnostics_channel`, `async_hooks`, `perf_hooks`, `console` and `process` modules; a fork's `console` reaches its `stdout`.
+  `diagnostics_channel`, `async_hooks`, `perf_hooks`, `console` (with its `Console` class) and `process` modules; a fork's `console`
+  is a `Console` over its `process.stdout` and `process.stderr`, and `require('process')` is the global itself.
 - **An esbuild plugin for ports** (`src/shim/bundler/`): maps every Node builtin to the shim under `platform: 'node'`, fails the
   build on a builtin it lacks, serves `node:sqlite` with its browser engine, and loads from another repository.
 - **`node:sqlite` in the Node shim**: `DatabaseSync` and `StatementSync` over the SQLite WebAssembly build, with a database file in
   the app's files (a rollback journal, page-level writes) in a forked child or thread of a cross-origin isolated app, and
-  `:memory:` everywhere. Function, aggregate, session, extension and backup members refuse by name.
+  `:memory:` everywhere. A commit reaches the file at the end of its transaction, `synchronous=off` included. Function, aggregate,
+  session, extension and backup members refuse by name.
 - **An app can show pages it serves itself**, each at an origin of its own, beside ordinary websites: a
   `web.embed` local pattern (`http://*.localhost:<port>`), admitted only while the app holds a listener on
   that port (ADR-0047).
