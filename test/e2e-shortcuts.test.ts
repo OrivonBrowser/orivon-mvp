@@ -179,8 +179,8 @@ it('quits on its shortcut, and a change made a moment before is on disk', async 
     await pressKey(app, siteUrl, 'Q', ['control', 'shift']).catch(() => {})
 
     expect(await Promise.race([exit, delay(15_000).then(() => 'still running' as const)])).toBe(0)
-    const saved = JSON.parse(await readFile(join(userData, 'bookmarks.json'), 'utf8')) as Array<{ url: string }>
-    expect(saved.map((bookmark) => bookmark.url)).toEqual([siteUrl])
+    const saved = JSON.parse(await readFile(join(userData, 'bookmarks.json'), 'utf8')) as { roots: { bar: Array<{ url: string }> } }
+    expect(saved.roots.bar.map((bookmark) => bookmark.url)).toEqual([siteUrl])
   } finally {
     await closeElectron(app)
   }

@@ -1,0 +1,44 @@
+/* The bookmark folder menu card. Rows are 28px with the icon at one edge and the chevron at the other. */
+
+body[data-overlay='bookmark-folder'] .bmf { padding: 4px; }
+
+body[data-overlay='bookmark-folder'] .bmf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--wink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+body[data-overlay='bookmark-folder'] .bmf-row:hover { background: var(--whover); }
+body[data-overlay='bookmark-folder'] .bmf-row:active { background: color-mix(in srgb, var(--wink) 12%, transparent); }
+body[data-overlay='bookmark-folder'] .bmf-row:focus-visible {
+  background: var(--whover);
+  outline: 2px solid var(--waccent-text);
+  outline-offset: -2px;
+}
+
+body[data-overlay='bookmark-folder'] .bmf-icon { flex: none; display: inline-flex; width: 16px; height: 16px; color: var(--wink-dim); }
+body[data-overlay='bookmark-folder'] .bmf-icon svg { width: 16px; height: 16px; }
+body[data-overlay='bookmark-folder'] .bmf-icon img { width: 16px; height: 16px; border-radius: 2px; object-fit: contain; }
+body[data-overlay='bookmark-folder'] .bmf-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-overlay='bookmark-folder'] .bmf-chevron { flex: none; display: inline-flex; color: var(--wink-dim); }
+body[data-overlay='bookmark-folder'] .bmf-chevron svg { width: 16px; height: 16px; }
+
+body[data-overlay='bookmark-folder'] .bmf-separator { height: 1px; margin: 4px 6px; background: var(--wborder); }
+
+/* The way out of a level: its own name, under an arrow pointing back. */
+body[data-overlay='bookmark-folder'] .bmf-back { font-weight: 600; color: var(--wink-strong); }
+body[data-overlay='bookmark-folder'] .bmf-arrow { transform: scaleX(-1); }
+
+body[data-overlay='bookmark-folder'] .bmf-all { color: var(--waccent-text); }
+
+body[data-overlay='bookmark-folder'] .bmf-empty { padding: 6px 8px; color: var(--wink-dim); font-size: 12px; }

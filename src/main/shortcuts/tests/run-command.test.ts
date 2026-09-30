@@ -36,11 +36,11 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
     overlays: { show: calls['overlayShow'], toggle: calls['overlayToggle'], isOpen: () => false, close: vi.fn(), send: vi.fn() },
     shortcutsSuspended: () => false
   } as unknown as ShellWindow
-  const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn() }
+  const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn(), children: vi.fn(() => []) }
   const zoom = { step: vi.fn(), reset: vi.fn() }
   const devtools = { toggle: vi.fn() }
   const profiles = { openPrivate: vi.fn() }
-  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack(), kiosk: options.kiosk === true, settings: { get: () => options.homeUrl ?? '' } } as unknown as ShellServices, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
+  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack(), kiosk: options.kiosk === true, settings: { get: () => options.homeUrl ?? '', set: vi.fn() } } as unknown as ShellServices, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
 }
 
 describe('the tab-state commands', () => {

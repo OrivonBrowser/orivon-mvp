@@ -2,10 +2,6 @@ import type { ShellState } from '../../main/shell/tabs.js'
 import type { ChromeContext, ChromeModule } from './context.js'
 import { hasSite, must } from './context.js'
 
-function isBookmarked (state: ShellState, url: string): boolean {
-  return state.bookmarks.some((b) => b.url === url)
-}
-
 /** The bookmark star, the zoom chip, and the toolbar's right end: the all-sites permissions button, the
  * profile chip and the menu button. */
 export function createCluster (): ChromeModule {
@@ -26,7 +22,7 @@ export function createCluster (): ChromeModule {
       const state = ctx.state()
       const active = ctx.activeTab()
       if (state === null || !hasSite(active)) return
-      if (isBookmarked(state, active.url)) {
+      if (state.bookmarked) {
         ctx.shell.removeBookmark(active.url)
       } else {
         ctx.shell.addBookmark(active.url, active.title.length > 0 ? active.title : active.url, active.id)
@@ -78,7 +74,7 @@ export function createCluster (): ChromeModule {
     },
     render: (state, ctx) => {
       const active = ctx.activeTab()
-      const bookmarked = active !== undefined && isBookmarked(state, active.url)
+      const bookmarked = active !== undefined && state.bookmarked
       bookmarkToggle?.classList.toggle('active', bookmarked)
       bookmarkToggle?.setAttribute('aria-pressed', String(bookmarked))
 

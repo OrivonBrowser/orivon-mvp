@@ -2,18 +2,20 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { parseBookmarksFile } from '../bookmark-file.js'
+import { flattenUrls } from '../bookmark-tree.js'
 import {
-  addBookmark,
   BookmarkStore,
-  hasBookmark,
   MAX_STORED_FAVICON_CHARS,
-  parseBookmarksFile,
-  removeBookmark,
   sanitizeStoredFavicon,
-  serializeBookmarksFile,
   WRITE_DEBOUNCE_MS,
   type Bookmark
 } from '../bookmarks.js'
+
+/** What bookmarks.json holds, as the flat list of pages the store's own `getAll` gives. */
+function pagesOnDisk (raw: string): Bookmark[] {
+  return flattenUrls(parseBookmarksFile(raw).tree).map(({ url, title, favicon }) => ({ url: url ?? '', title, favicon: favicon ?? null }))
+}
 
 // BookmarkStore writes through writeFileAtomicAsync (atomic-write.ts); mocking that module -- not
 // node:fs/promises, which it no longer calls at the top level, only through its own open() file handle --
@@ -50,48 +52,6 @@ vi.mock('../../../broker/adapters/atomic-write.js', async (importOriginal) => {
       await actual.writeFileAtomicAsync(path, text)
     }
   }
-})
-
-describe('addBookmark', () => {
-  it('appends a new entry', () => {
-    const result = addBookmark([], { url: 'https://a.example/', title: 'A', favicon: null })
-    expect(result).toEqual([{ url: 'https://a.example/', title: 'A', favicon: null }])
-  })
-
-  it('replaces an existing entry for the same URL, moving it to the end', () => {
-    const list: Bookmark[] = [
-      { url: 'https://a.example/', title: 'A', favicon: null },
-      { url: 'https://b.example/', title: 'B', favicon: null }
-    ]
-    const result = addBookmark(list, { url: 'https://a.example/', title: 'A renamed', favicon: null })
-    expect(result).toEqual([
-      { url: 'https://b.example/', title: 'B', favicon: null },
-      { url: 'https://a.example/', title: 'A renamed', favicon: null }
-    ])
-  })
-})
-
-describe('removeBookmark', () => {
-  it('drops the matching URL and leaves the rest', () => {
-    const list: Bookmark[] = [
-      { url: 'https://a.example/', title: 'A', favicon: null },
-      { url: 'https://b.example/', title: 'B', favicon: null }
-    ]
-    expect(removeBookmark(list, 'https://a.example/')).toEqual([{ url: 'https://b.example/', title: 'B', favicon: null }])
-  })
-
-  it('is a no-op when the URL is not bookmarked', () => {
-    const list: Bookmark[] = [{ url: 'https://a.example/', title: 'A', favicon: null }]
-    expect(removeBookmark(list, 'https://nowhere.example/')).toEqual(list)
-  })
-})
-
-describe('hasBookmark', () => {
-  it('reports true only for a URL present in the list', () => {
-    const list: Bookmark[] = [{ url: 'https://a.example/', title: 'A', favicon: null }]
-    expect(hasBookmark(list, 'https://a.example/')).toBe(true)
-    expect(hasBookmark(list, 'https://b.example/')).toBe(false)
-  })
 })
 
 describe('sanitizeStoredFavicon -- bookmarks.json is a user-writable file', () => {
@@ -139,61 +99,6 @@ describe('sanitizeStoredFavicon -- bookmarks.json is a user-writable file', () =
   it('relabels a stored icon by its bytes, so its label never disagrees with what it is', () => {
     const svgBytes = Buffer.from('<svg></svg>').toString('base64')
     expect(sanitizeStoredFavicon(`data:image/png;base64,${svgBytes}`)).toBe(`data:image/svg+xml;base64,${svgBytes}`)
-  })
-})
-
-describe('parseBookmarksFile -- the favicon field', () => {
-  const tiny = 'data:image/png;base64,iVBORw0KGgo='
-
-  it('keeps a valid stored icon', () => {
-    const raw = JSON.stringify([{ url: 'https://a.example/', title: 'A', favicon: tiny }])
-    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'A', favicon: tiny }])
-  })
-
-  it('reads a bookmark saved before this field existed as having no icon', () => {
-    const raw = JSON.stringify([{ url: 'https://a.example/', title: 'A' }])
-    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'A', favicon: null }])
-  })
-
-  it('drops a bad icon but KEEPS the bookmark -- losing a saved page over its icon would be the worse failure', () => {
-    const raw = JSON.stringify([{ url: 'https://a.example/', title: 'A', favicon: 'data:text/html,<script>' }])
-    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'A', favicon: null }])
-  })
-})
-
-describe('parseBookmarksFile', () => {
-  it('round-trips what serializeBookmarksFile writes', () => {
-    const list: Bookmark[] = [{ url: 'https://a.example/', title: 'A', favicon: null }]
-    expect(parseBookmarksFile(serializeBookmarksFile(list))).toEqual(list)
-  })
-
-  it('yields an empty list for invalid JSON', () => {
-    expect(parseBookmarksFile('{not json')).toEqual([])
-  })
-
-  it('yields an empty list when the JSON is not an array', () => {
-    expect(parseBookmarksFile('{"url":"https://a.example/"}')).toEqual([])
-  })
-
-  it('drops entries missing a url or title', () => {
-    const raw = JSON.stringify([
-      { url: 'https://a.example/', title: 'A', favicon: null },
-      { url: 'https://b.example/' },
-      { title: 'no url' },
-      { url: 123, title: 'wrong type' }
-    ])
-    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'A', favicon: null }])
-  })
-
-  // Security-critical: the file is user-writable, and a stored
-  // javascript:/data:/file: URL would be persisted XSS into this
-  // privileged chrome view the moment the bar renders it.
-  it('rejects entries with a dangerous scheme, same rule as the omnibox', () => {
-    const raw = JSON.stringify([
-      { url: 'javascript:alert(1)', title: 'evil', favicon: null },
-      { url: 'https://a.example/', title: 'fine', favicon: null }
-    ])
-    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'fine', favicon: null }])
   })
 })
 
@@ -260,7 +165,7 @@ describe('BookmarkStore', () => {
       expect(listener).not.toHaveBeenCalled()
 
       await store.flushPendingWrite()
-      const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+      const onDisk = pagesOnDisk(await readFile(filePath, 'utf8'))
       expect(onDisk[0]?.favicon).toBe(tiny)
     })
   })
@@ -327,7 +232,7 @@ describe('BookmarkStore', () => {
     // test flaky under load (ENOENT reading the file too early).
     await store.flushPendingWrite()
 
-    const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+    const onDisk = pagesOnDisk(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
       { url: 'https://a.example/', title: 'A', favicon: null },
       { url: 'https://b.example/', title: 'B', favicon: null }
@@ -344,7 +249,7 @@ describe('BookmarkStore', () => {
 
     await store.flushPendingWrite()
 
-    expect(parseBookmarksFile(await readFile(filePath, 'utf8'))).toEqual([
+    expect(pagesOnDisk(await readFile(filePath, 'utf8'))).toEqual([
       { url: 'https://a.example/', title: 'A', favicon: null }
     ])
     expect(await readdir(dirname(filePath))).toEqual(['bookmarks.json'])
@@ -361,7 +266,7 @@ describe('BookmarkStore', () => {
     // this regresses, it should fail fast here rather than hang the suite.
     await expect(flushed).resolves.toBeUndefined()
 
-    const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+    const onDisk = pagesOnDisk(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
       { url: 'https://a.example/', title: 'A', favicon: null },
       { url: 'https://b.example/', title: 'B', favicon: null }
@@ -387,7 +292,7 @@ describe('BookmarkStore', () => {
 
     await flushed
 
-    const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+    const onDisk = pagesOnDisk(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
       { url: 'https://a.example/', title: 'A', favicon: null },
       { url: 'https://b.example/', title: 'B', favicon: null }
@@ -433,7 +338,7 @@ describe('BookmarkStore', () => {
     await flushed
 
     expect(settled).toBe(true)
-    const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+    const onDisk = pagesOnDisk(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
       { url: 'https://a.example/', title: 'A', favicon: null },
       { url: 'https://b.example/', title: 'B', favicon: null }
@@ -485,7 +390,7 @@ describe('BookmarkStore', () => {
     store.add({ url: 'https://b.example/', title: 'B', favicon: null })
     await store.flushPendingWrite()
 
-    const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+    const onDisk = pagesOnDisk(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
       { url: 'https://a.example/', title: 'A', favicon: null },
       { url: 'https://b.example/', title: 'B', favicon: null }

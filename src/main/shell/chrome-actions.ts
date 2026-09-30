@@ -1,3 +1,4 @@
+import { barFolder, barItems, barMenu, barMove, barOpen } from './bookmarks-bar/bar-actions.js'
 import { homeOpen } from './actions/home-open.js'
 import { overlayClose, overlayToggle } from './actions/overlay.js'
 import { tabMute } from './actions/tab-mute.js'
@@ -9,6 +10,11 @@ export type ChromeAction = (payload: unknown, ctx: WindowContext) => unknown
 
 /** One entry per action, alphabetical by name. */
 export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
+  'bookmarks.bar': barItems,
+  'bookmarks.folder': barFolder,
+  'bookmarks.menu': barMenu,
+  'bookmarks.move': barMove,
+  'bookmarks.open': barOpen,
   'home.open': homeOpen,
   'overlay.close': overlayClose,
   'overlay.toggle': overlayToggle,

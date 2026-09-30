@@ -3,6 +3,7 @@
 // one line in `ShellState` (tab-types.ts). window-state.ts reads every part on
 // each push and starts every part's watcher with the window.
 import { contain } from './contain.js'
+import { bookmarkedStatePart } from './bookmarks-bar/bar-state.js'
 import { homeStatePart } from './state/home.js'
 import type { ShellState, TabsSnapshot } from './tab-types.js'
 import type { WindowContext } from './window-context.js'
@@ -16,7 +17,7 @@ export interface ShellStatePart {
 }
 
 /** One line per feature, alphabetical by name. */
-export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [homeStatePart]
+export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [bookmarkedStatePart, homeStatePart]
 
 /** What every part adds to a push, merged. A part that throws adds nothing to that push. */
 export function readStateParts (ctx: WindowContext, tabs: TabsSnapshot, parts: readonly ShellStatePart[] = SHELL_STATE_PARTS): Partial<ShellState> {

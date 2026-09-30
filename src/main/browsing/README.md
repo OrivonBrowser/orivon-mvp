@@ -1,8 +1,10 @@
 # `src/main/browsing/`: what the address bar and tab strip are made of
 
-**What lives here.** `omnibox.ts` (URL or search), `bookmarks.ts` (the bookmarks bar, on disk),
+**What lives here.** `omnibox.ts` (URL or search), `bookmarks.ts` (the bookmark store: the tree in memory and `bookmarks.json` on disk),
+`bookmark-tree.ts` (the tree and every operation on it, pure), `bookmark-import.ts` (whole trees in and out in one
+operation), `bookmark-file.ts` (reading and writing the file, pure),
 `favicon.ts` and its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL),
-`favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the bookmark tree's node, bar item and import shapes, types only), and `site-trust.ts` (the Web3 Score page and the
+`favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), and `site-trust.ts` (the Web3 Score page and the
 toolbar shield's data). `site-trust.ts` is pure: its caller,
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts), hands it the
 pin, pin coverage, a `.eth` name's evidence and the developer overrides, so it never reaches for
@@ -25,6 +27,24 @@ dependency on tab-collection state, which keeps it importable under plain vitest
 **Owner stream.** `shell`. Maintenance only.
 
 ## Design notes
+
+**`bookmarks.json` is a tree with stable ids, and nothing else reads its text.** Format 2 holds three roots (`bar`,
+`other`, `reading`) of nested nodes, each with a random id that stays the same from the first load on. A file that is a bare array
+of pages (the older format) is converted on load, in order, into the bar with fresh ids and the file's date, and the
+file is rewritten at once with the old one kept as `bookmarks.json.bak`. A version this build does not know, or a
+file that is not JSON, loads as an empty tree and is left alone until the person changes something; the first write
+then keeps it as `.bak` too. Every address is checked again on load, so a hand-edited `javascript:` page never
+reaches a view; a bad icon loses the icon, never the page.
+
+**The tree is two maps, and every operation returns a new tree.** `bookmark-tree.ts` holds the nodes by id and each
+folder's child ids in order, so an id lookup and a move are cheap, and a refused operation (a folder into its own
+subtree, a level past 12, the 20,001st node) returns `null` and changes nothing. `move`'s index is a position in the
+destination's list as it stands, so "drop before the third item" means the same from either side. The reading list
+holds pages only.
+
+**Main holds the tree; a surface receives what it shows and sends ids back.** The chrome gets the bar's items when
+they change, never the whole tree on every tab event, and an overlay or a page never sends an address to open: main
+reads it from the store and checks it again (`../shell/bookmarks-bar/`).
 
 **Main fetches favicons to a `data:` URL; the renderer never fetches one.** *Provisional.* The
 chrome view's CSP (`img-src 'self' data:`) is a one-line guarantee that the one privileged,

@@ -13,7 +13,9 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |
-| `bookmarks-bar.ts` | the row under the toolbar |
+| `bookmarks-bar.ts` | the row under the toolbar: the bar's items, folder menus, the overflow button, the right-click menu |
+| `bar-overflow.ts` | pure: which items fit, where an arrow key goes, what an event from main is worth |
+| `bar-drag.ts` | drag to reorder the bar, or to file an item in a folder |
 | `toolbar-button.ts` | `ctx.toolbarButton(...)`: a button in one of the three toolbar slots |
 
 **Adding a feature.** A file here with a `create<Feature>(): ChromeModule`, one line in
@@ -24,7 +26,7 @@ module's `init` runs once, `render` on every state push, and `event` on
 call to main with arguments is `shell.act(name, payload)`, answered by
 `src/main/shell/chrome-actions.ts`; a plain command is `shell.runCommand(id)`.
 
-**What it depends on.** `../` (icons, drag helpers, `web3-shield.ts`, `bookmarks-view.ts`) and, as
+**What it depends on.** `../` (icons, drag helpers, `web3-shield.ts`) and, as
 types only, `src/preload/shell.ts` and the main-side state types.
 
 **What it must never import.** `electron`, `node:*`, or anything under `src/main/` except types.
