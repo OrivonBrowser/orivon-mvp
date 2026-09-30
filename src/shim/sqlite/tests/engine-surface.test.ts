@@ -20,7 +20,7 @@ function declared (name: string): string[] {
 
 describe('the package', () => {
   it('is pinned to one exact version, and that version is the engine that loads', async () => {
-    const pinned = (JSON.parse(readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string> }).dependencies['@sqlite.org/sqlite-wasm']
+    const pinned = ((JSON.parse(readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string> }).dependencies['@sqlite.org/sqlite-wasm']) ?? ''
     expect(pinned).toMatch(/^\d+\.\d+\.\d+-build\d+$/)
     expect((require('@sqlite.org/sqlite-wasm/package.json') as { version: string }).version).toBe(pinned)
     await loadTestEngine()
