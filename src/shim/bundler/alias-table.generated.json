@@ -1,0 +1,165 @@
+{
+  "virtualRoot": "/orivon/app",
+  "entries": [
+    {
+      "specifier": "util",
+      "kind": "local",
+      "implementation": "./polyfills/util.js"
+    },
+    {
+      "specifier": "electron",
+      "kind": "local",
+      "implementation": "../shim-electron/index.js"
+    },
+    {
+      "specifier": "http",
+      "kind": "local",
+      "implementation": "./http/http.js"
+    },
+    {
+      "specifier": "https",
+      "kind": "local",
+      "implementation": "./http/https.js"
+    },
+    {
+      "specifier": "tls",
+      "kind": "local",
+      "implementation": "./net/tls.js"
+    },
+    {
+      "specifier": "net",
+      "kind": "local",
+      "implementation": "./net/net.js"
+    },
+    {
+      "specifier": "dgram",
+      "kind": "local",
+      "implementation": "./net/dgram.js"
+    },
+    {
+      "specifier": "dns",
+      "kind": "local",
+      "implementation": "./net/dns.js"
+    },
+    {
+      "specifier": "fs",
+      "kind": "local",
+      "implementation": "./fs/fs.js"
+    },
+    {
+      "specifier": "buffer",
+      "kind": "local",
+      "implementation": "./polyfills/buffer.js"
+    },
+    {
+      "specifier": "events",
+      "kind": "package",
+      "implementation": "events"
+    },
+    {
+      "specifier": "path",
+      "kind": "local",
+      "implementation": "./polyfills/path.js"
+    },
+    {
+      "specifier": "stream",
+      "kind": "package",
+      "implementation": "stream-browserify"
+    },
+    {
+      "specifier": "crypto",
+      "kind": "local",
+      "implementation": "./polyfills/crypto.js"
+    },
+    {
+      "specifier": "os",
+      "kind": "local",
+      "implementation": "./polyfills/os.js"
+    },
+    {
+      "specifier": "zlib",
+      "kind": "local",
+      "implementation": "./polyfills/zlib.js"
+    },
+    {
+      "specifier": "path/posix",
+      "kind": "local",
+      "implementation": "./polyfills/path.js"
+    },
+    {
+      "specifier": "fs/promises",
+      "kind": "local",
+      "implementation": "./fs/promises.js"
+    },
+    {
+      "specifier": "stream/promises",
+      "kind": "local",
+      "implementation": "./polyfills/stream-promises.js"
+    },
+    {
+      "specifier": "util/types",
+      "kind": "local",
+      "implementation": "./polyfills/util-types.js"
+    },
+    {
+      "specifier": "dns/promises",
+      "kind": "local",
+      "implementation": "./net/dns-promises.js"
+    },
+    {
+      "specifier": "timers",
+      "kind": "local",
+      "implementation": "./polyfills/timers.js"
+    },
+    {
+      "specifier": "timers/promises",
+      "kind": "local",
+      "implementation": "./polyfills/timers-promises.js"
+    },
+    {
+      "specifier": "url",
+      "kind": "local",
+      "implementation": "./polyfills/url.js"
+    },
+    {
+      "specifier": "querystring",
+      "kind": "local",
+      "implementation": "./polyfills/querystring.js"
+    },
+    {
+      "specifier": "string_decoder",
+      "kind": "local",
+      "implementation": "./polyfills/string-decoder.js"
+    },
+    {
+      "specifier": "child_process",
+      "kind": "local",
+      "implementation": "./child-process/index.js"
+    },
+    {
+      "specifier": "module",
+      "kind": "local",
+      "implementation": "./polyfills/module.js"
+    },
+    {
+      "specifier": "wasi",
+      "kind": "local",
+      "implementation": "./wasi/node-wasi.js"
+    },
+    {
+      "specifier": "worker_threads",
+      "kind": "local",
+      "implementation": "./polyfills/worker-threads.js"
+    },
+    {
+      "specifier": "vm",
+      "kind": "local",
+      "implementation": "./polyfills/vm.js"
+    },
+    {
+      "specifier": "assert",
+      "kind": "local",
+      "implementation": "./polyfills/assert.js"
+    }
+  ]
+}

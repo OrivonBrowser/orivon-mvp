@@ -17,6 +17,7 @@
 | [`net/`](net/) | `net`, `tls`, `dgram` and `dns` over `orivon.net` |
 | [`http/`](http/) | `http` and `https`: the client, and `http.createServer`, over `net/`'s real socket and listener |
 | [`polyfills/`](polyfills/) | The core polyfills |
+| [`bundler/`](bundler/) | The esbuild plugin a port bundles with: build tooling, not shim code |
 | [`wasi/`](wasi/) | A WASI preview1 host over `orivon.fs`, and Node's `wasi` module over it |
 | [`wasi-p2/`](wasi-p2/) | A WASI 0.2 host over `orivon.fs` and `orivon.net`, for a component `spawn` runs from jco's output |
 | [`worker/`](worker/) | What a child needs to run in a Web Worker, its `orivon.*` calls carried to the page |

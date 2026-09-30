@@ -5,8 +5,8 @@
 
 /**
  * True when `importer` starts with `root`, and what follows starts with one
- * of `dirs` (each root-relative, e.g. `'src/shim/'`) with no `tests` path
- * segment of its own. `root` is stripped as a literal string PREFIX, never
+ * of `dirs` (each root-relative, e.g. `'src/shim/'`) with no `tests` or
+ * `bundler` path segment of its own (`bundler/` runs in the build tool's Node, never in a page). `root` is stripped as a literal string PREFIX, never
  * resolved through `node:path`'s `relative()`: that is OS-aware (backslash
  * is not a separator on POSIX, so a Windows-style path run through it on
  * Linux does not come apart the way it would on Windows) and would also
@@ -26,5 +26,5 @@ export function isShimSource (root: string, importer: string | undefined, dirs: 
   const prefix = `${normalizedRoot}/`
   if (!normalizedImporter.startsWith(prefix)) return false
   const relativePath = normalizedImporter.slice(prefix.length)
-  return dirs.some((dir) => relativePath.startsWith(dir)) && !relativePath.split('/').includes('tests')
+  return dirs.some((dir) => relativePath.startsWith(dir)) && !relativePath.split('/').some((segment) => segment === 'tests' || segment === 'bundler')
 }
