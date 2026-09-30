@@ -1,0 +1,332 @@
+// Failure evidence for the e2e suite: what each launched app logged, and what
+// its windows looked like, kept in memory until a test is known to have failed.
+//
+// launch-electron.mjs calls attachCollectors() at launch and holdEvidence()
+// at close, because a spec closes its app in `finally`, before Vitest knows
+// the result. qa-setup.ts decides in afterEach whether to write the held
+// bundles (failure) or drop them (pass). Nothing here may throw into a launch
+// or a teardown: every Playwright call is time-boxed and its error recorded.
+// docs/development/testing.md §Visual QA and failure evidence has the layout.
+
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import pngjs from 'pngjs'
+
+const { PNG } = pngjs
+
+/** `qa-artifacts/` at the repository root (gitignored). */
+export const QA_ROOT = fileURLToPath(new URL('../qa-artifacts/', import.meta.url))
+export const LATEST_DIR = join(QA_ROOT, 'latest')
+
+const LIST_CAP = 500
+const SNAPSHOT_BUDGET_MS = 3_000
+const HELD_CAP = 8
+const DOM_CAP_BYTES = 200_000
+
+/** @typedef {{ url: string, title: string, png: Buffer | undefined, aria: string | undefined, html: string | undefined, errors: string[] }} ViewSnapshot */
+/** @typedef {{ url: string, bounds: { x: number, y: number, width: number, height: number }, visible: boolean }} ViewGeometry */
+/** @typedef {{ width: number, height: number, views: ViewGeometry[] }} WindowGeometry */
+/** @typedef {{ views: ViewSnapshot[], composites: Array<{ width: number, height: number, png: Buffer }>, geometry: WindowGeometry[], errors: string[] }} WindowSnapshot */
+
+const COLLECTORS = new WeakMap()
+/** Apps with collectors that have not been closed yet. */
+const LIVE = new Set()
+/** Bundles taken at close, waiting for the test's verdict. */
+let held = []
+
+export const evidenceEnabled = () => process.env['ORIVON_QA_EVIDENCE'] !== 'off'
+
+function push (list, item) {
+  list.push(item)
+  if (list.length > LIST_CAP) list.shift()
+}
+
+const slug = (s) => String(s).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'x'
+
+async function within (promise, ms, fallback) {
+  let timer
+  try {
+    return await Promise.race([promise, new Promise((resolve) => { timer = setTimeout(resolve, ms, fallback) })])
+  } catch {
+    return fallback
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Starts recording `app`'s console warnings and errors, page errors, failed
+ * requests, page crashes and main-process events. Safe on a fake app. */
+export function attachCollectors (app) {
+  if (!evidenceEnabled() || typeof app?.on !== 'function' || typeof app.windows !== 'function') return
+  const c = { console: [], pageErrors: [], failedRequests: [], crashes: [], traceZip: undefined }
+  COLLECTORS.set(app, c)
+  LIVE.add(app)
+
+  const hook = (page) => {
+    const at = () => { try { return page.url() } catch { return '' } }
+    page.on('console', (m) => {
+      const type = m.type()
+      if (type === 'error' || type === 'warning') {
+        push(c.console, { t: Date.now(), type, text: m.text().slice(0, 2000), url: at(), location: m.location() })
+      }
+    })
+    page.on('pageerror', (e) => {
+      push(c.pageErrors, { t: Date.now(), url: at(), message: String(e?.message ?? e).slice(0, 2000), stack: String(e?.stack ?? '').slice(0, 4000) })
+    })
+    page.on('requestfailed', (r) => {
+      push(c.failedRequests, { t: Date.now(), url: r.url(), method: r.method(), failure: r.failure()?.errorText ?? '', page: at() })
+    })
+    page.on('crash', () => push(c.crashes, { t: Date.now(), url: at() }))
+  }
+  for (const page of app.windows()) hook(page)
+  app.on('window', hook)
+
+  // uncaughtExceptionMonitor, not uncaughtException: a plain listener would
+  // suppress Electron's own error dialog and change what the test observes.
+  // There is no monitor for unhandled rejections; main.log carries those.
+  void app.evaluate(({ app: electronApp }) => {
+    const g = globalThis
+    if (g.__orivonQaEvents !== undefined) return
+    const events = g.__orivonQaEvents = []
+    const add = (kind, detail) => { if (events.length < 200) events.push({ t: Date.now(), kind, detail }) }
+    process.on('uncaughtExceptionMonitor', (err, origin) => add('uncaughtException', { message: String(err?.stack ?? err), origin }))
+    electronApp.on('render-process-gone', (_e, wc, details) => {
+      let url = ''
+      try { url = wc.getURL() } catch { /* destroyed */ }
+      add('render-process-gone', { url, ...details })
+    })
+    electronApp.on('child-process-gone', (_e, details) => add('child-process-gone', details))
+  }).catch(() => {})
+
+  if (process.env['ORIVON_QA_TRACE'] === '1') {
+    void app.context().tracing.start({ screenshots: true, snapshots: true }).catch(() => {})
+  }
+}
+
+/** How many console/pageError entries exist now; pass to entriesSince(). */
+export function mark (app) {
+  const c = COLLECTORS.get(app)
+  return { console: c?.console.length ?? 0, pageErrors: c?.pageErrors.length ?? 0 }
+}
+
+/** Console errors (not warnings) and page errors recorded after `since`. */
+export function errorsSince (app, since) {
+  const c = COLLECTORS.get(app)
+  if (c === undefined) return []
+  return [
+    ...c.console.slice(since.console).filter((e) => e.type === 'error').map((e) => ({ kind: 'console.error', url: e.url, text: e.text })),
+    ...c.pageErrors.slice(since.pageErrors).map((e) => ({ kind: 'pageerror', url: e.url, text: e.message }))
+  ]
+}
+
+export const liveApps = () => [...LIVE]
+
+function redactDom () {
+  const doc = document.documentElement.cloneNode(true)
+  for (const el of doc.querySelectorAll('input[type=password]')) el.removeAttribute('value')
+  for (const el of doc.querySelectorAll('script')) el.textContent = ''
+  return doc.outerHTML
+}
+
+/** @returns {Promise<ViewSnapshot>} */
+async function snapPage (page, timeout, shoot) {
+  /** @type {ViewSnapshot} */
+  const out = { url: '', title: '', png: undefined, aria: undefined, html: undefined, errors: [] }
+  try { out.url = page.url() } catch { /* closed */ }
+  const step = async (name, run) => {
+    try { return await run() } catch (e) { out.errors.push(`${name}: ${String(e?.message ?? e).split('\n')[0]}`); return undefined }
+  }
+  out.title = (await step('title', () => page.title(timeout))) ?? ''
+  if (shoot) out.png = await step('screenshot', () => page.screenshot({ timeout, animations: 'disabled', caret: 'hide' }))
+  else out.errors.push('screenshot: skipped, not a visible view')
+  out.aria = await step('aria', () => page.ariaSnapshot({ timeout }))
+  const html = await step('dom', () => page.evaluate(redactDom))
+  out.html = html === undefined ? undefined : html.slice(0, DOM_CAP_BYTES)
+  return out
+}
+
+/** @returns {Promise<WindowGeometry[]>} */
+async function windowGeometry (app) {
+  return await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().map((win) => {
+    const views = []
+    const walk = (view, ox, oy) => {
+      for (const child of view.children ?? []) {
+        const b = child.getBounds()
+        if (child.webContents !== undefined) {
+          views.push({ url: child.webContents.getURL(), bounds: { x: ox + b.x, y: oy + b.y, width: b.width, height: b.height }, visible: child.getVisible?.() ?? true })
+        }
+        walk(child, ox + b.x, oy + b.y)
+      }
+    }
+    walk(win.contentView, 0, 0)
+    const c = win.getContentBounds()
+    return { width: c.width, height: c.height, views }
+  }))
+}
+
+/** One PNG per window, views drawn in z-order at their bounds. Views are
+ * matched to pages by URL, so two tabs on one URL can swap: the per-view
+ * PNGs are the ground truth and this one is for a quick look. */
+function compose (geometry, snaps) {
+  const pool = snaps.filter((s) => s.png !== undefined)
+  return geometry.map((win) => {
+    const canvas = new PNG({ width: Math.max(1, win.width), height: Math.max(1, win.height) })
+    canvas.data.fill(0x80)
+    for (const view of win.views) {
+      if (!view.visible) continue
+      const i = pool.findIndex((s) => s.url === view.url)
+      if (i < 0) continue
+      const snap = pool.splice(i, 1)[0]
+      try {
+        const src = PNG.sync.read(snap.png)
+        PNG.bitblt(src, canvas, 0, 0, Math.min(src.width, view.bounds.width), Math.min(src.height, view.bounds.height), Math.max(0, view.bounds.x), Math.max(0, view.bounds.y))
+      } catch { /* undecodable view: leave the gap visible */ }
+    }
+    return { width: win.width, height: win.height, png: PNG.sync.write(canvas) }
+  })
+}
+
+/** Screenshot, ARIA tree and redacted DOM of every page of a live app, plus a
+ * composite per window. Bounded by `budgetMs`; never throws. */
+/** @returns {Promise<WindowSnapshot>} */
+export async function snapshotWindows (app, budgetMs = SNAPSHOT_BUDGET_MS) {
+  /** @type {WindowSnapshot} */
+  const result = { views: [], composites: [], geometry: [], errors: [] }
+  try {
+    result.geometry = (await within(windowGeometry(app), 1_000, [])) ?? []
+    // page.screenshot() on a hidden view (a background tab) hangs until its
+    // timeout, which would add seconds to every close. Only views the window
+    // shows are shot; with no geometry at all, try every page.
+    const visible = result.geometry.flatMap((w) => w.views.filter((v) => v.visible).map((v) => v.url))
+    const shootable = (url) => {
+      if (result.geometry.length === 0) return true
+      const i = visible.indexOf(url)
+      if (i >= 0) visible.splice(i, 1)
+      return i >= 0
+    }
+    const perPage = Math.max(500, budgetMs - 1_000)
+    result.views = await within(Promise.all(app.windows().map((p) => snapPage(p, perPage, shootable(p.url())))), budgetMs, [])
+    result.composites = compose(result.geometry, result.views)
+  } catch (e) {
+    result.errors.push(String(e?.message ?? e))
+  }
+  return result
+}
+
+async function stopTrace (app, c) {
+  if (process.env['ORIVON_QA_TRACE'] !== '1' || c.traceZip !== undefined) return
+  const path = join(tmpdir(), `orivon-qa-trace-${String(process.pid)}-${String(Date.now())}.zip`)
+  await within(app.context().tracing.stop({ path }), 3_000, undefined)
+  c.traceZip = path
+}
+
+/** Everything known about `app` right now, as a bundle writeEvidenceBundle() can write. */
+export async function bundleFor (app, { mainLog = '', alive = true } = {}) {
+  const c = COLLECTORS.get(app)
+  if (c === undefined) return undefined
+  const snap = alive ? await snapshotWindows(app) : { views: [], composites: [], geometry: [], errors: ['app already exited'] }
+  const mainEvents = alive ? (await within(app.evaluate(() => globalThis.__orivonQaEvents ?? []), 1_000, [])) ?? [] : []
+  if (alive) await stopTrace(app, c)
+  return {
+    snap,
+    mainEvents,
+    mainLog,
+    console: [...c.console],
+    pageErrors: [...c.pageErrors],
+    failedRequests: [...c.failedRequests],
+    crashes: [...c.crashes],
+    traceZip: c.traceZip
+  }
+}
+
+/** Called by closeElectron(): keeps the app's final state until the verdict. */
+export async function holdEvidence (app, options) {
+  if (!LIVE.has(app)) return
+  LIVE.delete(app)
+  try {
+    const bundle = await bundleFor(app, options)
+    if (bundle !== undefined) {
+      held.push(bundle)
+      for (const dropped of held.splice(0, Math.max(0, held.length - HELD_CAP))) await dropBundle(dropped)
+    }
+  } catch (e) {
+    console.error('[qa-evidence] could not hold evidence:', e)
+  }
+}
+
+async function dropBundle (bundle) {
+  if (bundle.traceZip !== undefined) await rm(bundle.traceZip, { force: true }).catch(() => {})
+}
+
+export async function dropHeld () {
+  const dropped = held
+  held = []
+  for (const bundle of dropped) await dropBundle(bundle)
+}
+
+const json = (value) => JSON.stringify(value, null, 2) + '\n'
+
+/** Writes one bundle under `dir`; returns the relative file list. */
+export async function writeEvidenceBundle (dir, bundle) {
+  const files = []
+  const put = async (rel, data) => {
+    const path = join(dir, rel)
+    await mkdir(join(path, '..'), { recursive: true })
+    await writeFile(path, data)
+    files.push(rel)
+  }
+  const { snap } = bundle
+  for (const [i, v] of snap.views.entries()) {
+    const name = `${String(i)}-${slug(v.url)}`
+    if (v.png !== undefined) await put(`screenshots/${name}.png`, v.png)
+    if (v.aria !== undefined) await put(`aria/${name}.txt`, v.aria)
+    if (v.html !== undefined) await put(`dom/${name}.html`, v.html)
+  }
+  for (const [i, comp] of snap.composites.entries()) await put(`screenshots/window-${String(i)}-composite.png`, comp.png)
+  await put('views.json', json(snap.views.map((v) => ({ url: v.url, title: v.title, errors: v.errors }))))
+  await put('window-geometry.json', json(snap.geometry))
+  await put('console.json', json(bundle.console))
+  await put('page-errors.json', json(bundle.pageErrors))
+  await put('failed-requests.json', json(bundle.failedRequests))
+  await put('crashes.json', json(bundle.crashes))
+  await put('main-events.json', json(bundle.mainEvents))
+  await put('main.log', bundle.mainLog)
+  if (bundle.traceZip !== undefined) {
+    const zip = await readFile(bundle.traceZip).catch(() => undefined)
+    if (zip !== undefined) await put('trace.zip', zip)
+  }
+  return files
+}
+
+/**
+ * Called by qa-setup.ts when a test failed: writes every held bundle and a
+ * fresh snapshot of any app still running, then links the folder from
+ * qa-artifacts/latest/index.md.
+ */
+export async function writeFailureEvidence ({ file, name, error, retried }) {
+  const bundles = held
+  held = []
+  for (const app of liveApps()) {
+    const bundle = await bundleFor(app, { mainLog: '', alive: true }).catch(() => undefined)
+    if (bundle !== undefined) bundles.push(bundle)
+  }
+  const rel = join(slug(file), slug(name))
+  const dir = join(LATEST_DIR, rel)
+  const lines = [`# ${name}`, '', `File: ${file}`, retried ? '**RETRIED: this test needed a retry to reach this state.**' : '', '', '## Error', '', '```', String(error ?? 'unknown').slice(0, 6000), '```', '']
+  for (const [i, bundle] of bundles.entries()) {
+    const launch = `launch-${String(i + 1)}`
+    const files = await writeEvidenceBundle(join(dir, launch), bundle)
+    lines.push(`## ${launch}`, '',
+      `- pages: ${String(bundle.snap.views.length)}, console errors/warnings: ${String(bundle.console.length)}, page errors: ${String(bundle.pageErrors.length)}, failed requests: ${String(bundle.failedRequests.length)}, crashes: ${String(bundle.crashes.length)}, main events: ${String(bundle.mainEvents.length)}`,
+      ...files.map((f) => `- ${launch}/${f}`), '')
+    await dropBundle(bundle)
+  }
+  if (bundles.length === 0) lines.push('No launched app was active in this test; nothing to snapshot.', '')
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, 'summary.md'), lines.join('\n'))
+  const first = String(error ?? '').split('\n')[0]?.slice(0, 160) ?? ''
+  await writeFile(join(LATEST_DIR, 'index.md'), `- [${name}](${rel}/summary.md): ${first}\n`, { flag: 'a' })
+  return dir
+}

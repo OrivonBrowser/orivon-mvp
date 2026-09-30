@@ -83,3 +83,6 @@ spike/results/
 test/apps/freetube/__as-page-script.js
 # test/fixture-as-page.ts's own copy of the same, for test/apps/fixture/.
 test/apps/fixture/__as-page-script.js
+
+# Failure evidence and state captures written by the e2e suite (test/qa-evidence.mjs)
+qa-artifacts/

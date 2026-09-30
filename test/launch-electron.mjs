@@ -21,6 +21,7 @@ import { _electron as electron } from 'playwright'
 import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
 
 /**
  * The minimal shape registerLaunchForTeardown/closeElectron actually call --
@@ -289,6 +290,9 @@ export async function launchElectron ({
   app.process().stdout?.on('data', captureAndForward)
   app.process().stderr?.on('data', captureAndForward)
   MAIN_OUTPUT.set(app, () => capturedOutput)
+  // Failure evidence (qa-evidence.mjs): recorded from here on, written only
+  // if the test that owns this launch fails.
+  attachCollectors(app)
 
   // Assert we got Electron, not Node wearing its binary. If this throws, no
   // result from this run may be trusted.
@@ -601,6 +605,8 @@ async function settledWithin (promise, ms) {
 export async function closeElectron (app, { raceMs = APP_CLOSE_RACE_MS, beforeClose } = {}) {
   const pid = APP_PIDS.get(app) ?? app.process().pid
   try {
+    // Before beforeClose, so the evidence shows the state the test ended in.
+    await holdEvidence(app, { mainLog: mainOutput(app), alive: pid === undefined || isAlive(pid) })
     if (typeof beforeClose === 'function') {
       const beforeCloseSettled = await settledWithin(
         beforeClose(app).catch((error) => {
