@@ -24,6 +24,7 @@ import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
 import { chromeContextMenuHost } from './chrome-context-menu.js'
 import type { ShellWindowOptions } from './window-options.js'
+import { runWindowHooks } from './window-hooks.js'
 import { showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady, windowBackgroundColor } from './window-frame.js'
 import { recordViewBackground } from './view-background-test-hook.js'
@@ -240,7 +241,10 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     area: tabBounds
   }))
   const forgetWindow = services.windows.add(entry)
-  win.on('close', () => { tabs.dispose() })
+  win.on('close', () => {
+    runWindowHooks('closing', context, options)
+    tabs.dispose()
+  })
   win.on('closed', () => {
     forgetWindow()
     windowState.stop()
@@ -272,6 +276,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   else first(tabs)
   // After the first tab, so the view stacks above it.
   if (intro !== undefined) showIntro(win, tabs, intro)
+  runWindowHooks('opened', context, options)
 
   showWhenReady(frame, { firstOfLaunch, instant })
 

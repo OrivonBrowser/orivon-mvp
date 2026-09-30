@@ -106,5 +106,6 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.save': return
     case 'page.viewSource': return
     case 'page.screenshot': return
+    case 'page.pip': return
   }
 }

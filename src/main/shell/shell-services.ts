@@ -35,6 +35,8 @@ export interface ShellServices {
   readonly devtools: DevToolsService
   readonly history: HistoryService
   readonly internalPages: InternalPageRegistry
+  /** This process is a private session: it never writes a store file of its own. */
+  readonly isPrivate: boolean
   readonly profiles: ProfilesService
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
@@ -80,6 +82,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     }),
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem),
     internalPages,
+    isPrivate: runtime.isPrivate,
     profiles: new ProfilesService(runtime),
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),

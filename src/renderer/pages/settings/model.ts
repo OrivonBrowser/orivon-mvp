@@ -8,7 +8,8 @@ import type { SettingsState } from './state.js'
 export type Control =
   /** A choice among a setting's options. Options default to the schema's own, with its labels. */
   | { readonly type: 'choice', readonly key: SettingKey, readonly options?: ReadonlyArray<{ readonly value: string, readonly label: string }> }
-  | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string }
+  /** `problem` is what the row says when main refuses the value; without it, the search address's own message. */
+  | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string, readonly problem?: string }
   | { readonly type: 'toggle', readonly key: SettingKey }
   /** A keyboard shortcut: its keys, and the buttons that change it. */
   | { readonly type: 'shortcut', readonly id: string }

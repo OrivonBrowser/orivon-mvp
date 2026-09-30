@@ -24,6 +24,7 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
   ['page.save', 'Save page as', 'tools', 'Mod+S', true],
   ['page.viewSource', 'View page source', 'tools', 'Mod+U', true],
   ['page.screenshot', 'Take a screenshot', 'tools', 'Mod+Shift+S', true],
+  ['page.pip', 'Picture in picture', 'tools', undefined, false],
   ['window.alwaysOnTop', 'Keep window on top', 'window', undefined, false]
 ]
 

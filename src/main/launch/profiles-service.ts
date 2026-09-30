@@ -3,7 +3,7 @@
 // handing it to another process (./peer-spawn.ts), so what this holds is the
 // data and the request, never a second browser inside this one.
 import { removePrivateDir, createPrivateDir } from './private-session.js'
-import { flagsFor, DEFAULT_PROFILE_ID } from './launch-context.js'
+import { flagsFor, urlsFromArgv, DEFAULT_PROFILE_ID } from './launch-context.js'
 import { spawnPeer } from './peer-spawn.js'
 import { watchProfiles } from './profiles-watcher.js'
 import type { ProfilesWatcher } from './profiles-watcher.js'
@@ -86,13 +86,15 @@ export class ProfilesService {
   }
 
   /** Starts a private session: a fresh directory holding this profile's settings, and a process of its own for it. Deleted when it ends.
-   * A shortcut calls this from an event handler, where a throw would end the browser: a failure is reported, not raised. */
-  openPrivate (): boolean {
+   * A shortcut calls this from an event handler, where a throw would end the browser: a failure is reported, not raised.
+   * `url` is opened in it when it is an http or https address; anything else is dropped rather than passed on. */
+  openPrivate (url?: string): boolean {
     let dir: string | null = null
     try {
       const made = createPrivateDir(this.runtime.dir, this.runtime.launch.home)
       dir = made
-      const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir: made })])
+      const address = url === undefined ? [] : urlsFromArgv([url])
+      const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir: made }), ...address])
       child.once('exit', () => { removePrivateDir(made) })
       child.once('error', () => { removePrivateDir(made) })
       return true

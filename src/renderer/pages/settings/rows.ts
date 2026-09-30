@@ -10,6 +10,8 @@ import type { SettingsState } from './state.js'
 
 let controlCount = 0
 
+const SEARCH_ADDRESS_PROBLEM = 'That is not an address this can search with. It must start with https:// and contain %s where the search goes.'
+
 function choiceOptions (control: Extract<Control, { type: 'choice' }>, state: SettingsState): Array<{ value: string, label: string }> {
   if (control.options !== undefined) return [...control.options]
   const description = state.description(control.key)
@@ -40,7 +42,7 @@ function renderText (control: Extract<Control, { type: 'text' }>, state: Setting
   input.addEventListener('change', () => {
     void state.set(control.key, input.value.trim()).then((error) => {
       input.setAttribute('aria-invalid', error === null ? 'false' : 'true')
-      problem.textContent = error === null ? '' : 'That is not an address this can search with. It must start with https:// and contain %s where the search goes.'
+      problem.textContent = error === null ? '' : control.problem ?? SEARCH_ADDRESS_PROBLEM
     })
   })
   return h('div', { className: 'text-control' }, input, problem)

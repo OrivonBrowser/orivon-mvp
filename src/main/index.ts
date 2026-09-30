@@ -16,6 +16,7 @@ import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
+import { firstWindowOptions } from './shell/first-window.js'
 import { urlsFromArgv } from './launch/launch-context.js'
 import { sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
@@ -193,7 +194,8 @@ function boot (runtime: Runtime): void {
         // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
         // firstOfLaunch: true -- the ONLY createShellWindow call ORIVON_WINDOW_NO_FOCUS=1 may leave
         // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
-        createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') }, firstOfLaunch: true })
+        const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv })
+        createShellWindow(ctx, shell, { ...plan, first: plan.first ?? ((tabs) => { tabs.openInternal('private') }), firstOfLaunch: true })
       } finally {
         markStarted()
       }
@@ -201,7 +203,8 @@ function boot (runtime: Runtime): void {
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
-        createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
+        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv })
+        createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
       } finally {
         markStarted()
       }

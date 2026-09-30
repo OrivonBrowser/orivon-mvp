@@ -74,6 +74,7 @@ export const COMMANDS = [
   { id: 'page.save', label: 'Save page as', category: 'tools', default: 'Mod+S', yieldToApp: true, pending: true },
   { id: 'page.viewSource', label: 'View page source', category: 'tools', default: 'Mod+U', yieldToApp: true, pending: true },
   { id: 'page.screenshot', label: 'Take a screenshot', category: 'tools', default: 'Mod+Shift+S', yieldToApp: true, pending: true },
+  { id: 'page.pip', label: 'Picture in picture', category: 'tools', pending: true },
   { id: 'window.new', label: 'New window', category: 'window', default: 'Mod+N' },
   { id: 'window.newPrivate', label: 'New private window', category: 'window', default: 'Mod+Shift+N' },
   { id: 'profiles.open', label: 'Profiles', category: 'window' },

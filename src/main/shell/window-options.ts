@@ -27,6 +27,8 @@ export interface ShellWindowOptions {
    * or a tab moved into a new window has content already rendered elsewhere, so the wait that masks an
    * ordinary window's fresh page load only adds a needless delay here. */
   readonly instant?: boolean | undefined
+  /** The window opens maximized, over `place`. */
+  readonly maximized?: boolean | undefined
 }
 
 /** A window opened from another one sits a little down and to the right of it, so the two are told apart. */

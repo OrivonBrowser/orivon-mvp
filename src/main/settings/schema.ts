@@ -2,6 +2,7 @@
 // accepted. The store validates against this and the Settings page is told
 // this, so the page cannot offer a value the store would refuse and a file
 // edited by hand cannot make one up.
+import { isAddressList, isEmptyOrAddress } from './address-checks.js'
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
 export type SettingSpec =
@@ -39,6 +40,14 @@ const SPECS = {
   // Every tab's page can be inspected unless the person turns it off; where the tools open is theirs too.
   'developer.tools': { kind: 'bool', default: true },
   'developer.dock': { kind: 'enum', options: ['right', 'bottom', 'undocked'], default: 'right' },
+  // What a launch opens: the new-tab page, the last session, or a list of pages (one address per line, at most eight).
+  'startup.mode': { kind: 'enum', options: ['newTab', 'continue', 'pages'], default: 'newTab' },
+  'startup.pages': { kind: 'text', default: '', maxLength: 4096, check: isAddressList },
+  // Empty means the new-tab page.
+  'home.url': { kind: 'text', default: '', maxLength: 2048, check: isEmptyOrAddress },
+  'toolbar.home': { kind: 'bool', default: false },
+  'spellcheck.enabled': { kind: 'bool', default: true },
+  'pdf.viewer': { kind: 'bool', default: true },
   'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' },
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
   'extensions.developerMode': { kind: 'bool', default: false }
