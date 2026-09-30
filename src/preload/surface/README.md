@@ -109,6 +109,12 @@ other case where an extension changes what a page's own script does (ADR-0045's 
 It is stated here because the sourceURL rule above closes a nearby, easily-confused route
 (extension code claiming to BE the page) and this one is easy to mistake for the same thing.
 
+**The child host's `orivon` is unfiltered.** `../child-host.ts` calls `installOrivon` with
+`attributeCallers` false and a `target` of its own that never leaves the preload's isolated world:
+the host script is its only caller, its stack holds no page script's URL for the filter to find, and
+neither a page's nor an extension's script can reach an isolated-world object. The filter stays on
+for every `installOrivon` that runs in a main world, which is the default.
+
 **`orivon.ts`'s `exposeFallback()` is fail-closed, not merely `net`-less.** It runs when
 `contextBridge.executeInMainWorld` is absent or throws -- `main-world-socket.ts`'s `installOrivon`
 is the only place a caller is attributed to the page, so an extension's script refused (ADR-0045);

@@ -42,7 +42,9 @@ if (isChildHostDocument()) {
     writeWindowBytes: LIMITS.writeWindowBytes,
     inboundDatagramWindow: LIMITS.inboundDatagramWindow,
     outboundDatagramWindow: LIMITS.outboundDatagramWindow
-  }, target)
+  }, target, false)
+  // No caller attribution (ADR-0045's filter guards a main-world object): `target` stays in this
+  // isolated world, where the host script below is the only caller and has no page frame.
   // installOrivon always sets this, whatever the app's own live grants are:
   // only an individual CALL through it can fail, never the install itself.
   const orivon = target.orivon as Orivon
