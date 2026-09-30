@@ -4,6 +4,7 @@ import { MAX_DEPTH, MAX_NODES, childrenOf, clipTitle, depthOf, freshId, nodeCoun
 import type { BookmarkTree, IdSource, TreeDraft } from './bookmark-tree.js'
 import type { BookmarkNode, BookmarkRoot, BookmarkTreeInput } from './bookmark-types.js'
 import { sanitizeDirectUrl } from './omnibox.js'
+import { sanitizeStoredFavicon } from './bookmark-file.js'
 
 export interface ImportResult {
   tree: BookmarkTree
@@ -34,7 +35,7 @@ export function importNodes (tree: BookmarkTree, parent: string, input: readonly
         const url = typeof item.url === 'string' ? sanitizeDirectUrl(item.url) : null
         if (url === null) continue
         const id = freshId(draft.nodes, newId)
-        draft.nodes.set(id, { id, parent: into, kind: 'url', title: clipTitle(String(item.title ?? '')), url, favicon: null, added: stamp })
+        draft.nodes.set(id, { id, parent: into, kind: 'url', title: clipTitle(String(item.title ?? '')), url, favicon: sanitizeStoredFavicon(item.favicon), added: stamp })
         ids.push(id)
         budget -= 1
         added += 1
@@ -62,11 +63,11 @@ export function importNodes (tree: BookmarkTree, parent: string, input: readonly
 }
 
 function inputOf (tree: BookmarkTree, node: BookmarkNode): BookmarkTreeInput {
-  if (node.kind === 'url') return { kind: 'url', title: node.title, ...(node.url === undefined ? {} : { url: node.url }), added: node.added }
+  if (node.kind === 'url') return { kind: 'url', title: node.title, ...(node.url === undefined ? {} : { url: node.url }), ...(node.favicon === undefined || node.favicon === null ? {} : { favicon: node.favicon }), added: node.added }
   return { kind: 'folder', title: node.title, added: node.added, children: childrenOf(tree, node.id).map((child) => inputOf(tree, child)) }
 }
 
-/** The bar and Other bookmarks as nested inputs, in order; ids and favicons are not part of a portable tree. */
+/** The bar and Other bookmarks as nested inputs, in order; ids are not part of a portable tree. */
 export function exportNodes (tree: BookmarkTree): Record<'bar' | 'other', BookmarkTreeInput[]> {
   const root = (id: BookmarkRoot): BookmarkTreeInput[] => childrenOf(tree, id).map((child) => inputOf(tree, child))
   return { bar: root('bar'), other: root('other') }

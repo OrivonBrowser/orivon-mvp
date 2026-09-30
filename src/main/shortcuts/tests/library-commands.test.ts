@@ -25,6 +25,7 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
 const LANDED: readonly string[] = [
   'about.open',
   'bookmark.allTabs',
+  'bookmarks.open',
   'bookmarks.toggleBar',
   'devtools.console',
   'downloads.open',
