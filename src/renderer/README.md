@@ -1,16 +1,17 @@
 # `src/renderer/`: the browser chrome UI
 
-**What lives here.** Nine entries, plain vanilla-TS pages with no framework. Tied to Electron,
+**What lives here.** Ten entries, plain vanilla-TS pages with no framework. Tied to Electron,
 entirely.
 
 | Entry | What it is |
 |---|---|
-| (top level) | The chrome view: tab strip (sharing its row with the native window buttons, and dragging a tab out of it: `tab-drag.ts`), the empty tail past the new-tab button in the manual drag mode (`strip-drag.ts`, Linux/X11 only -- `src/main/shell/drag-mode.ts` decides), toolbar and bookmarks bar, in its own `WebContentsView` above the active tab |
+| (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the drag helpers here (`tab-drag.ts`, and `strip-drag.ts` for the empty tail past the new-tab button in the manual drag mode, Linux/X11 only -- `src/main/shell/drag-mode.ts` decides), in its own `WebContentsView` above the active tab |
+| [`chrome/`](chrome/) | The chrome view's features, one file each, and the three toolbar slots a feature puts a button in |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
 | [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
 | [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches, its Web3 Score and site data pages |
 | [`intro/`](intro/) | The welcome screen, a full-window view over the shell (`src/main/shell/intro-view.ts`) |
-| [`menu/`](menu/) | The main menu popup: the commands under the menu button, each with its keys |
+| [`overlay/`](overlay/) | The one page every overlay shows: the main menu, and a page per feature that shows Orivon HTML above the page (`src/main/overlays/`) |
 | [`split-frame/`](split-frame/) | The view behind the two panes of a split: the divider, the ring round the pane in use, and where a dragged tab would go |
 | [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `profiles`, `private`, `extensions`), on the tokens and controls in `pages/shared/` |
 
@@ -29,7 +30,7 @@ Type-only imports from `src/main/shell/tabs.ts`, `src/main/browsing/bookmarks.ts
 
 **The chrome document never changes its own URL, not even the fragment.** Main refuses every
 command from a sender whose URL is not exactly the chrome's (`src/main/ipc/ipc.ts`'s
-`isFromChrome`), so a hash change or `pushState` in `main.ts` would silence the chrome.
+`isFromChrome`), so a hash change or `pushState` in the chrome would silence it.
 
 ## Design notes
 

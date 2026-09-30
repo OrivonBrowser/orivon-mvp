@@ -22,6 +22,7 @@ rather than editing here.
 |---|---|---|---|
 | [`launch/`](launch/) | Which browser this process is (default, another profile, a private session) and its data directory | the profiles, on disk | `start-launch.ts` only, as a type |
 | [`shell/`](shell/) | The window and the views inside it | the tab collection | yes |
+| [`overlays/`](overlays/) | Orivon HTML above the page: where an overlay sits, when it closes, where focus goes; the main menu is the first | no | `overlay-host.ts` and `overlay-view.ts` |
 | [`pages/`](pages/) | The shell's own pages at `orivon://`, in a session only they can load, and the one channel they speak on | which webContents are which page | `internal-session.ts`, `internal-ipc.ts` and `pages-subsystem.ts` only |
 | [`history/`](history/) | The pages that were visited, kept on this computer and forgotten on request | `history.db` on disk | `attach-history.ts` and `install-history.ts` only |
 | [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |

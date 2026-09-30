@@ -14,7 +14,7 @@ an `OverlayDef` to [`overlays.ts`](overlays.ts) and a page to
 | `overlay-ipc.ts` | The one channel a page speaks on, with its sender check |
 | `overlay-view.ts` | One `WebContentsView`: construction, background, navigation lock, focus |
 | `overlay-host.ts` | Per window: when a view exists, where it sits, when it closes, where focus goes |
-| `overlays.ts` | `OVERLAYS`, every overlay the shell can show |
+| `overlays.ts` | `OVERLAYS`, every overlay the shell can show: today the main menu (`../shell/menu-overlay.ts`) |
 
 **Tied to Electron.** `overlay-view.ts` and `overlay-host.ts` import `electron` values;
 `overlay-types.ts`, `overlay-bounds.ts` and `overlay-ipc.ts` need only its types. The types and
@@ -22,7 +22,7 @@ the geometry are the part that survives a change of shell.
 
 **What it depends on.** `electron`, `../channels.ts`, `../shell/` (`renderer-entry.ts`,
 `lock-navigation.ts`, `shell-session.ts`, `theme-colors.ts`, `view-background-test-hook.ts`,
-`window-context.ts` and the `Bounds` type).
+`window-context.ts` and the `Bounds` type), and `../shell/menu-overlay.ts` (listed in `overlays.ts`).
 
 **What it must never import.** A feature. A feature imports `overlay-types.ts` and is listed in
 `overlays.ts`; nothing in this directory reaches into one.
@@ -30,6 +30,23 @@ the geometry are the part that survives a change of shell.
 **Owner stream.** `shell`.
 
 ## Design notes
+
+**Beside the overlays, the host closes two legacy panels.** The permissions and site-info popovers
+stay on `../permissions/popover-view.ts` and are handed to the host with `adopt`, so a tab switch, a
+resize or the window closing dismisses them with every overlay, and showing a popup closes them.
+`close()` with no name closes popups and adopted panels; `closeOverlays()` closes the popups alone,
+for a panel that toggles itself straight after. `relayout()` closes an adopted panel every time, so
+its `close` must be idempotent.
+
+**A page's stylesheet is imported by its page.** `import './<name>.css'` in the page module is
+bundled into the overlay entry's one stylesheet, and every rule sits under
+`body[data-overlay='<name>']`. `src/renderer/overlay/surface.css` paints the page's own surface with
+the same colour main sets before the page loads (`../shell/theme-colors.ts`), so the two cannot
+disagree about the theme; a change to one changes the other.
+
+**The keys work inside an overlay without wiring.** `install-shortcuts.ts` puts the dispatcher on
+every window view, and an attached overlay view is a child of its window, so the shortcut owner is
+found the same way as for the chrome.
 
 **An overlay is a view of its own, never a region of the chrome view.** The chrome view is exactly
 as tall as the chrome and Electron honours a transparent view only inside a transparent window,

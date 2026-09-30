@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
-import { clickAddressBarRetrying } from './e2e-helpers.js'
+import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 90_000
@@ -235,6 +235,18 @@ it('a resize closes the menu; a check entry reflects the window and runs from th
     expect(await third.locator('.menu-row', { hasText: 'Keep window on top' }).getAttribute('aria-checked')).toBe('true')
     await shoot(app, chrome, third, 'menu-check')
     expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('a browser shortcut pressed inside the menu runs on its window, and the new tab dismisses the menu', async () => {
+  const { app, chrome } = await launched(true)
+  try {
+    await openMenu(app, chrome)
+    await pressKey(app, 'overlay=menu', 'T', ['control'])
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 2)).toBe(true)
+    expect(await waitFor(async () => !(await menuShown(app)))).toBe(true)
   } finally {
     await closeElectron(app)
   }
