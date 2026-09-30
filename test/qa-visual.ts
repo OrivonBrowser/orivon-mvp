@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import pixelmatch from 'pixelmatch'
 import pngjs from 'pngjs'
 import type { ElectronApplication, Page } from 'playwright'
-import { LATEST_DIR, errorsSince, mark, snapshotWindows } from './qa-evidence.mjs'
+import { LATEST_DIR, errorsSince, mark, snapshotWindows, windowGeometry } from './qa-evidence.mjs'
 import { mainOutput } from './launch-electron.mjs'
 import { layoutAudit } from './qa-layout-audit.mjs'
 import { findChrome, waitFor } from './smoke-helpers.mjs'
@@ -29,7 +29,10 @@ export interface AllowedFinding { rule: string, selector?: string, reason: strin
 export interface Rect { x: number, y: number, width: number, height: number }
 export type Check = (name: string, pass: boolean, detail?: string) => void
 
-export const DEFAULT_MAX_DIFF_RATIO = 0.002
+/** 0.005% of the window, about 50 pixels. Measured: an unchanged state differs by
+ * 0.000%, and growing the tab titles from 12px to 13px moves 0.02% to 0.13%, so
+ * anything looser misses a real change to the shell's small text. */
+export const DEFAULT_MAX_DIFF_RATIO = 0.00005
 export const STATES_DIR = join(LATEST_DIR, 'states')
 
 const slug = (s: string): string => s.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 80)
@@ -139,14 +142,20 @@ export async function prepareWindow (app: ElectronApplication, size: { width: nu
   if (!settled) throw new Error(`window did not settle at ${String(size.width)}px wide`)
 }
 
+const SETTLE_TIMEOUT_MS = 3_000
+
 /** Fonts loaded and two frames painted: the readiness a screenshot needs,
- * never a sleep. */
+ * never a sleep. Only for views the window shows: a hidden view (a background
+ * tab) never paints a frame, so waiting on one would wait forever. */
 async function settle (pages: Page[]): Promise<void> {
   await Promise.all(pages.map(async (p) => {
-    await p.evaluate(async () => {
+    const ready = p.evaluate(async () => {
       await document.fonts.ready
       await new Promise((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(resolve) }) })
     }).catch(() => undefined)
+    let timer: NodeJS.Timeout | undefined
+    await Promise.race([ready, new Promise((resolve) => { timer = setTimeout(resolve, SETTLE_TIMEOUT_MS) })])
+    clearTimeout(timer)
   }))
 }
 
@@ -160,6 +169,8 @@ export interface StateSpec {
   ignore?: Rect[]
   allowBlank?: boolean
   maxDiffRatio?: number
+  /** Where the pointer rests while capturing. Default 'idle': parked in empty tab-strip space, so no button shows its hover look. */
+  pointer?: 'idle' | 'keep'
   /** Count http(s) page errors too. Default: shell pages only, since a fixture may misbehave on purpose. */
   includeContentErrors?: boolean
 }
@@ -183,10 +194,14 @@ const isContent = (url: string): boolean => /^https?:/.test(url)
 
 /** Screenshots the whole window as it is now and records everything a reader needs to judge it. */
 export async function captureState (app: ElectronApplication, name: string, spec: StateSpec): Promise<StateReport> {
+  if (spec.pointer !== 'keep') {
+    const chrome = findChrome(app)
+    await chrome.mouse.move(Math.max(0, (await chrome.evaluate(() => window.innerWidth)) - 130), 8)
+  }
+  const shownUrls = (await windowGeometry(app)).flatMap((w) => w.views.filter((v) => v.visible).map((v) => v.url))
   const pages = app.windows()
-  await settle(pages)
+  await settle(pages.filter((p) => shownUrls.includes(p.url())))
   const snap = await snapshotWindows(app, 6_000)
-  const shownUrls = snap.geometry.flatMap((w) => w.views.filter((v) => v.visible).map((v) => v.url))
 
   const targets = spec.audit?.pages ?? pages.filter((p) => shownUrls.includes(p.url()) && !isContent(p.url()))
   const audit: ReturnType<typeof applyAllowlist> = { findings: [], allowed: [] }
@@ -241,5 +256,5 @@ export function checkState (check: Check, r: StateReport): void {
   check(`${r.name}: the window painted something`, !r.blank, r.png === undefined ? 'no screenshot was produced' : 'screenshot is one flat colour')
   const b = r.baseline
   check(`${r.name}: matches its baseline (${b.status})`, b.status !== 'mismatch' && b.status !== 'size-mismatch',
-    `${b.detail ?? ''}${b.ratio === undefined ? '' : ` (${(b.ratio * 100).toFixed(3)}% > ${(b.maxDiffRatio * 100).toFixed(3)}%)`} diff: ${b.diffPath ?? '-'}`)
+    `${b.detail ?? ''}${b.ratio === undefined ? '' : ` (${(b.ratio * 100).toFixed(4)}% > ${(b.maxDiffRatio * 100).toFixed(4)}%)`} diff: ${b.diffPath ?? '-'}`)
 }

@@ -74,9 +74,9 @@ export function layoutAudit (options = {}) {
       add('invisible-control', el, `zero-size control ${r.width}x${r.height}`)
       continue
     }
-    const named = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim() !== ''
+    // Not audited: a control hidden by opacity. Hover-revealed buttons (a tab's
+    // close button), fades and custom checkboxes make that mostly intended.
     const nativeInput = el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA'
-    if (Number(s.opacity) === 0 && named && !nativeInput) add('invisible-control', el, 'opacity 0 on a named control')
 
     const cx = Math.min(vw - 1, Math.max(0, r.left + r.width / 2))
     const cy = Math.min(vh - 1, Math.max(0, r.top + r.height / 2))

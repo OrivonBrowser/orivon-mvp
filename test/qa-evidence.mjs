@@ -23,6 +23,7 @@ export const LATEST_DIR = join(QA_ROOT, 'latest')
 const LIST_CAP = 500
 const SNAPSHOT_BUDGET_MS = 3_000
 const HELD_CAP = 8
+const ORPHAN_SHOT_MS = 600
 const DOM_CAP_BYTES = 200_000
 
 /** @typedef {{ url: string, title: string, png: Buffer | undefined, aria: string | undefined, html: string | undefined, errors: string[] }} ViewSnapshot */
@@ -131,7 +132,7 @@ function redactDom () {
 }
 
 /** @returns {Promise<ViewSnapshot>} */
-async function snapPage (page, timeout, shoot) {
+async function snapPage (page, timeout, shotTimeout) {
   /** @type {ViewSnapshot} */
   const out = { url: '', title: '', png: undefined, aria: undefined, html: undefined, errors: [] }
   try { out.url = page.url() } catch { /* closed */ }
@@ -139,7 +140,7 @@ async function snapPage (page, timeout, shoot) {
     try { return await run() } catch (e) { out.errors.push(`${name}: ${String(e?.message ?? e).split('\n')[0]}`); return undefined }
   }
   out.title = (await step('title', () => page.title(timeout))) ?? ''
-  if (shoot) out.png = await step('screenshot', () => page.screenshot({ timeout, animations: 'disabled', caret: 'hide' }))
+  if (shotTimeout > 0) out.png = await step('screenshot', () => page.screenshot({ timeout: shotTimeout, animations: 'disabled', caret: 'hide' }))
   else out.errors.push('screenshot: skipped, not a visible view')
   out.aria = await step('aria', () => page.ariaSnapshot({ timeout }))
   const html = await step('dom', () => page.evaluate(redactDom))
@@ -148,7 +149,7 @@ async function snapPage (page, timeout, shoot) {
 }
 
 /** @returns {Promise<WindowGeometry[]>} */
-async function windowGeometry (app) {
+export async function windowGeometry (app) {
   return await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().map((win) => {
     const views = []
     const walk = (view, ox, oy) => {
@@ -167,20 +168,25 @@ async function windowGeometry (app) {
 }
 
 /** One PNG per window, views drawn in z-order at their bounds. Views are
- * matched to pages by URL, so two tabs on one URL can swap: the per-view
- * PNGs are the ground truth and this one is for a quick look. */
+ * matched to pages by URL, then by size, so two tabs on one URL can swap: the
+ * per-view PNGs are the ground truth and this one is for a quick look. */
 function compose (geometry, snaps) {
-  const pool = snaps.filter((s) => s.png !== undefined)
+  const pool = snaps.filter((s) => s.png !== undefined).map((s) => ({ snap: s, image: undefined }))
+  const decoded = (entry) => { entry.image ??= PNG.sync.read(entry.snap.png); return entry.image }
   return geometry.map((win) => {
     const canvas = new PNG({ width: Math.max(1, win.width), height: Math.max(1, win.height) })
     canvas.data.fill(0x80)
     for (const view of win.views) {
       if (!view.visible) continue
-      const i = pool.findIndex((s) => s.url === view.url)
+      const byUrl = pool.findIndex((e) => e.snap.url === view.url)
+      const bySize = () => pool.findIndex((e) => {
+        try { return decoded(e).width === view.bounds.width && decoded(e).height === view.bounds.height } catch { return false }
+      })
+      const i = byUrl >= 0 ? byUrl : bySize()
       if (i < 0) continue
-      const snap = pool.splice(i, 1)[0]
+      const entry = pool.splice(i, 1)[0]
       try {
-        const src = PNG.sync.read(snap.png)
+        const src = decoded(entry)
         PNG.bitblt(src, canvas, 0, 0, Math.min(src.width, view.bounds.width), Math.min(src.height, view.bounds.height), Math.max(0, view.bounds.x), Math.max(0, view.bounds.y))
       } catch { /* undecodable view: leave the gap visible */ }
     }
@@ -197,17 +203,22 @@ export async function snapshotWindows (app, budgetMs = SNAPSHOT_BUDGET_MS) {
   try {
     result.geometry = (await within(windowGeometry(app), 1_000, [])) ?? []
     // page.screenshot() on a hidden view (a background tab) hangs until its
-    // timeout, which would add seconds to every close. Only views the window
-    // shows are shot; with no geometry at all, try every page.
+    // timeout, which would add seconds to every close. Only pages that match a
+    // visible view by URL are shot with the full budget. A visible view no page
+    // matches (an error page: the view reports the failed URL, the page reports
+    // chrome-error://) sends the other pages through a short attempt instead;
+    // hidden ones time out there, and compose() pairs the survivors by size.
+    // With no geometry at all, every page is tried.
     const visible = result.geometry.flatMap((w) => w.views.filter((v) => v.visible).map((v) => v.url))
-    const shootable = (url) => {
-      if (result.geometry.length === 0) return true
-      const i = visible.indexOf(url)
+    const pages = app.windows()
+    const matched = pages.map((p) => {
+      const i = visible.indexOf(p.url())
       if (i >= 0) visible.splice(i, 1)
       return i >= 0
-    }
+    })
     const perPage = Math.max(500, budgetMs - 1_000)
-    result.views = await within(Promise.all(app.windows().map((p) => snapPage(p, perPage, shootable(p.url())))), budgetMs, [])
+    const shot = (isMatched) => (result.geometry.length === 0 || isMatched ? perPage : visible.length > 0 ? ORPHAN_SHOT_MS : 0)
+    result.views = await within(Promise.all(pages.map((p, i) => snapPage(p, perPage, shot(matched[i])))), budgetMs, [])
     result.composites = compose(result.geometry, result.views)
   } catch (e) {
     result.errors.push(String(e?.message ?? e))
