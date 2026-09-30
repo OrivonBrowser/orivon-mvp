@@ -24,6 +24,10 @@ import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
+import { ClosedStack } from '../session-restore/closed-stack.js'
+import { watchClosedTabs } from '../session-restore/closed-tabs.js'
+import { NullSessionStore, SessionStore } from '../session-restore/session-store.js'
+import type { SessionLog } from '../session-restore/session-store.js'
 import { TearDragController } from './tear-drag.js'
 import { WindowRegistry } from './window-registry.js'
 import type { SubsystemContext } from '../registry.js'
@@ -31,6 +35,8 @@ import { TabLifecycle } from './tab-lifecycle.js'
 
 export interface ShellServices {
   readonly bookmarks: BookmarkStore
+  /** The tabs and windows closed, newest first: what Reopen closed tab brings back. In memory. */
+  readonly closedTabs: ClosedStack
   readonly commands: CommandBus
   readonly devtools: DevToolsService
   readonly history: HistoryService
@@ -38,6 +44,8 @@ export interface ShellServices {
   /** This process is a private session: it never writes a store file of its own. */
   readonly isPrivate: boolean
   readonly profiles: ProfilesService
+  /** The open windows, kept in `session.json`; a private session writes nothing. */
+  readonly session: SessionLog
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
   readonly shortcutStore: ShortcutStore
@@ -59,10 +67,14 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
   const zoomStore = new ZoomStore(join(userDataPath, 'zoom.json'))
   const internalPages = new InternalPageRegistry()
   const windows = new WindowRegistry()
+  const tabLifecycle = new TabLifecycle()
+  const closedTabs = new ClosedStack()
+  watchClosedTabs(tabLifecycle, closedTabs)
   // A private session writes down no pages: it never opens a history file at all.
   const openedHistory = runtime.isPrivate ? { store: new NullHistoryStore(), problem: null } : openHistory(join(userDataPath, 'history.db'))
   return {
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
+    closedTabs,
     commands: new CommandBus(),
     devtools: new DevToolsService(settings, {
       // A security prompt: it must key on the app HOLDING GRANTS (ADR-0044)
@@ -84,11 +96,12 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     internalPages,
     isPrivate: runtime.isPrivate,
     profiles: new ProfilesService(runtime),
+    session: runtime.isPrivate ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
     tearDrag: new TearDragController(() => windows.all()),
-    tabLifecycle: new TabLifecycle(),
+    tabLifecycle,
     windows,
     zoom: new ZoomService(zoomStore, settings),
     zoomStore

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { menuOverlay } from '../menu-overlay.js'
 import type { OverlayWindow } from '../../overlays/overlay-types.js'
+import { ClosedStack } from '../../session-restore/closed-stack.js'
 
 function attach (url = 'https://a.example/'): { handler: ReturnType<typeof menuOverlay.attach>, run: ReturnType<typeof vi.fn>, close: ReturnType<typeof vi.fn> } {
   const rows = ['tab.new', 'split.toggle', 'window.alwaysOnTop', 'zoom.in', 'zoom.out', 'zoom.reset', 'window.fullscreen', 'tab.close', 'devtools.toggle', 'history.open', 'bookmark.toggle', 'window.new', 'window.newPrivate', 'extensions.open', 'profiles.open', 'settings.open', 'app.quit']
@@ -9,7 +10,7 @@ function attach (url = 'https://a.example/'): { handler: ReturnType<typeof menuO
   const close = vi.fn()
   const win = {
     window: { window: { isAlwaysOnTop: () => false }, tabs: { getState: () => ({ tabs: [{ id: 'a', url }], activeTabId: 'a' }) } },
-    services: { shortcuts: { rows: () => rows }, zoom: { percentFor: () => 110 }, commands: { run } },
+    services: { shortcuts: { rows: () => rows }, closedTabs: new ClosedStack(), zoom: { percentFor: () => 110 }, commands: { run } },
     send: vi.fn(),
     close
   } as unknown as OverlayWindow

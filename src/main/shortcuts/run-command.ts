@@ -8,6 +8,7 @@ import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
+import { reopenClosed } from '../session-restore/reopen.js'
 import type { CommandId } from './commands.js'
 
 /** A new dependency of a command is a `ShellServices` member, never a field here. */
@@ -78,6 +79,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'split.focusOther': if (active !== undefined) tabs.splits.focusOther(active.id); return
     case 'split.swap': if (active !== undefined) tabs.splits.swap(active.id); return
     case 'split.rotate': if (active !== undefined) tabs.splits.rotate(active.id); return
+    case 'tab.reopen': reopenClosed(target, deps); return
     case 'tab.moveToNewWindow':
       if (active !== undefined) moveToNewWindow(target, active.id, deps.openWindow, cascadeFrom(window.getBounds()))
       return
@@ -95,7 +97,6 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'app.quit': deps.quit(); return
     // Ids the tools work reserves: each does nothing until the feature that owns it replaces its line and drops `pending` on its COMMANDS row.
-    case 'tab.reopen': return
     case 'tab.search': return
     case 'nav.stop': return
     case 'nav.home': return

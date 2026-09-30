@@ -17,6 +17,7 @@ import { devOnlySwitches } from './shell/dev-switches.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
 import { firstWindowOptions } from './shell/first-window.js'
+import { seedClosedStack } from './session-restore/restore.js'
 import { urlsFromArgv } from './launch/launch-context.js'
 import { sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
@@ -155,7 +156,8 @@ function boot (runtime: Runtime): void {
     publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
-    await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])
+    await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load(), shell.session.load()])
+    seedClosedStack(shell.closedTabs, shell.session.previous())
     applyThemeSetting(shell.settings, nativeTheme)
     // The light client starts after the first page loads, by which time the settings have been read: the person's choice reaches it.
     configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient') })

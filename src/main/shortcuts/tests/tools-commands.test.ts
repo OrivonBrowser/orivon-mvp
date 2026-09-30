@@ -35,6 +35,7 @@ const LANDED = new Set([
   'tab.duplicate',
   'tab.mute',
   'tab.pin',
+  'tab.reopen',
   'window.alwaysOnTop'
 ])
 

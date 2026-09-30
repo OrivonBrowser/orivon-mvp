@@ -4,6 +4,7 @@
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import { commandById } from '../shortcuts/commands.js'
+import { hintFor } from '../session-restore/reopen.js'
 import type { WindowContext } from './window-context.js'
 
 /** One line of the layout. A feature adds its entry beside the entries it belongs with. */
@@ -23,6 +24,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'window.newPrivate',
   '-',
   'history.open',
+  { item: 'tab.reopen', hint: ({ services }) => hintFor(services.closedTabs) },
   'bookmark.toggle',
   '-',
   { zoom: true },
