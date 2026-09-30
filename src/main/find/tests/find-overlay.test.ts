@@ -35,6 +35,7 @@ interface Rig {
   shown: ReturnType<typeof vi.fn>
   lifecycle: { tabActivated: (wc: unknown) => void, tabClosing: (info: { id: string }) => void }
   window: object
+  unsubscribe: ReturnType<typeof vi.fn>
   answer: (id: string, requestId: number, active: number, matches: number, finalUpdate?: boolean) => void
 }
 
@@ -44,6 +45,7 @@ function rig (initial: Record<string, FakeContents>): Rig {
   const open = { value: false }
   const shown = vi.fn()
   const send = vi.fn()
+  const unsubscribe = vi.fn()
   let lifecycle = { tabActivated: (_wc: unknown) => {}, tabClosing: (_info: { id: string }) => {} }
   const window = {
     window: { isDestroyed: () => false },
@@ -56,14 +58,14 @@ function rig (initial: Record<string, FakeContents>): Rig {
   }
   const win = {
     window,
-    services: { tabLifecycle: { subscribe: (listener: typeof lifecycle) => { lifecycle = listener; return () => {} } } },
+    services: { tabLifecycle: { subscribe: (listener: typeof lifecycle) => { lifecycle = listener; return unsubscribe } } },
     send,
     close: vi.fn()
   } as unknown as OverlayWindow
   const handler = findOverlay.attach(win)
   const bar = findWindowFor(window as never)
   return {
-    handler, send, tabs, open, shown, window,
+    handler, send, tabs, open, shown, window, unsubscribe,
     setActive: (id) => { active = id },
     get lifecycle () { return lifecycle },
     answer: (id, requestId, activeMatch, matches, finalUpdate = true) => {
@@ -337,5 +339,12 @@ describe('the find bar handler', () => {
     expect(await opened(r)).toEqual({ query: '', matchCase: false, fresh: true })
     r.handler.request(query('orivon'))
     expect(() => { r.handler.closed?.('escape') }).not.toThrow()
+  })
+
+  it('drops its tab lifecycle subscription when the window is gone, whether the bar was open or not', async () => {
+    const r = rig({ a: contents('a') })
+    expect(r.unsubscribe).not.toHaveBeenCalled()
+    r.handler.disposed?.()
+    expect(r.unsubscribe).toHaveBeenCalledTimes(1)
   })
 })

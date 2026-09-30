@@ -39,10 +39,10 @@ export interface WindowPanels {
 }
 
 export function createWindowPanels ({ ctx, win, services, tabs, overlays, chromeHeight, dirname }: WindowPanelsDeps): WindowPanels {
-  // Queue item 4.4: the all-sites popup reads/revokes through this one
-  // controller, closing over `ctx` so it always sees whichever broker is
-  // currently published (permissions.ts's own doc). `scoreLevelOverrideFor`
-  // is the developer-only preview path (ADR-0037, ../dev/score-levels.ts).
+  // The all-sites popup reads and revokes through this one controller,
+  // closing over `ctx` so it always sees whichever broker is currently
+  // published (permissions.ts's own doc). `scoreLevelOverrideFor` is the
+  // developer-only preview path (../dev/score-levels.ts).
   const permissionsController = createPermissionsController(ctx, scoreLevelOverrideFor)
 
   // The site-info popup's own door, sibling to `permissions` above
