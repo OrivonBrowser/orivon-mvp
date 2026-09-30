@@ -52,15 +52,24 @@ function tryRead (path: string): string | undefined {
   }
 }
 
-interface Found { readonly filename: string, readonly source: string }
+/** A resolved file; `source` is absent when the module is already in the cache, which needs no read. */
+interface Found { readonly filename: string, readonly source?: string }
+
+/** The file a path resolved to, for a module that loaded: its cache entry is what says the answer is still valid. */
+const resolutions = new Map<string, string>()
 
 function locate (id: string, base: string, requireStack: string[]): Found {
-  const absolute = resolve(base, id)
-  const bare = absolute.replace(/\/+$/, '')
+  const bare = resolve(base, id).replace(/\/+$/, '')
+  const remembered = resolutions.get(bare)
+  if (remembered !== undefined && cache[remembered] !== undefined) return { filename: remembered }
   for (const suffix of SUFFIXES) {
     const filename = `${bare}${suffix}`
+    if (cache[filename] !== undefined) return { filename }
     const source = tryRead(filename)
-    if (source !== undefined) return { filename, source }
+    if (source !== undefined) {
+      resolutions.set(bare, filename)
+      return { filename, source }
+    }
   }
   throw notFound(id, requireStack)
 }
@@ -118,6 +127,7 @@ function makeRequire (parent: CjsModule | undefined, base: string, from: string)
     const { filename, source } = locate(id, base, requireStack())
     const cached = cache[filename]
     if (cached !== undefined) return cached.exports
+    if (source === undefined) throw notFound(id, requireStack())
     const mod: CjsModule = { id: filename, filename, path: dirname(filename), exports: {}, loaded: false, children: [], paths: [], parent, require: undefined as unknown as CjsRequire }
     mod.require = makeRequire(mod, mod.path, filename)
     parent?.children.push(mod)

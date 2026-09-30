@@ -49,6 +49,29 @@ describe('cjs-loader', () => {
     expect(a).toEqual({ name: `${VIRTUAL_ROOT}/lib/a.js`, dir: `${VIRTUAL_ROOT}/lib`, self: true, b: 7 })
   })
 
+  it('requiring a module that is already loaded reads no file, by whichever spelling reaches it', () => {
+    files.set('lib/a.js', 'module.exports = { n: 1 }')
+    files.set('lib/b.js', "module.exports = { a: require('./a'), again: require('./a.js') }")
+    const r = require()
+    const first = r('./lib/a')
+    reads.length = 0
+    expect(r('./lib/a')).toBe(first)
+    expect(r('./lib/a.js')).toBe(first)
+    expect((r('./lib/b') as { a: unknown, again: unknown }).again).toBe(first)
+    expect(reads).toEqual(['lib/b', 'lib/b.js'])
+  })
+
+  it('reads the file again after its cache entry is deleted', () => {
+    files.set('lib/a.js', 'module.exports = { n: 1 }')
+    const r = require()
+    r('./lib/a')
+    delete r.cache[`${VIRTUAL_ROOT}/lib/a.js`]
+    reads.length = 0
+    files.set('lib/a.js', 'module.exports = { n: 2 }')
+    expect(r('./lib/a')).toEqual({ n: 2 })
+    expect(reads).toEqual(['lib/a', 'lib/a.js'])
+  })
+
   it('tries the exact name, .js, .cjs, .json, then /index.js', () => {
     files.set('exact', 'module.exports = "exact"')
     files.set('one.js', 'module.exports = "js"')
