@@ -285,13 +285,17 @@ export function couldAnyPatternMatch (
 export type ConnectPatternKind = 'tcp.connect' | 'https.connect' | 'udp.send'
 
 /** Why a host may not be DECLARED (in a manifest, or requested via
- * `app.requestGrant`) -- narrower than what `hostMatches` will authorise at
- * connect time, matching `src/loader/manifest/capabilities.ts`'s own
- * doc: every reason below is one where `hostMatches` would deny on EVERY
- * call, so rejecting it up front can never refuse a pattern the runtime
- * would otherwise have honoured. */
+ * `app.requestGrant`). Most reasons are ones where `hostMatches` would deny on
+ * EVERY call, so rejecting up front never refuses a pattern the runtime would
+ * have honoured (`src/loader/manifest/capabilities.ts` says the same).
+ * `'wildcard-needs-wildcard-port'` is the exception: `udp.send` narrows what
+ * may be declared below what `hostMatches` would honour. `'bracketed-wildcard'`
+ * is one too: `parsePattern` strips the brackets, so the runtime reads
+ * `[*]:443` as `*:443`, yet every other reader of the string would take the
+ * `[*]` for a literal host. */
 export type ConnectHostRejection =
   | 'wildcard-needs-wildcard-port'
+  | 'bracketed-wildcard'
   | 'sub-glob'
   | 'non-ascii'
   | 'too-long'
@@ -316,14 +320,21 @@ export type ConnectHostRejection =
  * `"*:6660-6699"`; the port half is validated by the caller). `udp.send`
  * accepts it only as the exact literal `"*:*"`: whether a UDP wildcard may
  * reach a reserved port such as 53 is undecided (docs/open-questions.md
- * A304), so its grammar stays as narrow as it was.
+ * A304). The wildcard is always written bare: `"[*]:443"` is refused for
+ * every kind. The kind check is an allow-list, so a kind added later is
+ * refused a wildcard until its own rule is written.
  */
 export function declarableConnectHostRejection (
   host: string,
   wholePattern: string,
   kind: ConnectPatternKind
 ): ConnectHostRejection | null {
-  if (host === '*') return kind !== 'udp.send' || wholePattern === '*:*' ? null : 'wildcard-needs-wildcard-port'
+  if (host === '*') {
+    if (wholePattern.startsWith('[')) return 'bracketed-wildcard'
+    const pairsWithAnyPort = kind === 'tcp.connect' || kind === 'https.connect'
+    const isUdpAnyPort = kind === 'udp.send' && wholePattern === '*:*'
+    return pairsWithAnyPort || isUdpAnyPort ? null : 'wildcard-needs-wildcard-port'
+  }
   if (host.includes('*')) return 'sub-glob'
   if (!isAsciiHost(host)) return 'non-ascii'
   if (host.length > MAX_HOST_LENGTH) return 'too-long'

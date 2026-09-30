@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest'
+import type { Manifest } from '../../../contracts/index.js'
 import { checkConnect } from '../connect.js'
 import { checkConnectSecure } from '../connect-secure.js'
 import { declarableConnectHostRejection, isDeclarableConnectPattern } from '../connect-patterns.js'
+import { decideGrantRequest } from '../request-grant.js'
 import { decideUpdate, widensAuthority } from '../update.js'
 import type { PatternSet, UpdateInput } from '../update.js'
 import { PUBLIC_A, noResolution, resolverFor } from './connect.test-helpers.js'
 
 // A wildcard host paired with a port or a port range, for tcp.connect and
-// https.connect (owner decision 2026-10-01). Everything here goes through the
-// same entry points the broker uses: the declarable check, checkConnect,
-// checkConnectSecure and the update subset check. A reserved port (A82) is
-// reached only by a pattern that names it exactly, and a wildcard host never
-// reaches a private, loopback or link-local address whatever its port.
+// https.connect. Everything here goes through the same entry points the broker
+// uses: the declarable check, checkConnect, checkConnectSecure and the update
+// subset check. A reserved port (A82) is reached only by a pattern that names
+// it exactly. The wildcard host never reaches a private, loopback or
+// link-local address literal, whatever its port; for https.connect a public
+// NAME that resolves to one is not caught, because checkConnectSecure never
+// resolves (A245).
 
 const PRIVATE_LITERALS = ['127.0.0.1', '192.168.1.1', '10.0.0.5', '169.254.169.254', '::1']
 
@@ -101,6 +105,17 @@ describe('checkConnectSecure with a wildcard host and a port', () => {
     expect(checkConnectSecure(['*:*'], 'irc.example.org', 6697)).toMatchObject({ allowed: false, reason: 'reserved-port' })
   })
 
+  // A245: checkConnectSecure never resolves, so the address gate above sees an
+  // address literal only. A public-looking name that resolves to a LAN address
+  // passes here; a certificate binds the name, not the address.
+  it('decides by the requested name alone, so a name that would resolve to the LAN is not caught (A245)', () => {
+    expect(checkConnectSecure(['*:443'], 'plex-192-168-1-5.example.direct', 443)).toEqual({
+      allowed: true,
+      host: 'plex-192-168-1-5.example.direct'
+    })
+    expect(checkConnectSecure(['*:443'], '192.168.1.5', 443).allowed).toBe(false)
+  })
+
   it('"*:6660-6699" refuses 6667 and 6697 but allows 6668', () => {
     expect(checkConnectSecure(['*:6660-6699'], 'irc.example.org', 6667).allowed).toBe(false)
     expect(checkConnectSecure(['*:6660-6699'], 'irc.example.org', 6697).allowed).toBe(false)
@@ -167,5 +182,66 @@ describe('an update that adds a wildcard host with a port', () => {
 
   it('a reserved port named inside a range is not a naming, so a range grant does not cover the exact one', () => {
     expect(widens(['irc.example.org:6660-6699'], ['irc.example.org:6697'])).toBe(true)
+  })
+})
+
+describe('coverage by a wildcard host reaches only what the wildcard reaches at run time', () => {
+  const widens = (granted: readonly string[], requested: readonly string[]): boolean =>
+    widensAuthority({ 'tcp.connect': granted } satisfies PatternSet, { 'tcp.connect': requested })
+
+  it.each(['10.0.0.1', '192.168.1.1', '127.0.0.1', '169.254.169.254', '[::1]', 'localhost', 'app.localhost'])(
+    '"*:*" does not cover %s, so naming it is a widening',
+    (host) => {
+      expect(widens(['*:*'], [`${host}:80`])).toBe(true)
+      expect(widens(['*:*'], ['*:*', `${host}:80`])).toBe(true)
+    }
+  )
+
+  it('"*:6697" does not cover a private literal at 6697', () => {
+    expect(widens(['*:6697'], ['10.0.0.1:6697'])).toBe(true)
+  })
+
+  it('still covers a public literal, a public name and the wildcard itself', () => {
+    expect(widens(['*:*'], ['8.8.8.8:443'])).toBe(false)
+    expect(widens(['*:*'], ['api.example.com:443'])).toBe(false)
+    expect(widens(['*:*'], ['*:443'])).toBe(false)
+    expect(widens(['*:443'], ['*:443'])).toBe(false)
+  })
+
+  it('a private literal already granted stays covered by itself', () => {
+    expect(widens(['192.168.1.1:80'], ['192.168.1.1:80'])).toBe(false)
+    expect(widens(['*:*', '192.168.1.1:80'], ['192.168.1.1:80'])).toBe(false)
+  })
+
+  it('a bracketed wildcard is one shape for coverage and for run time', () => {
+    expect(widens(['*:443'], ['[*]:443'])).toBe(false)
+    expect(widens(['api.example.com:443'], ['[*]:443'])).toBe(true)
+  })
+
+  it('a request under a wildcard manifest may not name a private literal or a localhost name', () => {
+    const manifest: Manifest = {
+      orivonApiVersion: 0,
+      id: 'app.test',
+      name: 'Test',
+      version: '1.0.0',
+      entry: 'index.html',
+      capabilities: { net: { tcp: { connect: ['*:6697'] }, https: { connect: ['*:*'] } } }
+    }
+    const ask = (kind: 'tcp.connect' | 'https.connect', patterns: string[]) => decideGrantRequest(manifest, kind, patterns)
+    expect(ask('tcp.connect', ['10.0.0.1:6697'])).toEqual({ allowed: false, patterns: [] })
+    expect(ask('https.connect', ['localhost:3000'])).toEqual({ allowed: false, patterns: [] })
+    expect(ask('https.connect', ['192.168.1.1:443'])).toEqual({ allowed: false, patterns: [] })
+    expect(ask('https.connect', ['api.example.com:443'])).toEqual({ allowed: true, patterns: ['api.example.com:443'] })
+  })
+})
+
+describe('a bracketed wildcard host', () => {
+  it.each(['tcp.connect', 'https.connect', 'udp.send'] as const)('is never declarable for %s', (kind) => {
+    expect(isDeclarableConnectPattern('[*]:443', kind)).toBe(false)
+    expect(isDeclarableConnectPattern('[*]:*', kind)).toBe(false)
+  })
+
+  it('an unknown kind fails closed', () => {
+    expect(declarableConnectHostRejection('*', '*:*', 'udp.bind' as never)).not.toBeNull()
   })
 })

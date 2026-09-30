@@ -169,6 +169,9 @@ function validateConnectHost (host: string, pattern: string, field: string, kind
         `(a wildcard with a bounded port is accepted for tcp.connect and https.connect only) -- got ${describeValue(pattern)}`
       )
       break
+    case 'bracketed-wildcard':
+      reject(`${field}: write the wildcard host as "*", never bracketed -- got ${describeValue(pattern)}`)
+      break
     case 'sub-glob':
       reject(
         `${field}: sub-glob hosts are not supported -- ${describeValue(host)} would match nothing ` +

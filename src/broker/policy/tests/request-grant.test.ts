@@ -101,7 +101,7 @@ describe('decideGrantRequest', () => {
 // (`declarableConnectHostRejection`, connect-patterns.ts), so a udp.send
 // request for "*:53" is refused however the subset check reads it.
 describe('decideGrantRequest -- a request may never declare a shape the manifest grammar itself would refuse', () => {
-  it('allows "*:443" under a "*:*" manifest for https.connect -- a narrowing the grammar now declares', () => {
+  it('allows "*:443" under a "*:*" manifest for https.connect -- a narrowing of the wildcard', () => {
     const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
     const decision = decideGrantRequest(manifest, 'https.connect', ['*:443'])
     expect(decision).toEqual({ allowed: true, patterns: ['*:443'] })

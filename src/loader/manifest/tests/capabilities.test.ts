@@ -123,8 +123,8 @@ describe('capabilities.net.https.connect (A164)', () => {
   })
 })
 
-// Owner decision 2026-10-01: tcp.connect and https.connect take a wildcard host
-// paired with a port or a port range; udp.send keeps "*:*" only (A304).
+// tcp.connect and https.connect take a wildcard host paired with a port or a
+// port range; udp.send takes it only as "*:*" (A304).
 describe('a wildcard host paired with a port', () => {
   it('is accepted for tcp.connect and https.connect', () => {
     expect(parsed({ tcp: { connect: ['*:6697'] } }).tcp?.connect).toEqual(['*:6697'])
@@ -135,6 +135,12 @@ describe('a wildcard host paired with a port', () => {
     expect(parsed({ udp: { send: ['*:*'] } }).udp?.send).toEqual(['*:*'])
     expect(rejection({ udp: { send: ['*:53'] } })).toContain('udp.send')
     expect(rejection({ udp: { send: ['*:53'] } })).toContain('"*:*"')
+  })
+
+  it('rejects a bracketed wildcard for every kind, which every other reader would take for a literal host', () => {
+    expect(rejection({ tcp: { connect: ['[*]:443'] } })).toContain('never bracketed')
+    expect(rejection({ https: { connect: ['[*]:*'] } })).toContain('never bracketed')
+    expect(rejection({ udp: { send: ['[*]:*'] } })).toContain('never bracketed')
   })
 
   it('still rejects a sub-glob host and a malformed port on the wildcard', () => {
