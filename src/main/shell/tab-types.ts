@@ -10,6 +10,7 @@ import type { Connection } from '../browsing/connection.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import type { DevToolsGate } from '../devtools/devtools-service.js'
+import type { Attention } from '../downloads/download-attention.js'
 import type { TabLifecycle } from './tab-lifecycle.js'
 import type { ShellServices } from './shell-services.js'
 import type { CommandId } from '../shortcuts/commands.js'
@@ -70,6 +71,18 @@ export interface TabsSnapshot {
   activeTabId: string | null
 }
 
+/** What the toolbar's downloads button draws: whether it shows, the ring, and the dot. */
+export interface DownloadsButtonState {
+  readonly shown: boolean
+  /** Downloads running or paused. */
+  readonly active: number
+  /** Share done across those that know their size; null when none does. */
+  readonly fraction: number | null
+  /** Everything running is paused. */
+  readonly paused: boolean
+  readonly attention: Attention
+}
+
 export interface ShellState extends TabsSnapshot {
   /** The active tab's address is in the bar or in Other bookmarks: the star shows it. */
   bookmarked: boolean
@@ -79,6 +92,8 @@ export interface ShellState extends TabsSnapshot {
   zoomPercent: number | null
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
+  /** The downloads button: whether it shows, its ring and its dot (`toolbar.downloads`). */
+  downloads: DownloadsButtonState
   /** Whether the toolbar shows the Home button (`toolbar.home`). */
   homeButton: boolean
   /** Whether the address bar shows the literal address when it is not being edited (`addressBar.showFullUrl`). */

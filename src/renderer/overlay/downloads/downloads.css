@@ -1,0 +1,102 @@
+/* The downloads bubble and its peek (one page, two overlay names). A header, up to six rows and a footer.
+   Rows are 56px with their actions at the right; a held file is taller and answers with two buttons
+   under its text. The list scrolls inside the card, so the header and footer stay in view. */
+
+body[data-overlay^='downloads'] .dlb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 6px 16px;
+}
+body[data-overlay^='downloads'] .dlb-head h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--wink-strong); }
+body[data-overlay^='downloads'] .dlb-head-actions { display: flex; align-items: center; gap: 2px; }
+body[data-overlay^='downloads'] .dlb-head-actions [hidden] { display: none; }
+
+body[data-overlay^='downloads'] .dlb-list {
+  margin: 0;
+  padding: 0 8px;
+  list-style: none;
+  max-height: 372px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--wborder) transparent;
+}
+body[data-overlay^='downloads'] .dlb-list[hidden],
+body[data-overlay^='downloads'] .empty-state[hidden] { display: none; }
+
+body[data-overlay^='downloads'] .dlb-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: default;
+}
+body[data-overlay^='downloads'] .dlb-row:hover { background: var(--whover); }
+body[data-overlay^='downloads'] .dlb-row:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; }
+body[data-overlay^='downloads'] .dlb-row.is-completed:not(.is-missing),
+body[data-overlay^='downloads'] .dlb-row.is-paused,
+body[data-overlay^='downloads'] .dlb-row.is-cancelled,
+body[data-overlay^='downloads'] .dlb-row.is-interrupted { cursor: pointer; }
+
+body[data-overlay^='downloads'] .dlb-icon { flex: none; display: inline-flex; width: 20px; height: 20px; color: var(--wink-dim); }
+body[data-overlay^='downloads'] .dlb-icon svg { width: 20px; height: 20px; }
+body[data-overlay^='downloads'] .is-cancelled .dlb-icon { opacity: 0.5; }
+
+body[data-overlay^='downloads'] .dlb-main { flex: 1 1 auto; min-width: 0; display: grid; gap: 1px; }
+body[data-overlay^='downloads'] .dlb-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--wink-strong);
+}
+body[data-overlay^='downloads'] .is-cancelled .dlb-name { color: var(--wink-dim); }
+body[data-overlay^='downloads'] .dlb-line { display: flex; align-items: center; gap: 6px; min-width: 0; line-height: 16px; }
+body[data-overlay^='downloads'] .dlb-line-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--wink-dim);
+  font-variant-numeric: tabular-nums;
+}
+body[data-overlay^='downloads'] .is-interrupted .dlb-line-text { color: var(--wdanger); }
+body[data-overlay^='downloads'] .dlb-line .badge { flex: none; }
+body[data-overlay^='downloads'] .dlb-line .badge[hidden] { display: none; }
+body[data-overlay^='downloads'] .dlb-main .progress { height: 3px; margin-top: 3px; }
+body[data-overlay^='downloads'] .progress[hidden] { display: none; }
+
+body[data-overlay^='downloads'] .dlb-actions { flex: none; display: flex; align-items: center; gap: 2px; }
+/* Show in folder and Retry wait until the row is aimed at; Pause and Cancel are always there. */
+body[data-overlay^='downloads'] .dlb-actions.reveal { opacity: 0; }
+body[data-overlay^='downloads'] .dlb-row:hover .dlb-actions.reveal,
+body[data-overlay^='downloads'] .dlb-row:focus-within .dlb-actions.reveal { opacity: 1; }
+
+/* A file held as dangerous: the warning tint of the permissions panel, and its answer under the text. */
+body[data-overlay^='downloads'] .dlb-row.is-held,
+body[data-overlay^='downloads'] .dlb-row.is-held:hover {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 56px;
+  padding: 10px 10px 10px 8px;
+  row-gap: 8px;
+  background: color-mix(in srgb, var(--wwarn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--wwarn) 40%, transparent);
+  cursor: default;
+}
+body[data-overlay^='downloads'] .is-held .dlb-icon { color: var(--wwarn); }
+body[data-overlay^='downloads'] .is-held .dlb-line { align-items: flex-start; }
+body[data-overlay^='downloads'] .is-held .dlb-line-text { white-space: normal; color: var(--wink); }
+body[data-overlay^='downloads'] .is-held .dlb-actions { flex: 1 0 100%; justify-content: flex-end; gap: 8px; }
+body[data-overlay^='downloads'] .dlb-row + .dlb-row { margin-top: 2px; }
+
+body[data-overlay^='downloads'] .dlb-foot { margin-top: 6px; padding: 9px 16px 11px; border-top: 1px solid var(--wborder); }
+body[data-overlay^='downloads'] .dlb-foot .link-btn { font-size: 12.5px; }

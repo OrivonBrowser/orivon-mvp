@@ -27,7 +27,7 @@ export interface DownloadServer {
   close: () => Promise<void>
 }
 
-/** Every address answers with a link page, except the files. `/slow.bin` sends 64 KB every 200 ms, `/stall.bin` sends 64 KB and waits, `/broken.bin` drops its connection half way. */
+/** Every address answers with a link page, except the files. `/slow.bin` sends 64 KB every 200 ms, `/stall.bin` sends 64 KB and waits, `/half.bin` stops at 40%, `/unknown.bin` never says how long it is, `/broken.bin` drops its connection half way. */
 export async function startServer (): Promise<DownloadServer> {
   const open = new Set<ServerResponse>()
   const server: Server = createServer((request, response) => {
@@ -53,6 +53,18 @@ export async function startServer (): Promise<DownloadServer> {
         else setTimeout(send, 200)
       }
       send()
+    } else if (url === '/half.bin') {
+      // Four tenths of ten chunks, then silence: a ring that stays at 40%.
+      response.writeHead(200, { ...ATTACHMENT('half.bin'), 'content-length': String(CHUNK * 10) })
+      open.add(response)
+      response.on('close', () => { open.delete(response) })
+      response.write(Buffer.alloc(CHUNK * 4, 5))
+    } else if (url === '/unknown.bin') {
+      // No length and no end: the size is never known and the download never finishes until the server goes.
+      response.writeHead(200, ATTACHMENT('unknown.bin'))
+      open.add(response)
+      response.on('close', () => { open.delete(response) })
+      response.write(Buffer.alloc(CHUNK, 3))
     } else if (url === '/broken.bin') {
       response.writeHead(200, { ...ATTACHMENT('broken.bin'), 'content-length': '100000' })
       response.write(Buffer.alloc(10_000, 1), () => { setTimeout(() => { response.destroy() }, 100) })
@@ -60,7 +72,8 @@ export async function startServer (): Promise<DownloadServer> {
       response.writeHead(200, { 'content-type': 'text/html' })
       response.end(`<!doctype html><title>Files</title>
         <a id="file" href="/file.bin">file</a> <a id="exe" href="/setup.exe">exe</a> <a id="slow" href="/slow.bin">slow</a>
-        <a id="stall" href="/stall.bin">stall</a> <a id="broken" href="/broken.bin">broken</a>`)
+        <a id="stall" href="/stall.bin">stall</a> <a id="broken" href="/broken.bin">broken</a> <a id="unknown" href="/unknown.bin">unknown</a> <a id="half" href="/half.bin">half</a>
+        <input id="field" type="text">`)
     }
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
@@ -86,14 +99,16 @@ export interface Launched {
   readonly chrome: Page
 }
 
-/** Launches with `downloads.folder` in the profile, or without it: then the caller must point the system folder away from the real one. */
-export async function launchDownloads (options: { folder?: string, args?: string[], reuseProfile?: string } = {}): Promise<Launched> {
-  const { folder, args = [], reuseProfile } = options
+/** Launches with `downloads.folder` (and any other setting) in the profile, or without: then the caller must point the system folder away from the real one. */
+export async function launchDownloads (options: { folder?: string, args?: string[], reuseProfile?: string, settings?: Record<string, unknown> } = {}): Promise<Launched> {
+  const { folder, args = [], reuseProfile, settings = {} } = options
   const app = await launchElectron({
     appPath: '.',
     args: [HERMETIC_RESOLVER, ...args],
     ...(reuseProfile === undefined ? {} : { reuseProfile }),
-    ...(folder === undefined || reuseProfile !== undefined ? {} : { seedProfile: async (dir: string) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'downloads.folder': folder } })) } })
+    ...(reuseProfile !== undefined || (folder === undefined && Object.keys(settings).length === 0)
+      ? {}
+      : { seedProfile: async (dir: string) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { ...(folder === undefined ? {} : { 'downloads.folder': folder }), ...settings } })) } })
   })
   expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
   return { app, chrome: findChrome(app) }

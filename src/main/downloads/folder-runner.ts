@@ -1,7 +1,7 @@
 // Where downloads go, and the operations on the machine the downloads service needs: the folder, the file
 // manager, the trash. The only place in this directory that touches Electron's `app` and `shell`.
 import { randomBytes } from 'node:crypto'
-import { accessSync, constants, existsSync, mkdirSync } from 'node:fs'
+import { accessSync, constants, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, session, shell } from 'electron'
 import type { BaseWindow } from 'electron'
@@ -59,6 +59,8 @@ export function machineDeps (settings: Pick<SettingsStore, 'get'>): DownloadDeps
     openPath: async (path) => await shell.openPath(path),
     showInFolder: (path) => { shell.showItemInFolder(path) },
     trash: async (path) => { await shell.trashItem(path) },
+    rename: renameSync,
+    removeFile: (path) => { rmSync(path, { force: true }) },
     fetchAgain: (url) => { session.defaultSession.downloadURL(url) },
     now: Date.now,
     newId: () => randomBytes(8).toString('hex')

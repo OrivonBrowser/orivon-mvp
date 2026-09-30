@@ -43,6 +43,15 @@
 .dl-icon .icon { width: 28px; height: 28px; }
 .is-missing .dl-icon, .is-cancelled .dl-icon { opacity: 0.5; }
 
+/* A file held as dangerous waits for an answer: the warning tint the permissions panel uses for the same kind of moment. */
+.download.is-held, .download.is-held:hover, .download.is-held:focus-within {
+  background: color-mix(in srgb, var(--wwarn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--wwarn) 40%, transparent);
+}
+.is-held .dl-icon { color: var(--wwarn); }
+.is-held .dl-status { color: var(--wink); }
+.is-held .dl-actions { gap: 8px; }
+
 .dl-main { flex: 1 1 auto; min-width: 0; display: grid; gap: 0; }
 .dl-name, .dl-source, .dl-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-name { height: 20px; line-height: 20px; font-size: 14px; font-weight: 500; color: var(--wink-strong); }

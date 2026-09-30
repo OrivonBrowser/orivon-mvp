@@ -51,6 +51,11 @@ export function isActive (entry: Pick<DownloadEntry, 'state'>): boolean {
   return entry.state === 'progressing' || entry.state === 'paused'
 }
 
+/** Not running and not waiting for an answer: safe to forget. */
+export function isSettled (entry: Pick<DownloadEntry, 'state'>): boolean {
+  return !isActive(entry) && entry.state !== 'held'
+}
+
 export function summarise (entries: readonly DownloadEntry[]): DownloadSummary {
   let active = 0
   let received = 0
