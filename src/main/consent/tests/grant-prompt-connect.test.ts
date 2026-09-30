@@ -266,3 +266,43 @@ describe('describeCapabilityGrant -- A198: blank-line padding does not survive i
     expect(summary.message).toBe('Connect to real.example')
   })
 })
+
+// A wildcard host reaches a port Orivon keeps closed to broad grants (A82)
+// only when its own pattern names that port exactly, so the prompt must say
+// so: "Limited to port 6697" alone reads as a narrowing, and for a reserved
+// port it is an exception a person should see.
+describe('describeCapabilityGrant -- a wildcard pattern that names a reserved port', () => {
+  it('says so for a mixed grant naming two reserved ports, at the unlimited level', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:*', '*:6667', '*:6697'])
+
+    expect(summary.warning).toBe(true)
+    expect(summary.message).toBe('⚠ Unlimited network access')
+    expect(summary.explanation).toBe(
+      'This app can connect to any computer on the internet, not just specific ones. ' +
+      'It can also reach ports Orivon keeps closed to broad grants: 6667 and 6697.'
+    )
+  })
+
+  it('says so for a single wildcard pattern at one reserved port, keeping the port limit', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:6697'])
+
+    expect(summary.warning).toBe(true)
+    expect(summary.explanation).toBe(
+      'This app can connect to any computer on the internet, not just specific ones. ' +
+      'Limited to port 6697. ' +
+      'It can also reach a port Orivon keeps closed to broad grants: 6697.'
+    )
+  })
+
+  it('says nothing about closed ports for "*:*", an ordinary port, or a range that merely contains one', () => {
+    for (const patterns of [['*:*'], ['*:443'], ['*:6660-6699']]) {
+      expect(describeCapabilityGrant('tcp.connect', patterns).explanation).not.toContain('keeps closed')
+    }
+  })
+
+  it('does not count a named host at a reserved port, which is not a wildcard', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:443', 'irc.example.org:6697'])
+
+    expect(summary.explanation).not.toContain('keeps closed')
+  })
+})

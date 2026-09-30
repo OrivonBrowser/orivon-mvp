@@ -8,6 +8,7 @@
 import type { CapabilityKind, Grant, Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress } from './address.js'
 import { isArray, ownProperty } from './own-property.js'
+import { isReservedPort } from './reserved-ports.js'
 import { compareVersions } from './version-order.js'
 
 export { compareVersions } from './version-order.js'
@@ -331,7 +332,16 @@ function covers (granted: Pattern, requested: Pattern): boolean {
     return false
   }
 
-  return from.ports.lo <= to.ports.lo && to.ports.hi <= from.ports.hi
+  if (from.ports.lo > to.ports.lo || to.ports.hi > from.ports.hi) return false
+
+  // A port the broker keeps closed to broad grants is reached only by a
+  // pattern that names it as a single port (`reserved-ports.ts`), so a
+  // requested pattern naming one is not covered by a granted pattern that
+  // merely spans it: `*:*` -> `*:6697` adds reach although every port of the
+  // second lies inside the first. Only a host:port pattern has this rule;
+  // a bare port range is a listen pattern.
+  const namesReservedPort = from.shape === 'host-port' && to.ports.lo === to.ports.hi && isReservedPort(to.ports.lo)
+  return !namesReservedPort || (from.ports.lo === from.ports.hi)
 }
 
 /**

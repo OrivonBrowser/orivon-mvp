@@ -122,3 +122,23 @@ describe('capabilities.net.https.connect (A164)', () => {
     expect(rejection({ https: 'nope' })).toContain('https')
   })
 })
+
+// Owner decision 2026-10-01: tcp.connect and https.connect take a wildcard host
+// paired with a port or a port range; udp.send keeps "*:*" only (A304).
+describe('a wildcard host paired with a port', () => {
+  it('is accepted for tcp.connect and https.connect', () => {
+    expect(parsed({ tcp: { connect: ['*:6697'] } }).tcp?.connect).toEqual(['*:6697'])
+    expect(parsed({ https: { connect: ['*:6660-6699'] } }).https?.connect).toEqual(['*:6660-6699'])
+  })
+
+  it('is rejected for udp.send, which accepts the wildcard host only as "*:*"', () => {
+    expect(parsed({ udp: { send: ['*:*'] } }).udp?.send).toEqual(['*:*'])
+    expect(rejection({ udp: { send: ['*:53'] } })).toContain('udp.send')
+    expect(rejection({ udp: { send: ['*:53'] } })).toContain('"*:*"')
+  })
+
+  it('still rejects a sub-glob host and a malformed port on the wildcard', () => {
+    expect(rejection({ tcp: { connect: ['*.example.com:6697'] } })).toContain('sub-glob')
+    expect(rejection({ tcp: { connect: ['*:99999'] } })).toContain('malformed port')
+  })
+})

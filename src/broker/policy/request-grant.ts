@@ -9,7 +9,7 @@
 
 import { widensAuthority } from './update.js'
 import { patternSetFromCapabilities } from './manifest-patterns.js'
-import { isDeclarableConnectPattern } from './connect-patterns.js'
+import { isDeclarableConnectPattern, type ConnectPatternKind } from './connect-patterns.js'
 import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js'
 
 const CAPABILITY_KINDS: readonly CapabilityKind[] = [
@@ -28,6 +28,10 @@ const CAPABILITY_KINDS: readonly CapabilityKind[] = [
  * about R2-01 concerns a port-range pattern shape a manifest could not have
  * declared. */
 const CONNECT_SHAPED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set(['tcp.connect', 'https.connect', 'udp.send'])
+
+function isConnectShaped (capability: CapabilityKind): capability is ConnectPatternKind {
+  return CONNECT_SHAPED_CAPABILITIES.has(capability)
+}
 
 /**
  * True for exactly the eleven `CapabilityKind` literals -- the guard an
@@ -71,18 +75,15 @@ export interface GrantRequestDecision {
  * enough that reuse also means it inherits update.ts's own mutation-tested
  * coverage rather than starting from zero.
  *
- * THE SUBSET CHECK IS NOT ENOUGH ON ITS OWN (R2-01). `widensAuthority` uses
- * `covers()`, which is the RUNTIME's own matching grammar
- * (`./connect-patterns.js`'s `hostSpecKind`) -- the one where a bare `"*"`
- * host authorises any public address REGARDLESS of its paired port. A
- * manifest declaring `"*:*"` therefore "covers" a requested pattern like
- * `"*:443"` under that grammar, even though no manifest could ever have
- * declared `"*:443"` directly: `declarableConnectHostRejection` (the same
- * file) requires the wildcard host be paired with a wildcard port,
- * specifically to close this shape off. Without the check below, `app.
- * requestGrant` could hand a person a consent prompt for a pattern shape
- * their own manifest review process would have refused outright at
- * install. Checked BEFORE the subset check, not after: a shape the manifest
+ * THE SUBSET CHECK IS NOT ENOUGH ON ITS OWN (R2-01). `widensAuthority`
+ * judges one pattern set against another, never whether a requested pattern
+ * is a shape a manifest could declare at all. `udp.send` accepts a wildcard
+ * host only as the exact literal `"*:*"`
+ * (`declarableConnectHostRejection`, `./connect-patterns.js`), yet a
+ * manifest declaring `"*:*"` "covers" a requested `"*:53"` under the
+ * subset relation. Without the check below, `app.requestGrant` could hand a
+ * person a consent prompt for a pattern shape the manifest grammar refuses
+ * for that kind. Checked BEFORE the subset check, not after: a shape the
  * grammar itself rejects should never reach `widensAuthority` at all.
  */
 export function decideGrantRequest (
@@ -114,8 +115,8 @@ export function decideGrantRequest (
   // against that grammar here.
   if (
     requestedPatterns !== undefined &&
-    CONNECT_SHAPED_CAPABILITIES.has(capability) &&
-    requestedPatterns.some((pattern) => !isDeclarableConnectPattern(pattern))
+    isConnectShaped(capability) &&
+    requestedPatterns.some((pattern) => !isDeclarableConnectPattern(pattern, capability))
   ) {
     return { allowed: false, patterns: [] }
   }

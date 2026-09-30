@@ -17,6 +17,7 @@ import type { Pattern } from '../../contracts/index.js'
 import { MAX_PORT, normalizeHost } from '../../broker/policy/canonical-host.js'
 import { MAX_PATTERNS } from '../../broker/policy/connect.js'
 import { hostSpecKind, parsePattern as parseConnectPattern, parsePortSpec } from '../../broker/policy/connect-patterns.js'
+import { isReservedPort } from '../../broker/policy/reserved-ports.js'
 import { classifyAddress, isPublicUnicast, type AddressClass } from '../../broker/policy/address.js'
 
 /**
@@ -169,6 +170,24 @@ function coversAllPorts (portSpec: string): boolean {
   const parsed = parsePortSpec(portSpec)
   if (parsed === null) return false
   return parsed === 'any' || (parsed.lo === 1 && parsed.hi === MAX_PORT)
+}
+
+/** The reserved ports (`reserved-ports.ts`) a set of wildcard-host patterns
+ * names as a single port, ascending -- the only way a wildcard host reaches
+ * one, which a broad `*:*` or a range never does. */
+function reservedPortsNamed (wildcard: readonly ConnectPatternInfo[]): readonly number[] {
+  const named = new Set<number>()
+  for (const info of wildcard) {
+    const spec = parsePortSpec(info.port)
+    if (spec !== null && spec !== 'any' && spec.lo === spec.hi && isReservedPort(spec.lo)) named.add(spec.lo)
+  }
+  return [...named].sort((a, b) => a - b)
+}
+
+function closedPortsSentence (ports: readonly number[]): string {
+  if (ports.length === 0) return ''
+  const list = ports.length === 1 ? String(ports[0]) : `${ports.slice(0, -1).join(', ')} and ${String(ports[ports.length - 1])}`
+  return ` It can also reach ${ports.length === 1 ? 'a port' : 'ports'} Orivon keeps closed to broad grants: ${list}.`
 }
 
 function isSinglePort (portSpec: string): boolean {
@@ -327,7 +346,7 @@ export function describeConnectCapability (
     const explanation = fullyOpen
       ? unlimitedExplanation
       : `${unlimitedExplanation} Limited to ${portsListPhrase(wildcard.map((info) => info.port))}.`
-    return { warning: true, message: WARNING_HEADLINE, explanation }
+    return { warning: true, message: WARNING_HEADLINE, explanation: explanation + closedPortsSentence(reservedPortsNamed(wildcard)) }
   }
 
   if (named.some((info) => info.nonPublicAddressClass !== null)) {

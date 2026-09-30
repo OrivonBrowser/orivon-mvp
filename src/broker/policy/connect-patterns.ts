@@ -281,6 +281,9 @@ export function couldAnyPatternMatch (
   return false
 }
 
+/** The capability kinds that share the `host:port` grammar; they differ only in what a wildcard host may be paired with. */
+export type ConnectPatternKind = 'tcp.connect' | 'https.connect' | 'udp.send'
+
 /** Why a host may not be DECLARED (in a manifest, or requested via
  * `app.requestGrant`) -- narrower than what `hostMatches` will authorise at
  * connect time, matching `src/loader/manifest/capabilities.ts`'s own
@@ -307,13 +310,20 @@ export type ConnectHostRejection =
  * manifest could ever have declared (R2-01) -- one implementation of the
  * grammar, not two (code-guidelines.md Rule 3).
  *
- * `wholePattern` is needed, not just `host`, because the one wildcard rule
- * is about the PAIR: `"*"` is only declarable paired with a `"*"` port, as
- * the exact literal `"*:*"` (capability-api.md's only documented wildcard
- * form).
+ * `wholePattern` and `kind` are needed, not just `host`, because the
+ * wildcard rule is about the PAIR and differs per kind. `tcp.connect` and
+ * `https.connect` accept `"*"` with any port or port range (`"*:6697"`,
+ * `"*:6660-6699"`; the port half is validated by the caller). `udp.send`
+ * accepts it only as the exact literal `"*:*"`: whether a UDP wildcard may
+ * reach a reserved port such as 53 is undecided (docs/open-questions.md
+ * A304), so its grammar stays as narrow as it was.
  */
-export function declarableConnectHostRejection (host: string, wholePattern: string): ConnectHostRejection | null {
-  if (host === '*') return wholePattern === '*:*' ? null : 'wildcard-needs-wildcard-port'
+export function declarableConnectHostRejection (
+  host: string,
+  wholePattern: string,
+  kind: ConnectPatternKind
+): ConnectHostRejection | null {
+  if (host === '*') return kind !== 'udp.send' || wholePattern === '*:*' ? null : 'wildcard-needs-wildcard-port'
   if (host.includes('*')) return 'sub-glob'
   if (!isAsciiHost(host)) return 'non-ascii'
   if (host.length > MAX_HOST_LENGTH) return 'too-long'
@@ -334,10 +344,10 @@ export function declarableConnectHostRejection (host: string, wholePattern: stri
  * own doc for why this lives here rather than duplicating
  * `src/loader/manifest/capabilities.ts`'s `validateConnectPattern`.
  */
-export function isDeclarableConnectPattern (pattern: Pattern): boolean {
+export function isDeclarableConnectPattern (pattern: Pattern, kind: ConnectPatternKind): boolean {
   if (typeof pattern !== 'string' || pattern !== pattern.trim()) return false
   const parsed = parsePattern(pattern)
   if (parsed === null) return false
   if (parsed.port !== '*' && parsePortSpec(parsed.port) === null) return false
-  return declarableConnectHostRejection(parsed.host, pattern) === null
+  return declarableConnectHostRejection(parsed.host, pattern, kind) === null
 }
