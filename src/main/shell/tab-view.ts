@@ -276,6 +276,7 @@ export function wireView (id: string, record: TabRecord): void {
     const { devtools, services, runCommand } = record.host
     showContextMenu(wc, params, {
       window,
+      ...(services?.kiosk === true ? { kiosk: true } : {}),
       // Beside the page being read, as a middle click opens a link.
       openInNewTab: (url) => { record.host.openTab(url, false) },
       openInFront: (url) => { record.host.openTab(url) },

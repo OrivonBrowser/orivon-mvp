@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WebContents } from 'electron'
 import type { TabRecord } from '../../shell/tab-types.js'
-import { boundHistory, MAX_HISTORY_ENTRIES, MAX_TITLE_LENGTH, MAX_URL_LENGTH, sanitizeSnapshot, snapshotOf } from '../tab-snapshot.js'
+import { boundHistory, MAX_HISTORY_ENTRIES, MAX_TITLE_LENGTH, MAX_URL_LENGTH, rememberOpenedFrom, sanitizeSnapshot, snapshotOf } from '../tab-snapshot.js'
 
 interface FakePage {
   url?: string
@@ -33,6 +33,16 @@ describe('snapshotOf', () => {
     for (const url of ['view-source:https://a.example/', 'blob:https://a.example/1', 'about:blank', 'javascript:alert(1)', 'file:///etc/passwd', 'chrome://gpu']) {
       expect(snapshotOf(recordOf(), wcOf({ url })), url).toBeNull()
     }
+  })
+
+  it('keeps a restored tab on the address it was opened from until its page commits, then follows the page', () => {
+    const record = recordOf({ pinned: true })
+    rememberOpenedFrom(record, { url: 'https://slow.example/a', title: 'Saved title', pinned: false })
+    expect(snapshotOf(record, wcOf({ url: '', title: '' }))).toEqual({ url: 'https://slow.example/a', title: 'Saved title', pinned: true })
+    expect(snapshotOf(record, wcOf({ url: '', title: 'Now' }))?.title).toBe('Now')
+    expect(snapshotOf(record, wcOf({ url: 'https://slow.example/b', title: 'B' }))?.url).toBe('https://slow.example/b')
+    // Once committed it is not the address to fall back to again.
+    expect(snapshotOf(record, wcOf({ url: '', title: '' }))).toBeNull()
   })
 
   it('records an internal page by its id and path', () => {

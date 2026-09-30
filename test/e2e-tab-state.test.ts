@@ -177,12 +177,13 @@ it('gives the copy of a tab the pages behind it', async () => {
     expect(await waitFor(async () => (await order(chrome)).length === 3)).toBe(true)
     const copy = (await order(chrome))[2] as string
     await waitForTab(chrome, { address: pageOf('/two') })
-    const canGoBack = await waitFor(async () => await app.evaluate(({ webContents }, url) => {
+    // Both the original and the copy have exactly the two pages, on the second: a copy made while its own load was
+    // still running would hold a third, duplicate entry, and its first Back would stay on /two.
+    const twoEach = await waitFor(async () => await app.evaluate(({ webContents }, url) => {
       const wcs = webContents.getAllWebContents().filter((w) => w.getURL() === url && !w.isLoading())
-      // The original has a page behind it too: both must.
-      return wcs.filter((w) => w.navigationHistory.canGoBack()).length === 2
+      return wcs.length === 2 && wcs.every((w) => w.navigationHistory.getAllEntries().length === 2 && w.navigationHistory.getActiveIndex() === 1)
     }, pageOf('/two')))
-    expect(canGoBack, `copy ${copy} has no history`).toBe(true)
+    expect(twoEach, `copy ${copy} does not hold the original's two pages`).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

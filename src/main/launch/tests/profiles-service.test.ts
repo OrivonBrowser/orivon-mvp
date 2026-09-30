@@ -146,6 +146,16 @@ describe('the profiles service', () => {
     complaint.mockRestore()
   })
 
+  it('starts no other browser from a kiosk', () => {
+    const made = service()
+    const s = new ProfilesService({ launch: { kind: 'default', home, dir: home }, dir: home, profiles: made.store, source: { execPath: '/x', appPath: '/x', packaged: true, appImage: undefined, env: {} }, isPrivate: false, profileId: 'default', inherit: [] }, made.spawn as never, true)
+    const created = made.service.create('Work', 'green')
+    if (!created.ok) throw new Error('not created')
+    expect(s.openPrivate('https://a.example/')).toBe(false)
+    expect(s.open(created.profile.id)).toBe(false)
+    expect(made.spawn).not.toHaveBeenCalled()
+  })
+
   it('says whether a private session was started', () => {
     const { service: s, children } = service()
     expect(s.openPrivate()).toBe(true)

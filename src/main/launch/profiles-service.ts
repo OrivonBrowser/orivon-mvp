@@ -29,7 +29,8 @@ export class ProfilesService {
   private readonly listeners = new Set<() => void>()
   private watcher: ProfilesWatcher | undefined
 
-  constructor (private readonly runtime: Runtime, private readonly spawn: typeof spawnPeer = spawnPeer) {}
+  /** `kiosk`: this process is a kiosk, which starts no other browser: a second one would have the chrome the kiosk hides. */
+  constructor (private readonly runtime: Runtime, private readonly spawn: typeof spawnPeer = spawnPeer, private readonly kiosk = false) {}
 
   get isPrivate (): boolean {
     return this.runtime.isPrivate
@@ -75,7 +76,7 @@ export class ProfilesService {
 
   /** Starts a browser for a profile, or brings the one running forward (its second start hands over and stops). */
   open (id: string): boolean {
-    if (this.runtime.profiles.read(id) === null || (id === this.runtime.profileId && !this.runtime.isPrivate)) return false
+    if (this.kiosk || this.runtime.profiles.read(id) === null || (id === this.runtime.profileId && !this.runtime.isPrivate)) return false
     try {
       this.spawn(this.runtime.source, [...this.runtime.inherit, ...(id === DEFAULT_PROFILE_ID ? [] : flagsFor({ kind: 'profile', id }))])
       return true
@@ -89,6 +90,7 @@ export class ProfilesService {
    * A shortcut calls this from an event handler, where a throw would end the browser: a failure is reported, not raised.
    * `url` is opened in it when it is an http or https address; anything else is dropped rather than passed on. */
   openPrivate (url?: string): boolean {
+    if (this.kiosk) return false
     let dir: string | null = null
     try {
       const made = createPrivateDir(this.runtime.dir, this.runtime.launch.home)

@@ -6,6 +6,8 @@ import type { SubsystemContext } from '../../registry.js'
 // order, and which page each call reaches.
 interface FakeContents extends EventEmitter {
   loadURL: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
+  reload: ReturnType<typeof vi.fn>
   isDestroyed: ReturnType<typeof vi.fn>
   isLoading: () => boolean
   getURL: () => string
@@ -23,6 +25,8 @@ function makeFakeWebContents (): FakeContents {
   const emitter = new EventEmitter() as FakeContents
   let destroyed = false
   emitter.loadURL = vi.fn(async () => {})
+  emitter.stop = vi.fn()
+  emitter.reload = vi.fn()
   emitter.isDestroyed = vi.fn(() => destroyed)
   emitter.isLoading = () => false
   emitter.getURL = () => 'https://a.example/'
@@ -235,6 +239,10 @@ describe('opening a tab beside another', () => {
 
     const copy = createdViews.at(-1)?.webContents as FakeContents
     expect(copy.navigationHistory.restore).toHaveBeenCalledWith({ entries: [{ url: 'https://a.example/1', title: 'One' }, { url: 'https://a.example/2', title: 'Two' }], index: 1 })
+    // The load the copy was created with is stopped first, and the restored page loaded once after: left to run, it
+    // adds a third, duplicate entry.
+    expect(copy.stop.mock.invocationCallOrder[0]).toBeLessThan(copy.navigationHistory.restore.mock.invocationCallOrder[0] ?? 0)
+    expect(copy.reload).toHaveBeenCalledTimes(1)
   })
 
   it('has no history to give a copy of a tab that has only its one page', () => {

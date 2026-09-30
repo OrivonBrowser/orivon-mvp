@@ -95,6 +95,14 @@ function historyOf (wc: WebContents): { entries: HistoryEntry[], index: number }
   }
 }
 
+/** What a tab was opened from, until its page commits: `getURL()` is empty before that, and a tab still waiting on a
+ * slow server would otherwise be written down as nothing and lost from the next start. */
+const openedFrom = new WeakMap<TabRecord, TabSnapshot>()
+
+export function rememberOpenedFrom (record: TabRecord, snapshot: TabSnapshot): void {
+  openedFrom.set(record, snapshot)
+}
+
 /**
  * The tab as it would be written down, or null when it is not worth bringing back: the new-tab page, a
  * page that is gone, and any address a tab would refuse to open (`view-source:`, a blob, `about:blank`).
@@ -104,8 +112,14 @@ export function snapshotOf (record: TabRecord, wc: WebContents): TabSnapshot | n
   const title = wc.getTitle()
   const pinned = record.pinned === true
   if (record.internalPage !== null) {
-    const address = parseInternalUrl(wc.getURL()) ?? { page: record.internalPage, path: '/' }
+    const address = parseInternalUrl(wc.getURL()) ?? openedFrom.get(record)?.internal ?? { page: record.internalPage, path: '/' }
     return sanitizeSnapshot({ url: internalUrl(address.page, address.path), title, pinned, internal: address })
   }
-  return sanitizeSnapshot({ url: wc.getURL(), title, pinned, ...historyOf(wc) })
+  const url = wc.getURL()
+  if (url === '') {
+    const before = openedFrom.get(record)
+    return before === undefined ? null : sanitizeSnapshot({ ...before, title: title === '' ? before.title : title, pinned })
+  }
+  openedFrom.delete(record)
+  return sanitizeSnapshot({ url, title, pinned, ...historyOf(wc) })
 }

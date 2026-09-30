@@ -4,7 +4,7 @@ import { dismissRestoreOffer, OFFER_DELAY_MS, restoreOffer } from '../restore-of
 
 const crashed: SavedSession = { version: 1, clean: false, windows: [{ bounds: { x: 0, y: 0, width: 800, height: 600 }, maximized: false, active: 0, tabs: [{ url: 'https://a.example/', title: '', pinned: false }] }] }
 
-function setup (over: { mode?: string, previous?: SavedSession | null, isPrivate?: boolean } = {}) {
+function setup (over: { mode?: string, previous?: SavedSession | null, isPrivate?: boolean, kiosk?: boolean } = {}) {
   const show = vi.fn()
   const closedHandlers: Array<() => void> = []
   const native = { isDestroyed: () => false, once: (_event: string, handler: () => void) => { closedHandlers.push(handler) } }
@@ -13,7 +13,8 @@ function setup (over: { mode?: string, previous?: SavedSession | null, isPrivate
     services: {
       settings: { get: () => over.mode ?? 'newTab' },
       session: { previous: () => ('previous' in over ? over.previous : crashed) },
-      isPrivate: over.isPrivate ?? false
+      isPrivate: over.isPrivate ?? false,
+      kiosk: over.kiosk ?? false
     }
   }
   return { ctx, show, closedHandlers }
@@ -31,13 +32,14 @@ describe('the crash offer', () => {
     expect(show).toHaveBeenCalledWith('restore')
   })
 
-  it('stays quiet for a later window, a clean end, the continue choice and a private session', () => {
+  it('stays quiet for a later window, a clean end, the continue choice, a private session and a kiosk', () => {
     for (const [over, options] of [
       [{}, {}],
       [{}, { firstOfLaunch: false }],
       [{ previous: { ...crashed, clean: true } }, { firstOfLaunch: true }],
       [{ mode: 'continue' }, { firstOfLaunch: true }],
       [{ isPrivate: true }, { firstOfLaunch: true }],
+      [{ kiosk: true }, { firstOfLaunch: true }],
       [{ previous: null }, { firstOfLaunch: true }]
     ] as const) {
       const { ctx, show } = setup(over)

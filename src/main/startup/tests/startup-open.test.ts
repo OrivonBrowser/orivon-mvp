@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { fakeTabs } from '../../session-restore/tests/tabs-fake.js'
 import type { SavedWindow } from '../../session-restore/session-types.js'
 import { ClosedStack } from '../../session-restore/closed-stack.js'
-import { fillFirst, optionsFor, restoreWindows, takeOffStack } from '../startup-open.js'
+import { optionsFor } from '../../session-restore/restore.js'
+import { fillFirst, restoreWindows, takeOffStack } from '../startup-open.js'
 
 const tab = (url: string, pinned = false) => ({ url, title: '', pinned })
 const display = { bounds: { x: 0, y: 0, width: 1920, height: 1080 } }

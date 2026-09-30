@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ClosedStack } from '../closed-stack.js'
-import { fillTabs, restoreWindows, seedClosedStack } from '../restore.js'
+import { fillTabs, optionsFor, seedClosedStack } from '../restore.js'
 import type { SavedSession, SavedWindow } from '../session-types.js'
 import { fakeTabs } from './tabs-fake.js'
 
@@ -43,20 +43,19 @@ describe('fillTabs', () => {
   })
 })
 
-describe('restoreWindows', () => {
-  it('opens each window where it was, with its state', () => {
-    const openWindow = vi.fn()
-    restoreWindows(session([saved(['https://a.example/']), { ...saved(['https://b.example/']), maximized: true }]), openWindow)
-    expect(openWindow).toHaveBeenCalledTimes(2)
-    expect(openWindow.mock.calls[0]?.[0]).toMatchObject({ place: { x: 1, y: 2, width: 800, height: 600 }, maximized: false })
-    expect(openWindow.mock.calls[1]?.[0]).toMatchObject({ maximized: true })
-    expect(typeof openWindow.mock.calls[0]?.[0].first).toBe('function')
+describe('optionsFor', () => {
+  const display = { bounds: { x: 0, y: 0, width: 1920, height: 1080 } }
+
+  it('keeps a window where a display still shows it, with its state and a way to fill it', () => {
+    const options = optionsFor({ ...saved(['https://a.example/']), bounds: { x: 50, y: 60, width: 800, height: 600 }, maximized: true }, [display])
+    expect(options).toMatchObject({ place: { x: 50, y: 60, width: 800, height: 600 }, maximized: true })
+    expect(typeof options.first).toBe('function')
   })
 
-  it('opens nothing for an empty session', () => {
-    const openWindow = vi.fn()
-    restoreWindows(session([]), openWindow)
-    expect(openWindow).not.toHaveBeenCalled()
+  it('drops the place of a window no display shows, such as one last seen on an unplugged monitor', () => {
+    const options = optionsFor({ ...saved(['https://a.example/']), bounds: { x: 9000, y: 9000, width: 800, height: 600 } }, [display])
+    expect(options).not.toHaveProperty('place')
+    expect(options.maximized).toBe(false)
   })
 })
 

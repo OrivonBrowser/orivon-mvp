@@ -2,7 +2,7 @@
 // focus and goes away by itself. It carries no data, so the page can ask for two things and nothing else.
 import type { OverlayDef } from '../overlays/overlay-types.js'
 import { restoreWindows, takeOffStack } from './startup-open.js'
-import type { Displays } from './startup-open.js'
+import type { Displays } from '../session-restore/restore.js'
 import { usableWindows } from './startup-plan.js'
 
 export const RESTORE_OVERLAY = 'restore'

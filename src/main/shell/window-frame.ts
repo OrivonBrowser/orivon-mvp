@@ -149,6 +149,10 @@ export interface ShowOptions {
   instant?: boolean | undefined
   /** Maximised once shown, from the size `initialBounds` names: un-maximising returns to it. */
   maximized?: boolean | undefined
+  /** Shown without taking focus, whatever the launch switch says. */
+  inactive?: boolean | undefined
+  /** Called once the window has been shown. */
+  onShown?: (() => void) | undefined
 }
 
 /** Shows the window once it can paint, and once only. */
@@ -181,6 +185,8 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
       // window opened under the same switch still takes focus.
       console.log('[window] ORIVON_WINDOW_NO_FOCUS=1 -- showInactive()')
       win.showInactive()
+    } else if (options.inactive === true) {
+      win.showInactive()
     } else {
       win.show()
     }
@@ -191,9 +197,11 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
     // offsets). The constructor size loses that argument; a setBounds once
     // the window is mapped is honoured. Harmless where the first size
     // already stuck -- it sets what is already set.
-    if (kiosk) return
-    win.setBounds(initialBounds)
-    if (options.maximized === true) win.maximize()
+    if (!kiosk) {
+      win.setBounds(initialBounds)
+      if (options.maximized === true) win.maximize()
+    }
+    options.onShown?.()
   }
   // A tear-off or a moved-tab window's content is already rendered
   // somewhere (the tab it is given), so there is nothing worth racing

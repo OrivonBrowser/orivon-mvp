@@ -13,7 +13,8 @@ export interface ContextMenuActions {
   paste: () => void
   selectAll: () => void
   copyText: (text: string) => void
-  openInNewTab: (url: string) => void
+  /** Absent in a kiosk, which opens nothing beside the page it shows. */
+  openInNewTab?: (url: string) => void
   /** Absent where a split is not offered. */
   openInSplit?: (url: string) => void
   openInWindow?: (url: string) => void
@@ -80,7 +81,8 @@ export function linkGroup (params: MenuParams, actions: ContextMenuActions): Men
   // Only what a fresh tab can load: the same check window.open targets get.
   const openable = sanitizeDirectUrl(params.linkURL)
   if (openable !== null) {
-    items.push({ label: 'Open Link in New Tab', click: () => { actions.openInNewTab(openable) } })
+    const inTab = actions.openInNewTab
+    if (inTab !== undefined) items.push({ label: 'Open Link in New Tab', click: () => { inTab(openable) } })
     const inWindow = actions.openInWindow
     if (inWindow !== undefined) items.push({ label: 'Open Link in New Window', click: () => { inWindow(openable) } })
     const inPrivate = actions.openInPrivate
@@ -100,7 +102,8 @@ export function imageGroup (params: MenuParams, actions: ContextMenuActions): Me
   if (params.mediaType !== 'image') return []
   const items: MenuItemConstructorOptions[] = []
   const address = webAddress(params.srcURL)
-  if (address !== null) items.push({ label: 'Open Image in New Tab', click: () => { actions.openInNewTab(address) } })
+  const inTab = actions.openInNewTab
+  if (address !== null && inTab !== undefined) items.push({ label: 'Open Image in New Tab', click: () => { inTab(address) } })
   const save = actions.saveUrl
   if (address !== null && save !== undefined) items.push({ label: 'Save Image As…', click: () => { save(address) } })
   if (params.hasImageContents) items.push({ label: 'Copy Image', click: () => { actions.copyImageAt(params.x, params.y) } })
@@ -118,7 +121,8 @@ export function mediaGroup (params: MenuParams, actions: ContextMenuActions): Me
   }
   const address = webAddress(params.srcURL)
   if (address === null) return items
-  items.push({ label: `Open ${noun} in New Tab`, click: () => { actions.openInNewTab(address) } })
+  const inTab = actions.openInNewTab
+  if (inTab !== undefined) items.push({ label: `Open ${noun} in New Tab`, click: () => { inTab(address) } })
   const save = actions.saveUrl
   if (save !== undefined) items.push({ label: `Save ${noun} As…`, click: () => { save(address) } })
   items.push({ label: `Copy ${noun} Address`, click: () => { actions.copyText(address) } })

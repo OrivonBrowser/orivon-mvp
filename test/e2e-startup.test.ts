@@ -1,7 +1,7 @@
 // What a start opens: the new tab page, last session's windows, or the listed pages; the address on the
 // command line added to either; the Settings rows that choose it; and the bar that offers the last session back
 // after a run that did not end cleanly. Set ORIVON_UI_SHOTS_DIR to also write screenshots of the new surfaces.
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
@@ -16,6 +16,8 @@ let server: FixtureServer
 beforeAll(async () => {
   server = await startServer((request, response) => {
     const name = (request.url ?? '/').replace(/^\//, '') || 'root'
+    // A server that never answers: its tab has committed nothing when the session is written.
+    if (name === 'hang') return
     html(response, `<!doctype html><meta charset="utf-8"><title>page ${name}</title><body><p>${name}</p>`)
   })
 })
@@ -179,6 +181,26 @@ it('drops a tab whose address is refused and a window that is not one, and never
   }
 }, TEST_TIMEOUT_MS * 2)
 
+it('keeps a restored tab whose page has not loaded in the session written at quit', async () => {
+  const session = sessionText([{ active: 0, tabs: [tabOf('a'), tabOf('hang')] }])
+  const { app, chrome } = await launchShell({ seedProfile: seed({ settings: { 'startup.mode': 'continue' }, session }) })
+  let dir = ''
+  try {
+    await waitTitles(chrome, ['page a', 'page hang'])
+    dir = await userDataOf(app)
+    // Past the recorder's first write: nothing of the hung page has committed yet.
+    await delay(ABSENCE_SETTLE_MS * 2)
+  } finally {
+    await closeElectron(app, { keepProfile: true })
+  }
+  try {
+    const written = JSON.parse(await readFile(join(dir, 'session.json'), 'utf8')) as { windows: Array<{ tabs: Array<{ url: string }> }> }
+    expect(written.windows[0]?.tabs.map((tab) => tab.url)).toEqual([url('a'), url('hang')])
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}, TEST_TIMEOUT_MS)
+
 it('adds a launch address to the restored tabs, in front', async () => {
   const session = sessionText([{ active: 0, tabs: [tabOf('a'), tabOf('b')] }])
   const { app, chrome } = await launchShell({ args: [url('x')], seedProfile: seed({ settings: { 'startup.mode': 'continue' }, session }) })
@@ -190,7 +212,9 @@ it('adds a launch address to the restored tabs, in front', async () => {
   }
 }, TEST_TIMEOUT_MS)
 
-it('ignores the choice in a private session', async () => {
+// A private runtime has no session file to read (its store is empty), so this is about what a private start shows: one tab and no
+// offer. That it ignores the start-up choice when there is a session is the unit test of planStartup.
+it('opens a private session on one tab with no restore bar', async () => {
   const session = sessionText([{ active: 0, tabs: [tabOf('a')] }], false)
   const { app, chrome } = await launchShell({ args: ['--orivon-private'], seedProfile: seed({ settings: { 'startup.mode': 'continue' }, session }) })
   try {
