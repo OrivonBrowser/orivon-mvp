@@ -165,7 +165,7 @@ A stack reads ✅ built when its ordinary client path runs under the grants name
 
 | Protocol or stack | Primitives it needs | Status | What is missing, or the condition |
 |---|---|:--:|---|
-| IRC over TLS on 6697, with SASL (S081) | P05, P51 | ⚠️ partial | Port 6697 is reserved: `https.connect` must hold a pattern that spells `host:6697`, and `*:*` does not reach it. A client that lets the person type any server cannot connect on its default port |
+| IRC over TLS on 6697, with SASL (S081) | P05, P51 | ⚠️ partial | Port 6697 is reserved, so `*:*` does not reach it. `https.connect: ["*:6697"]` reaches any public server on that port, and the prompt names the port. Not yet run against a real IRC server |
 | IRC plain TCP on 6667, with DCC chat and file transfer (S082) | P01, P51, P12, P13 | ⚠️ partial | Port 6667 is reserved as above. DCC needs a listener the peer can reach (`tcp.listen.network` and a forwarded port, P39) |
 | XMPP with STARTTLS on 5222 (S083) | P06 | ❌ missing | The stream is plain until `<starttls/>`, then upgraded in place (P06) |
 | XMPP direct TLS on 5223 (S084) | P05 | ✅ built | `https.connect` naming the server. Few servers offer it |

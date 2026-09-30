@@ -60,8 +60,12 @@ no legitimate use from a page are excluded from every blanket grant, and reached
 pattern that names the exact port, which a person then approved. It does not limit egress rate
 (accepted, [`A82`](../../docs/open-questions.md)), and private addresses are already denied by
 `policy/address.ts`. `udp.send` gets the same rule, since `authorisedSend` reuses
-`checkConnect`. Why a range is not a naming, why the check is per pattern, and where it runs:
-`reserved-ports.ts` and `connect-preflight.ts`.
+`checkConnect`. A wildcard host follows the same rule: `*:6697` names the port and reaches it,
+`*:*` and `*:6660-6699` do not, and the host must still be public unicast. `tcp.connect` and
+`https.connect` may declare a wildcard host with a port or a range; `udp.send` only `*:*`. An
+update that adds a pattern naming a reserved port widens reach even under a granted `*:*`
+(`policy/update.ts`'s `covers`). Why a range is not a naming, why the check is per pattern, and
+where it runs: `reserved-ports.ts` and `connect-preflight.ts`.
 
 ### `index.ts` and the files split from it
 
