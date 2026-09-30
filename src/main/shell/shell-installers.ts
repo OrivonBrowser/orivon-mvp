@@ -8,7 +8,6 @@ import type { SubsystemContext } from '../registry.js'
 import { installAuth } from '../auth/install-auth.js'
 import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
-import { installOsLinks } from '../os/install-os-links.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installFormWatch } from '../passwords/install-form-watch.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
@@ -27,7 +26,6 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installChoosers,
   installContentSettings,
   installFormWatch,
-  installOsLinks,
   installPrivacyNet,
   installSitePermissions,
   installTabSlots

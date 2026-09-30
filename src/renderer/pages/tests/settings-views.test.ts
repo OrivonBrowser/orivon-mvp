@@ -55,6 +55,26 @@ describe('what "Check now" says', () => {
     expect(nothing.updates.words()).toContain('private window')
   })
 
+  it('names the newer release without its v, and only when there is one', async () => {
+    const newer = state({ ok: true, answer: { reached: true, current: '1.0.0', latest: 'v1.1.0', newer: true, url: 'x' } })
+    expect(newer.updates.available()).toBeNull()
+    await newer.updates.check()
+    expect(newer.updates.available()).toBe('1.1.0')
+    const current = state({ ok: true, answer: { reached: true, current: '1.1.0', latest: 'v1.1.0', newer: false, url: 'x' } })
+    await current.updates.check()
+    expect(current.updates.available()).toBeNull()
+    const offline = state({ ok: true, answer: { reached: false, current: '1.0.0', latest: null, newer: false, url: null } })
+    await offline.updates.check()
+    expect(offline.updates.available()).toBeNull()
+  })
+
+  it('asks main to open the release page, naming no address of its own', async () => {
+    const request = vi.fn(async () => ({ ok: true }))
+    const updates = new UpdatesState({ request } as unknown as OrivonInternal, () => {})
+    await updates.openRelease()
+    expect(request).toHaveBeenCalledWith('updates', { type: 'openRelease' })
+  })
+
   it('takes another window\'s own check as an `updates.changed` push, without asking again', () => {
     const { updates, changes } = state(undefined)
     const answer = { reached: true, current: '1.0.0', latest: 'v1.1.0', newer: true, url: 'x' }

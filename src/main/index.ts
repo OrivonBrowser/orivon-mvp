@@ -22,6 +22,7 @@ import { planIntro } from './shell/intro-state.js'
 import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
 import { urlsFromArgv } from './launch/launch-context.js'
+import { handleOpenUrl } from './os/open-url.js'
 import { sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
@@ -116,10 +117,13 @@ function boot (runtime: Runtime): void {
   let markStarted: () => void = () => {}
   const startedUp = new Promise<void>((resolve) => { markStarted = resolve })
   const requested: string[][] = []
-  app.on('second-instance', (_event, argv) => {
-    requested.push(urlsFromArgv(argv))
-    void startedUp.then(() => { for (const urls of requested.splice(0)) opener(urls) })
-  })
+  const queueLaunch = (urls: string[]): void => {
+    requested.push(urls)
+    void startedUp.then(() => { for (const waiting of requested.splice(0)) opener(waiting) })
+  }
+  app.on('second-instance', (_event, argv) => { queueLaunch(urlsFromArgv(argv)) })
+  // macOS hands a clicked link to the running app as an event; it joins the same queue.
+  app.on('open-url', (event, url) => { handleOpenUrl(event, url, queueLaunch) })
 
   // A private session ends with its last window on every platform: there is nothing to keep resident, and no window to bring back.
   app.on('window-all-closed', () => {
