@@ -142,10 +142,12 @@ describe('menuItems', () => {
 
   it('leaves out a command whose feature is still pending, and never reads its tick or its hint', async () => {
     const { ctx } = await setup()
-    const read = vi.fn(() => true)
-    const items = menuItems(ctx, ['tab.new', 'downloads.open', { check: 'bookmarks.toggleBar', on: read }, { item: 'about.open', hint: read }])
+    const on = vi.fn(() => true)
+    const hint = vi.fn(() => 'note')
+    const items = menuItems(ctx, ['tab.new', 'downloads.open', { check: 'bookmarks.toggleBar', on }, { item: 'about.open', hint }])
     expect(items).toEqual([expect.objectContaining({ id: 'tab.new' })])
-    expect(read).not.toHaveBeenCalled()
+    expect(on).not.toHaveBeenCalled()
+    expect(hint).not.toHaveBeenCalled()
   })
 
   it('shows none of the library commands while they are pending, and no Bookmarks submenu', async () => {

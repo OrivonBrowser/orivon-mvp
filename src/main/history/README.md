@@ -2,6 +2,9 @@
 
 **What lives here.** The record of pages a person has reached, kept on this computer. `history-store.ts`
 is the interface (and the store that keeps nothing), `sqlite-history-store.ts` keeps it in one file,
+`history-schema.ts` is that file's shape and its migrations, `history-list.ts` the listing and search,
+`history-suggest.ts`, `history-favicons.ts`, `history-order.ts` and `history-import.ts` what the address bar,
+the History page and the importer read and write through the same database,
 `open-history.ts` opens that file and falls back to the null store when it cannot be used,
 `history-service.ts` applies the person's two settings (whether to remember, and for how long),
 `attach-history.ts` and `install-history.ts` write down each page a tab reaches, and
@@ -38,6 +41,10 @@ first, so a list is never behind, and quitting flushes it (`DebouncedWriter.flus
 second per tab, and past 100,000 pages the ones visited longest ago go. A write that fails (a full disk, a damaged
 page) is reported and dropped rather than raised: it happens inside event handlers, where a throw ends the browser.
 
+**Icons live in a table of their own, by host.** An icon is shared by every page of its site, and it is forgotten
+in the same transaction that forgets the site's last page (`remove`, `removeRange`, `clear` each prune), so clearing
+history leaves no list of sites behind.
+
 **Forgetting overwrites.** `secure_delete` is on, and clearing or removing a range empties the write-ahead log (and
 clearing rewrites the file), so an address a person cleared is not left readable in it. That is not a claim about
 what the disk itself keeps.
@@ -55,7 +62,7 @@ characters, not UTF-16 code units, so a two-character emoji-plus-letter query is
 where LIKE folds only ASCII, so the two would otherwise disagree on a search like `'école'` against a title
 holding `École`. The FTS path's query ANDs the same `LIKE` condition onto the rows MATCH narrows to, so a
 search returns the same rows whichever path answered it. Every statement `list`, `count` and the rest run more
-than once is prepared once, in the constructor, and reused. The index is built by `PRAGMA user_version`'s
+than once is prepared once, in the constructor, and reused. The index is built by the
 v1-to-v2 migration, which `rebuild`s it from every row already in `pages` -- measured at 1.9s for a full
 100,000-page history.
 

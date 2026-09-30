@@ -2,7 +2,7 @@
 
 **What lives here.** `omnibox.ts` (URL or search), `bookmarks.ts` (the bookmarks bar, on disk),
 `favicon.ts` and its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL),
-`favicon-cache.ts` (the icons already fetched), and `site-trust.ts` (the Web3 Score page and the
+`favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the bookmark tree's node, bar item and import shapes, types only), and `site-trust.ts` (the Web3 Score page and the
 toolbar shield's data). `site-trust.ts` is pure: its caller,
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts), hands it the
 pin, pin coverage, a `.eth` name's evidence and the developer overrides, so it never reaches for
