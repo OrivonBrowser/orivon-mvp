@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SavedSession } from '../../session-restore/session-types.js'
-import { OFFER_DELAY_MS, restoreOffer } from '../restore-offer.js'
+import { dismissRestoreOffer, OFFER_DELAY_MS, restoreOffer } from '../restore-offer.js'
 
 const crashed: SavedSession = { version: 1, clean: false, windows: [{ bounds: { x: 0, y: 0, width: 800, height: 600 }, maximized: false, active: 0, tabs: [{ url: 'https://a.example/', title: '', pinned: false }] }] }
 
@@ -53,5 +53,11 @@ describe('the crash offer', () => {
     closedHandlers.forEach((handler) => { handler() })
     vi.advanceTimersByTime(OFFER_DELAY_MS * 2)
     expect(show).not.toHaveBeenCalled()
+  })
+
+  it('steps aside for the find bar by closing its own overlay and no other', () => {
+    const close = vi.fn()
+    dismissRestoreOffer({ overlays: { close } })
+    expect(close).toHaveBeenCalledExactlyOnceWith('restore')
   })
 })

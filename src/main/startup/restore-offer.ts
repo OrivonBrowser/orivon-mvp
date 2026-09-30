@@ -18,3 +18,9 @@ export const restoreOffer: WindowHook = {
     window.window.once('closed', () => { clearTimeout(timer) })
   }
 }
+
+/** The bar and the find bar share the top of the page and, in a window under about 1200 px wide, overlap: the find bar is the
+ * person's own request, so the offer steps aside for it (the windows stay on the closed stack, so Reopen still has them). */
+export function dismissRestoreOffer (window: { readonly overlays: { readonly close: (name: string) => void } }): void {
+  window.overlays.close(RESTORE_OVERLAY)
+}

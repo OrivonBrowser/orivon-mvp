@@ -374,3 +374,19 @@ it('leaves the session on the closed stack when the bar is dismissed, and offers
     }
   }
 }, TEST_TIMEOUT_MS * 3)
+
+it('gives way to the find bar, which shares the top of the page, and leaves the windows on the closed stack', async () => {
+  const session = sessionText([{ bounds: sized(60, 60), active: 0, tabs: [tabOf('a')] }], false)
+  const { app, chrome } = await launchShell({ seedProfile: seed({ session }) })
+  try {
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=restore'))).toBe(true)
+    await command(chrome, 'find.open')
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=find'))).toBe(true)
+    expect(await waitFor(async () => !(await popoverShown(app, 'overlay=restore')))).toBe(true)
+    await command(chrome, 'tab.reopen')
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)

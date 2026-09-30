@@ -12,6 +12,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { reopenClosed } from '../session-restore/reopen.js'
 import { TAB_SEARCH_OVERLAY } from '../tab-search/tab-search-overlay.js'
+import { dismissRestoreOffer } from '../startup/restore-offer.js'
 import { kioskAllows } from '../window-state/kiosk.js'
 import type { CommandId } from './commands.js'
 import { pdfCommand, pipCommand, printCommand, saveCommand, screenshotCommand, viewSourceCommand } from '../page-tools/page-commands.js'
@@ -67,9 +68,9 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       else services.zoom.step(origin, id === 'zoom.in' ? 'in' : 'out')
       return
     }
-    case 'find.open': openFind(target); return
-    case 'find.next': findStep(target, true); return
-    case 'find.previous': findStep(target, false); return
+    case 'find.open': dismissRestoreOffer(target); openFind(target); return
+    case 'find.next': dismissRestoreOffer(target); findStep(target, true); return
+    case 'find.previous': dismissRestoreOffer(target); findStep(target, false); return
     case 'history.open': tabs.openInternal('history'); return
     case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
     case 'bookmark.toggle':
