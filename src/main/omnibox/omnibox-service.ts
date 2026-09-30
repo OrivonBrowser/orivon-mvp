@@ -116,7 +116,7 @@ export class OmniboxService {
     const seq = this.seq
     for (const source of sources) {
       source(text, ctx, controller.signal).then((rows) => {
-        if (controller.signal.aborted || seq !== this.seq) return
+        if (controller.signal.aborted || seq !== this.seq || rows.length === 0) return
         this.rows = placeLate(this.rows, rows, this.selected)
         this.deps.onLate(this.snapshot())
       }, () => {})

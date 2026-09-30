@@ -6,6 +6,7 @@ import type { ShellServices } from '../shell/shell-services.js'
 import { extensionsDomain } from '../extensions/extensions-domain.js'
 import { readExtensionFacts } from '../extensions/extensions-view-runner.js'
 import { pickExtensionFile, pickExtensionFolder } from '../extensions/extensions-picker-runner.js'
+import { searchEnginesDomain } from '../browsing/search-engines-domain.js'
 import { settingsDomain } from '../settings/settings-domain.js'
 import { startupDomain } from '../startup/startup-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
@@ -69,6 +70,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   }
   registerInternalIpc(services.internalPages, internalSession, {
     settings: settingsDomain(services.settings),
+    searchEngines: searchEnginesDomain(services.searchEngines, services.settings, { isPrivate: services.isPrivate }),
     shortcuts: shortcutsDomain(services.shortcuts),
     startup: startupDomain(services.windows),
     history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyText: (text) => { clipboard.writeText(text) } }),
@@ -127,6 +129,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   onVerifierChange(() => { services.internalPages.publish('web3.changed', verifierView(), ['settings']) })
   // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain.
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions']) })
+  services.searchEngines.onChange(() => { services.internalPages.publish('searchEngines.changed', undefined, ['settings']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
   // Every grant/revoke, from every surface (install, the site-info popover, a
   // dev-grant test seam, the Apps list's own revoke), lands through the

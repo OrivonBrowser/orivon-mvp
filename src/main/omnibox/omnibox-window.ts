@@ -1,7 +1,8 @@
 // The suggestions of one window: what its service reads from the shell's stores, and where a slow source's
 // rows are sent. A window has one service, made on the first query and kept as long as the window.
 import { parseOmniboxInput } from '../browsing/omnibox.js'
-import { SEARCH_ENGINES, searchUrlFor } from '../browsing/search-engines.js'
+import { currentDefault, resolveCurrent } from '../browsing/search-current.js'
+import { fillTemplate, SEARCH_ENGINES } from '../browsing/search-engines.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
 import { aliasToInternal, viewSourceTarget } from '../pages/internal-aliases.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
@@ -12,6 +13,8 @@ import { OmniboxService } from './omnibox-service.js'
 import type { OmniboxDeps } from './omnibox-service.js'
 import type { SuggestTab } from './suggest-sources.js'
 import { verbatimRow } from './verbatim-row.js'
+import { fetchViaNet } from './suggest-net.js'
+import { testSuggestEndpoint } from './suggest-test-seam.js'
 
 const services = new WeakMap<ShellWindow, OmniboxService>()
 
@@ -33,20 +36,39 @@ function openTabs ({ window, services: shell }: WindowContext): SuggestTab[] {
 
 function depsFor (ctx: WindowContext): OmniboxDeps {
   const { window, services: shell } = ctx
-  const searchUrl = (query: string): string => searchUrlFor(shell.settings.get('search.engine'), shell.settings.get('search.customUrl'), query)
+  const searchUrl = (query: string): string => resolveCurrent(shell, query).url
   const classify = (text: string): ReturnType<typeof parseOmniboxInput> => parseOmniboxInput(text, isDevEthName, searchUrl)
+  const isInternal = (candidate: string): boolean => parseInternalUrl(candidate) !== null || aliasToInternal(candidate) !== null || viewSourceTarget(candidate) !== null
+  /** The text Enter would send to the default engine as typed: no address, no page of the shell, no keyword, no `?`. */
+  const isPlainSearch = (text: string): boolean =>
+    !text.startsWith('?') && !isInternal(text) && classify(text).kind === 'search' && !resolveCurrent(shell, text).byKeyword
   return {
-    context: () => ({
-      now: Date.now(),
-      isPrivate: shell.isPrivate,
-      history: shell.history,
-      bookmarks: () => shell.bookmarks.getAll(),
-      tabs: () => openTabs(ctx)
-    }),
+    context: () => {
+      const engine = currentDefault(shell)
+      return {
+        now: Date.now(),
+        isPrivate: shell.isPrivate,
+        history: shell.history,
+        bookmarks: () => shell.bookmarks.getAll(),
+        tabs: () => openTabs(ctx),
+        suggest: {
+          enabled: shell.settings.get('search.suggestions'),
+          isPrivate: shell.isPrivate,
+          endpoint: testSuggestEndpoint() ?? SEARCH_ENGINES.find((candidate) => candidate.id === engine.id)?.suggestUrl ?? null,
+          isPlainSearch,
+          searchUrl: (query) => fillTemplate(engine.template, query),
+          fetch: fetchViaNet
+        }
+      }
+    },
     verbatim: (text) => verbatimRow(text, {
       classify,
-      isInternal: (candidate) => parseInternalUrl(candidate) !== null || aliasToInternal(candidate) !== null || viewSourceTarget(candidate) !== null,
-      engineName: SEARCH_ENGINES.find((engine) => engine.id === shell.settings.get('search.engine'))?.label ?? ''
+      isInternal,
+      engineName: currentDefault(shell).name,
+      keyword: (query) => {
+        const resolved = resolveCurrent(shell, query)
+        return resolved.byKeyword ? { name: resolved.engine.name, terms: resolved.terms } : null
+      }
     }),
     autocomplete: () => shell.settings.get('addressBar.autocomplete'),
     resolve: (text) => {
