@@ -144,6 +144,8 @@ function createView (control: PageListControl, state: SettingsState): PageListVi
       field.disabled = full
       addButton.disabled = full
       field.placeholder = full ? PLACEHOLDER_FULL : PLACEHOLDER_ADD
+      // What was typed, and what was said of it, are no longer about anything once there is no room for it.
+      if (full) { field.value = ''; say('') }
     }
   }
 }

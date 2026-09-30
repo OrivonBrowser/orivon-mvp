@@ -15,9 +15,11 @@
 
 /* The unpinned tabs. It is the one scroller in the strip, so a scrolled tab never reaches the room the row keeps for the
    window buttons, and the new-tab and search buttons after it stay in view. Tabs share its width equally, down to
-   their minimum, and it scrolls from there. */
+   their minimum, and it scrolls from there. Its own width is the room its tabs want (--tab-count, set by the strip):
+   a tab is a size container, so nothing inside it tells a flex row how wide it would like to be. */
 .tabscroll {
   flex: 0 1 auto;
+  width: calc(var(--tab-count, 1) * 242px); /* a tab's 240px and its 1px margins */
   min-width: 0;
   align-self: stretch;
   display: flex;

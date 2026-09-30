@@ -122,6 +122,7 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
       if (tab.pinned) scroller.before(el)
       else scroller.append(el)
     }
+    scroller.style.setProperty('--tab-count', String(Math.max(1, scroller.childElementCount)))
     const active = scroller.querySelector<HTMLElement>('.tab.active')
     if (state.activeTabId !== shownActiveId && active !== null && typeof active.scrollIntoView === 'function') {
       active.scrollIntoView({ inline: 'nearest', block: 'nearest' })
@@ -160,7 +161,14 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
       tabrow = must(document.querySelector<HTMLDivElement>('#tabrow'), '#tabrow missing')
       tabScroll = must(document.querySelector<HTMLDivElement>('#tab-scroll'), '#tab-scroll missing')
       tabScroll.addEventListener('scroll', markOverflow, { passive: true })
-      if (typeof ResizeObserver === 'function') new ResizeObserver(markOverflow).observe(tabScroll)
+      // A narrower window must not leave the tab in front out of view.
+      const scroller = tabScroll
+      if (typeof ResizeObserver === 'function') {
+        new ResizeObserver(() => {
+          scroller.querySelector<HTMLElement>('.tab.active')?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+          markOverflow()
+        }).observe(scroller)
+      }
       newTabBtn = must(document.querySelector<HTMLButtonElement>('#new-tab'), '#new-tab missing')
       const stripTail = must(document.querySelector<HTMLDivElement>('#tab-strip-tail'), '#tab-strip-tail missing')
       newTabBtn.addEventListener('click', () => shell.newTab())
