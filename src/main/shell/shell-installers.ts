@@ -8,10 +8,11 @@ import type { SubsystemContext } from '../registry.js'
 import { installAuth } from '../auth/install-auth.js'
 import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
-import { installContentSettings } from '../site-settings/install-content-settings.js'
-import { installFormWatch } from '../passwords/install-form-watch.js'
 import { installOsLinks } from '../os/install-os-links.js'
+import { installTabSlots } from '../overlays/install-tab-slots.js'
+import { installFormWatch } from '../passwords/install-form-watch.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
+import { installContentSettings } from '../site-settings/install-content-settings.js'
 import { installSitePermissions } from '../site-settings/install-site-permissions.js'
 import type { ShellServices } from './shell-services.js'
 
@@ -28,7 +29,8 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installFormWatch,
   installOsLinks,
   installPrivacyNet,
-  installSitePermissions
+  installSitePermissions,
+  installTabSlots
 ]
 
 /** An installer that throws is logged and skipped: one feature failing to wire must not stop the others or the first window. */
