@@ -124,7 +124,9 @@ html[data-drag-mode="manual"] .tabstrip-tail {
   padding-right: 16px;
   font-size: 12px;
   font-weight: 500;
-  line-height: 1;
+  /* Room for descenders: overflow: hidden clips at the line box, and a 1em box
+     is shorter than the glyphs' content area (taller still in Segoe UI). */
+  line-height: 1.4;
 }
 
 .tab .close {

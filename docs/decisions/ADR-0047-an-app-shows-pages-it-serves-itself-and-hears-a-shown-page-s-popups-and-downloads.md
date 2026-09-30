@@ -120,11 +120,17 @@ left guessing.
   subresource on that scheme gets nothing. Such a navigation is never offered to another
   program and raises no prompt.
 - **The listener is an ordinary `tcp.listen.local` one**, bound to `127.0.0.1` (`ADR-0034`).
-  Other programs on this computer can reach it, so the app's server decides what it answers. A
-  program bound to the same port on IPv6 loopback alone is an open residual
-  (`docs/open-questions.md` A308).
+  Other programs on this computer can reach it, so the app's server decides what it answers.
+- **Every `*.localhost` name resolves to `127.0.0.1` in this browser**, by one resolver clause
+  set at launch. Left alone, Chromium tries IPv6 loopback first, and a program on `[::1]` at the
+  same port answered in place of the app's listener when measured. The cost: a `*.localhost`
+  server bound to IPv6 loopback alone does not load in any tab. Bare `localhost` is unchanged.
+- **A shown local page closes with its listener.** When the app's last listener on the port
+  goes, every page it shows from a local pattern on that port is closed, so none is left to
+  reach whatever program takes the port next.
 - **A flood of notices is dropped.** Twenty in a second reach the app from one shown page; the
-  contract does not state this bound yet (A305).
+  contract does not state this bound yet (A305). A window name, a file name or a content type
+  past 4096 bytes arrives as `''`, and a notice is sent only while the tab is still the app's.
 - **A popup address past the limit arrives as `about:blank#blocked`**, not `''`: Chromium
   replaces it before the shell sees it. The shell's own cap still holds for any other route.
 - **Sites under one `<name>.localhost` are the same site to a cookie.** They are different
