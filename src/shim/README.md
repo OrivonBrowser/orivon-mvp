@@ -12,7 +12,7 @@
 
 | Folder | Holds |
 |---|---|
-| (top level) | `globals.ts`, `virtual-root.ts`, `module-map.ts` (the alias table), `node-errors.ts`, `errors.ts`, `unimplemented.ts`, `orivon-global.ts`, `stream-bytes.ts`, `encoding.ts`, `warn-once.ts` |
+| (top level) | `globals.ts`, `virtual-root.ts`, `module-map.ts` (the alias table), `node-errors.ts`, `errors.ts`, `unimplemented.ts`, `orivon-global.ts`, `bind-scope.ts`, `stream-bytes.ts`, `encoding.ts`, `warn-once.ts` |
 | [`fs/`](fs/) | Node's `fs` over `orivon.fs` |
 | [`net/`](net/) | `net`, `tls`, `dgram` and `dns` over `orivon.net` |
 | [`http/`](http/) | `http` and `https`, over `net/`'s real socket |

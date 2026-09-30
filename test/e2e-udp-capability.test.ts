@@ -251,10 +251,12 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
     await grantUdp('udp.send', [`${HOST}:${String(UDP_ECHO_PORT)}`])
 
     // ---- the bind lands inside what was granted
-    const socket = await broker.net.udpBind(FIXTURE_ORIGIN, { port: 0 })
+    // `scope: 'network'`: this file is about what the network grant reaches, and an omitted scope is 'local'.
+    const socket = await broker.net.udpBind(FIXTURE_ORIGIN, { port: 0, scope: 'network' })
     try {
       check('an ephemeral bind lands inside the granted range, not wherever the OS chose (A88)',
         socket.localPort >= 45000 && socket.localPort <= 45100, `bound ${String(socket.localPort)}`)
+      check('a network-scope bind holds every interface', socket.localAddress === '0.0.0.0', socket.localAddress)
 
       // ---- the granted destination round-trips real bytes
       const payload = `udp e2e ${new Date().toISOString()}`
@@ -306,6 +308,14 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
       })
       check('revoking udp.send stops the NEXT datagram on an already-bound socket (A70\'s lesson)',
         !afterRevoke.sent && afterRevoke.code === 'denied', JSON.stringify(afterRevoke))
+
+      // ---- an omitted scope is 'local' even under the network grant
+      const narrow = await broker.net.udpBind(FIXTURE_ORIGIN, { port: 0 })
+      try {
+        check('a bind that names no scope holds loopback only, even under the network grant', narrow.localAddress === '127.0.0.1', narrow.localAddress)
+      } finally {
+        await narrow.close().catch(() => {})
+      }
     } finally {
       await socket.close().catch(() => {})
     }

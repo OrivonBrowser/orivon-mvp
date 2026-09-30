@@ -4,7 +4,7 @@
 file per capability (`net`, `fs`, `user-selected`, `id`, `secrets`, `web`, and `embed` for
 `web.embed`'s broker half, `ADR-0039`), plus the helpers they share.
 [`listener-registry.ts`](listener-registry.ts) is one of them: which ports each origin holds a
-listener on, written by `net.ts`'s `listen` and read by `embed.ts`, because `web.embed`'s local
+listener on, written by `net-listen.ts`'s `listen` and read by `embed.ts`, because `web.embed`'s local
 pattern (`ADR-0047`) loads only while the embedding app holds its port. `createBroker` builds it
 once and hands the same object to both.
 [`declined-consent.ts`](declined-consent.ts) is not an `orivon.*` capability: it is the advisory
@@ -42,9 +42,21 @@ threat and the cost (a self-signed LAN node needs a grant naming its address): T
 [`security-model.md`](../../../docs/architecture/security-model.md) and
 [`A248`](../../../docs/open-questions.md).
 
+### `net-listen.ts` and `net-udp.ts`: the scope picks the grant and the interface
+
+`listen` and `udpBind` take an optional `scope` (`ADR-0034`); omitted is `'local'`. A `'local'`
+call is authorised by a live `.local` grant, or by a live `.network` grant, since `network`
+covers `local`, and binds `127.0.0.1` only. A `'network'` call needs the `.network` grant and
+binds every interface, and a `.local` grant never reaches it. When both grants are live and the
+scope is `'local'`, `net-bind-grant.ts` takes the first whose ports cover the port, `.local`
+first: the handle is tied to that grant, so revoking it closes the socket, and `port: 0` lands
+inside that grant's ranges alone, never the union. The interface is chosen by the adapter from
+`scope` (`../policy/bind-scope.ts`), and only `'network'` widens. The listener registry records
+both scopes, because `web.embed`'s local pattern is served from a loopback listener.
+
 ### `net.ts`: the accept-queue bound is not the specification's backpressure
 
-`listen`'s `LISTEN_ACCEPT_QUEUE_LIMIT` (`../adapters/node-adapters.ts`) resets new connections
+`listen`'s (`net-listen.ts`) `LISTEN_ACCEPT_QUEUE_LIMIT` (`../adapters/node-adapters.ts`) resets new connections
 once too many sit unclaimed, which bounds main-process memory (T11b). It is not the OS-backlog
 pressure `handle-contracts.md` item 7 describes, which Node cannot provide, and its number is
 provisional ([`A106`](../../../docs/open-questions.md)).

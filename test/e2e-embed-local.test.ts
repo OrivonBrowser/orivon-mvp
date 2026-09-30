@@ -77,7 +77,7 @@ function manifestFor (id: string, origins: readonly string[]): Manifest {
     version: '1.0.0',
     entry: '/index.html',
     capabilities: {
-      net: { tcp: { listen: { network: [String(APP_PORT)] } } },
+      net: { tcp: { listen: { local: [String(APP_PORT)] } } },
       web: { embed: { origins } }
     }
   }
@@ -127,9 +127,9 @@ function installSurface (): void {
 }
 
 /** `orivon.net.listen` on `port`, answering every connection with a page whose title is the Host header it arrived under. */
-async function serveOwnPages (port: number): Promise<number> {
-  const orivon = (window as unknown as { orivon: { net: { listen: (o: { port: number, scope: string }) => Promise<{ localPort: number, connections: ReadableStream<{ readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array>, close: () => Promise<void> }> }> } } }).orivon
-  const server = await orivon.net.listen({ port, scope: 'network' })
+async function serveOwnPages (port: number): Promise<{ port: number, address: string }> {
+  const orivon = (window as unknown as { orivon: { net: { listen: (o: { port: number, scope: string }) => Promise<{ localPort: number, localAddress: string, connections: ReadableStream<{ readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array>, close: () => Promise<void> }> }> } } }).orivon
+  const server = await orivon.net.listen({ port, scope: 'local' })
   ;(window as unknown as { __ownServer: unknown }).__ownServer = server
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
@@ -161,7 +161,7 @@ async function serveOwnPages (port: number): Promise<number> {
     }
   }
   void accept().catch(() => {})
-  return server.localPort
+  return { port: server.localPort, address: server.localAddress }
 }
 
 async function closeOwnServer (): Promise<string> {
@@ -170,7 +170,7 @@ async function closeOwnServer (): Promise<string> {
   return 'closed'
 }
 
-async function grant (app: Awaited<ReturnType<typeof launchElectron>>, manifest: Manifest, capability: 'web.embed' | 'tcp.listen.network', patterns: readonly string[]): Promise<boolean> {
+async function grant (app: Awaited<ReturnType<typeof launchElectron>>, manifest: Manifest, capability: 'web.embed' | 'tcp.listen.local', patterns: readonly string[]): Promise<boolean> {
   const outcome = await app.evaluate(async (_electron, request: DevGrantRequest) => {
     const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
     if (typeof hook !== 'function') return false
@@ -197,7 +197,7 @@ it(
       const app = await launchElectron({ appPath: '.', args: [LOCALHOST_RESOLVER] })
       try {
         const manifest = manifestFor('app.orivon.embed-local-e2e', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN])
-        const installed = await grant(app, manifest, 'tcp.listen.network', [String(APP_PORT)])
+        const installed = await grant(app, manifest, 'tcp.listen.local', [String(APP_PORT)])
         check('the developer-only grant hook is installed in this build', installed)
         if (!installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         await grant(app, manifest, 'web.embed', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN])
@@ -211,8 +211,9 @@ it(
         check('before the app listens, a page under its local pattern is refused', before === 'refused:ERR_FAILED', before)
 
         // ---- (2) the app listens; two labels load, each an origin of its own.
-        const port = await asPage(view, setAsPageScript, AS_PAGE_URL, serveOwnPages, APP_PORT)
-        check('the app listens on its port through orivon.net.listen', port === APP_PORT, String(port))
+        const listener = await asPage(view, setAsPageScript, AS_PAGE_URL, serveOwnPages, APP_PORT)
+        check('the app listens on its port through orivon.net.listen', listener.port === APP_PORT, String(listener.port))
+        check('the listener holds only the local grant and is bound to loopback, so no other device can reach it', listener.address === '127.0.0.1', listener.address)
 
         const a = await show('a', `http://a.localhost:${APP_PORT}/`)
         const b = await show('b', `http://b.localhost:${APP_PORT}/`)
@@ -291,7 +292,7 @@ it(
       const app = await launchElectron({ appPath: '.', args: [LOCALHOST_RESOLVER] })
       try {
         const manifest = manifestFor('app.orivon.embed-local-e2e-wildcard', ['*', BARE_PATTERN])
-        const installed = await grant(app, manifest, 'tcp.listen.network', [String(APP_PORT)])
+        const installed = await grant(app, manifest, 'tcp.listen.local', [String(APP_PORT)])
         check('the developer-only grant hook is installed in this build', installed)
         if (!installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         await grant(app, manifest, 'web.embed', ['*', BARE_PATTERN])

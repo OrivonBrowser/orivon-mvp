@@ -12,7 +12,8 @@ Durable: no Electron API, only JSPI.
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), and within the shim
 [`../wasi/`](../wasi/): its path operations (`path-ops.ts`), run through its asynchronous driver
 with a host context of this host's own, its errno table, clocks and termination, so both hosts
-resolve, refuse, retry and stop the same way; and `../fs/paths.ts`.
+resolve, refuse, retry and stop the same way; `../fs/paths.ts`; and `../bind-scope.ts`, which maps
+a bind address onto a scope for the Node shim too.
 
 **What it must never import.** `electron`, or [`../../broker/`](../../broker/): see the parent
 README.
@@ -35,9 +36,11 @@ name) runs on its blocking pool, which needs a thread, and traps: a program reso
 the name (`addresses.ts`'s `ResolvedNames`). WASI 0.2's `exit` carries only success or
 failure, so a program's non-zero code reaches Node as 1, unless the component calls
 `exit-with-code`, which passes its code. A listen or UDP bind asks `orivon.net` for the scope its
-address implies (loopback is `local`, anything else `network`), but the broker binds every
-interface and requires the `network` grant for either today (ADR-0034): within the app's grant,
-but wider than a program binding loopback asked.
+address implies (loopback is `local`, anything else `network`), and a `network` ask the broker refuses as `denied` is asked
+again as `local`, as the `net` shim's is ([`../bind-scope.ts`](../bind-scope.ts)); a listener's
+`local-address` then reports the loopback address it got. The broker binds loopback or every
+interface, never one other address, so a bind to a single non-loopback address holds every
+interface.
 
 **What a file call costs.** Every filesystem import is a round trip from the program's Worker to
 the page and the broker, a few milliseconds each, and the program has one thread, so it serves no

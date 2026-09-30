@@ -28,6 +28,12 @@ because patterns must be matched against resolved addresses (T12); a bind names 
 there is no name to resolve, no rebinding window and no reason to be async. The grammars are
 opposites too (`bind.ts`'s header).
 
+**[`bind-scope.ts`](bind-scope.ts) decides which grants may authorise a bind, and which interface
+it opens** (`ADR-0034`). `'local'` may ride `.local` or `.network`, the narrower first; `'network'`
+rides `.network` alone. The first grant whose ports cover the port wins and the bind is made
+inside its ranges only, so a wider grant beside it never lends ranges to a port the chosen one
+does not cover.
+
 **`bind(0)` returns ranges, not a yes.** Port 0 asks the OS to pick, and a bare yes would let it
 pick outside what the person read ("ports 6881-6889"). Returning the granted ranges means the
 caller binds inside them by the shape of the result, as `ConnectAllowed.addresses` does for
