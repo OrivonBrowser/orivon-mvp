@@ -24,7 +24,7 @@ export function shimEsbuildPlugin (): esbuild.Plugin {
     name: 'orivon-shim-alias',
     setup (build) {
       for (const entry of buildAliasEntries()) {
-        build.onResolve({ filter: aliasPattern(entry.specifier) }, async (args) => {
+        build.onResolve({ filter: aliasPattern(entry.specifier, entry.prefixOnly) }, async (args) => {
           // A package row's target (`events` -> `events`) resolves through
           // this same filter; the marker lets that inner resolve fall through.
           if (args.pluginData === SHIM_ALIAS_INNER) return undefined

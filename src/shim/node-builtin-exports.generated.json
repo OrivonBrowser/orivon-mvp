@@ -902,6 +902,17 @@
         "throws"
       ],
       "data": []
+    },
+    "sqlite": {
+      "functions": [
+        "DatabaseSync",
+        "Session",
+        "StatementSync",
+        "backup"
+      ],
+      "data": [
+        "constants"
+      ]
     }
   }
 }

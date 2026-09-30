@@ -8,10 +8,10 @@ import { refuseShim } from '../errors.js'
 import { SHIM_MODULE_MAP } from '../module-map.js'
 import { nodeModule } from './module-proxy.js'
 
-export const builtinModules: readonly string[] = [...new Set(SHIM_MODULE_MAP.map((entry) => entry.specifier))]
+export const builtinModules: readonly string[] = [...new Set(SHIM_MODULE_MAP.map((entry) => entry.prefixOnly === true ? `node:${entry.specifier}` : entry.specifier))]
 
 export function isBuiltin (name: string): boolean {
-  return builtinModules.includes(name.replace(/^node:/, ''))
+  return builtinModules.includes(name) || builtinModules.includes(name.replace(/^node:/, ''))
 }
 
 type ShimRequire = ((id: string) => unknown) & { resolve: (id: string) => string, cache: Record<string, unknown> }

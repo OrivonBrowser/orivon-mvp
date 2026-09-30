@@ -53,6 +53,7 @@ export const REFUSAL_TARGETS: readonly RefusalTarget[] = [
   generic('child_process', 'child-process/index.js', 'child-process/generated/child-process.ts'),
   generic('wasi', 'wasi/node-wasi.js', 'wasi/generated/wasi.ts'),
   generic('dgram', 'net/dgram.js', 'net/generated/dgram.ts'),
+  generic('sqlite', 'sqlite/index.js', 'sqlite/generated/sqlite.ts'),
   {
     specifier: 'net',
     sourceModule: 'net/net.js',

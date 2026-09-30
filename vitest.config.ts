@@ -26,10 +26,10 @@ function isShimImporter (importer: string | undefined): boolean {
  * a bare builtin before plugin hooks run, and only the alias stage sees it.
  */
 function shimModuleAliases (): Alias[] {
-  return buildAliasEntries().map(({ specifier, kind, implementation }) => {
+  return buildAliasEntries().map(({ specifier, kind, implementation, prefixOnly }) => {
     const target = kind === 'package' ? implementation : resolve(root, 'src/shim', implementation)
     return {
-      find: aliasPattern(specifier),
+      find: aliasPattern(specifier, prefixOnly),
       replacement: '$&',
       async customResolver (_source, importer, options) {
         if (!isShimImporter(importer)) return null
