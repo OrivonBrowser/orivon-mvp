@@ -499,15 +499,15 @@ describe('fs.open / fs.promises.open', () => {
   })
 
   // readFile/writeFile/access/appendFile/rename/unlink/mkdir/readdir/stat/rm
-  // are all real now (fs/tests/promises.test.ts) -- `watch` stands in here as
+  // are all real now (fs/tests/promises.test.ts) -- `cp` stands in here as
   // a member still genuinely unbuilt.
   it('fs.promises\'s other members are named, not silently absent (A135) -- reading one is safe (A169), only calling it refuses', async () => {
     installFakeOrivon()
     const fs = await import('../fs.js')
     const { OrivonShimError } = await import('../../errors.js')
     const promisesRec = fs.promises as unknown as Record<string, () => unknown>
-    expect(() => promisesRec.watch).not.toThrow()
-    expect(() => promisesRec.watch!()).toThrow(OrivonShimError)
+    expect(() => promisesRec.cp).not.toThrow()
+    expect(() => promisesRec.cp!()).toThrow(OrivonShimError)
   })
 })
 

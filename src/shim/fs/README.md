@@ -72,3 +72,25 @@ stored, because the confined fs has no mode to keep (`stat` reports the fixed on
 missing path fails `ENOENT` and an unknown descriptor `EBADF`. `chmodSync` checks with
 `existsSync`, so it works on a page as well as in a Worker, and reads a path it may not open as
 missing. `chown` and its variants still refuse as *not-applicable*: no uid or gid exists to set.
+
+**`fs.watch` hears only the writes made through this shim** ([`watch.ts`](watch.ts),
+[`notices.ts`](notices.ts)). `orivon.fs` has no change feed, so every mutating call here
+(`core.ts`, `core-sync.ts`, `handle.ts`, and the streams over it) announces the confined path
+it changed: directly to the watchers of its own context, and on a per-app `BroadcastChannel`
+to every other context of the same app (a channel never crosses an origin). A watcher filters by
+path: a watched file sees its own name; a watched directory sees its direct children by name, or
+every descendant by relative path with `recursive`. Created, removed, renamed and made things are
+`'rename'`; a content write is `'change'`. **What it does not see:** a write made outside the
+shim, a write by another app, and a change made before the watcher existed. `fs.watch` on a
+missing path throws `ENOENT`, checked with `existsSync`'s semantics (a path the app may not open
+reads as missing).
+
+A write that creates its file reads `'rename'` then `'change'`, as inotify's create and modify do;
+telling it from a rewrite costs a `stat`, which a writer pays only while some context is known to
+be watching. Contexts learn that from a count each posts on the same channel, so a context's
+first announcement, made before it has heard from the others, reads `'change'` alone. A persistent
+watcher (the default) keeps a forked child alive until `close()` or `unref()`, as it keeps a Node
+process; `persistent: false` does not. `fs.promises.watch` is an async iterator over the same
+events, and `signal` closes either form. `watchFile` and `unwatchFile` refuse by name: they poll,
+which would see writes from outside the shim too, and no consumer has asked. Provisional: whether
+`orivon.fs` should carry a real change feed, which would settle the outside-the-shim gap.

@@ -23,12 +23,13 @@ import type { FileHandle } from '../../contracts/handles.js'
 import { getOrivon } from '../orivon-global.js'
 import { toNodeStats, type NodeStats } from './stats.js'
 import { encode } from '../encoding.js'
+import { announce, canCreate, watchersExist } from './notices.js'
 import { assertMode, confine, confineSync, fsError, guarded, type PathLike } from './paths.js'
 import { refuseShim } from '../errors.js'
 import {
   assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootDirectoryHandleSync, rootReadError, rootTruncateError, rootWriteError
 } from './root.js'
-import { guardedSync, syncFs, type SyncFileHandleWire } from './sync-orivon.js'
+import { guardedSync, syncFs, tryStatSync, type SyncFileHandleWire } from './sync-orivon.js'
 
 export type NodeCallback<T> = (error: Error | null, result?: T) => void
 
@@ -145,12 +146,14 @@ export class NodeFileHandle {
       openByFd.set(fd, wrapped)
       return wrapped
     }
+    const existed = !(canCreate(flags) && watchersExist()) || await getOrivon().fs.stat(confined).then(() => true, () => false)
     return await guarded(async () => {
       const handle = await getOrivon().fs.open(confined, flags)
       const cursor = new LocalCursor(await initialCursor(handle, flags))
       const fd = nextFd++
       const wrapped = new NodeFileHandle(fd, handle, cursor, confined)
       openByFd.set(fd, wrapped)
+      if (!existed) announce(confined, 'rename')
       return wrapped
     })
   }
@@ -169,6 +172,7 @@ export class NodeFileHandle {
     if (this.isRoot) rootWriteError()
     const data = offset === 0 && length === buffer.length ? buffer : buffer.subarray(offset, offset + length)
     const bytesWritten = await guarded(async () => await this.cursor.run(position, async (at) => await this.handle.write({ position: at, data })))
+    announce(this.identity, 'change')
     return { bytesWritten, buffer }
   }
 
@@ -177,6 +181,7 @@ export class NodeFileHandle {
   async truncate (length = 0): Promise<void> {
     if (this.isRoot) rootTruncateError()
     await guarded(async () => { await this.handle.truncate(length) })
+    announce(this.identity, 'change')
   }
 
   // No file-vs-directory branch, on purpose: whatever `getOrivon().fs.open`
@@ -393,12 +398,14 @@ class SyncNodeFileHandle {
       openByFdSync.set(fd, wrapped)
       return wrapped
     }
+    const existed = !(canCreate(flags) && watchersExist()) || tryStatSync(confined) !== false
     return guardedSync(() => {
       const handle = syncFs('fs.openSync').open(confined, flags)
       const cursor = new SyncLocalCursor(initialCursorSync(handle, flags))
       const fd = nextFd++
       const wrapped = new SyncNodeFileHandle(fd, handle, cursor, confined)
       openByFdSync.set(fd, wrapped)
+      if (!existed) announce(confined, 'rename')
       return wrapped
     })
   }
@@ -417,6 +424,7 @@ class SyncNodeFileHandle {
     if (this.isRoot) rootWriteError()
     const data = offset === 0 && length === buffer.length ? buffer : buffer.subarray(offset, offset + length)
     const bytesWritten = guardedSync(() => this.cursor.run(position, (at) => this.handle.write({ position: at, data })))
+    announce(this.identity, 'change')
     return { bytesWritten, buffer }
   }
 

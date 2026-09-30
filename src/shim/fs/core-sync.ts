@@ -18,6 +18,7 @@ import {
 } from './root.js'
 import { confineSync, fsError, type PathLike } from './paths.js'
 import { openHandleSync } from './handle.js'
+import { announce, announceWrite, watchersExist } from './notices.js'
 import { guardedSync, syncFs, tryStatSync, type SyncOrivonFs } from './sync-orivon.js'
 import { toNodeError } from '../node-errors.js'
 import { encode, encodingOf } from '../encoding.js'
@@ -45,7 +46,9 @@ export function doWriteFileSync (path: PathLike, data: unknown, options: WriteFi
   if (flag !== undefined && flag !== 'w') { writeThroughHandleSync(path, bytes, flag); return }
   const confined = confineSync(path, 'open', 'fs.writeFileSync')
   if (isRootPath(confined)) rootIsDirectoryError('open')
+  const existed = !watchersExist() || tryStatSync(confined) !== false
   guardedSync(() => { syncFs('fs.writeFileSync').writeFile(confined, bytes) })
+  announceWrite(confined, existed)
 }
 
 export function doAppendFileSync (path: PathLike, data: unknown, options: WriteFileOptions | string | null | undefined): void {
@@ -68,7 +71,9 @@ function writeThroughHandleSync (path: PathLike, bytes: Uint8Array, flags: strin
 export function doMkdirSync (path: PathLike, opts: MkdirOptions | undefined): void {
   const confined = confineSync(path, 'mkdir', 'fs.mkdirSync')
   if (isRootPath(confined)) { assertRootMkdirAllowed(opts); return }
+  const existed = opts?.recursive === true && watchersExist() && tryStatSync(confined) === true
   guardedSync(() => { syncFs('fs.mkdirSync').mkdir(confined, opts) })
+  if (!existed) announce(confined, 'rename')
 }
 
 export function doReaddirSync (path: PathLike, options: ReaddirOptions | string | null | undefined): ReadonlyArray<string | Uint8Array | NodeDirent> {
@@ -97,6 +102,7 @@ export function doRmSync (path: PathLike, opts: RmOptions | undefined): void {
     if (opts?.force === true && (error as { code?: string }).code === 'ENOENT') return
     throw error
   }
+  announce(confined, 'rename')
 }
 
 /**
@@ -115,6 +121,7 @@ export function doRmdirSync (path: PathLike, opts: RmdirOptions | undefined): vo
   const fs = syncFs('fs.rmdirSync')
   if (opts?.recursive === true) {
     guardedSync(() => { fs.rm(confined, { recursive: true }) })
+    announce(confined, 'rename')
     return
   }
   const pathText = typeof path === 'string' ? path : confined
@@ -123,6 +130,7 @@ export function doRmdirSync (path: PathLike, opts: RmdirOptions | undefined): vo
   const entries = guardedSync(() => fs.readdir(confined))
   if (entries.length > 0) throw fsError('ENOTEMPTY', 'directory not empty', 'rmdir', pathText)
   guardedSync(() => { fs.rm(confined, { recursive: true }) })
+  announce(confined, 'rename')
 }
 
 /** doRealpath's synchronous twin (core.ts's own doc comment has the detail): confirms the confined path exists (over the twin's `stat`), then returns its normalised absolute path under the virtual root -- no other broker call, since orivon.fs never reports a symlink as its own kind. */
@@ -137,12 +145,15 @@ export function doRenameSync (from: PathLike, to: PathLike): void {
   const target = confineSync(to, 'rename', 'fs.renameSync')
   if (isRootPath(source) || isRootPath(target)) rootNotRemovableError('rename')
   guardedSync(() => { syncFs('fs.renameSync').rename(source, target) })
+  announce(source, 'rename')
+  announce(target, 'rename')
 }
 
 export function doUnlinkSync (path: PathLike): void {
   const confined = confineSync(path, 'unlink', 'fs.unlinkSync')
   if (isRootPath(confined)) rootNotRemovableError('unlink')
   guardedSync(() => { syncFs('fs.unlinkSync').rm(confined) })
+  announce(confined, 'rename')
 }
 
 export function doAccessSync (path: PathLike): void {
@@ -164,7 +175,9 @@ export function doCopyFileSync (src: PathLike, dest: PathLike, mode: number | un
   }
   if (isRootPath(to)) rootIsDirectoryError('open')
   const bytes = guardedSync(() => fs.readFile(from))
+  const existed = !watchersExist() || tryStatOk(fs, to)
   guardedSync(() => { fs.writeFile(to, bytes) })
+  announceWrite(to, existed)
 }
 
 function tryStatOk (fs: SyncOrivonFs, path: string): boolean {
@@ -190,6 +203,7 @@ export function doMkdtempSync (prefix: string): string {
     const confined = confineSync(path, 'mkdtemp', 'fs.mkdtempSync')
     try {
       guardedSync(() => { fs.mkdir(confined) })
+      announce(confined, 'rename')
       return path
     } catch (error) {
       // guardedSync already mapped this to a Node-shaped error -- checking

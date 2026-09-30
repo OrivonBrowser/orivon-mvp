@@ -29,6 +29,7 @@ import {
 } from './handle.js'
 import { createReadStream, createWriteStream } from './streams.js'
 import { chmod, lchmod, chmodSyncWith } from './permissions.js'
+import { watch, FSWatcher } from './watch.js'
 import { promises } from './promises.js'
 import { FS_CONSTANTS } from './constants.js'
 import { getOrivon } from '../orivon-global.js'
@@ -52,6 +53,7 @@ import { toNodeError } from '../node-errors.js'
 
 export { open, close, read, write, fstat, ftruncate, fsync, openSync, closeSync, readSync, writeSync, fstatSync, fchmod, fchmodSync } from './handle.js'
 export { chmod, lchmod } from './permissions.js'
+export { watch, FSWatcher } from './watch.js'
 export { createReadStream, createWriteStream } from './streams.js'
 export { promises } from './promises.js'
 // Named as well as on the default export below: a bundled `require('fs')`
@@ -326,7 +328,7 @@ export default refusingProxy({
   createReadStream, createWriteStream,
   statSync, lstatSync, mkdirSync, readdirSync, rmSync, rmdirSync, renameSync, existsSync, accessSync,
   appendFileSync, unlinkSync, copyFileSync, mkdtempSync, realpathSync, openSync, closeSync, readSync, writeSync, fstatSync,
-  chmod, chmodSync, lchmod, lchmodSync, fchmod, fchmodSync,
+  chmod, chmodSync, lchmod, lchmodSync, fchmod, fchmodSync, watch, FSWatcher,
   // fs.constants is data (POSIX flag numbers), not a function -- a
   // throwing-function refusal (A169) would misreport its own type, so this
   // is a real object rather than routed through otherFsMember.

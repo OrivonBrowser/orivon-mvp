@@ -20,6 +20,7 @@
 import { getOrivon } from '../orivon-global.js'
 import { NodeDirent, toNodeStats, type NodeStats } from './stats.js'
 import { openHandle } from './handle.js'
+import { announce, announceWrite, watchersExist } from './notices.js'
 import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './root.js'
@@ -49,7 +50,15 @@ export async function doWriteFile (path: PathLike, data: unknown, options: Write
   if (flag !== undefined && flag !== 'w') { await writeThroughHandle(path, bytes, flag); return }
   const confined = await confine(path, 'open')
   if (isRootPath(confined)) rootIsDirectoryError('open')
+  const existed = await existedBefore(confined)
   await guarded(async () => { await getOrivon().fs.writeFile(confined, bytes) })
+  announceWrite(confined, existed)
+}
+
+/** Whether `confined` exists, asked only while something watches (notices.ts): a creating write announces 'rename' first. Unknown reads as existing. */
+export async function existedBefore (confined: string): Promise<boolean> {
+  if (!watchersExist()) return true
+  return await getOrivon().fs.stat(confined).then(() => true, () => false)
 }
 
 /** appendFile is writeFile with the flag defaulting to 'a'. */
@@ -81,7 +90,9 @@ async function writeThroughHandle (path: PathLike, bytes: Uint8Array, flags: str
 export async function doMkdir (path: PathLike, opts: MkdirOptions | undefined): Promise<void> {
   const confined = await confine(path, 'mkdir')
   if (isRootPath(confined)) { assertRootMkdirAllowed(opts); return }
+  const existed = opts?.recursive === true ? await existedBefore(confined) : false
   await guarded(async () => { await getOrivon().fs.mkdir(confined, opts) })
+  if (!existed) announce(confined, 'rename')
 }
 
 export async function doReaddir (path: PathLike, options: ReaddirOptions | string | null | undefined): Promise<ReadonlyArray<string | Uint8Array | NodeDirent>> {
@@ -115,6 +126,7 @@ export async function doRm (path: PathLike, opts: RmOptions | undefined): Promis
     if (opts?.force === true && (error as { code?: string }).code === 'ENOENT') return
     throw error
   }
+  announce(confined, 'rename')
 }
 
 /**
@@ -135,6 +147,7 @@ export async function doRmdir (path: PathLike, opts: RmdirOptions | undefined): 
   if (isRootPath(confined)) rootNotRemovableError('rmdir')
   if (opts?.recursive === true) {
     await guarded(async () => { await getOrivon().fs.rm(confined, { recursive: true }) })
+    announce(confined, 'rename')
     return
   }
   const pathText = typeof path === 'string' ? path : confined
@@ -143,6 +156,7 @@ export async function doRmdir (path: PathLike, opts: RmdirOptions | undefined): 
   const entries = await guarded(async () => await getOrivon().fs.readdir(confined))
   if (entries.length > 0) throw fsError('ENOTEMPTY', 'directory not empty', 'rmdir', pathText)
   await guarded(async () => { await getOrivon().fs.rm(confined, { recursive: true }) })
+  announce(confined, 'rename')
 }
 
 /**
@@ -166,6 +180,8 @@ export async function doRename (from: PathLike, to: PathLike): Promise<void> {
   const target = await confine(to, 'rename')
   if (isRootPath(source) || isRootPath(target)) rootNotRemovableError('rename')
   await guarded(async () => { await getOrivon().fs.rename(source, target) })
+  announce(source, 'rename')
+  announce(target, 'rename')
 }
 
 /** Real Node's fs.unlink never takes a `recursive` option -- orivon.fs has no separate unlink primitive, so this rides fs.rm with none given, failing on a directory the same non-recursive way rm's own callers already do. */
@@ -173,6 +189,7 @@ export async function doUnlink (path: PathLike): Promise<void> {
   const confined = await confine(path, 'unlink')
   if (isRootPath(confined)) rootNotRemovableError('unlink')
   await guarded(async () => { await getOrivon().fs.rm(confined) })
+  announce(confined, 'rename')
 }
 
 /**
