@@ -4,6 +4,7 @@
 import type { WebContents } from 'electron'
 import { parseOmniboxInput } from '../browsing/omnibox.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
+import { aliasToInternal, viewSourceTarget } from '../pages/internal-aliases.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { Broker } from '../../broker/broker-contracts.js'
@@ -16,6 +17,8 @@ export interface NavigationEnv {
   readonly record: (id: string) => TabRecord | undefined
   readonly liveWebContents: (id: string) => WebContents | undefined
   readonly openInternal: (page: InternalPageId, path: string) => void
+  /** The source of an http(s) address in a tab beside the active one. False when none opened. */
+  readonly viewSource: (url: string) => boolean
   /** A getter: the broker may still be undefined when the tab collection is made. */
   readonly broker: () => Broker | undefined
   readonly searchUrl: ((query: string) => string) | undefined
@@ -39,9 +42,15 @@ export function navigateTab (env: NavigationEnv, id: string, rawInput: string): 
   if (record === undefined || record.view.webContents.isDestroyed()) return
   // The address bar and the dashboard's search box are the person typing:
   // an address of one of the shell's own pages opens that page.
-  const internal = parseInternalUrl(rawInput)
+  const internal = aliasToInternal(rawInput) ?? parseInternalUrl(rawInput)
   if (internal !== null) {
     env.openInternal(internal.page, internal.path)
+    return
+  }
+  // `view-source:` followed by anything but a web address is an ordinary search, as before.
+  const source = viewSourceTarget(rawInput)
+  if (source !== null) {
+    env.viewSource(source)
     return
   }
   const target = resolveTarget(env, rawInput)

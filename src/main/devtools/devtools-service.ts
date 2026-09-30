@@ -4,6 +4,7 @@
 // question asked before a console can act with an app's permissions.
 import type { BaseWindow, WebContents } from 'electron'
 import type { SettingsStore } from '../settings/settings-store.js'
+import { showConsolePanel } from './open-console.js'
 
 export interface DevToolsDeps {
   /** The app whose permissions a page's console would act with, or null for a page that is not one. Decided by the
@@ -52,6 +53,13 @@ export class DevToolsService implements DevToolsGate {
       return
     }
     if (this.permit(contents, window)) this.show(contents)
+  }
+
+  /** Opens them on the Console panel, or moves an open set there. The same rules as `toggle`. */
+  openConsole (contents: WebContents | undefined, window: BaseWindow): void {
+    if (contents === undefined || contents.isDestroyed() || !this.permit(contents, window)) return
+    if (!contents.isDevToolsOpened()) this.show(contents)
+    showConsolePanel(contents)
   }
 
   inspect (contents: WebContents, window: BaseWindow, x: number, y: number): void {

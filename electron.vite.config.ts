@@ -292,11 +292,13 @@ export default defineConfig({
           newtab: resolve(root, 'src/renderer/newtab/index.html'),
           intro: resolve(root, 'src/renderer/intro/index.html'),
           permissions: resolve(root, 'src/renderer/permissions/index.html'),
+          'page-about': resolve(root, 'src/renderer/pages/about/index.html'),
           'page-settings': resolve(root, 'src/renderer/pages/settings/index.html'),
           'page-history': resolve(root, 'src/renderer/pages/history/index.html'),
           'page-profiles': resolve(root, 'src/renderer/pages/profiles/index.html'),
           'page-private': resolve(root, 'src/renderer/pages/private/index.html'),
           'page-extensions': resolve(root, 'src/renderer/pages/extensions/index.html'),
+          'page-tasks': resolve(root, 'src/renderer/pages/tasks/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),
           overlay: resolve(root, 'src/renderer/overlay/index.html'),
           'split-frame': resolve(root, 'src/renderer/split-frame/index.html')

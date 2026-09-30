@@ -75,8 +75,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'history.open': tabs.openInternal('history'); return
     case 'bookmarks.open': return
     case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
-    case 'devtools.console': return
-    case 'tasks.open': return
+    case 'devtools.console': services.devtools.openConsole(tabs.activeWebContents(), window); return
+    case 'tasks.open': tabs.openInternal('tasks'); return
     case 'bookmark.toggle':
       // The same rule as the star in the toolbar: a page with a site, and no other.
       if (active === undefined || active.isNewTab || active.isInternal) return
@@ -117,7 +117,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'bookmarks.toggleBar': return
     case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
     case 'settings.open': tabs.openInternal('settings'); return
-    case 'about.open': return
+    case 'about.open': tabs.openInternal('about'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'import.open': return
     case 'app.quit': deps.quit(); return

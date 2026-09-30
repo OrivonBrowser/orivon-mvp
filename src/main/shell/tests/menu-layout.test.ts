@@ -144,7 +144,7 @@ describe('menuItems', () => {
     const { ctx } = await setup()
     const on = vi.fn(() => true)
     const hint = vi.fn(() => 'note')
-    const items = menuItems(ctx, ['tab.new', 'downloads.open', { check: 'bookmarks.toggleBar', on }, { item: 'about.open', hint }])
+    const items = menuItems(ctx, ['tab.new', 'downloads.open', { check: 'bookmarks.toggleBar', on }, { item: 'import.open', hint }])
     expect(items).toEqual([expect.objectContaining({ id: 'tab.new' })])
     expect(on).not.toHaveBeenCalled()
     expect(hint).not.toHaveBeenCalled()
@@ -155,9 +155,17 @@ describe('menuItems', () => {
     const items = menuItems(ctx)
     expect(items.some((item) => item.kind === 'submenu' && item.label === 'Bookmarks')).toBe(false)
     const ids = runnableIds(items)
-    for (const id of ['downloads.open', 'bookmarks.open', 'bookmarks.toggleBar', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'page.qr', 'devtools.console', 'tasks.open', 'import.open', 'about.open']) {
+    for (const id of ['downloads.open', 'bookmarks.open', 'bookmarks.toggleBar', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'page.qr', 'import.open']) {
       expect(ids.has(id as never), id).toBe(false)
     }
+  })
+})
+
+describe('the about and task manager entries', () => {
+  it('list About Orivon, the JavaScript console and the Task manager', async () => {
+    const { ctx } = await setup()
+    const ids = runnableIds(menuItems(ctx))
+    for (const id of ['about.open', 'devtools.console', 'tasks.open']) expect(ids.has(id as never), id).toBe(true)
   })
 })
 

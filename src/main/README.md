@@ -27,6 +27,7 @@ rather than editing here.
 | [`history/`](history/) | The pages that were visited, kept on this computer and forgotten on request | `history.db` on disk | `attach-history.ts` and `install-history.ts` only |
 | [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |
 | [`devtools/`](devtools/) | When developer tools may open on a page, and the question before they open on an app | which tools are open | `devtools-prompt.ts` only |
+| [`info/`](info/) | The About page and the task manager: the version and graphics facts, the process list, ending a process | when the last processor reading was taken | `about-runner.ts` and `tasks-runner.ts` only |
 | [`page-tools/`](page-tools/) | Print, save as PDF, save the page, view source, screenshots and picture in picture, and the toast that reports them | no | `real-deps.ts` and the files that type a `webContents`, as types |
 | [`zoom/`](zoom/) | How large each site is shown, chosen per site and remembered | `zoom.json` on disk | `attach-zoom.ts` and `install-zoom.ts` only |
 | [`spellcheck/`](spellcheck/) | Spell checking in tabs, switched on or off by a setting | no: Chromium keeps the custom dictionary | `install-spellcheck.ts` only |

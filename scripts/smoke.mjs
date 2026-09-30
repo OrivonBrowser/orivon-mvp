@@ -553,9 +553,10 @@ async function main () {
       { input: 'data:text/html,<title>PWNED-DATA</title>', marker: 'PWNED-DATA' },
       { input: 'file:///etc/passwd', marker: undefined },
       // about:blank would be indistinguishable from the fallback, but
-      // about:version is not: rejected it lands on about:blank, passed through
-      // it commits chrome://version.
-      { input: 'about:version', marker: undefined }
+      // about:config is not: rejected it lands on about:blank, passed through
+      // it commits an about: page. Names Orivon has a page for (about:version)
+      // open that page instead, so a name with none is the one to type.
+      { input: 'about:config', marker: undefined }
     ]
 
     for (const { input, marker } of HOSTILE_INPUTS) {
