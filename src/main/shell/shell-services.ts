@@ -15,6 +15,7 @@ import { HistoryService } from '../history/history-service.js'
 import { NullHistoryStore } from '../history/history-store.js'
 import { openHistory } from '../history/open-history.js'
 import { ProfilesService } from '../launch/profiles-service.js'
+import { memoryVault, type PasswordVault } from '../passwords/vault.js'
 import type { Runtime } from '../launch/start-launch.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmOpenDevTools } from '../devtools/devtools-prompt.js'
@@ -52,6 +53,8 @@ export interface ShellServices {
   readonly isPrivate: boolean
   /** This process was started with --orivon-kiosk (window-state/kiosk.ts). Read once, at start. */
   readonly kiosk: boolean
+  /** The saved logins; this process's own memory until an encrypted store replaces it. */
+  readonly passwords: PasswordVault
   readonly profiles: ProfilesService
   /** The open windows, kept in `session.json`; a private session writes nothing. */
   readonly session: SessionLog
@@ -108,6 +111,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     internalPages,
     isPrivate: runtime.isPrivate,
     kiosk: app.commandLine.hasSwitch(KIOSK_FLAG.slice(2)),
+    passwords: memoryVault(),
     profiles: new ProfilesService(runtime),
     session: runtime.isPrivate ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
