@@ -8,6 +8,7 @@ import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
 import { installShortcuts } from './shortcuts/install-shortcuts.js'
+import { installSpellcheck } from './spellcheck/install-spellcheck.js'
 import { installZoom } from './zoom/install-zoom.js'
 import { installHistory } from './history/install-history.js'
 import { createSubsystemContext, criticalFailureMessage, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
@@ -171,6 +172,7 @@ function boot (runtime: Runtime): void {
     shell.commands.bind({ services: shell, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
     installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
     installZoom(app, shell.windows, shell.zoom)
+    installSpellcheck(app, shell.windows, shell.settings)
     installHistory(app, shell.windows, shell.internalPages, shell.history)
     registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
     // Looks for a newer release once a day when the person has said it may; installs nothing.

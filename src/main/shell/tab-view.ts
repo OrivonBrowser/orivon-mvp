@@ -277,11 +277,19 @@ export function wireView (id: string, record: TabRecord): void {
   wc.on('context-menu', (_event, params) => {
     const { window } = record.host
     if (window === undefined) return
-    const { devtools } = record.host
+    const { devtools, services, runCommand } = record.host
     showContextMenu(wc, params, {
       window,
-      openInNewTab: (url) => { record.host.openTab(url) },
+      // Beside the page being read, as a middle click opens a link.
+      openInNewTab: (url) => { record.host.openTab(url, false) },
+      openInFront: (url) => { record.host.openTab(url) },
       openInSplit: (url) => { record.host.openInSplit(id, url) },
+      openInWindow: (url) => { record.host.openWindow(url) },
+      // A private window has no way back to the profile: it offers no second private session.
+      ...(services === undefined || services.isPrivate ? {} : { openInPrivate: (url: string) => { services.profiles.openPrivate(url) } }),
+      page: { bare: () => record.internalPage !== null || record.isDashboardTab },
+      ...(services === undefined ? {} : { services }),
+      runCommand,
       ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { devtools.inspect(wc, window, x, y) } } : {})
     })
   })

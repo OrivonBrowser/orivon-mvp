@@ -9,7 +9,7 @@ import { partitionFor } from '../../../broker/grants/origin-hash.js'
 // events Electron emits on a real tab's webContents.
 const { showMessageBoxSync, buildFromTemplate, adoptedViews } = vi.hoisted(() => ({
   showMessageBoxSync: vi.fn(),
-  buildFromTemplate: vi.fn(() => ({ popup: vi.fn() })),
+  buildFromTemplate: vi.fn((_template: unknown) => ({ popup: vi.fn() })),
   adoptedViews: [] as Array<{ options: Record<string, unknown> }>
 }))
 vi.mock('electron', () => ({
@@ -46,6 +46,7 @@ interface FakeContents extends EventEmitter {
   close: ReturnType<typeof vi.fn>
   getURL: () => string
   isDestroyed: () => boolean
+  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean, goBack: () => void, goForward: () => void }
 }
 
 function fakeContents (url = 'https://news.example/'): FakeContents {
@@ -56,6 +57,7 @@ function fakeContents (url = 'https://news.example/'): FakeContents {
   wc.close = vi.fn()
   wc.getURL = () => url
   wc.isDestroyed = () => false
+  wc.navigationHistory = { canGoBack: () => false, canGoForward: () => false, goBack: vi.fn(), goForward: vi.fn() }
   return wc
 }
 
@@ -598,12 +600,57 @@ describe('wireView -- context menu', () => {
     wireView('tab-1', record(wc))
 
     wc.emit('context-menu', {}, {
-      x: 1, y: 1, linkURL: 'https://example.com/', srcURL: '', mediaType: 'none', hasImageContents: false,
+      x: 1, y: 1, linkURL: 'https://example.com/', linkText: '', srcURL: '', mediaType: 'none', hasImageContents: false,
       isEditable: false, selectionText: '', frame: null,
       editFlags: { canCut: false, canCopy: false, canPaste: false, canSelectAll: true }
     })
 
     expect(buildFromTemplate).toHaveBeenCalledTimes(1)
+  })
+
+  const LINK_PARAMS = {
+    x: 1, y: 1, linkURL: 'https://example.com/a', linkText: 'a', srcURL: '', mediaType: 'none', hasImageContents: false,
+    isEditable: false, selectionText: '', frame: null,
+    editFlags: { canCut: false, canCopy: false, canPaste: false, canSelectAll: true }
+  }
+  const services = (isPrivate: boolean): Record<string, unknown> => ({
+    isPrivate, profiles: { openPrivate: vi.fn() }, settings: { get: () => true, set: vi.fn() }
+  })
+  const menuItems = (): Array<{ label?: string, click?: () => void }> => (buildFromTemplate.mock.calls.at(-1)?.[0] ?? []) as Array<{ label?: string, click?: () => void }>
+  const choose = (label: string): void => { menuItems().find((item) => item.label === label)?.click?.() }
+
+  it('opens a link beside the page, in a window, or in a private session of its own', () => {
+    const wc = fakeContents()
+    const shared = services(false)
+    const host = fakeHost({ services: shared as never })
+    wireView('tab-1', record(wc, undefined, host))
+    wc.emit('context-menu', {}, LINK_PARAMS)
+
+    choose('Open Link in New Tab')
+    choose('Open Link in New Window')
+    choose('Open Link in Private Window')
+    expect(host.openTab).toHaveBeenCalledWith('https://example.com/a', false)
+    expect(host.openWindow).toHaveBeenCalledWith('https://example.com/a')
+    expect((shared['profiles'] as { openPrivate: ReturnType<typeof vi.fn> }).openPrivate).toHaveBeenCalledWith('https://example.com/a')
+  })
+
+  it('offers no private window from inside a private one', () => {
+    const wc = fakeContents()
+    wireView('tab-1', record(wc, undefined, fakeHost({ services: services(true) as never })))
+    wc.emit('context-menu', {}, LINK_PARAMS)
+
+    expect(menuItems().map((item) => item.label)).not.toContain('Open Link in Private Window')
+    expect(menuItems().map((item) => item.label)).toContain('Open Link in New Window')
+  })
+
+  it('shows only navigation on a tab that holds an internal page', () => {
+    const wc = fakeContents()
+    const r = record(wc)
+    r.internalPage = 'settings'
+    wireView('tab-1', r)
+    wc.emit('context-menu', {}, { ...LINK_PARAMS, linkURL: '', selectionText: '', editFlags: { ...LINK_PARAMS.editFlags, canSelectAll: false } })
+
+    expect(menuItems().map((item) => item.label)).toEqual(['Back', 'Forward', 'Reload'])
   })
 })
 

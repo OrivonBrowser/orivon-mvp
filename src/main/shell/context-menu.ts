@@ -1,72 +1,69 @@
-// A tab's right-click menu: the edit commands, the link and image commands,
-// and Inspect Element where developer tools are allowed. Electron shows no
-// menu at all unless one is built.
+// A tab's right-click menu, composed from context-menu-groups.ts: what was
+// clicked decides which groups show. Electron shows no menu at all unless one
+// is built.
 import { clipboard, Menu } from 'electron'
 import type { BaseWindow, ContextMenuParams, MenuItemConstructorOptions, WebContents } from 'electron'
-import { sanitizeDirectUrl } from '../browsing/omnibox.js'
+import type { CommandId } from '../shortcuts/commands.js'
+import { engineLabelFor } from './context-menu-text.js'
+import type { ShellServices } from './shell-services.js'
+import {
+  DEFAULT_CONTEXT, editableGroup, imageGroup, linkGroup, mediaGroup, pageGroup, selectionGroup, spellingGroup
+} from './context-menu-groups.js'
+import type { ContextMenuActions, ContextMenuContext, MenuParams } from './context-menu-groups.js'
+import { searchUrlFor } from '../browsing/search-engines.js'
 
-export interface ContextMenuActions {
-  cut: () => void
-  copy: () => void
-  paste: () => void
-  selectAll: () => void
-  copyText: (text: string) => void
-  openInNewTab: (url: string) => void
-  /** Absent where a split is not offered. */
-  openInSplit?: (url: string) => void
-  copyImageAt: (x: number, y: number) => void
-  inspectAt: (x: number, y: number) => void
-}
+export type { ContextMenuActions, ContextMenuContext } from './context-menu-groups.js'
 
-type MenuParams = Pick<ContextMenuParams, 'x' | 'y' | 'linkURL' | 'mediaType' | 'hasImageContents' | 'isEditable' | 'selectionText' | 'editFlags'>
-
-function editItems (params: MenuParams, actions: ContextMenuActions): MenuItemConstructorOptions[] {
-  const flags = params.editFlags
-  if (params.isEditable) {
-    return [
-      { label: 'Cut', enabled: flags.canCut, click: actions.cut },
-      { label: 'Copy', enabled: flags.canCopy, click: actions.copy },
-      { label: 'Paste', enabled: flags.canPaste, click: actions.paste },
-      { type: 'separator' },
-      { label: 'Select All', enabled: flags.canSelectAll, click: actions.selectAll }
-    ]
+/** Separators only between two items: none first, none last, none twice. */
+function compact (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
+  const out: MenuItemConstructorOptions[] = []
+  for (const item of items) {
+    if (item.type === 'separator' && (out.length === 0 || out[out.length - 1]?.type === 'separator')) continue
+    out.push(item)
   }
-  const items: MenuItemConstructorOptions[] = []
-  if (params.selectionText !== '') items.push({ label: 'Copy', enabled: flags.canCopy, click: actions.copy })
-  if (flags.canSelectAll) items.push({ label: 'Select All', click: actions.selectAll })
-  return items
+  while (out[out.length - 1]?.type === 'separator') out.pop()
+  return out
 }
 
 /** Empty when there is nothing to offer; the caller then shows no menu. */
-export function contextMenuTemplate (params: MenuParams, actions: ContextMenuActions, canInspect: boolean): MenuItemConstructorOptions[] {
-  const groups: MenuItemConstructorOptions[][] = []
-  if (params.linkURL !== '') {
-    const link: MenuItemConstructorOptions[] = []
-    // Only what a fresh tab can load: the same check window.open targets get.
-    const openable = sanitizeDirectUrl(params.linkURL)
-    if (openable !== null) {
-      link.push({ label: 'Open Link in New Tab', click: () => { actions.openInNewTab(openable) } })
-      const inSplit = actions.openInSplit
-      if (inSplit !== undefined) link.push({ label: 'Open Link in Split View', click: () => { inSplit(openable) } })
-    }
-    link.push({ label: 'Copy Link Address', click: () => { actions.copyText(params.linkURL) } })
-    groups.push(link)
-  }
-  if (params.mediaType === 'image' && params.hasImageContents) {
-    groups.push([{ label: 'Copy Image', click: () => { actions.copyImageAt(params.x, params.y) } }])
-  }
-  groups.push(editItems(params, actions))
+export function contextMenuTemplate (
+  params: MenuParams,
+  actions: ContextMenuActions,
+  canInspect: boolean,
+  context: ContextMenuContext = DEFAULT_CONTEXT
+): MenuItemConstructorOptions[] {
+  const specific = [
+    spellingGroup(params, actions, context),
+    linkGroup(params, actions),
+    imageGroup(params, actions),
+    mediaGroup(params, actions),
+    selectionGroup(params, actions, context),
+    editableGroup(params, actions, context)
+  ]
+  const groups = specific.some((group) => group.length > 0) ? specific : [pageGroup(actions, context)]
   if (canInspect) groups.push([{ label: 'Inspect Element', click: () => { actions.inspectAt(params.x, params.y) } }])
-  return groups
+  return compact(groups
     .filter((group) => group.length > 0)
-    .flatMap((group, i): MenuItemConstructorOptions[] => i === 0 ? group : [{ type: 'separator' }, ...group])
+    .flatMap((group, i): MenuItemConstructorOptions[] => i === 0 ? group : [{ type: 'separator' }, ...group]))
 }
-
 
 export interface ContextMenuHost {
   readonly window: BaseWindow
   openInNewTab: (url: string) => void
   openInSplit?: (url: string) => void
+  openInWindow?: (url: string) => void
+  /** Absent in a private window, where there is no way back to the profile. */
+  openInPrivate?: (url: string) => void
+  /** Opens an address in a tab put in front: what a search of the selection does. */
+  openInFront?: (url: string) => void
+  /** Present for a tab's menu and absent for the chrome's, whose menu holds only edit items. `bare`: an internal page or the new-tab page. */
+  readonly page?: { readonly bare: () => boolean }
+  /** What the menu reads: the search engine and the spelling switch. Absent in tests. */
+  readonly services?: Pick<ShellServices, 'settings'>
+  /** Runs a command on the window: Save, Print, Screenshot, View Source, Picture in Picture. */
+  readonly runCommand?: (id: CommandId) => void
+  /** The address bar's "Paste and Go". */
+  readonly pasteAndGo?: () => void
   /** Opens developer tools at a point of the page. Absent where they are not allowed: the menu then has no Inspect. */
   readonly inspect?: (x: number, y: number) => void
 }
@@ -75,17 +72,50 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
   // The menu can outlive the tab: a page may close itself while it is open,
   // and a call on a destroyed webContents throws in the main process.
   const onTab = (act: () => void) => () => { if (!wc.isDestroyed()) act() }
-  const template = contextMenuTemplate(params, {
+  const settings = host.services?.settings
+  const { openInSplit, openInWindow, openInPrivate, openInFront, runCommand, pasteAndGo } = host
+  const actions: ContextMenuActions = {
     cut: onTab(() => { wc.cut() }),
     copy: onTab(() => { wc.copy() }),
     paste: onTab(() => { wc.paste() }),
     selectAll: onTab(() => { wc.selectAll() }),
+    undo: onTab(() => { wc.undo() }),
+    redo: onTab(() => { wc.redo() }),
+    pasteAndMatchStyle: onTab(() => { wc.pasteAndMatchStyle() }),
     copyText: (text) => { clipboard.writeText(text) },
     openInNewTab: host.openInNewTab,
-    ...(host.openInSplit === undefined ? {} : { openInSplit: host.openInSplit }),
+    ...(openInSplit === undefined ? {} : { openInSplit }),
+    ...(openInWindow === undefined ? {} : { openInWindow }),
+    ...(openInPrivate === undefined ? {} : { openInPrivate }),
+    ...(pasteAndGo === undefined ? {} : { pasteAndGo }),
     copyImageAt: (x, y) => { onTab(() => { wc.copyImageAt(x, y) })() },
     inspectAt: (x, y) => { onTab(() => { host.inspect?.(x, y) })() }
-  }, host.inspect !== undefined)
+  }
+  const context: ContextMenuContext = { ...DEFAULT_CONTEXT }
+  if (host.page !== undefined) {
+    actions.saveUrl = (url) => { onTab(() => { wc.downloadURL(url) })() }
+    actions.navigate = {
+      canGoBack: wc.navigationHistory.canGoBack(),
+      canGoForward: wc.navigationHistory.canGoForward(),
+      back: onTab(() => { wc.navigationHistory.goBack() }),
+      forward: onTab(() => { wc.navigationHistory.goForward() }),
+      reload: onTab(() => { wc.reload() })
+    }
+    actions.replaceMisspelling = (word) => { onTab(() => { wc.replaceMisspelling(word) })() }
+    actions.addToDictionary = (word) => { onTab(() => { wc.session.addWordToSpellCheckerDictionary(word) })() }
+    if (runCommand !== undefined) actions.run = runCommand
+    context.bare = host.page.bare()
+    if (settings !== undefined) {
+      context.spellcheckOn = settings.get('spellcheck.enabled')
+      context.engineLabel = engineLabelFor(settings.get('search.engine'))
+      actions.toggleSpellcheck = () => { settings.set('spellcheck.enabled', !context.spellcheckOn) }
+      actions.search = (query) => {
+        const url = searchUrlFor(settings.get('search.engine'), settings.get('search.customUrl'), query)
+        ;(openInFront ?? host.openInNewTab)(url)
+      }
+    }
+  }
+  const template = contextMenuTemplate(params, actions, host.inspect !== undefined, context)
   if (template.length === 0) return
   Menu.buildFromTemplate(template).popup({ window: host.window, ...(params.frame !== null ? { frame: params.frame } : {}) })
 }
