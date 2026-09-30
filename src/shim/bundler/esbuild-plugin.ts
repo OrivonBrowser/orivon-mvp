@@ -250,7 +250,7 @@ export function orivonShimPlugin (): Plugin {
         })
       }
       build.onLoad({ filter: /.*/, namespace: REQUIRE_NAMESPACE }, (args) => ({
-        contents: `import * as namespace from ${JSON.stringify(args.path)}\nmodule.exports = typeof namespace.default === 'function' ? namespace.default : Object.defineProperty({ ...namespace }, '__esModule', { value: true })\n`,
+        contents: `import * as namespace from ${JSON.stringify(args.path)}\nmodule.exports = typeof namespace.default === 'function' ? namespace.default : Object.assign({ __esModule: true }, namespace)\n`,
         loader: 'js',
         resolveDir: SHIM_DIR
       }))
