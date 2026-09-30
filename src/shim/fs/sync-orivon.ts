@@ -56,12 +56,34 @@ export function syncFs (api: string): SyncOrivonFs {
   return fs
 }
 
+/**
+ * A rate-limited call was refused before it ran, so asking again is safe, and a synchronous caller has no
+ * way to wait and ask again itself: a burst of calls (a program starting up) would otherwise fail the
+ * first call past the origin's bucket.
+ */
+const LIMIT_RETRIES = 40
+const LIMIT_BACKOFF_MS = 25
+
+function isLimit (error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'limit'
+}
+
+function sleepSync (ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
 /** Runs one orivon.fs call, rethrowing its OrivonError as a Node-shaped one -- fs/paths.ts's guarded(), synchronous. */
-export function guardedSync<T> (run: () => T): T {
-  try {
-    return run()
-  } catch (error) {
-    throw toNodeError(error)
+export function guardedSync<T> (run: () => T, sleep: (ms: number) => void = sleepSync): T {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return run()
+    } catch (error) {
+      if (attempt < LIMIT_RETRIES && isLimit(error)) {
+        sleep(LIMIT_BACKOFF_MS * Math.min(attempt + 1, 8))
+        continue
+      }
+      throw toNodeError(error)
+    }
   }
 }
 
