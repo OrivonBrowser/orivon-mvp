@@ -1,0 +1,26 @@
+@import '/shared/tokens.css';
+@import '/shared/controls.css';
+
+/* Layout only: the components under test are the kit's own. */
+.page { max-width: 980px; margin: 0 auto; padding: 32px 24px 64px; display: grid; gap: 28px; }
+h1 { font-size: 22px; font-weight: 600; }
+.card { border: 1px solid var(--wborder); border-radius: var(--wradius); background: var(--wpanel); padding: 16px 18px; }
+.card > h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.grid { display: grid; gap: 14px 18px; align-items: center; }
+.matrix { grid-template-columns: 120px repeat(5, minmax(0, 1fr)); }
+.matrix > .head { color: var(--wink-dim); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.matrix > .name { color: var(--wink-dim); font-size: 12.5px; }
+.stack { display: grid; gap: 12px; }
+.line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.cap { color: var(--wink-dim); font-size: 12px; margin-bottom: 6px; }
+.narrow { width: 380px; }
+.tall { display: grid; gap: 10px; }
+.icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.icon-cell { display: grid; justify-items: center; gap: 6px; padding: 10px 4px; border-radius: 8px; color: var(--wink); font-size: 11px; text-align: center; }
+.icon-cell .icon { width: 24px; height: 24px; }
+.icon-cell span { color: var(--wink-dim); }
+.sizes { display: flex; align-items: center; gap: 14px; margin-top: 14px; color: var(--wink); }
+.sizes .s16 { width: 16px; height: 16px; } .sizes .s20 { width: 20px; height: 20px; } .sizes .s24 { width: 24px; height: 24px; }
+.on-toast { padding: 14px; border-radius: 8px; background: var(--wbg-2); }
+.stack > .segmented { justify-self: start; }
