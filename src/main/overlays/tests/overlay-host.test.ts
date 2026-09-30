@@ -46,7 +46,7 @@ const { createOverlayHost } = await import('../overlay-host.js')
 
 const ANCHOR = { x: 900, y: 40, width: 30, height: 30 }
 
-function def (name: string, patch: Partial<OverlayDef> = {}, handler: Partial<OverlayHandler<unknown>> = {}): OverlayDef {
+function def (name: string, patch: Partial<OverlayDef> = {}, handler: Partial<OverlayHandler> = {}): OverlayDef {
   return {
     name, placement: { kind: 'anchor', width: 380, align: 'right' }, surface: 'panel', focus: 'take', layer: 'popup',
     closeOn: CLOSE_LIKE_POPUP, keep: 'fresh',
@@ -427,6 +427,23 @@ describe('createOverlayHost: keep and reopen', () => {
 })
 
 describe('createOverlayHost: what the page hears', () => {
+  it('registers a def whose show validates a payload, and hands it the chrome\'s payload unchecked', async () => {
+    // The shape a feature lane writes: no generic, `unknown` in, checked by the handler itself.
+    const query: OverlayDef = {
+      ...def('find'),
+      attach: () => ({
+        show: (payload) => typeof (payload as { query?: unknown } | null)?.query === 'string' ? (payload as { query: string }).query : '',
+        request: () => undefined
+      })
+    }
+    const { host } = setup([query])
+    host.show('find', ANCHOR, { query: 'needle' })
+    await expect(views[0]?.spec.port.ready()).resolves.toEqual({ shown: true, payload: 'needle' })
+    host.close('find')
+    host.show('find', ANCHOR, 42)
+    await expect(views[1]?.spec.port.ready()).resolves.toEqual({ shown: true, payload: '' })
+  })
+
   it('ready answers the show result that was waiting', async () => {
     const { host } = setup([def('a', {}, { show: (payload) => ({ got: payload }) })])
     host.show('a', ANCHOR, 'p')

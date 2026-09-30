@@ -49,7 +49,7 @@ export type OverlayHostHandle = OverlayHost & {
 
 interface Slot {
   readonly def: OverlayDef
-  handler: OverlayHandler<unknown> | null
+  handler: OverlayHandler | null
   view: OverlayViewHandle | null
   pageReady: boolean
   /** The show result the page has not fetched yet. */
@@ -62,7 +62,7 @@ interface Slot {
   lastBlurCloseAt: number
 }
 
-async function showResult (handler: OverlayHandler<unknown>, payload: unknown): Promise<OverlayReady> {
+async function showResult (handler: OverlayHandler, payload: unknown): Promise<OverlayReady> {
   try {
     return { shown: true, payload: await handler.show?.(payload) }
   } catch (error) {
@@ -93,12 +93,12 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     return overlayBounds(slot.def.placement, slot.anchor, { width, height, area: deps.area() }, slot.height, limits)
   }
 
-  function handlerFor (slot: Slot): OverlayHandler<unknown> {
+  function handlerFor (slot: Slot): OverlayHandler {
     slot.handler ??= slot.def.attach({
       ...deps.context(),
       send: (event) => { send(slot.def.name, event) },
       close: () => { closeSlot(slot, 'request') }
-    }) as OverlayHandler<unknown>
+    })
     return slot.handler
   }
 

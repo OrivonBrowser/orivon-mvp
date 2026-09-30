@@ -22,7 +22,7 @@ export interface OverlayCloseOn { blur: boolean, tabSwitch: boolean, navigation:
 export const CLOSE_LIKE_POPUP: OverlayCloseOn = { blur: true, tabSwitch: true, navigation: false, layout: true }
 export const CLOSE_LIKE_BAR: OverlayCloseOn = { blur: false, tabSwitch: true, navigation: false, layout: false }
 
-export interface OverlayDef<Payload = undefined> {
+export interface OverlayDef {
   /** Also the renderer page key and `?overlay=<name>`. */
   readonly name: string
   readonly placement: OverlayPlacement
@@ -37,7 +37,7 @@ export interface OverlayDef<Payload = undefined> {
   /** Content height in px, clamped to the room left: initial 180, min 120, max 460 by default. */
   readonly height?: { initial?: number, min?: number, max?: number }
   /** Runs once per window, on first use. */
-  readonly attach: (win: OverlayWindow) => OverlayHandler<Payload>
+  readonly attach: (win: OverlayWindow) => OverlayHandler
 }
 
 export interface OverlayWindow extends WindowContext {
@@ -47,9 +47,9 @@ export interface OverlayWindow extends WindowContext {
   close: () => void
 }
 
-export interface OverlayHandler<Payload> {
-  /** Its result goes to the page on every show. */
-  show?: (payload: Payload) => unknown
+export interface OverlayHandler {
+  /** Its result goes to the page on every show. The payload is the chrome's, unvalidated: check every field as `request` does. */
+  show?: (payload: unknown) => unknown
   /** Untrusted: the page sends anything, so validate every field and run only listed commands. */
   request: (command: unknown) => unknown
   closed?: (reason: OverlayCloseReason) => void
