@@ -60,6 +60,8 @@ interface Slot {
   height: number
   returnTo: FocusTarget | undefined
   lastBlurCloseAt: number
+  /** A `never` overlay whose handler asked for the keyboard: it behaves as `take` until it closes. */
+  focusTaken: boolean
 }
 
 async function showResult (handler: OverlayHandler, payload: unknown): Promise<OverlayReady> {
@@ -77,7 +79,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     if (slots.has(def.name)) throw new Error(`overlay "${def.name}" is declared twice`)
     slots.set(def.name, {
       def, handler: null, view: null, pageReady: false, awaitingReply: false, pending: null, queued: [], open: false,
-      anchor: undefined, height: def.height?.initial ?? DEFAULT_HEIGHT.initial, returnTo: undefined, lastBlurCloseAt: 0
+      anchor: undefined, height: def.height?.initial ?? DEFAULT_HEIGHT.initial, returnTo: undefined, lastBlurCloseAt: 0, focusTaken: false
     })
   }
   const adopted: Array<{ close: () => void, restack?: (() => void) | undefined }> = []
@@ -97,7 +99,13 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.handler ??= slot.def.attach({
       ...deps.context(),
       send: (event) => { send(slot.def.name, event) },
-      close: () => { closeSlot(slot, 'request') }
+      close: () => { closeSlot(slot, 'request') },
+      takeFocus: () => {
+        const view = slot.view
+        if (!slot.open || view === null || slot.def.focus === 'take' || slot.focusTaken || inBackground()) return
+        slot.focusTaken = true
+        view.focusWhenReady(() => slot.open && slot.view === view)
+      }
     })
     return slot.handler
   }
@@ -160,7 +168,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       onBlur: () => { if (current() && slot.open && slot.def.closeOn.blur) closeSlot(slot, 'blur') },
       onGone: () => { if (current()) discardView(slot) },
       // A click gave focus to a view that must never hold it: hand it straight back.
-      onFocus: () => { if (current() && slot.open && slot.def.focus === 'never') restoreFocus(slot, 'request') }
+      onFocus: () => { if (current() && slot.open && slot.def.focus === 'never' && !slot.focusTaken) restoreFocus(slot, 'request') }
     })
     slot.view = mine
     slot.pageReady = false
@@ -202,7 +210,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       slot.view = null
       slot.pageReady = false
     }
-    if (slot.def.focus === 'take') restoreFocus(slot, reason)
+    if (slot.def.focus === 'take' || slot.focusTaken) restoreFocus(slot, reason)
+    slot.focusTaken = false
     slot.returnTo = undefined
   }
 
