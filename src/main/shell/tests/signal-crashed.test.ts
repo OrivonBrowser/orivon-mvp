@@ -3,7 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TabSignalContext } from '../tab-signals.js'
 import type { TabRecord } from '../tab-types.js'
 
-vi.mock('electron', () => ({ nativeTheme: { shouldUseDarkColors: true, on: () => {}, removeListener: () => {} } }))
+const theme = vi.hoisted(() => ({ dark: true, listeners: [] as Array<() => void> }))
+vi.mock('electron', () => ({
+  nativeTheme: {
+    get shouldUseDarkColors () { return theme.dark },
+    on: (_event: string, listener: () => void) => { theme.listeners.push(listener) },
+    removeListener: () => {}
+  }
+}))
 vi.mock('../../sad-tab/sad-tab-controller.js', () => ({ syncSadTab: vi.fn(), watchActivations: vi.fn() }))
 
 const { crashedSignal } = await import('../signals/crashed.js')
@@ -101,6 +108,26 @@ describe('the crashed signal', () => {
     expect(view.setBackgroundColor).toHaveBeenLastCalledWith('#17181c')
     wc.emit('did-start-loading')
     expect(view.setBackgroundColor).toHaveBeenLastCalledWith('#FFFFFF')
+  })
+
+  it('repaints a dead view when the theme changes, and stops once it recovered or was destroyed', () => {
+    const { wc, view } = rig()
+    const other = rig()
+    wc.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 9 })
+    other.wc.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 9 })
+    theme.dark = false
+    view.setBackgroundColor.mockClear()
+    other.view.setBackgroundColor.mockClear()
+    for (const listener of theme.listeners) listener()
+    expect(view.setBackgroundColor).toHaveBeenLastCalledWith('#f4f4f8')
+    wc.emit('did-start-loading')
+    other.wc.emit('destroyed')
+    view.setBackgroundColor.mockClear()
+    other.view.setBackgroundColor.mockClear()
+    for (const listener of theme.listeners) listener()
+    expect(view.setBackgroundColor).not.toHaveBeenCalled()
+    expect(other.view.setBackgroundColor).not.toHaveBeenCalled()
+    theme.dark = true
   })
 
   it('leaves the colour of the dashboard and of a shell page alone', () => {

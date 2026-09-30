@@ -25,7 +25,7 @@ body[data-overlay='find'] .find-input {
 body[data-overlay='find'] .find-input::placeholder { color: var(--wink-off); }
 /* The ring sits inside the box: the card's edge is 1px away on every side. */
 body[data-overlay='find'] .find-input:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; }
-body[data-overlay='find'] .find-input[aria-invalid='true']:focus-visible { outline-color: var(--wdanger); }
+body[data-overlay='find'] .find-input[aria-invalid='true']:focus-visible { outline-color: var(--wdanger-text); }
 
 body[data-overlay='find'] .find-count {
   flex: none;
@@ -41,10 +41,19 @@ body[data-overlay='find'] .find-count {
 
 body[data-overlay='find'] .find-case {
   flex: none;
-  height: 26px;
+  height: 28px;
   padding: 0 8px;
   box-sizing: border-box;
   font-weight: 600;
+  /* Off reads as off: no border or fill until it is pressed, like the icon buttons beside it. */
+  border-color: transparent;
+  background: none;
+  color: var(--wink-dim);
+}
+body[data-overlay='find'] .find-case[aria-pressed='true'] {
+  background: var(--waccent-wash);
+  color: var(--waccent-text);
+  border-color: color-mix(in srgb, var(--waccent-text) 40%, transparent);
 }
 body[data-overlay='find'] .btn.icon:focus-visible,
 body[data-overlay='find'] .find-case:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; }
