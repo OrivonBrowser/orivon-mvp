@@ -65,7 +65,8 @@ termination, which unwinds the component as a trap.
 always succeeds, and an address in use is reported by `finish-listen` (`tcp.ts`). An ephemeral
 (port 0) listen is confined to the app's granted range exactly like an explicit one (ADR-0034),
 so a program that listens twice on a single-port grant collides with its own ephemeral listen and
-sees `address-in-use` -- correct, not a bug.
+sees `address-in-use` -- correct, not a bug. Listening is IPv4 in this build whatever family the
+program's socket has, and a listener reports the address it bound with the port the server holds.
 
 **Sockets block only where POSIX does.** A connect and a lookup are started at once and answered
 `would-block` until `orivon.net` settles, and the program waits on a pollable: a non-blocking

@@ -7,7 +7,7 @@
 import type { TcpServer, TcpSocket as OrivonTcpSocket } from '../../contracts/handles.js'
 import {
   type IpAddressFamily, type IpSocketAddress, type ResolvedNames, type SocketNet,
-  addressOf, isIpv4Mapped, isUnspecified, networkCode, reportedAddress, scopeOf, socketFailure
+  addressOf, isIpv4Mapped, isUnspecified, networkCode, reportedAddress, scopeOf, socketAddressOf, socketFailure
 } from './addresses.js'
 import { InputStream, OutputStream, Pollable, Signal } from './io.js'
 
@@ -197,7 +197,7 @@ export class TcpSocket {
 
   localAddress (): IpSocketAddress {
     if (this.#socket !== undefined) return reportedAddress(this.#socket.localAddress, this.#socket.localPort, this.#family)
-    if (this.#server !== undefined) return reportedAddress(this.#server.localAddress, this.#server.localPort, this.#family)
+    if (this.#server !== undefined && this.#local !== undefined) return socketAddressOf(addressOf(this.#local), this.#server.localPort)
     if (this.#local !== undefined && this.#state !== 'unbound') return this.#local
     throw 'invalid-state'
   }

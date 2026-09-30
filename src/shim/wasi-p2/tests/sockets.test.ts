@@ -104,6 +104,22 @@ describe('TCP', () => {
     expect(socket.localAddress()).toEqual(v4(127, 0, 0, 1, 4001))
   })
 
+  it('reports the address a listener bound, of its own family, with the port the server holds', async () => {
+    const listenOn = async (family: string, bound: IpSocketAddress, reported: string): Promise<IpSocketAddress> => {
+      const fake = createFakeTcpServer({ localAddress: reported, localPort: 4100 })
+      const interfaces = socketInterfaces(fakeNet({ listen: async () => fake.server as TcpServer }))
+      const socket = fn<(family: string) => TcpSocket>(interfaces, 'wasi:sockets/tcp-create-socket', 'createTcpSocket')(family)
+      socket.startBind({}, bound)
+      socket.finishBind()
+      socket.startListen()
+      await socket.finishListen()
+      return socket.localAddress()
+    }
+    const loopback6: IpSocketAddress = { tag: 'ipv6', val: { port: 0, flowInfo: 0, address: [0, 0, 0, 0, 0, 0, 0, 1], scopeId: 0 } }
+    expect(await listenOn('ipv6', loopback6, '0.0.0.0')).toEqual({ tag: 'ipv6', val: { port: 4100, flowInfo: 0, address: [0, 0, 0, 0, 0, 0, 0, 1], scopeId: 0 } })
+    expect(await listenOn('ipv4', v4(127, 0, 0, 1, 0), '0.0.0.0')).toEqual(v4(127, 0, 0, 1, 4100))
+  })
+
   it('throws a listen that fails from finish-listen once it settles, and a UDP bind that fails from finish-bind', async () => {
     const inUse = Object.assign(new Error('in use'), { code: 'failed', platformCode: 'EADDRINUSE' })
     const tcp = createTcp(socketInterfaces(fakeNet({ listen: async () => { throw inUse } })))

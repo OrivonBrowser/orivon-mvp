@@ -134,6 +134,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   through Node's `Duplex.toWeb`, whose teardown could throw where nothing could catch it.
 - **A program a forked child spawns can use the app's files and network.** Every `orivon.*` call from it failed
   before, which a WASI program saw as an I/O error on its first file call.
+- **A WASI program that listens on an IPv6 address no longer aborts when it reads its own address.** A
+  listener reports the address it bound, and every reported address is of the socket's own family.
 - **A middle, ctrl, shift or ctrl+shift click on a link no longer closes the browser.**
 - **An extension's sandbox page gets no extension APIs**, as in Chrome, so untrusted code an extension runs there
   cannot act with the extension's permissions.
