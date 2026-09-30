@@ -21,6 +21,9 @@ import { collected, windowGeometry } from './qa-evidence.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, tabIds, tabViews, waitFor, waitForTab } from './smoke-helpers.mjs'
 
+/** Thirty tabs opened or closed in a burst: generous, because a shared CI runner is slower than a desk. */
+const SLOW_RUNNER_MS = 30_000
+
 let server: FixtureServer
 const hung: ServerResponse[] = []
 let hangRequests = 0
@@ -92,13 +95,13 @@ it('thirty rapid new tabs and thirty rapid closes leave the tab strip and the ma
       const agree = async (): Promise<{ strip: number, views: number }> => ({ strip: (await tabIds(chrome)).length, views: tabViews(app, chrome).length })
 
       for (let i = 0; i < 30; i++) await chrome.click('#new-tab')
-      check('thirty-one tabs appear in the strip', await waitFor(async () => (await tabIds(chrome)).length === 31), String((await tabIds(chrome)).length))
+      check('thirty-one tabs appear in the strip', await waitFor(async () => (await tabIds(chrome)).length === 31, SLOW_RUNNER_MS), String((await tabIds(chrome)).length))
       await delay(ABSENCE_SETTLE_MS)
       const opened = await agree()
       check('the main process holds one view per tab in the strip', opened.strip === opened.views, JSON.stringify(opened))
 
       for (let i = 0; i < 30; i++) await chrome.click('.tab.active .close')
-      check('thirty closes leave exactly one tab', await waitFor(async () => (await tabIds(chrome)).length === 1), String((await tabIds(chrome)).length))
+      check('thirty closes leave exactly one tab', await waitFor(async () => (await tabIds(chrome)).length === 1, SLOW_RUNNER_MS), String((await tabIds(chrome)).length))
       await delay(ABSENCE_SETTLE_MS)
       const closed = await agree()
       check('after closing, the strip and the main process still agree', closed.strip === 1 && closed.views === 1, JSON.stringify(closed))

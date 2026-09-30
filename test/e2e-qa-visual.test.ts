@@ -13,7 +13,7 @@ import { runPhase } from './e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
 import { captureState, checkState, prepareWindow, type Check, type Rect, type StateSpec } from './qa-visual.js'
-import { findChrome, popoverShown, waitFor } from './smoke-helpers.mjs'
+import { findChrome, popoverShown, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 /** The address text of a fixture page: its port changes on every run. */
 const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
@@ -114,8 +114,10 @@ it('the shell looks right in each state it can be in', async () => {
       await chrome.fill('#address', 'http://unresolvable.invalid/')
       await chrome.press('#address', 'Enter')
       expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('chrome-error://')))).toBe(true)
-      check('the address bar keeps the address that failed', (await chrome.inputValue('#address')) === 'http://unresolvable.invalid/', await chrome.inputValue('#address'))
-      check('back is enabled, so the person can leave the failed page', await chrome.isEnabled('#back'))
+      // The shell pushes the address and the nav buttons on later events than the error view appearing: wait on each.
+      const failed = await waitForTab(chrome, { address: 'http://unresolvable.invalid/' })
+      check('the address bar keeps the address that failed', failed.ok, `address bar shows ${await chrome.inputValue('#address')}`)
+      check('back is enabled, so the person can leave the failed page', await waitFor(async () => await chrome.isEnabled('#back')))
       await state(check, app, 'navigation-failure', {
         expected: 'Today a blank white view under the tab strip, with the failed address in the address bar and its host as the tab title: the shell draws no failure message (docs/open-questions.md, a failed navigation). A message or error page here means that was fixed: update this expectation and re-record the baseline.',
         action: 'Typed http://unresolvable.invalid/ under a resolver that answers nothing but loopback.'
