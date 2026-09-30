@@ -31,6 +31,8 @@ export interface OverlayHostDeps {
   /** The tab area, as the window lays it out now. */
   area: () => Bounds
   activeContents: () => WebContents | undefined
+  /** Called with each overlay view's webContents as it is built, so the window can wire what every view of it shares (the browser's shortcuts). */
+  viewCreated?: (contents: WebContents) => void
 }
 
 export type OverlayHostHandle = OverlayHost & {
@@ -113,6 +115,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     mine = createOverlayView({
       dirname: deps.dirname,
       def: slot.def,
+      onCreated: deps.viewCreated,
       port: {
         ready: () => {
           if (!current()) return { shown: false }

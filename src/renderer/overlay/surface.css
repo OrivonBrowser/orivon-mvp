@@ -1,0 +1,56 @@
+/* What every overlay shares: a view the size of its content, no scrolling of
+   its own document, and the surface colour main also paints before the page
+   loads (src/main/shell/theme-colors.ts). A page adds its own rules under
+   body[data-overlay='<name>']. */
+
+body[data-surface='menu'] { --wbg: #f2f2f7; }
+body[data-surface='panel'] { --wbg: #e5e5ec; }
+body[data-surface] { --wborder: color-mix(in srgb, var(--wbg) 82%, black); }
+
+@media (prefers-color-scheme: dark) {
+  body[data-surface='menu'] { --wbg: #2b2c31; --wborder: #3b3c42; }
+  body[data-surface='panel'] { --wbg: #1e1f24; --wborder: #3b3c42; }
+}
+
+html, body {
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  color: var(--wink);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+body { display: flex; flex-direction: column; }
+
+/* The box that scrolls when the view is shorter than its content. */
+#scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Its own formatting context, so a page's margins count towards the height it reports. */
+#content { display: flow-root; }
+
+/* The card edge, drawn over the content so it never changes the height. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  border: 1px solid var(--wborder);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.overlay-error {
+  padding: 16px;
+  color: var(--wink-dim);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}

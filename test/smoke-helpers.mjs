@@ -53,7 +53,7 @@ export function findChrome (app) {
  * `app.windows()` keeps listing it long after a script that opened and
  * closed it would otherwise expect the "just the tabs" count to settle back
  * down. */
-const POPOVER_URL_PARTS = ['/menu/', '/permissions/', '/site-info/']
+const POPOVER_URL_PARTS = ['/menu/', '/overlay/', '/permissions/', '/site-info/']
 
 /** Non-chrome, non-popover views, as Playwright pages -- lets a check read a
  * tab's OWN location rather than trusting the toolbar's rendering of it

@@ -45,6 +45,8 @@ export interface OverlayViewSpec {
   readonly port: OverlayPort
   readonly onBlur: () => void
   readonly onFocus: () => void
+  /** Called once with the new webContents, before its page loads: where a caller wires per-contents behaviour such as the browser's shortcuts. */
+  readonly onCreated?: ((contents: WebContents) => void) | undefined
 }
 
 function backgroundFor (surface: OverlayDef['surface']): string {
@@ -80,6 +82,7 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
   lockNavigation(contents, url)
   view.setBorderRadius(CORNER_RADIUS)
   registerOverlayIpc(contents, url, spec.port)
+  spec.onCreated?.(contents)
   contents.on('blur', spec.onBlur)
   contents.on('focus', spec.onFocus)
   void contents.loadURL(url)
