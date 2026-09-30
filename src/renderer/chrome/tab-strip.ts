@@ -80,6 +80,7 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
       })
       makeTabDraggable(el, tab.id, {
         tabs: () => [...row.querySelectorAll<HTMLElement>('.tab')],
+        isPinned: (tabEl) => tabEl.classList.contains('pinned'),
         partnerOf: () => tab.splitWith === null ? null : row.querySelector<HTMLElement>(`.tab[data-id="${tab.splitWith}"]`),
         stripHeight: () => row.getBoundingClientRect().height,
         moveTab: (id, index) => { shell.moveTab(id, index) },

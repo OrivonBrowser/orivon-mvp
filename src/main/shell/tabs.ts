@@ -16,7 +16,7 @@ import { captureFaviconInto } from '../browsing/favicon.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabFactory } from './tab-factory.js'
-import { clearOfPairs, moveInOrder } from './tab-order.js'
+import { clampToRun, clearOfPairs, moveInOrder, pinnedCount } from './tab-order.js'
 import { SplitController } from './split-controller.js'
 import { MAX_TABS } from './tab-view.js'
 import { closeParkedViews } from './tab-parking.js'
@@ -114,7 +114,8 @@ export class TabManager {
       focus: (id) => { this.liveWebContents(id)?.focus() },
       changed: () => { this.panes.sync(); this.changed() },
       openTab: () => this.atCapacity() ? undefined : this.createTab(),
-      area: getTabBounds
+      area: getTabBounds,
+      isPinned: (id) => this.isPinned(id)
     })
     this.panes = new TabPanes({
       contentView,
@@ -194,9 +195,13 @@ export class TabManager {
     this.forgetTab(id, true)
   }
 
-  /** Puts a tab at `index` in the strip. */
+  /** Puts a tab at `index` in the strip, kept within the pinned run or outside it, as the tab is pinned or not. */
   moveTab (id: string, index: number): void {
-    if (this.splits.move(id, index) || moveInOrder(this.order, id, index, this.splits.groups.pairs())) this.changed()
+    if (this.splits.move(id, index) || moveInOrder(this.order, id, index, this.splits.groups.pairs(), (other) => this.isPinned(other))) this.changed()
+  }
+
+  private isPinned (id: string): boolean {
+    return this.tabs.get(id)?.pinned === true
   }
 
   get tabCount (): number {
@@ -224,7 +229,7 @@ export class TabManager {
     if (this.disposed) return
     record.host = this.viewHost
     this.tabs.set(id, record)
-    const wanted = Math.min(Math.max(0, index ?? this.order.length), this.order.length)
+    const wanted = clampToRun(Math.min(Math.max(0, index ?? this.order.length), this.order.length), record.pinned === true, pinnedCount(this.order, (other) => this.isPinned(other)), this.order.length)
     this.order.splice(clearOfPairs(this.order, wanted, this.splits.groups.pairs(), -1), 0, id)
     // takeTab()'s forgetTab() already said this tab closed; this says it is back.
     this.shell?.tabLifecycle?.tabCreated(record.view.webContents, this.viewHost.window)

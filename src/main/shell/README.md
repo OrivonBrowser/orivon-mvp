@@ -88,7 +88,9 @@ never use one of their exports at the top level of another.
 **A tab's own state is a record and a list of signals, not a method on `TabManager`.** A feature that
 needs per-tab state adds a field to `TabRecord` and `TabState`, and a `TabSignal` in
 `tab-signals.ts` for what to watch on the `WebContents`; `tabClosing` in `tab-lifecycle.ts` tells it
-when the tab ends and why. `TabViewHost.services` and `runCommand` give code that runs on a view
+when the tab ends and why. Each signal is a file under `signals/` (sound: `signals/audio.ts`); the
+strip's order rules (pinned run first, a pair never split) live in `tab-order.ts`, and the things
+done to one tab or to those around it in `tab-commands.ts`. `TabViewHost.services` and `runCommand` give code that runs on a view
 (the context menu) the shared stores and the command bus.
 
 **[`shell-session.ts`](shell-session.ts): the shell's own views never share a session with a

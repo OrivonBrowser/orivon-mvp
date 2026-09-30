@@ -4,6 +4,7 @@
 // file changes by one line per feature.
 import type { WebContents, WebContentsView } from 'electron'
 import { contain } from './contain.js'
+import { audioSignal } from './signals/audio.js'
 import type { TabRecord, TabState } from './tab-types.js'
 
 export interface TabSignalContext {
@@ -26,7 +27,9 @@ export interface TabSignal {
 }
 
 /** One line per feature, alphabetical by name. */
-export const TAB_SIGNALS: readonly TabSignal[] = []
+export const TAB_SIGNALS: readonly TabSignal[] = [
+  audioSignal
+]
 
 function contextFor (id: string, record: TabRecord): TabSignalContext {
   const view = record.view

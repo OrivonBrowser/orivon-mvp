@@ -282,7 +282,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
 
     assignTabDetails: (details, wc) => {
       const found = bridge?.services.windows.findTab(wc)
-      applyOrivonTabDetails(details, found == null ? null : found.window.tabs.faviconFor(found.tabId))
+      applyOrivonTabDetails(details, found == null ? null : found.window.tabs.faviconFor(found.tabId), found != null && found.window.tabs.record(found.tabId)?.pinned === true)
     },
 
     createWindow: async (details) => {

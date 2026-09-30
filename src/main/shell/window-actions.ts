@@ -11,6 +11,7 @@ import { runChromeAction } from './chrome-actions.js'
 import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
 import { dropTab, moveToNewWindow, moveToWindow } from './tab-move.js'
+import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { showTabMenu, tabMenuTemplate } from './tab-menu.js'
 import { cascadeFrom } from './window-options.js'
 import type { ShellWindowOptions } from './window-options.js'
@@ -60,21 +61,29 @@ export function shellActions (parts: WindowParts): ShellActions {
   const showTabMenuFor = (id: string): void => {
     const { tabs: all } = tabs.getState()
     const tab = all.find((candidate) => candidate.id === id)
-    if (tab === undefined) return
+    const flags = tabMenuFlags({ tabs: all }, id)
+    if (tab === undefined || flags === undefined) return
     const others = services.windows.all().filter((other) => other !== entry && !other.window.isDestroyed())
+    // A pinned tab is never in a split, on either side of it.
+    const partners = tab.pinned ? [] : all.filter((other) => other.id !== id && other.splitWith === null && !other.pinned)
     showTabMenu(window, tabMenuTemplate({
-      canDuplicate: !tab.isInternal,
+      ...flags,
       tabCount: all.length,
       inSplit: tab.splitWith !== null,
-      splitPartners: all.filter((other) => other.id !== id && other.splitWith === null).map((other) => ({ label: other.title === '' ? 'New Tab' : other.title, split: () => { tabs.splits.split(id, other.id, 'right') } })),
+      splitPartners: partners.map((other) => ({ label: other.title === '' ? 'New Tab' : other.title, split: () => { tabs.splits.split(id, other.id, 'right') } })),
       otherWindows: others.map((other, position) => ({ label: windowLabel(other, position), move: () => { moveToWindow(entry, id, other) } }))
     }, {
+      newTabRight: () => { newTabToRight(tabs, id) },
       reload: () => { tabs.reload(id) },
-      duplicate: () => { tabs.createTab(tab.isNewTab ? undefined : tab.url) },
+      duplicate: () => { duplicateTab(tabs, id) },
+      togglePin: () => { togglePin(tabs, id) },
+      toggleMute: () => { toggleMute(tabs, id) },
       moveToNewWindow: () => { moveToNewWindow(entry, id, openWindow, cascadeFrom(window.getBounds())) },
       separate: () => { tabs.splits.separate(id) },
       close: () => { tabs.closeTab(id) },
-      closeOthers: () => { for (const other of all) if (other.id !== id) tabs.closeTab(other.id) }
+      closeOthers: () => { closeOthers(tabs, id) },
+      closeRight: () => { closeToRight(tabs, id) },
+      run: (command) => { services.commands.run(command, entry) }
     }))
   }
 
