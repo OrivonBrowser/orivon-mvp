@@ -462,6 +462,45 @@ describe('exposeOrivon -- P-F11 continued: net.listen (A114, d-0028)', () => {
   })
 })
 
+describe('exposeOrivon -- the scope of net.listen and net.udpBind (ADR-0034)', () => {
+  /** Runs `call` on `orivon.net`, answers its envelope, delivers its port, and returns the payload the broker was sent. */
+  async function payloadSent (method: 'listen' | 'udpBind', opts: unknown): Promise<unknown> {
+    const target = installViaFakeMainWorld()
+    const wire = method === 'listen' ? 'net.listen' : 'net.udpBind'
+    let sent: unknown
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: unknown }) => {
+      if (envelope.method === wire) {
+        sent = envelope.payload
+        return okEnvelope({ id: 'h-1', localAddress: '127.0.0.1', localPort: 4001 })
+      }
+      return okEnvelope(undefined)
+    })
+    exposeOrivon()
+    const orivon = asPage(target.orivon) as { net: Record<string, (opts: unknown) => Promise<unknown>> }
+    const pending = orivon.net[method]!(opts)
+    // The rejection is the test's to ignore: only the payload matters here.
+    pending.catch(() => {})
+    await Promise.resolve()
+    await Promise.resolve()
+    return sent
+  }
+
+  it.each(['listen', 'udpBind'] as const)('net.%s sends the scope the app passed', async (method) => {
+    expect(await payloadSent(method, { port: 4001, scope: 'local' })).toEqual({ port: 4001, scope: 'local' })
+    expect(await payloadSent(method, { port: 4001, scope: 'network' })).toEqual({ port: 4001, scope: 'network' })
+  })
+
+  it.each(['listen', 'udpBind'] as const)('net.%s leaves scope out when the app omitted it, so the broker default applies', async (method) => {
+    const sent = await payloadSent(method, { port: 4001 })
+    expect(sent).toEqual({ port: 4001 })
+    expect(sent).not.toHaveProperty('scope')
+  })
+
+  it.each(['listen', 'udpBind'] as const)('net.%s forwards an unrecognised scope untouched, for the broker to refuse', async (method) => {
+    expect(await payloadSent(method, { port: 4001, scope: 'lan' })).toEqual({ port: 4001, scope: 'lan' })
+  })
+})
+
 describe('exposeOrivon -- fs.open and its handle-scoped siblings', () => {
   it('open, then read/write/fstat/truncate/sync/close, each send the right CONTROL_CHANNEL envelope', async () => {
     const target = installViaFakeMainWorld()

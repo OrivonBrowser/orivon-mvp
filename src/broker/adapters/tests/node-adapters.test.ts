@@ -168,7 +168,7 @@ async function connectClient (port: number): Promise<Socket> {
 
 describe('listenTcp against a real TCP client', () => {
   it('binds inside the granted range and reports the real bound port', async () => {
-    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts(), 'network')
 
     expect(listened.localPort).toBeGreaterThanOrEqual(30000)
     expect(listened.localPort).toBeLessThanOrEqual(30010)
@@ -178,7 +178,7 @@ describe('listenTcp against a real TCP client', () => {
   })
 
   it('accept() resolves with a real connection once a client connects', async () => {
-    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts(), 'network')
     const acceptPromise = listened.accept()
 
     const client = await connectClient(listened.localPort)
@@ -193,7 +193,7 @@ describe('listenTcp against a real TCP client', () => {
   })
 
   it('a second accept() waits until a second client connects -- no pre-accepting ahead of demand', async () => {
-    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts(), 'network')
 
     const first = await (async () => {
       const p = listened.accept()
@@ -219,7 +219,7 @@ describe('listenTcp against a real TCP client', () => {
   })
 
   it("destroy('closed') ends the server gracefully -- a still-pending accept() resolves null, not an error", async () => {
-    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts(), 'network')
     const pending = listened.accept()
 
     await listened.destroy('closed')
@@ -228,7 +228,7 @@ describe('listenTcp against a real TCP client', () => {
   })
 
   it("destroy('revoked') rejects a still-pending accept() with 'revoked', not a silent null", async () => {
-    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts(), 'network')
     const pending = listened.accept()
 
     await listened.destroy('revoked')
@@ -237,7 +237,7 @@ describe('listenTcp against a real TCP client', () => {
   })
 
   it('destroy() resets every accepted-but-unclaimed connection still queued', async () => {
-    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts(), 'network')
     const client = await connectClient(listened.localPort)
     const clientErrored = new Promise<NodeJS.ErrnoException>((resolve) => client.once('error', resolve))
     // Give the server's 'connection' handler a tick to run and queue it --
@@ -251,7 +251,7 @@ describe('listenTcp against a real TCP client', () => {
   })
 
   it('a peer that resets a still-queued connection is dropped from the queue and never crashes the process', async () => {
-    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts(), 'network')
     const first = await connectClient(listened.localPort)
     const second = await connectClient(listened.localPort)
     // Give the server's 'connection' handler a tick to queue both -- nothing
@@ -280,9 +280,9 @@ describe('listenTcp against a real TCP client', () => {
   })
 
   it('rejects a listen with no free port in the granted range', async () => {
-    const first = await listenTcp([{ lo: 30020, hi: 30020 }], neverAborts())
+    const first = await listenTcp([{ lo: 30020, hi: 30020 }], neverAborts(), 'network')
 
-    await expect(listenTcp([{ lo: 30020, hi: 30020 }], neverAborts())).rejects.toMatchObject({ code: 'limit' })
+    await expect(listenTcp([{ lo: 30020, hi: 30020 }], neverAborts(), 'network')).rejects.toMatchObject({ code: 'limit' })
 
     await first.destroy('closed')
   })
@@ -297,9 +297,9 @@ describe('listenTcp against a real TCP client', () => {
   // `shim/wasi-p2/tests/sockets.test.ts`'s own listen-failure case.
   it('an ephemeral listen and an explicit one on a single-port grant collide with the real EADDRINUSE', async () => {
     const range = [{ lo: 30021, hi: 30021 }]
-    const ephemeral = await listenTcp(range, neverAborts())
+    const ephemeral = await listenTcp(range, neverAborts(), 'network')
 
-    await expect(listenTcp(range, neverAborts())).rejects.toMatchObject({ code: 'limit', platformCode: 'EADDRINUSE' })
+    await expect(listenTcp(range, neverAborts(), 'network')).rejects.toMatchObject({ code: 'limit', platformCode: 'EADDRINUSE' })
 
     await ephemeral.destroy('closed')
   })

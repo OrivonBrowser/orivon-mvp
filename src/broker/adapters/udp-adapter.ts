@@ -9,10 +9,11 @@
 
 import { createSocket } from 'node:dgram'
 import type { Socket as DgramSocket } from 'node:dgram'
-import type { Datagram, OrivonErrorCode } from '../../contracts/index.js'
+import type { BindScope, Datagram, OrivonErrorCode } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
 import type { BoundUdpSocket, SendOutcome } from '../broker-contracts.js'
 import type { PortRange } from '../policy/bind.js'
+import { bindAddressFor } from '../policy/bind-scope.js'
 import { fail } from '../errors.js'
 import { mapIoError } from '../io-errors.js'
 import { countPorts, portAt, randomStart } from './port-pick.js'
@@ -43,7 +44,7 @@ function refused (code: OrivonErrorCode, platformCode?: string): SendOutcome {
  * -- verified against real Node dgram sockets, not assumed. Without this,
  * that race left this promise, and `bindUdp`'s, pending forever.
  */
-function bindOne (socket: DgramSocket, port: number): Promise<void> {
+function bindOne (socket: DgramSocket, port: number, address: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const cleanup = (): void => {
       socket.removeListener('error', onError)
@@ -53,7 +54,7 @@ function bindOne (socket: DgramSocket, port: number): Promise<void> {
     const onClose = (): void => { cleanup(); reject(fail('revoked', 'the socket was closed while binding')) }
     socket.once('error', onError)
     socket.once('close', onClose)
-    socket.bind(port, '0.0.0.0', () => {
+    socket.bind(port, address, () => {
       cleanup()
       resolve()
     })
@@ -143,7 +144,10 @@ export function readableOf (socket: DgramSocket, dropped: { count: number }, win
  * is a cheap cross-session fingerprint for a browser whose whole pitch is
  * privacy -- and it costs nothing to avoid (A88's own note).
  *
- * IPv4 ONLY in v0 (`udp4`, bound to 0.0.0.0). Nothing in the corpus specifies
+ * `scope` picks the interface (`bindAddressFor`): `'local'` is `127.0.0.1`, only
+ * `'network'` is `0.0.0.0`.
+ *
+ * IPv4 ONLY in v0 (`udp4`). Nothing in the corpus specifies
  * the family, and a dual-stack `udp6` socket reports IPv4 peers as
  * IPv4-mapped addresses, which would have to be un-mapped before they could be
  * matched against a `udp.send` pattern -- a rebinding-shaped bug in the making
@@ -152,11 +156,13 @@ export function readableOf (socket: DgramSocket, dropped: { count: number }, win
 export async function bindUdp (
   ranges: readonly PortRange[],
   signal: AbortSignal,
+  scope: BindScope,
   windowBytes: number = LIMITS.inboundDatagramWindowBytes
 ): Promise<BoundUdpSocket> {
   if (signal.aborted) throw fail('revoked', 'the grant authorising this bind was withdrawn')
   const total = countPorts(ranges)
   if (total === 0) throw fail('internal', 'no granted port ranges to bind within')
+  const bindAddress = bindAddressFor(scope)
 
   const socket = createSocket({ type: 'udp4' })
   // Guarded via closeSocket, not a raw socket.close(): this callback runs
@@ -172,7 +178,7 @@ export async function bindUdp (
   const start = randomStart(total)
   for (let attempt = 0; attempt < Math.min(BIND_ATTEMPTS, total); attempt += 1) {
     try {
-      await bindOne(socket, portAt(ranges, (start + attempt) % total))
+      await bindOne(socket, portAt(ranges, (start + attempt) % total), bindAddress)
       lastError = undefined
       break
     } catch (error) {

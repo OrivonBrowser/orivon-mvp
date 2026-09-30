@@ -10,8 +10,9 @@
 // trusted because the preload is well-behaved -- not the payload, and not
 // the envelope carrying it.
 
-import type { CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
+import type { BindScope, CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
+import { isBindScope } from '../policy/bind-scope.js'
 import { MAX_PATTERNS } from '../policy/connect.js'
 
 /**
@@ -114,7 +115,8 @@ export interface WebSetEmbedScriptParams { readonly source: string }
 /** net.connect's payload. net.connectSecure's adds TLS options and has its own validator, ./secure-connect-params.ts. */
 export interface NetConnectParams { readonly host: string, readonly port: number }
 /**
- * Shared by net.udpBind and net.listen -- both take exactly `{ port }`, and
+ * Shared by net.udpBind and net.listen -- both take `{ port }` and an optional
+ * `scope` (ADR-0034), and
  * `isNetUdpBindParams` below validates either call's payload
  * (code-guidelines.md Rule 3: same shape, same reason).
  *
@@ -122,7 +124,7 @@ export interface NetConnectParams { readonly host: string, readonly port: number
  * file where zero is not a shape error. policy/bind.ts decides what it is
  * allowed to resolve to; this only checks it is an integer in range.
  */
-export interface NetUdpBindParams { readonly port: number }
+export interface NetUdpBindParams { readonly port: number, readonly scope?: BindScope }
 export interface NetCloseParams { readonly id: string }
 /** `net.lookup` (d-0030) -- no port, unlike NetConnectParams: a lookup is bounded by the origin's held network grants, never by a port of its own. */
 export interface NetLookupParams { readonly hostname: string }
@@ -167,7 +169,11 @@ export interface RequestGrantCtx {
 
 export function isNetUdpBindParams (payload: unknown): payload is NetUdpBindParams {
   if (typeof payload !== 'object' || payload === null) return false
-  const port = (payload as { port?: unknown }).port
+  const { port, scope } = payload as { port?: unknown, scope?: unknown }
+  // `scope` is exactly 'local', 'network' or absent (an explicit `undefined`
+  // is absent: it is what a caller that omitted it looks like after a
+  // structured clone). Anything else is a shape error, never a default.
+  if (scope !== undefined && !isBindScope(scope)) return false
   return typeof port === 'number' && Number.isInteger(port) && port >= 0 && port <= 65535
 }
 

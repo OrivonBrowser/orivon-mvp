@@ -10,6 +10,7 @@ import type {
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge
 } from '../main-world-socket.js'
 import type { OrivonErrorCode } from '../../../contracts/errors.js'
+import type { BindScope } from '../../../contracts/capability-api.js'
 import type { FileStat, SendRefusal } from '../../../contracts/handles.js'
 import type { ResponseEnvelope } from '../../../contracts/ipc.js'
 
@@ -193,8 +194,8 @@ export function fakeBridge (
   webSetEmbedScript: (source: string) => Promise<void>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
-  netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
-  netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
+  netUdpBind: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldUdpBridge>
+  netListen: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldServerBridge>
   netLookup: (opts: { hostname: string }) => Promise<ReadonlyArray<{ address: string, family: 'IPv4' | 'IPv6' }>>
 } {
   return {
