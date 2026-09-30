@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { groupLabelFor, NAV_ICON } from '../settings/nav.js'
 import { sectionsFor } from '../settings/sections/index.js'
-import { aboutSystemRows } from '../settings/sections/about-system.js'
 import { addresses } from '../settings/sections/addresses.js'
 import { passwords } from '../settings/sections/passwords.js'
 import { privacyNetworkRows } from '../settings/sections/privacy-network.js'
@@ -111,6 +110,5 @@ describe('the sections a feature fills', () => {
   it('has row lists that add nothing to the sections they join', () => {
     expect(privacyNetworkRows).toEqual([])
     expect(privacySiteDataRows).toEqual([])
-    expect(aboutSystemRows).toEqual([])
   })
 })
