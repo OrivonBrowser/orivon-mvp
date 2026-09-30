@@ -64,6 +64,8 @@ export interface ContextMenuHost {
   readonly runCommand?: (id: CommandId) => void
   /** The address bar's "Paste and Go". */
   readonly pasteAndGo?: () => void
+  /** The address bar's "Always Show Full Addresses": whether it is on, and the flip. */
+  readonly fullAddresses?: { readonly on: () => boolean, readonly toggle: () => void }
   /** Opens developer tools at a point of the page. Absent where they are not allowed: the menu then has no Inspect. */
   readonly inspect?: (x: number, y: number) => void
 }
@@ -92,6 +94,10 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     inspectAt: (x, y) => { onTab(() => { host.inspect?.(x, y) })() }
   }
   const context: ContextMenuContext = { ...DEFAULT_CONTEXT }
+  if (host.fullAddresses !== undefined) {
+    actions.toggleFullAddresses = host.fullAddresses.toggle
+    context.fullAddresses = host.fullAddresses.on()
+  }
   if (host.page !== undefined) {
     actions.saveUrl = (url) => { onTab(() => { wc.downloadURL(url) })() }
     actions.navigate = {

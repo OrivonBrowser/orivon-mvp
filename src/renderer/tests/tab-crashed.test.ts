@@ -28,7 +28,7 @@ afterEach(() => { vi.unstubAllGlobals() })
 
 const tab = (over: Partial<TabState> = {}): TabState => ({
   id: 'a', url: 'https://example.com/page', displayUrl: 'https://example.com/page', title: 'Example', canGoBack: false, canGoForward: false, loading: false,
-  favicon: null, isNewTab: false, splitWith: null, isInternal: false, pinned: false, muted: false, audible: false, crashed: null, ...over
+  favicon: null, isNewTab: false, splitWith: null, isInternal: false, pinned: false, muted: false, audible: false, crashed: null, connection: 'none', ...over
 })
 
 function decorate (over: Partial<TabState>, title = 'Example\nexample.com'): FakeEl {

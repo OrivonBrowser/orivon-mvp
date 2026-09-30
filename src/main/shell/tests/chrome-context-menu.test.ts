@@ -45,6 +45,12 @@ describe('chromeContextMenuHost -- Inspect on the chrome\'s own right-click menu
     expect(chromeContextMenuHost(undefined, {} as never, {} as never, vi.fn()).pasteAndGo).toBeUndefined()
   })
 
+  it('carries the full-address switch through when the window supplies one', () => {
+    const fullAddresses = { on: () => false, toggle: vi.fn() }
+    expect(chromeContextMenuHost(undefined, {} as never, {} as never, vi.fn(), undefined, fullAddresses).fullAddresses).toBe(fullAddresses)
+    expect(chromeContextMenuHost(undefined, {} as never, {} as never, vi.fn()).fullAddresses).toBeUndefined()
+  })
+
   it('offers no page items: no tab navigation, no page tools', () => {
     const host = chromeContextMenuHost(undefined, {} as never, {} as never, vi.fn())
     expect(host.page).toBeUndefined()

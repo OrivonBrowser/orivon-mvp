@@ -18,6 +18,14 @@ export const search: Section = {
       keywords: ['custom', 'own', 'url', 'template', 'searxng'],
       control: { type: 'text', key: 'search.customUrl', placeholder: 'https://search.example/?q=%s' },
       visible: (state) => state.value('search.engine') === 'custom'
+    },
+    {
+      id: 'address-bar-full-urls',
+      label: 'Always show full addresses',
+      help: 'Show the whole address, with https:// and www., while you are not editing it. Off, the bar shows the site name and hides them.',
+      keywords: ['url', 'https', 'www', 'elide', 'full address', 'address bar', 'omnibox', 'show full url'],
+      control: { type: 'toggle', key: 'addressBar.showFullUrl' },
+      group: 'Address bar'
     }
   ]
 }

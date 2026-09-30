@@ -190,7 +190,7 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
     const run = vi.fn()
     showContextMenu(wc as never, params({}), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false }, runCommand: run })
     const template = lastTemplate()
-    expect(labels(template)).toEqual(['Back', 'Forward', 'Reload', 'Save Page As…', 'Print…', 'Take a Screenshot', 'View Page Source'])
+    expect(labels(template)).toEqual(['Back', 'Forward', 'Reload', 'Save Page As…', 'Print…', 'Take a Screenshot', 'View Page Source', 'Create QR Code for This Page'])
     expect(template.find((i) => i.label === 'Back')?.enabled).toBe(true)
     expect(template.find((i) => i.label === 'Forward')?.enabled).toBe(false)
     click(template, 'Back')
@@ -274,6 +274,16 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
     expect(labels(template)).toEqual(['Undo', 'Redo', 'Cut', 'Copy', 'Paste', 'Paste and Go', 'Paste as Plain Text', 'Select All'])
     click(template, 'Paste and Go')
     expect(pasteAndGo).toHaveBeenCalledTimes(1)
+  })
+
+  it('puts the full-address switch on the chrome\'s menu, ticked from the setting and flipping it', () => {
+    buildFromTemplate.mockClear()
+    const toggle = vi.fn()
+    showContextMenu(tabContents() as never, params({ isEditable: true }), { window: {} as never, openInNewTab: vi.fn(), fullAddresses: { on: () => true, toggle } })
+    const template = lastTemplate()
+    expect(template.at(-1)).toMatchObject({ label: 'Always Show Full Addresses', type: 'checkbox', checked: true })
+    click(template, 'Always Show Full Addresses')
+    expect(toggle).toHaveBeenCalledTimes(1)
   })
 
   it('shows the chrome nothing for a click on empty space', () => {

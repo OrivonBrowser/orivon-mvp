@@ -24,7 +24,7 @@ async function setup (url = 'https://a.example/', zoomPercent = 100, onTop = fal
   const ctx = {
     window: {
       window: { isAlwaysOnTop: () => onTop },
-      tabs: { getState: () => ({ tabs: [{ id: 'a', url }], activeTabId: 'a' }) }
+      tabs: { getState: () => ({ tabs: [{ id: 'a', url, displayUrl: url, isNewTab: url === 'orivon://newtab/', isInternal: false }], activeTabId: 'a' }) }
     },
     services: { shortcuts, closedTabs, zoom: { percentFor: (origin: string | null) => origin === null ? 100 : zoomPercent } }
   } as unknown as WindowContext
@@ -155,9 +155,29 @@ describe('menuItems', () => {
     const items = menuItems(ctx)
     expect(items.some((item) => item.kind === 'submenu' && item.label === 'Bookmarks')).toBe(false)
     const ids = runnableIds(items)
-    for (const id of ['downloads.open', 'bookmarks.open', 'bookmarks.toggleBar', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'page.qr', 'devtools.console', 'tasks.open', 'import.open', 'about.open']) {
+    for (const id of ['downloads.open', 'bookmarks.open', 'bookmarks.toggleBar', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'devtools.console', 'tasks.open', 'import.open', 'about.open']) {
       expect(ids.has(id as never), id).toBe(false)
     }
+  })
+})
+
+describe('the QR code row', () => {
+  const more = (items: readonly MenuItemView[]): readonly MenuItemView[] => (items.find((item) => item.kind === 'submenu' && item.label === 'More tools') as Extract<MenuItemView, { kind: 'submenu' }>).items
+
+  it('is offered on a page, after Save as PDF', async () => {
+    const { ctx } = await setup()
+    const tools = more(menuItems(ctx))
+    expect(find(tools, 'page.qr')).toMatchObject({ label: 'Create QR code for this page' })
+    expect(find(tools, 'page.qr')).not.toHaveProperty('disabled')
+    expect(runnableIds(menuItems(ctx)).has('page.qr')).toBe(true)
+    const ids = tools.flatMap((item) => item.kind === 'command' ? [item.id] : [])
+    expect(ids.indexOf('page.qr')).toBe(ids.indexOf('page.pdf') + 1)
+  })
+
+  it('is greyed, and not runnable, on the new-tab page', async () => {
+    const { ctx } = await setup('orivon://newtab/')
+    expect(find(more(menuItems(ctx)), 'page.qr')).toMatchObject({ disabled: true })
+    expect(runnableIds(menuItems(ctx)).has('page.qr')).toBe(false)
   })
 })
 
@@ -165,7 +185,7 @@ describe('runnableIds', () => {
   it('holds every listed command at every depth, and the zoom row\'s four', async () => {
     const { ctx } = await setup()
     const ids = runnableIds(menuItems(ctx))
-    for (const id of ['tab.new', 'split.toggle', 'tab.search', 'page.print', 'page.save', 'page.screenshot', 'page.pip', 'page.pdf', 'page.viewSource', 'window.alwaysOnTop', 'zoom.in', 'zoom.out', 'zoom.reset', 'window.fullscreen']) expect(ids.has(id as never), id).toBe(true)
+    for (const id of ['tab.new', 'split.toggle', 'tab.search', 'page.print', 'page.save', 'page.screenshot', 'page.pip', 'page.pdf', 'page.qr', 'page.viewSource', 'window.alwaysOnTop', 'zoom.in', 'zoom.out', 'zoom.reset', 'window.fullscreen']) expect(ids.has(id as never), id).toBe(true)
     expect(ids.has('tab.close')).toBe(false)
   })
 

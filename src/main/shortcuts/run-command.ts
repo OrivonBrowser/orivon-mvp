@@ -11,6 +11,7 @@ import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { reopenClosed } from '../session-restore/reopen.js'
+import { openQr } from '../qr/qr-open.js'
 import { TAB_SEARCH_OVERLAY } from '../tab-search/tab-search-overlay.js'
 import { dismissRestoreOffer } from '../startup/restore-offer.js'
 import { kioskAllows } from '../window-state/kiosk.js'
@@ -126,7 +127,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return
     case 'page.screenshot': void screenshotCommand(target); return
-    case 'page.qr': return
+    case 'page.qr': openQr(target); return
     case 'page.pip': void pipCommand(target); return
   }
 }

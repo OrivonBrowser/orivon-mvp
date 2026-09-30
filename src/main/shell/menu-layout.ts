@@ -4,6 +4,7 @@
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import { commandById } from '../shortcuts/commands.js'
+import { qrAvailable } from '../qr/qr-open.js'
 import { hintFor } from '../session-restore/reopen.js'
 import type { WindowContext } from './window-context.js'
 
@@ -22,6 +23,11 @@ export type MenuEntry = '-' | CommandId
 function barShown ({ settings, bookmarks }: WindowContext['services']): boolean {
   const mode = settings.get('appearance.bookmarksBar')
   return mode === 'always' || (mode === 'auto' && bookmarks.getAll().length > 0)
+}
+
+/** Commands that do nothing on some pages; the menu greys their row there. */
+const UNAVAILABLE: Partial<Record<CommandId, (ctx: WindowContext) => boolean>> = {
+  'page.qr': ({ window }) => !qrAvailable(window)
 }
 
 export const MENU_LAYOUT: readonly MenuEntry[] = [
@@ -81,6 +87,8 @@ export type MenuItemView =
     readonly hint: string | null
     /** Null for an entry that is not a tick; otherwise whether it is on. */
     readonly checked: boolean | null
+    /** Present (true) when the page in front gives the command nothing to do: the row is shown greyed and does not run. */
+    readonly disabled?: true
   }
   /** `zoomable` is false on a page that has no zoom of its own (the new-tab page, a shell page). */
   | { readonly kind: 'zoom', readonly percent: number, readonly zoomable: boolean }
@@ -114,7 +122,8 @@ export function menuItems (ctx: WindowContext, layout: readonly MenuEntry[] = ME
   const command = (id: CommandId, hint: () => string | null, checked: () => boolean | null): MenuItemView[] => {
     const row = rows.get(id)
     if (row === undefined || commandById(id)?.pending === true) return []
-    return [{ kind: 'command', id, label: commandById(id)?.label ?? row.label, keys: row.keys, hint: hint(), checked: checked() }]
+    const disabled = UNAVAILABLE[id]?.(ctx) === true
+    return [{ kind: 'command', id, label: commandById(id)?.label ?? row.label, keys: row.keys, hint: hint(), checked: checked(), ...(disabled ? { disabled: true as const } : {}) }]
   }
   const build = (entries: readonly MenuEntry[]): MenuItemView[] => tidy(entries.flatMap((entry): MenuItemView[] => {
     if (entry === '-') return [{ kind: 'separator' }]
@@ -133,7 +142,7 @@ export function runnableIds (items: readonly MenuItemView[]): ReadonlySet<Comman
   const ids = new Set<CommandId>()
   const visit = (list: readonly MenuItemView[]): void => {
     for (const item of list) {
-      if (item.kind === 'command') ids.add(item.id)
+      if (item.kind === 'command') { if (item.disabled !== true) ids.add(item.id) }
       else if (item.kind === 'submenu') visit(item.items)
       else if (item.kind === 'zoom') {
         for (const id of ZOOM_ROW_COMMANDS) if (item.zoomable || id === 'window.fullscreen') ids.add(id)
