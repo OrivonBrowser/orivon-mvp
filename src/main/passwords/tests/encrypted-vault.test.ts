@@ -203,6 +203,27 @@ describe('EncryptedVault', () => {
     expect(vault.state()).toBe('ready')
   })
 
+  it('tells its listeners once the system has answered and the store is ready', async () => {
+    const vault = new EncryptedVault({ path, storage: createFakeKeyring() })
+    const listener = vi.fn()
+    vault.onChange(listener)
+    await vault.ready()
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('records a fill on the login it names, writes it and tells its listeners', async () => {
+    const vault = await opened()
+    const login = await vault.save({ origin: SITE, username: 'ada', password: 'one' })
+    const listener = vi.fn()
+    vault.onChange(listener)
+    vault.touch(login?.id ?? '')
+    vault.touch('no-such-login')
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(vault.list()[0]?.used).toBeGreaterThan(0)
+    await vault.flush()
+    expect(JSON.parse(fileText()).logins[0].used).toBe(vault.list()[0]?.used)
+  })
+
   it('keeps nothing and says so when the keyring refuses to encrypt', async () => {
     const vault = await opened({ ...createFakeKeyring(), encryptStringAsync: async () => { throw new Error('locked') } })
     expect(await vault.save({ origin: SITE, username: 'ada', password: 'x' })).toBeNull()

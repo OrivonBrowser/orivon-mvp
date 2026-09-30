@@ -121,6 +121,14 @@ export class EncryptedVault implements PasswordVault {
     return true
   }
 
+  touch (id: string): void {
+    const stored = this.#logins.get(id)
+    if (this.#state !== 'ready' || stored === undefined) return
+    stored.used = this.#now()
+    this.#writeInBackground()
+    this.#changed()
+  }
+
   onChange (listener: () => void): () => void {
     this.#listeners.add(listener)
     return () => { this.#listeners.delete(listener) }
@@ -184,6 +192,8 @@ export class EncryptedVault implements PasswordVault {
       if (!await this.#storage.isAsyncEncryptionAvailable()) return
       if (NO_REAL_KEYRING.has(this.#storage.getSelectedStorageBackend())) return
       this.#state = 'ready'
+      // Watchers that started while the answer was pending learn it only from a change.
+      this.#changed()
     } catch {
       console.error('[passwords] the system keyring could not be asked')
     }
