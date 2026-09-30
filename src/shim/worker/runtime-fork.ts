@@ -172,10 +172,16 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
   const { proc: baseProc, liveness, crash, write } = setupChildProcess(scope, parent, start)
   routeConsole(scope.console, write)
   const proc = baseProc as ForkProcess
-  // The IPC channel itself is a reason to stay alive, released only when it closes (closeChannel below).
-  liveness.ref()
   ;(scope as unknown as Record<symbol, Liveness>)[FORK_LIVENESS_SYMBOL] = liveness
   proc.connected = true
+  // As in Node, the open channel keeps the child alive only while something listens on it: a 'message' or
+  // 'disconnect' listener takes the reference and the last one going away (or the channel closing) gives it back.
+  // The process object has no 'newListener' events, so each way a listener comes or goes re-reads the count.
+  let channelRef = false
+  const syncChannel = (): void => {
+    const wanted = proc.connected && proc.listenerCount('message') + proc.listenerCount('disconnect') > 0
+    if (wanted && !channelRef) { channelRef = true; liveness.ref() } else if (!wanted && channelRef) { channelRef = false; liveness.unref() }
+  }
   proc.send = (message: unknown, ...rest: unknown[]): boolean => {
     const callback = rest.find((arg): arg is SendCallback => typeof arg === 'function')
     if (!proc.connected) {
@@ -191,7 +197,7 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
   const closeChannel = (): void => {
     if (!proc.connected) return
     proc.connected = false
-    queueMicrotask(() => { proc.emit('disconnect'); liveness.unref() })
+    queueMicrotask(() => { proc.emit('disconnect'); syncChannel() })
   }
   proc.disconnect = () => {
     if (!proc.connected) return
@@ -200,7 +206,7 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
   }
 
   const deliver = (message: ToWorker): void => {
-    if (message.type === 'ipc') proc.emit('message', message.message)
+    if (message.type === 'ipc') { proc.emit('message', message.message); syncChannel() }
     else if (message.type === 'stdin') proc.stdin.push(Buffer.from(message.data))
     else if (message.type === 'stdin-end') proc.stdin.push(null)
     else if (message.type === 'disconnect') closeChannel()
@@ -215,12 +221,13 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
     for (const message of early ?? []) deliver(message)
   }
   parent.onMessage((message) => { if (held === undefined) deliver(message); else held.push(message) })
-  for (const method of ['on', 'addListener', 'once', 'prependListener'] as const) {
+  for (const method of ['on', 'addListener', 'once', 'prependListener', 'off', 'removeListener', 'removeAllListeners'] as const) {
     const register = (proc as unknown as Record<string, unknown>)[method] as ((event: string, listener: (...args: unknown[]) => void) => unknown) | undefined
     if (register === undefined) continue
     ;(proc as unknown as Record<string, unknown>)[method] = (event: string, listener: (...args: unknown[]) => void) => {
       const result = register.call(proc, event, listener)
-      if (event === 'message' && held !== undefined) queueMicrotask(release)
+      if (event === 'message' && held !== undefined && !method.startsWith('remove') && method !== 'off') queueMicrotask(release)
+      syncChannel()
       return result
     }
   }

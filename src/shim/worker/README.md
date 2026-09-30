@@ -120,8 +120,9 @@ slot open in the broker's per-app handle table.
 runs before any message is processed, while a top-level `await` on the first message must still
 receive it.
 
-**A forked child ends on its own as a Node child does** (`liveness.ts`): once its IPC channel is
-closed and no timer, immediate, fetch, `orivon.*` call or open handle is pending, it emits
+**A forked child ends on its own as a Node child does** (`liveness.ts`): once nothing holds its IPC
+channel (no `'message'` or `'disconnect'` listener, or the channel closed) and no timer, immediate,
+fetch, `orivon.*` call or open handle is pending, it emits
 `'beforeExit'`, then `'exit'`, and ends with code 0. Scheduling that must not keep it alive uses
 the unwrapped `setTimeout` that `trackScope` returns.
 

@@ -248,12 +248,27 @@ describe('runFork', () => {
     expect(parent.posts).toContainEqual({ type: 'ipc', message: { configuredWith: 'config' } })
   })
 
-  it('ends on its own with code 0 once the parent disconnects and nothing is pending, after beforeExit', async () => {
+  it('ends on its own with code 0, after beforeExit, when nothing is pending and nothing listens on the channel, as a Node child does', async () => {
     const scope = fakeScope()
     const parent = fakeParent()
     const seen: string[] = []
     await runFork(forkStart(await orivonPort()), parent, scope, async () => {
       const proc = scope.process as unknown as { on: (event: string, listener: (code: unknown) => void) => void }
+      proc.on('beforeExit', () => seen.push('beforeExit'))
+      proc.on('exit', () => seen.push('exit'))
+    })
+    await vi.waitFor(() => { expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 0, signal: null }) })
+    expect(seen).toEqual(['beforeExit', 'exit'])
+    expect(scope.closed()).toBe(true)
+  })
+
+  it('stays alive while a \'message\' listener holds the channel, and ends once the parent disconnects', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    const seen: string[] = []
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const proc = scope.process as unknown as { on: (event: string, listener: (code: unknown) => void) => void }
+      proc.on('message', () => {})
       proc.on('beforeExit', () => seen.push('beforeExit'))
       proc.on('exit', () => seen.push('exit'))
     })
@@ -263,6 +278,22 @@ describe('runFork', () => {
     await vi.waitFor(() => { expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 0, signal: null }) })
     expect(seen).toEqual(['beforeExit', 'exit'])
     expect(scope.closed()).toBe(true)
+  })
+
+  it('lets go of the channel when the last \'message\' listener is removed', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const proc = scope.process as unknown as { on: (event: string, listener: () => void) => void, off: (event: string, listener: () => void) => void }
+      const listener = (): void => {}
+      proc.on('message', listener)
+      proc.on('disconnect', listener)
+      proc.off('message', listener)
+      setTimeout(() => { proc.off('disconnect', listener) }, 10)
+    })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(parent.posts.some((post) => post.type === 'exit')).toBe(false)
+    await vi.waitFor(() => { expect(parent.posts.at(-1)).toEqual({ type: 'exit', code: 0, signal: null }) })
   })
 
   it('stays alive after disconnecting while a timer is pending, and ends when it fires', async () => {
