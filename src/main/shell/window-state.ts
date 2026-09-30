@@ -134,6 +134,9 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
       laidOutHeight = height
       layout.layoutChrome()
       tabs.layout()
+      // The toolbar and the tab area moved, so an overlay placed against
+      // either is now off by the row's height.
+      overlays.relayout()
     }
     pushState()
   }
