@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import type { ChromeContext, ChromeModule } from '../chrome/context.js'
-import { CHROME_MODULES, dispatchShellEvent } from '../chrome/modules.js'
+import { runDecorators } from '../chrome/contain.js'
+import { CHROME_MODULES, dispatchShellEvent, initModules, renderModules } from '../chrome/modules.js'
 
 const ctx = {} as ChromeContext
 
@@ -49,5 +50,44 @@ describe('dispatchShellEvent', () => {
 
     expect(() => { dispatchShellEvent({ type: 'module', module: 'quiet', payload: 1 }, ctx, [quiet]) }).not.toThrow()
     expect(() => { dispatchShellEvent({ type: 'module', module: 'ghost', payload: 1 }, ctx, [quiet]) }).not.toThrow()
+  })
+})
+
+describe('a module that throws', () => {
+  const tabState = {} as never
+  const shellState = {} as never
+
+  function broken (name: string, where: 'init' | 'render' | 'event'): ChromeModule & { ran: Mock } {
+    const ran = vi.fn()
+    const boom = (): never => { throw new Error(`${name} broke`) }
+    return { name, ran, init: where === 'init' ? boom : ran, render: where === 'render' ? boom : ran, event: where === 'event' ? boom : ran } as ChromeModule & { ran: Mock }
+  }
+
+  it('is logged by name in init, render and event while the other modules carry on', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (const where of ['init', 'render', 'event'] as const) {
+      const bad = broken('bad', where)
+      const good = broken('good', where === 'init' ? 'render' : 'init')
+      const modules = [bad, good]
+      complaint.mockClear()
+      if (where === 'init') initModules(ctx, modules)
+      else if (where === 'render') renderModules(shellState, ctx, modules)
+      else dispatchShellEvent({ type: 'module', module: 'bad', payload: 1 }, ctx, modules)
+      expect(complaint).toHaveBeenCalledTimes(1)
+      expect(String(complaint.mock.calls[0]?.[0])).toContain(`bad ${where}`)
+      if (where !== 'event') expect(good.ran).toHaveBeenCalledTimes(1)
+    }
+    complaint.mockRestore()
+  })
+
+  it('is logged by name in a tab decorator, and the decorators after it still run', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const after = vi.fn()
+    const badge = (): void => { throw new Error('badge broke') }
+    runDecorators([badge, after], {} as HTMLElement, tabState, shellState, ctx)
+    expect(after).toHaveBeenCalledTimes(1)
+    expect(complaint).toHaveBeenCalledTimes(1)
+    expect(String(complaint.mock.calls[0]?.[0])).toContain('badge')
+    complaint.mockRestore()
   })
 })

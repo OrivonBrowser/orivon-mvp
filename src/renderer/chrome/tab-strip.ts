@@ -4,6 +4,7 @@ import { makeStripDraggable } from '../strip-drag.js'
 import { isDraggingTab, makeTabDraggable } from '../tab-drag.js'
 import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
 import { must } from './context.js'
+import { runDecorators } from './contain.js'
 
 function renderFavicon (tab: TabState): HTMLSpanElement {
   const fav = document.createElement('span')
@@ -101,7 +102,7 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
           shell.closeTab(tab.id)
         }
       })
-      for (const decorate of decorators) decorate(el, tab, state, ctx)
+      runDecorators(decorators, el, tab, state, ctx)
       // Tabs render before the ever-present #new-tab button, matching its fixed position at the end of the strip.
       newTabBtn.before(el)
     }

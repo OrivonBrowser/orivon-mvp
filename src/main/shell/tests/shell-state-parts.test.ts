@@ -33,4 +33,22 @@ describe('the shell state parts', () => {
     stop()
     expect(stopA).toHaveBeenCalledTimes(1)
   })
+
+  it('contains a part that throws: it is logged by name, adds nothing, and the others still count', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const boom = (): never => { throw new Error('boom') }
+    const parts: ShellStatePart[] = [
+      { name: 'broken', read: boom, watch: boom },
+      { name: 'zoom', read: () => ({ zoomPercent: 150 }) },
+      { name: 'stops-badly', read: () => ({}), watch: () => boom }
+    ]
+
+    expect(readStateParts(ctx, tabs, parts)).toEqual({ zoomPercent: 150 })
+    const stop = watchStateParts(ctx, vi.fn(), parts)
+    expect(() => { stop() }).not.toThrow()
+    const logged = complaint.mock.calls.map((call) => String(call[0]))
+    expect(logged.some((line) => line.includes('broken'))).toBe(true)
+    expect(logged.some((line) => line.includes('stops-badly'))).toBe(true)
+    complaint.mockRestore()
+  })
 })

@@ -1,6 +1,6 @@
 import type { OrivonShell } from '../preload/shell.js'
 import { createChromeContext, must } from './chrome/context.js'
-import { CHROME_MODULES, dispatchShellEvent } from './chrome/modules.js'
+import { dispatchShellEvent, initModules, renderModules } from './chrome/modules.js'
 
 // The chrome view's whole job: render ShellState, turn clicks and typing into orivonShell.* commands.
 // Main holds truth (src/main/shell/tabs.ts, src/main/browsing/bookmarks.ts) -- nothing here guesses at
@@ -24,11 +24,11 @@ document.documentElement.dataset['platform'] = shell.platform
 document.documentElement.dataset['dragMode'] = shell.dragMode
 
 const { ctx, setState } = createChromeContext(shell)
-for (const module of CHROME_MODULES) module.init(ctx)
+initModules(ctx)
 
 shell.onState((state) => {
   setState(state)
-  for (const module of CHROME_MODULES) module.render?.(state, ctx)
+  renderModules(state, ctx)
 })
 
 shell.onCommand((event) => { dispatchShellEvent(event, ctx) })

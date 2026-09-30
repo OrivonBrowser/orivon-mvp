@@ -3,6 +3,7 @@
 // state push call for every tab. A feature owns its file under `signals/`; this
 // file changes by one line per feature.
 import type { WebContents, WebContentsView } from 'electron'
+import { contain } from './contain.js'
 import type { TabRecord, TabState } from './tab-types.js'
 
 export interface TabSignalContext {
@@ -35,17 +36,17 @@ function contextFor (id: string, record: TabRecord): TabSignalContext {
 /** A new view's events: every signal's `wire`, then its `apply`. */
 export function wireTabSignals (id: string, record: TabRecord, signals: readonly TabSignal[] = TAB_SIGNALS): void {
   const tab = contextFor(id, record)
-  for (const signal of signals) signal.wire?.(tab)
-  for (const signal of signals) signal.apply?.(tab)
+  for (const signal of signals) contain(`tab signal ${signal.name} wire`, undefined, () => { signal.wire?.(tab) })
+  for (const signal of signals) contain(`tab signal ${signal.name} apply`, undefined, () => { signal.apply?.(tab) })
 }
 
 /** A parked view back in the tab: already wired, so only the settings the record holds. */
 export function applyTabSignals (id: string, record: TabRecord, signals: readonly TabSignal[] = TAB_SIGNALS): void {
   const tab = contextFor(id, record)
-  for (const signal of signals) signal.apply?.(tab)
+  for (const signal of signals) contain(`tab signal ${signal.name} apply`, undefined, () => { signal.apply?.(tab) })
 }
 
-/** What every signal adds to one tab's state. */
+/** What every signal adds to one tab's state. A signal that throws adds nothing for that push. */
 export function signalState (record: TabRecord, wc: WebContents | undefined, signals: readonly TabSignal[] = TAB_SIGNALS): Partial<TabState> {
-  return Object.assign({}, ...signals.map((signal) => signal.state?.(record, wc) ?? {})) as Partial<TabState>
+  return Object.assign({}, ...signals.map((signal) => contain<Partial<TabState>>(`tab signal ${signal.name} state`, {}, () => signal.state?.(record, wc) ?? {}))) as Partial<TabState>
 }

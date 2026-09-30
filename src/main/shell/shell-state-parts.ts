@@ -2,6 +2,7 @@
 // ShellStatePart per feature, listed in SHELL_STATE_PARTS. The field itself is
 // one line in `ShellState` (tab-types.ts). window-state.ts reads every part on
 // each push and starts every part's watcher with the window.
+import { contain } from './contain.js'
 import type { ShellState, TabsSnapshot } from './tab-types.js'
 import type { WindowContext } from './window-context.js'
 
@@ -16,13 +17,16 @@ export interface ShellStatePart {
 /** One line per feature, alphabetical by name. */
 export const SHELL_STATE_PARTS: readonly ShellStatePart[] = []
 
-/** What every part adds to a push, merged. */
+/** What every part adds to a push, merged. A part that throws adds nothing to that push. */
 export function readStateParts (ctx: WindowContext, tabs: TabsSnapshot, parts: readonly ShellStatePart[] = SHELL_STATE_PARTS): Partial<ShellState> {
-  return Object.assign({}, ...parts.map((part) => part.read(ctx, tabs))) as Partial<ShellState>
+  return Object.assign({}, ...parts.map((part) => contain(`state part ${part.name}`, {}, () => part.read(ctx, tabs)))) as Partial<ShellState>
 }
 
-/** Starts every part's watcher; the returned function stops them all. */
+/** Starts every part's watcher; the returned function stops them all. A watcher that throws, on start or on stop, is skipped. */
 export function watchStateParts (ctx: WindowContext, push: () => void, parts: readonly ShellStatePart[] = SHELL_STATE_PARTS): () => void {
-  const stops = parts.flatMap((part) => part.watch === undefined ? [] : [part.watch(ctx, push)])
+  const stops = parts.flatMap((part) => {
+    const stop = part.watch === undefined ? undefined : contain(`state part ${part.name} watch`, undefined, () => part.watch?.(ctx, push))
+    return stop === undefined ? [] : [() => { contain(`state part ${part.name} stop`, undefined, stop) }]
+  })
   return () => { for (const stop of stops) stop() }
 }

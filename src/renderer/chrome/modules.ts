@@ -1,5 +1,7 @@
 import type { ShellEvent } from '../../main/shell/shell-events.js'
+import type { ShellState } from '../../main/shell/tabs.js'
 import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
+import { contained } from './contain.js'
 import { createBookmarksBar } from './bookmarks-bar.js'
 import { createCluster } from './cluster.js'
 import { createNavigation } from './navigation.js'
@@ -18,11 +20,22 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createBookmarksBar()
 ]
 
+/** Every module's `init`, once. A module that throws is logged by name and the rest still start. */
+export function initModules (ctx: ChromeContext, modules: readonly ChromeModule[] = CHROME_MODULES): void {
+  for (const module of modules) contained(`${module.name} init`, () => { module.init(ctx) })
+}
+
+/** Every module's `render` for one pushed state. */
+export function renderModules (state: ShellState, ctx: ChromeContext, modules: readonly ChromeModule[] = CHROME_MODULES): void {
+  for (const module of modules) contained(`${module.name} render`, () => { module.render?.(state, ctx) })
+}
+
 /** Hands a main-to-chrome event to the module it is for. The three events that predate modules name their
  * module here; a module event names its own. */
 export function dispatchShellEvent (event: ShellEvent, ctx: ChromeContext, modules: readonly ChromeModule[] = CHROME_MODULES): void {
   const [name, payload] = event.type === 'module'
     ? [event.module, event.payload]
     : [event.type === 'focusAddress' ? 'navigation' : 'tab-strip', event]
-  modules.find((module) => module.name === name)?.event?.(payload, ctx)
+  const module = modules.find((candidate) => candidate.name === name)
+  if (module !== undefined) contained(`${module.name} event`, () => { module.event?.(payload, ctx) })
 }
