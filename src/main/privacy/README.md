@@ -3,13 +3,15 @@
 **What lives here.** `clear-data.ts` does "Clear browsing data": history back as far as chosen, the
 cookies and storage of ordinary websites, the cache, the saved zoom levels, and (only when asked for by
 name) the browser storage of every cache-served app that holds permissions. `privacy-domain.ts` is what the
-Settings page may ask: how much is kept, and to clear.
+Settings page may ask: how much is kept, and to clear. `install-privacy-net.ts` is the installer
+`../shell/shell-installers.ts` runs at start; it is empty until the network privacy controls land.
 
 **What it depends on.** `electron` (types: the sessions cleared);
 [`../history/`](../history/) and [`../zoom/`](../zoom/) (what is forgotten through them);
 [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the shape of a page's domain).
 
-**What it must never import.** [`../shell/`](../shell/).
+**What it must never import.** [`../shell/`](../shell/), except `install-privacy-net.ts`, which takes
+`ShellInstaller` from it as a type.
 
 **Owner stream.** `shell`.
 

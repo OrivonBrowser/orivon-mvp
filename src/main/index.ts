@@ -2,6 +2,7 @@ import { app, BaseWindow, dialog, nativeTheme, screen, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
 import { openUrlsOnSecondLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
+import { runShellInstallers } from './shell/shell-installers.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
@@ -175,6 +176,7 @@ function boot (runtime: Runtime): void {
     installZoom(app, shell.windows, shell.zoom)
     installSpellcheck(app, shell.windows, shell.settings)
     installHistory(app, shell.windows, shell.internalPages, shell.history)
+    runShellInstallers(app, shell, ctx, runtime)
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession })
     registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
     // Looks for a newer release once a day when the person has said it may; installs nothing.
