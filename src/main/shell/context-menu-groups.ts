@@ -183,8 +183,9 @@ export function pageGroup (actions: ContextMenuActions, context: ContextMenuCont
     { label: 'Save Page As…', click: () => { run('page.save') } },
     { label: 'Print…', click: () => { run('page.print') } },
     { label: 'Take a Screenshot', click: () => { run('page.screenshot') } },
-    { label: 'Create QR Code for This Page', click: () => { run('page.qr') } }
+    SEPARATOR
   )
-  if (context.viewSource) items.push(SEPARATOR, { label: 'View Page Source', click: () => { run('page.viewSource') } })
+  if (context.viewSource) items.push({ label: 'View Page Source', click: () => { run('page.viewSource') } })
+  items.push({ label: 'Create QR Code for This Page', click: () => { run('page.qr') } })
   return items
 }
