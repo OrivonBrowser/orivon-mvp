@@ -110,6 +110,7 @@ Four reversals worth knowing about, because they are the ones people still repea
 | Why is something the way it is? | [`decisions/`](decisions/) |
 | Who decided that, and when? | [`decisions/decision-log.md`](decisions/decision-log.md) |
 | How much does integrating app X cost? | [`architecture/app-compatibility.md`](architecture/app-compatibility.md) |
+| Does a given Node module, `electron` API, permission or protocol work in an app today? | [`planning/compatibility-matrix.md`](planning/compatibility-matrix.md) and its per-table pages in [`planning/compatibility/`](planning/compatibility/) |
 | What are we defending against? | [`architecture/security-model.md`](architecture/security-model.md) |
 | I am about to review the privilege boundary. What should I know first? | [`development/security-review-briefing.md`](development/security-review-briefing.md) |
 | What is undecided or contradictory? | [`open-questions.md`](open-questions.md); settled ones are in [`decisions/resolved-questions.md`](decisions/resolved-questions.md) |
