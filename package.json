@@ -62,6 +62,7 @@
     "pako": "^3.0.1",
     "path-browserify": "^1.0.1",
     "pbf": "^4.0.2",
+    "qrcode-generator": "2.0.4",
     "stream-browserify": "^3.0.0",
     "util": "^0.12.5",
     "viem": "^2.56.8"
