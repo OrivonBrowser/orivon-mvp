@@ -1,0 +1,11 @@
+/* The sheet: a warning icon beside the title, the host, a line of explanation, then the two answers. */
+
+body[data-overlay='https-warning'] .https-card { padding: 18px 20px 16px; }
+body[data-overlay='https-warning'] .https-head { display: flex; align-items: center; gap: 10px; }
+body[data-overlay='https-warning'] .https-icon { flex: none; display: inline-flex; color: var(--wwarn-mark); }
+body[data-overlay='https-warning'] .https-icon .icon { width: 24px; height: 24px; }
+body[data-overlay='https-warning'] .sheet-title { margin: 0; }
+body[data-overlay='https-warning'] .https-host { margin: 12px 0 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; word-break: normal; }
+body[data-overlay='https-warning'] .https-body { margin: 6px 0 0; color: var(--wink-dim); font-size: 13px; }
+body[data-overlay='https-warning'] .btn-row { margin-top: 16px; }
+body[data-overlay='https-warning'] .https-continue { margin-right: auto; margin-left: -6px; }

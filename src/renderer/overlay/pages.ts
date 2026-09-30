@@ -3,6 +3,7 @@
 import type { OverlayPage } from './kit.js'
 import { bookmarkFolderPage } from './bookmark-folder/page.js'
 import { findPage } from './find/page.js'
+import { httpsWarningPage } from './https-warning/page.js'
 import { menuPage } from './menu/page.js'
 import { omniboxPage } from './omnibox/page.js'
 import { qrPage } from './qr/page.js'
@@ -15,6 +16,7 @@ import { toastPage } from './toast/page.js'
 export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'bookmark-folder': bookmarkFolderPage,
   find: findPage,
+  'https-warning': httpsWarningPage,
   menu: menuPage,
   omnibox: omniboxPage,
   qr: qrPage,

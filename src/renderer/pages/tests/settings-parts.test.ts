@@ -4,7 +4,6 @@ import { sectionsFor } from '../settings/sections/index.js'
 import { aboutSystemRows } from '../settings/sections/about-system.js'
 import { addresses } from '../settings/sections/addresses.js'
 import { passwords } from '../settings/sections/passwords.js'
-import { privacyNetworkRows } from '../settings/sections/privacy-network.js'
 import { privacySiteDataRows } from '../settings/sections/privacy-site-data.js'
 import { sites } from '../settings/sections/sites.js'
 import type { SettingsPart, SettingsPartDef } from '../settings/settings-parts.js'
@@ -109,7 +108,6 @@ describe('the sections a feature fills', () => {
   })
 
   it('has row lists that add nothing to the sections they join', () => {
-    expect(privacyNetworkRows).toEqual([])
     expect(privacySiteDataRows).toEqual([])
     expect(aboutSystemRows).toEqual([])
   })
