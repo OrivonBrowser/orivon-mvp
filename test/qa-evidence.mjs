@@ -122,6 +122,12 @@ export function errorsSince (app, since) {
   ]
 }
 
+/** A copy of everything collected for `app` so far; undefined for an app with no collectors. */
+export function collected (app) {
+  const c = COLLECTORS.get(app)
+  return c === undefined ? undefined : { console: [...c.console], pageErrors: [...c.pageErrors], failedRequests: [...c.failedRequests], crashes: [...c.crashes] }
+}
+
 export const liveApps = () => [...LIVE]
 
 function redactDom () {
@@ -130,6 +136,8 @@ function redactDom () {
   for (const el of doc.querySelectorAll('script')) el.textContent = ''
   return doc.outerHTML
 }
+
+const safeUrl = (page) => { try { return page.url() } catch { return '' } }
 
 /** @returns {Promise<ViewSnapshot>} */
 async function snapPage (page, timeout, shotTimeout) {
@@ -218,7 +226,9 @@ export async function snapshotWindows (app, budgetMs = SNAPSHOT_BUDGET_MS) {
     })
     const perPage = Math.max(500, budgetMs - 1_000)
     const shot = (isMatched) => (result.geometry.length === 0 || isMatched ? perPage : visible.length > 0 ? ORPHAN_SHOT_MS : 0)
-    result.views = await within(Promise.all(pages.map((p, i) => snapPage(p, perPage, shot(matched[i])))), budgetMs, [])
+    // Per page, so one hung or crashed page cannot cost the others their evidence.
+    result.views = await Promise.all(pages.map((p, i) => within(snapPage(p, perPage, shot(matched[i])), budgetMs,
+      { url: safeUrl(p), title: '', png: undefined, aria: undefined, html: undefined, errors: [`snapshot: no answer within ${String(budgetMs)}ms`] })))
     result.composites = compose(result.geometry, result.views)
   } catch (e) {
     result.errors.push(String(e?.message ?? e))

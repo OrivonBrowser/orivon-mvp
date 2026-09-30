@@ -20,7 +20,7 @@
 import { _electron as electron } from 'playwright'
 import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
 
 /**
@@ -170,6 +170,12 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
  *   helper and unprivileged user namespaces disabled), the launch throws
  *   a clear error instead of returning a window-less app or hanging -- see
  *   waitForShellWindow's SHELL_WINDOW_WAIT_MS bound below.
+ * @param {string} [options.reuseProfile] A profile directory from an earlier
+ *   launch in this process, kept by closeElectron(app, { keepProfile: true }),
+ *   for a test that relaunches on the state the first run wrote. Only a
+ *   directory this file created (a temp `orivon-test-*`) is accepted, so the
+ *   never-touch-the-real-profile guarantee below still holds; the next
+ *   closeElectron() removes it as usual.
  * @returns {Promise<import('playwright').ElectronApplication>} Launched
  *   against a fresh, unique --user-data-dir -- never this machine's real
  *   `orivon` profile. See the userDataDir comment below.
@@ -180,7 +186,8 @@ export async function launchElectron ({
   defaultTimeoutMs = DEFAULT_ACTION_TIMEOUT_MS,
   env: envOverrides = {},
   seedProfile,
-  sandbox = false
+  sandbox = false,
+  reuseProfile
 } = {}) {
   const env = { ...process.env, ...envOverrides }
   const stripped = []
@@ -227,7 +234,10 @@ export async function launchElectron ({
   // actual contents on this machine. A fresh, unique directory per launch is
   // what "hermetic by construction" (this file's own header, and
   // smoke.mjs's) already promised for the network; it never covered disk.
-  const userDataDir = await mkdtemp(join(tmpdir(), 'orivon-test-'))
+  if (reuseProfile !== undefined && !isOwnTempProfile(reuseProfile)) {
+    throw new Error(`reuseProfile must be a temp orivon-test-* directory made by launchElectron, got ${reuseProfile}`)
+  }
+  const userDataDir = reuseProfile ?? await mkdtemp(join(tmpdir(), 'orivon-test-'))
   let app
   try {
     // Inside the same try as the launch, so a throwing seed is cleaned up by
@@ -249,7 +259,7 @@ export async function launchElectron ({
     // yet at this point, so this is the only place responsible for the
     // directory created above (C-12: found via one leftover
     // /tmp/orivon-test-* whose timestamp matched a launch that had failed).
-    await rmUserDataDir(userDataDir, 'launchElectron')
+    if (reuseProfile === undefined) await rmUserDataDir(userDataDir, 'launchElectron')
     if (sandbox) {
       throw new Error(
         'Sandboxed launch (chromiumSandbox: true) failed before a CDP connection was established -- ' +
@@ -554,6 +564,23 @@ async function rmUserDataDir (dir, context) {
   })
 }
 
+/** True only for a directory under the OS temp dir named like the ones launchElectron makes. */
+function isOwnTempProfile (dir) {
+  const full = resolve(dir)
+  return full.startsWith(resolve(tmpdir()) + sep) && full.slice(resolve(tmpdir()).length + 1).startsWith('orivon-test-')
+}
+
+/**
+ * The profile directory `app` was launched on, to hand to a later
+ * launchElectron({ reuseProfile }) after closeElectron(app, { keepProfile: true }).
+ *
+ * @param {TeardownApp} app
+ * @returns {string | undefined}
+ */
+export function profileDirOf (app) {
+  return USER_DATA_DIRS.get(app)
+}
+
 async function removeUserDataDirFor (app) {
   const dir = USER_DATA_DIRS.get(app)
   if (dir === undefined) return
@@ -598,11 +625,14 @@ async function settledWithin (promise, ms) {
  * removed in a `finally`, so a thrown OR HUNG `beforeClose`, or a hung
  * `app.close()`, still leaves nothing behind on disk.
  *
+ * `keepProfile` leaves the profile directory on disk for a relaunch on it
+ * (launchElectron's `reuseProfile`); the caller then owns removing it.
+ *
  * @param {TeardownApp} app
- * @param {{ raceMs?: number, beforeClose?: (app: TeardownApp) => Promise<void> }} [options]
+ * @param {{ raceMs?: number, beforeClose?: (app: TeardownApp) => Promise<void>, keepProfile?: boolean }} [options]
  * @returns {Promise<void>}
  */
-export async function closeElectron (app, { raceMs = APP_CLOSE_RACE_MS, beforeClose } = {}) {
+export async function closeElectron (app, { raceMs = APP_CLOSE_RACE_MS, beforeClose, keepProfile = false } = {}) {
   const pid = APP_PIDS.get(app) ?? app.process().pid
   try {
     // Before beforeClose, so the evidence shows the state the test ended in.
@@ -629,7 +659,8 @@ export async function closeElectron (app, { raceMs = APP_CLOSE_RACE_MS, beforeCl
       console.error(`[closeElectron] pid ${pid} still reported alive after SIGKILL and a 5s wait`)
     }
   } finally {
-    await removeUserDataDirFor(app)
+    if (keepProfile) USER_DATA_DIRS.delete(app)
+    else await removeUserDataDirFor(app)
   }
 }
 
