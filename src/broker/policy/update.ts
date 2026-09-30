@@ -308,7 +308,7 @@ type ParsedPattern =
  * answers "is this pattern set contained in that pattern set" and touches no
  * network at all. Do not merge them.
  */
-function covers (granted: Pattern, requested: Pattern): boolean {
+export function covers (granted: Pattern, requested: Pattern): boolean {
   // web.context's own patterns (ADR-0019; manifest.ts's own doc: "compared
   // exactly") are whole `https://host[:port]` origin strings -- a shape
   // this file's host:port/port-range grammar was never built for, and
