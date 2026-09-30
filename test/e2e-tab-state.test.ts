@@ -193,7 +193,9 @@ it('shows a page\'s sound on its tab, mutes it from the badge and keeps it muted
   const { app, chrome } = await launched()
   try {
     const [first, tone] = await openTabs(chrome, '/tone') as [string, string]
-    expect(await chrome.locator(`.tab[data-id="${tone}"]`).getAttribute('title')).toBe(`Radio\n${origin.slice('http://'.length)}`)
+    // The tab shows the address until the page's own title arrives.
+    const tooltip = async (): Promise<string | null> => await chrome.locator(`.tab[data-id="${tone}"]`).getAttribute('title')
+    expect(await waitFor(async () => await tooltip() === `Radio\n${origin.slice('http://'.length)}`)).toBe(true)
     expect(await chrome.locator('.tab-audio').count()).toBe(0)
 
     // The tone needs a user gesture to start, as any page's does.

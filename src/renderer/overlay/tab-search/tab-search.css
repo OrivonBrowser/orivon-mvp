@@ -48,8 +48,8 @@ body[data-overlay='tab-search'] .ts-group {
   text-transform: uppercase;
 }
 
-body[data-overlay='tab-search'] .listbox-item { padding: 6px 10px; }
-/* A row with no address line centres its title. */
+/* Every row is as tall as one with an address line, and a row without one centres its title. */
+body[data-overlay='tab-search'] .listbox-item { box-sizing: border-box; min-height: 48px; padding: 6px 10px; }
 body[data-overlay='tab-search'] .listbox-item.no-sub > .item-title { grid-row: 1 / span 2; }
 
 /* The marks and the close button share one column that never wraps or shrinks. */
