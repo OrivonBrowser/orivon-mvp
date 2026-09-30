@@ -9,7 +9,7 @@ body[data-overlay='restore'] .restorebar {
   padding: 0 8px 0 14px;
 }
 
-body[data-overlay='restore'] .restore-mark { flex: none; display: inline-flex; color: var(--wwarn); }
+body[data-overlay='restore'] .restore-mark { flex: none; display: inline-flex; color: var(--wwarn-mark); }
 body[data-overlay='restore'] .restore-mark svg { width: 16px; height: 16px; }
 
 body[data-overlay='restore'] .restore-text {

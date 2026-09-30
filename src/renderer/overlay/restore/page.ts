@@ -3,6 +3,7 @@
 import { h } from '../../pages/shared/dom.js'
 import { closeIcon, warningIcon } from '../../pages/shared/icons.js'
 import type { Overlay, OverlayPage } from '../kit.js'
+import { formatKeys } from '../menu/keys.js'
 import './restore.css'
 
 export const restorePage: OverlayPage = {
@@ -14,6 +15,13 @@ export const restorePage: OverlayPage = {
       h('span', { className: 'restore-text', textContent: 'Orivon didn\'t shut down correctly.' }),
       restore,
       dismiss))
-    return { shown: () => {} }
+    return {
+      // The bar never takes focus, so the keyboard route to the same thing is named in the button's tooltip.
+      shown (payload) {
+        const keys = typeof payload === 'object' && payload !== null ? (payload as { keys?: unknown }).keys : undefined
+        const bound = Array.isArray(keys) && keys.every((key) => typeof key === 'string') ? keys as string[] : null
+        restore.title = bound === null ? 'Restore tabs' : `Restore tabs (${formatKeys(bound, overlay.platform)})`
+      }
+    }
   }
 }

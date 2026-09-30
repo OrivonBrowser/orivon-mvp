@@ -38,9 +38,14 @@ export function restoreWindows (windows: readonly SavedWindow[], openWindow: (op
   for (const window of windows) openWindow(optionsFor(window, displays))
 }
 
-/** The closed stack holds the previous session's windows as closed windows; once they are open again, Reopen must not offer them. */
-export function takeOffStack (stack: ClosedStack, windows: readonly SavedWindow[]): void {
+/**
+ * The closed stack holds the previous session's windows as closed windows; once they are open again, Reopen must
+ * not offer them. Returns the windows that were still on it: one that Reopen already brought back is not on it.
+ */
+export function takeOffStack (stack: ClosedStack, windows: readonly SavedWindow[]): SavedWindow[] {
+  const taken: SavedWindow[] = []
   for (const entry of stack.list()) {
-    if (entry.kind === 'window' && windows.includes(entry.window)) stack.take(entry.id)
+    if (entry.kind === 'window' && windows.includes(entry.window) && stack.take(entry.id) !== undefined) taken.push(entry.window)
   }
+  return windows.filter((window) => taken.includes(window))
 }
