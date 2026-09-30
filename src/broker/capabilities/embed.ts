@@ -11,6 +11,7 @@ import { fail } from '../errors.js'
 import { originFromUrl } from '../policy/origin.js'
 import type { HandleTable } from '../handles/handles.js'
 import type { GrantLedger } from '../grants/grant-ledger.js'
+import type { ListenerRegistry } from './listener-registry.js'
 import type { BrokerEmbedMethods } from '../embed-contracts.js'
 
 export interface EmbedCapabilityOptions {
@@ -18,6 +19,8 @@ export interface EmbedCapabilityOptions {
   readonly ledger: GrantLedger
   /** ../index.ts's own `canonical`, shared rather than redefined here. */
   readonly canonical: (origin: string) => string
+  /** The listeners `orivon.net.listen` registered, which a local pattern's port is checked against (ADR-0047). */
+  readonly listeners: ListenerRegistry
 }
 
 /** UTF-8 byte length, the unit `LIMITS.embedScriptBytes` is measured in. */
@@ -26,13 +29,18 @@ function utf8Bytes (text: string): number {
 }
 
 /** Builds `Broker['embed']` -- see this file's header. */
-export function createEmbedCapability ({ handleTable, ledger, canonical }: EmbedCapabilityOptions): BrokerEmbedMethods {
+export function createEmbedCapability ({ handleTable, ledger, canonical, listeners }: EmbedCapabilityOptions): BrokerEmbedMethods {
   const scripts = new Map<string, string>()
 
   function originsSync (origin: string): readonly Pattern[] | undefined {
     const key = originFromUrl(origin)
     if (key === null) return undefined
     return ledger.currentGrant(key, 'web.embed')?.patterns
+  }
+
+  function holdsListenerSync (origin: string, port: number): boolean {
+    const key = originFromUrl(origin)
+    return key !== null && listeners.holds(key, port)
   }
 
   function scriptSync (origin: string): string | undefined {
@@ -73,5 +81,5 @@ export function createEmbedCapability ({ handleTable, ledger, canonical }: Embed
     scripts.delete(key)
   }
 
-  return { originsSync, scriptSync, attach, setScript, forgetScript }
+  return { originsSync, holdsListenerSync, scriptSync, attach, setScript, forgetScript }
 }

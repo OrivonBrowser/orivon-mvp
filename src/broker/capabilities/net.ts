@@ -13,6 +13,7 @@ import { checkBind } from '../policy/bind.js'
 import { checkConnect, connectStillAuthorised } from '../policy/connect.js'
 import { checkLookup } from '../policy/lookup.js'
 import { createConnectSecure } from './net-connect-secure.js'
+import type { ListenerRegistry } from './listener-registry.js'
 import { assertSocketRoom } from './socket-room.js'
 import { isPublicUnicast } from '../policy/address.js'
 import { GENERIC_PROXY_PROBE_URL, proxyProbeUrl } from '../policy/proxy-guard.js'
@@ -52,10 +53,12 @@ export interface NetCapabilityOptions {
   readonly canonical: (origin: string) => string
   /** The origin's socket allowance. A restored app answers from its pinned manifest until it re-registers, which the ledger alone cannot see; defaults to `ledger.socketAllowance`. */
   readonly socketAllowance?: (origin: string) => number
+  /** Where each successful `listen` is recorded for `web.embed`'s local pattern (ADR-0047). */
+  readonly listeners: ListenerRegistry
 }
 
 /** Builds `Broker['net']` -- see this file's header for why it takes the broker's own state rather than owning any of it. */
-export function createNetCapability ({ deps, handleTable, ledger, canonical, socketAllowance = (origin) => ledger.socketAllowance(origin) }: NetCapabilityOptions): Broker['net'] {
+export function createNetCapability ({ deps, handleTable, ledger, canonical, listeners, socketAllowance = (origin) => ledger.socketAllowance(origin) }: NetCapabilityOptions): Broker['net'] {
   /**
    * Builds a `FailableTcpSocket` over an already-registered handle entry --
    * shared by `connect`'s own direct acquisition and `listen`'s
@@ -322,14 +325,22 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, soc
         throw fail('revoked', 'the grant authorising this listen was withdrawn')
       }
 
+      // Forgotten from the resource's own teardown, which every close path
+      // reaches (`close`, a revoked or narrowed grant, `fail`), so no path
+      // can leave a port registered that nothing holds.
+      let forgetPort = (): void => {}
       const entry = handleTable.acquire({
         origin: key,
         kind: 'tcpServer',
         authorisedBy: { by: 'grant', grantId: current.id },
-        destroy: listened.destroy,
+        destroy: async (reason) => {
+          forgetPort()
+          await listened.destroy(reason)
+        },
         socketLimit: socketAllowance(key),
         stillCovered: (patterns) => checkBind(patterns, listened.localPort).allowed
       })
+      forgetPort = listeners.add(key, listened.localPort)
 
       // `highWaterMark: 0`: handle-contracts.md's "TcpServer" section --
       // "the broker never pre-accepts a connection the app has not asked for

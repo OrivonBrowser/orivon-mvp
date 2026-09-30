@@ -71,7 +71,13 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
   embedSession.on('will-download', (event) => { event.preventDefault() })
   const resolve = resolveViaSession(embedSession)
   embedSession.webRequest.onBeforeRequest((details, callback) => {
-    guestRequestAllowed(details.url, details.resourceType, broker.embed.originsSync(appOrigin), resolve)
+    guestRequestAllowed(
+      details.url,
+      details.resourceType,
+      broker.embed.originsSync(appOrigin),
+      resolve,
+      (port) => broker.embed.holdsListenerSync(appOrigin, port)
+    )
       // A callback Electron waits on is called exactly once: a rejection
       // refuses, the way every refusal here fails closed.
       .then((allowed) => !allowed, () => true)

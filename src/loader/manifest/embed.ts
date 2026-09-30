@@ -5,7 +5,7 @@
 // developer-facing.
 
 import type { EmbedCapability } from '../../contracts/index.js'
-import { ANY_SITE, embedOriginRejection } from '../../broker/policy/embed-origin.js'
+import { embedOriginRejection } from '../../broker/policy/embed-origin.js'
 import { describeValue, extraKey, isRecord, optionalStringArray, reject } from './manifest.js'
 
 /** The parity guard (scripts/check-manifest-parity.mjs) reads this list against the contract's `EmbedCapability`. */
@@ -13,8 +13,9 @@ const EMBED_CAPABILITY_KEYS = ['origins']
 const MAX_PATTERNS = 256
 
 /**
- * ADR-0039's `web.embed.origins` grammar: `"*"` alone, or exact
- * `http(s)://host[:port]` origins. The GRAMMAR is `embedOriginRejection`
+ * `web.embed.origins`' grammar: `"*"`, exact
+ * `http(s)://host[:port]` origins, or a local pattern (ADR-0047), in any mix.
+ * The GRAMMAR is `embedOriginRejection`
  * (`../../broker/policy/embed-origin.js`), shared with the shell's own
  * runtime gate; this function owns only the developer-facing MESSAGE per
  * reason, the same split `validateWebContextOrigin` above makes.
@@ -30,7 +31,10 @@ function validateEmbedOrigin (pattern: string, field: string): void {
       reject(`${field} must be an http or https origin, or "*": ${describeValue(pattern)}`)
       break
     case 'wildcard-host':
-      reject(`${field} must be an EXACT origin or the bare "*" -- no wildcard host is accepted: ${describeValue(pattern)}`)
+      reject(
+        `${field} holds a wildcard host, and the only wildcards are the bare "*" and a local pattern -- http://*.localhost:<port> or ` +
+        `http://*.<name>.localhost:<port>, http only, port 1024 or above, written in lower case: ${describeValue(pattern)}`
+      )
       break
     case 'userinfo':
       reject(`${field} must carry no userinfo: ${describeValue(pattern)}`)
@@ -50,11 +54,7 @@ function validateEmbedOrigin (pattern: string, field: string): void {
   }
 }
 
-/**
- * `origins` is required, never empty, and `"*"` stands alone: a list that
- * names `"*"` beside an exact origin would be shown to a person as two
- * things and mean only one.
- */
+/** `origins` is required and never empty. `"*"` may be listed beside the other kinds: each adds what `"*"` does not reach. */
 export function readEmbed (raw: unknown, path: string): EmbedCapability {
   if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
   const extra = extraKey(raw, EMBED_CAPABILITY_KEYS)
@@ -63,9 +63,6 @@ export function readEmbed (raw: unknown, path: string): EmbedCapability {
   const origins = optionalStringArray(raw, path, 'origins', MAX_PATTERNS, (pattern, i) => {
     validateEmbedOrigin(pattern, `${path}.origins[${i}]`)
   })
-  if (origins === undefined) reject(`${path}.origins is required: an exact origin, or "*" for any site`)
-  if (origins.length > 1 && origins.includes(ANY_SITE)) {
-    reject(`${path}.origins: "*" already names every site, so it must be the only entry`)
-  }
+  if (origins === undefined) reject(`${path}.origins is required: an exact origin, "*" for any site, or a local pattern`)
   return { origins }
 }

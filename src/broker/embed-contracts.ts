@@ -6,21 +6,28 @@ import type { Pattern } from '../contracts/index.js'
 
 /**
  * `Broker['embed']`. The shell's embed host (src/main/embed/) is the only
- * caller of the three synchronous or trusted-side members; `setScript` is
+ * caller of the synchronous or trusted-side members; `setScript` is
  * `orivon.web.setEmbedScript`'s broker half, reached over CONTROL_CHANNEL
  * like every other capability call.
  *
- * TWO MEMBERS ARE SYNCHRONOUS on purpose, the same reason `Broker.app.
+ * THREE MEMBERS ARE SYNCHRONOUS on purpose, the same reason `Broker.app.
  * hasGrantsSync` is: Electron decides whether a `<webview>` may attach
  * inside a synchronous event (`will-attach-webview`, where `preventDefault`
  * must run before the handler returns), and a shown page's preload asks for
  * its script over a synchronous channel so the script runs before the page's
- * own code. Both read the in-memory ledger and never throw; an origin that
+ * own code. All three read in-memory state and never throw; an origin that
  * does not parse is simply "not granted".
  */
 export interface BrokerEmbedMethods {
   /** The live `web.embed` grant's patterns for `origin`, or undefined with none. */
   originsSync(origin: string): readonly Pattern[] | undefined
+  /**
+   * Whether `origin` itself holds a TCP listener on `port`, from any scope
+   * and any grant (ADR-0047's local pattern reaches only such a port).
+   * Synchronous for the same reason as `originsSync`, and false for an
+   * origin that does not parse.
+   */
+  holdsListenerSync(origin: string, port: number): boolean
   /** The script `setScript` stored for `origin`, or undefined with none set or no live grant. */
   scriptSync(origin: string): string | undefined
   /**

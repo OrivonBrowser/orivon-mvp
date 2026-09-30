@@ -171,3 +171,62 @@ describe('guestRequestAllowed', () => {
     expect(calls).toEqual([])
   })
 })
+
+// ADR-0047: a local pattern reaches only a listener the embedding app itself
+// holds. The guard asks `listenerHeld` for the pattern's port, resolves no
+// name for it, and fails closed when it is not given the question at all.
+describe('guestRequestAllowed -- the local pattern', () => {
+  const local = ['http://*.localhost:8123']
+
+  function neverResolves (): { resolve: (host: string) => Promise<readonly string[]>, calls: string[] } {
+    const calls: string[] = []
+    return { calls, resolve: async (host) => { calls.push(host); return ['127.0.0.1'] } }
+  }
+
+  it('loads a document under the pattern while the app holds the port, resolving no name', async () => {
+    const { resolve, calls } = neverResolves()
+    const asked: number[] = []
+    const held = (port: number): boolean => { asked.push(port); return true }
+    await expect(guestRequestAllowed('http://a.localhost:8123/', 'mainFrame', local, resolve, held)).resolves.toBe(true)
+    await expect(guestRequestAllowed('http://b.localhost:8123/frame', 'subFrame', local, resolve, held)).resolves.toBe(true)
+    expect(asked).toEqual([8123, 8123])
+    expect(calls).toEqual([])
+  })
+
+  it('refuses a document under the pattern while the app holds no listener on the port', async () => {
+    const { resolve } = neverResolves()
+    await expect(guestRequestAllowed('http://a.localhost:8123/', 'mainFrame', local, resolve, () => false)).resolves.toBe(false)
+  })
+
+  it('refuses it when the question is not supplied (fail closed)', async () => {
+    const { resolve } = neverResolves()
+    await expect(guestRequestAllowed('http://a.localhost:8123/', 'mainFrame', local, resolve)).resolves.toBe(false)
+  })
+
+  it('refuses it when the question throws', async () => {
+    const { resolve } = neverResolves()
+    const throwing = (): boolean => { throw new Error('broker gone') }
+    await expect(guestRequestAllowed('http://a.localhost:8123/', 'mainFrame', local, resolve, throwing)).resolves.toBe(false)
+  })
+
+  it('does not ask about a listener for a document the pattern does not admit', async () => {
+    const { resolve } = neverResolves()
+    const held = vi.fn(() => true)
+    await expect(guestRequestAllowed('http://a.localhost:8124/', 'mainFrame', local, resolve, held)).resolves.toBe(false)
+    await expect(guestRequestAllowed('http://127.0.0.1:8123/', 'mainFrame', local, resolve, held)).resolves.toBe(false)
+    expect(held).not.toHaveBeenCalled()
+  })
+
+  it('never asks about a listener for a subresource, which is always the page\'s own business', async () => {
+    const { resolve } = neverResolves()
+    const held = vi.fn(() => false)
+    await expect(guestRequestAllowed('http://a.localhost:8123/x.js', 'script', local, resolve, held)).resolves.toBe(true)
+    expect(held).not.toHaveBeenCalled()
+  })
+
+  it('still resolves and checks a public name admitted by "*" listed beside the pattern', async () => {
+    const { resolve, calls } = neverResolves()
+    await expect(guestRequestAllowed('https://attacker.example/', 'mainFrame', ['*', ...local], resolve, () => true)).resolves.toBe(false)
+    expect(calls).toEqual(['attacker.example'])
+  })
+})

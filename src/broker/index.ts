@@ -32,6 +32,7 @@ import { createGrantsChangeEmitter } from './grants/grant-events.js'
 import { socketAllowance } from './grants/resource-limits.js'
 import { originFromUrl } from './policy/origin.js'
 import { widensAuthority } from './policy/update.js'
+import { createListenerRegistry } from './capabilities/listener-registry.js'
 import { createNetCapability } from './capabilities/net.js'
 import { createIdCapability } from './capabilities/id.js'
 import { createWebCapability } from './capabilities/web.js'
@@ -98,7 +99,8 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // orivon.net's three entry points. Lifted to ./capabilities/net.ts once
   // `listen` pushed this file past Rule 2's 500 lines -- see that file's own
   // header, and README.md's design notes, for why the split lands here.
-  const net = createNetCapability({ deps, handleTable, ledger, canonical, socketAllowance: socketAllowanceSync })
+  const listeners = createListenerRegistry()
+  const net = createNetCapability({ deps, handleTable, ledger, canonical, listeners, socketAllowance: socketAllowanceSync })
 
   // orivon.id's two entry points (publicKey, sign) -- built alongside
   // capabilities/net.ts from the start rather than inlined here first, for
@@ -119,7 +121,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // web.embed's broker half (ADR-0039): a shown page is a handle of kind
   // 'embed' under the grant, so the same `handleTable.revoke` cascade
   // closes it -- see ./capabilities/embed.ts's own header.
-  const embed = createEmbedCapability({ handleTable, ledger, canonical })
+  const embed = createEmbedCapability({ handleTable, ledger, canonical, listeners })
 
   // orivon.secrets's three entry points (ADR-0033) -- built the same shape
   // as `id` above, over the seed `deps.keychain` already provides for it,

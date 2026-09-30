@@ -52,10 +52,16 @@ function fakeGuest (id: number, session: FakeSession): { id: number, session: Fa
   return { id, session, isDestroyed: () => false, close: vi.fn(), setWindowOpenHandler: vi.fn(), once: vi.fn() }
 }
 
-function fakeBroker (origins: ReadonlySet<string>, attach: ReturnType<typeof vi.fn>): Broker {
+function fakeBroker (
+  origins: ReadonlySet<string>,
+  attach: ReturnType<typeof vi.fn>,
+  patterns: readonly string[] = ['*'],
+  holdsListenerSync: (origin: string, port: number) => boolean = () => false
+): Broker {
   return {
     embed: {
-      originsSync: (origin: string) => origins.has(origin) ? ['*'] : undefined,
+      originsSync: (origin: string) => origins.has(origin) ? patterns : undefined,
+      holdsListenerSync,
       scriptSync: () => undefined,
       attach,
       setScript: async () => {}
@@ -311,5 +317,50 @@ describe('configureEmbedSession -- the verifier partition header is stripped and
     const session = attachAndGetSession(ORIGIN_A)
     const [filter] = session.webRequest.onBeforeSendHeaders.mock.calls[0] as [{ urls: string[] }]
     expect(filter.urls).toEqual(expect.arrayContaining(['https://*.eth/*']))
+  })
+})
+
+// ADR-0047: a local pattern's document is admitted only while the EMBEDDING
+// app holds a listener on the port -- the host asks the broker with the app
+// origin its partition was configured for, never with anything the request
+// carried.
+describe('configureEmbedSession -- a local pattern asks whether the embedding app holds the port', () => {
+  beforeEach(() => {
+    fakeApp.removeAllListeners()
+    sessionsByPartition.clear()
+  })
+
+  function localSession (holds: (origin: string, port: number) => boolean): FakeSession {
+    const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
+    installEmbedHost(fakeBroker(new Set([ORIGIN_A]), attach, ['http://*.localhost:8123'], holds), '/preload/embed.js')
+    const embedder = fakeEmbedder(`${ORIGIN_A}/tab`)
+    fakeApp.emit('web-contents-created', {}, embedder)
+    embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const [session] = sessionsByPartition.values()
+    if (session === undefined) throw new Error('no session was configured')
+    return session
+  }
+
+  type Listener = (details: { url: string, resourceType: string }, callback: (r: { cancel: boolean }) => void) => void
+
+  async function loadOutcome (session: FakeSession, url: string): Promise<{ cancel: boolean }> {
+    const onBeforeRequest = session.webRequest.onBeforeRequest.mock.calls[0]?.[0] as Listener
+    const callback = vi.fn()
+    onBeforeRequest({ url, resourceType: 'mainFrame' }, callback)
+    await new Promise((resolve) => { setImmediate(resolve) })
+    return callback.mock.calls[0]?.[0] as { cancel: boolean }
+  }
+
+  it('loads the page while the broker says the app holds the port, asking with the app origin, and resolves nothing', async () => {
+    const holds = vi.fn(() => true)
+    const session = localSession(holds)
+    expect(await loadOutcome(session, 'http://a.localhost:8123/')).toEqual({ cancel: false })
+    expect(holds).toHaveBeenCalledWith(ORIGIN_A, 8123)
+    expect(session.resolveHost).not.toHaveBeenCalled()
+  })
+
+  it('cancels the page once the broker says the app holds no such listener', async () => {
+    const session = localSession(() => false)
+    expect(await loadOutcome(session, 'http://a.localhost:8123/')).toEqual({ cancel: true })
   })
 })

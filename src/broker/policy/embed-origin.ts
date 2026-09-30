@@ -1,4 +1,5 @@
-// ADR-0039's `web.embed` pattern grammar and its document gate -- shared by
+// ADR-0039's `web.embed` pattern grammar and its document gate (with the
+// local pattern ADR-0047 adds beside an exact origin and "*") -- shared by
 // the loader's manifest validator (src/loader/manifest/capabilities.ts's
 // readEmbed, rich per-reason messages) and the shell's own runtime gate
 // (src/main/embed/, which decides whether a shown page may load a document
@@ -13,6 +14,33 @@ import type { Pattern } from '../../contracts/index.js'
 /** The one pattern that is not an origin: any site on the web. */
 export const ANY_SITE: Pattern = '*'
 
+const DNS_LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
+const LOCAL_PATTERN = new RegExp(`^http://\\*\\.((?:${DNS_LABEL}\\.)*)localhost:([1-9][0-9]{3,4})$`)
+const SINGLE_LABEL = new RegExp(`^${DNS_LABEL}$`)
+const MIN_LOCAL_PORT = 1024
+const MAX_LOCAL_PORT = 65535
+
+/** A parsed local pattern: the port, and the host suffix (`.localhost` or `.<name>.localhost`) that follows the one label `*` stands for. */
+export interface LocalPattern {
+  readonly port: number
+  readonly suffix: string
+}
+
+/**
+ * `http://*.localhost:<port>` or `http://*.<name>.localhost:<port>`, in its
+ * canonical spelling only, or null. `*` is the leftmost label and the only
+ * one; each `<name>` label is 1 to 63 characters of lowercase letters,
+ * digits and hyphens, with no hyphen at either end (a DNS label); the port
+ * is written out, without leading zeros, from 1024 to 65535.
+ */
+export function parseLocalPattern (pattern: string): LocalPattern | null {
+  const match = LOCAL_PATTERN.exec(pattern)
+  if (match === null) return null
+  const port = Number(match[2])
+  if (port < MIN_LOCAL_PORT || port > MAX_LOCAL_PORT) return null
+  return { port, suffix: `.${match[1] ?? ''}localhost` }
+}
+
 export type EmbedOriginRejection =
   | 'unparseable'
   | 'not-http'
@@ -25,7 +53,7 @@ export type EmbedOriginRejection =
 /**
  * Why `pattern` is not a valid `web.embed` pattern, or null if it is.
  *
- * `"*"` passes. Anything else must be an EXACT `http://host[:port]` or
+ * `"*"` and a local pattern (`parseLocalPattern`) pass. Anything else must be an EXACT `http://host[:port]` or
  * `https://host[:port]` origin: no wildcard host, no path beyond `/`, no
  * userinfo, no query or fragment, and `url.origin === pattern` so the
  * canonical form is the only accepted spelling (a grant's patterns compare
@@ -36,7 +64,7 @@ export type EmbedOriginRejection =
  * in `embedDocumentAllowed` below.
  */
 export function embedOriginRejection (pattern: string): EmbedOriginRejection | null {
-  if (pattern === ANY_SITE) return null
+  if (pattern === ANY_SITE || parseLocalPattern(pattern) !== null) return null
   let url: URL
   try {
     url = new URL(pattern)
@@ -61,7 +89,10 @@ function reachableByWildcard (hostname: string): boolean {
 
 /**
  * HOW a document load at `url` is admitted under `patterns` -- never just
- * whether. `'exact'`: an exact-origin pattern matched (or the URL is
+ * whether. `'local'`: a local pattern matched, a `http` host of one DNS label
+ * under the pattern's suffix on its port; that says nothing about who holds
+ * the port, which the caller checks (ADR-0047), and nothing is resolved for
+ * it. `'exact'`: an exact-origin pattern matched (or the URL is
  * `about:`/`data:`, which reach no site at all, or `blob:`, judged by the
  * origin that minted it); ADR-0039 lets a named origin be private, so
  * nothing about it is ever resolved. `'wildcard'`: only `"*"` admitted it,
@@ -92,14 +123,26 @@ export function embedAdmissionKind (url: string, patterns: readonly Pattern[]): 
   if (parsed.protocol === 'blob:') return embedAdmissionKind(parsed.pathname, patterns)
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return REFUSED
   let wildcardMatch = false
+  let localMatch: EmbedAdmission | undefined
   for (const pattern of patterns) {
     if (pattern === ANY_SITE) {
       if (reachableByWildcard(parsed.hostname)) wildcardMatch = true
       continue
     }
     if (pattern === parsed.origin) return EXACT
+    const local = parseLocalPattern(pattern)
+    if (local !== null && parsed.protocol === 'http:' && localLabelMatches(parsed, local)) {
+      localMatch = { kind: 'local', port: local.port }
+    }
   }
+  if (localMatch !== undefined) return localMatch
   return wildcardMatch ? { kind: 'wildcard', hostname: parsed.hostname } : REFUSED
+}
+
+/** Whether `url`'s host is exactly one DNS label followed by the pattern's suffix, on its port. */
+function localLabelMatches (url: URL, local: LocalPattern): boolean {
+  if (url.port !== String(local.port) || !url.hostname.endsWith(local.suffix)) return false
+  return SINGLE_LABEL.test(url.hostname.slice(0, url.hostname.length - local.suffix.length))
 }
 
 /**

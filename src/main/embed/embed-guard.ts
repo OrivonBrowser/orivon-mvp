@@ -64,6 +64,15 @@ export function hardenGuest (webPreferences: WebPreferences, params: Record<stri
 /** Request types that load a document: the only ones the grant judges. */
 const DOCUMENT_TYPES: ReadonlySet<string> = new Set(['mainFrame', 'subFrame'])
 
+/** A local pattern reaches only a listener the embedding app itself holds; anything that cannot be answered refuses. */
+function localListenerHeld (listenerHeld: (port: number) => boolean, port: number): boolean {
+  try {
+    return listenerHeld(port)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Whether a request inside a shown page may proceed under `patterns`. A
  * subresource always may: the grant names which sites the app shows, and
@@ -87,7 +96,9 @@ const DOCUMENT_TYPES: ReadonlySet<string> = new Set(['mainFrame', 'subFrame'])
  * public; only a `"*"` match whose host is a genuine NAME is resolved, and
  * refused unless `resolve` returns at least one address and every one of
  * them is public unicast. `resolve` throwing refuses, same as everything
- * else here: fail closed. The residual this cannot close -- a TTL-0 name
+ * else here: fail closed. A local pattern's document (ADR-0047) proceeds
+ * only while `listenerHeld` says the embedding app holds that port, with no
+ * name resolved: a `localhost` name never leaves this computer. The residual this cannot close -- a TTL-0 name
  * that answers differently between this check and the connection -- is
  * A286, the same class A196 already accepts for `connectSecure`.
  */
@@ -95,13 +106,15 @@ export async function guestRequestAllowed (
   url: string,
   resourceType: string,
   patterns: readonly Pattern[] | undefined,
-  resolve: (host: string) => Promise<readonly string[]>
+  resolve: (host: string) => Promise<readonly string[]>,
+  listenerHeld: (port: number) => boolean = () => false
 ): Promise<boolean> {
   if (patterns === undefined) return false
   if (!DOCUMENT_TYPES.has(resourceType)) return true
   const admission = embedAdmissionKind(url, patterns)
   if (admission.kind === 'refused') return false
   if (admission.kind === 'exact') return true
+  if (admission.kind === 'local') return localListenerHeld(listenerHeld, admission.port)
   if (classifyAddress(admission.hostname) !== 'unparseable') return true
   let addresses: readonly string[]
   try {
