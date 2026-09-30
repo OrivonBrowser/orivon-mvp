@@ -4,6 +4,7 @@ import { SHELL_EVENT_CHANNEL } from '../channels.js'
 import { findStep, openFind } from '../find/find-commands.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { closeOthers, closeToRight, duplicateTab, toggleMute, togglePin } from '../shell/tab-commands.js'
+import { openBookmarkAllTabs, starCommand } from '../shell/bookmark-bubble/open-edit.js'
 import { toggleBookmarksBar } from '../shell/bookmarks-bar/bar-visibility.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
 import { goHome } from '../shell/home.js'
@@ -84,13 +85,9 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
     case 'devtools.console': services.devtools.openConsole(tabs.activeWebContents(), window); return
     case 'tasks.open': tabs.openInternal('tasks'); return
-    case 'bookmark.toggle':
-      // The same rule as the star in the toolbar: a page with a site, and no other.
-      if (active === undefined || active.isNewTab || active.isInternal) return
-      if (services.bookmarks.has(active.url)) services.bookmarks.remove(active.url)
-      else services.bookmarks.add({ url: active.url, title: active.title.length > 0 ? active.title : active.url, favicon: tabs.faviconFor(active.id) })
-      return
-    case 'bookmark.allTabs': return
+    // Saves a page that is new and opens the bubble; on a saved page it only opens it, so the key never removes one.
+    case 'bookmark.toggle': starCommand({ window: target, services }); return
+    case 'bookmark.allTabs': openBookmarkAllTabs({ window: target, services }); return
     case 'window.new': deps.openWindow({ place: cascadeFrom(window.getBounds()) }); return
     case 'readingList.add': return
     case 'readingList.open': return

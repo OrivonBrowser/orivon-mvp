@@ -8,6 +8,7 @@ vi.mock('electron', () => ({
 }))
 
 const { CHROME_ACTIONS, runChromeAction } = await import('../../chrome-actions.js')
+const { bookmarkEdit } = await import('../../bookmark-bubble/edit-action.js')
 const { barFolder, barItems, barMenu, barMove, barOpen } = await import('../bar-actions.js')
 const { harness } = await import('./harness.js')
 const { commandById } = await import('../../../shortcuts/commands.js')
@@ -22,6 +23,7 @@ beforeEach(() => { popups.length = 0; copied.length = 0 })
 describe('the bookmarks chrome actions', () => {
   it('are registered under their names', () => {
     expect(CHROME_ACTIONS['bookmarks.bar']).toBe(barItems)
+    expect(CHROME_ACTIONS['bookmarks.edit']).toBe(bookmarkEdit)
     expect(CHROME_ACTIONS['bookmarks.folder']).toBe(barFolder)
     expect(CHROME_ACTIONS['bookmarks.menu']).toBe(barMenu)
     expect(CHROME_ACTIONS['bookmarks.move']).toBe(barMove)
@@ -126,9 +128,30 @@ describe('the bookmarks chrome actions', () => {
       runChromeAction('bookmarks.menu', { id: folder.id, x: 1, y: 2 }, ctx)
       runChromeAction('bookmarks.menu', { id: null, x: 1, y: 2 }, ctx)
       expect(popups.map((entry) => entry.template.map((item) => item.label ?? '-'))).toEqual([
-        ['Open All (1)', '-', 'Delete', '-', 'Show Bookmarks Bar', ...MANAGER],
-        ['Show Bookmarks Bar', ...MANAGER]
+        ['Open All (1)', '-', 'Rename…', 'Delete', '-', 'Add Folder…', '-', 'Show Bookmarks Bar', ...MANAGER],
+        ['Add Folder…', '-', 'Show Bookmarks Bar', ...MANAGER]
       ])
+    })
+
+    it('puts the bubble under the item for Edit… and Rename…, and the sheet where the click was for Add Folder…', () => {
+      const { ctx, store, overlays } = harness()
+      const page = store.addUrl({ url: 'https://a.example/', title: 'A' }) as NonNullable<ReturnType<typeof store.addUrl>>
+      const folder = store.addFolder({ title: 'F', parent: 'bar' }) as NonNullable<ReturnType<typeof store.addFolder>>
+      const choose = (id: string | null, label: string, extra: object = {}): void => {
+        popups.length = 0
+        runChromeAction('bookmarks.menu', { id, x: 30, y: 60, ...extra }, ctx)
+        popups[0]?.template.find((item) => item.label === label)?.click?.()
+      }
+
+      choose(page.id, 'Edit…', { anchor })
+      expect(overlays.show).toHaveBeenLastCalledWith('bookmark-edit', anchor, { mode: 'edit', id: page.id })
+      choose(folder.id, 'Rename…', { anchor })
+      expect(overlays.show).toHaveBeenLastCalledWith('bookmark-edit', anchor, { mode: 'rename-folder', id: folder.id })
+      choose(null, 'Add Folder…')
+      expect(overlays.show).toHaveBeenLastCalledWith('bookmark-edit', { x: 30, y: 60, width: 0, height: 0 }, { mode: 'new-folder', id: 'bar' })
+      // A rectangle the chrome garbled is dropped, not trusted.
+      choose(page.id, 'Edit…', { anchor: { x: 'left', y: 1, width: 1, height: 1 } })
+      expect(overlays.show).toHaveBeenLastCalledWith('bookmark-edit', { x: 30, y: 60, width: 0, height: 0 }, { mode: 'edit', id: page.id })
     })
 
     it('refuses a bad payload and an unknown id', () => {

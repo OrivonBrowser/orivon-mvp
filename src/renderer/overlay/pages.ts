@@ -1,6 +1,7 @@
 // Every overlay page, keyed by the overlay's name (src/main/overlays/overlays.ts).
 // One line per page, in name order.
 import type { OverlayPage } from './kit.js'
+import { bookmarkEditPage } from './bookmark-edit/page.js'
 import { bookmarkFolderPage } from './bookmark-folder/page.js'
 import { downloadsPage } from './downloads/page.js'
 import { findPage } from './find/page.js'
@@ -14,6 +15,8 @@ import { tabSearchPage } from './tab-search/page.js'
 import { toastPage } from './toast/page.js'
 
 export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
+  'bookmark-all-tabs': bookmarkEditPage,
+  'bookmark-edit': bookmarkEditPage,
   'bookmark-folder': bookmarkFolderPage,
   downloads: downloadsPage,
   'downloads-peek': downloadsPage,

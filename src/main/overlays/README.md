@@ -14,7 +14,7 @@ an `OverlayDef` to [`overlays.ts`](overlays.ts) and a page to
 | `overlay-ipc.ts` | The one channel a page speaks on, with its sender check |
 | `overlay-view.ts` | One `WebContentsView`: construction, background, navigation lock, focus |
 | `overlay-host.ts` | Per window: when a view exists, where it sits, when it closes, where focus goes |
-| `overlays.ts` | `OVERLAYS`, every overlay the shell can show: the bookmark folder menu (`../shell/bookmarks-bar/folder-overlay.ts`), the main menu (`../shell/menu-overlay.ts`), the downloads bubble and its peek (`../downloads/downloads-overlay.ts`), the find bar (`../find/find-overlay.ts`) and tab search (`../tab-search/tab-search-overlay.ts`) |
+| `overlays.ts` | `OVERLAYS`, every overlay the shell can show: the bookmark bubble and the all-tabs sheet (`../shell/bookmark-bubble/edit-overlay.ts`), the bookmark folder menu (`../shell/bookmarks-bar/folder-overlay.ts`), the main menu (`../shell/menu-overlay.ts`), the downloads bubble and its peek (`../downloads/downloads-overlay.ts`), the find bar (`../find/find-overlay.ts`) and tab search (`../tab-search/tab-search-overlay.ts`) |
 
 **Tied to Electron.** `overlay-view.ts` and `overlay-host.ts` import `electron` values;
 `overlay-types.ts`, `overlay-bounds.ts` and `overlay-ipc.ts` need only its types. The types and

@@ -69,7 +69,7 @@ export const COMMANDS = [
   { id: 'devtools.toggle', label: 'Developer tools', category: 'navigation', default: 'F12', macDefault: 'Mod+Alt+I', aliases: ['Mod+Shift+I'] },
   { id: 'devtools.console', label: 'JavaScript console', category: 'navigation', default: 'Mod+Shift+J', macDefault: 'Mod+Alt+J' },
   { id: 'bookmark.toggle', label: 'Bookmark this page', category: 'navigation', default: 'Mod+D' },
-  { id: 'bookmark.allTabs', label: 'Bookmark all tabs', category: 'navigation', default: 'Mod+Shift+D', pending: true },
+  { id: 'bookmark.allTabs', label: 'Bookmark all tabs', category: 'navigation', default: 'Mod+Shift+D' },
   { id: 'bookmarks.open', label: 'Bookmark manager', category: 'navigation', default: 'Mod+Shift+O', pending: true },
   { id: 'bookmarks.toggleBar', label: 'Show bookmarks bar', category: 'navigation', default: 'Mod+Shift+B' },
   { id: 'readingList.add', label: 'Add page to reading list', category: 'navigation', pending: true },
