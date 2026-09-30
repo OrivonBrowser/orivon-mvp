@@ -1,9 +1,11 @@
 // Every command a keyboard shortcut can run, with its default binding. The
 // key handling, the macOS menu and the Shortcuts section all read this one
 // table, so a command exists in all three or none. A command is added here in
-// the change that gives it something to run.
+// the change that gives it something to run, or as a reserved row whose case in
+// run-command.ts does nothing until its feature lands.
 
-export type CommandCategory = 'tabs' | 'navigation' | 'window'
+/** `tools` is the Page tools group: find, print, save, source, screenshot. */
+export type CommandCategory = 'tabs' | 'navigation' | 'tools' | 'window'
 
 export interface CommandDef {
   readonly id: string
@@ -17,6 +19,8 @@ export interface CommandDef {
   readonly aliases?: readonly string[]
   /** Runs again while the key is held down. */
   readonly repeatable?: boolean
+  /** In a registered app's tab the key goes to the app, not to the browser: the app has its own find, print or save. */
+  readonly yieldToApp?: boolean
 }
 
 const GO_TO_TAB = [1, 2, 3, 4, 5, 6, 7, 8].map((n): CommandDef => ({
@@ -38,12 +42,21 @@ export const COMMANDS = [
   { id: 'split.swap', label: 'Swap the panes', category: 'tabs', default: 'Mod+Alt+X' },
   { id: 'split.rotate', label: 'Side by side or stacked', category: 'tabs' },
   { id: 'tab.moveToNewWindow', label: 'Move tab to a new window', category: 'tabs' },
+  { id: 'tab.reopen', label: 'Reopen closed tab', category: 'tabs', default: 'Mod+Shift+T' },
+  { id: 'tab.duplicate', label: 'Duplicate tab', category: 'tabs' },
+  { id: 'tab.pin', label: 'Pin tab', category: 'tabs' },
+  { id: 'tab.mute', label: 'Mute tab', category: 'tabs' },
+  { id: 'tab.closeOthers', label: 'Close other tabs', category: 'tabs' },
+  { id: 'tab.closeRight', label: 'Close tabs to the right', category: 'tabs' },
+  { id: 'tab.search', label: 'Search tabs', category: 'tabs', default: 'Mod+Shift+A' },
   ...GO_TO_TAB,
   { id: 'tab.gotoLast', label: 'Go to the last tab', category: 'tabs', default: 'Mod+9' },
   { id: 'nav.back', label: 'Back', category: 'navigation', default: 'Alt+Left', macDefault: 'Mod+[' },
   { id: 'nav.forward', label: 'Forward', category: 'navigation', default: 'Alt+Right', macDefault: 'Mod+]' },
   { id: 'nav.reload', label: 'Reload', category: 'navigation', default: 'Mod+R', aliases: ['F5'] },
   { id: 'nav.hardReload', label: 'Reload without the cache', category: 'navigation', default: 'Mod+Shift+R', aliases: ['Ctrl+F5'] },
+  { id: 'nav.stop', label: 'Stop loading', category: 'navigation' },
+  { id: 'nav.home', label: 'Home page', category: 'navigation', default: 'Alt+Home' },
   { id: 'nav.focusAddress', label: 'Go to the address bar', category: 'navigation', default: 'Mod+L', aliases: ['F6', 'Alt+D'] },
   { id: 'zoom.in', label: 'Zoom in', category: 'navigation', default: 'Mod+=', aliases: ['Mod++'], repeatable: true },
   { id: 'zoom.out', label: 'Zoom out', category: 'navigation', default: 'Mod+-', repeatable: true },
@@ -51,11 +64,20 @@ export const COMMANDS = [
   { id: 'history.open', label: 'History', category: 'navigation', default: 'Mod+H' },
   { id: 'devtools.toggle', label: 'Developer tools', category: 'navigation', default: 'F12', macDefault: 'Mod+Alt+I', aliases: ['Mod+Shift+I'] },
   { id: 'bookmark.toggle', label: 'Bookmark this page', category: 'navigation', default: 'Mod+D' },
+  { id: 'find.open', label: 'Find in page', category: 'tools', default: 'Mod+F', yieldToApp: true },
+  { id: 'find.next', label: 'Find next', category: 'tools', default: 'Mod+G', aliases: ['F3'], repeatable: true, yieldToApp: true },
+  { id: 'find.previous', label: 'Find previous', category: 'tools', default: 'Mod+Shift+G', aliases: ['Shift+F3'], repeatable: true, yieldToApp: true },
+  { id: 'page.print', label: 'Print', category: 'tools', default: 'Mod+P', yieldToApp: true },
+  { id: 'page.pdf', label: 'Save as PDF', category: 'tools' },
+  { id: 'page.save', label: 'Save page as', category: 'tools', default: 'Mod+S', yieldToApp: true },
+  { id: 'page.viewSource', label: 'View page source', category: 'tools', default: 'Mod+U', yieldToApp: true },
+  { id: 'page.screenshot', label: 'Take a screenshot', category: 'tools', default: 'Mod+Shift+S', yieldToApp: true },
   { id: 'window.new', label: 'New window', category: 'window', default: 'Mod+N' },
   { id: 'window.newPrivate', label: 'New private window', category: 'window', default: 'Mod+Shift+N' },
   { id: 'profiles.open', label: 'Profiles', category: 'window' },
   { id: 'window.close', label: 'Close window', category: 'window', default: 'Mod+Shift+W' },
   { id: 'window.fullscreen', label: 'Full screen', category: 'window', default: 'F11', macDefault: 'Ctrl+Meta+F' },
+  { id: 'window.alwaysOnTop', label: 'Keep window on top', category: 'window' },
   { id: 'settings.open', label: 'Open Settings', category: 'window', default: 'Mod+,' },
   { id: 'extensions.open', label: 'Extensions', category: 'window' },
   { id: 'app.quit', label: 'Quit Orivon', category: 'window', default: 'Ctrl+Shift+Q' }

@@ -9,7 +9,7 @@ import { COMMANDS } from './commands.js'
 import type { CommandCategory, CommandId } from './commands.js'
 import type { ShortcutService } from './shortcut-service.js'
 
-const TITLES: Readonly<Record<CommandCategory, string>> = { tabs: 'Tab', navigation: 'Go', window: 'Window' }
+const TITLES: Readonly<Record<CommandCategory, string>> = { tabs: 'Tab', navigation: 'Go', tools: 'Tools', window: 'Window' }
 
 /** A chord in Electron's accelerator spelling. */
 export function toElectronAccelerator (chord: Chord, platform: Platform): string {
@@ -25,7 +25,7 @@ export function toElectronAccelerator (chord: Chord, platform: Platform): string
 /** Null where there is to be no menu. */
 export function buildAppMenuTemplate (service: ShortcutService, run: (id: CommandId) => void): MenuItemConstructorOptions[] | null {
   if (service.platform !== 'darwin') return null
-  const categories: CommandCategory[] = ['tabs', 'navigation', 'window']
+  const categories: CommandCategory[] = ['tabs', 'navigation', 'tools', 'window']
   return [
     { role: 'appMenu' },
     { role: 'editMenu' },
