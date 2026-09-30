@@ -1,10 +1,9 @@
 import type { ShellState, TabState } from '../../main/shell/tabs.js'
+import type { OverlayAnchor } from '../../main/overlays/overlay-types.js'
 import type { OrivonShell } from '../../preload/shell.js'
 import { toolbarButton } from './toolbar-button.js'
 
-/** A chrome-client rectangle. A plain object, not a DOMRect: contextBridge deep-clones what crosses it, and
- * a DOMRect's values live on its prototype rather than as own properties, so it arrives in main as `{}`. */
-export interface OverlayAnchor { x: number, y: number, width: number, height: number }
+export type { OverlayAnchor }
 
 export type ToolbarSlot = 'nav' | 'address' | 'cluster'
 
@@ -54,8 +53,10 @@ export function hasSite (tab: TabState | undefined): tab is TabState {
   return tab !== undefined && !tab.isNewTab && !tab.isInternal
 }
 
-/** Measured at click time, not cached: the window may have been resized, and the bookmarks bar appearing or
- * disappearing moves nothing in this row but the toolbar's own width does shift these buttons. */
+/** A plain object, not a DOMRect: contextBridge deep-clones what crosses it, and a DOMRect's values live on its
+ * prototype rather than as own properties, so it arrives in main as `{}`. Measured at click time, not cached:
+ * the window may have been resized, and the bookmarks bar appearing or disappearing moves nothing in this row
+ * but the toolbar's own width does shift these buttons. */
 export function anchorFor (el: Element): OverlayAnchor {
   const r = el.getBoundingClientRect()
   return { x: r.x, y: r.y, width: r.width, height: r.height }
