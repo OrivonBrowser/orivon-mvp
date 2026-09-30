@@ -24,7 +24,8 @@ export interface BarMenuActions {
   copyLink: () => void
   remove: () => void
   toggleBar: () => void
-  openManager: () => void
+  /** Absent while the Bookmark manager command is still a stub: no row then. */
+  openManager?: () => void
 }
 
 /** "Open All (7)", or "Open All (25 of 40)" when a folder holds more than one Open all makes. */
@@ -37,7 +38,7 @@ export function barMenuTemplate (model: BarMenuModel, actions: BarMenuActions): 
   const separator: MenuItemConstructorOptions = { type: 'separator' }
   const common: MenuItemConstructorOptions[] = [
     { label: 'Show Bookmarks Bar', type: 'checkbox', checked: model.barShown, click: actions.toggleBar },
-    { label: 'Bookmark Manager', click: actions.openManager }
+    ...(actions.openManager === undefined ? [] : [{ label: 'Bookmark Manager', click: actions.openManager }])
   ]
   if (target.kind === 'bar') return common
   if (target.kind === 'folder') {

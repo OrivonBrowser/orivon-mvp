@@ -1,5 +1,6 @@
 // Shows the bar's native menu: builds the model from the store, wires each item to what it does, and pops it up.
 import { Menu, clipboard } from 'electron'
+import { commandById } from '../../shortcuts/commands.js'
 import { barMenuTemplate } from './bar-menu.js'
 import type { BarMenuTarget } from './bar-menu.js'
 import { bookmarksBarShown } from './bar-visibility.js'
@@ -21,7 +22,7 @@ export function showBarMenu (ctx: WindowContext, id: string | null, at: { x: num
     copyLink: () => { if (node?.url !== undefined) clipboard.writeText(node.url) },
     remove: () => { if (node !== undefined) services.bookmarks.remove([node.id]) },
     toggleBar: () => { services.commands.run('bookmarks.toggleBar', window) },
-    openManager: () => { services.commands.run('bookmarks.open', window) }
+    openManager: commandById('bookmarks.open')?.pending === true ? undefined : () => { services.commands.run('bookmarks.open', window) }
   })
   if (window.window.isDestroyed()) return
   Menu.buildFromTemplate(template).popup({ window: window.window, x: Math.round(at.x), y: Math.round(at.y) })

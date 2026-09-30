@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { QrSaveDeps } from '../qr-download.js'
-import { MAX_PNG_BYTES, pngFrom, qrFileName, saveQrPng, uniqueName } from '../qr-download.js'
+import { MAX_PNG_BYTES, pngFrom, qrFileName, saveQrPng } from '../qr-download.js'
 
 const PNG_HEAD = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const png = (extra = 8): string => Buffer.from([...PNG_HEAD, ...new Array<number>(extra).fill(1)]).toString('base64')
@@ -41,14 +41,6 @@ describe('qrFileName', () => {
   it('never lets the name climb out of the folder', () => {
     expect(qrFileName('https://..%2f..%2fetc.example/')).not.toMatch(/[/\\]/)
     expect(qrFileName(`https://${'a'.repeat(200)}.com/`).length).toBeLessThan(80)
-  })
-})
-
-describe('uniqueName', () => {
-  it('counts up past names that are taken', () => {
-    const taken = new Set(['/d/qr-a.png', '/d/qr-a (2).png'])
-    expect(uniqueName('/d', 'qr-a.png', (path) => taken.has(path))).toBe('/d/qr-a (3).png')
-    expect(uniqueName('/d', 'qr-b.png', (path) => taken.has(path))).toBe('/d/qr-b.png')
   })
 })
 

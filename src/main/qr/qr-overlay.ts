@@ -5,6 +5,7 @@ import type { OverlayDef } from '../overlays/overlay-types.js'
 import { QR_OVERLAY } from './qr-open.js'
 import { saveQrPng } from './qr-download.js'
 import type { QrSaveDeps } from './qr-download.js'
+import type { SettingsStore } from '../settings/settings-store.js'
 
 const SHEET_WIDTH = 300
 /** The clipboard can stall under a display with no clipboard owner; the sheet must not wait on it. */
@@ -12,8 +13,10 @@ const CLIPBOARD_LIMIT_MS = 1000
 /** An address longer than this is not something a clipboard write or a sheet should carry. */
 const MAX_ADDRESS = 32768
 
-export interface QrDeps extends QrSaveDeps {
+export interface QrDeps extends Omit<QrSaveDeps, 'downloadsDir'> {
   writeClipboard: (text: string) => void
+  /** The folder downloads go to, which follows the person's Downloads setting. */
+  downloadsDir: (settings: Pick<SettingsStore, 'get'>) => string
 }
 
 type QrCommand = { type: 'copy' } | { type: 'download', png: string }
@@ -43,7 +46,7 @@ export function qrOverlayFor (deps: QrDeps): OverlayDef {
     closeOn: { ...CLOSE_LIKE_POPUP, navigation: true },
     keep: 'fresh',
     height: { initial: 420, min: 300, max: 480 },
-    attach: () => {
+    attach: ({ services }) => {
       let address: string | undefined
       return {
         show: (payload) => {
@@ -65,7 +68,7 @@ export function qrOverlayFor (deps: QrDeps): OverlayDef {
             const limit = new Promise<boolean>((resolve) => { setTimeout(() => { resolve(false) }, CLIPBOARD_LIMIT_MS).unref() })
             return { ok: await Promise.race([written, limit]) }
           }
-          return { ok: await saveQrPng(deps, address, request.png) !== undefined }
+          return { ok: await saveQrPng({ ...deps, downloadsDir: () => deps.downloadsDir(services.settings) }, address, request.png) !== undefined }
         }
       }
     }

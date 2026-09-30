@@ -1,6 +1,6 @@
 // Saving the sheet's code as a picture. The page sends the PNG it drew; main checks what it got, builds the file
 // name itself and never overwrites a file that is there.
-import { join } from 'node:path'
+import { uniquePath } from '../downloads/download-model.js'
 
 /** A 232px code drawn at twice that stays far below this; anything bigger is not what the sheet sends. */
 export const MAX_PNG_BYTES = 200 * 1024
@@ -32,18 +32,6 @@ export function qrFileName (address: string): string {
   return `qr-${safe === '' ? 'page' : safe}.png`
 }
 
-/** `name`, or `name (2)`, `name (3)` and so on, the first that is free in `dir`. */
-export function uniqueName (dir: string, name: string, exists: (path: string) => boolean): string {
-  const dot = name.lastIndexOf('.')
-  const stem = dot === -1 ? name : name.slice(0, dot)
-  const extension = dot === -1 ? '' : name.slice(dot)
-  for (let n = 1; n < 1000; n += 1) {
-    const candidate = n === 1 ? name : `${stem} (${String(n)})${extension}`
-    if (!exists(join(dir, candidate))) return join(dir, candidate)
-  }
-  return join(dir, `${stem}-${String(Date.now())}${extension}`)
-}
-
 export interface QrSaveDeps {
   downloadsDir: () => string
   exists: (path: string) => boolean
@@ -54,7 +42,7 @@ export interface QrSaveDeps {
 export async function saveQrPng (deps: QrSaveDeps, address: string, base64: unknown): Promise<string | undefined> {
   const png = pngFrom(base64)
   if (png === undefined) return undefined
-  const path = uniqueName(deps.downloadsDir(), qrFileName(address), deps.exists)
+  const path = uniquePath(deps.downloadsDir(), qrFileName(address), deps.exists)
   try {
     await deps.writeFile(path, png)
     return path

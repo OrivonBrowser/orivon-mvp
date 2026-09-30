@@ -4,13 +4,13 @@
 `qr-open.ts` decides whether a tab has a page worth sharing (not the new-tab page, not one of the shell's own
 pages) and opens the sheet with the tab's address, read in main. `qr-overlay.ts` declares the sheet as an overlay and
 answers its two requests, copy the link and save the picture; `qr-download.ts` checks and names the PNG the sheet
-sends; `qr-real.ts` wires the clipboard and the Downloads folder in. The page is
+sends; `qr-real.ts` wires the clipboard and the downloads folder (`downloads.folder`, else the system's) in. The page is
 [`../../renderer/overlay/qr/`](../../renderer/overlay/qr/).
 
-**Tied to Electron.** `qr-real.ts` imports `electron` values (the clipboard, the Downloads path); every other file
+**Tied to Electron.** `qr-real.ts` imports `electron` values (the clipboard) and the downloads folder from `../downloads/folder-runner.ts`; every other file
 needs nothing of it.
 
-**What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`) and, as types only,
+**What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`), [`../downloads/`](../downloads/) (the folder and the unique-name rule) and, as types only,
 [`../shell/`](../shell/) (`tab-types.ts`, `window-registry.ts`).
 
 **What it must never import.** The renderer, or a value from the rest of the shell: the shell lists this feature

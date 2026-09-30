@@ -4,7 +4,7 @@ import type { MenuItemConstructorOptions } from 'electron'
 import { barMenuTemplate, openAllLabel } from '../bar-menu.js'
 import type { BarMenuActions, BarMenuModel } from '../bar-menu.js'
 
-const actions = (): { [K in keyof BarMenuActions]: Mock<() => void> } => ({
+const actions = (): { [K in keyof BarMenuActions]-?: Mock<() => void> } => ({
   openInTab: vi.fn<() => void>(), openInWindow: vi.fn<() => void>(), openInPrivate: vi.fn<() => void>(), openAll: vi.fn<() => void>(), copyLink: vi.fn<() => void>(),
   remove: vi.fn<() => void>(), toggleBar: vi.fn<() => void>(), openManager: vi.fn<() => void>()
 })
@@ -17,6 +17,12 @@ describe('the bookmarks bar menu', () => {
     expect(labels(barMenuTemplate(model(), actions()))).toEqual([
       'Open in New Tab', 'Open in New Window', 'Open in Private Window', '-', 'Copy Link', 'Delete', '-', 'Show Bookmarks Bar', 'Bookmark Manager'
     ])
+  })
+
+  it('leaves the manager out while nothing can open it', () => {
+    const { openManager, ...rest } = actions()
+    expect(openManager).toBeDefined()
+    expect(labels(barMenuTemplate(model({ target: { kind: 'bar' } }), rest))).toEqual(['Show Bookmarks Bar'])
   })
 
   it('offers a folder Open All, delete, and the same two at the foot', () => {

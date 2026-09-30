@@ -10,6 +10,10 @@ vi.mock('electron', () => ({
 const { CHROME_ACTIONS, runChromeAction } = await import('../../chrome-actions.js')
 const { barFolder, barItems, barMenu, barMove, barOpen } = await import('../bar-actions.js')
 const { harness } = await import('./harness.js')
+const { commandById } = await import('../../../shortcuts/commands.js')
+
+// The menu lists the manager row once its command stops being a stub.
+const MANAGER = commandById('bookmarks.open')?.pending === true ? [] : ['Bookmark Manager']
 
 const anchor = { x: 10, y: 50, width: 80, height: 28 }
 
@@ -104,8 +108,10 @@ describe('the bookmarks chrome actions', () => {
       expect(tabs.createTab).toHaveBeenCalledWith('https://a.example/', false)
       click('Copy Link')
       expect(copied).toEqual(['https://a.example/'])
-      click('Bookmark Manager')
-      expect(commands.run).toHaveBeenCalledWith('bookmarks.open', ctx.window)
+      if (MANAGER.length > 0) {
+        click('Bookmark Manager')
+        expect(commands.run).toHaveBeenCalledWith('bookmarks.open', ctx.window)
+      }
       click('Show Bookmarks Bar')
       expect(commands.run).toHaveBeenCalledWith('bookmarks.toggleBar', ctx.window)
       click('Delete')
@@ -120,8 +126,8 @@ describe('the bookmarks chrome actions', () => {
       runChromeAction('bookmarks.menu', { id: folder.id, x: 1, y: 2 }, ctx)
       runChromeAction('bookmarks.menu', { id: null, x: 1, y: 2 }, ctx)
       expect(popups.map((entry) => entry.template.map((item) => item.label ?? '-'))).toEqual([
-        ['Open All (1)', '-', 'Delete', '-', 'Show Bookmarks Bar', 'Bookmark Manager'],
-        ['Show Bookmarks Bar', 'Bookmark Manager']
+        ['Open All (1)', '-', 'Delete', '-', 'Show Bookmarks Bar', ...MANAGER],
+        ['Show Bookmarks Bar', ...MANAGER]
       ])
     })
 
