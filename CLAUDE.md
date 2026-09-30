@@ -3,6 +3,9 @@
 The human documentation is the map; this file holds only what an agent needs on every turn.
 **Load the `orivon-workflow` skill at the start of a build step and before opening a PR**: it
 holds the tooling table, the review shape, the build-step-end checklist and the `gh` workarounds.
+**Load the `orivon-qa` skill before changing the shell UI, a user flow, or anything at a security
+boundary, and again before calling such a change done**: it says which QA to run, how to read a
+failure and a screenshot, and why a check is never weakened to pass. Compiling is not done.
 
 Status and roadmap: `README.md`. What works today: `docs/planning/compatibility-matrix.md`.
 
@@ -15,6 +18,7 @@ Status and roadmap: `README.md`. What works today: `docs/planning/compatibility-
 | Editing in a directory | its `README.md`: what it may depend on and must never import |
 | Writing code | `docs/development/code-guidelines.md` §Rules, nothing else |
 | Adding a test or a `check:*` guard | `docs/development/testing.md` |
+| Changing UI, a flow, or broker, IPC, preload, natives, filesystem or network code | the `orivon-qa` skill |
 | Starting a build step, or syncing `main` | `docs/development/parallel-work.md` §If you are an agent |
 | Opening a PR | `docs/development/pr-blueprint.md` |
 | Asking why, or who decided | `docs/decisions/decision-log.md` |
@@ -83,7 +87,8 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 | `npm test` | Unit tests (Vitest) |
 | `npm run check:<name>` | The twelve guards in `docs/development/testing.md` §Guards; CI runs each |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
-| `npm run test:e2e` | The Electron end-to-end suite |
+| `npm run test:e2e` | The Electron end-to-end suite; a failed spec leaves its evidence in `qa-artifacts/latest/` |
+| `npm run qa`, `qa:visual`, `qa:report` | Before calling a UI, flow or boundary change done; `orivon-qa` says which, and how to read the screenshots |
 | `npm run dev` | Humans only: it opens a real window |
 
 ## Syncing `main`, and PR cadence

@@ -140,7 +140,9 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
       "contexts": ["https://www.youtube.com"],  // ADR-0019: run code as that site, in a private, empty
                                                  // session that is never displayed; exact origins only
       "embed": { "origins": ["*"] }             // ADR-0039: show a site inside the app's own page, in a
-                                                 // <webview>; exact origins, or "*" for any site on the web
+                                                 // <webview>; exact origins, "*" for any site on the web, or
+                                                 // a local pattern such as "http://*.localhost:8080" for pages
+                                                 // the app serves from its own listener (ADR-0047)
     },
     "media": { "camera": true, "microphone": true },  // ADR-0032; omit a flag to not ask for it
     "clipboard": { "read": true },                    // ADR-0032
@@ -302,9 +304,21 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 > not a call.** An app holding it puts a `<webview>` in its page, with the element's interface as
 > Electron defines it (`src`, `loadURL`, `executeJavaScript`, `insertCSS`, `findInPage`, `send`
 > and `ipc-message`, muting). The shell decides what the element attaches: the page it shows runs
-> in a `persist:` partition of the app's own, sandboxed, with the shell's preload, no `orivon.*`,
-> no popups, no downloads and no `<webview>` of its own, and it may load documents only from the
-> granted origins. `setEmbedScript` above is the one `orivon.*` call the capability adds.
+> in a `persist:` partition of the app's own, sandboxed, with the shell's preload, no `orivon.*`
+> and no `<webview>` of its own, and it may load documents only from the granted origins.
+> `setEmbedScript` above is the one `orivon.*` call the capability adds.
+>
+> **A shown page reaches outside itself only through the app** (ADR-0047). A window it asks for
+> never opens and a download it starts is cancelled; the element fires `orivon-popup` or
+> `orivon-download`, a bubbling `CustomEvent` whose `detail` names what was asked (`EmbedPopup`,
+> `EmbedDownload`), and the app decides with its own grants. An app that shows pages it serves
+> itself declares a local pattern, `http://*.localhost:<port>` or
+> `http://*.<name>.localhost:<port>`: every origin with one label where `*` stands, admitted only
+> while the app itself holds a listener on that port, so each site the app serves has an origin
+> of its own and no other program's server is ever shown. `"*"` may be listed with other
+> entries. The contract is in `src/contracts/`; the loader and the shell do not build the
+> pattern or the events yet ([`compatibility-matrix.md`](../planning/compatibility-matrix.md),
+> Table 4).
 
 > **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0032) have no `orivon.*` entry
 > point of their own.** They are Chromium platform permissions (`getUserMedia`,

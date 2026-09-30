@@ -397,6 +397,59 @@ export interface OrivonWeb {
   setEmbedScript(source: string): Promise<void>
 }
 
+/**
+ * ADR-0047. A page an app shows inside itself (`manifest.js`'s
+ * `EmbedCapability`) asked for a new window: `window.open`, or a link or a
+ * form with a `target`. The window never opens. The `<webview>` element
+ * showing the page fires `orivon-popup`, a `CustomEvent` that bubbles, with
+ * this as its `detail`; what happens next is the app's choice, under its
+ * own grants (an app with a tab strip opens `url` in a new element).
+ */
+export interface EmbedPopup {
+  /** The address asked for, on any scheme: `about:blank` when the page named none, `''` when longer than `LIMITS.embedEventUrlBytes`. */
+  readonly url: string
+  /** How it was asked, in Electron's window-open words: a plain `target` link is `'foreground-tab'`, a modifier or middle click `'background-tab'`, `window.open` with features or a shift-click `'new-window'`. */
+  readonly disposition: 'default' | 'foreground-tab' | 'background-tab' | 'new-window' | 'other'
+  /** The window name the page gave (`target`, or `window.open`'s second argument); `''` when it gave none. */
+  readonly frameName: string
+  /** The asking page's address as a `Referer` header would carry it; `''` when the page sends none. */
+  readonly referrer: string
+  /** `'POST'` for a form posted to a new window. Its body is NOT carried, so loading `url` is a different request from the page's. */
+  readonly method: 'GET' | 'POST'
+}
+
+/**
+ * ADR-0047. A page an app shows inside itself started a download. The
+ * transfer is cancelled and no file is written; the element fires
+ * `orivon-download`, a bubbling `CustomEvent` with this as its `detail`,
+ * and an app that wants the file gets it by its own means, under its own
+ * grants. ONLY A DOWNLOAD THE GRANT ADMITS AS A DOCUMENT gets this far: a
+ * link to a file on an origin outside `EmbedCapability.origins` is refused
+ * as any document load there is, and no event fires.
+ */
+export interface EmbedDownload {
+  /**
+   * Where the bytes were coming from, after any redirect; `''` when longer
+   * than `LIMITS.embedEventUrlBytes`. An app can fetch an `http(s)` one
+   * again unless the answer needed the page's cookies or a posted form; a
+   * `blob:` one is readable only inside the page, through the element,
+   * until the page revokes it; a `data:` one carries the file itself.
+   */
+  readonly url: string
+  /** The file name the server or the page suggested: a bare name, never a path. */
+  readonly filename: string
+  /** The content type the server stated; `''` when it stated none. */
+  readonly mimeType: string
+  /** The size the server stated, in bytes; `0` when it stated none. */
+  readonly totalBytes: number
+}
+
+/** ADR-0047's two `<webview>` events by name, for a typed `addEventListener`. Both bubble. */
+export interface EmbedEventMap {
+  readonly 'orivon-popup': CustomEvent<EmbedPopup>
+  readonly 'orivon-download': CustomEvent<EmbedDownload>
+}
+
 export interface WebContextOptions {
   /** The viewport the document reports, in CSS pixels. Default 1920 x 1080; each clamped to 1..7680. */
   readonly width?: number
