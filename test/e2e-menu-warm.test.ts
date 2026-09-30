@@ -28,6 +28,20 @@ function menuWebContentsId (app: Awaited<ReturnType<typeof launchElectron>>): Pr
     webContents.getAllWebContents().find((wc) => wc.getURL().includes('/menu/'))?.id)
 }
 
+/**
+ * The chrome page, once its own script has run. That script attaches the
+ * menu button's listeners, and the page exists before it has: a click or a
+ * hover that lands in between is lost, and the menu never opens. A module
+ * script with no top-level await has run by the time the document is
+ * `complete`.
+ */
+async function readyChrome (app: Awaited<ReturnType<typeof launchElectron>>): Promise<ReturnType<typeof findChrome>> {
+  expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
+  const chrome = findChrome(app)
+  await chrome.waitForFunction(() => document.readyState === 'complete')
+  return chrome
+}
+
 function menuPage (app: Awaited<ReturnType<typeof launchElectron>>): ReturnType<typeof app.windows>[number] | undefined {
   return app.windows().find((w) => w.url().endsWith('/menu/index.html'))
 }
@@ -35,8 +49,7 @@ function menuPage (app: Awaited<ReturnType<typeof launchElectron>>): ReturnType<
 it('builds no menu view at launch, builds one on the button\'s own hover, and reuses it on every open', async () => {
   const app = await launchElectron({ appPath: '.', ...SILENT })
   try {
-    expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
-    const chrome = findChrome(app)
+    const chrome = await readyChrome(app)
 
     // Absence cannot be polled for the instant chrome exists -- settle first
     // (scripts/smoke.mjs's own rule 3), then confirm it never showed up.
@@ -78,8 +91,7 @@ it('builds no menu view at launch, builds one on the button\'s own hover, and re
 it('a click with no prior hover still opens the menu, building it then', async () => {
   const app = await launchElectron({ appPath: '.', ...SILENT })
   try {
-    expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
-    const chrome = findChrome(app)
+    const chrome = await readyChrome(app)
 
     // A programmatic click, unlike chrome.click(), moves no real pointer --
     // no `pointerenter` fires, matching a keyboard Enter on a button that
@@ -97,8 +109,7 @@ it('a click with no prior hover still opens the menu, building it then', async (
 it('a brand-new tab is painted the app\'s own dark wash before its page ever loads', async () => {
   const app = await launchElectron({ appPath: '.', ...SILENT })
   try {
-    expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
-    const chrome = findChrome(app)
+    const chrome = await readyChrome(app)
 
     const before = await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((wc) => wc.id))
     await chrome.click('#new-tab')
