@@ -283,3 +283,15 @@ browser-action-list {
   border-radius: 50%;
   background: var(--wok);
 }
+
+/* Where a feature adds a toolbar button without editing index.html (chrome/toolbar-button.ts). Buttons
+   sit in ascending `order`; a slot with nothing visible in it takes no room, not even the gap its
+   parent puts between children. */
+.toolbar-slot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.toolbar-slot:not(:has(> :not([hidden]))) { display: none; }
+.toolbar-slot > [hidden] { display: none; }
