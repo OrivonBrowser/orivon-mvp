@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **`better-sqlite3` runs on the Node shim**: an adapter over `node:sqlite` with `Database`, `Statement` (`run`, `get`, `all`, `iterate`,
+  `pluck`, `raw`, `expand`, `bind`, `safeIntegers`), `pragma`, `transaction` with its variants and `SqliteError`; the esbuild plugin
+  points the package name at it. `function`, `aggregate`, `table`, `backup`, `serialize` and `loadExtension` refuse by name.
 - **A forked child behaves as a Node child does**: it ends when nothing listens on its IPC channel, `setTimeout` and friends
   return Node's objects (`unref`, `refresh`), `process.versions.node` is set, a taken port is `EADDRINUSE`, a bundled
   `require('assert')` is the function, and `fs.Stats` reports the modes of an app-private store. The Lounge's server runs on it.
