@@ -88,11 +88,23 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'settings.open': tabs.openInternal('settings'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'app.quit': deps.quit(); return
-    // Ids the tools work reserves: each does nothing until the feature that owns it replaces its line.
-    case 'tab.reopen': case 'tab.duplicate': case 'tab.pin': case 'tab.mute': case 'tab.closeOthers': case 'tab.closeRight': case 'tab.search':
-    case 'nav.stop': case 'nav.home':
-    case 'find.open': case 'find.next': case 'find.previous':
-    case 'page.print': case 'page.pdf': case 'page.save': case 'page.viewSource': case 'page.screenshot':
-      return
+    // Ids the tools work reserves: each does nothing until the feature that owns it replaces its line and drops `pending` on its COMMANDS row.
+    case 'tab.reopen': return
+    case 'tab.duplicate': return
+    case 'tab.pin': return
+    case 'tab.mute': return
+    case 'tab.closeOthers': return
+    case 'tab.closeRight': return
+    case 'tab.search': return
+    case 'nav.stop': return
+    case 'nav.home': return
+    case 'find.open': return
+    case 'find.next': return
+    case 'find.previous': return
+    case 'page.print': return
+    case 'page.pdf': return
+    case 'page.save': return
+    case 'page.viewSource': return
+    case 'page.screenshot': return
   }
 }
