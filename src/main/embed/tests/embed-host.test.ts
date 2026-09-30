@@ -40,11 +40,18 @@ vi.mock('electron', () => ({
 }))
 
 const { installEmbedHost } = await import('../embed-host.js')
+const { EMBED_EVENT_CHANNEL } = await import('../../channels.js')
 const { embedPartitionFor } = await import('../embed-guard.js')
 
-/** An embedder WebContents: a real EventEmitter (embed-host.ts attaches `will-attach-webview`/`did-attach-webview` to it) with a mutable top-frame URL. */
-function fakeEmbedder (url: string): EventEmitter & { mainFrame: { url: string } } {
-  return Object.assign(new EventEmitter(), { mainFrame: { url } })
+/** An embedder WebContents: a real EventEmitter (embed-host.ts attaches `will-attach-webview`/`did-attach-webview` to it) with a mutable top-frame URL and a frame that records what is sent to it. */
+function fakeEmbedder (url: string): EventEmitter & { mainFrame: { url: string, send: ReturnType<typeof vi.fn> }, destroyed: boolean } {
+  const embedder = Object.assign(new EventEmitter(), {
+    destroyed: false,
+    mainFrame: { url, send: vi.fn() },
+    getType: () => 'window',
+    isDestroyed: () => embedder.destroyed
+  })
+  return embedder
 }
 
 /** `session` is the guest's OWN Session object, the way Electron hands back whatever `webPreferences.partition` the attach actually used -- did-attach-webview reads origin from it, never from the embedder. */
@@ -311,5 +318,92 @@ describe('configureEmbedSession -- the verifier partition header is stripped and
     const session = attachAndGetSession(ORIGIN_A)
     const [filter] = session.webRequest.onBeforeSendHeaders.mock.calls[0] as [{ urls: string[] }]
     expect(filter.urls).toEqual(expect.arrayContaining(['https://*.eth/*']))
+  })
+})
+
+// ADR-0047: what a shown page asks for reaches the app that shows it, and
+// nothing else happens. The wiring only -- embed-events.test.ts covers what
+// the notices contain.
+describe('installEmbedHost -- a shown page\'s popups and downloads are told to its app', () => {
+  beforeEach(() => {
+    fakeApp.removeAllListeners()
+    sessionsByPartition.clear()
+  })
+
+  type OpenHandler = (details: { url: string, frameName: string, disposition: string, referrer: { url: string }, postBody?: unknown }) => { action: string }
+  interface Downloading { getURLChain: () => string[], getFilename: () => string, getMimeType: () => string, getTotalBytes: () => number }
+
+  function attached (): { embedder: ReturnType<typeof fakeEmbedder>, guest: ReturnType<typeof fakeGuest>, session: FakeSession, handler: () => OpenHandler } {
+    const broker = fakeBroker(new Set([ORIGIN_A]), vi.fn(() => ({ release: vi.fn() })))
+    installEmbedHost(broker, '/preload/embed.js')
+    const embedder = fakeEmbedder(`${ORIGIN_A}/tab`)
+    fakeApp.emit('web-contents-created', {}, embedder)
+    embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const session = sessionsByPartition.get(embedPartitionFor(ORIGIN_A))
+    if (session === undefined) throw new Error('no session was configured')
+    const guest = fakeGuest(42, session)
+    embedder.emit('did-attach-webview', {}, guest)
+    return { embedder, guest, session, handler: () => guest.setWindowOpenHandler.mock.calls.at(-1)?.[0] as OpenHandler }
+  }
+
+  function willDownload (session: FakeSession): (event: { preventDefault: () => void }, item: Downloading, guest: { id: number }) => void {
+    const call = session.on.mock.calls.find(([name]) => name === 'will-download')
+    if (call === undefined) throw new Error('no will-download listener')
+    return call[1] as ReturnType<typeof willDownload>
+  }
+
+  const item = (over: Partial<Downloading> = {}): Downloading =>
+    ({ getURLChain: () => ['https://a.example/go', 'https://a.example/f.bin'], getFilename: () => 'f.bin', getMimeType: () => 'application/octet-stream', getTotalBytes: () => 9, ...over })
+
+  it('denies a guest\'s windows from the moment it exists, before it has attached', () => {
+    installEmbedHost(fakeBroker(new Set([ORIGIN_A]), vi.fn()), '/preload/embed.js')
+    const setWindowOpenHandler = vi.fn()
+    fakeApp.emit('web-contents-created', {}, Object.assign(new EventEmitter(), { getType: () => 'webview', setWindowOpenHandler }))
+    expect((setWindowOpenHandler.mock.calls[0]?.[0] as () => unknown)()).toEqual({ action: 'deny' })
+  })
+
+  it('denies the window and sends the embedder\'s main frame the popup, tagged with the guest\'s id', () => {
+    const { embedder, handler } = attached()
+    const outcome = handler()({ url: 'https://a.example/x', frameName: 'pane', disposition: 'foreground-tab', referrer: { url: 'https://a.example/' }, postBody: { data: [] } })
+    expect(outcome).toEqual({ action: 'deny' })
+    expect(embedder.mainFrame.send).toHaveBeenCalledExactlyOnceWith(EMBED_EVENT_CHANNEL, 42, 'orivon-popup', {
+      url: 'https://a.example/x', disposition: 'foreground-tab', frameName: 'pane', referrer: 'https://a.example/', method: 'POST'
+    })
+  })
+
+  it('cancels a download after reading the item, and sends the embedder the download', () => {
+    const { embedder, session } = attached()
+    const event = { preventDefault: vi.fn() }
+    const read = vi.fn(() => 'f.bin')
+    willDownload(session)(event, item({ getFilename: read }), { id: 42 })
+    expect(read.mock.invocationCallOrder[0]).toBeLessThan(event.preventDefault.mock.invocationCallOrder[0] as number)
+    expect(embedder.mainFrame.send).toHaveBeenCalledExactlyOnceWith(EMBED_EVENT_CHANNEL, 42, 'orivon-download', {
+      url: 'https://a.example/f.bin', filename: 'f.bin', mimeType: 'application/octet-stream', totalBytes: 9
+    })
+  })
+
+  it('cancels a download from a page it does not know, and tells nobody', () => {
+    const { embedder, session } = attached()
+    const event = { preventDefault: vi.fn() }
+    willDownload(session)(event, item(), { id: 999 })
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('tells nobody once the guest is gone, or the page holding it is', () => {
+    const { embedder, guest, handler } = attached()
+    const destroyed = guest.once.mock.calls.find(([name]) => name === 'destroyed')?.[1] as () => void
+    embedder.destroyed = true
+    handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } })
+    embedder.destroyed = false
+    destroyed()
+    handler()({ url: 'https://a.example/y', frameName: '', disposition: 'default', referrer: { url: '' } })
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('still denies the window when the page\'s frame is gone between the check and the send', () => {
+    const { embedder, handler } = attached()
+    embedder.mainFrame.send.mockImplementation(() => { throw new Error('Render frame was disposed') })
+    expect(handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } })).toEqual({ action: 'deny' })
   })
 })

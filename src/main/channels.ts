@@ -172,3 +172,6 @@ export const CHILD_HOST_READY_CHANNEL = 'orivon-children:host-ready'
  * file's `extension-host.ts` duplicates `EXTENSIONS_DEFAULT_PARTITION`
  * instead of importing it. */
 export const EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL = 'orivon-extensions:sandbox-page-query'
+
+/** Main -> an app's page: a shown page asked for a window or started a download (ADR-0047). The page's preload turns it into an event on the `<webview>` element. */
+export const EMBED_EVENT_CHANNEL = 'orivon-embed:event'
