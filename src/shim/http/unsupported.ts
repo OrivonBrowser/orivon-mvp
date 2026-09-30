@@ -16,12 +16,12 @@ export class OrivonHttpUnsupportedError extends OrivonShimError {
   }
 }
 
-/** `http.createServer`/`https.createServer`: the TCP listener exists (net.createServer), the HTTP server on top of it does not. */
-export function createServer (): never {
+/** `https.createServer`: an HTTP server exists (http/server.ts), but orivon.net has no TLS listener to put under one. */
+export function createHttpsServer (): never {
   throw new OrivonHttpUnsupportedError(
-    'createServer',
-    'net.createServer is built over orivon.net.listen, but this shim has no HTTP request parser or ' +
-    'ServerResponse on top of it yet. Serve HTTP from a net.createServer connection handler instead.'
+    'https.createServer',
+    'orivon.net.listen accepts plain TCP connections only, so there is no TLS server for it to run over ' +
+    '(orivon.net.connectSecure is a client). Serve http.createServer on loopback instead, or terminate TLS in front of it.'
   )
 }
 
@@ -30,7 +30,7 @@ export function createServer (): never {
  * names the gap on the default export -- the shape a bundled CJS
  * `require('http'|'https')` resolves to -- instead of reading `undefined`.
  * Shared by http/http.ts and http/https.ts so both name it the same way;
- * `createServer` above has its own reason and is not reclassified by this.
+ * `https.createServer` above has its own reason and is not reclassified by this.
  */
 export function otherHttpMember (moduleName: 'http' | 'https') {
   return (prop: string): OrivonShimError => refuseShim(

@@ -7,7 +7,7 @@
 
 import { getOrivon } from '../orivon-global.js'
 import { createHttpModule, type RequestSocket } from './client.js'
-import { createServer, otherHttpMember } from './unsupported.js'
+import { createHttpsServer as createServer, otherHttpMember } from './unsupported.js'
 import { STATUS_CODES, METHODS } from './status-codes.js'
 import { HttpsAgent as Agent, httpsGlobalAgent as globalAgent } from './agent.js'
 import { connectTls } from '../net/tls.js'
