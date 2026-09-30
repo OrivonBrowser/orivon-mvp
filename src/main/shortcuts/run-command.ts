@@ -1,28 +1,24 @@
 // What each command does to the window it was pressed in. The shell already
 // has a method for nearly all of them; this maps a command to that method.
-import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
 import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import type { DevToolsService } from '../devtools/devtools-service.js'
-import type { ProfilesService } from '../launch/profiles-service.js'
-import type { ZoomService } from '../zoom/zoom-service.js'
+import type { ShellServices } from '../shell/shell-services.js'
 import type { CommandId } from './commands.js'
 
+/** A new dependency of a command is a `ShellServices` member, never a field here. */
 export interface CommandDeps {
-  readonly bookmarks: BookmarkStore
-  readonly zoom: ZoomService
-  readonly devtools: DevToolsService
-  readonly profiles: ProfilesService
+  readonly services: ShellServices
   readonly openWindow: (options?: ShellWindowOptions) => void
   readonly quit: () => void
 }
 
 export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDeps): void {
   const { tabs, window, chrome } = target
+  const { services } = deps
   const { tabs: order, activeTabId } = tabs.getState()
   const active = order.find((tab) => tab.id === activeTabId)
   const goTo = (index: number): void => {
@@ -56,17 +52,17 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'zoom.in': case 'zoom.out': case 'zoom.reset': {
       const origin = active === undefined ? null : originFromUrl(active.url)
       if (origin === null) return
-      if (id === 'zoom.reset') deps.zoom.reset(origin)
-      else deps.zoom.step(origin, id === 'zoom.in' ? 'in' : 'out')
+      if (id === 'zoom.reset') services.zoom.reset(origin)
+      else services.zoom.step(origin, id === 'zoom.in' ? 'in' : 'out')
       return
     }
     case 'history.open': tabs.openInternal('history'); return
-    case 'devtools.toggle': deps.devtools.toggle(tabs.activeWebContents(), window); return
+    case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
     case 'bookmark.toggle':
       // The same rule as the star in the toolbar: a page with a site, and no other.
       if (active === undefined || active.isNewTab || active.isInternal) return
-      if (deps.bookmarks.has(active.url)) deps.bookmarks.remove(active.url)
-      else deps.bookmarks.add({ url: active.url, title: active.title.length > 0 ? active.title : active.url, favicon: tabs.faviconFor(active.id) })
+      if (services.bookmarks.has(active.url)) services.bookmarks.remove(active.url)
+      else services.bookmarks.add({ url: active.url, title: active.title.length > 0 ? active.title : active.url, favicon: tabs.faviconFor(active.id) })
       return
     case 'window.new': deps.openWindow({ place: cascadeFrom(window.getBounds()) }); return
     case 'tab.moveLeft': case 'tab.moveRight': {
@@ -84,12 +80,19 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.moveToNewWindow':
       if (active !== undefined) moveToNewWindow(target, active.id, deps.openWindow, cascadeFrom(window.getBounds()))
       return
-    case 'window.newPrivate': deps.profiles.openPrivate(); return
+    case 'window.newPrivate': services.profiles.openPrivate(); return
     case 'profiles.open': tabs.openInternal('profiles'); return
     case 'window.close': window.close(); return
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
     case 'settings.open': tabs.openInternal('settings'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'app.quit': deps.quit(); return
+    // Ids the tools work reserves: each does nothing until the feature that owns it replaces its line.
+    case 'tab.reopen': case 'tab.duplicate': case 'tab.pin': case 'tab.mute': case 'tab.closeOthers': case 'tab.closeRight': case 'tab.search':
+    case 'nav.stop': case 'nav.home':
+    case 'find.open': case 'find.next': case 'find.previous':
+    case 'page.print': case 'page.pdf': case 'page.save': case 'page.viewSource': case 'page.screenshot':
+    case 'window.alwaysOnTop':
+      return
   }
 }

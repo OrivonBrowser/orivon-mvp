@@ -1,12 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { BookmarkStore } from '../../browsing/bookmarks.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import { COMMANDS } from '../commands.js'
 import { runCommand } from '../run-command.js'
 import type { CommandDeps } from '../run-command.js'
-import type { DevToolsService } from '../../devtools/devtools-service.js'
-import type { ProfilesService } from '../../launch/profiles-service.js'
-import type { ZoomService } from '../../zoom/zoom-service.js'
+import type { ShellServices } from '../../shell/shell-services.js'
 
 interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null }
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, ...extra })
@@ -32,7 +29,7 @@ function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindo
   const zoom = { step: vi.fn(), reset: vi.fn() }
   const devtools = { toggle: vi.fn() }
   const profiles = { openPrivate: vi.fn() }
-  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never }, bookmarks, deps: { bookmarks: bookmarks as unknown as BookmarkStore, zoom: zoom as unknown as ZoomService, devtools: devtools as unknown as DevToolsService, profiles: profiles as unknown as ProfilesService, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
+  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles } as unknown as ShellServices, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
 }
 
 describe('runCommand', () => {

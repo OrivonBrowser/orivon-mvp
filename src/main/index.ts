@@ -165,7 +165,7 @@ function boot (runtime: Runtime): void {
     // filesystem itself has to announce.
     shell.profiles.startWatching()
     app.once('will-quit', () => { shell.profiles.stopWatching() })
-    shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, profiles: shell.profiles, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
+    shell.commands.bind({ services: shell, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
     installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
     installZoom(app, shell.windows, shell.zoom)
     installHistory(app, shell.windows, shell.internalPages, shell.history)
