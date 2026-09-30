@@ -95,6 +95,9 @@ cancels every download after reading the item, then sends the embedder's main fr
 [`../../preload/embed-event-relay.ts`](../../preload/embed-event-relay.ts) finds the `<webview>`
 whose `getWebContentsId()` matches and dispatches the event in the main world; an id no element
 matches is dropped. The embedder is recorded at `did-attach-webview`, and forgotten with the guest.
+Every field a shown page chooses is bounded: an address (`url`, `referrer`) past
+`LIMITS.embedEventUrlBytes`, and a `frameName`, `filename` or `mimeType` past `NOTICE_TEXT_BYTES`
+(4096 UTF-8 bytes), each arrives as `''`.
 
 **A shown page cannot flood its app with notices.** The page chooses when it asks for a window,
 and each notice may carry an address up to `LIMITS.embedEventUrlBytes`. Each guest gets a budget

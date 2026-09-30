@@ -1,6 +1,38 @@
 import { describe, expect, it } from 'vitest'
 import { LIMITS } from '../../../contracts/index.js'
-import { bareFileName, boundedAddress, createNoticeBudget, downloadDetail, NOTICES_PER_SECOND, popupDetail } from '../embed-events.js'
+import { bareFileName, boundedAddress, boundedText, createNoticeBudget, downloadDetail, NOTICE_TEXT_BYTES, NOTICES_PER_SECOND, popupDetail } from '../embed-events.js'
+
+describe('boundedText', () => {
+  it('keeps text at the limit and empties it one byte past', () => {
+    expect(boundedText('x'.repeat(NOTICE_TEXT_BYTES))).toBe('x'.repeat(NOTICE_TEXT_BYTES))
+    expect(boundedText('x'.repeat(NOTICE_TEXT_BYTES + 1))).toBe('')
+  })
+
+  it('counts UTF-8 bytes, not characters', () => {
+    expect(boundedText('\u00e9'.repeat(NOTICE_TEXT_BYTES / 2))).not.toBe('')
+    expect(boundedText('\u00e9'.repeat(NOTICE_TEXT_BYTES / 2 + 1))).toBe('')
+  })
+})
+
+describe('the fields a shown page chooses are bounded', () => {
+  const long = 'x'.repeat(NOTICE_TEXT_BYTES + 1)
+  const longUrl = 'https://a.example/' + 'x'.repeat(LIMITS.embedEventUrlBytes)
+
+  it('empties a frame name over the limit and a referrer over the address limit', () => {
+    const detail = popupDetail({ url: 'https://a.example/', frameName: long, disposition: 'default', referrer: { url: longUrl } })
+    expect(detail.frameName).toBe('')
+    expect(detail.referrer).toBe('')
+  })
+
+  it('empties a file name and a MIME type over the limit, keeping the rest of the notice', () => {
+    expect(downloadDetail({ urlChain: ['https://a.example/f'], filename: long, mimeType: long, totalBytes: 5 }))
+      .toEqual({ url: 'https://a.example/f', filename: '', mimeType: '', totalBytes: 5 })
+  })
+
+  it('bounds a file name after its directory part is removed, so a long path in front of a short name is kept short', () => {
+    expect(downloadDetail({ urlChain: ['https://a.example/f'], filename: `${long}/f.txt`, mimeType: '', totalBytes: 0 }).filename).toBe('f.txt')
+  })
+})
 
 describe('boundedAddress', () => {
   it('keeps an address at the limit and empties one byte past it', () => {
