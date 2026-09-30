@@ -9,6 +9,7 @@ import { createNavigation } from './navigation.js'
 import { createReloadStop } from './reload-stop.js'
 import { createSiteBadges } from './site-badges.js'
 import { decorateTabBadges } from './tab-badges.js'
+import { createTabSearchButton } from './tab-search-button.js'
 import { createTabStrip } from './tab-strip.js'
 
 /** Adds to a tab's element after the strip built it; one entry per feature, alphabetical by the file that draws it. */
@@ -19,6 +20,7 @@ export const TAB_DECORATORS: readonly TabDecorator[] = [
 /** The chrome's features, initialised and rendered in this order; one entry per feature. */
 export const CHROME_MODULES: readonly ChromeModule[] = [
   createTabStrip(TAB_DECORATORS),
+  createTabSearchButton(),
   createNavigation(),
   createReloadStop(),
   createHomeButton(),

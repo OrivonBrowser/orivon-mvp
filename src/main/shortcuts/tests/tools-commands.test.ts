@@ -47,6 +47,7 @@ const LANDED: readonly string[] = [
   'tab.mute',
   'tab.pin',
   'tab.reopen',
+  'tab.search',
   'window.alwaysOnTop'
 ]
 
