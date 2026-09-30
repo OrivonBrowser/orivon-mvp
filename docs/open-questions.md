@@ -575,7 +575,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Question:** How should pin coverage (requests and bytes from the pin vs third-party hosts)
   affect the delivery ladder or what a person sees as the Web3 Score?
 - **Why it matters:** A two-file bundle that fetches thirty remote scripts sits on the same D2
-  rung as one that ships everything it runs (see A148). Today coverage is shown, never scored.
+  rung as one that ships everything it runs. Today coverage is shown, never scored.
 - **Options:** keep it evidence-only; lower or cap the rung below a coverage threshold; add a
   separate coverage grade (`src/trust/delivery-ladder.ts`).
 - **Who decides:** owner

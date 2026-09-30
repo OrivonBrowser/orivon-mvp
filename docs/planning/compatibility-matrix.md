@@ -195,9 +195,11 @@ open blockers are listed; a resolved one is deleted, not struck through.
 
 Rows 1 and 2 are the top of the list: neither needs anything but the work itself or one
 confirmation. Row 6 sits behind them despite touching the metric, because it needs
-a decision before it is even build-shaped. **Unfiled:** rows 6 and 7, row 8's camera and
-microphone half, plus declarability (what a grant prompt can honestly say for runtime-chosen
-hosts) and per-syscall IPC cost on a chatty workload.
+a decision before it is even build-shaped. Rows 14 to 22 are the widest gaps the enumeration
+of Tables 1 to 3 exposed, listed after rows 1 to 11 rather than ranked among them; rows 15 to 18
+and 22 are shim work with no decision first. **Unfiled:** rows 6 and 7, row 8's camera and
+microphone half, rows 15, 18, 19, 20 and 22, plus declarability (what a grant prompt can honestly
+say for runtime-chosen hosts) and per-syscall IPC cost on a chatty workload.
 
 ## Table 5: the native-module question, per library
 
