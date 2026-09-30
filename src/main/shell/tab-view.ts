@@ -12,6 +12,7 @@ import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
@@ -58,11 +59,6 @@ export function tabWebPreferences (preload: string, partition: string | undefine
     webviewTag: additionalArguments?.includes(APP_TAB_FLAG) === true
   }
 }
-
-/** Electron's own default: what a WebContentsView paints before anything
- * ever calls `setBackgroundColor` on it. Named so `resetViewBackground`
- * below reads as putting a view back to this, not to an arbitrary white. */
-const DEFAULT_BACKGROUND = '#FFFFFF'
 
 /** Builds one tab's WebContentsView, shared by tabs.ts's createTab() and
  * repartitionView().

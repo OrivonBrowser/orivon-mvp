@@ -15,8 +15,7 @@ import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import { guardInternalView } from '../pages/internal-tab.js'
 import type { TabRecord, TabViewHost } from './tab-types.js'
 import { appTabArgsFor, makeTabView, partitionForTarget, wireView } from './tab-view.js'
-import { APP_DARK_WASH, resolveThemeColor } from './theme-colors.js'
-import type { ThemeColorPair } from './theme-colors.js'
+import { APP_DARK_WASH, INTERNAL_PAGE_BACKGROUND, resolveThemeColor } from './theme-colors.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
  * a bad window.open() URL, empty input) -- never the dashboard. Keeping
@@ -28,11 +27,6 @@ import type { ThemeColorPair } from './theme-colors.js'
  * navigate() call must never show a page that expects the dashboard's
  * own preload to exist. */
 export const BLANK_URL = 'about:blank'
-
-/** Literally pages/shared/tokens.css's own `--wbg` pair (Settings, History,
- * Extensions, ...) -- the one internal-page consumer of this fact, so it
- * stays local rather than moving into theme-colors.ts. */
-const INTERNAL_PAGE_BACKGROUND: ThemeColorPair = { light: '#f4f4f8', dark: '#17181c' }
 
 let nextId = 1
 function makeTabId (): string {
