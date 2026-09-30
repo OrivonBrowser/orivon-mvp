@@ -51,18 +51,35 @@ describe('http/http.ts', () => {
     expect(http.default.STATUS_CODES[200]).toBe('OK')
   })
 
-  it('createServer throws a named, explanatory error rather than pretending to listen', async () => {
-    installFakeOrivon()
+  it('createServer builds an http.Server (a net.Server) without touching orivon until listen()', async () => {
     const http = await import('../http.js')
-    expect(() => http.createServer()).toThrow(/net\.listen/)
-    // A177: OrivonHttpUnsupportedError now extends OrivonShimError, so a
-    // catch block checking only the shared type still catches this one.
-    const { OrivonShimError } = await import('../../errors.js')
-    try {
-      http.createServer()
-    } catch (error) {
-      expect(error).toBeInstanceOf(OrivonShimError)
-    }
+    const net = await import('../../net/net.js')
+    const server = http.createServer((_req, res) => { res.end() })
+    expect(server).toBeInstanceOf(http.Server)
+    expect(server).toBeInstanceOf(net.Server)
+    expect(server.listenerCount('request')).toBe(1)
+    expect(http.default.createServer).toBe(http.createServer)
+    expect(http.default.Server).toBe(http.Server)
+    expect(http.default.ServerResponse).toBe(http.ServerResponse)
+    expect(http.default.IncomingMessage).toBe(http.IncomingMessage)
+    expect(http.default.OutgoingMessage).toBe(http.OutgoingMessage)
+    expect(new http.ServerResponse(new http.IncomingMessage())).toBeInstanceOf(http.OutgoingMessage)
+  })
+
+  it('a server\'s listen() surfaces a missing window.orivon as an \'error\' event, never a throw', async () => {
+    const http = await import('../http.js')
+    const server = http.createServer()
+    const error = new Promise<Error>((resolve) => server.once('error', resolve))
+    server.listen(0)
+    expect((await error).message).toMatch(/window\.orivon/)
+  })
+
+  it('exports maxHeaderSize and the header validators as Node does', async () => {
+    const http = await import('../http.js')
+    expect(http.maxHeaderSize).toBe(16384)
+    expect(() => http.validateHeaderName('bad name')).toThrow(expect.objectContaining({ code: 'ERR_INVALID_HTTP_TOKEN' }))
+    expect(() => http.validateHeaderValue('x', 'bad\nvalue')).toThrow(expect.objectContaining({ code: 'ERR_INVALID_CHAR' }))
+    expect(() => http.validateHeaderName('x-ok')).not.toThrow()
   })
 
   it('surfaces a clear, named "error" event if window.orivon is absent when a request is attempted', async () => {
@@ -76,16 +93,16 @@ describe('http/http.ts', () => {
   // `require('http')`'s own shape) used to be silently absent. A169:
   // reading one is now safe, the same as real absence; only calling it
   // still names the gap.
-  it('reading an unbuilt member (validateHeaderName) on the default export is safe; calling it names the gap instead of leaving it absent', async () => {
+  it('reading an unbuilt member (setMaxIdleHTTPParsers) on the default export is safe; calling it names the gap instead of leaving it absent', async () => {
     installFakeOrivon()
     const http = (await import('../http.js')).default as unknown as Record<string, () => unknown>
     const { OrivonShimError } = await import('../../errors.js')
-    expect(() => http.validateHeaderName).not.toThrow()
-    expect(() => http.validateHeaderName!()).toThrow(OrivonShimError)
+    expect(() => http.setMaxIdleHTTPParsers).not.toThrow()
+    expect(() => http.setMaxIdleHTTPParsers!()).toThrow(OrivonShimError)
     try {
-      http.validateHeaderName!()
+      http.setMaxIdleHTTPParsers!()
     } catch (error) {
-      expect((error as InstanceType<typeof OrivonShimError>).api).toBe('http.validateHeaderName')
+      expect((error as InstanceType<typeof OrivonShimError>).api).toBe('http.setMaxIdleHTTPParsers')
     }
   })
 
@@ -131,10 +148,13 @@ describe('http/https.ts', () => {
     expect(connectCalls).toHaveLength(0)
   })
 
-  it('createServer throws a named, explanatory error', async () => {
+  it('createServer refuses by name: there is no TLS listener to run a server over', async () => {
     installFakeOrivon()
     const https = await import('../https.js')
-    expect(() => https.createServer()).toThrow(/net\.listen/)
+    expect(() => https.createServer()).toThrow(/no TLS server/)
+    expect(() => https.default.createServer()).toThrow(/no TLS server/)
+    const { OrivonShimError } = await import('../../errors.js')
+    expect(() => https.createServer()).toThrow(OrivonShimError)
   })
 
   it('https.Agent extends http.Agent with https defaults', async () => {

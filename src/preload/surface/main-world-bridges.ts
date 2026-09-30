@@ -19,7 +19,7 @@
 
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { FileStat, LookupAddress, SecureHandshake, SendRefusal } from '../../contracts/handles.js'
-import type { CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
+import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
 
 /**
@@ -233,8 +233,8 @@ export interface MainWorldBridge {
   netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
   /** net.connectSecure's own closure -- resolves to netConnect's bridge shape plus `tls`; `./main-world-socket.ts`'s own `buildSocket` is shared by both (Rule 3). The options pass through untouched: the broker validates them. */
   netConnectSecure: (opts: SecureConnectOptions) => Promise<MainWorldSocketBridge>
-  netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
-  netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
+  netUdpBind: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldUdpBridge>
+  netListen: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldServerBridge>
   /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */
   netLookup: (opts: { hostname: string }) => Promise<readonly LookupAddress[]>
 }

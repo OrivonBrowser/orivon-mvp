@@ -15,7 +15,7 @@ import type { PortLike } from '../ports/socket.js'
 import { createServerPort } from '../ports/server.js'
 import type { AcceptedConnection } from '../ports/server.js'
 import type { MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
-import type { LookupAddress, SecureConnectOptions, SecureHandshake } from '../../contracts/index.js'
+import type { BindScope, LookupAddress, SecureConnectOptions, SecureHandshake } from '../../contracts/index.js'
 
 /**
  * What `net.connect`'s CONTROL_CHANNEL reply actually carries -- deliberately
@@ -132,12 +132,25 @@ function buildBridgeResult (descriptor: SocketDescriptor, port: PortLike): MainW
 }
 
 /**
+ * What `net.udpBind` and `net.listen` send: the app's argument, without a
+ * `scope` key it left undefined, so the broker's own default applies to an
+ * omitted one. Whatever else the app passed, including something that is not
+ * an object at all, is forwarded as it is: the broker refuses a bad argument
+ * or a scope that is neither 'local' nor 'network' as 'invalid'.
+ */
+function bindPayload (opts: unknown): unknown {
+  if (typeof opts !== 'object' || opts === null || !('scope' in opts) || opts.scope !== undefined) return opts
+  const { scope: _omitted, ...rest } = opts
+  return rest
+}
+
+/**
  * `net.udpBind`'s counterpart to netConnectBridge, and it correlates the same
  * two channels the same way -- ../ports/socket-bridge.ts is kind-agnostic, so the
  * caller is what knows which kind of port it asked for.
  */
-export async function netUdpBindBridge (opts: { port: number }): Promise<MainWorldUdpBridge> {
-  const descriptor = await call<UdpSocketDescriptor>('net.udpBind', opts, TIMEOUT_MS.net)
+export async function netUdpBindBridge (opts: { port: number, scope?: BindScope }): Promise<MainWorldUdpBridge> {
+  const descriptor = await call<UdpSocketDescriptor>('net.udpBind', bindPayload(opts), TIMEOUT_MS.net)
   try {
     return buildUdpBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
   } catch (error) {
@@ -177,8 +190,8 @@ function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike):
  * that one, the "port" it correlates is not the socket's own bytes but the
  * SERVER's own accept-demand/AcceptedMessage channel (../ports/server.ts).
  */
-export async function netListenBridge (opts: { port: number }): Promise<MainWorldServerBridge> {
-  const descriptor = await call<TcpServerDescriptor>('net.listen', opts, TIMEOUT_MS.net)
+export async function netListenBridge (opts: { port: number, scope?: BindScope }): Promise<MainWorldServerBridge> {
+  const descriptor = await call<TcpServerDescriptor>('net.listen', bindPayload(opts), TIMEOUT_MS.net)
   try {
     return buildServerBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
   } catch (error) {

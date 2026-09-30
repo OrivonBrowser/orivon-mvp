@@ -21,7 +21,7 @@ afterEach(async () => {
 })
 
 async function bindIn (lo: number, hi: number): Promise<BoundUdpSocket> {
-  const socket = await bindUdp([{ lo, hi }], new AbortController().signal)
+  const socket = await bindUdp([{ lo, hi }], new AbortController().signal, 'network')
   opened.push(socket)
   return socket
 }
@@ -65,7 +65,7 @@ describe('bindUdp -- where it lands', () => {
     const blocker = createSocket('udp4')
     opened.push(blocker)
     await new Promise<void>((resolve) => { blocker.bind(41400, '0.0.0.0', resolve) })
-    await expect(bindUdp([{ lo: 41400, hi: 41400 }], new AbortController().signal))
+    await expect(bindUdp([{ lo: 41400, hi: 41400 }], new AbortController().signal, 'network'))
       .rejects.toMatchObject({ code: 'limit' })
   })
 
@@ -95,7 +95,7 @@ describe('bindUdp -- where it lands', () => {
   it('refuses a bind whose grant was withdrawn before it started', async () => {
     const controller = new AbortController()
     controller.abort()
-    await expect(bindUdp([{ lo: 41600, hi: 41600 }], controller.signal))
+    await expect(bindUdp([{ lo: 41600, hi: 41600 }], controller.signal, 'network'))
       .rejects.toMatchObject({ code: 'revoked' })
   })
 
@@ -169,7 +169,7 @@ describe('bindUdp -- the inbound window drops rather than grows', () => {
   const PAYLOAD = new Uint8Array(512)
 
   async function bindTiny (lo: number, hi: number): Promise<BoundUdpSocket> {
-    const socket = await bindUdp([{ lo, hi }], new AbortController().signal, TINY_WINDOW)
+    const socket = await bindUdp([{ lo, hi }], new AbortController().signal, 'network', TINY_WINDOW)
     opened.push(socket)
     return socket
   }
@@ -293,7 +293,7 @@ describe('bindUdp -- an abort landing mid-bind', () => {
 
     try {
       const controller = new AbortController()
-      const promise = bindUdp([{ lo: 43000, hi: 43010 }], controller.signal)
+      const promise = bindUdp([{ lo: 43000, hi: 43010 }], controller.signal, 'network')
       controller.abort()
       await expect(promise).rejects.toMatchObject({ code: 'revoked' })
     } finally {

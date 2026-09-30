@@ -211,7 +211,9 @@ function noteForNotice (contents: WebContents, permission: string): void {
  * already covered) just overwrites each with an identical function. */
 function denyByDefault (target: Session): void {
   target.setPermissionRequestHandler((contents, permission, callback, details) => {
-    if (permission === 'openExternal') return answerWhenAsked(externalLinks(contents, details), callback)
+    // A page an app shows in a <webview> reaches another program only if the
+    // app decides to, through its own grants (ADR-0047): never through a prompt here.
+    if (permission === 'openExternal') return contents.getType() === 'webview' ? callback(false) : answerWhenAsked(externalLinks(contents, details), callback)
     if (permission === 'notifications') return answerWhenAsked(siteNotifications.request(contents, details), callback)
     if (permission === 'media') return callback(allowTabCaptureMediaRequest(contents, details))
     const allowed = isAllowed(permission, details)

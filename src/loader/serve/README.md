@@ -38,8 +38,8 @@ profile) with larger consequences than a stale file. Provisional.
 **What the served bundle's CSP admits, and why** ([`csp.ts`](csp.ts)). Set on every served
 response (`onHeadersReceived` never fires for one, A110) and rebuilt from the live grants per
 request. `csp.ts` gives the reasons for `script-src`'s eval sources and for the `data:`/`blob:`
-schemes; A148 records what `'unsafe-inline'` gives up for content an app renders but did not
-author.
+schemes, and for leaving `'unsafe-inline'` out of `script-src`: an inline `<script>` or event
+handler in an app's markup does not run, whoever wrote it.
 
 - **`frame-src 'self' data: blob:`, and no third-party frame.** A `data:` or `blob:` frame is
   opaque-origin, gets no preload and inherits this policy (measured), so it can do nothing its

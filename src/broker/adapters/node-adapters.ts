@@ -12,6 +12,7 @@ import type { Server, Socket } from 'node:net'
 import type { CloseReason } from '../handles/handle-contracts.js'
 import type { Dial, DialedSocket, Listen, ListenedServer } from '../broker-contracts.js'
 import type { PortRange } from '../policy/bind.js'
+import { bindAddressFor } from '../policy/bind-scope.js'
 import { countPorts, portAt, randomStart } from './port-pick.js'
 import type { Resolver } from '../policy/connect.js'
 import { fail, isOrivonErrorLike } from '../errors.js'
@@ -301,27 +302,30 @@ function wrapAccepted (socket: Socket): DialedSocket {
  * fd before emitting `'error'` when a listen attempt fails, so this server
  * never held one to release.
  */
-function listenOne (server: Server, port: number): Promise<void> {
+function listenOne (server: Server, port: number, address: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const cleanup = (): void => { server.removeListener('error', onError) }
     const onError = (error: Error): void => { cleanup(); reject(error) }
     server.once('error', onError)
-    server.listen(port, '0.0.0.0', () => { cleanup(); resolve() })
+    server.listen(port, address, () => { cleanup(); resolve() })
   })
 }
 
 /**
  * `Listen` over real TCP. Binds inside `ranges` and nowhere else, and picks
  * the port at random within them for the same reason `bindUdp` does (A88).
+ * `scope` picks the interface (`bindAddressFor`): `'local'` is `127.0.0.1`
+ * and only `'network'` is `0.0.0.0`.
  *
  * IPv4 ONLY IN v0, matching `bindUdp`'s own scope note: nothing in the
- * corpus specifies dual-stack for a listening socket either, and `0.0.0.0`
+ * corpus specifies dual-stack for a listening socket either, and IPv4
  * keeps this half of `net.*` consistent with the other.
  */
-export const listenTcp: Listen = async (ranges: readonly PortRange[], signal) => {
+export const listenTcp: Listen = async (ranges: readonly PortRange[], signal, scope) => {
   if (signal.aborted) throw fail('revoked', 'the grant authorising this listen was withdrawn')
   const total = countPorts(ranges)
   if (total === 0) throw fail('internal', 'no granted port ranges to listen within')
+  const bindAddress = bindAddressFor(scope)
 
   let server: Server | undefined
   let lastError: unknown
@@ -330,7 +334,7 @@ export const listenTcp: Listen = async (ranges: readonly PortRange[], signal) =>
   for (let attempt = 0; attempt < attempts && !signal.aborted; attempt += 1) {
     const candidate = createServer()
     try {
-      await listenOne(candidate, portAt(ranges, (start + attempt) % total))
+      await listenOne(candidate, portAt(ranges, (start + attempt) % total), bindAddress)
       server = candidate
       lastError = undefined
       break

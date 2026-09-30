@@ -243,3 +243,19 @@ see in the PR itself.
 | Mechanism | Scope | Outcome |
 |---|---|---|
 | `/code-review` at high effort (an agent) | The branch against `main`: `src/contracts/` and the pages that state it | Ten findings, all acted on before merge. The pattern now reaches only a listener the app itself holds, and its grammar is fixed (`http` only, a port written out); the cookie sharing under `<name>.localhost` is stated; `"*"` may be listed with any other entry; `EmbedPopup` gains `referrer` and `method`; both events' addresses are bounded (`LIMITS.embedEventUrlBytes`); `EmbedEventMap` types the two names; the limits of each event are written into the contract; `ADR-0039` carries an amendment; and the specification says the loader and the shell do not build either yet |
+
+### `stream/embed-local`: the local pattern, the popup and download events, the loopback listen scope, `http.createServer` (2026-09-30)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Conductor hand-review of each lane's diff before it was merged | `src/broker/` (the bind scope, the listener registry, the embed policy), `src/main/embed/`, `src/main/sessions/permission-gate.ts`, `src/preload/embed-event-relay.ts` | Added, with tests: a bound on the notices one shown page sends its app, and a cancelled download that names no page. Found that the shim's own notes still refused a loopback host after the scope was built |
+| `/code-review` at high effort (an agent) | The branch against `main` | Ten findings, all fixed with tests. The one that mattered: Chromium tries IPv6 loopback first for a `localhost` name, so a program on `[::1]` was shown in place of an app's own listener (measured, then closed with a resolver clause and an end-to-end test). In the shim's HTTP server: an unbounded backlog of pipelined requests, a silent connection never timed out, no error answer after the first request, uncapped trailers, and a `listen()` that dropped a pending `close()` |
+| Security review (the `security-review` method, applied to the branch diff by an agent, from reading) | The privileged side of the diff | No network-reachable socket under a local grant and no real window from a shown page. Four findings, all fixed with tests: a shown local page outlived its listener and could reach whatever took the port; a notice could reach a tab that had left the app's origin; the consent line could hide a private origin behind "any website"; a bind call with no argument threw from the preload |
+
+### `stream/compat-coverage`: the compatibility matrix as enumerations (2026-09-30)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Row-by-row verification against the code (eleven agents, one or two sub-tables each, plus one for the rows a merge on `main` changed) | Every row of Tables 1, 2, 3 and 5 and the Table 8 corrections, at `802cae01` | Roughly one row in four corrected before merge: overstated "works" claims, counts off by one or two, substitutes nobody had measured, and rows the loopback scope and HTTP server on `main` had made wrong |
+| Coverage check against 1,156 needs from scans of 80 Electron apps, 56 Node apps and the ports' own ledger (an agent) | The assembled rows | Five needs had no row, now added |
+| `/code-review` at medium effort | The pull request | Three findings: a stale cross-reference to the resolved A148 and a Table 4 paragraph that did not mention the new rows, both fixed; a claim that rows 12 and 13 never existed was wrong (both were deleted when resolved) |

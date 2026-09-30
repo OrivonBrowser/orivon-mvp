@@ -10,7 +10,7 @@
 import { fail } from '../../errors.js'
 import type { Broker, FailableSecureTcpSocket } from '../../broker-contracts.js'
 import type { FailableTcpSocket } from '../../handles/handle-contracts.js'
-import type { SecureHandshake } from '../../../contracts/index.js'
+import type { BindScope, SecureHandshake } from '../../../contracts/index.js'
 import { parseSecureConnectParams } from '../secure-connect-params.js'
 import { createSocketRelay } from '../relay/socket.js'
 import { createDatagramRelay } from '../relay/datagram.js'
@@ -20,6 +20,7 @@ import {
   isNetCloseParams, isNetConnectParams, isNetLookupParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
   isNetUdpBindParams
 } from '../ipc-validation.js'
+import type { NetUdpBindParams } from '../ipc-validation.js'
 import type { ControlMethod } from '../ipc-validation.js'
 import type { ControlEvent, PortTransport, SocketDescriptor, UdpSocketDescriptor } from '../relay/port-transport.js'
 import { LIMITS } from '../../../contracts/index.js'
@@ -107,6 +108,11 @@ function handshakeOf (socket: FailableSecureTcpSocket): SecureHandshake {
     : { authorized, authorizationError, alpnProtocol, peerCertificate }
 }
 
+/** A validated bind payload as the broker takes it: `scope` left out, not set to undefined, when the app omitted it. */
+function bindOptions (payload: NetUdpBindParams): { port: number, scope?: BindScope } {
+  return payload.scope === undefined ? { port: payload.port } : { port: payload.port, scope: payload.scope }
+}
+
 /** `net.*`'s dispatch cases, unchanged from ../ipc.ts's own switch. */
 export async function dispatchNet (
   broker: Broker,
@@ -138,9 +144,9 @@ export async function dispatchNet (
       return { ...descriptor, tls: handshakeOf(socket) }
     }
     case 'net.udpBind': {
-      if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.udpBind requires { port: number }')
+      if (!isNetUdpBindParams(payload)) throw fail('invalid', "net.udpBind requires { port: number, scope?: 'local' | 'network' }")
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.udpBind(origin, { port: payload.port })
+      const socket = await broker.net.udpBind(origin, bindOptions(payload))
 
       const pair = transport.createPortPair()
       const relay = createDatagramRelay({
@@ -184,9 +190,9 @@ export async function dispatchNet (
     // AcceptedMessage, not through another control-channel round trip --
     // see ../relay/server.ts's own header for the shape this reuses.
     case 'net.listen': {
-      if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.listen requires { port: number }')
+      if (!isNetUdpBindParams(payload)) throw fail('invalid', "net.listen requires { port: number, scope?: 'local' | 'network' }")
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const server = await broker.net.listen(origin, { port: payload.port })
+      const server = await broker.net.listen(origin, bindOptions(payload))
       return await deliverTcpServer(origin, server, event, transport)
     }
     case 'net.close': {

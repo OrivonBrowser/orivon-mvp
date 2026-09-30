@@ -73,7 +73,7 @@ describe('udpBind -- the grant ledger decides', () => {
     await broker.net.udpBind(APP, { port: 6885 })
 
     // Narrowed to exactly the port that was checked -- see BindAllowed.ranges.
-    expect(bind).toHaveBeenCalledWith([{ lo: 6885, hi: 6885 }], expect.anything())
+    expect(bind).toHaveBeenCalledWith([{ lo: 6885, hi: 6885 }], expect.anything(), 'local')
   })
 
   it('hands the adapter every granted range for an ephemeral bind (A88)', async () => {
@@ -82,7 +82,7 @@ describe('udpBind -- the grant ledger decides', () => {
 
     await broker.net.udpBind(APP, { port: 0 })
 
-    expect(bind).toHaveBeenCalledWith([{ lo: 6881, hi: 6889 }], expect.anything())
+    expect(bind).toHaveBeenCalledWith([{ lo: 6881, hi: 6889 }], expect.anything(), 'local')
   })
 
   it('tears the socket down rather than leaking it when the grant is revoked mid-bind', async () => {

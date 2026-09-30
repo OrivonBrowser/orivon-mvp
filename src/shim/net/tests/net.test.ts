@@ -13,18 +13,18 @@ type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
 function installFakeOrivon (): {
   connectCalls: Array<{ host: string, port: number }>
-  listenCalls: Array<{ port: number }>
+  listenCalls: Array<{ port: number, scope?: string }>
   fakeServer: ReturnType<typeof createFakeTcpServer>
 } {
   const connectCalls: Array<{ host: string, port: number }> = []
-  const listenCalls: Array<{ port: number }> = []
+  const listenCalls: Array<{ port: number, scope?: string }> = []
   const fakeSocket = createFakeTcpSocket()
   const fakeServer = createFakeTcpServer()
   ;(globalThis as GlobalWithOrivon).orivon = {
     net: {
       connect: async (opts: { host: string, port: number }) => { connectCalls.push(opts); return fakeSocket.socket },
       connectSecure: async () => { throw new Error('not used in this test') },
-      listen: async (opts: { port: number }) => { listenCalls.push(opts); return fakeServer.server },
+      listen: async (opts: { port: number, scope?: string }) => { listenCalls.push(opts); return fakeServer.server },
       udpBind: async () => { throw new Error('not used in this test') }
     }
   } as unknown as Orivon
@@ -82,7 +82,8 @@ describe('net/net.ts', () => {
     const net = await import('../net.js')
     net.createServer().listen(6881)
     await vi.waitFor(() => expect(listenCalls).toHaveLength(1))
-    expect(listenCalls[0]).toEqual({ port: 6881 })
+    // No host is Node's own default, every interface: the shim asks for the network scope first.
+    expect(listenCalls[0]).toEqual({ port: 6881, scope: 'network' })
   })
 
   it('createServer(connectionListener) attaches it as a real \'connection\' listener', async () => {

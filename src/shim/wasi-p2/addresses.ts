@@ -86,6 +86,18 @@ export function isIpv4Mapped (address: IpAddress): boolean {
   return address.tag === 'ipv6' && address.val.slice(0, 5).every((part) => part === 0) && address.val[5] === 0xffff
 }
 
+/**
+ * The address a bind to `asked` holds once orivon.net reports `gotText`: what
+ * was asked, unless every interface was asked and only loopback was given (the
+ * network scope was refused and the local one served), then loopback of the
+ * same family.
+ */
+export function addressGot (asked: IpAddress, gotText: string): IpAddress {
+  const got = parseAddress(gotText)
+  if (!isUnspecified(asked) || got === undefined || !isLoopback(got)) return asked
+  return asked.tag === 'ipv4' ? { tag: 'ipv4', val: [127, 0, 0, 1] } : { tag: 'ipv6', val: [0, 0, 0, 0, 0, 0, 0, 1] }
+}
+
 /** Which interface a bind to `address` reaches: orivon.net binds loopback or every interface, never one address. */
 export function scopeOf (address: IpAddress): 'local' | 'network' {
   return isLoopback(address) ? 'local' : 'network'

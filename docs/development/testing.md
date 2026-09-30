@@ -188,12 +188,20 @@ the *next datagram* on an already-bound socket). The shared harness (the fixture
 children, the address-bar navigation dance, the per-phase reporter) lives in
 [`test/e2e-helpers.ts`](../../test/e2e-helpers.ts).
 
-Two suites cover what an app's page is served with and what it may put inside itself:
+These suites cover what an app's page is served with, what it may put inside itself and what it may serve:
 [`e2e-embed.test.ts`](../../test/e2e-embed.test.ts) drives a `<webview>` under a `web.embed`
 grant (the shown site loads in the app's own embed partition with no `orivon.*`, the app's
 script runs first under a strict page CSP and talks to the element both ways, a site outside
 the grant and a `file:` URL are refused, an ordinary tab's element is inert, and a revoke closes
-the page), and [`e2e-wasm-threads.test.ts`](../../test/e2e-wasm-threads.test.ts) pins one bundle
+the page), [`e2e-embed-local.test.ts`](../../test/e2e-embed-local.test.ts) serves pages from the
+app's own loopback listener under a local pattern (two labels are two origins, a cookie does not
+cross them, a page is refused while the app holds no listener or another program holds the
+port, a server the test holds on `[::1]` at the app's port is never the one shown, and a shown
+page closes with the app's listener), [`e2e-embed-events.test.ts`](../../test/e2e-embed-events.test.ts) drives a shown page's
+popups, downloads and a link to an unknown scheme with real input and reads the events on the
+element, [`e2e-http-server.test.ts`](../../test/e2e-http-server.test.ts) runs `http.createServer`
+in a page and answers real requests from outside the browser,
+and [`e2e-wasm-threads.test.ts`](../../test/e2e-wasm-threads.test.ts) pins one bundle
 declaring `crossOriginIsolated` and one without, and measures `SharedArrayBuffer`, a shared
 `WebAssembly.Memory` and `Atomics.wait` in a worker in each.
 

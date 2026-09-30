@@ -56,6 +56,11 @@ is a secure context with `crypto.subtle`, and each label is an origin of its own
 characters loads; one of 64 fails to resolve. When a shown page navigates to a scheme Chromium
 does not know, the element's own `will-navigate` event names the address.
 
+Measured again once built, in the shell's own guarded view: a cookie a page under `*.localhost`
+sets for `localhost` is rejected outright, and one set for `<name>.localhost` is read by every
+label under it; a plain `target` link reports `frameName` `''`; and a shown page's navigation to
+an unknown scheme made Chromium ask to open it outside the browser.
+
 ## Alternatives considered
 
 1. **A request channel from the shell into the app for a scheme the manifest names**, the shape
@@ -112,10 +117,22 @@ left guessing.
   and hyphens. An app re-encodes a longer or case-sensitive name.
 - **An address on the app's own scheme inside a shown page does not load.** The element's
   `will-navigate` names a navigation to it, and the app loads its own address for it. A
-  subresource on that scheme gets nothing. The shell's external-link prompt may still ask about
-  such a navigation (`docs/open-questions.md` A306).
-- **The listener is an ordinary `tcp.listen.local` one.** Other programs on this computer can
-  reach it, so the app's server decides what it answers.
+  subresource on that scheme gets nothing. Such a navigation is never offered to another
+  program and raises no prompt.
+- **The listener is an ordinary `tcp.listen.local` one**, bound to `127.0.0.1` (`ADR-0034`).
+  Other programs on this computer can reach it, so the app's server decides what it answers.
+- **Every `*.localhost` name resolves to `127.0.0.1` in this browser**, by one resolver clause
+  set at launch. Left alone, Chromium tries IPv6 loopback first, and a program on `[::1]` at the
+  same port answered in place of the app's listener when measured. The cost: a `*.localhost`
+  server bound to IPv6 loopback alone does not load in any tab. Bare `localhost` is unchanged.
+- **A shown local page closes with its listener.** When the app's last listener on the port
+  goes, every page it shows from a local pattern on that port is closed, so none is left to
+  reach whatever program takes the port next.
+- **A flood of notices is dropped.** Twenty in a second reach the app from one shown page; the
+  contract does not state this bound yet (A305). A window name, a file name or a content type
+  past 4096 bytes arrives as `''`, and a notice is sent only while the tab is still the app's.
+- **A popup address past the limit arrives as `about:blank#blocked`**, not `''`: Chromium
+  replaces it before the shell sees it. The shell's own cap still holds for any other route.
 - **Sites under one `<name>.localhost` are the same site to a cookie.** They are different
   origins, and a cookie one sets for `<name>.localhost` still reaches the rest. The bare
   `*.localhost` form keeps them apart, and is the one for sites that do not trust each other.

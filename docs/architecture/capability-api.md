@@ -316,9 +316,10 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 > `http://*.<name>.localhost:<port>`: every origin with one label where `*` stands, admitted only
 > while the app itself holds a listener on that port, so each site the app serves has an origin
 > of its own and no other program's server is ever shown. `"*"` may be listed with other
-> entries. The contract is in `src/contracts/`; the loader and the shell do not build the
-> pattern or the events yet ([`compatibility-matrix.md`](../planning/compatibility-matrix.md),
-> Table 4).
+> entries. A shown page's link to a scheme the browser does not know is never offered to
+> another program; the element's own `will-navigate` names it. One shown page reaches its app
+> with at most 20 notices a second, and the rest are dropped. A page shown from a local pattern
+> is closed when the app's last listener on its port closes.
 
 > **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0032) have no `orivon.*` entry
 > point of their own.** They are Chromium platform permissions (`getUserMedia`,

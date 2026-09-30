@@ -130,7 +130,7 @@ function installedHandlers (target: FakeSession): {
   return {
     request: (permission, details = {}) => {
       let granted: boolean | undefined
-      requestHandler({}, permission, (result: boolean) => { granted = result }, details)
+      requestHandler(fakeTab(), permission, (result: boolean) => { granted = result }, details)
       return granted === true
     },
     check: (permission, details = {}) => checkHandler({}, permission, 'https://example.com', details) === true,
@@ -299,6 +299,17 @@ describe('permissionGateSubsystem', () => {
 
     shell.confirmExternalLink.mockResolvedValueOnce(false)
     expect(await handlers.ask(fakeTab(), 'openExternal', details)).toBe(false)
+  })
+
+  it('never offers a shown page\'s external link to another program, however the person would answer', async () => {
+    const handlers = defaultSessionHandlers()
+    shell.confirmExternalLink.mockClear()
+    shell.confirmExternalLink.mockResolvedValue(true)
+    const details = { externalURL: 'mailto:someone@example.com', requestingUrl: 'http://a.localhost:8080/', isMainFrame: true }
+    expect(await handlers.ask(fakeTab('http://a.localhost:8080/', 'webview'), 'openExternal', details)).toBe(false)
+    expect(shell.confirmExternalLink).not.toHaveBeenCalled()
+    shell.confirmExternalLink.mockReset()
+    shell.confirmExternalLink.mockResolvedValue(false)
   })
 
   // The check handler is synchronous and cannot ask, so it never allows.

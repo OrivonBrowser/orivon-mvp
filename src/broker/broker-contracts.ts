@@ -16,6 +16,7 @@ import type { BrokerSecretsMethods, Keychain } from './secrets-contracts.js'
 import type { PickedPath } from './grants/picked-path-ledger.js'
 import type { DialSecure, FailableSecureTcpSocket } from './secure-dial-contracts.js'
 import type {
+  BindScope,
   CapabilityKind,
   Datagram,
   Grant,
@@ -121,10 +122,13 @@ export interface BoundUdpSocket {
  * remembered. An implementation MUST NOT bind outside them, and MUST fail with
  * 'limit' rather than widening when every port in them is taken.
  *
+ * `scope` is the interface: `'local'` binds loopback only, `'network'` every
+ * interface (ADR-0034). `localAddress` reports what was actually bound.
+ *
  * `signal` fires the instant the grant authorising this bind is revoked while
  * the bind is still in flight, exactly as `Dial`'s does.
  */
-export type Bind = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<BoundUdpSocket>
+export type Bind = (ranges: readonly PortRange[], signal: AbortSignal, scope: BindScope) => Promise<BoundUdpSocket>
 
 /**
  * A listening TCP server's own side of the `Listen` contract below: what
@@ -159,12 +163,13 @@ export interface ListenedServer {
  * returned by `checkBind` (policy/bind.ts, shared with `Bind` above: its own
  * header has always anticipated this second caller). An implementation MUST
  * NOT listen outside them, and MUST fail with 'limit' rather than widening
- * when every port in them is taken.
+ * when every port in them is taken. `scope` is the interface, as for `Bind`
+ * above: `'local'` is loopback only, `'network'` every interface.
  *
  * `signal` fires the instant the grant authorising this listen is revoked
  * while the bind is still in flight, exactly as `Dial`'s and `Bind`'s do.
  */
-export type Listen = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<ListenedServer>
+export type Listen = (ranges: readonly PortRange[], signal: AbortSignal, scope: BindScope) => Promise<ListenedServer>
 
 /**
  * T20: true when a proxy applies to `url`, so a net capability must refuse
@@ -295,7 +300,13 @@ export interface Broker {
     connectSecure(origin: string, opts: SecureConnectOptions): Promise<FailableSecureTcpSocket>
     /**
      * `port: 0` means "any free port", and it still binds only inside the
-     * granted ranges (policy/bind.ts, docs/open-questions.md A88).
+     * authorising grant's ranges (policy/bind.ts, docs/open-questions.md A88).
+     *
+     * `scope` (ADR-0034), omitted meaning `'local'`, is checked against
+     * `udp.bind.local` or `udp.bind.network`, and picks the interface bound:
+     * `'local'` is authorised by either grant and binds loopback only,
+     * `'network'` needs the `.network` grant and binds every interface. Any
+     * other value is 'invalid'.
      *
      * The returned socket's `send` is ALREADY AUTHORISED PER DATAGRAM against
      * this origin's live `udp.send` grant -- the caller cannot reach an
@@ -303,11 +314,11 @@ export interface Broker {
      * captured at bind, so a revoke stops the next datagram rather than the
      * next bind (the lesson A70 recorded for `net.close`).
      */
-    udpBind(origin: string, opts: { port: number }): Promise<FailableUdpSocket>
+    udpBind(origin: string, opts: { port: number, scope?: BindScope }): Promise<FailableUdpSocket>
     /**
-     * Opens a TCP listening socket on `port`, checked against
-     * `tcp.listen.network` (ADR-0034). `port: 0` asks the OS to pick, same
-     * rule as `udpBind`'s (A88).
+     * Opens a TCP listening socket on `port`, with `udpBind`'s `scope` rule
+     * over `tcp.listen.local` and `tcp.listen.network` (ADR-0034). `port: 0`
+     * asks the OS to pick, same rule as `udpBind`'s (A88).
      *
      * Returns a `FailableTcpServer` -- a `TcpServer` plus the broker-internal
      * escape hatch every handle type gets, see handle-contracts.ts. Each
@@ -316,7 +327,7 @@ export interface Broker {
      * (handle-contracts.md's "Revocation" section): closing or revoking the
      * server tears down every socket it produced that is still open.
      */
-    listen(origin: string, opts: { port: number }): Promise<FailableTcpServer>
+    listen(origin: string, opts: { port: number, scope?: BindScope }): Promise<FailableTcpServer>
     /** `orivon.net.lookup` (d-0030) -- bounded by the origin's tcp.connect/https.connect/udp.send grants; see capability-api.ts's own OrivonNet.lookup doc for the full spec. */
     lookup(origin: string, opts: { hostname: string }): Promise<readonly LookupAddress[]>
   }

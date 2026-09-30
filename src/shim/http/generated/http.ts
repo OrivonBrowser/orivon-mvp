@@ -13,18 +13,13 @@ const classify = otherHttpMember('http')
 
 export const CloseEvent = refusingExport('CloseEvent', classify)
 export const MessageEvent = refusingExport('MessageEvent', classify)
-export const OutgoingMessage = refusingExport('OutgoingMessage', classify)
-export const Server = refusingExport('Server', classify)
-export const ServerResponse = refusingExport('ServerResponse', classify)
 export const WebSocket = refusingExport('WebSocket', classify)
 export const _connectionListener = refusingExport('_connectionListener', classify)
 export const setMaxIdleHTTPParsers = refusingExport('setMaxIdleHTTPParsers', classify)
-export const validateHeaderName = refusingExport('validateHeaderName', classify)
-export const validateHeaderValue = refusingExport('validateHeaderValue', classify)
 
 /**
  * Node `http` members this file has no stand-in for: real Node exposes each
  * as DATA, not a function, and a throwing stand-in would misreport its own type (A169).
  * Checked by the freshness test above, so a member that changes shape is still seen.
  */
-export const DATA_GAPS: readonly string[] = ["maxHeaderSize"]
+export const DATA_GAPS: readonly string[] = []
