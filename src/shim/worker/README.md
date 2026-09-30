@@ -63,6 +63,19 @@ from that text through a `blob:` URL, which works whatever bundler a port uses a
 CSP's `worker-src 'self' blob:`. `tests/runtime-bundle.test.ts` fails when it is stale: after
 changing anything the runtime imports, run it with `ORIVON_WRITE_WORKER_RUNTIME=1`.
 
+**A forked child or thread gets a global `require`** (`runtime-fork.ts`'s `setupChildProcess`),
+the loader behind `createRequire` ([`../polyfills/cjs-loader.ts`](../polyfills/cjs-loader.ts)):
+esbuild's `__require` helper reads a global `require` when a bundle's dynamic `require` runs. The
+loader's builtin table statically holds most of the shim, which makes `runtime.generated.json`
+roughly five times larger than it was without it; every child pays that parse, a spawned WASI
+program included.
+
+**A forked child's console is a `Console` over its `process.stdout` and `process.stderr`**
+(`routeConsole`, [`../polyfills/console-class.ts`](../polyfills/console-class.ts)), as Node's is: every
+method (`dir`, `table`, `assert`, `group`, `time*`, `count*` as well as `log` and `error`) reaches the
+parent's `child.stdout` and `child.stderr`, and a program that patches either `write` sees the output.
+The Worker's own console still gets every call.
+
 **`early-globals.ts` must stay the runtime's first import.** Polyfills in the bundle read
 `process` while they load; in a tab the preload installs it first, and in a Worker this module does.
 
@@ -109,10 +122,17 @@ slot open in the broker's per-app handle table.
 runs before any message is processed, while a top-level `await` on the first message must still
 receive it.
 
-**A forked child ends on its own as a Node child does** (`liveness.ts`): once its IPC channel is
-closed and no timer, immediate, fetch, `orivon.*` call or open handle is pending, it emits
+**A forked child ends on its own as a Node child does** (`liveness.ts`): once nothing holds its IPC
+channel (no `'message'` or `'disconnect'` listener, or the channel closed) and no timer, immediate,
+fetch, `orivon.*` call or open handle is pending, it emits
 `'beforeExit'`, then `'exit'`, and ends with code 0. Scheduling that must not keep it alive uses
 the unwrapped `setTimeout` that `trackScope` returns.
+
+**A child's timers are Node's objects** (`liveness.ts`): `setTimeout`, `setInterval` and `setImmediate`
+return a value with `ref`, `unref`, `hasRef`, `refresh` (timers) and `close`, which reports a number when
+asked, and `clearTimeout` takes the object or that number. A server library calls `refresh()` on its ping
+timer and `unref()` on a keep-alive, so a bare id would end the child with a `TypeError`. An unref'd timer
+does not keep the child alive.
 
 **A thread ends on its own the same way, minus the IPC channel** (`runtime-thread.ts`): what
 keeps it alive instead is a ref'd `parentPort` listener. `node-port.ts`'s wrapper calls back only

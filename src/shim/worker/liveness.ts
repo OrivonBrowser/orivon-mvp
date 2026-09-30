@@ -45,6 +45,88 @@ interface TimerScope {
 }
 
 /**
+ * A timer, interval or immediate as Node returns it: `ref`, `unref`, `hasRef`, `refresh` (timers) and
+ * `close`, and a number when asked for one. It counts towards the child's liveness while it is pending and
+ * ref'd. Libraries call `timer.unref()` on a keep-alive and `timer.refresh()` on a ping, so a bare id
+ * would throw in them.
+ */
+class Tracked {
+  readonly #liveness: Liveness
+  readonly #arm: () => unknown
+  readonly #disarm: (raw: unknown) => void
+  readonly #repeats: boolean
+  readonly #registry: Map<number, Tracked>
+  readonly #onFire: () => void
+  readonly id: number
+  #raw: unknown
+  #pending = false
+  #refed = true
+
+  constructor (id: number, liveness: Liveness, repeats: boolean, arm: (fire: () => void) => unknown, disarm: (raw: unknown) => void, registry: Map<number, Tracked>, onFire: () => void) {
+    this.id = id
+    this.#liveness = liveness
+    this.#repeats = repeats
+    this.#registry = registry
+    this.#onFire = onFire
+    this.#disarm = disarm
+    this.#arm = () => arm(() => { this.#fired() })
+    this.#start()
+  }
+
+  #fired (): void {
+    if (!this.#repeats) this.#settle()
+    this.#onFire()
+  }
+
+  #start (): void {
+    this.#raw = this.#arm()
+    this.#registry.set(this.id, this)
+    if (this.#pending) return
+    this.#pending = true
+    if (this.#refed) this.#liveness.ref()
+  }
+
+  #settle (): void {
+    if (!this.#pending) return
+    this.#pending = false
+    this.#registry.delete(this.id)
+    if (this.#refed) this.#liveness.unref()
+  }
+
+  ref (): this {
+    if (!this.#refed) {
+      this.#refed = true
+      if (this.#pending) this.#liveness.ref()
+    }
+    return this
+  }
+
+  unref (): this {
+    if (this.#refed) {
+      this.#refed = false
+      if (this.#pending) this.#liveness.unref()
+    }
+    return this
+  }
+
+  hasRef (): boolean { return this.#refed }
+
+  refresh (): this {
+    if (this.#pending) this.#disarm(this.#raw)
+    this.#start()
+    return this
+  }
+
+  close (): this {
+    if (this.#pending) this.#disarm(this.#raw)
+    this.#settle()
+    return this
+  }
+
+  [Symbol.toPrimitive] (): number { return this.id }
+}
+
+/**
  * Makes the scope's timers and fetch take a reference while pending. Returns
  * the unwrapped setTimeout, for scheduling that must not keep the child alive.
  */
@@ -56,35 +138,25 @@ export function trackScope (scope: TimerScope, liveness: Liveness): (run: () => 
   const fetchRaw = scope.fetch?.bind(scope)
   const setImmediateRaw = scope.setImmediate
   const clearImmediateRaw = scope.clearImmediate
-  const pending = new Set<unknown>()
-  const release = (id: unknown): void => { if (pending.delete(id)) liveness.unref() }
+  // What `clearTimeout(Number(timer))` finds: every pending timer by the number it reports.
+  const byId = new Map<number, Tracked>()
+  let nextId = 1
+  const make = (repeats: boolean, arm: (fire: () => void) => unknown, disarm: (raw: unknown) => void, handler: (...args: never[]) => void, args: unknown[]): Tracked => {
+    return new Tracked(nextId++, liveness, repeats, arm, disarm, byId, () => { handler(...(args as [])) })
+  }
+  const find = (id: unknown): Tracked | undefined => id instanceof Tracked ? id : typeof id === 'number' || typeof id === 'string' ? byId.get(Number(id)) : undefined
 
   if (setTimeoutRaw !== undefined && clearTimeoutRaw !== undefined) {
-    scope.setTimeout = (handler, ms, ...args) => {
-      const id: unknown = setTimeoutRaw(() => { release(id); handler(...(args as [])) }, ms)
-      pending.add(id)
-      liveness.ref()
-      return id
-    }
-    scope.clearTimeout = (id) => { clearTimeoutRaw(id); release(id) }
+    scope.setTimeout = (handler, ms, ...args) => make(false, (fire) => setTimeoutRaw(fire, ms), clearTimeoutRaw, handler, args)
+    scope.clearTimeout = (id) => { find(id)?.close() }
   }
   if (setIntervalRaw !== undefined && clearIntervalRaw !== undefined) {
-    scope.setInterval = (handler, ms, ...args) => {
-      const id = setIntervalRaw(() => { handler(...(args as [])) }, ms)
-      pending.add(id)
-      liveness.ref()
-      return id
-    }
-    scope.clearInterval = (id) => { clearIntervalRaw(id); release(id) }
+    scope.setInterval = (handler, ms, ...args) => make(true, (fire) => setIntervalRaw(fire, ms), clearIntervalRaw, handler, args)
+    scope.clearInterval = (id) => { find(id)?.close() }
   }
   if (setImmediateRaw !== undefined && clearImmediateRaw !== undefined) {
-    scope.setImmediate = (handler, ...args) => {
-      const id: unknown = setImmediateRaw(() => { release(id); handler(...(args as [])) })
-      pending.add(id)
-      liveness.ref()
-      return id
-    }
-    scope.clearImmediate = (id) => { clearImmediateRaw(id); release(id) }
+    scope.setImmediate = (handler, ...args) => make(false, (fire) => setImmediateRaw(fire), clearImmediateRaw, handler, args)
+    scope.clearImmediate = (id) => { find(id)?.close() }
   }
   if (fetchRaw !== undefined) {
     scope.fetch = async (...args: never[]) => {

@@ -29,6 +29,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   picture**, each reporting in a toast; a PDF opens in a tab.
 - **Tab search** (Ctrl+Shift+A) lists every open tab of every window and the recently closed ones, filtered as you type.
 - **A tab whose page crashed or stopped answering shows a card with Reload**, and a warning mark on the strip.
+- **A forked child behaves as a Node child does**: it ends when nothing listens on its IPC channel, `setTimeout` and friends
+  return Node's objects (`unref`, `refresh`), `process.versions.node` is set, a taken port is `EADDRINUSE`, a bundled
+  `require('assert')` is the function, and `fs.Stats` reports the modes of an app-private store. The Lounge's server runs on it.
+- **A Node web server's stack runs on the shim**: real `express` and `socket.io` on `http.createServer`, `fs.watch`, a run-time
+  CommonJS `require` (also a forked child's global one), the full `fs.Stats`, `chmod`, and `tty`, `readline`, `http2`,
+  `diagnostics_channel`, `async_hooks`, `perf_hooks`, `console` (with its `Console` class) and `process` modules; a fork's `console`
+  is a `Console` over its `process.stdout` and `process.stderr`, and `require('process')` is the global itself.
+- **An esbuild plugin for ports** (`src/shim/bundler/`): maps every Node builtin to the shim under `platform: 'node'`, fails the
+  build on a builtin it lacks, serves `node:sqlite` with its browser engine, and loads from another repository.
+- **`node:sqlite` in the Node shim**: `DatabaseSync` and `StatementSync` over the SQLite WebAssembly build, with a database file in
+  the app's files (a rollback journal, page-level writes) in a forked child or thread of a cross-origin isolated app, and
+  `:memory:` everywhere. A commit reaches the file at the end of its transaction, `synchronous=off` included. Function, aggregate,
+  session, extension and backup members refuse by name.
 - **The compatibility matrix lists everything a ported app can need**, not only what ports have hit: every
   Node builtin, every `electron` export, every `orivon.*` member, permission string and protocol stack has a
   row, checked against the code, one sub-table per file under `docs/planning/compatibility/`.

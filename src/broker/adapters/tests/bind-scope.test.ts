@@ -1,6 +1,6 @@
 import { createSocket } from 'node:dgram'
 import type { Socket as DgramSocket } from 'node:dgram'
-import { connect as netConnect } from 'node:net'
+import { connect as netConnect, createServer } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createBroker } from '../../index.js'
@@ -49,6 +49,17 @@ async function tcpReaches (host: string, port: number): Promise<boolean> {
     socket.once('error', () => { done(false) })
     socket.setTimeout(1000, () => { done(false) })
   })
+}
+
+/** `count` distinct loopback TCP ports nothing is listening on now, so a test never collides with a port another process on the machine holds. */
+async function freeTcpPorts (count: number): Promise<number[]> {
+  const holders = await Promise.all(Array.from({ length: count }, async () => await new Promise<{ close: () => void, port: number }>((resolve, reject) => {
+    const holder = createServer()
+    holder.once('error', reject)
+    holder.listen(0, '127.0.0.1', () => { resolve({ port: (holder.address() as { port: number }).port, close: () => { holder.close() } }) })
+  })))
+  holders.forEach((holder) => { holder.close() })
+  return holders.map((holder) => holder.port)
 }
 
 /** Whether a datagram sent to `host:port` arrives on `bound`'s readable within a short wait. */
@@ -152,44 +163,47 @@ describe('through the broker with the real adapters: which grant opens which soc
     })
   }
 
-  async function brokerHolding (kind: 'tcp.listen' | 'udp.bind', scope: BindScope, ports: string): Promise<Broker> {
+  async function brokerHolding (kind: 'tcp.listen' | 'udp.bind', scope: BindScope, ports: string | readonly number[]): Promise<Broker> {
     const broker = realBroker()
-    const list = { [scope]: [ports] }
+    const specs = typeof ports === 'string' ? [ports] : ports.map(String)
+    const list = { [scope]: specs }
     broker.registerApp(APP, {
       orivonApiVersion: 0, id: 'org.orivon.test', name: 'Test', version: '1.0.0', entry: '/index.html',
       capabilities: { net: kind === 'tcp.listen' ? { tcp: { listen: list } } : { udp: { bind: list } } }
     })
-    await broker.grant(APP, `${kind}.${scope}`, [ports])
+    await broker.grant(APP, `${kind}.${scope}`, specs)
     return broker
   }
 
   it('a .local-only grant opens a real loopback listener when scope is omitted or local, and is refused network', async () => {
-    const broker = await brokerHolding('tcp.listen', 'local', '44300-44309')
+    const [first, second, third] = await freeTcpPorts(3) as [number, number, number]
+    const broker = await brokerHolding('tcp.listen', 'local', [first, second, third])
 
-    const omitted = await broker.net.listen(APP, { port: 44300 })
+    const omitted = await broker.net.listen(APP, { port: first })
     expect(omitted.localAddress).toBe('127.0.0.1')
-    expect(await tcpReaches('127.0.0.1', 44300)).toBe(true)
-    await withLan(async (lan) => { expect(await tcpReaches(lan, 44300)).toBe(false) })
+    expect(await tcpReaches('127.0.0.1', first)).toBe(true)
+    await withLan(async (lan) => { expect(await tcpReaches(lan, first)).toBe(false) })
 
-    const explicit = await broker.net.listen(APP, { port: 44301, scope: 'local' })
+    const explicit = await broker.net.listen(APP, { port: second, scope: 'local' })
     expect(explicit.localAddress).toBe('127.0.0.1')
 
-    await expect(broker.net.listen(APP, { port: 44302, scope: 'network' })).rejects.toMatchObject({ code: 'denied' })
-    expect(await tcpReaches('127.0.0.1', 44302)).toBe(false)
+    await expect(broker.net.listen(APP, { port: third, scope: 'network' })).rejects.toMatchObject({ code: 'denied' })
+    expect(await tcpReaches('127.0.0.1', third)).toBe(false)
     await omitted.close()
     await explicit.close()
   })
 
   it('a .network grant opens a listener other devices can reach with scope network, and a loopback one with scope local', async () => {
-    const broker = await brokerHolding('tcp.listen', 'network', '44310-44319')
+    const [first, second] = await freeTcpPorts(2) as [number, number]
+    const broker = await brokerHolding('tcp.listen', 'network', [first, second])
 
-    const wide = await broker.net.listen(APP, { port: 44310, scope: 'network' })
+    const wide = await broker.net.listen(APP, { port: first, scope: 'network' })
     expect(wide.localAddress).toBe('0.0.0.0')
-    await withLan(async (lan) => { expect(await tcpReaches(lan, 44310)).toBe(true) })
+    await withLan(async (lan) => { expect(await tcpReaches(lan, first)).toBe(true) })
 
-    const narrow = await broker.net.listen(APP, { port: 44311, scope: 'local' })
+    const narrow = await broker.net.listen(APP, { port: second, scope: 'local' })
     expect(narrow.localAddress).toBe('127.0.0.1')
-    await withLan(async (lan) => { expect(await tcpReaches(lan, 44311)).toBe(false) })
+    await withLan(async (lan) => { expect(await tcpReaches(lan, second)).toBe(false) })
     await wide.close()
     await narrow.close()
   })

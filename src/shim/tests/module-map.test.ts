@@ -101,4 +101,23 @@ describe('aliasPattern', () => {
     expect(aliasPattern('string_decoder').test('string_decoder')).toBe(true)
     expect(aliasPattern('a.b').test('axb')).toBe(false)
   })
+
+  // `sqlite` on npm is a different package: only the node: form is Node's.
+  it('a prefix-only row matches the node: form and never the bare name', () => {
+    expect(aliasPattern('sqlite', true).test('node:sqlite')).toBe(true)
+    expect(aliasPattern('sqlite', true).test('sqlite')).toBe(false)
+    expect(aliasPattern('sqlite', true).test('node:sqlite/x')).toBe(false)
+    expect(aliasPattern('sqlite', true).test('node:sqlite3')).toBe(false)
+  })
+})
+
+describe('prefix-only rows', () => {
+  it('sqlite is the only one, and its alias entry carries the flag', () => {
+    expect(SHIM_MODULE_MAP.filter((entry) => entry.prefixOnly === true).map((entry) => entry.specifier)).toEqual(['sqlite'])
+    expect(buildAliasEntries().find((entry) => entry.specifier === 'sqlite')).toEqual({ specifier: 'sqlite', kind: 'local', implementation: './sqlite/index.js', prefixOnly: true })
+  })
+
+  it('every other alias entry is unflagged, so the generated table is unchanged for them', () => {
+    for (const entry of buildAliasEntries()) if (entry.specifier !== 'sqlite') expect('prefixOnly' in entry).toBe(false)
+  })
 })

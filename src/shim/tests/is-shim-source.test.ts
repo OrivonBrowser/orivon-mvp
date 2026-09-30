@@ -17,6 +17,10 @@ describe('isShimSource', () => {
     expect(isShimSource(ORDINARY_ROOT, undefined)).toBe(false)
   })
 
+  it('is false for the bundler plugin, which runs in the build tool\'s Node', () => {
+    expect(isShimSource(ORDINARY_ROOT, `${ORDINARY_ROOT}/src/shim/bundler/esbuild-plugin.ts`)).toBe(false)
+  })
+
   it('checks more than one root-relative directory when given one', () => {
     const dirs = ['src/shim/', 'src/shim-electron/']
     expect(isShimSource(ORDINARY_ROOT, `${ORDINARY_ROOT}/src/shim-electron/unimplemented.ts`, dirs)).toBe(true)
