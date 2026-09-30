@@ -7,6 +7,7 @@ import { extensionsDomain } from '../extensions/extensions-domain.js'
 import { readExtensionFacts } from '../extensions/extensions-view-runner.js'
 import { pickExtensionFile, pickExtensionFolder } from '../extensions/extensions-picker-runner.js'
 import { settingsDomain } from '../settings/settings-domain.js'
+import { startupDomain } from '../startup/startup-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
 import { pagesDomain } from './pages-domain.js'
 import { appsDomain } from '../permissions/apps-domain.js'
@@ -57,6 +58,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   registerInternalIpc(services.internalPages, internalSession, {
     settings: settingsDomain(services.settings),
     shortcuts: shortcutsDomain(services.shortcuts),
+    startup: startupDomain(services.windows),
     history: historyDomain(services.history),
     profiles: profilesDomain(services.profiles),
     pages: pagesDomain(services.windows),

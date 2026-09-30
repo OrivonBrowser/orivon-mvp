@@ -6,6 +6,7 @@ import type { ClosedEntry } from '../session-restore/closed-stack.js'
 import { reopenEntry } from '../session-restore/reopen.js'
 import type { ReopenResult } from '../session-restore/reopen.js'
 import type { ShellWindow } from '../shell/window-registry.js'
+import type { ShellWindowOptions } from '../shell/window-options.js'
 import type { CommandId } from './commands.js'
 import { runCommand } from './run-command.js'
 import type { CommandDeps } from './run-command.js'
@@ -15,6 +16,11 @@ export class CommandBus {
 
   bind (deps: CommandDeps): void {
     this.deps = deps
+  }
+
+  /** Opens a window the way a command does, for what is not a command: a session coming back. */
+  openWindow (options: ShellWindowOptions): void {
+    this.deps?.openWindow(options)
   }
 
   run (id: CommandId, target: ShellWindow): void {

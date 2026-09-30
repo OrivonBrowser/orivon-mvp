@@ -35,6 +35,7 @@ rather than editing here.
 | [`session-restore/`](session-restore/) | The tabs and windows that were closed, for reopening, and the open windows kept in `session.json` | `session.json` on disk, the closed stack in memory | `session-hook.ts` only |
 | [`sad-tab/`](sad-tab/) | The card over a tab whose page crashed or stopped answering, with Reload and Close tab | no | no |
 | [`tab-search/`](tab-search/) | The tab search list: open tabs of every window and recently closed ones, and what choosing a row does | which tab was in front last, in memory | no (types only) |
+| [`startup/`](startup/) | What a cold start opens (the new tab page, last session, chosen pages) and the offer to restore after a crash | no | `startup-overlays.ts` only |
 | [`settings/`](settings/) | What the person set, validated, persisted and told to whoever listens | `settings.json` on disk | no |
 | [`storage/`](storage/) | The debounced, single-flight disk write every small persisted file shares | no | no |
 | [`browsing/`](browsing/) | What the address bar and tab strip are made of | bookmarks on disk | `favicon.ts` only |
