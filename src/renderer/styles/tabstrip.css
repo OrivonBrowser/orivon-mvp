@@ -10,11 +10,27 @@
   gap: 0;
   padding: 4px 4px 0;
   background: var(--wchrome);
+  overflow: hidden;
+}
+
+/* The unpinned tabs. It is the one scroller in the strip, so a scrolled tab never reaches the room the row keeps for the
+   window buttons, and the new-tab and search buttons after it stay in view. Tabs share its width equally, down to
+   their minimum, and it scrolls from there. */
+.tabscroll {
+  flex: 0 1 auto;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: flex-end;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
 }
-.tabrow::-webkit-scrollbar { display: none; }
+.tabscroll::-webkit-scrollbar { display: none; }
+/* A short fade at an edge with more tabs behind it: the scrollbar is hidden, so this says the strip goes on. */
+.tabscroll[data-fade='end'] { mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%); }
+.tabscroll[data-fade='start'] { mask-image: linear-gradient(to right, transparent 0, #000 16px); }
+.tabscroll[data-fade='both'] { mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); }
 
 /* The line another window's strip shows while a tab dragged from elsewhere
    is over it (main.ts's dragMark/dragMarkClear commands; the index comes
@@ -53,7 +69,7 @@ html[data-drag-mode="manual"] .tabstrip-tail {
   padding: 0 12px;
   margin: 0 1px 1px;
   border-radius: 8px 8px 0 0;
-  flex: 1 1 0%;
+  flex: 0 1 240px;
   min-width: 44px;
   max-width: 240px;
   color: var(--wink-dim);

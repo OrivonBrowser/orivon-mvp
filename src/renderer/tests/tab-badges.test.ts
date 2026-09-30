@@ -30,7 +30,7 @@ class FakeEl {
 
 vi.mock('../pages/shared/icons.js', () => ({ speakerIcon: () => 'speaker', speakerOffIcon: () => 'speaker-off' }))
 
-const { decorateTabBadges, muteLabel, tabTooltip } = await import('../chrome/tab-badges.js')
+const { decorateTabBadges, muteLabel, tabName, tabTooltip } = await import('../chrome/tab-badges.js')
 
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -62,6 +62,23 @@ describe('a tab\'s tooltip', () => {
   it('shows a whole address that has no host: a file or a shell page', () => {
     expect(tabTooltip(tab({ displayUrl: 'file:///tmp/a.html' }))).toBe('Example\nfile:///tmp/a.html')
     expect(tabTooltip(tab({ displayUrl: 'not an address' }))).toBe('Example\nnot an address')
+  })
+})
+
+describe('a tab\'s accessible name', () => {
+  it('is its title, with the sound state a sighted person reads from the badge', () => {
+    expect(tabName(tab())).toBe('Example')
+    expect(tabName(tab({ audible: true }))).toBe('Example, playing audio')
+    expect(tabName(tab({ muted: true, audible: true }))).toBe('Example, muted')
+    expect(tabName(tab({ title: '' }))).toBe('New tab')
+  })
+
+  it('is set on every tab, not only a pinned one', () => {
+    vi.stubGlobal('document', { createElement: () => new FakeEl() })
+    const el = new FakeEl()
+    const current = tab({ audible: true })
+    decorateTabBadges(el as never, current, { tabs: [current], activeTabId: 'a' } as unknown as ShellState, {} as ChromeContext)
+    expect(el.attrs.get('aria-label')).toBe('Example, playing audio')
   })
 })
 
