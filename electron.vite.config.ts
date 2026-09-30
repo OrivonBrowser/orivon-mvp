@@ -226,6 +226,13 @@ export default defineConfig({
     // its own header has the full reasoning. Order after pageBufferPackage
     // is not load-bearing (different id, `enforce: 'post'` besides).
     plugins: [pageBufferPackage(), shimNodeSpecifiers(), wrapSandboxedPreloadBody()],
+    // Mirrors main's own `define` above: src/preload/sign-in-identity.ts
+    // reads this same compiled-in flag for its test-only host seam, so the
+    // flag must reach the preload bundle for an ordinary build to fold that
+    // branch away, as it does main's dev-grant code.
+    define: {
+      __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1')
+    },
     build: {
       // CommonJS, which a sandboxed preload requires: it has no ESM context
       // and loads electron via require (see src/main/index.ts).

@@ -170,4 +170,10 @@ exempts: the opener link is exactly what must not survive here.
 closes the webContents without running `beforeunload` (A231).
 
 **[`user-agent.ts`](user-agent.ts): the string, not the brand list.** `navigator.userAgentData`
-still lists Chromium rather than Google Chrome, and Electron has no API to change it.
+lists Chromium rather than Google Chrome, and Electron has no API to change it. Google's sign-in
+hosts (`accounts.google.com`, `accounts.youtube.com`) reject that, so on those two hosts alone the
+browser presents as Firefox, which has no `navigator.userAgentData` and sends no `Sec-CH-UA*`
+headers: [`sign-in-identity-headers.ts`](sign-in-identity-headers.ts) rewrites the request headers,
+[`sign-in-identity-tab.ts`](sign-in-identity-tab.ts) swaps `navigator.userAgent`, and
+`../../preload/sign-in-identity.ts` deletes `navigator.userAgentData` at document start. The
+preload runs in a tab's main frame only, so a sign-in page in another site's iframe keeps it.

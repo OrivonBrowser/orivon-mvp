@@ -151,7 +151,8 @@ independent features registering directly on the same session would fight over w
 handler with an `order`, a `WebRequestFilter` and a URL predicate, and `web-request-compose.ts`'s
 pure logic runs them in order, threading each one's result to the next. Used for
 `session.defaultSession` today: the verifier's partition stamp (`../verifier/verifier-
-subsystem.ts`) and the granted-origin CSP (`../install/granted-origin-csp.ts`). The embed session
+subsystem.ts`), the granted-origin CSP (`../install/granted-origin-csp.ts`) and the Firefox
+request headers on Google's sign-in hosts (`../shell/sign-in-identity-headers.ts`). The embed session
 ([`../embed/embed-host.ts`](../embed/embed-host.ts)), the internal-pages session
 ([`../pages/internal-session.ts`](../pages/internal-session.ts)) and an isolated `WebContext`
 session (`web-context-host.ts`, above) register directly instead: each is the only thing that

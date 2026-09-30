@@ -1539,17 +1539,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A297: Google refuses sign-in from Orivon **[OWNER]**
-
-- **Question:** How does Orivon get past Google's "This browser or app may not be secure" at sign-in?
-- **Why it matters:** nobody can sign in to a Google account in Orivon; the user-agent string is already plain
-  Chrome, but the client hints still describe an unbranded Chromium.
-- **Options:** a Firefox identity on Google's sign-in hosts, header and page agreeing (rec.; the page half is on
-  branch `stream/sef-google`, the header rewrite and the `navigator.userAgentData` removal are not written);
-  a Chrome identity with a "Google Chrome" brand in the client hints; leave it.
-- **Who decides:** owner
-- **Blocks:** Google sign-in
-
 ### A298: A keyboard command or context-menu click does not count as invoking an extension **[AI-REC]**
 
 - **Question:** Chrome grants activeTab, and so `chrome.tabCapture`, on a command or context-menu click as well as

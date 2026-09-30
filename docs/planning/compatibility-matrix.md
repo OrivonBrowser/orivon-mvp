@@ -550,7 +550,7 @@ the reference set, and whether this build has it.
 | Platform authenticator (Windows Hello/Touch ID) | ❌ | Not found |
 | Security keys (FIDO2/U2F) | ❌ | Not found |
 | FedCM | ❌ | Not found |
-| Google account sign-in (on any site) | ❌ | Google rejects this build as not secure; open question [`A297`](../open-questions.md) |
+| Google account sign-in (on any site) | ⚠️ | Google's sign-in hosts are shown a Firefox identity (`src/main/shell/sign-in-identity-headers.ts`); not yet confirmed against a real account, and a sign-in page in another site's iframe is not covered |
 | Basic-auth (HTTP 401) dialog | ⚠️ | No `app.on('login', ...)` handler; whatever Electron does unhandled applies, unverified without a launch |
 | Client certificate picker | ❌ | No `select-client-certificate` handler; `certificate-check.ts` pins Orivon's own verifier certificate only |
 | Sign-in / account sync | ➖ | Explicit non-goal: no sync, no Orivon-operated server for user data |

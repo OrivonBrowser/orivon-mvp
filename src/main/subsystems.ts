@@ -25,6 +25,7 @@ import type { Subsystem } from './registry.js'
 import { permissionGateSubsystem } from './sessions/permission-gate.js'
 import { sessionAttributionSubsystem } from './sessions/session-attribution.js'
 import { verifierSubsystem } from './verifier/verifier-subsystem.js'
+import { signInIdentitySubsystem } from './shell/sign-in-identity-headers.js'
 import { extensionsSubsystem } from './extensions/extensions-subsystem.js'
 import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
 import { devGrantSubsystem } from './dev/dev-grant.js'
@@ -50,6 +51,7 @@ export const subsystems: Subsystem[] = [
   // brokerIpcSubsystem: that subsystem reads ctx.senderAttributed itself.
   sessionAttributionSubsystem,
   verifierSubsystem, // .eth names: resolver rules, certificate check, verifier host -> src/main/verifier/. Reads neither ctx.broker nor ctx.loader.
+  signInIdentitySubsystem, // Firefox request headers on Google's sign-in hosts -> src/main/shell/sign-in-identity-headers.ts. Reads neither ctx.broker nor ctx.loader.
   // extensions -> src/main/extensions/. Listed here, before anything else
   // touches session.defaultSession (extensions/README.md's Design notes).
   // Reads neither ctx.broker nor ctx.loader.

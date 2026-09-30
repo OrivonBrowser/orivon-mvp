@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Google's sign-in pages are shown a Firefox identity**, since Google rejects this browser as "not secure"; the
+  request headers, `navigator.userAgent` and the missing `navigator.userAgentData` agree on `accounts.google.com`
+  and `accounts.youtube.com` alone. Not yet confirmed against a real account.
 - **An app's child processes outlive the tab that started them** while another tab of the app is open,
   and end with its last page: they run in a hidden host of the app's own, with the app's grants
   (ADR-0046).
