@@ -26,6 +26,14 @@ export const search: Section = {
       keywords: ['autocomplete', 'autofill', 'inline', 'suggestions', 'address bar', 'omnibox', 'history'],
       control: { type: 'toggle', key: 'addressBar.autocomplete' },
       group: 'Address bar'
+    },
+    {
+      id: 'address-bar-full-urls',
+      label: 'Always show full addresses',
+      help: 'Show the whole address, with https:// and www., while you are not editing it. Off, the bar shows the site name and hides them.',
+      keywords: ['url', 'https', 'www', 'elide', 'full address', 'address bar', 'omnibox', 'show full url'],
+      control: { type: 'toggle', key: 'addressBar.showFullUrl' },
+      group: 'Address bar'
     }
   ]
 }

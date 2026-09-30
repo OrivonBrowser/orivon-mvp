@@ -8,6 +8,7 @@
    The 104px total mirrors src/main/window.ts's CHROME_HEIGHT comment --
    change one, change both, then re-run `npm run smoke`. */
 
+@import './styles/address-display.css';
 @import './styles/tabstrip.css';
 @import './styles/tab-badges.css';
 @import './styles/tab-crashed.css';

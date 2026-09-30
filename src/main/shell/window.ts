@@ -225,6 +225,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   chrome.webContents.on('context-menu', (_event, params) => {
     showContextMenu(chrome.webContents, params, chromeContextMenuHost(services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }, () => {
       void pasteAndGo(() => clipboard.readText(), (text) => { sendChromeEvent(entry, 'navigation', { type: 'pasteAndGo', text }) })
+    }, {
+      on: () => services.settings.get('addressBar.showFullUrl'),
+      toggle: () => { services.settings.set('addressBar.showFullUrl', !services.settings.get('addressBar.showFullUrl')) }
     }))
   })
 

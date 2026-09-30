@@ -6,6 +6,7 @@
 import type { BaseWindow, LoadURLOptions, View, WebContents, WebContentsView } from 'electron'
 import type { FrameState } from './split-controller.js'
 import type { Broker } from '../../broker/broker-contracts.js'
+import type { Connection } from '../browsing/connection.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import type { DevToolsGate } from '../devtools/devtools-service.js'
@@ -48,6 +49,8 @@ export interface TabState {
   splitWith: string | null
   /** One of the shell's own pages (Settings, History, ...). It has no site: no shield, no permissions, nothing to bookmark. */
   isInternal: boolean
+  /** What the address bar may say about the connection: a lock, a warning, or nothing (browsing/connection.ts). */
+  connection: Connection
   /** Kept at the strip's start, narrow, and not closed by accident. */
   pinned: boolean
   /** The page's sound is switched off. */
@@ -78,6 +81,8 @@ export interface ShellState extends TabsSnapshot {
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** Whether the toolbar shows the Home button (`toolbar.home`). */
   homeButton: boolean
+  /** Whether the address bar shows the literal address when it is not being edited (`addressBar.showFullUrl`). */
+  showFullUrl: boolean
 }
 
 export interface Bounds {

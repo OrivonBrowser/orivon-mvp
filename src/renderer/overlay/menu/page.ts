@@ -45,7 +45,7 @@ export const menuPage: OverlayPage = {
       const tick = item.checked !== null
       const button = h('button', {
         type: 'button', className: 'menu-row', role: tick ? 'menuitemcheckbox' : 'menuitem',
-        onclick: () => { run(item.id, false) }
+        onclick: () => { if (item.disabled !== true) run(item.id, false) }
       },
       h('span', { className: 'menu-label' }, item.label),
       item.hint !== null && h('span', { className: 'menu-hint' }, item.hint),
@@ -53,6 +53,8 @@ export const menuPage: OverlayPage = {
       item.checked === true && h('span', { className: 'menu-check' }, checkIcon()))
       button.dataset['key'] = `cmd:${item.id}`
       if (tick) button.setAttribute('aria-checked', String(item.checked))
+      // Greyed but still reachable by the arrow keys, so moving down the list never stops at it.
+      if (item.disabled === true) button.setAttribute('aria-disabled', 'true')
       return button
     }
 

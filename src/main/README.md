@@ -36,6 +36,7 @@ rather than editing here.
 | [`sad-tab/`](sad-tab/) | The card over a tab whose page crashed or stopped answering, with Reload and Close tab | no | no |
 | [`omnibox/`](omnibox/) | The address bar's suggestions: rows from history, bookmarks and open tabs, the text finished inline, and what choosing a row does | the rows and the selection of the last query, in memory | no (types only, but the overlay and the actions use the window) |
 | [`tab-search/`](tab-search/) | The tab search list: open tabs of every window and recently closed ones, and what choosing a row does | which tab was in front last, in memory | no (types only) |
+| [`qr/`](qr/) | The page's address as a QR code, with copy and save as PNG | no | `qr-real.ts` only |
 | [`startup/`](startup/) | What a cold start opens (the new tab page, last session, chosen pages) and the offer to restore after a crash | no | `startup-overlays.ts` only |
 | [`settings/`](settings/) | What the person set, validated, persisted and told to whoever listens | `settings.json` on disk | no |
 | [`storage/`](storage/) | The debounced, single-flight disk write every small persisted file shares | no | no |

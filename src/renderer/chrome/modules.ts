@@ -2,6 +2,7 @@ import type { ShellEvent } from '../../main/shell/shell-events.js'
 import type { ShellState } from '../../main/shell/tabs.js'
 import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
 import { contained } from './contain.js'
+import { createAddressDisplay } from './address-display.js'
 import { createAddressSuggest } from './address-suggest.js'
 import { createBookmarksBar } from './bookmarks-bar.js'
 import { createCluster } from './cluster.js'
@@ -25,6 +26,7 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createTabStrip(TAB_DECORATORS),
   createTabSearchButton(),
   createNavigation(),
+  createAddressDisplay(),
   createAddressSuggest(),
   createReloadStop(),
   createHomeButton(),

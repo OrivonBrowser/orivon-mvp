@@ -1,0 +1,53 @@
+/* The unfocused address: a display laid over the input, sharing its box. The input keeps the real value and
+   stays under it at zero opacity (still focusable, still the target of a click); focusing it swaps the two in
+   the same frame, so the full address never flashes in. */
+
+.address-field {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.address-field .addressbar { width: 100%; }
+.address-field[data-elided='true']:not(:focus-within) .addressbar { opacity: 0; }
+
+.address-display {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 12px 0 4px;
+  overflow: hidden;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.address-field:focus-within .address-display,
+.address-field[data-elided='false'] .address-display { visibility: hidden; }
+
+.address-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.address-host { color: var(--wink); }
+.address-rest { color: var(--wink-dim); }
+
+/* The mark has a tooltip, so it is the one part that takes the pointer; pressing it is pressing the bar. */
+.address-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  cursor: default;
+  color: var(--wink-dim);
+}
+.address-mark .icon { width: 12px; height: 12px; }
+.address-mark.insecure { color: var(--winsecure); }
+.address-mark-label { font-size: 12px; font-weight: 600; }
