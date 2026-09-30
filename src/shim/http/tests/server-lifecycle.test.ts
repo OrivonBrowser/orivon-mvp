@@ -45,11 +45,12 @@ describe('createServer and listen', () => {
     }
   })
 
-  it('refuses a loopback-only host by name, as net.Server does: orivon.net.listen binds every interface', () => {
+  it('listens on a loopback host, and refuses one other address by name, as net.Server does', async () => {
     const server = createServer({ [kListen]: listenViaRealSocket() })
-    expect(() => server.listen(0, '127.0.0.1')).toThrow(/every interface/)
-    expect(() => server.listen(0, '0.0.0.0')).not.toThrow()
-    server.close()
+    expect(() => server.listen(0, '192.168.1.5')).toThrow(/192\.168\.1\.5/)
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    expect(server.address()).toMatchObject({ address: '127.0.0.1' })
+    await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
   })
 
   it('reports a listen the broker refuses as an error event with the broker\'s code', async () => {
