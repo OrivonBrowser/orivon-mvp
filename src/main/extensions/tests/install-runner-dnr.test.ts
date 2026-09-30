@@ -16,7 +16,8 @@ vi.mock('../extensions-dnr.js', () => ({
   clearPendingDnrInstall: (id: string) => { dnr.order.push(`clear:${id}`) }
 }))
 
-import { installFromFolder, uninstall, type InstallContext } from '../install-runner.js'
+import { installFromFolder, type InstallContext } from '../install-runner.js'
+import { uninstall } from '../install-lifecycle.js'
 
 const ALWAYS_ALLOW: InstallContext['prompt'] = async () => true
 const MANIFEST = { manifest_version: 3, name: 'Fixture Extension', version: '1.0.0', permissions: ['storage'] }

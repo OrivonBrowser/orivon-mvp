@@ -87,8 +87,9 @@ same exception, reached only through the virtual specifiers above).
 | File | Layer |
 |---|---|
 | `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts` | The decision -- no `electron`, unit-tested under plain vitest |
-| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `extensions-view-runner.ts`, `store-runner.ts` | The real I/O |
+| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts` | The real I/O |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
+| `extension-host.ts`, `extension-host-impl.ts`, `extension-popup-policy.ts`, `extension-event-filter.ts` | The library wiring: construction and tab lifecycle, the shell callbacks, the popup and background-page window policy, the per-listener event filter |
 | `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`) |
 | `store-test-hook.ts` | Test builds only -- exposes the store methods on `globalThis` for `test/e2e-extensions-store.test.ts` |
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
@@ -303,7 +304,7 @@ the first.
 `store-runner.ts` registers the library's store-page preload and its IPC handlers
 (`chrome.webstorePrivate` on chromewebstore.google.com's own top frame only -- vendor's
 `api.ts`/`chrome-web-store.preload.ts`), but every actual write goes through
-`install-runner.ts`'s `installFromStoreCrx`, the same `finishInstall` every other install uses:
+`install-store-runner.ts`'s `installFromStoreCrx`, the same `finishInstall` every other install uses:
 `verifyCrx3` with `requirePublisherProof: true`, the id checked against what was requested, and,
 for an update, `updateRequiresConsent` (`extension-manifest.ts`'s T19 subset rule) held back
 rather than installed silently if it widens what the person already granted -- `registry.ts`'s

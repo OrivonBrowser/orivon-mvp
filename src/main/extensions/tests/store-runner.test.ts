@@ -19,10 +19,13 @@ vi.mock('electron', () => ({
 const installFromStoreCrx = vi.fn<(...args: any[]) => Promise<InstallOutcome>>()
 const uninstallMock = vi.fn()
 
-vi.mock('../install-runner.js', () => ({
+vi.mock('../install-store-runner.js', () => ({
   installFromStoreCrx: (...args: any[]) => installFromStoreCrx(...args),
   installFromStore: vi.fn(),
-  updateFromStore: vi.fn(),
+  updateFromStore: vi.fn()
+}))
+
+vi.mock('../install-lifecycle.js', () => ({
   uninstall: (...args: any[]) => uninstallMock(...args)
 }))
 

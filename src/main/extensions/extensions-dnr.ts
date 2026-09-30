@@ -182,7 +182,7 @@ export function getCachedStrippedPermissions(extensionId: string): readonly stri
  * and deletes) whatever entry is registered for the id it fires for,
  * falling back to `registry.json` only when nothing was registered -- the
  * ordinary boot-time load path (`extensions-subsystem.ts`'s
- * `loadEnabledExtensions`) and `install-runner.ts`'s `setEnabled` never call
+ * `loadEnabledExtensions`) and `install-lifecycle.ts`'s `setEnabled` never call
  * this, so they still resolve through the registry exactly as before.
  */
 export function registerPendingDnrInstall(entry: InstalledExtension): void {
