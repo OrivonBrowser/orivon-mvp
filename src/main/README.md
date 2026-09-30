@@ -22,13 +22,14 @@ rather than editing here.
 |---|---|---|---|
 | [`launch/`](launch/) | Which browser this process is (default, another profile, a private session) and its data directory | the profiles, on disk | `start-launch.ts` only, as a type |
 | [`shell/`](shell/) | The window and the views inside it | the tab collection | yes |
-| [`overlays/`](overlays/) | Orivon HTML above the page: where an overlay sits, when it closes, where focus goes; the main menu is the first | no | `overlay-host.ts` and `overlay-view.ts` |
+| [`overlays/`](overlays/) | Orivon HTML above the page: where an overlay sits, when it closes, where focus goes; every bar, sheet and popup below shares it | no | `overlay-host.ts` and `overlay-view.ts` |
 | [`pages/`](pages/) | The shell's own pages at `orivon://`, in a session only they can load, and the one channel they speak on | which webContents are which page | `internal-session.ts`, `internal-ipc.ts` and `pages-subsystem.ts` only |
 | [`history/`](history/) | The pages that were visited, kept on this computer and forgotten on request | `history.db` on disk | `attach-history.ts` and `install-history.ts` only |
 | [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |
 | [`devtools/`](devtools/) | When developer tools may open on a page, and the question before they open on an app | which tools are open | `devtools-prompt.ts` only |
 | [`page-tools/`](page-tools/) | Print, save as PDF, save the page, view source, screenshots and picture in picture, and the toast that reports them | no | `real-deps.ts` and the files that type a `webContents`, as types |
 | [`zoom/`](zoom/) | How large each site is shown, chosen per site and remembered | `zoom.json` on disk | `attach-zoom.ts` and `install-zoom.ts` only |
+| [`find/`](find/) | Find in page: the bar, the search it runs in the tab in front, and its commands | the query, per window, in memory | no (types only) |
 | [`spellcheck/`](spellcheck/) | Spell checking in tabs, switched on or off by a setting | no: Chromium keeps the custom dictionary | `install-spellcheck.ts` only |
 | [`window-state/`](window-state/) | Where the first window opens (the last-used window's place) and what a kiosk may run | `window-state.json` on disk | `window-state-recorder.ts` as a type only |
 | [`shortcuts/`](shortcuts/) | Which key runs which command, the rules for changing one, and the listener that runs them | `shortcuts.json` on disk | `dispatcher.ts`, `install-shortcuts.ts` and `app-menu.ts` only |

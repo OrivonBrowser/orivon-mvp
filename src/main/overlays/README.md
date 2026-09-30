@@ -71,7 +71,8 @@ the show, so a page that starts afresh on a show never loses one.
 and answers only that view's main frame at the exact address main built. A view can reach only the
 handler of the definition it was built from, because the port closes over the slot. A handler's
 `request` is untrusted input from a page: it validates every field. A failure inside one is logged,
-never returned.
+never returned. Why one shared preload is safe, and what a compromised overlay page can reach:
+[`ADR-0048`](../../../docs/decisions/ADR-0048-orivon-s-own-overlays-share-one-host-and-one-preload-bridge.md).
 
 **Focus.** A `take` overlay remembers what held focus, if it belongs to this window (its chrome or
 the tab in front), and gives it back on close, except when the

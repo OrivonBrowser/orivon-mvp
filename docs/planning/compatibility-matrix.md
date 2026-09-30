@@ -303,7 +303,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `devtools_page` | ⚠️ | Electron supports `chrome.devtools.*` natively; not separately measured loading a `devtools_page` |
 | `web_accessible_resources` | ✅ | Tracked for the install prompt; Chromium enforces the resource list itself |
 | `externally_connectable` | ❌ | No wiring for `runtime.onMessageExternal`/`onConnectExternal` |
-| `commands` | ⚠️ | `getAll`/`onCommand` work; no page to view or rebind an extension's key combinations |
+| `commands` | ⚠️ | `getAll` lists each declared command with an empty shortcut; no key is ever registered, so `onCommand` never fires; no page to view or rebind a combination |
 | `omnibox` | ❌ | Orivon's own address bar is unrelated code |
 | `side_panel` | ❌ | `chrome.sidePanel` is a no-op stub (Table 7c); the key drives no real panel surface |
 | `host_permissions` | ✅ | Gates `chrome.cookies`/`chrome.tabs`/`insertCSS`/`webNavigation` API access |
@@ -336,16 +336,16 @@ is not the same as it doing anything: read the note, not just the symbol.
 
 | API | Works | Note |
 |---|---|---|
-| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup, `getUserSettings` |
+| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup and `getUserSettings`, which always answers `isOnToolbar: true` |
 | `alarms` | ✅ | `create` + `onAlarm` measured firing |
-| `commands` | ✅ | `getAll`, `onCommand` measured working |
+| `commands` | ⚠️ | `getAll` returns each command the manifest declares with an empty shortcut, and no key is registered, so `onCommand` never fires (measured; `vendor/electron-chrome-extensions/src/browser/api/commands.ts`) |
 | `contextMenus` | ✅ | `create`/`remove`/`removeAll`/`onClicked` work; `update` is a no-op |
 | `cookies` | ✅ | `get`/`getAll`/`set`/`remove`/`getAllCookieStores`/`onChanged`, gated on the `cookies` permission and per-URL host access |
 | `devtools.inspectedWindow`, `devtools.network`, `devtools.panels` | ✅ | Native to Electron |
 | `dns` | ⚠️ | `chrome.dns.resolve` exists as a real function, not exercised in measurement; dev-channel-only in real Chrome too |
 | `downloads` | ⚠️ | Every method and event is a declared no-op stub; nothing downloads, cancels or reports |
 | `extension` | ⚠️ | `isAllowedFileSchemeAccess`/`isAllowedIncognitoAccess` always answer `false`; `getViews` always `[]` |
-| `i18n` | ⚠️ | `getMessage` resolves the real `_locales` string; `getUILanguage`/`getAcceptLanguages` are hardcoded `en-US`, no real negotiation |
+| `i18n` | ⚠️ | `getMessage` resolves the real `_locales` string and `getUILanguage` returns the real UI language (measured: `en-GB`); `getAcceptLanguages` is not measured |
 | `idle` | ✅ | `queryState()` measured returning `"active"` |
 | `management` | ⚠️ | Only `getPermissionWarningsByManifest`/`getSelf`/`uninstallSelf` are real; `getAll` is not a function |
 | `notifications` | ⚠️ | `clear`/`getAll`/`update`/its three events present; `create`'s live effect is untested by policy (nothing here reaches a real OS notification) |
@@ -363,7 +363,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `storage.session` | ✅ | Measured round-tripping in a service worker/popup/options/tab; present as a real function in an MV3 isolated content script, absent in MV2's |
 | `system.cpu`, `system.display`, `system.memory`, `system.storage` | ✅ | `system.cpu.getInfo()` measured returning real hardware data (actual CPU model, core count, per-core usage) |
 | `tabCapture` | ✅ | `getMediaStreamId`/`getCapturedTabs`/`onStatusChanged`; needs a click on the extension's toolbar button on that tab; only an http(s) tab of no app holding grants; the tab is muted locally while captured |
-| `tabs` | ⚠️ | A rich working set, filtered by permission/host access; `captureVisibleTab` specifically is not a function |
+| `tabs` | ⚠️ | A rich working set, filtered by permission/host access; `pinned` comes from the tab's record and `audible` and `mutedInfo` from its page, but `update({ pinned, muted })` changes neither; `captureVisibleTab` specifically is not a function |
 | `topSites` | ⚠️ | `get()` resolves an empty stub |
 | `userScripts` | ⚠️ | Every method resolves as a no-op; no user-script world runs |
 | `webNavigation` | ✅ | `getFrame`/`getAllFrames` and the full event set work |
@@ -414,8 +414,8 @@ policy source this build has no equivalent of.
 | Storage: `sync`/`managed` | ⚠️ | Alias `local`, not real sync or policy delivery (Table 7c) |
 | Storage: `session` | ✅ | Confirmed round-tripping (Table 7c) |
 | Storage: quotas | ⚠️ | Whatever Electron's own `storage.local` implementation enforces; not measured separately |
-| i18n / `_locales` | ✅ | Name/description/icon resolution on the extensions page; `chrome.i18n` itself is a thin, non-negotiated fallback (Table 7c) |
-| Toolbar: pin/unpin, badge, icon, title | ✅ | |
+| i18n / `_locales` | ✅ | Name/description/icon resolution on the extensions page; `chrome.i18n` answers from Electron's own implementation (Table 7c) |
+| Toolbar: pin/unpin, badge, icon, title | ⚠️ | Badge, icon and title work. There is no pin or unpin: `getUserSettings` always answers `isOnToolbar: true` and no pin control exists (measured) |
 | Toolbar: enable/disable a button per tab | ✅ | `getState`/`activate` |
 | Site access controls: "on click" / "on specific sites" / "on all sites" picker | ❌ | Not modelled; host access is all-or-nothing per the manifest's own declared patterns, decided once at install/update |
 | Site access controls: `activeTab` (temporary grant on click) | ❌ | Treated like any other declared permission, not as a one-click temporary host grant |
@@ -424,7 +424,7 @@ policy source this build has no equivalent of.
 | Install from CRX/zip/unpacked | ✅ | Table 7a |
 | Enabling/disabling/uninstalling | ✅ | Table 7a |
 | Errors page | ❌ | Table 7a |
-| Keyboard shortcuts page | ❌ | `chrome.commands` itself works; no page to view or rebind a combination |
+| Keyboard shortcuts page | ❌ | `chrome.commands.getAll` lists commands with empty shortcuts (Table 7c); no page to view or rebind a combination |
 | Extension devtools/inspect views | ⚠️ | `chrome.devtools.*` is native to Electron; no test exercises it end to end |
 | Running without the Chromium sandbox | ❌ | The service-worker preload that injects most `chrome.*` APIs is silently never invoked for any worker when Electron launches `--no-sandbox`; every automated launch here runs sandboxed instead (`A289`) |
 | Apps a person has granted permissions to | ✅ | One instance, in the default session (`ADR-0044`); extension code is refused at `window.orivon`, a filter rather than a session split (`ADR-0045`). An app served from its pinned copy keeps its own partition and runs none |
@@ -439,8 +439,8 @@ the reference set, and whether this build has it.
 | Feature | Orivon | Note |
 |---|---|---|
 | Back / forward | ✅ | `webContents.goBack/goForward` (`src/main/shell/tabs.ts`), `Alt+Left`/`Alt+Right` |
-| Reload / stop | ✅ | `nav.reload`/`nav.hardReload`; no Stop control separate from the reload button toggling |
-| Home button | ❌ | No homepage/home-button concept |
+| Reload / stop | ✅ | `nav.reload`/`nav.hardReload`; the reload button becomes Stop while a tab loads (`nav.stop`, `src/renderer/chrome/reload-stop.ts`), and Escape in the page stops a load (`src/main/shell/signals/stop-key.ts`) |
+| Home button | ✅ | A toolbar button (`toolbar.home`, off by default; `src/renderer/chrome/home-button.ts`) and `nav.home` (`Alt+Home`) open the home page in the current tab; a middle or Ctrl click opens a background tab |
 | Omnibox: address-or-search classification | ✅ | `src/main/browsing/omnibox.ts`, refuses `javascript:`/`data:`/`file:`/`about:` typed in the bar |
 | Search suggestions (live dropdown) | ❌ | No suggestion/autocomplete code for the address bar |
 | History/bookmark autocomplete in the bar | ❌ | Omnibox is pure classification only |
@@ -450,9 +450,9 @@ the reference set, and whether this build has it.
 | Security indicator / padlock | ⚠️ | No padlock; a broader "Website Level" trust indicator (`src/trust/`) replaces it |
 | Site info panel | ✅ | `src/main/permissions/site-info.ts`, `popover-view.ts`, `site-info-panel.ts` |
 | Copy URL | ✅ | Native input field behaviour |
-| Paste-and-go | ⚠️ | Paste works; no dedicated context-menu command |
+| Paste-and-go | ✅ | The address bar's context menu has Paste and Go: main reads the clipboard and the address form submits it as typed (`src/main/shell/paste-and-go.ts`, `chrome-context-menu.ts`) |
 | QR code share of current page | ❌ | Not found |
-| `view-source:` | ⚠️ | Reaches Chromium's own built-in viewer (internal scheme list); no address-bar menu item or shortcut types it for a person |
+| `view-source:` | ⚠️ | `page.viewSource` (`Ctrl+U`) and the page menu open `view-source:<address>` in a tab beside the page, for an http(s) page in an ordinary tab (`src/main/page-tools/view-source.ts`); typing it in the address bar is not recognised as an address |
 | `data:` / `file:` typed in the address bar | 🚫 | `DANGEROUS_SCHEMES` refuses `javascript:`, `data:`, `file:`, `about:` typed or pasted |
 | `file://` browsing (via a link, not typed) | ⚠️ | Treated as internal (loads directly); directory-listing behaviour is Chromium's own default, unverified without a launch |
 
@@ -462,22 +462,23 @@ the reference set, and whether this build has it.
 |---|---|---|
 | New tab | ✅ | `tab.new` (`Mod+T`) |
 | Close tab | ✅ | `tab.close` (`Mod+W`) |
-| Reopen last closed tab | ❌ | No closed-tab stack |
-| Restore previous session on launch | ❌ | A fresh launch opens a clean window |
-| Pin tab | ❌ | No pinned state on a tab |
-| Mute tab | ❌ | No per-tab audio mute |
-| Audio-playing indicator | ❌ | No audible-state indicator on the tab strip |
-| Duplicate tab | ✅ | `tab-menu.ts` |
-| Drag to reorder | ✅ | `tab-drag.ts`, `tab-order.ts` |
+| Reopen last closed tab | ✅ | `tab.reopen` (`Ctrl+Shift+T`) puts back the last closed tab where it was, or the last closed window with its tabs; 25 entries, in memory (`src/main/session-restore/closed-stack.ts`, `reopen.ts`) |
+| Restore previous session on launch | ✅ | `startup.mode` "Continue where you left off" reopens the windows in `session.json` (`src/main/startup/startup-plan.ts`); after a run that did not end cleanly a bar offers them back; a private session and a kiosk do neither |
+| Pin tab | ✅ | `tab.pin` (unbound) and the tab menu; pinned tabs lead the strip, are 36px wide with no title or close button (`src/main/shell/tab-pin.ts`, `tab-order.ts`) |
+| Mute tab | ✅ | `tab.mute` (unbound), the tab menu and the speaker badge on the tab; the mute belongs to the tab and follows it to another window (`src/main/shell/signals/audio.ts`) |
+| Audio-playing indicator | ✅ | A speaker badge on the tab from `audio-state-changed`; a muted tab keeps it, and a pinned tab shows it as a mark on its icon (`src/renderer/chrome/tab-badges.ts`) |
+| Duplicate tab | ✅ | `tab.duplicate` and the tab menu open a copy, with its back and forward list, right of its source; not offered for the new-tab page or a shell page (`src/main/shell/tab-commands.ts`, `tab-history.ts`) |
+| Drag to reorder | ✅ | `tab-drag.ts`, `tab-order.ts`; a pinned tab stays in the leading run, and a split refuses a pinned tab |
 | Tear off into a new window | ✅ | `tear-drag.ts` |
 | Move tab to another open window | ✅ | `tab-menu.ts`, `tab-move.ts` |
 | Tab groups (named/coloured) | ❌ | No grouping concept |
 | Vertical tabs | ❌ | Tab strip is horizontal only |
-| Tab search (Ctrl+Shift+A style) | ❌ | Not found |
+| Tab search (Ctrl+Shift+A style) | ✅ | `tab.search` (`Ctrl+Shift+A`), More tools and the strip's button list every open tab of every window and the recently closed ones, filtered by title and address as you type (`src/main/tab-search/`, overlay `tab-search`) |
 | Hover preview / thumbnail | ❌ | Not found |
 | Tab discarding / memory saver | ❌ | No discard/suspend logic |
 | Split view (two tabs side by side) | ✅ | `split-controller.ts`, `split-model.ts`, `split-frame.ts` |
-| Close other tabs | ✅ | `tab-menu.ts` |
+| Close other tabs | ✅ | `tab.closeOthers` and the tab menu close every unpinned tab but the one chosen (`src/main/shell/tab-commands.ts`) |
+| Close tabs to the right | ✅ | `tab.closeRight` and the tab menu close the unpinned tabs right of a tab, or of its split pair (`src/main/shell/tab-commands.ts`) |
 | Next/previous tab, go to tab N | ✅ | `tab.next`/`tab.previous`/`tab.goto1..9`/`tab.gotoLast` |
 | Open a link in a new tab (`target=_blank`, `window.open`) | ✅ | Every such request reaches `setWindowOpenHandler`; ctrl+shift+click and `target=_blank` open it in the foreground |
 | Open a link in a background tab (keeps the current tab focused) | ✅ | A middle click or a plain ctrl+click opens a background tab; the current tab stays in front (`popups.ts`) |
@@ -485,9 +486,9 @@ the reference set, and whether this build has it.
 | Middle-click a tab to close it | ✅ | `auxclick`/`mousedown` guard on each tab element |
 | Middle-click the empty end of the tab strip to open a tab | ⚠️ | Linux X11 only (`docs/open-questions.md` A292) |
 | Tab loading spinner | ✅ | `.loading` class on the favicon element |
-| Tab title tooltip on hover | ❌ | No `title` attribute on an ordinary tab element |
-| Tab close button appears on hover | ✅ | `.tab:hover .close` |
-| Tab crashed indicator | ❌ | `render-process-gone` only logs to the console |
+| Tab title tooltip on hover | ✅ | Title, host, and whether the tab is playing audio, muted, in a split view or crashed (`src/renderer/chrome/tab-badges.ts`, `tab-crashed.ts`) |
+| Tab close button appears on hover | ✅ | `.tab:hover .close`; a pinned tab has none, and an inactive tab too narrow for one shows none |
+| Tab crashed indicator | ✅ | `src/main/shell/signals/crashed.ts` keeps the renderer's death on the tab; the strip shows a warning icon in place of the favicon and a tooltip line (`src/renderer/chrome/tab-crashed.ts`) |
 
 ### Windows and profiles
 
@@ -498,9 +499,9 @@ the reference set, and whether this build has it.
 | Guest mode | ❌ | No guest-session concept distinct from a private window |
 | Profiles | ✅ | `orivon://profiles`, `profile-store.ts`: a separate browser instance/data directory |
 | Full screen (browser chrome, F11) | ✅ | `fullscreen.ts` |
-| Kiosk mode | ❌ | No kiosk-window option |
-| Always on top | ⚠️ | Only for the ephemeral tab-tear drag-preview window |
-| Window state (size/maximized) restored on relaunch | ❌ | A new window always opens at a computed placement, never a remembered one |
+| Kiosk mode | ✅ | `--orivon-kiosk` opens full-screen windows with no tab strip or toolbar that run only back, forward, reload, zoom, find, print and quit; quit is the only way out, and a page's own `window.open` still opens a tab (`src/main/window-state/kiosk.ts`) |
+| Always on top | ✅ | `window.alwaysOnTop` (More tools, unbound) keeps the focused window above others; per window, not remembered |
+| Window state (size/maximized) restored on relaunch | ✅ | The first window of a launch opens at the last-used window's size, position and maximised state, clamped to a visible display (`src/main/window-state/`); a private session records nothing; on Wayland the position is the compositor's |
 | Multiple monitors, HiDPI, touch, IME input | ➖ | Chromium's own default support applies |
 
 ### New tab page and start-up
@@ -508,9 +509,9 @@ the reference set, and whether this build has it.
 | Feature | Orivon | Note |
 |---|---|---|
 | Custom new-tab page | ✅ | A dashboard replacing `about:blank` (`src/renderer/newtab/`) |
-| Homepage setting | ❌ | No homepage URL setting |
-| Startup pages ("open these pages") | ❌ | Not found |
-| Continue where you left off | ❌ | No session-restore machinery |
+| Homepage setting | ✅ | `home.url` (Settings, On start-up): any address the address bar would load; empty means the new tab page (`src/main/shell/home.ts`) |
+| Startup pages ("open these pages") | ✅ | `startup.mode` "Open specific pages" and `startup.pages`: up to eight addresses, each checked as the address bar checks one (`src/main/startup/`, `src/renderer/pages/settings/controls/page-list.ts`) |
+| Continue where you left off | ✅ | `startup.mode` "Continue where you left off" reopens the last session's windows, tabs, pins and places from `session.json`; the addresses on the command line open in front (`src/main/startup/startup-plan.ts`) |
 | First-launch welcome/intro screen | ✅ | Shown once per profile (`intro-view.ts`, `intro-state.ts`) |
 | White flash avoided on window open, new tab, internal pages and popovers | ✅ | Every such view's `backgroundColor`/theme colour is set before it has a pixel to show (`theme-colors.ts`, `popover-view.ts`); the main menu's own view is kept built between opens rather than recreated |
 
@@ -610,7 +611,7 @@ the reference set, and whether this build has it.
 | Certificate viewer | ❌ | `certificate-check.ts` pins Orivon's own verifier certificate, not a user-facing viewer |
 | Certificate error interstitial | ➖ | Chromium's own default applies |
 | Custom CA management | ❌ | Not found |
-| HSTS | ❌ | Beyond Chromium's own built-in preload list |
+| HSTS | ⚠️ | Chromium applies the HSTS headers it is sent and its preload list in every tab; Electron has no API to list or clear the stored entries, so no Orivon page shows them |
 | Site isolation | ➖ | Chromium's own default; also load-bearing to the capability model |
 | Sandbox | ✅ | `sandbox: true, nodeIntegration: false` for every app tab |
 | Proxy settings (user-configurable) | ❌ | The only proxy code checks whether the OS proxy interferes with the verifier's own fetches |
@@ -666,21 +667,21 @@ the reference set, and whether this build has it.
 
 | Feature | Orivon | Note |
 |---|---|---|
-| Find in page | ❌ | No `findInPage`/`Ctrl+F` command |
-| Zoom (page) | ✅ | `zoom.in`/`zoom.out`/`zoom.reset`, per-origin |
-| Print / print preview | ❌ | No `webContents.print()` call |
-| Save page as | ❌ | Not found |
-| View source | ⚠️ | See Navigation, `view-source:` |
+| Find in page | ✅ | `find.open` (`Ctrl+F`), `find.next` (`Ctrl+G`, `F3`), `find.previous`: a bar with a live count, match case and Enter/Shift+Enter, per tab; `Ctrl+F` and `Ctrl+G` go to a registered app's tab (`src/main/find/`, overlay `find`) |
+| Zoom (page) | ✅ | `zoom.in`/`zoom.out`/`zoom.reset`, per-origin; a tab zooms per webContents (`isolated` mode) so the page's pixels scale and `innerWidth` follows (`src/main/zoom/attach-zoom.ts`) |
+| Print / print preview | ⚠️ | `page.print` (`Ctrl+P`, menu, More tools) opens the system print dialog with backgrounds on, and with no printer offers Save as PDF instead; no in-browser preview (`src/main/page-tools/print.ts`) |
+| Save page as | ✅ | `page.save` (`Ctrl+S`) saves complete HTML, a single-file `.mhtml` by extension, and downloads an image, PDF or text page as it is; `page.pdf` saves the page as PDF (`src/main/page-tools/save-page.ts`, `save-pdf.ts`) |
+| View source | ✅ | `page.viewSource` (`Ctrl+U`) opens `view-source:` beside the page for an http(s) page that is not an app's tab (`src/main/page-tools/view-source.ts`) |
 | Reader mode | ❌ | Not found |
 | Translate | ❌ | Not found |
-| Spellcheck | ⚠️ | Disabled only on Settings/History search boxes; ordinary page text uses Chromium's own default |
+| Spellcheck | ⚠️ | `spellcheck.enabled` (on by default) checks text in every tab; the menu offers up to five suggestions, Add to Dictionary and a Check Spelling switch; no language picker, and Chromium downloads each dictionary once (`src/main/spellcheck/`) |
 | Dictionary / look up word | ❌ | Not found |
-| PDF viewer | ❌ | No PDFium wiring (`plugins: true` never set) |
+| PDF viewer | ✅ | A served PDF opens in an ordinary tab in Chromium's built-in viewer with no `plugins` flag and no setting (`test/e2e-page-tools.test.ts`) |
 | Image viewer | ➖ | Chromium's own default applies |
-| Picture-in-picture | ❌ | Not found |
+| Picture-in-picture | ✅ | `page.pip` (More tools, the video's menu) pops out the video under the pointer, or the playing or largest one, and puts it back on a second run (`src/main/page-tools/pip.ts`) |
 | Media controls / global media hub | ❌ | Not found |
 | Casting (Chromecast/AirPlay) | ❌ | Not found |
-| Screenshots / page capture | ⚠️ | Only used internally for the tab-tear drag preview, not user-facing |
+| Screenshots / page capture | ✅ | `page.screenshot` (`Ctrl+Shift+S`): the visible area or the whole page, to the clipboard or a PNG file; a page longer than 16,384 device pixels is cut there (`src/main/page-tools/screenshot.ts`, overlay `screenshot`) |
 | Text-to-speech / read aloud | ❌ | No "read aloud" UI; the page's own `speechSynthesis` call is ungated |
 | Forced dark mode for light-only sites | ⚠️ | `appearance.theme` flips OS-level `prefers-color-scheme`; no forced repaint of a site with no dark styles |
 | Page fonts / minimum font size | ❌ | Not found |
@@ -689,30 +690,33 @@ the reference set, and whether this build has it.
 | Pinch zoom, smooth scrolling, autoscroll (middle-click drag on a page) | ➖ | Chromium's own default applies to page content |
 | Drag-and-drop of links/images/files into the page | ➖ | Chromium's own default applies |
 | Network / DNS / certificate error pages ("can't be reached") | ➖ | Chromium's own built-in interstitials apply |
-| "Aw, snap" crash page / sad-tab reload | ❌ | A crashed renderer is only logged to the console |
+| "Aw, snap" crash page / sad-tab reload | ✅ | Overlay `sad-tab` (`src/main/sad-tab/`) over a crashed active tab with Reload and Close tab; an unresponsive page gets the same card with Wait and Reload; a background crash shows only the strip icon until the tab is activated |
 | `beforeunload` guard | ✅ | Asks Leave/Stay (`leave-page-prompt.ts`) |
 
 ### Context menus
 
 | Feature | Orivon | Note |
 |---|---|---|
-| Link: open in new tab | ✅ | `context-menu.ts` |
-| Link: open in new window | ❌ | Not a context-menu item (see Tabs for shift+click) |
-| Link: open in private window | ❌ | Not found |
+| Link: open in new tab | ✅ | Opens in a background tab (`src/main/shell/context-menu-groups.ts`) |
+| Link: open in new window | ✅ | Open Link in New Window opens a real window (`context-menu-groups.ts`) |
+| Link: open in private window | ✅ | Starts a private session on the address; hidden inside a private window and in a kiosk (`context-menu-groups.ts`, `ProfilesService.openPrivate`) |
 | Link: copy link address | ✅ | |
-| Link: save link as | ❌ | Not found |
+| Link: save link as | ✅ | `webContents.downloadURL` through Electron's own save dialog (`context-menu-groups.ts`) |
 | Link: open in split view | ✅ | Orivon-specific addition |
-| Image: open image in new tab | ❌ | Not found |
-| Image: save image as | ❌ | Not found |
+| Link: copy link text | ✅ | `context-menu-groups.ts` |
+| Image: open image in new tab | ✅ | Shown for http(s) images; opens in a background tab |
+| Image: save image as | ✅ | `webContents.downloadURL` through Electron's own save dialog; not offered for `data:` or `blob:` images |
 | Image: copy image | ✅ | |
-| Image: copy image address | ❌ | Not found |
+| Image: copy image address | ✅ | Shown for http(s) images |
 | Image: search image | ❌ | Not found |
 | Selection: copy | ✅ | |
-| Selection: search selected text | ❌ | Not found |
+| Selection: search selected text | ✅ | The engine chosen in Settings searches for the selection, in a tab in front; the text is sent only on the click, at most 1,000 characters (`context-menu-groups.ts`, `context-menu-text.ts`) |
 | Selection: translate selection | ❌ | Not found |
-| Page: back/forward/reload in menu | ❌ | Only Reload; navigation otherwise via toolbar |
+| Page: back/forward/reload in menu | ✅ | Back, Forward and Reload when nothing more specific was clicked; Back and Forward follow the tab's history |
+| Page: save page as, print, screenshot, view source | ✅ | In the same group, for a web page; an internal page shows only Back, Forward and Reload |
 | Page: inspect element | ✅ | Opens DevTools at the clicked element |
-| Cut/copy/paste/select all (editable fields) | ✅ | Plus the chrome's own edit menu |
+| Cut/copy/paste/select all (editable fields) | ✅ | Undo, Redo, Cut, Copy, Paste, Paste as Plain Text, Select All and Check Spelling, each enabled from the field's state; a misspelt word adds suggestions and Add to Dictionary; plus the chrome's own edit menu |
+| Video/audio: open, save, copy address, picture in picture | ✅ | Open Video in New Tab, Save Video As, Copy Video Address and a Picture in Picture check (`context-menu-groups.ts`) |
 
 ### Web platform features that need the browser
 
@@ -730,7 +734,7 @@ the reference set, and whether this build has it.
 | PWA install / standalone app windows | ❌ | Orivon's own "app" concept is unrelated to a `beforeinstallprompt` PWA path |
 | File handlers (web app file associations) | ❌ | Not found |
 | DRM / Widevine / EME | ❌ | No CDM wiring; the stock `electron` package ships without Widevine |
-| Proprietary codecs (H.264/AAC/HEVC) | ⚠️ | The `libffmpeg.so` of Electron 44.0.0 decodes H.264, AAC, MP3, FLAC, Opus, Vorbis and PCM and demuxes MP4 and MOV, Matroska and WebM, Ogg, WAV, MP3, AAC and FLAC. It has no HEVC, AC-3, E-AC-3 or DTS decoder. HEVC through a platform hardware decoder is not measured |
+| Proprietary codecs (H.264/AAC/HEVC) | ⚠️ | The stock `libffmpeg.so` of Electron 44.0.0 decodes H.264, AAC, MP3, FLAC, Opus, Vorbis and PCM and demuxes MP4 and MOV, Matroska and WebM, Ogg, WAV, MP3, AAC and FLAC. It has no HEVC, AC-3, E-AC-3 or DTS decoder (`MediaSource.isTypeSupported` answers true for H.264 and AAC and false for HEVC). HEVC through a platform hardware decoder is not measured |
 | WebRTC | ➖ | Chromium's own default applies. An app tab's WebRTC is not bounded by CSP or by grants and reaches STUN, TURN and peers with no grant (A41); media tracks depend on camera/microphone permission, denied by default |
 | WebGL / WebGPU | ➖ | Chromium's own default GPU-accelerated rendering applies |
 | WebXR | ⚠️ | No Electron permission name exists for it; Chromium's default in this build applies (not measured) |
@@ -818,7 +822,7 @@ the reference set, and whether this build has it.
 | Languages / UI locale switcher | ❌ | No i18n/locale-switching code; UI strings are hard-coded English |
 | Enterprise policy support | ❌ | Not found |
 | Run from source, no compiler needed (Windows/macOS) | ✅ | Forces a no-native-modules policy on Orivon's own dependencies (Rule 8) |
-| Linux packaging (AppImage/deb) | ⚠️ | Not yet done |
+| Linux packaging (AppImage/deb) | ⚠️ | `electron-builder.yml` and `npm run package:linux` build a `deb` and an AppImage; there is no packaging job in CI and no release workflow, so nothing is built or published automatically |
 | External protocol links (`mailto:`, `magnet:`, `bitcoin:`, ...) | ✅ | Opened by the OS's default app only after a per-site, per-URL confirmation dialog (`ADR-0027`) |
 | `beforeunload` guard | ✅ | See Page content tools |
 | Right-click menu (chrome + page) | ✅ | See Context menus |

@@ -68,3 +68,12 @@ strings.
 
 **The PDF viewer needs no setting.** A served PDF renders in an ordinary tab through Chromium's own
 viewer; nothing here enables it, and there is no switch that makes a PDF download instead.
+
+**A toast's link is the one thing a page of an overlay can trigger, and main chooses what it runs.** `showToast`
+records the command of the toast it showed, and the overlay's request runs that command only, never one the page
+names. A toast with a link stays eight seconds and pauses while the pointer is on it; a saving toast stays until the
+save ends.
+
+**A save that sets its own path must not be undone by a session-wide download handler.** Save page as on a tab that
+shows a file sets the item's path from a one-shot `will-download` listener. A handler that answers every download
+must leave alone an item whose save path is already set.
