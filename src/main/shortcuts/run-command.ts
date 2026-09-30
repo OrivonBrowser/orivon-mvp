@@ -80,6 +80,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'find.next': dismissRestoreOffer(target); findStep(target, true); return
     case 'find.previous': dismissRestoreOffer(target); findStep(target, false); return
     case 'history.open': tabs.openInternal('history'); return
+    case 'privacy.clearData': return
     case 'bookmarks.open': return
     case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
     case 'devtools.console': services.devtools.openConsole(tabs.activeWebContents(), window); return
@@ -124,6 +125,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'bookmarks.toggleBar': toggleBookmarksBar(services); return
     case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
     case 'settings.open': tabs.openInternal('settings'); return
+    case 'passwords.open': return
+    case 'siteSettings.open': return
     case 'about.open': tabs.openInternal('about'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'import.open': return
@@ -132,6 +135,10 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return
+    case 'share.copyLink': return
+    case 'share.email': return
+    case 'site.certificate': return
+    case 'site.shortcut': return
     case 'page.screenshot': void screenshotCommand(target); return
     case 'page.qr': openQr(target); return
     case 'page.pip': void pipCommand(target); return
