@@ -277,6 +277,12 @@ describe('runCommand', () => {
     expect(calls['openInternal']!.mock.calls).toEqual([['about'], ['tasks']])
   })
 
+  it('opens the Import page', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('import.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('import')
+  })
+
   it('stops the active tab\'s load', () => {
     const { target, calls, deps } = harness([tab('a')], 'a')
 

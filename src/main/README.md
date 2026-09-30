@@ -26,6 +26,7 @@ rather than editing here.
 | [`pages/`](pages/) | The shell's own pages at `orivon://`, in a session only they can load, and the one channel they speak on | which webContents are which page | `internal-session.ts`, `internal-ipc.ts` and `pages-subsystem.ts` only |
 | [`downloads/`](downloads/) | The files tabs download, saved without a dialog, tracked and managed from `orivon://downloads` | `downloads.json` on disk (memory only in a private session) | `install-downloads.ts`, `folder-runner.ts` and the `DownloadItem` type in `download-service.ts` |
 | [`history/`](history/) | The pages that were visited, kept on this computer and forgotten on request | `history.db` on disk | `attach-history.ts` and `install-history.ts` only |
+| [`import/`](import/) | Bookmarks and history read once from another browser's profile files, through a read-only copy, into Orivon's own stores | no | `import-host.ts` only |
 | [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |
 | [`devtools/`](devtools/) | When developer tools may open on a page, and the question before they open on an app | which tools are open | `devtools-prompt.ts` only |
 | [`info/`](info/) | The About page and the task manager: the version and graphics facts, the process list, ending a process | when the last processor reading was taken | `about-runner.ts` and `tasks-runner.ts` only |

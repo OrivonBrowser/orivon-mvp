@@ -92,7 +92,7 @@ export const COMMANDS = [
   { id: 'window.alwaysOnTop', label: 'Keep window on top', category: 'window' },
   { id: 'settings.open', label: 'Open Settings', category: 'window', default: 'Mod+,' },
   { id: 'extensions.open', label: 'Extensions', category: 'window' },
-  { id: 'import.open', label: 'Import bookmarks and history', category: 'window', pending: true },
+  { id: 'import.open', label: 'Import bookmarks and history', category: 'window' },
   { id: 'about.open', label: 'About Orivon', category: 'window' },
   // Shift+Escape is an alias, not the default: a binding needs Ctrl, Alt or Cmd, and this one is fixed to match the key other browsers use.
   { id: 'tasks.open', label: 'Task manager', category: 'window', aliases: ['Shift+Escape'] },

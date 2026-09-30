@@ -27,6 +27,7 @@ const LANDED: readonly string[] = [
   'bookmarks.toggleBar',
   'devtools.console',
   'downloads.open',
+  'import.open',
   'nav.focusSearch',
   'page.qr',
   'tasks.open'

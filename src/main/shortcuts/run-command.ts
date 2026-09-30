@@ -126,7 +126,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'settings.open': tabs.openInternal('settings'); return
     case 'about.open': tabs.openInternal('about'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
-    case 'import.open': return
+    case 'import.open': tabs.openInternal('import'); return
     case 'app.quit': deps.quit(); return
     case 'page.print': void printCommand(target); return
     case 'page.pdf': void pdfCommand(target, realDeps); return

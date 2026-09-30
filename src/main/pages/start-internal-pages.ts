@@ -21,6 +21,8 @@ import { updatesDomain } from '../self-update/updates-domain.js'
 import { onTelemetryChanged } from '../../telemetry/runner.js'
 import { profilesDomain } from '../launch/profiles-domain.js'
 import { historyDomain } from '../history/history-domain.js'
+import { importDomain } from '../import/import-domain.js'
+import { importHost } from '../import/import-host.js'
 import { throttleChanges } from '../downloads/change-throttle.js'
 import { downloadsDomain } from '../downloads/downloads-domain.js'
 import { downloadsHost } from '../downloads/folder-runner.js'
@@ -72,6 +74,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     shortcuts: shortcutsDomain(services.shortcuts),
     startup: startupDomain(services.windows),
     history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyText: (text) => { clipboard.writeText(text) } }),
+    import: importDomain(importHost(services, (phase) => { services.internalPages.publish('import.progress', phase, ['import']) })),
     downloads: downloadsDomain(services.downloads, downloadsHost(services)),
     info: infoDomain({
       facts: () => readAboutFacts(services.settings, services.isPrivate),

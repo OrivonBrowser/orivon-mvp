@@ -11,6 +11,7 @@ export const INTERNAL_PAGES = [
   'downloads',
   'extensions',
   'history',
+  'import',
   'private',
   'profiles',
   'settings',

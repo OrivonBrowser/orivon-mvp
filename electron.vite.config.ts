@@ -296,6 +296,7 @@ export default defineConfig({
           'page-settings': resolve(root, 'src/renderer/pages/settings/index.html'),
           'page-downloads': resolve(root, 'src/renderer/pages/downloads/index.html'),
           'page-history': resolve(root, 'src/renderer/pages/history/index.html'),
+          'page-import': resolve(root, 'src/renderer/pages/import/index.html'),
           'page-profiles': resolve(root, 'src/renderer/pages/profiles/index.html'),
           'page-private': resolve(root, 'src/renderer/pages/private/index.html'),
           'page-extensions': resolve(root, 'src/renderer/pages/extensions/index.html'),
