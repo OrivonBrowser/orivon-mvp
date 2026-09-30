@@ -22,12 +22,14 @@
 | [`wasi-p2/`](wasi-p2/) | A WASI 0.2 host over `orivon.fs` and `orivon.net`, for a component `spawn` runs from jco's output |
 | [`worker/`](worker/) | What a child needs to run in a Web Worker, its `orivon.*` calls carried to the page |
 | [`child-process/`](child-process/) | Node's `child_process` over those Workers |
+| [`sqlite/`](sqlite/) | Node's `node:sqlite` over the SQLite WebAssembly build, its database files in the app's files |
 | [`addon/`](addon/) | Native addons, loaded as their WebAssembly builds through emnapi |
 
 **A bundler must alias each specifier exactly** (`module-map.ts`'s `aliasPattern`). A prefix
 alias also captures subpaths and sends the shim's own imports back into the shim
 (`polyfills/util.ts` imports `util/util.js`). A port bundling against `src/shim/` with its own
-bundler needs one exact entry per specifier, `node:` forms included (webpack: `util$`).
+bundler needs one exact entry per specifier, `node:` forms included (webpack: `util$`). A row marked
+`prefixOnly` (`sqlite`) is only the `node:` form: the bare name is another npm package.
 
 **Tests run against the page's polyfills** (`vitest.config.ts`), not Node's builtins. Test files
 and `tests/support/` keep `node:*`; `tests/support/page-buffer.ts` and `page-stream.ts` give a
@@ -39,9 +41,9 @@ chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review
 **What it depends on.** [`src/contracts/`](../contracts/), and
 [`src/shim-electron/unimplemented.ts`](../shim-electron/unimplemented.ts)'s `refusingProxy`, the
 one import across the two sibling packages (`unimplemented.ts` says why not `src/shared/`;
-provisional until the owner confirms it, A160). Its npm dependencies are the polyfill packages
-and `@emnapi/core` and `@emnapi/runtime`, which `addon/` loads native addons' WebAssembly builds
-through (`d-0163`).
+provisional until the owner confirms it, A160). Its npm dependencies are the polyfill packages,
+`@emnapi/core` and `@emnapi/runtime`, which `addon/` loads native addons' WebAssembly builds
+through (`d-0163`), and `@sqlite.org/sqlite-wasm`, which `sqlite/` runs.
 
 **What it must never import.** `electron`, or [`src/broker/`](../broker/). The shim runs in the
 renderer and reaches the broker only through `orivon.*`; importing the broker would hand it

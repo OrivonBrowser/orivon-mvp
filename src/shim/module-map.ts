@@ -20,6 +20,8 @@ export interface ShimModuleEntry {
   readonly kind?: 'local' | 'package'
   readonly implementation?: string
   readonly note: string
+  /** True for a module Node exposes only as `node:<specifier>`: the bare name is a different npm package, so an alias must not capture it. */
+  readonly prefixOnly?: boolean
 }
 
 const REVIEW = 'docs/planning/shim-dependency-review.md'
@@ -56,6 +58,7 @@ export const SHIM_MODULE_MAP: readonly ShimModuleEntry[] = [
   { specifier: 'wasi', status: 'ready', kind: 'local', implementation: './wasi/node-wasi.js', note: 'Node\'s WASI class over the preview1 host in wasi/ (files, clocks, random, args/env, exit, over orivon.fs). start()/initialize() return promises (JSPI: the program suspends on each file call), and preopens name paths under the virtual root. Links, file times and sockets refuse by name. See wasi/README.md and src/shim/wasi/tests/.' },
   { specifier: 'worker_threads', status: 'ready', kind: 'local', implementation: './polyfills/worker-threads.js', note: 'Worker runs an app module as a thread over the same Web Workers child_process.fork uses (child-process/thread.ts): workerData, parentPort, postMessage, terminate(), ref()/unref(), online/message/messageerror/error/exit. isMainThread/threadId/parentPort/workerData/resourceLimits read what the thread itself set at evaluation time; MessageChannel/MessagePort are Node-shaped (worker/node-port.ts), BroadcastChannel is the platform\'s. eval, a nested thread, receiveMessageOnPort and moveMessagePortToContext refuse by name. See polyfills/tests/worker-threads-vm.test.ts and child-process/tests/thread.test.ts.' },
   { specifier: 'vm', status: 'ready', kind: 'local', implementation: './polyfills/vm.js', note: 'Hand-written: runInThisContext, Script#runInThisContext and compileFunction run in the page\'s own context, as indirect eval and new Function do under the served CSP\'s unsafe-eval. A context of its own needs a second realm, so createContext and the calls that enter one refuse by name. See polyfills/tests/worker-threads-vm.test.ts.' },
+  { specifier: 'sqlite', status: 'ready', kind: 'local', implementation: './sqlite/index.js', prefixOnly: true, note: 'DatabaseSync and StatementSync over the SQLite WebAssembly engine (@sqlite.org/sqlite-wasm): exec, prepare, run/get/all/iterate with positional and named parameters, readBigInts, returnArrays, columns, transactions, and Node\'s error shapes. A database file is real, in the app\'s files with page-level I/O, and works only in a Worker of a cross-origin isolated app (a synchronous file call, ADR-0016\'s amendment); \':memory:\' works everywhere. The engine loads asynchronously, so a bundle imports sqlite/ready.ts first. function, aggregate, sessions, extensions, tag stores and backup refuse by name. See src/shim/sqlite/README.md.' },
   { specifier: 'assert', status: 'ready', kind: 'local', implementation: './polyfills/assert.js', note: 'Hand-written: ok/equal/strictEqual/deepEqual/deepStrictEqual/throws/rejects and their negations, AssertionError, assert.strict. Deep equality is polyfills/deep-equal.ts, shared with util.' },
   { specifier: 'tty', status: 'ready', kind: 'local', implementation: './polyfills/tty.js', note: 'isatty() is false for every descriptor, which is what libraries read to skip colour and prompts (supports-color, debug); ReadStream and WriteStream refuse by name, since an app has no terminal. See polyfills/tests/terminal-modules.test.ts.' },
   { specifier: 'readline', status: 'ready', kind: 'local', implementation: './polyfills/readline.js', note: 'Loads, so a library that only requires it at the top evaluates; every function (createInterface, Interface, cursorTo, ...) refuses by name. See polyfills/tests/terminal-modules.test.ts.' },
@@ -70,15 +73,17 @@ export interface ShimAliasEntry {
   readonly specifier: string
   readonly kind: 'local' | 'package'
   readonly implementation: string
+  readonly prefixOnly?: boolean
 }
 
 /**
- * Matches `specifier` whole, bare or `node:`-prefixed. Never a string alias:
+ * Matches `specifier` whole, bare or `node:`-prefixed, or only `node:`-prefixed for a `prefixOnly` row. Never a string alias:
  * Vite's string form also captures every subpath, rewriting `fs/promises` to
  * `<shim>/node-fs.js/promises`, which does not exist. A subpath is its own row.
  */
-export function aliasPattern (specifier: string): RegExp {
-  return new RegExp(`^(?:node:)?${specifier.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}$`)
+export function aliasPattern (specifier: string, prefixOnly = false): RegExp {
+  const escaped = specifier.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  return new RegExp(prefixOnly ? `^node:${escaped}$` : `^(?:node:)?${escaped}$`)
 }
 
 /** Every 'ready' row, in the shape electron.vite.config.ts resolves into its alias map. Silently drops every 'pending-dependency' row -- there is nothing yet to point an alias at. */
@@ -86,7 +91,7 @@ export function buildAliasEntries (): readonly ShimAliasEntry[] {
   const entries: ShimAliasEntry[] = []
   for (const entry of SHIM_MODULE_MAP) {
     if (entry.status !== 'ready' || entry.kind === undefined || entry.implementation === undefined) continue
-    entries.push({ specifier: entry.specifier, kind: entry.kind, implementation: entry.implementation })
+    entries.push({ specifier: entry.specifier, kind: entry.kind, implementation: entry.implementation, ...(entry.prefixOnly === true ? { prefixOnly: true } : {}) })
   }
   return entries
 }

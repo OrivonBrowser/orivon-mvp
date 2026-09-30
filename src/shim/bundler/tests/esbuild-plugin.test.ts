@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import esbuild from 'esbuild'
+import { existsSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildAliasEntries } from '../../module-map.js'
 import { VIRTUAL_ROOT } from '../../virtual-root.js'
-import { orivonShimPlugin, virtualRoot } from '../esbuild-plugin.js'
+import { orivonShimPlugin, shimAssets, virtualRoot } from '../esbuild-plugin.js'
 
 const PLUGIN_PATH = fileURLToPath(new URL('../esbuild-plugin.ts', import.meta.url))
 let dir = ''
@@ -32,7 +33,7 @@ describe('orivonShimPlugin', () => {
 
   it('resolves every ready row, bare and node:-prefixed, into this checkout', async () => {
     const entries = buildAliasEntries()
-    const source = entries.flatMap((entry, i) => [`import * as a${i} from '${entry.specifier}'`, `import * as b${i} from 'node:${entry.specifier}'`, `globalThis.x${i} = [a${i}, b${i}]`]).join('\n')
+    const source = entries.flatMap((entry, i) => [...(entry.prefixOnly === true ? [] : [`import * as a${i} from '${entry.specifier}'`]), `import * as b${i} from 'node:${entry.specifier}'`, `globalThis.x${i} = [${entry.prefixOnly === true ? '' : `a${i}, `}b${i}]`]).join('\n')
     const { inputs } = await bundle(source)
     const shim = fileURLToPath(new URL('../../', import.meta.url))
     for (const entry of entries.filter((e) => e.kind === 'local')) {
@@ -87,6 +88,32 @@ describe('orivonShimPlugin', () => {
   it('leaves a devDependency of this checkout on Node semantics', async () => {
     const { inputs } = await bundle("import iconv from 'iconv-lite'\nglobalThis.x = iconv")
     expect(inputs.some((input) => input.endsWith('iconv-lite/lib/extend-node.js'))).toBe(true)
+  })
+
+  it('words an unmapped builtin exactly as a port parses it', async () => {
+    const entry = join(dir, 'exact-wording.js')
+    writeFileSync(entry, "import 'cluster'\n")
+    const error = await esbuild.build({ entryPoints: [entry], bundle: true, platform: 'node', write: false, logLevel: 'silent', plugins: [orivonShimPlugin()] }).then(() => undefined, (e: esbuild.BuildFailure) => e)
+    expect(error?.errors[0]?.text).toBe(`'cluster' is a Node builtin the Orivon shim has no module for (imported from ${entry}); see src/shim/module-map.ts`)
+  })
+
+  it('maps node:sqlite and never the bare npm package of that name', async () => {
+    const { inputs } = await bundle("import 'node:sqlite'\nimport 'orivon-node-shim/sqlite-ready'")
+    expect(inputs.some((input) => input.endsWith('src/shim/sqlite/index.ts'))).toBe(true)
+    expect(inputs.some((input) => input.endsWith('src/shim/sqlite/ready.ts'))).toBe(true)
+    const entry = join(dir, 'bare-sqlite.js')
+    writeFileSync(entry, "import 'sqlite'\n")
+    const error = await esbuild.build({ entryPoints: [entry], bundle: true, platform: 'node', write: false, logLevel: 'silent', plugins: [orivonShimPlugin()] }).then(() => undefined, (e: esbuild.BuildFailure) => e)
+    expect(error?.errors[0]?.text).toContain('Could not resolve "sqlite"')
+  })
+
+  it('bundles the SQLite engine\'s browser build under platform node, and lists the wasm it fetches', async () => {
+    const { inputs } = await bundle("import 'orivon-node-shim/sqlite-ready'")
+    expect(inputs.some((input) => input.endsWith('@sqlite.org/sqlite-wasm/dist/index.mjs'))).toBe(true)
+    expect(inputs.some((input) => input.endsWith('sqlite-wasm/dist/node.mjs'))).toBe(false)
+    const assets = shimAssets()
+    expect(assets.map((asset) => asset.name)).toEqual(['sqlite3.wasm'])
+    expect(existsSync(assets[0]?.path ?? '')).toBe(true)
   })
 
   it('loads under plain node from another directory', () => {

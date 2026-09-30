@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **`node:sqlite` in the Node shim**: `DatabaseSync` and `StatementSync` over the SQLite WebAssembly build, with a database file in
+  the app's files (a rollback journal, page-level writes) in a forked child or thread of a cross-origin isolated app, and
+  `:memory:` everywhere. Function, aggregate, session, extension and backup members refuse by name.
 - **An app can show pages it serves itself**, each at an origin of its own, beside ordinary websites: a
   `web.embed` local pattern (`http://*.localhost:<port>`), admitted only while the app holds a listener on
   that port (ADR-0047).

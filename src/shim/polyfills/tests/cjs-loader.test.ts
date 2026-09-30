@@ -175,7 +175,7 @@ describe('cjs-loader', () => {
   it('every ready module-map row is in the require table or named as left out', async () => {
     const { SHIM_MODULE_MAP } = await import('../../module-map.js')
     const { hasBuiltin } = await import('../cjs-builtins.js')
-    const leftOut = new Set(['child_process', 'wasi', 'worker_threads', 'module', 'electron'])
+    const leftOut = new Set(['child_process', 'wasi', 'worker_threads', 'module', 'electron', 'sqlite'])
     const missing = SHIM_MODULE_MAP.map((row) => row.specifier).filter((name) => !hasBuiltin(name) && !leftOut.has(name))
     expect(missing).toEqual([])
   })

@@ -17,7 +17,8 @@ const { orivonShimPlugin, virtualRoot } = await import(pathToFileURL(plugin).hre
 ```
 
 Run the build with Node 22.18 or later (type stripping is on by default), or pass
-`--experimental-strip-types`. Then:
+`--experimental-strip-types`. [`package.json`](package.json) beside the plugin marks this directory
+an ES module, so Node loads it without a module-type warning. Then:
 
 ```js
 await build({
@@ -34,14 +35,46 @@ await build({
 **A port locates this checkout through the `ORIVON_MVP_ROOT` environment variable.** Provisional:
 it needs a checkout beside the port, and a published package would settle it.
 
+### `node:sqlite`
+
+An app that opens a database imports `orivon-node-shim/sqlite-ready` first, before any code that
+requires `node:sqlite`; the plugin resolves that name to [`../sqlite/ready.ts`](../sqlite/ready.ts),
+whose top-level `await` finishes the engine's asynchronous start-up. The bundle is therefore an ES
+module (`format: 'esm'`), and a forked child imports it as one.
+
+```js
+// server/index.ts
+import 'orivon-node-shim/sqlite-ready'
+import './main.js' // and whatever else requires 'node:sqlite'
+```
+
+The plugin also bundles the engine's browser build (`@sqlite.org/sqlite-wasm/dist/index.mjs`) under
+`platform: 'node'`; the package's `node` condition names a build that reads the disk with Node's `fs`.
+The engine fetches `sqlite3.wasm` at `new URL('sqlite3.wasm', import.meta.url)`: **relative to the
+module that holds its code, which is the bundle file itself**, whether a page or a forked child
+loads it. Copy each file `shimAssets()` lists into the bundle's directory, with the name it gives:
+
+```js
+const { shimAssets } = await import(pathToFileURL(plugin).href)
+for (const { name, path } of shimAssets()) copyFileSync(path, join(outDir, name))
+```
+
+A bundle split into chunks needs the file beside the chunk that holds the engine; a single-file
+bundle needs it beside that file. `loadSqliteEngine({ wasmBinary })` in a ready module of the app's
+own replaces the fetch.
+
 ## What the plugin does
 
-- Every `ready` row of `module-map.ts` matches its specifier whole, bare and `node:`-prefixed.
+- Every `ready` row of `module-map.ts` matches its specifier whole, bare and `node:`-prefixed; a
+  `prefixOnly` row (`sqlite`) matches `node:sqlite` alone, since the bare name is another npm package.
   A `local` row resolves to the `.ts` file in this checkout, a `package` row to the package in
   this checkout's `node_modules`, whatever directory the port builds from.
 - Any other Node builtin (`cluster`, `node:sqlite` until it has a row, ...) fails the build with
   an error naming the specifier and the file that imported it. Left to esbuild, `platform: 'node'`
   would keep it as an external `import`, and the bundle would fail only when run.
+- An unmapped builtin's error reads exactly `'<name>' is a Node builtin the Orivon shim has no
+  module for (imported from <file>); see src/shim/module-map.ts`; a port parses it, so the wording
+  is stable.
 - It registers `onResolve` only: a port adds its own `onLoad`.
 
 ## Design notes

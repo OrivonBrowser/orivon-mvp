@@ -43,7 +43,8 @@ export function shimNodeSpecifiers (): Plugin {
   const targets = new Map(buildAliasEntries().map((entry) => [entry.specifier, entry]))
   const isOurs = (source: string, importer: string | undefined): boolean => {
     const bare = bareSpecifier(source)
-    if (!targets.has(bare)) return false
+    const entry = targets.get(bare)
+    if (entry === undefined || (entry.prefixOnly === true && !source.startsWith('node:'))) return false
     return isShimImporter(importer) || (isPackageImporter(importer) && !SANDBOX_PRELOAD_MODULES.has(bare))
   }
 
@@ -76,8 +77,8 @@ export function shimNodeSpecifiers (): Plugin {
  * the exact host named here. */
 export const rendererHost = '127.0.0.1'
 export const rendererRoot = resolve(root, 'src/renderer')
-export const rendererAlias = buildAliasEntries().map(({ specifier, kind, implementation }) => ({
-  find: aliasPattern(specifier),
+export const rendererAlias = buildAliasEntries().map(({ specifier, kind, implementation, prefixOnly }) => ({
+  find: aliasPattern(specifier, prefixOnly),
   replacement: kind === 'package' ? implementation : resolve(root, 'src/shim', implementation)
 }))
 export const rendererHmr = { host: rendererHost } as const

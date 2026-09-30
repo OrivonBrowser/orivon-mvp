@@ -157,6 +157,12 @@
       "implementation": "./polyfills/vm.js"
     },
     {
+      "specifier": "sqlite",
+      "kind": "local",
+      "implementation": "./sqlite/index.js",
+      "prefixOnly": true
+    },
+    {
       "specifier": "assert",
       "kind": "local",
       "implementation": "./polyfills/assert.js"

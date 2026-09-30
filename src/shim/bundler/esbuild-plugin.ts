@@ -3,7 +3,7 @@
 // under Node's type stripping: erasable TypeScript only, node: imports only,
 // and the alias table read as JSON beside this file (README.md).
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { builtinModules } from 'node:module'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,7 +11,7 @@ import type { OnResolveArgs, OnResolveResult, Plugin, PluginBuild } from 'esbuil
 
 interface AliasTable {
   readonly virtualRoot: string
-  readonly entries: readonly { readonly specifier: string, readonly kind: 'local' | 'package', readonly implementation: string }[]
+  readonly entries: readonly { readonly specifier: string, readonly kind: 'local' | 'package', readonly implementation: string, readonly prefixOnly?: boolean }[]
 }
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
@@ -24,8 +24,22 @@ export const virtualRoot: string = TABLE.virtualRoot
 
 const NODE_BUILTINS = new Set(builtinModules)
 const NODE_MODULES_DIR = `${CHECKOUT_ROOT}node_modules${sep}`
-const EMPTY_MODULE = `${HERE}empty.js`
+const EMPTY_MODULE = `${HERE}empty.cjs`
 const PACKAGE_RESOLVE_MARK = 'orivon-shim-package-resolve'
+
+/** The SQLite engine's browser build: the package's `node` export condition names a build that reads the disk with Node's own `fs`. */
+const SQLITE_ENGINE = `${NODE_MODULES_DIR}@sqlite.org${sep}sqlite-wasm${sep}dist${sep}index.mjs`
+const SQLITE_WASM = `${NODE_MODULES_DIR}@sqlite.org${sep}sqlite-wasm${sep}dist${sep}sqlite3.wasm`
+
+/** Specifiers a port imports by a name of the shim's own choosing. */
+const SHIM_SUBPATHS: Readonly<Record<string, string>> = {
+  'orivon-node-shim/sqlite-ready': join(SHIM_DIR, 'sqlite', 'ready.ts')
+}
+
+/** Files a port copies next to its bundle: the engine fetches `sqlite3.wasm` relative to the module that holds its code. */
+export function shimAssets (): readonly { readonly name: string, readonly path: string }[] {
+  return [{ name: 'sqlite3.wasm', path: SQLITE_WASM }]
+}
 
 /** Node's own escape for an npm package named like a builtin: `events/` is the package. */
 function packageRequest (name: string): string {
@@ -119,54 +133,114 @@ function isShimTree (file: string): boolean {
   return owner !== undefined && shimPackages().has(owner.dir)
 }
 
+/** The package name in a bare specifier: `name`, `name/sub`, `@scope/name` or `@scope/name/sub`. */
+function packageName (specifier: string): string {
+  const parts = specifier.split('/')
+  return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0] ?? specifier
+}
+
 /**
  * The shim's own dependencies (crypto-browserify and what it stands on) keep a Node entry point
  * that requires the very builtin they implement, so their `browser` field must be honoured
  * even when the port builds for `platform: 'node'`. esbuild applies that field only for
  * `platform: 'browser'`, so it is applied here, for those files only.
  */
+function resolveFile (absolute: string): string | undefined {
+  return forms(absolute).find((candidate) => existsSync(candidate) && statSync(candidate).isFile())
+}
+
+/** A package's directory, and its `main` file, when it can be found without asking esbuild: no `exports` map to follow. */
+function locateInstalled (specifier: string, importerDir: string): { info: PackageInfo, file: string | undefined } | undefined {
+  const dir = installedAt(packageName(specifier), importerDir)
+  if (dir === undefined) return undefined
+  const info = packageOf(join(dir, 'package.json'))
+  if (info === undefined) return undefined
+  const subpath = specifier.slice(packageName(specifier).length + 1)
+  if (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).exports !== undefined) return { info, file: undefined }
+  return { info, file: resolveFile(resolve(dir, subpath === '' ? info.main : subpath)) }
+}
+
 async function resolveBrowserField (build: PluginBuild, args: OnResolveArgs): Promise<OnResolveResult | undefined> {
-  const options = { kind: args.kind, resolveDir: args.resolveDir, importer: args.importer, pluginData: PACKAGE_RESOLVE_MARK }
-  let request = args.path
   const from = packageOf(args.importer)
-  if (from !== undefined) {
-    const key = request.startsWith('.') ? resolve(dirname(args.importer), request) : request
-    const rule = browserRule(from, key)
-    if (rule === false) return { path: EMPTY_MODULE }
-    if (rule !== undefined) request = rule
+  const isRelative = args.path.startsWith('.') || args.path.startsWith('/')
+  let request = args.path
+  if (from !== undefined && from.browser.length > 0) {
+    const rule = browserRule(from, isRelative ? resolve(dirname(args.importer), request) : request)
+    const wanted = isRelative ? resolveFile(resolve(dirname(args.importer), request)) : undefined
+    const byFile = wanted === undefined ? undefined : browserRule(from, wanted)
+    const found = rule ?? byFile
+    if (found === false) return { path: EMPTY_MODULE }
+    if (found !== undefined) request = found
   }
-  if (request === args.path && (request.startsWith('node:') || NODE_BUILTINS.has(request))) return undefined
+  if (request !== args.path) {
+    const mapped = isAbsolutePath(request) ? resolveFile(request) : undefined
+    if (mapped !== undefined) return { path: mapped }
+    return await nestedResolve(build, request, args)
+  }
+  if (request.startsWith('node:') || NODE_BUILTINS.has(request)) return undefined
+  // What the imported file is, and what its own package's `browser` field says about it.
+  let target: { info: PackageInfo, file: string | undefined } | undefined
+  if (isRelative) {
+    const file = resolveFile(resolve(dirname(args.importer), request))
+    target = from === undefined || file === undefined ? undefined : { info: from, file }
+  } else {
+    target = locateInstalled(request, dirname(args.importer))
+    if (target !== undefined && target.file === undefined && target.info.browser.length > 0) return await viaEsbuild(build, args)
+  }
+  if (target?.file === undefined) return undefined
+  const rule = browserRule(target.info, target.file)
+  if (rule === undefined) return undefined
+  if (rule === false) return { path: EMPTY_MODULE }
+  const mapped = resolveFile(rule)
+  return mapped === undefined ? undefined : { path: mapped }
+}
+
+function isAbsolutePath (path: string): boolean {
+  return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)
+}
+
+/** The slow route: asks esbuild where `request` goes, then applies the imported package's `browser` field to the answer. */
+async function nestedResolve (build: PluginBuild, request: string, args: OnResolveArgs): Promise<OnResolveResult | undefined> {
+  const options = { kind: args.kind, resolveDir: args.resolveDir, importer: args.importer, pluginData: PACKAGE_RESOLVE_MARK }
   const found = await build.resolve(request, options)
-  if (found.errors.length > 0 || found.external || !isShimTree(found.path)) return found.errors.length > 0 ? { errors: found.errors } : undefined
-  const target = packageOf(found.path)
-  const rule = target === undefined ? undefined : browserRule(target, found.path)
+  if (found.errors.length > 0) return { errors: found.errors }
+  if (found.external || !isShimTree(found.path)) return { path: found.path }
+  const owner = packageOf(found.path)
+  const rule = owner === undefined ? undefined : browserRule(owner, found.path)
   if (rule === false) return { path: EMPTY_MODULE }
   if (typeof rule === 'string') {
-    const mapped = await build.resolve(rule, { ...options, resolveDir: target?.dir ?? args.resolveDir })
-    return mapped.errors.length > 0 ? { errors: mapped.errors } : { path: mapped.path }
+    const mapped = resolveFile(rule)
+    if (mapped !== undefined) return { path: mapped }
   }
   return { path: found.path }
 }
 
-/** onResolve only, so a port can register its own onLoad. Matches each ready
- * module-map.ts row whole: an alias by prefix would also capture subpaths and
- * send the shim's own imports (`util/util.js`) back into the shim. */
+async function viaEsbuild (build: PluginBuild, args: OnResolveArgs): Promise<OnResolveResult | undefined> {
+  return await nestedResolve(build, args.path, args)
+}
+
 export function orivonShimPlugin (): Plugin {
   return {
     name: 'orivon-shim',
     setup (build) {
       const specifiers = new Set(TABLE.entries.map((entry) => entry.specifier))
+      const packageRows: Record<string, Promise<Awaited<ReturnType<PluginBuild['resolve']>>>> = {}
+      build.onResolve({ filter: /^(orivon-node-shim\/sqlite-ready|@sqlite\.org\/sqlite-wasm)$/ }, (args) => {
+        const shimPath = SHIM_SUBPATHS[args.path]
+        return { path: shimPath ?? SQLITE_ENGINE }
+      })
       build.onResolve({ filter: /.*/ }, async (args) => {
         if (args.pluginData === PACKAGE_RESOLVE_MARK || !isShimTree(args.importer)) return undefined
         return await resolveBrowserField(build, args)
       })
       for (const entry of TABLE.entries) {
         const escaped = entry.specifier.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
-        build.onResolve({ filter: new RegExp(`^(?:node:)?${escaped}$`) }, async (args) => {
+        build.onResolve({ filter: new RegExp(entry.prefixOnly === true ? `^node:${escaped}$` : `^(?:node:)?${escaped}$`) }, async (args) => {
           // A package row's own inner resolve passes back through here.
           if (args.pluginData === PACKAGE_RESOLVE_MARK) return undefined
           if (entry.kind === 'local') return { path: join(SHIM_DIR, entry.implementation.replace(/\.js$/, '.ts')) }
-          const resolved = await build.resolve(packageRequest(entry.implementation), { kind: args.kind, resolveDir: CHECKOUT_ROOT, pluginData: PACKAGE_RESOLVE_MARK })
+          packageRows[entry.specifier] ??= build.resolve(packageRequest(entry.implementation), { kind: args.kind, resolveDir: CHECKOUT_ROOT, pluginData: PACKAGE_RESOLVE_MARK })
+          const resolved = await packageRows[entry.specifier]!
           return resolved.errors.length > 0 ? { errors: resolved.errors } : { path: resolved.path }
         })
       }
