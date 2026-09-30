@@ -9,7 +9,7 @@
 .head h1 .icon { width: 24px; height: 24px; }
 .head-tools { display: flex; align-items: center; flex: 1 1 360px; justify-content: flex-end; gap: 8px; }
 .head-tools .search { flex: 1 1 auto; max-width: 360px; }
-.head-tools .btn:not(.icon) { flex: none; white-space: nowrap; }
+.head-tools .btn:not(.icon) { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 
 .banner[hidden] { display: none; }
 
