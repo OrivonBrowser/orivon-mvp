@@ -86,7 +86,7 @@ describe('broker.embed.holdsListenerSync', () => {
   it('is false when the listener failed on its own', async () => {
     const broker = await brokerListeningOn([30005])
     const server = await broker.net.listen(APP, { port: 30005 })
-    server.fail('failed')
+    server.fail('reset')
     expect(broker.embed.holdsListenerSync(APP, 30005)).toBe(false)
   })
 })

@@ -107,6 +107,7 @@ function reachableByWildcard (hostname: string): boolean {
 export type EmbedAdmission =
   | { readonly kind: 'exact' }
   | { readonly kind: 'wildcard', readonly hostname: string }
+  | { readonly kind: 'local', readonly port: number }
   | { readonly kind: 'refused' }
 
 const EXACT: EmbedAdmission = { kind: 'exact' }
