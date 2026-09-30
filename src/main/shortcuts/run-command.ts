@@ -1,6 +1,7 @@
 // What each command does to the window it was pressed in. The shell already
 // has a method for nearly all of them; this maps a command to that method.
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
+import { findStep, openFind } from '../find/find-commands.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
 import { cascadeFrom } from '../shell/window-options.js'
@@ -45,6 +46,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'nav.forward': if (active !== undefined) tabs.forward(active.id); return
     case 'nav.reload': if (active !== undefined) tabs.reload(active.id); return
     case 'nav.hardReload': tabs.activeWebContents()?.reloadIgnoringCache(); return
+    case 'nav.stop': tabs.activeWebContents()?.stop(); return
     case 'nav.focusAddress':
       chrome.webContents.focus()
       chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'focusAddress' })
@@ -56,6 +58,9 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       else services.zoom.step(origin, id === 'zoom.in' ? 'in' : 'out')
       return
     }
+    case 'find.open': openFind(target); return
+    case 'find.next': findStep(target, true); return
+    case 'find.previous': findStep(target, false); return
     case 'history.open': tabs.openInternal('history'); return
     case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
     case 'bookmark.toggle':
@@ -96,11 +101,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.closeOthers': return
     case 'tab.closeRight': return
     case 'tab.search': return
-    case 'nav.stop': return
     case 'nav.home': return
-    case 'find.open': return
-    case 'find.next': return
-    case 'find.previous': return
     case 'page.print': return
     case 'page.pdf': return
     case 'page.save': return

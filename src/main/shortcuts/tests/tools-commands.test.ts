@@ -28,6 +28,15 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
   ['window.alwaysOnTop', 'Keep window on top', 'window', undefined, false]
 ]
 
+// Rows whose feature has landed: they run something now, so they carry no pending flag. One id a line.
+const LANDED: readonly string[] = [
+  'find.next',
+  'find.open',
+  'find.previous',
+  'nav.stop',
+  'window.alwaysOnTop'
+]
+
 describe('the page-tools command rows', () => {
   it.each(ROWS)('%s is "%s" in %s with its default and its yield flag', (id, label, category, binding, yields) => {
     const def = commandById(id) as CommandDef | undefined
@@ -40,7 +49,7 @@ describe('the page-tools command rows', () => {
   it('marks every row without a feature behind it pending, and no other row', () => {
     const pending = COMMANDS.filter((def) => (def as CommandDef).pending === true).map((def) => def.id)
 
-    expect(pending).toEqual(ROWS.map(([id]) => id).filter((id) => id !== 'window.alwaysOnTop'))
+    expect(pending).toEqual(ROWS.map(([id]) => id).filter((id) => !LANDED.includes(id)))
   })
 
   it('gives find next and previous their function-key aliases', () => {
