@@ -233,6 +233,28 @@ describe('streaming a large response', () => {
   })
 })
 
+describe('destroying and timing out a response', () => {
+  it('res.destroy() drops the connection, and the client sees the reset', async () => {
+    const closed: string[] = []
+    const { port } = await startServer((_req, res) => { res.on('close', () => closed.push('res')); res.destroy() })
+    const { data, closed: dropped } = await rawExchange(port, GET('/'))
+    expect(data).toBe('')
+    expect(dropped).toBe(true)
+    await waitFor(() => closed.length === 1)
+  })
+
+  it('res.setTimeout() raises timeout on the response first, and the socket survives when it is handled', async () => {
+    const seen: string[] = []
+    const { server, port } = await startServer((_req, res) => {
+      res.setTimeout(80, () => { seen.push('response timeout'); res.end('handled') })
+    })
+    server.on('timeout', () => seen.push('server timeout'))
+    const { data } = await rawExchange(port, GET('/'), { until: 'handled', timeoutMs: 1000 })
+    expect(data).toContain('handled')
+    expect(seen).toEqual(['response timeout', 'server timeout'])
+  })
+})
+
 describe('server.close()', () => {
   it('lets a request in flight finish, then closes the connection and emits close', async () => {
     const events: string[] = []
@@ -289,6 +311,19 @@ describe('server.close()', () => {
     expect((await inflight).text).toBe('done')
     await waitFor(() => order.length === 2)
     expect(order).toEqual(['first', 'second'])
+  })
+
+  it('closeIdleConnections() closes a keep-alive connection between requests and leaves one that is answering', async () => {
+    const { server, port } = await startServer((req, res) => { if (req.url !== '/slow') res.end('x'); else setTimeout(() => res.end('slow'), 200) })
+    const idle = connect(port, '127.0.0.1')
+    const idleClosed = new Promise<void>((resolve) => idle.once('close', () => resolve()))
+    idle.write(GET('/fast'))
+    await new Promise((r) => idle.once('data', r))
+    const busy = fetchFrom(port, '/slow')
+    await new Promise((r) => setTimeout(r, 60))
+    server.closeIdleConnections()
+    await idleClosed
+    expect((await busy).text).toBe('slow')
   })
 
   it('splitReply keeps the harness honest', () => {

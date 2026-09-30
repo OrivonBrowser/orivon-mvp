@@ -76,6 +76,7 @@ export class OutgoingMessage extends Stream {
   private pendingWrites = 0
   private needDrain = false
   private finishEmitted = false
+  private lastChunkQueued = false
   private readonly onSocketDrain = (): void => {
     if (!this.needDrain) return
     this.needDrain = false
@@ -255,7 +256,14 @@ export class OutgoingMessage extends Stream {
       this._implicitHeader()
     }
     if (!this._hasBody || bytes.length === 0) { queueMicrotask(() => callback()); return true }
-    return this.sendHead(this.chunkedEncoding ? this.frameChunk(bytes) : bytes, callback)
+    if (!this.chunkedEncoding) return this.sendHead(bytes, callback)
+    // The last chunk rides with the body of an end(): one socket write for a whole small response.
+    if (fromEnd) { this.lastChunkQueued = true; return this.sendHead(toBytesJoined([this.frameChunk(bytes), this.lastChunk()]), callback) }
+    return this.sendHead(this.frameChunk(bytes), callback)
+  }
+
+  private lastChunk (): Uint8Array {
+    return new TextEncoder().encode(`${LAST_CHUNK}${this.trailer}\r\n`)
   }
 
   private frameChunk (bytes: Uint8Array): Uint8Array {
@@ -263,7 +271,7 @@ export class OutgoingMessage extends Stream {
   }
 
   private sendEnd (): void {
-    if (this.chunkedEncoding && this._hasBody) this.sendHead(new TextEncoder().encode(`${LAST_CHUNK}${this.trailer}\r\n`), undefined)
+    if (this.chunkedEncoding && this._hasBody && !this.lastChunkQueued) this.sendHead(this.lastChunk(), undefined)
     else this.sendHead(null, undefined)
     queueMicrotask(() => this.checkFinished())
   }

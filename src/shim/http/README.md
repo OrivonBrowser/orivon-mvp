@@ -12,6 +12,9 @@
   the request head, [`message.ts`](message.ts) `IncomingMessage`, [`headers.ts`](headers.ts),
   [`header-validation.ts`](header-validation.ts), [`status-codes.ts`](status-codes.ts)).
 
+**Why the server exists.** Node apps commonly run a small HTTP server of their own on loopback, to
+serve pages or an API to themselves, and a ported one cannot run without `http.createServer`.
+
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../errors.ts`](../errors.ts),
 [`../node-errors.ts`](../node-errors.ts), [`../unimplemented.ts`](../unimplemented.ts),
 [`../stream-bytes.ts`](../stream-bytes.ts) and [`../net/`](../net/).

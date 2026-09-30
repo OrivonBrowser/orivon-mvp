@@ -50,7 +50,7 @@ export class ServerResponse extends OutgoingMessage {
       if (INVALID_STATUS_MESSAGE_CHARACTER.test(reasonOrHeaders)) throw codedError(TypeError, 'ERR_INVALID_CHAR', 'Invalid character in statusMessage')
       this.statusMessage = reasonOrHeaders
     } else {
-      this.statusMessage ??= STATUS_CODES[code] ?? 'unknown'
+      this.statusMessage ||= STATUS_CODES[code] ?? 'unknown'
       headers ??= reasonOrHeaders
     }
     this.statusCode = code
