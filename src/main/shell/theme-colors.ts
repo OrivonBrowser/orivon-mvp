@@ -11,7 +11,7 @@
 // not logic. This file is the ONE place in main for a colour fact that MORE
 // THAN ONE caller needs (the "one home per fact" half of the same rule) --
 // a colour only one file needs stays a literal there, commented with the
-// CSS file it copies (tab-factory.ts's internal-page pair is the example).
+// CSS file it copies.
 import { nativeTheme } from 'electron'
 
 export interface ThemeColorPair {
@@ -26,6 +26,14 @@ export interface ThemeColorPair {
  * this same value in both themes for the same reason (a picture wash, not a
  * themed surface). */
 export const APP_DARK_WASH = '#0d0e14'
+
+/** Electron's own default: what a WebContentsView paints before anything
+ * ever calls `setBackgroundColor` on it. Named so putting a view back reads as
+ * returning it to this, not to an arbitrary white. */
+export const DEFAULT_BACKGROUND = '#FFFFFF'
+
+/** Literally pages/shared/tokens.css's own `--wbg` pair (Settings, History, Extensions, ...): an internal page's first paint, and what a crashed page shows behind the sad-tab card. */
+export const INTERNAL_PAGE_BACKGROUND: ThemeColorPair = { light: '#f4f4f8', dark: '#17181c' }
 
 /** Literally the `--wbg` pair of `body[data-surface='menu']` in renderer/overlay/surface.css. */
 export const MENU_POPOVER_BACKGROUND: ThemeColorPair = { light: '#f2f2f7', dark: '#2b2c31' }

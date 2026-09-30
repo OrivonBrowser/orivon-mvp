@@ -5,6 +5,7 @@
 import type { WebContents, WebContentsView } from 'electron'
 import { contain } from './contain.js'
 import { audioSignal } from './signals/audio.js'
+import { crashedSignal } from './signals/crashed.js'
 import { findSignal } from './signals/find.js'
 import { stopKeySignal } from './signals/stop-key.js'
 import type { TabRecord, TabState } from './tab-types.js'
@@ -32,6 +33,7 @@ export interface TabSignal {
 /** One line per feature, alphabetical by name. */
 export const TAB_SIGNALS: readonly TabSignal[] = [
   audioSignal,
+  crashedSignal,
   findSignal,
   restoredTitle,
   stopKeySignal
