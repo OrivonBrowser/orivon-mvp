@@ -200,8 +200,8 @@ export async function doUnlink (path: PathLike): Promise<void> {
  * fails on -- is the only thing this can honestly answer for any mode.
  * Not owner-reviewed: README.md's Design notes, "fs.access's mode".
  */
-export async function doAccess (path: PathLike): Promise<void> {
-  const confined = await confine(path, 'access')
+export async function doAccess (path: PathLike, syscall = 'access'): Promise<void> {
+  const confined = await confine(path, syscall)
   if (isRootPath(confined)) return
   await guarded(async () => { await getOrivon().fs.stat(confined) })
 }

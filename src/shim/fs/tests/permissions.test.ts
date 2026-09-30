@@ -59,6 +59,18 @@ describe('chmod family', () => {
     expect(() => fs.chmodSync('missing', 0o700)).toThrowError(expect.objectContaining({ code: 'ENOENT' }) as Error)
   })
 
+  it('a path outside the app\'s files is the same denial from chmod, chmodSync and promises.chmod, never ENOENT', async () => {
+    install()
+    const fs = await import('../fs.js')
+    const outside = '/etc/passwd'
+    const sync = (() => { try { fs.chmodSync(outside, 0o700) } catch (error) { return error as Error & { code: string } } })()
+    const callback = await new Promise<(Error & { code: string }) | null>((resolve) => { fs.chmod(outside, 0o700, resolve as never) })
+    const promise = await fs.promises.chmod(outside, 0o700).then(() => undefined, (error: Error & { code: string }) => error)
+    expect(sync?.code).toBe('EACCES')
+    expect([callback?.code, promise?.code]).toEqual(['EACCES', 'EACCES'])
+    expect([callback?.message, promise?.message]).toEqual([sync?.message, sync?.message])
+  })
+
   it('validates the mode as Node does', async () => {
     install()
     const fs = await import('../fs.js')
