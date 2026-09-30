@@ -169,14 +169,14 @@ describe('the routes in', () => {
     expect(requested).toContain('/app/native/meta.node.wasm')
   })
 
-  it('createRequire loads a .node path relative to its module, and refuses any other run-time require', () => {
+  it('createRequire loads a .node path relative to its module, and any other bare name that is no builtin fails MODULE_NOT_FOUND', () => {
     const requested = serveSync({ '/app/native/rel.wasm': napiAddon() })
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     const require = createRequire('/app/main.js')
     expect((require('./native/rel.node') as { answer: number }).answer).toBe(42)
     expect(requested).toContain('/app/native/rel.node.wasm')
     expect(require.resolve('./native/rel.node')).toBe('/app/native/rel.node')
-    expect(() => require('lodash')).toThrow(OrivonShimError)
+    expect(() => require('lodash')).toThrowError(expect.objectContaining({ code: 'MODULE_NOT_FOUND' }) as Error)
   })
 
   it('shares one preload between concurrent callers, so the addon is instantiated once', async () => {

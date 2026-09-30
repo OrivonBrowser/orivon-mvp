@@ -8,6 +8,8 @@
 import { Buffer } from 'buffer'
 import { Readable } from 'stream'
 import { installGlobals } from '../globals.js'
+import { Console } from '../polyfills/console-class.js'
+import { createRequire } from '../polyfills/module.js'
 import type { GlobalsTarget, ShimProcess } from '../globals-types.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
 import { Liveness, trackScope } from './liveness.js'
@@ -24,6 +26,8 @@ export interface ForkScope extends GlobalsTarget {
   setInterval?: (handler: () => void, ms?: number, ...args: unknown[]) => unknown
   clearInterval?: (id: unknown) => void
   fetch?: (...args: never[]) => Promise<unknown>
+  require?: unknown
+  console?: Record<string, unknown>
   close (): void
   addEventListener (type: 'error' | 'unhandledrejection', listener: (event: Event) => void): void
 }
@@ -32,6 +36,9 @@ type SendCallback = (error: Error | null) => void
 
 /** Thrown by process.exit to unwind the code after it; the runtime swallows it. */
 class ChildExit extends Error {}
+
+/** The Node release a child claims: the first one with `node:sqlite` unflagged. */
+const NODE_VERSION = '22.13.0'
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
@@ -81,6 +88,11 @@ export function setupChildProcess (scope: ForkScope, parent: ParentChannel, star
   const later = trackScope(scope as Parameters<typeof trackScope>[0], liveness)
   scope.orivon = createOrivonClient(start.orivon, liveness)
   scope.Buffer = Buffer
+  // esbuild's `__require` helper reads a global `require` when its call runs; the module
+  // set-up runs before any of the app's code, so a bundle's dynamic require finds this one.
+  if (scope.require === undefined) {
+    Object.defineProperty(scope, 'require', { value: createRequire(`${start.cwd}/`), configurable: true, writable: true })
+  }
 
   const end = (code: number | null, signal: string | null = null): void => {
     if (exited) return
@@ -96,6 +108,10 @@ export function setupChildProcess (scope: ForkScope, parent: ParentChannel, star
     return true
   }
 
+  // A child is a Node program, unlike a page: packages read these to pick their Node branch.
+  proc.versions = { ...proc.versions, node: NODE_VERSION }
+  proc.version = `v${NODE_VERSION}`
+  proc.release = { name: 'node' }
   proc.argv = [...start.argv]
   proc.env = { ...start.env }
   proc.cwd = () => start.cwd
@@ -137,13 +153,45 @@ export function setupChildProcess (scope: ForkScope, parent: ParentChannel, star
   return { proc, liveness, write, end, crash }
 }
 
+const CONSOLE_METHODS = ['log', 'info', 'debug', 'dirxml', 'warn', 'error', 'trace', 'dir', 'table', 'assert', 'count', 'countReset', 'group', 'groupCollapsed', 'groupEnd', 'time', 'timeEnd', 'timeLog'] as const
+
+/**
+ * A forked child's console is a `Console` over its `process.stdout` and `process.stderr`, as
+ * Node's is, so its output reaches `child.stdout` and a program that patches either `write`
+ * sees it. The Worker's own console still gets every call too, so a developer's devtools keep
+ * showing them.
+ */
+function routeConsole (target: Record<string, unknown> | undefined, proc: BaseProcess): void {
+  if (target === undefined) return
+  const streams = {
+    stdout: { write: (chunk: string, callback?: () => void) => proc.stdout.write(chunk, callback as never) },
+    stderr: { write: (chunk: string, callback?: () => void) => proc.stderr.write(chunk, callback as never) }
+  }
+  const child = new Console(streams) as unknown as Record<string, (...args: unknown[]) => void>
+  for (const name of CONSOLE_METHODS) {
+    const original = target[name]
+    target[name] = (...args: unknown[]): void => {
+      if (typeof original === 'function') (original as (...rest: unknown[]) => void).apply(target, args)
+      child[name]!(...args)
+    }
+  }
+  target.Console ??= Console
+}
+
 export async function runFork (start: ForkStart, parent: ParentChannel, scope: ForkScope, load: (url: string) => Promise<unknown>): Promise<void> {
   const { proc: baseProc, liveness, crash } = setupChildProcess(scope, parent, start)
+  routeConsole(scope.console, baseProc)
   const proc = baseProc as ForkProcess
-  // The IPC channel itself is a reason to stay alive, released only when it closes (closeChannel below).
-  liveness.ref()
   ;(scope as unknown as Record<symbol, Liveness>)[FORK_LIVENESS_SYMBOL] = liveness
   proc.connected = true
+  // As in Node, the open channel keeps the child alive only while something listens on it: a 'message' or
+  // 'disconnect' listener takes the reference and the last one going away (or the channel closing) gives it back.
+  // The process object has no 'newListener' events, so each way a listener comes or goes re-reads the count.
+  let channelRef = false
+  const syncChannel = (): void => {
+    const wanted = proc.connected && proc.listenerCount('message') + proc.listenerCount('disconnect') > 0
+    if (wanted && !channelRef) { channelRef = true; liveness.ref() } else if (!wanted && channelRef) { channelRef = false; liveness.unref() }
+  }
   proc.send = (message: unknown, ...rest: unknown[]): boolean => {
     const callback = rest.find((arg): arg is SendCallback => typeof arg === 'function')
     if (!proc.connected) {
@@ -159,7 +207,7 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
   const closeChannel = (): void => {
     if (!proc.connected) return
     proc.connected = false
-    queueMicrotask(() => { proc.emit('disconnect'); liveness.unref() })
+    queueMicrotask(() => { proc.emit('disconnect'); syncChannel() })
   }
   proc.disconnect = () => {
     if (!proc.connected) return
@@ -168,7 +216,7 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
   }
 
   const deliver = (message: ToWorker): void => {
-    if (message.type === 'ipc') proc.emit('message', message.message)
+    if (message.type === 'ipc') { proc.emit('message', message.message); syncChannel() }
     else if (message.type === 'stdin') proc.stdin.push(Buffer.from(message.data))
     else if (message.type === 'stdin-end') proc.stdin.push(null)
     else if (message.type === 'disconnect') closeChannel()
@@ -183,12 +231,13 @@ export async function runFork (start: ForkStart, parent: ParentChannel, scope: F
     for (const message of early ?? []) deliver(message)
   }
   parent.onMessage((message) => { if (held === undefined) deliver(message); else held.push(message) })
-  for (const method of ['on', 'addListener', 'once', 'prependListener'] as const) {
+  for (const method of ['on', 'addListener', 'once', 'prependListener', 'off', 'removeListener', 'removeAllListeners'] as const) {
     const register = (proc as unknown as Record<string, unknown>)[method] as ((event: string, listener: (...args: unknown[]) => void) => unknown) | undefined
     if (register === undefined) continue
     ;(proc as unknown as Record<string, unknown>)[method] = (event: string, listener: (...args: unknown[]) => void) => {
       const result = register.call(proc, event, listener)
-      if (event === 'message' && held !== undefined) queueMicrotask(release)
+      if (event === 'message' && held !== undefined && !method.startsWith('remove') && method !== 'off') queueMicrotask(release)
+      syncChannel()
       return result
     }
   }

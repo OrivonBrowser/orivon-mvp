@@ -39,5 +39,11 @@ security one, and the broker binds loopback or every interface, never one other 
 sockets close with the server, unlike Node: the broker closes derived handles with the server
 handle ([`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §TcpServer).
 
+**A taken port is Node's `EADDRINUSE`, worded as Node words it.** The broker answers `limit` with
+`platformCode: 'EADDRINUSE'` when every port the grant covers is held; the `'error'` event carries
+`code`, `errno` -98, `syscall: 'listen'`, the address and port, and the message `listen EADDRINUSE:
+address already in use 127.0.0.1:9000`, since a program decides "another copy already runs" by
+matching that text.
+
 **[`dgram-socket.ts`](dgram-socket.ts) validates a send before the broker sees it**, as Node does:
 the broker's write path drops a malformed datagram silently.

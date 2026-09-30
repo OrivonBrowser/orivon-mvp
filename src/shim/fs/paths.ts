@@ -7,7 +7,7 @@
 
 import { isAbsolute, normalize } from 'path'
 import { getOrivon } from '../orivon-global.js'
-import { toNodeError } from '../node-errors.js'
+import { codedError, toNodeError } from '../node-errors.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
 import { syncFs } from './sync-orivon.js'
 
@@ -124,4 +124,11 @@ export function confineSync (path: PathLike, syscall: string, api: string): stri
     }
   }
   return confined
+}
+
+/** Node's own check: a uint32, or a string of octal digits. */
+export function assertMode (mode: unknown): void {
+  if (typeof mode === 'string' ? /^[0-7]+$/.test(mode) : typeof mode === 'number' && Number.isInteger(mode) && mode >= 0 && mode <= 0xffffffff) return
+  throw codedError(TypeError, typeof mode === 'string' ? 'ERR_INVALID_ARG_VALUE' : 'ERR_INVALID_ARG_TYPE',
+    `The argument 'mode' must be a 32-bit unsigned integer or an octal string. Received ${String(mode)}`)
 }

@@ -499,15 +499,15 @@ describe('fs.open / fs.promises.open', () => {
   })
 
   // readFile/writeFile/access/appendFile/rename/unlink/mkdir/readdir/stat/rm
-  // are all real now (fs/tests/promises.test.ts) -- `watch` stands in here as
+  // are all real now (fs/tests/promises.test.ts) -- `cp` stands in here as
   // a member still genuinely unbuilt.
   it('fs.promises\'s other members are named, not silently absent (A135) -- reading one is safe (A169), only calling it refuses', async () => {
     installFakeOrivon()
     const fs = await import('../fs.js')
     const { OrivonShimError } = await import('../../errors.js')
     const promisesRec = fs.promises as unknown as Record<string, () => unknown>
-    expect(() => promisesRec.watch).not.toThrow()
-    expect(() => promisesRec.watch!()).toThrow(OrivonShimError)
+    expect(() => promisesRec.cp).not.toThrow()
+    expect(() => promisesRec.cp!()).toThrow(OrivonShimError)
   })
 })
 
@@ -578,8 +578,8 @@ describe('fs\'s other members -- named refusal instead of absence (A135), readin
     }
   })
 
-  it.each(['chmod', 'chmodSync', 'chown', 'chownSync'])(
-    'reading %s does not throw; calling it names it, reason not-applicable -- no POSIX permission model exists to set',
+  it.each(['chown', 'chownSync', 'fchown', 'lchown'])(
+    'reading %s does not throw; calling it names it, reason not-applicable -- no POSIX ownership model exists to set',
     async (member) => {
       installFakeOrivon()
       const fs = (await import('../fs.js')).default as unknown as Record<string, () => unknown>

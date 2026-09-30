@@ -15,6 +15,7 @@ export function nodeModuleRefusal (name: string, prop: string): ReturnType<typeo
   )
 }
 
-export function nodeModule<T extends object> (name: string, known: T): T {
-  return refusingProxy(known, (prop) => nodeModuleRefusal(name, prop))
+/** `classify` replaces the generic refusal for a module whose gaps have a reason of their own (tty, http2). */
+export function nodeModule<T extends object> (name: string, known: T, classify: (prop: string) => Error = (prop) => nodeModuleRefusal(name, prop)): T {
+  return refusingProxy(known, classify)
 }

@@ -26,10 +26,10 @@ function isShimImporter (importer: string | undefined): boolean {
  * a bare builtin before plugin hooks run, and only the alias stage sees it.
  */
 function shimModuleAliases (): Alias[] {
-  return buildAliasEntries().map(({ specifier, kind, implementation }) => {
+  return buildAliasEntries().map(({ specifier, kind, implementation, prefixOnly }) => {
     const target = kind === 'package' ? implementation : resolve(root, 'src/shim', implementation)
     return {
-      find: aliasPattern(specifier),
+      find: aliasPattern(specifier, prefixOnly),
       replacement: '$&',
       async customResolver (_source, importer, options) {
         if (!isShimImporter(importer)) return null
@@ -39,9 +39,14 @@ function shimModuleAliases (): Alias[] {
   })
 }
 
+/** The engine's browser build, as a bundled app gets it: the package's `node` condition would hand the tests a build no app ships. */
+function sqliteEngineAlias (): Alias {
+  return { find: /^@sqlite\.org\/sqlite-wasm$/, replacement: resolve(root, 'node_modules/@sqlite.org/sqlite-wasm/dist/index.mjs') }
+}
+
 // Node, not a DOM: the unit suite tests pure functions and needs no browser.
 export default defineConfig({
-  resolve: { alias: shimModuleAliases() },
+  resolve: { alias: [...shimModuleAliases(), sqliteEngineAlias()] },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],

@@ -56,7 +56,10 @@ it('loads a typed ipfs:// address, follows an ipfs:// link, and opens an ipns://
       const view = findViewShowing(app, chrome, `https://${site}.ipfs.orivon/`)
       check('the page runs at the https origin serving it', view !== undefined)
       if (view === undefined) throw new Error('no view shows the served origin')
-      const page = await evaluateRetrying(view, () => ({ origin: location.origin, secure: window.isSecureContext, ran: document.body.dataset['app'] ?? null }))
+      const readPage = async (): Promise<{ origin: string, secure: boolean, ran: string | null }> => await evaluateRetrying(view, () => ({ origin: location.origin, secure: window.isSecureContext, ran: document.body.dataset['app'] ?? null }))
+      // The title is up once the head is parsed; the script is its own verified fetch at the end of the body, so it may not have run yet.
+      let page = await readPage()
+      await waitFor(async () => { page = await readPage(); return page.ran === 'ran' })
       check(`it is a secure context, and its verified script ran (${JSON.stringify(page)})`, page.secure && page.ran === 'ran')
       check(`the gateway was asked for raw blocks (${String(gateway.requests.length)} requests)`, gateway.requests.some((r) => r.endsWith('?format=raw')))
 

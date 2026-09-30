@@ -1660,13 +1660,44 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A313: No port consumes the Node shim **[OWNER]**
+### A313: Most ports do not consume the Node shim **[OWNER]**
 
-- **Question:** Should a port bundle against the shim (the `module-map.ts` aliases and the page globals), or keep
-  bringing its own polyfills and empty stubs, as every port in `orivon-ports` does?
-- **Why it matters:** what the compatibility tables say the shim offers reaches no ported app, and a port's own
-  `crypto-browserify` or empty `fs` hides both the shim's gains and its gaps.
-- **Options:** publish the alias table and the globals entry as a preset each port's bundler loads (rec.); keep
-  per-port polyfills and describe the shim as for apps written for Orivon.
+- **Question:** The Lounge's port bundles against the shim through `src/shim/bundler/esbuild-plugin.ts`; the
+  other ports in `orivon-ports` bring their own polyfills and empty stubs. Should every port bundle against the
+  shim, which for the webpack-built ones means a webpack preset of the same alias table and the page globals?
+- **Why it matters:** what the compatibility tables say the shim offers reaches only the ports that bundle
+  against it, and a port's own `crypto-browserify` or empty `fs` hides both the shim's gains and its gaps.
+- **Options:** a preset for each bundler the ports use, esbuild's being built, and each port moved over when it
+  is next touched (rec.); keep per-port polyfills and describe the shim as for apps written for Orivon.
 - **Who decides:** owner
 - **Blocks:** how much of compatibility Tables 2 and 3 a port benefits from
+
+### A314: A connect grant cannot pair a wildcard host with one port **[AI-REC]**
+
+- **Question:** `net.tcp.connect` and `net.https.connect` accept `*` as a host only in `*:*`. An app that dials
+  whatever server its user names on one service port (IRC on 6697) must ask for every port on every host.
+- **Why it matters:** the consent prompt then shows unlimited network access for an app that needs one port.
+- **Options:** accept `*:<port>` and `*:<low>-<high>` in the loader and the broker, still refusing private
+  addresses under `*` (rec.); leave `*:*` as the only wildcard.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** a narrower grant for The Lounge's port
+
+### A315: The `node:sqlite` VFS assumes one connection per file **[AI-REC]**
+
+- **Question:** the VFS takes no lock and caches file size and existence, which is safe only while one
+  connection uses a file. Nothing refuses a second connection to the same file, in the same context or another.
+- **Why it matters:** a second connection would read stale pages and could corrupt the database.
+- **Options:** refuse a second open of a file already open in any context of the app (rec.); a lock over
+  `orivon.fs`; leave it to the app.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A316: Every forked child parses a runtime of about 1 MB **[AI-REC]**
+
+- **Question:** the builtin table behind a child's run-time `require` holds most of the shim statically, so the
+  Worker runtime bundle is about 1 MB, parsed by every child.
+- **Why it matters:** start-up time and memory for each child, most of which never call `require` at run time.
+- **Options:** load the table's modules on first `require` (rec.); a smaller table plus `registerBuiltin` per
+  app; accept the size.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing

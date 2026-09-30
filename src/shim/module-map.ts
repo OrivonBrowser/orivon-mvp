@@ -20,6 +20,8 @@ export interface ShimModuleEntry {
   readonly kind?: 'local' | 'package'
   readonly implementation?: string
   readonly note: string
+  /** True for a module Node exposes only as `node:<specifier>`: the bare name is a different npm package, so an alias must not capture it. */
+  readonly prefixOnly?: boolean
 }
 
 const REVIEW = 'docs/planning/shim-dependency-review.md'
@@ -52,26 +54,37 @@ export const SHIM_MODULE_MAP: readonly ShimModuleEntry[] = [
   { specifier: 'querystring', status: 'ready', kind: 'local', implementation: './polyfills/querystring.js', note: 'Hand-written, checked against node:querystring.' },
   { specifier: 'string_decoder', status: 'ready', kind: 'local', implementation: './polyfills/string-decoder.js', note: 'Hand-written over TextDecoder\'s streaming mode, checked against node:string_decoder.' },
   { specifier: 'child_process', status: 'ready', kind: 'local', implementation: './child-process/index.js', note: 'A child is WebAssembly or JavaScript in a Worker, never an OS process (ADR-0040): spawn/execFile/exec run a WASI program from the app\'s bundle (a native program refuses as ENOEXEC, a missing one is ENOENT), fork runs an app module with process.send and an IPC channel. spawnSync/execSync/execFileSync work only in a Worker of a cross-origin isolated app, over a request kind of their own on its synchronous channel (spawn-sync.ts, ADR-0016\'s amendment); shell and uid/gid still refuse by name. See child-process/README.md.' },
-  { specifier: 'module', status: 'ready', kind: 'local', implementation: './polyfills/module.js', note: 'createRequire for a native addon\'s .node path, loaded as its WebAssembly build over emnapi (addon/, ADR-0040); any other run-time require refuses by name, since a bundle resolves its modules when it is built. builtinModules and isBuiltin answer from this table. Importing it also installs process.dlopen.' },
+  { specifier: 'module', status: 'ready', kind: 'local', implementation: './polyfills/module.js', note: 'createRequire loads a native addon by its .node path as its WebAssembly build over emnapi (addon/, ADR-0040), and any other relative or absolute path as a CommonJS file of the app\'s own fs (polyfills/cjs-loader.ts: exact name, .js, .cjs, .json, /index.js; a cache, cycles, require.resolve, a shim builtin by name). A bare name that is no builtin throws MODULE_NOT_FOUND: there is no node_modules resolution, since a bundle resolves its packages when it is built. A forked child also gets a global require of the same loader. builtinModules and isBuiltin answer from this table. Importing it also installs process.dlopen.' },
   { specifier: 'wasi', status: 'ready', kind: 'local', implementation: './wasi/node-wasi.js', note: 'Node\'s WASI class over the preview1 host in wasi/ (files, clocks, random, args/env, exit, over orivon.fs). start()/initialize() return promises (JSPI: the program suspends on each file call), and preopens name paths under the virtual root. Links, file times and sockets refuse by name. See wasi/README.md and src/shim/wasi/tests/.' },
   { specifier: 'worker_threads', status: 'ready', kind: 'local', implementation: './polyfills/worker-threads.js', note: 'Worker runs an app module as a thread over the same Web Workers child_process.fork uses (child-process/thread.ts): workerData, parentPort, postMessage, terminate(), ref()/unref(), online/message/messageerror/error/exit. isMainThread/threadId/parentPort/workerData/resourceLimits read what the thread itself set at evaluation time; MessageChannel/MessagePort are Node-shaped (worker/node-port.ts), BroadcastChannel is the platform\'s. eval, a nested thread, receiveMessageOnPort and moveMessagePortToContext refuse by name. See polyfills/tests/worker-threads-vm.test.ts and child-process/tests/thread.test.ts.' },
   { specifier: 'vm', status: 'ready', kind: 'local', implementation: './polyfills/vm.js', note: 'Hand-written: runInThisContext, Script#runInThisContext and compileFunction run in the page\'s own context, as indirect eval and new Function do under the served CSP\'s unsafe-eval. A context of its own needs a second realm, so createContext and the calls that enter one refuse by name. See polyfills/tests/worker-threads-vm.test.ts.' },
-  { specifier: 'assert', status: 'ready', kind: 'local', implementation: './polyfills/assert.js', note: 'Hand-written: ok/equal/strictEqual/deepEqual/deepStrictEqual/throws/rejects and their negations, AssertionError, assert.strict. Deep equality is polyfills/deep-equal.ts, shared with util.' }
+  { specifier: 'sqlite', status: 'ready', kind: 'local', implementation: './sqlite/index.js', prefixOnly: true, note: 'DatabaseSync and StatementSync over the SQLite WebAssembly engine (@sqlite.org/sqlite-wasm): exec, prepare, run/get/all/iterate with positional and named parameters, readBigInts, returnArrays, columns, transactions, and Node\'s error shapes. A database file is real, in the app\'s files with page-level I/O, and works only in a Worker of a cross-origin isolated app (a synchronous file call, ADR-0016\'s amendment); \':memory:\' works everywhere. The engine loads asynchronously, so a bundle imports sqlite/ready.ts first. function, aggregate, sessions, extensions, tag stores and backup refuse by name. See src/shim/sqlite/README.md.' },
+  { specifier: 'process', status: 'ready', kind: 'local', implementation: './polyfills/process.js', note: 'The process global itself (require(\'process\') === process), with its function members as named exports that forward to the global at call time and its data members as the objects it holds at load. See polyfills/tests/process-module.test.ts.' },
+  { specifier: 'assert', status: 'ready', kind: 'local', implementation: './polyfills/assert.js', note: 'Hand-written: ok/equal/strictEqual/deepEqual/deepStrictEqual/throws/rejects and their negations, AssertionError, assert.strict. Deep equality is polyfills/deep-equal.ts, shared with util.' },
+  { specifier: 'tty', status: 'ready', kind: 'local', implementation: './polyfills/tty.js', note: 'isatty() is false for every descriptor, which is what libraries read to skip colour and prompts (supports-color, debug); ReadStream and WriteStream refuse by name, since an app has no terminal. See polyfills/tests/terminal-modules.test.ts.' },
+  { specifier: 'readline', status: 'ready', kind: 'local', implementation: './polyfills/readline.js', note: 'Loads, so a library that only requires it at the top evaluates; every function (createInterface, Interface, cursorTo, ...) refuses by name. See polyfills/tests/terminal-modules.test.ts.' },
+  { specifier: 'http2', status: 'ready', kind: 'local', implementation: './polyfills/http2.js', note: 'Loads with Node\'s real constants (polyfills/http2-constants.generated.json), which http2-wrapper and undici read as they evaluate; connect, createServer and every other function refuse by name, since orivon.net carries no HTTP/2 session. See polyfills/tests/http2.test.ts.' },
+  { specifier: 'diagnostics_channel', status: 'ready', kind: 'local', implementation: './polyfills/diagnostics-channel.js', note: 'Real, pure JavaScript: channel/subscribe/unsubscribe/hasSubscribers, Channel#bindStore/runStores, and tracingChannel with traceSync/tracePromise/traceCallback. A throwing subscriber surfaces on the next tick, as in Node. See polyfills/tests/diagnostics-channel.test.ts.' },
+  { specifier: 'async_hooks', status: 'ready', kind: 'local', implementation: './polyfills/async-hooks.js', note: 'AsyncResource (runInAsyncScope, bind, asyncId, triggerAsyncId) and AsyncLocalStorage (run, exit, enterWith, disable, getStore, bind, snapshot) over one table of current stores that a bound callback carries. A page has no per-continuation context, so a store does not follow an await or a timer nothing bound. createHook returns an inert hook: express\'s on-finished wraps every response in an AsyncResource and needs nothing more. See polyfills/tests/async-hooks.test.ts.' },
+  { specifier: 'perf_hooks', status: 'ready', kind: 'local', implementation: './polyfills/perf-hooks.js', note: 'The platform\'s performance, PerformanceObserver and entry classes; the event-loop histograms refuse by name. See polyfills/tests/terminal-modules.test.ts.' },
+  { specifier: 'console', status: 'ready', kind: 'local', implementation: './polyfills/console.js', note: 'The global console itself, with each named export forwarding to it at call time; Console is a real class, a console over a pair of writable streams (polyfills/console-class.ts), and the members Node has and the page lacks refuse by name. See polyfills/tests/terminal-modules.test.ts.' }
 ]
 
 export interface ShimAliasEntry {
   readonly specifier: string
   readonly kind: 'local' | 'package'
   readonly implementation: string
+  readonly prefixOnly?: boolean
 }
 
 /**
- * Matches `specifier` whole, bare or `node:`-prefixed. Never a string alias:
+ * Matches `specifier` whole, bare or `node:`-prefixed, or only `node:`-prefixed for a `prefixOnly` row. Never a string alias:
  * Vite's string form also captures every subpath, rewriting `fs/promises` to
  * `<shim>/node-fs.js/promises`, which does not exist. A subpath is its own row.
  */
-export function aliasPattern (specifier: string): RegExp {
-  return new RegExp(`^(?:node:)?${specifier.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}$`)
+export function aliasPattern (specifier: string, prefixOnly = false): RegExp {
+  const escaped = specifier.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  return new RegExp(prefixOnly ? `^node:${escaped}$` : `^(?:node:)?${escaped}$`)
 }
 
 /** Every 'ready' row, in the shape electron.vite.config.ts resolves into its alias map. Silently drops every 'pending-dependency' row -- there is nothing yet to point an alias at. */
@@ -79,7 +92,7 @@ export function buildAliasEntries (): readonly ShimAliasEntry[] {
   const entries: ShimAliasEntry[] = []
   for (const entry of SHIM_MODULE_MAP) {
     if (entry.status !== 'ready' || entry.kind === undefined || entry.implementation === undefined) continue
-    entries.push({ specifier: entry.specifier, kind: entry.kind, implementation: entry.implementation })
+    entries.push({ specifier: entry.specifier, kind: entry.kind, implementation: entry.implementation, ...(entry.prefixOnly === true ? { prefixOnly: true } : {}) })
   }
   return entries
 }
