@@ -39,6 +39,15 @@ address implies (loopback is `local`, anything else `network`), but the broker b
 interface and requires the `network` grant for either today (ADR-0034): within the app's grant,
 but wider than a program binding loopback asked.
 
+**What a file call costs.** Every filesystem import is a round trip from the program's Worker to
+the page and the broker, a few milliseconds each, and the program has one thread, so it serves no
+socket while it waits. A program that makes a dozen file calls per operation is slow here in a
+way it is not natively. SQLite built for WASI is the common case: its default VFS there
+(`unix-dotfile`) takes a lock directory and re-reads the file header on every statement. A port
+whose program is the database's only user opens it with the `unix-none` VFS and
+`PRAGMA locking_mode = EXCLUSIVE`; one real program's start went from 809 s to 20 s with that
+change alone.
+
 ## Design notes
 
 **jco is never one of this repository's dependencies.** It could transpile a component at run
@@ -62,7 +71,11 @@ program retrying against a grant that is gone would spin. The host throws the pr
 termination, which unwinds the component as a trap.
 
 **A bind is made at listen**, since `orivon.net` binds and listens in one call: `finish-bind`
-always succeeds, and an address in use is reported by `finish-listen` (`tcp.ts`).
+always succeeds, and an address in use is reported by `finish-listen` (`tcp.ts`). An ephemeral
+(port 0) listen is confined to the app's granted range exactly like an explicit one (ADR-0034),
+so a program that listens twice on a single-port grant collides with its own ephemeral listen and
+sees `address-in-use` -- correct, not a bug. Listening is IPv4 in this build whatever family the
+program's socket has, and a listener reports the address it bound with the port the server holds.
 
 **Sockets block only where POSIX does.** A connect and a lookup are started at once and answered
 `would-block` until `orivon.net` settles, and the program waits on a pollable: a non-blocking
@@ -71,3 +84,9 @@ instead suspend in `finish-listen` and `finish-bind` until it settles, because w
 `listen()` and `bind()` take `would-block` there as failure on a non-blocking socket, which every
 mio and tokio socket is; wasmtime never answers it. The streams read ahead of the program
 (`io.ts`), so a non-blocking read answers from what has arrived.
+
+**A datagram to a reserved port needs a grant naming that port.** `udp.send` is checked as
+`tcp.connect` is, so a wildcard never covers a reserved port (A82), and a manifest declares a
+wildcard host only as `*:*`: a program with its own DNS resolver names it, as `1.1.1.1:53`. The
+broker drops a refused datagram without an error (A87), so the program sees only a query that
+never gets an answer (A304).

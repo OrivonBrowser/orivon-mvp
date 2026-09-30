@@ -64,6 +64,15 @@
    convenient. `readFileSync` is the one call a ported app cannot do without at startup; the
    blocking cost is bounded and visible there, and a chatty use of it is the app's own cost
    to pay, not a reason to widen the exception further.
+
+   > **Widened once since, at the shim, not at the contract** (`ADR-0016`'s amendment). In a
+   > Worker (a forked child or a `worker_threads` thread) of a cross-origin isolated app, the
+   > shim offers every path-based `fs` `*Sync` call over the same shared-memory channel
+   > `readFileSync` already used there as its deferred route B -- a page that blocks freezes
+   > the tab, which is what this rule guards against, but a Worker that blocks freezes no
+   > page. `orivon.fs` itself still has exactly one synchronous member; nothing was added to
+   > the contract to widen it. Elsewhere -- the page, or a Worker with no
+   > `SharedArrayBuffer` -- every one of those calls still refuses by name.
 3. **Handles, not ambient authority.** `connect()` returns a handle; later operations
    reference the handle. Capability is checked once, at acquisition. This avoids TOCTOU and
    avoids re-authorising on every call.
@@ -227,7 +236,10 @@ installation.
 unrestricted network access, and the grant prompt must say so in plain words
 (*"connect to any computer on the internet"*), not hide it behind a pattern string. This is a
 real property of P2P software, and understating it would be the kind of dishonesty the trust
-indicator exists to prevent.
+indicator exists to prevent. A wildcard never reaches a reserved port (A82: DNS, mail, SMB, RDP,
+IRC and the like), and a wildcard host is declarable only as `*:*`: a P2P program that resolves
+names itself names its resolver, as in `udp.send: ["*:*", "1.1.1.1:53"]`, and a refused datagram
+is dropped without an error (A87, A304).
 
 ## v0 surface
 

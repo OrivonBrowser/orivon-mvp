@@ -2,6 +2,7 @@
 // run in-process (support/in-process-worker.ts), programs served by a fetch
 // stub, and a real directory standing in for the broker.
 
+import { EventEmitter } from 'node:events'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../../contracts/capability-api.js'
@@ -11,6 +12,8 @@ import { hasJspi } from '../../wasi/tests/support/jspi.js'
 import { echoProgram, failingProgram } from '../../wasi/tests/support/programs.js'
 import { tourFixture } from '../../wasi-p2/tests/support/component-fixture.js'
 import childProcess, { type ChildProcess, exec, execFile, execFileSync, fork, spawn } from '../index.js'
+import type { SpawnOptions } from '../spawn.js'
+import { type SpawnFn, runSpawnSync } from '../spawn-sync.js'
 import { failNext, forkModules, workers } from './support/in-process-worker.js'
 
 vi.mock('../../worker/launch.js', async () => ({ createChildWorker: (await import('./support/in-process-worker.js')).createInProcessWorker }))
@@ -126,6 +129,145 @@ describe.skipIf(!hasJspi)('spawn', () => {
   })
 })
 
+describe.skipIf(!hasJspi)('runSpawnSync -- spawnSync/execSync/execFileSync\'s server-side half', () => {
+  it('runs the echo WASI program with input, and collects it back on stdout', async () => {
+    const result = await runSpawnSync(spawn, {
+      command: '/bin/echo', args: [], env: {}, maxBuffer: 1024 * 1024, input: new TextEncoder().encode('blocking input')
+    })
+    expect(result.status).toBe(0)
+    expect(result.signal).toBeNull()
+    expect(result.error).toBeUndefined()
+    expect(new TextDecoder().decode(result.stdout ?? new Uint8Array(0))).toBe('blocking input')
+    expect(result.pid).toBeGreaterThan(1)
+  })
+
+  it('reports a non-zero exit as status, with stderr collected and no error', async () => {
+    const result = await runSpawnSync(spawn, { command: '/bin/fail', args: [], env: {}, maxBuffer: 1024 * 1024 })
+    expect(result.status).toBe(3)
+    expect(result.signal).toBeNull()
+    expect(result.error).toBeUndefined()
+    expect(new TextDecoder().decode(result.stderr ?? new Uint8Array(0))).toBe('went wrong\n')
+  })
+
+  // A real WASI program cannot outrun a real timeout deterministically in this
+  // in-process fixture (its fd_read bridge resolves entirely through
+  // microtasks, which starve a real setTimeout forever rather than race it),
+  // so this proves the one thing runSpawnSync itself adds with a fake
+  // spawn() standing in for a real child -- runSpawnSync arms its OWN timer
+  // (never spawn()'s own applyLifetime, which cannot tell a timeout kill from
+  // any other) and reports the kill it causes as ETIMEDOUT, matching Node's
+  // own message/errno/syscall (measured).
+  it('kills with killSignal on its own timeout, reporting ETIMEDOUT -- not spawn()\'s own timeout option', async () => {
+    const seenOptions: SpawnOptions[] = []
+    class FakeChild extends EventEmitter {
+      pid = 99
+      stdin = { end: () => {} }
+      stdout = new EventEmitter()
+      stderr = new EventEmitter()
+      kill (signal?: string | number): boolean {
+        queueMicrotask(() => { this.emit('close', null, signal ?? 'SIGTERM') })
+        return true
+      }
+    }
+    const fakeChild = new FakeChild()
+    const fakeSpawn: SpawnFn = (_command, _args, options) => {
+      seenOptions.push(options)
+      return fakeChild as unknown as ChildProcess
+    }
+    const result = await runSpawnSync(fakeSpawn, { command: '/bin/x', args: [], env: {}, maxBuffer: 1024, timeout: 5, killSignal: 'SIGKILL' })
+    // runSpawnSync's own timer causes the kill, not spawn()'s -- so `timeout`
+    // itself must NOT reach spawn()'s options this time (finding 6).
+    expect(seenOptions[0]?.timeout).toBeUndefined()
+    expect(seenOptions[0]).toMatchObject({ killSignal: 'SIGKILL' })
+    expect(result.status).toBeNull()
+    expect(result.signal).toBe('SIGKILL')
+    expect(result.error).toMatchObject({
+      code: 'ETIMEDOUT', errno: -110, syscall: 'spawnSync /bin/x', message: 'spawnSync /bin/x ETIMEDOUT'
+    })
+  })
+
+  it('kills a program whose output crosses maxBuffer, reporting ENOBUFS', async () => {
+    const result = await runSpawnSync(spawn, {
+      command: '/bin/echo', args: [], env: {}, maxBuffer: 4, input: new TextEncoder().encode('more than four bytes')
+    })
+    expect(result.status).toBeNull()
+    expect(result.error).toMatchObject({ code: 'ENOBUFS' })
+  })
+
+  class FakeChild extends EventEmitter {
+    pid = 1
+    stdin = { end: () => {} }
+    stdout = new EventEmitter()
+    stderr = new EventEmitter()
+    kill (): boolean { queueMicrotask(() => this.emit('close', null, 'SIGTERM')); return true }
+  }
+
+  // Node counts stdout and stderr TOGETHER against one maxBuffer, and keeps
+  // the chunk that crosses it -- measured against Node's own spawnSync
+  // (finding 12): 2+2 bytes against a limit of 4, then one more chunk, still
+  // reports ENOBUFS with every byte kept, not the earlier per-stream count
+  // that silently dropped the crossing chunk.
+  it('counts stdout and stderr TOGETHER against maxBuffer, keeping the chunk that crosses it', async () => {
+    const fakeChild = new FakeChild()
+    const fakeSpawn: SpawnFn = () => fakeChild as unknown as ChildProcess
+    const resultPromise = runSpawnSync(fakeSpawn, { command: '/bin/x', args: [], env: {}, maxBuffer: 4 })
+    fakeChild.stdout.emit('data', Buffer.from('ab'))
+    fakeChild.stderr.emit('data', Buffer.from('cd'))
+    fakeChild.stdout.emit('data', Buffer.from('e'))
+    const result = await resultPromise
+    expect(result.error).toMatchObject({ code: 'ENOBUFS' })
+    expect(new TextDecoder().decode(result.stdout ?? new Uint8Array(0))).toBe('abe')
+    expect(new TextDecoder().decode(result.stderr ?? new Uint8Array(0))).toBe('cd')
+  })
+
+  // execSync/execFileSync's own default (unlike spawnSync's): the child's
+  // stderr also reaches the parent's stderr as it streams, not only the
+  // captured result (finding 12).
+  it('forwardStderr also prints each stderr line while still capturing it -- execSync/execFileSync\'s own default, never spawnSync\'s', async () => {
+    const fakeChild = new FakeChild()
+    const fakeSpawn: SpawnFn = () => fakeChild as unknown as ChildProcess
+    const printed: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((line: string) => { printed.push(line) })
+    const resultPromise = runSpawnSync(fakeSpawn, { command: '/bin/x', args: [], env: {}, maxBuffer: 1024, forwardStderr: true })
+    fakeChild.stderr.emit('data', Buffer.from('first\nsecond\n'))
+    fakeChild.emit('close', 0, null)
+    const result = await resultPromise
+    spy.mockRestore()
+    expect(printed).toEqual(['first', 'second'])
+    expect(new TextDecoder().decode(result.stderr ?? new Uint8Array(0))).toBe('first\nsecond\n')
+  })
+
+  // A non-'pipe' stdio has no stream to collect from (child.ts's own
+  // stdout/stderr getters are null there) -- the wire result reports `null`,
+  // not empty bytes, matching Node's own null output for 'ignore'/'inherit',
+  // and the real requested mode reaches spawn() instead of always 'pipe'.
+  it('a non-\'pipe\' stdio reaches spawn(), and reports null stdout/stderr, not empty bytes', async () => {
+    class FakeIgnoredChild extends EventEmitter {
+      pid = 1
+      stdin = null
+      stdout = null
+      stderr = null
+      kill (): boolean { return false }
+    }
+    const fakeChild = new FakeIgnoredChild()
+    const seenOptions: SpawnOptions[] = []
+    const fakeSpawn: SpawnFn = (_command, _args, options) => { seenOptions.push(options); return fakeChild as unknown as ChildProcess }
+    const resultPromise = runSpawnSync(fakeSpawn, { command: '/bin/x', args: [], env: {}, maxBuffer: 1024, stdio: 'ignore' })
+    fakeChild.emit('close', 0, null)
+    const result = await resultPromise
+    expect(seenOptions[0]).toMatchObject({ stdio: 'ignore' })
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBeNull()
+    expect(result.stderr).toBeNull()
+  })
+
+  it('reports a spawn failure (a missing program) as .error, with no pid', async () => {
+    const result = await runSpawnSync(spawn, { command: 'git', args: ['--version'], env: {}, maxBuffer: 1024 * 1024 })
+    expect(result.status).toBeNull()
+    expect(result.error).toMatchObject({ code: 'ENOENT' })
+  })
+})
+
 describe.skipIf(!hasJspi)('spawn a WASI 0.2 component', () => {
   it('runs its jco output: stdin in, stdout and stderr out, a file through orivon.fs, and its exit', async () => {
     const child = spawn('/bin/tour')
@@ -205,9 +347,10 @@ describe.skipIf(!hasJspi)('execFile and exec', () => {
     expect(() => exec('/bin/echo | grep x')).toThrow(OrivonShimError)
   })
 
-  it('refuses the synchronous forms by name', () => {
-    expect(() => execFileSync()).toThrow(OrivonShimError)
-    expect(() => (childProcess as unknown as { spawnSync: () => void }).spawnSync()).toThrow(OrivonShimError)
+  it('refuses the synchronous forms by name outside a Worker with the synchronous channel', () => {
+    expect(() => execFileSync('/bin/echo')).toThrow(OrivonShimError)
+    expect(() => execFileSync('/bin/echo')).toThrow(/forked child or a worker_threads.Worker/)
+    expect(() => (childProcess as unknown as { spawnSync: (cmd: string) => void }).spawnSync('/bin/echo')).toThrow(OrivonShimError)
   })
 })
 

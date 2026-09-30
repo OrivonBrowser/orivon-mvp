@@ -71,6 +71,9 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 11. **A rule the owner states twice goes into the repository in the same session**: a hook, a
     guard or a line here, never only memory. Memory is keyed to the checkout path and stops
     loading after a move.
+12. If you create a PR, always ensure it has no merge conflicts and passes all tests
+13. Ask questions trough the tool, and never stop working until feedback/decision from owner is the only real bottleneck
+14. Merge PR's by yourself, unless owner decision is critical. This is preferred for faster development, 
 
 ## Commands
 

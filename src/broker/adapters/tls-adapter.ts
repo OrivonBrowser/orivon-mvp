@@ -14,12 +14,12 @@
 import { checkServerIdentity, connect as tlsConnect } from 'node:tls'
 import type { ConnectionOptions, PeerCertificate as NodePeerCertificate, TLSSocket } from 'node:tls'
 import { isIP } from 'node:net'
-import { Duplex } from 'node:stream'
 import type { SecureHandshake } from '../../contracts/index.js'
 import type { DialedSecureSocket, DialSecure, SecureDialOptions, SecureDialTarget } from '../broker-contracts.js'
 import { DIAL_TIMEOUT_MS, destroySocket } from './node-adapters.js'
 import { errnoOf, fail } from '../errors.js'
 import { toPeerCertificate } from './tls-peer-certificate.js'
+import { socketReadable, socketWritable } from './socket-streams.js'
 
 /**
  * The roots a dial trusts when the call supplies no `ca` of its own.
@@ -145,10 +145,15 @@ function dialOneSecure (connectOptions: ConnectionOptions, signal: AbortSignal):
     })
     socket.once('secureConnect', () => {
       settle()
-      const { readable, writable } = Duplex.toWeb(socket)
+      // A `TLSSocket` IS a `net.Socket` (this file's own header), so the same
+      // hand-written substitute for `Duplex.toWeb` that ../socket-streams.ts
+      // built for `dialOne`/`wrapAccepted` applies unchanged here: a TLS
+      // handle reads and writes through the same real `net.Socket` events,
+      // and carries the same nodejs/node#63761 crash risk without it. See
+      // ../socket-streams.ts's own header and README.md's Design notes.
       resolve({
-        readable: readable as ReadableStream<Uint8Array>,
-        writable: writable as WritableStream<Uint8Array>,
+        readable: socketReadable(socket),
+        writable: socketWritable(socket),
         remoteAddress: socket.remoteAddress ?? String(connectOptions.host),
         remotePort: socket.remotePort ?? connectOptions.port ?? 0,
         localAddress: socket.localAddress ?? '',

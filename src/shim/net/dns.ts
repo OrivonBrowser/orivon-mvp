@@ -187,12 +187,15 @@ function otherDnsPromisesMember (prop: string) {
 export const promises = refusingProxy({ lookup: lookupPromise }, otherDnsPromisesMember)
 
 /** Every other dns.* member -- `resolve4`, `resolve6`, `reverse`, `setServers`, ... -- is real Node dns surface this shim has not implemented and has not decided whether it will (compatibility-matrix.md Table 3), distinct from `lookup`/`promises.lookup` above, which are built. */
-function otherDnsMember (prop: string) {
+export function otherDnsMember (prop: string) {
   return refuseShim(
     `dns.${prop}`, 'unimplemented',
     `dns.${prop} is real Node dns surface this shim has not implemented and has not decided ` +
     'whether it will. See docs/planning/compatibility-matrix.md Table 3.'
   )
 }
+
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/dns.js'
 
 export default refusingProxy({ lookup, promises }, otherDnsMember)

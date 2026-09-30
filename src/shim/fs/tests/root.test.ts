@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../../contracts/capability-api.js'
 import { isRootPath } from '../root.js'
+import { VIRTUAL_ROOT } from '../../virtual-root.js'
 
 type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
@@ -189,11 +190,18 @@ describe('stat(\'.\')/readdir(\'.\') -- answered locally, never the broker\'s re
     await expect(promises.readFile('.')).rejects.toMatchObject({ code: 'EISDIR' })
   })
 
-  it('rm, unlink and rename of the root fail EACCES', async () => {
+  it('rm, rmdir, unlink and rename of the root fail EACCES', async () => {
     installRootRefusingOrivon()
     const { promises } = await import('../promises.js')
     await expect(promises.rm('.', { recursive: true })).rejects.toMatchObject({ code: 'EACCES', syscall: 'rm' })
+    await expect(promises.rmdir('.')).rejects.toMatchObject({ code: 'EACCES', syscall: 'rmdir' })
     await expect(promises.unlink('.')).rejects.toMatchObject({ code: 'EACCES', syscall: 'unlink' })
     await expect(promises.rename('.', 'x')).rejects.toMatchObject({ code: 'EACCES', syscall: 'rename' })
+  })
+
+  it('realpath(root) resolves to the virtual root locally, without ever calling orivon.fs', async () => {
+    installRootRefusingOrivon()
+    const { promises } = await import('../promises.js')
+    await expect(promises.realpath('.')).resolves.toBe(VIRTUAL_ROOT)
   })
 })

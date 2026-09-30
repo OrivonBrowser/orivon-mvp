@@ -26,6 +26,18 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Apps can show a website inside their own page: `<webview>` under a `web.embed` grant, with the app's script running first in every shown page.
 - A manifest can ask for cross-origin isolation, so a WebAssembly component built with threads gets `SharedArrayBuffer`.
 - Review of three merged PRs found five HIGH regressions; all fixed, with `.eth` gateways, favicons and the chrome lock hardened.
+- Merged favicon formats (#22) and `.eth` gateway reliability (#24); found and fixed a garbage-collection bug that silently killed apps' isolated web contexts.
+- Built `ipfs://`/`ipns://`, shown as addresses but served over HTTPS; protocols now register through one function in `src/protocols/` (ADR-0038).
+- Cut the instructions and docs every AI session reads by more than half, and turned repeated corrections into automatic checks.
+- WASI programs now run inside an app's tab over orivon.fs, via `require('wasi')`; 63 of 72 conformance programs pass.
+- `child_process` works for ported apps: `spawn` runs WebAssembly programs and `fork` runs app scripts, each in a Web Worker under the app's grants.
+- Native addons load as their WebAssembly builds through Node-API for WebAssembly; the `.node` machine code never runs.
+- A native addon reaches the app's files from a forked child of a cross-origin isolated app; that child's `fs.readFileSync` works too.
+- A spawned program can open sockets: WASI 0.2 components run from jco's output, their sockets reaching orivon.net under the app's grants.
+- Found and fixed: in Electron no accepted TCP connection ever reached an app. Listening apps and spawned daemons now receive them.
+- Real Rust programs and napi-rs addons, built outside the repo, now run on Orivon's WebAssembly hosts; testing them caught two gaps.
+- A real tokio program runs as a spawned component: timers, concurrent dials, a listener, UDP. Testing it found every tokio listen failing; fixed.
+- Published napi-rs WebAssembly packages run unchanged in isolated apps, threads included; `worker_threads` and `vm` now import instead of breaking builds.
 
 - Settings page at orivon://settings: a section per implemented feature, searchable, live-applied, remappable shortcuts, per-site zoom, local history, F12 on any tab.
 - Tabs reorder, tear off and move between windows; two tabs split side by side or stacked, with a divider and edge-drag to make one.
@@ -33,9 +45,15 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Two hostile reviews of that work found about twenty defects, from a leaked listener to history that could end the browser; all fixed with tests.
 - A whole-repository security audit's findings fixed: a site's grants work only in its own session, and the picker refuses the browser's data.
 - Tearing off a tab now previews where its window opens; Settings and History restyled; eight shell bugs from daily use fixed.
+- Ported Node code gets threads, synchronous file calls in workers, and children that outlive their tab; three reviews' findings fixed.
 - Volume Master works; link middle-clicks no longer crash; no white flashes; Settings updates live; extension popups close. Google sign-in still refused.
 - Google's sign-in pages now get a Firefox identity (headers, user agent, no userAgentData); untested against a real account until the owner tries it.
 
 ### In my head
+- Explored what `child_process` can safely mean: a WASI program in the app's own tab, native `subprocess` still excluded (`docs/planning/child-process-design.md`).
+- WASM compatibility explored: JSPI works in Electron 44, so a WASI host over orivon.* needs no contracts change; no port needs it yet (docs/planning/wasm-compatibility.md).
+- Audited how AI sessions spend their budget: most goes to very long sessions and a 700 KB questions file. Handoff written for Opus 5.5.
+- Direction: the wallet moves from OUT to IN; explored as three provider layers behind one registry, mnemonic first, reads through Helios (`docs/planning/wallet-system-exploration.md`).
+- Decided native modules, spawn and fork run only as WebAssembly under the broker; native machine code never runs for an app (ADR-0040).
 
 ### Non-repo

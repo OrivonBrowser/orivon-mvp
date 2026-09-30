@@ -7,6 +7,16 @@
 /** Where a Worker's orivon keeps its synchronous twin (orivon-client.ts). Registered, so each bundle's shim finds the same one. */
 export const SYNCHRONOUS = Symbol.for('orivon.synchronous')
 
+/**
+ * Where a Worker's orivon keeps child_process's synchronous spawn request
+ * (orivon-client.ts, orivon-server.ts). Not an orivon.* call -- spawnSync's
+ * grandchild runs on the SERVING side (the page, or a forked child serving
+ * its own thread), never the Worker that asked, so it is its own request
+ * kind over the same channel, not routed through SYNCHRONOUS's namespaces.
+ * Registered for the same reason SYNCHRONOUS is.
+ */
+export const SPAWN_SYNC = Symbol.for('orivon.spawnSync')
+
 const STATE = 0
 const CHUNK_LENGTH = 1
 const TOTAL_LENGTH = 2

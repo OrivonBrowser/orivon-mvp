@@ -8,15 +8,19 @@ import { instantiateFrom } from '../../../wasi-p2/tests/support/component-fixtur
 import type { ParentChannel } from '../../../worker/parent.js'
 import type { FromWorker, ToWorker } from '../../../worker/protocol.js'
 import { type ForkScope, runFork } from '../../../worker/runtime-fork.js'
+import { runThread } from '../../../worker/runtime-thread.js'
 import { runSpawn } from '../../../worker/runtime-spawn.js'
 
-/** What a forked module does, keyed by its URL; given the Worker's global scope. */
+/** What a forked module or a thread does, keyed by its URL; given the Worker's global scope. */
 export const forkModules = new Map<string, (scope: ForkScope) => void | Promise<void>>()
+export const threadModules = new Map<string, (scope: ForkScope) => void | Promise<void>>()
 
 export const workers: InProcessWorker[] = []
 
-/** Set to make the next Worker fail to construct, as a page whose CSP refuses one does. */
-export const failNext = { worker: false }
+/** Set to make the next Worker fail to construct, as a page whose CSP refuses one does; or the
+ * next real `postMessage` to it throw, as a non-cloneable value would from `launchChild()`'s own
+ * post to a real Worker (a case this fake, message-by-reference harness otherwise never hits). */
+export const failNext = { worker: false, postMessage: false }
 
 export class InProcessWorker {
   onmessage: ((event: { data: FromWorker }) => void) | null = null
@@ -32,10 +36,15 @@ export class InProcessWorker {
   }
 
   postMessage (message: ToWorker): void {
+    if (failNext.postMessage) {
+      failNext.postMessage = false
+      throw new DOMException('could not be cloned', 'DataCloneError')
+    }
     queueMicrotask(() => {
       if (this.terminated) return
       if (message.type === 'spawn') void runSpawn(message, this.#parent(), jspiWebAssembly, async (glue) => instantiateFrom(await (await fetch(glue)).text(), jspiWebAssembly))
       else if (message.type === 'fork') void runFork(message, this.#parent(), this.#scope, async (url) => { await forkModules.get(url)?.(this.#scope) })
+      else if (message.type === 'thread') void runThread(message, this.#parent(), this.#scope, async (url) => { await threadModules.get(url)?.(this.#scope) })
       else for (const handler of this.#handlers) handler(message)
     })
   }
@@ -44,7 +53,8 @@ export class InProcessWorker {
 
   #parent (): ParentChannel {
     return {
-      post: (message) => { queueMicrotask(() => { if (!this.terminated || message.type === 'exit') this.onmessage?.({ data: message }) }) },
+      // 'crash' and 'exit' still arrive even once terminated: an uncaught error posts 'crash' then closes the scope (setting terminated) in the same turn, just before 'exit'.
+      post: (message) => { queueMicrotask(() => { if (!this.terminated || message.type === 'exit' || message.type === 'crash') this.onmessage?.({ data: message }) }) },
       onMessage: (handler) => { this.#handlers.push(handler) }
     }
   }

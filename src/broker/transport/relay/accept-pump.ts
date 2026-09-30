@@ -95,7 +95,8 @@ export function createAcceptPump (options: AcceptPumpOptions): AcceptPump {
         // failure to an OrivonError via mapIoError before erroring this
         // controller -- nothing here needs a second mapping
         // (code-guidelines.md Rule 3), unlike port-pump.ts's own mapError,
-        // which sees a RAW stream error straight off Duplex.toWeb.
+        // which sees a RAW stream error straight off
+        // ../../adapters/socket-streams.ts's readable.
         stopped = true
         const code = isOrivonErrorLike(error) ? error.code : 'internal'
         sendEnd(code)

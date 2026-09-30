@@ -17,6 +17,7 @@ import type { WebContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishSenderAttributed } from '../registry.js'
 import { partitionForTarget } from '../shell/tab-view.js'
+import { isChildHostFor } from '../children/child-host.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
@@ -75,6 +76,8 @@ export const sessionAttributionSubsystem: Subsystem = {
 
     publishSenderAttributed(ctx, (sender, origin) => {
       const wc = sender as WebContents
+      // An app's own child host (ADR-0046) runs in a session of its own by design.
+      if (isChildHostFor(wc, origin)) return true
       // Cache-served origins are checked LIVE and STRICTLY, never through a
       // record: a pinned app's own bundle is only ever intercepted inside
       // its own partition (ADR-0007), so a document attributed to it must

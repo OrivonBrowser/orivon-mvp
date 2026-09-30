@@ -1389,17 +1389,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A287: A CommonJS `require()` of a shim module gets no named refusal **[AI-REC]**
-
-- **Question:** Refusal by name lives on each module's default export. A CommonJS dependency
-  bundled by esbuild 0.25 gets the ESM namespace from `require('os')`, where an unbuilt member
-  (`os.userInfo`) is `undefined`, called as a bare `TypeError`. Vite's and webpack's: unverified.
-- **Why it matters:** most Node dependencies are CommonJS, so a port sees `undefined is not a
-  function` with no name.
-- **Options:** export a refusing stand-in by name for each Node member a module lacks, generated
-  from Node's own export list (rec.); a CommonJS wrapper per module; accept it, as documented.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing: it degrades an error message, never a working call
 
 ### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
 
@@ -1453,6 +1442,18 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** add both with the store's first migration, when people ask for them (rec.); add them now.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A304: A82's reserved-port carve-out blocks a P2P app's own DNS-over-UDP **[OWNER]**
+
+- **Question:** `udp.send` reuses `checkConnect`, so a wildcard never reaches port 53 (A82), and a
+  manifest declares a wildcard host only as `*:*`. A program's own resolver works only when the
+  manifest names it (`1.1.1.1:53`); otherwise each query is dropped silently (A87).
+- **Why it matters:** correct as built, but a trap an app author cannot see, and `authorisedSend`
+  reusing `checkConnect` was never a logged decision.
+- **Options:** name the resolver's `host:53` (rec., no change); accept `*:53` as a declarable
+  pattern; exempt `udp.send` from A82; drop port 53 from `RESERVED_PORTS`.
+- **Who decides:** owner
+- **Blocks:** nothing; a manifest can name its resolver today
 
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 

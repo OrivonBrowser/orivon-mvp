@@ -3,6 +3,7 @@ import { createPortSink } from '../port-sink.js'
 import type { WriteAckMessage, WriteFailedMessage } from '../../../../contracts/ipc.js'
 import { CREDIT_COALESCE_BYTES, WRITE_HEARTBEAT_MS } from '../../../../contracts/ipc.js'
 import { tick } from '../../tests/ipc.test-helpers.js'
+import { WRITABLE_ALREADY_ENDED_CODE } from '../../../adapters/socket-streams.js'
 
 const HANDLE = 'handle-1'
 
@@ -262,11 +263,12 @@ describe('createPortSink -- errors from the underlying writable', () => {
 })
 
 describe('createPortSink -- the writable independently ending underneath a write (A69: peer FIN, allowHalfOpen: false)', () => {
-  it('maps the resulting AbortError to write-failed code closed, not internal, and does not fail the whole handle', async () => {
-    // The exact shape Node 24.11.1 produces for a write() issued after our
-    // own writable auto-ended on a peer FIN with allowHalfOpen: false --
-    // confirmed empirically against a real socket, not assumed.
-    const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError', code: 'ABORT_ERR' })
+  it('maps the resulting rejection to write-failed code closed, not internal, and does not fail the whole handle', async () => {
+    // The exact shape ../../../adapters/socket-streams.ts's write() rejects
+    // with when the underlying socket's writable side already auto-ended on
+    // a peer FIN (allowHalfOpen: false) -- that adapter's own up-front
+    // `socket.writable` check, not an inference from an error's shape.
+    const abortError = Object.assign(new Error('the writable already ended'), { code: WRITABLE_ALREADY_ENDED_CODE })
     const { writable, rejectNext } = controllableWritable()
     const send = vi.fn()
     const onSinkFailed = vi.fn()

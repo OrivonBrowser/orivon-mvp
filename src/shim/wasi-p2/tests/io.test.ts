@@ -2,7 +2,7 @@
 // convert, driven the way jco's glue calls them.
 
 import { describe, expect, it } from 'vitest'
-import { ResolvedNames, formatAddress, parseAddress, socketErrorCode } from '../addresses.js'
+import { ResolvedNames, formatAddress, parseAddress, reportedAddress, socketErrorCode } from '../addresses.js'
 import { ComponentExit, exit, monotonicClock } from '../basics.js'
 import { componentImports } from '../imports.js'
 import { CLOSED, InputStream, IoError, OutputStream, poll } from '../io.js'
@@ -100,6 +100,13 @@ describe('socket addresses', () => {
     expect(parseAddress('1:2:3:4:5:6:7:8:9')).toBeUndefined()
     expect(parseAddress('example.com')).toBeUndefined()
     expect(formatAddress({ tag: 'ipv6', val: [0x2001, 0xdb8, 0, 0, 0, 0, 0, 1] })).toBe('2001:db8:0:0:0:0:0:1')
+  })
+
+  it('reports an address of the socket\'s own family, the unspecified one when orivon.net answered the other', () => {
+    expect(reportedAddress('0.0.0.0', 4001, 'ipv6')).toEqual({ tag: 'ipv6', val: { port: 4001, flowInfo: 0, address: [0, 0, 0, 0, 0, 0, 0, 0], scopeId: 0 } })
+    expect(reportedAddress('::1', 4001, 'ipv4')).toEqual({ tag: 'ipv4', val: { port: 4001, address: [0, 0, 0, 0] } })
+    expect(reportedAddress('::1', 4001, 'ipv6').tag).toBe('ipv6')
+    expect(reportedAddress('127.0.0.1', 4001, 'ipv4').tag).toBe('ipv4')
   })
 
   it('maps orivon.net failures to socket error codes, the platform code first', () => {

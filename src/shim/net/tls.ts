@@ -151,10 +151,13 @@ export function connect (...args: readonly unknown[]): TLSSocket {
 
 export { checkServerIdentity }
 
-function otherTlsMember (prop: string): OrivonShimError {
+export function otherTlsMember (prop: string): OrivonShimError {
   return refuseShim(`tls.${prop}`, 'unimplemented',
     `tls.${prop} is real Node tls surface this shim has not implemented; tls.connect, TLSSocket and ` +
     'checkServerIdentity are built, over orivon.net.connectSecure. See docs/planning/compatibility-matrix.md Table 3.')
 }
+
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/tls.js'
 
 export default refusingProxy({ connect, TLSSocket, checkServerIdentity }, otherTlsMember)

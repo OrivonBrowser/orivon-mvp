@@ -6,8 +6,9 @@
 
 import { openHandle } from './handle.js'
 import {
-  doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRename, doRm, doStat, doUnlink, doWriteFile,
-  type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
+  doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRealpath, doRename, doRm, doRmdir, doStat,
+  doUnlink, doWriteFile,
+  type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmdirOptions, type RmOptions, type WriteFileOptions
 } from './core.js'
 import type { NodeDirent, NodeStats } from './stats.js'
 import { FS_CONSTANTS } from './constants.js'
@@ -15,6 +16,7 @@ import { encodingOf } from '../encoding.js'
 import type { PathLike } from './paths.js'
 import { refusingProxy } from '../unimplemented.js'
 import { refuseShim } from '../errors.js'
+import { Buffer } from 'buffer'
 
 
 async function readFile (path: PathLike, options?: ReadFileOptions | string): Promise<Uint8Array | string> {
@@ -56,6 +58,16 @@ async function unlink (path: PathLike): Promise<void> {
   await doUnlink(path)
 }
 
+async function rmdir (path: PathLike, opts?: RmdirOptions): Promise<void> {
+  await doRmdir(path, opts)
+}
+
+/** `encoding: 'buffer'` returns the path as a Buffer, same shorthand fs/fs.ts's callback/sync realpath share. */
+async function realpath (path: PathLike, options?: { encoding?: string | null } | string | null): Promise<string | Buffer> {
+  const result = await doRealpath(path)
+  return encodingOf(options) === 'buffer' ? Buffer.from(result) : result
+}
+
 /** `mode` is accepted for Node signature parity; doAccess's own header says why it cannot be distinguished. */
 async function access (path: PathLike, _mode?: number): Promise<void> {
   await doAccess(path)
@@ -77,6 +89,8 @@ export const promises = refusingProxy({
   appendFile,
   rename,
   unlink,
+  rmdir,
+  realpath,
   mkdir,
   readdir,
   stat,
@@ -88,6 +102,6 @@ export const promises = refusingProxy({
 
 // The `fs/promises` module target (module-map.ts) is this file itself: the
 // same object as fs.promises, as default export and as named members.
-export { openHandle as open, access, readFile, writeFile, appendFile, rename, unlink, mkdir, readdir, stat, rm }
+export { openHandle as open, access, readFile, writeFile, appendFile, rename, unlink, rmdir, realpath, mkdir, readdir, stat, rm }
 export const constants = FS_CONSTANTS
 export default promises

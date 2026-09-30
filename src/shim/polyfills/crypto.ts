@@ -18,6 +18,9 @@ export const subtle = globalThis.crypto.subtle
 export function getRandomValues<T extends ArrayBufferView<ArrayBuffer>> (array: T): T { return globalThis.crypto.getRandomValues(array) }
 export function randomUUID (): string { return globalThis.crypto.randomUUID() }
 
+// A287: the named-export gaps a bundled CommonJS require()'s namespace needs.
+export * from './generated/crypto.js'
+
 export default nodeModule('crypto', {
   ...cryptoBrowserify, webcrypto, subtle, getRandomValues, randomUUID
 })

@@ -7,7 +7,7 @@
 
 import type { CallBody, HandleDescriptor, Request, ServerMessage } from './orivon-server.js'
 import type { WireError } from './protocol.js'
-import { SYNCHRONOUS, awaitReply, createChannelBuffer, decodeReply, hasSharedMemory } from './sync-channel.js'
+import { SPAWN_SYNC, SYNCHRONOUS, awaitReply, createChannelBuffer, decodeReply, hasSharedMemory } from './sync-channel.js'
 
 interface Pending { resolve: (value: unknown) => void, reject: (error: unknown) => void }
 
@@ -131,28 +131,43 @@ export function createOrivonClient (port: MessagePort, activity?: ClientActivity
   }
 
   const synchronous = hasSharedMemory() ? namespaces((name, member) => (...args: unknown[]) => callSync({ path: [name, member], args })) : undefined
+  /** Set only where a Worker can block (hasSharedMemory()): child_process.spawnSync's own route, over the same channel, never an orivon.* path. */
+  const spawnSync = hasSharedMemory() ? (payload: unknown) => callSync({ spawnSync: payload }) : undefined
 
   return namespaces((name, member) => {
     if (name === 'fs' && member === 'readFileSync') return synchronous === undefined ? syncUnavailable : (path: string) => callSync({ path: ['fs', 'readFile'], args: [path] })
     return async (...args: unknown[]) => await call({ path: [name, member], args })
-  }, synchronous)
+  }, synchronous, spawnSync)
+}
+
+/**
+ * A trap that reports whatever `get` answers as an own property: a spawn made
+ * from inside a Worker serves this object to its own child, and
+ * orivon-server.ts's serveOrivon finds a method only among an object's own
+ * properties.
+ */
+function ownFromGet (read: (key: string) => unknown): Pick<ProxyHandler<object>, 'getOwnPropertyDescriptor'> {
+  return {
+    getOwnPropertyDescriptor: (_target, key) => {
+      const value = typeof key === 'string' ? read(key) : undefined
+      return value === undefined ? undefined : { value, writable: false, enumerable: true, configurable: true }
+    }
+  }
 }
 
 /** An orivon-shaped object whose every `orivon.<name>.<member>` is `method(name, member)`. */
-function namespaces (method: (name: string, member: string) => unknown, synchronous?: object): Record<string, unknown> {
-  const namespace = (name: string): object => new Proxy({}, {
-    get: (_target, member) => {
-      // Never a thenable, a primitive or anything awaited by accident.
-      if (typeof member !== 'string' || member === 'then') return undefined
-      return method(name, member)
-    }
-  })
-  return new Proxy({}, {
-    get: (_target, name) => {
-      if (name === SYNCHRONOUS) return synchronous
-      if (typeof name !== 'string' || name === 'then') return undefined
-      if (name === 'version') return 0
-      return namespace(name)
-    }
-  }) as Record<string, unknown>
+function namespaces (method: (name: string, member: string) => unknown, synchronous?: object, spawnSync?: (payload: unknown) => unknown): Record<string, unknown> {
+  const namespace = (name: string): object => {
+    // Never a thenable, a primitive or anything awaited by accident.
+    const member = (key: string | symbol): unknown => typeof key !== 'string' || key === 'then' ? undefined : method(name, key)
+    return new Proxy({}, { get: (_target, key) => member(key), ...ownFromGet(member) })
+  }
+  const top = (name: string | symbol): unknown => {
+    if (name === SYNCHRONOUS) return synchronous
+    if (name === SPAWN_SYNC) return spawnSync
+    if (typeof name !== 'string' || name === 'then') return undefined
+    if (name === 'version') return 0
+    return namespace(name)
+  }
+  return new Proxy({}, { get: (_target, name) => top(name), ...ownFromGet(top) }) as Record<string, unknown>
 }
