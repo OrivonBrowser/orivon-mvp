@@ -22,17 +22,17 @@ async function findChromeRetrying (app: import('playwright').ElectronApplication
   return findChrome(app)
 }
 
-async function startHeaderServer (): Promise<{ port: number, close: () => void, lastHeaders: () => http.IncomingHttpHeaders | undefined }> {
+async function startHeaderServer (): Promise<{ port: number, close: () => void, documentHeaders: () => http.IncomingHttpHeaders | undefined }> {
   let last: http.IncomingHttpHeaders | undefined
   const server = http.createServer((req, res) => {
-    last = req.headers
+    if (req.url === '/') last = req.headers
     res.setHeader('content-type', 'text/html')
     res.end('<!doctype html><title>fixture</title><body>fixture-ok</body>')
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   const port = typeof address === 'object' && address !== null ? address.port : 0
-  return { port, close: () => { server.close() }, lastHeaders: () => last }
+  return { port, close: () => { server.close() }, documentHeaders: () => last }
 }
 
 async function navigate (chrome: any, url: string): Promise<void> {
@@ -48,15 +48,16 @@ async function navigate (chrome: any, url: string): Promise<void> {
 async function pageReport (tab: any): Promise<{ userAgent: string, hasUserAgentData: boolean }> {
   return await tab.evaluate(() => ({
     userAgent: navigator.userAgent,
-    hasUserAgentData: (navigator as any).userAgentData !== undefined
+    hasUserAgentData: 'userAgentData' in navigator
   }))
 }
 
 describe('the Firefox sign-in identity, against local fixtures only', () => {
-  // Covers src/main/shell/sign-in-identity-tab.ts's navigator.userAgent
-  // swap only. Its own header names two known gaps this test does not
-  // cover: the request header itself, and navigator.userAgentData.
-  it('gives the configured host a Firefox navigator.userAgent, and leaves an unlisted host on Chrome', async () => {
+  // The three parts of the identity: the request headers
+  // (sign-in-identity-headers.ts), navigator.userAgent
+  // (sign-in-identity-tab.ts) and the absence of navigator.userAgentData
+  // (src/preload/sign-in-identity.ts), and their absence off the host.
+  it('gives the configured host Firefox headers, navigator.userAgent and no userAgentData, and leaves an unlisted host on Chrome', async () => {
     const signInFixture = await startHeaderServer()
     const plainFixture = await startHeaderServer()
     const app = await launchElectron({
@@ -70,25 +71,38 @@ describe('the Firefox sign-in identity, against local fixtures only', () => {
     try {
       const chrome = await findChromeRetrying(app)
 
-      await navigate(chrome, `http://127.0.0.1:${signInFixture.port}/`)
-      const onSignInHost = await waitFor(async () => app.windows().some((w: any) => w.url().includes(String(signInFixture.port))))
-      expect(onSignInHost).toBe(true)
-      const signInTab = app.windows().find((w: any) => w.url().includes(String(signInFixture.port)))
-      if (signInTab === undefined) throw new Error('sign-in fixture tab not found')
-      const signInReport = await pageReport(signInTab)
-
-      expect(signInReport.userAgent).toMatch(/^Mozilla\/5\.0 \(.+\) Gecko\/20100101 Firefox\/\d+\.\d+$/)
-      expect(signInReport.userAgent).not.toMatch(/chrome/i)
-
+      // An unlisted host first, so its request headers are not touched by a
+      // tab that has been on a sign-in host.
       await navigate(chrome, `http://127.0.0.1:${plainFixture.port}/`)
-      const onPlainHost = await waitFor(async () => app.windows().some((w: any) => w.url().includes(String(plainFixture.port))))
-      expect(onPlainHost).toBe(true)
+      expect(await waitFor(async () => app.windows().some((w: any) => w.url().includes(String(plainFixture.port))))).toBe(true)
       const plainTab = app.windows().find((w: any) => w.url().includes(String(plainFixture.port)))
       if (plainTab === undefined) throw new Error('plain fixture tab not found')
       const plainReport = await pageReport(plainTab)
-
       expect(plainReport.userAgent).toMatch(/Chrome\/\d+\.0\.0\.0/)
       expect(plainReport.userAgent).not.toMatch(/firefox/i)
+      expect(plainReport.hasUserAgentData).toBe(true)
+      expect(plainFixture.documentHeaders()?.['user-agent']).toMatch(/Chrome\/\d+\.0\.0\.0/)
+
+      await navigate(chrome, `http://127.0.0.1:${signInFixture.port}/`)
+      expect(await waitFor(async () => app.windows().some((w: any) => w.url().includes(String(signInFixture.port))))).toBe(true)
+      const signInTab = app.windows().find((w: any) => w.url().includes(String(signInFixture.port)))
+      if (signInTab === undefined) throw new Error('sign-in fixture tab not found')
+      const signInReport = await pageReport(signInTab)
+      expect(signInReport.userAgent).toMatch(/^Mozilla\/5\.0 \(.+\) Gecko\/20100101 Firefox\/\d+\.\d+$/)
+      expect(signInReport.userAgent).not.toMatch(/chrome/i)
+      expect(signInReport.hasUserAgentData).toBe(false)
+      const signInHeaders = signInFixture.documentHeaders()
+      expect(signInHeaders?.['user-agent']).toMatch(/^Mozilla\/5\.0 \(.+\) Gecko\/20100101 Firefox\/\d+\.\d+$/)
+      expect(Object.keys(signInHeaders ?? {}).filter((name) => name.startsWith('sec-ch-ua'))).toEqual([])
+
+      // Leaving the host restores the page-visible identity.
+      await navigate(chrome, `http://127.0.0.1:${plainFixture.port}/?again=1`)
+      expect(await waitFor(async () => {
+        const tab = app.windows().find((w: any) => w.url().includes('again=1'))
+        return tab !== undefined && (await pageReport(tab)).userAgent.includes('Chrome/')
+      })).toBe(true)
+      const restoredTab = app.windows().find((w: any) => w.url().includes('again=1'))
+      expect((await pageReport(restoredTab)).hasUserAgentData).toBe(true)
     } finally {
       signInFixture.close()
       plainFixture.close()

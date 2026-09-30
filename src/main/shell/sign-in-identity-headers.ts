@@ -17,9 +17,10 @@ const SIGN_IN_HEADERS_ORDER = 0
 
 /** Only requests addressed to a sign-in host reach the handler: a listener
  * with a wider filter puts every request of every site through the main
- * process. */
+ * process. A match pattern cannot carry a port, so a test host's port is
+ * dropped here and the handler's own exact check on `host` keeps it. */
 export function signInHeaderFilter (hosts: readonly string[]): { urls: string[] } {
-  return { urls: hosts.map((host) => `*://${host}/*`) }
+  return { urls: [...new Set(hosts.map((host) => `*://${host.replace(/:\d+$/, '')}/*`))] }
 }
 
 /** Registers on the owner for `target`, never on `target.webRequest`: Electron

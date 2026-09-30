@@ -20,9 +20,9 @@ describe('firefoxIdentityHeaders', () => {
 })
 
 describe('signInHeaderFilter', () => {
-  it('names each host with any scheme, and nothing wider', () => {
+  it('names each host with any scheme, without a port a match pattern cannot carry, and nothing wider', () => {
     expect(signInHeaderFilter(['accounts.google.com', '127.0.0.1:5000'])).toEqual({
-      urls: ['*://accounts.google.com/*', '*://127.0.0.1:5000/*']
+      urls: ['*://accounts.google.com/*', '*://127.0.0.1/*']
     })
   })
 })

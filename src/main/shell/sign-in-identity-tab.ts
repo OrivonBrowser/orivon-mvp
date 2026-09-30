@@ -17,11 +17,17 @@ import { firefoxUserAgent, isSignInHost } from './sign-in-identity.js'
 import { resolveSignInHosts } from './sign-in-identity-test-seam.js'
 
 /** Wires one webContents's main-frame navigations to swap identity on the
- * way in and restore it on the way out. `did-start-navigation`, not
- * `will-navigate`: the latter fires only for a renderer-initiated,
- * cancelable navigation (a clicked link or a form submit), missing a
- * redirect, a programmatic `loadURL`, or history navigation -- exactly the
- * ways a real sign-in flow (or an OAuth popup) moves between these hosts.
+ * way in and restore it on the way out. Three events, because each catches
+ * a way a sign-in flow moves between these hosts and none catches all:
+ * `will-navigate` (a clicked link or form submit) and `will-redirect` (a
+ * server redirect) both fire BEFORE the request goes out, so the User-Agent
+ * of that request already carries the new identity; `did-start-navigation`
+ * also covers a programmatic `loadURL` and history navigation, but
+ * `setUserAgent` called from it lands after the navigation's own request
+ * headers are fixed. Requests to a sign-in host are corrected at the network
+ * layer regardless (./sign-in-identity-headers.ts); the first request of a
+ * navigation that starts elsewhere from a `loadURL` while the tab is on a
+ * sign-in host still leaves with the Firefox User-Agent.
  *
  * Both UA strings are built lazily, inside the handler, and only on an
  * actual CHANGE of state -- never at wire time, and never on a navigation
@@ -38,11 +44,10 @@ import { resolveSignInHosts } from './sign-in-identity-test-seam.js'
 export function wireSignInIdentity (webContents: WebContents): void {
   const hosts = resolveSignInHosts()
   let usingFirefoxIdentity = false
-  webContents.on('did-start-navigation', (details) => {
-    if (!details.isMainFrame || details.isSameDocument) return
+  const follow = (url: string): void => {
     let host: string
     try {
-      host = new URL(details.url).host
+      host = new URL(url).host
     } catch {
       return
     }
@@ -52,5 +57,10 @@ export function wireSignInIdentity (webContents: WebContents): void {
       ? firefoxUserAgent(process.platform)
       : chromeUserAgent(process.versions.chrome, process.platform))
     usingFirefoxIdentity = shouldUseFirefox
+  }
+  webContents.on('will-navigate', (details) => { if (details.isMainFrame) follow(details.url) })
+  webContents.on('will-redirect', (details) => { if (details.isMainFrame) follow(details.url) })
+  webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) follow(details.url)
   })
 }
