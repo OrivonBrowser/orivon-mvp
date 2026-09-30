@@ -3,7 +3,7 @@
 import { h } from '../../shared/dom.js'
 import { internalBridge } from '../../shared/bridge.js'
 import { closeIcon, fileIcon } from '../../shared/icons.js'
-import { addPage, focusAfterRemove, joinPages, PROBLEM_ADDRESS, PROBLEM_FULL, removePage, shorten, splitPages } from './page-list-model.js'
+import { addPage, focusAfterRemove, joinPages, MAX_PAGES, NOTE_NONE_OPEN, PLACEHOLDER_ADD, PLACEHOLDER_FULL, PROBLEM_ADDRESS, PROBLEM_FULL, PROBLEM_SAVE, PROBLEM_UNAVAILABLE, removePage, shorten, splitPages } from './page-list-model.js'
 import type { Control } from '../model.js'
 import type { SettingsState } from '../state.js'
 
@@ -36,42 +36,77 @@ const views = new Map<string, PageListView>()
 
 function createView (control: PageListControl, state: SettingsState): PageListView {
   let pages: readonly string[] = []
-  const save = (next: string[]): Promise<string | null> => state.set(control.key, joinPages(next))
+  /** Why the list was not kept, or null once it is. A refused write and a failed request read alike to the person. */
+  const save = async (next: string[]): Promise<string | null> => {
+    try {
+      return await state.set(control.key, joinPages(next)) === null ? null : PROBLEM_SAVE
+    } catch {
+      return PROBLEM_SAVE
+    }
+  }
 
   const list = h('div', { className: 'page-list-rows' })
-  const field = h('input', { className: 'text page-list-field', type: 'text', placeholder: 'Add a page, like example.com', maxLength: 2048, autocomplete: 'off', spellcheck: false })
+  const field = h('input', { className: 'text page-list-field', type: 'text', placeholder: PLACEHOLDER_ADD, maxLength: 2048, autocomplete: 'off', spellcheck: false })
   field.setAttribute('aria-label', 'Add a page')
   // The draft lives in this node, so a redraw may happen at any time; the page hands the keyboard back to it.
   field.dataset['settled'] = 'true'
   const problem = h('p', { className: 'problem', role: 'alert' })
-  const say = (message: string): void => {
+  /** A message under the field; `invalid` marks the field as the cause. */
+  const say = (message: string, invalid = message !== ''): void => {
     problem.textContent = message
-    field.setAttribute('aria-invalid', message === '' ? 'false' : 'true')
+    field.setAttribute('aria-invalid', invalid ? 'true' : 'false')
   }
 
   const add = async (): Promise<void> => {
     const text = field.value.trim()
     if (text === '') return
-    const address = await validate(text)
+    let address: string | null
+    try {
+      address = await validate(text)
+    } catch {
+      say(PROBLEM_UNAVAILABLE, false)
+      return
+    }
     if (address === null) { say(PROBLEM_ADDRESS); return }
     const outcome = addPage(pages, address)
     if (outcome.kind === 'full') { say(PROBLEM_FULL); return }
+    if (outcome.kind === 'duplicate') { say(''); field.value = ''; return }
+    // A full list has no field to come back to: focus its last row instead.
+    focusNext = outcome.pages.length >= MAX_PAGES ? { kind: 'remove', index: MAX_PAGES - 1 } : { kind: 'field' }
+    const refused = await save(outcome.pages)
+    if (refused !== null) {
+      // The typed address stays, and what to do with it is said.
+      focusNext = null
+      say(refused, false)
+      return
+    }
     say('')
     field.value = ''
-    if (outcome.kind === 'duplicate') return
-    focusNext = { kind: 'field' }
-    await save(outcome.pages)
   }
   field.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); void add() } })
   field.addEventListener('input', () => { if (problem.textContent !== '') say('') })
-  const addButton = h('button', { type: 'button', className: 'btn small', textContent: 'Add', onclick: () => { void add() } })
+  const addButton = h('button', { type: 'button', className: 'btn', textContent: 'Add', onclick: () => { void add() } })
 
-  const useOpen = h('button', { type: 'button', className: 'link-btn', textContent: 'Use the pages open now', disabled: true })
-  // Enabled once main says there is something to take: a Settings tab alone has nothing.
-  void pagesOpenNow().then((open) => {
-    useOpen.disabled = open.length === 0
-    useOpen.onclick = () => { focusNext = { kind: 'field' }; void save(open) }
-  }).catch(() => {})
+  // The pages are read when the button is pressed, not when Settings opened: tabs come and go in between. A
+  // Settings tab alone has nothing to take, which is said instead of the button being switched off for good.
+  const useOpen = h('button', {
+    type: 'button',
+    className: 'link-btn',
+    textContent: 'Use the pages open now',
+    onclick: () => {
+      void (async () => {
+        try {
+          const open = await pagesOpenNow()
+          if (open.length === 0) { say(NOTE_NONE_OPEN, false); return }
+          focusNext = { kind: 'field' }
+          const refused = await save(open)
+          if (refused !== null) { focusNext = null; say(refused, false) } else say('')
+        } catch {
+          say(PROBLEM_UNAVAILABLE, false)
+        }
+      })()
+    }
+  })
 
   const root = h('div', { className: 'page-list' }, list, h('div', { className: 'page-list-add' }, field, addButton), problem, useOpen)
 
@@ -104,6 +139,11 @@ function createView (control: PageListControl, state: SettingsState): PageListVi
       if (list.childElementCount > 0 && joinPages(next) === joinPages(pages)) return
       pages = next
       list.replaceChildren(rowsFor())
+      // A full list takes no more: say so before anything is typed, rather than after it is submitted.
+      const full = pages.length >= MAX_PAGES
+      field.disabled = full
+      addButton.disabled = full
+      field.placeholder = full ? PLACEHOLDER_FULL : PLACEHOLDER_ADD
     }
   }
 }

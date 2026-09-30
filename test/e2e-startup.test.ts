@@ -296,10 +296,10 @@ it('takes the pages open now, leaves out Settings, and refuses a ninth page', as
     // A change from elsewhere waits while the field has focus, as a draft in it would be lost.
     await settings.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur() })
     await settings.waitForFunction(() => document.querySelectorAll('.page-list-item').length === 8)
-    await settings.fill('#row-startup-pages .page-list-field', 'ninth.example')
-    await settings.press('#row-startup-pages .page-list-field', 'Enter')
-    await settings.waitForFunction(() => (document.querySelector('#row-startup-pages .problem')?.textContent ?? '') !== '')
-    expect(await settings.textContent('#row-startup-pages .problem')).toBe('You can open up to 8 pages at start-up')
+    // A full list says so before anything is typed: the field and Add are off, with the limit in the field.
+    expect(await settings.isDisabled('#row-startup-pages .page-list-field')).toBe(true)
+    expect(await settings.isDisabled('#row-startup-pages .page-list-add .btn')).toBe(true)
+    expect(await settings.getAttribute('#row-startup-pages .page-list-field', 'placeholder')).toBe('You can open up to 8 pages')
     expect(await items(settings)).toEqual(eight)
     await shoot(settings, 'settings-startup-pages-full')
   } finally {
@@ -307,13 +307,22 @@ it('takes the pages open now, leaves out Settings, and refuses a ninth page', as
   }
 }, TEST_TIMEOUT_MS)
 
-it('disables "Use the pages open now" when no web page is open', async () => {
+it('says so when no web page is open, and takes one opened after Settings was', async () => {
   const { app, chrome } = await launchShell({ seedProfile: seed({ settings: { 'startup.mode': 'pages' } }) })
   try {
     const settings = await openSettings(app, chrome)
-    await settings.waitForSelector('#row-startup-pages .link-btn')
-    await delay(ABSENCE_SETTLE_MS)
-    expect(await settings.isDisabled('#row-startup-pages .link-btn')).toBe(true)
+    const use = '#row-startup-pages .link-btn'
+    await settings.waitForSelector(use)
+    await settings.click(use)
+    await settings.waitForFunction(() => (document.querySelector('#row-startup-pages .problem')?.textContent ?? '') !== '')
+    expect(await settings.textContent('#row-startup-pages .problem')).toBe('No other pages are open right now.')
+    expect(await items(settings)).toEqual([])
+    // The list is read when the button is pressed: a page opened since Settings did is taken.
+    await newTab(chrome, url('late'))
+    await waitFor(async () => (await titles(chrome)).includes('page late'))
+    await settings.evaluate((selector) => { document.querySelector<HTMLButtonElement>(selector)?.click() }, use)
+    await settings.waitForFunction(() => document.querySelectorAll('.page-list-item').length === 1)
+    expect(await items(settings)).toEqual([url('late')])
   } finally {
     await closeElectron(app)
   }
