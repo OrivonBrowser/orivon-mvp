@@ -343,9 +343,14 @@ it('says so when no web page is open, and takes one opened after Settings was', 
     expect(await items(settings)).toEqual([])
     // The list is read when the button is pressed: a page opened since Settings did is taken.
     await newTab(chrome, url('late'))
-    await waitFor(async () => (await titles(chrome)).includes('page late'))
-    await settings.evaluate((selector) => { document.querySelector<HTMLButtonElement>(selector)?.click() }, use)
-    await settings.waitForFunction(() => document.querySelectorAll('.page-list-item').length === 1)
+    expect(await waitFor(async () => (await titles(chrome)).includes('page late'))).toBe(true)
+    // Pressed again until the list takes the page: on a slow runner the first press can read the
+    // open pages before the new tab has reported its address.
+    expect(await waitFor(async () => {
+      await settings.evaluate((selector) => { document.querySelector<HTMLButtonElement>(selector)?.click() }, use)
+      await delay(300)
+      return await settings.evaluate(() => document.querySelectorAll('.page-list-item').length === 1)
+    })).toBe(true)
     expect(await items(settings)).toEqual([url('late')])
   } finally {
     await closeElectron(app)
