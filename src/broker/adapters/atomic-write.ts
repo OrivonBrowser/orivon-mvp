@@ -30,11 +30,14 @@ const tmpPathFor = (path: string): string => `${path}.${String(process.pid)}.tmp
  * dies mid-write can leave `path` truncated, and the old contents are gone
  * either way. A write that can only ever land whole, or not at all, is what
  * keeps a crash from destroying what was there before.
+ *
+ * `mode` is the permission bits the new file is created with, so a file that must not be world-readable never
+ * is, not even for the moment before a later chmod.
  */
-export function writeFileAtomic (path: string, text: string): void {
+export function writeFileAtomic (path: string, text: string, mode?: number): void {
   const tmp = tmpPathFor(path)
   try {
-    const fd = openSync(tmp, 'w')
+    const fd = openSync(tmp, 'w', mode)
     try {
       writeFileSync(fd, text)
       fsyncSync(fd)

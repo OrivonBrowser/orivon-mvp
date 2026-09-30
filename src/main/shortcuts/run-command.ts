@@ -127,7 +127,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'bookmarks.toggleBar': toggleBookmarksBar(services); return
     case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
     case 'settings.open': tabs.openInternal('settings'); return
-    case 'passwords.open': return
+    case 'passwords.open': tabs.openInternal('settings', '/passwords'); return
     case 'siteSettings.open': return
     case 'about.open': tabs.openInternal('about'); return
     case 'extensions.open': tabs.openInternal('extensions'); return

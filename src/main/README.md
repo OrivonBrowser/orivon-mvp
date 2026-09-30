@@ -28,7 +28,7 @@ rather than editing here.
 | [`history/`](history/) | The pages that were visited, kept on this computer and forgotten on request | `history.db` on disk | `attach-history.ts` and `install-history.ts` only |
 | [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |
 | [`site-settings/`](site-settings/) | What a site may do: per-site permissions, content settings and the prompt that asks | no | the installers only |
-| [`passwords/`](passwords/) | The saved-login store and the form watcher that feeds it | no | the installer only |
+| [`passwords/`](passwords/) | The saved-login store, its Settings domain and the form watcher that feeds it | yes: `passwords.json` | the installer and the runner only |
 | [`auth/`](auth/) | The sign-in sheets an HTTP server asks for and the certificates a connection shows | no | the installer only |
 | [`os/`](os/) | What the operating system is told about Orivon: links from other programs, the default-browser registration, shortcuts, sharing | no | the installer only |
 | [`autofill/`](autofill/) | Saved postal addresses and the chooser that fills a form from them | no | the installer only |

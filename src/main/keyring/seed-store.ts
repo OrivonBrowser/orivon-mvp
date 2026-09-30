@@ -26,7 +26,7 @@ export interface SafeStorageLike {
  * a name this file has never heard of -- is treated as a real keyring:
  * failing open here would mean failing OPEN on which backends persist a
  * plaintext-adjacent secret, the wrong direction for this decision. */
-const NO_REAL_KEYRING = new Set(['basic_text', 'unknown'])
+export const NO_REAL_KEYRING = new Set(['basic_text', 'unknown'])
 
 /** What a private session stores its identity with: nothing that outlives it. `SeedStore` reads it as "no keyring is reachable",
  * so the seed is made fresh in memory, never written down, and `orivon.secrets.available()` is false. */

@@ -355,4 +355,10 @@ describe('runCommand', () => {
     runCommand('downloads.open', target, deps)
     expect(calls['openInternal']).toHaveBeenCalledWith('downloads')
   })
+
+  it('opens Settings at its Passwords section', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('passwords.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('settings', '/passwords')
+  })
 })

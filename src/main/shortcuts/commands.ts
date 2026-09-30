@@ -96,7 +96,7 @@ export const COMMANDS = [
   { id: 'window.fullscreen', label: 'Full screen', category: 'window', default: 'F11', macDefault: 'Ctrl+Meta+F' },
   { id: 'window.alwaysOnTop', label: 'Keep window on top', category: 'window' },
   { id: 'settings.open', label: 'Open Settings', category: 'window', default: 'Mod+,' },
-  { id: 'passwords.open', label: 'Passwords', category: 'window', pending: true },
+  { id: 'passwords.open', label: 'Passwords', category: 'window' },
   { id: 'siteSettings.open', label: 'Site settings', category: 'window', pending: true },
   { id: 'extensions.open', label: 'Extensions', category: 'window' },
   { id: 'import.open', label: 'Import bookmarks and history', category: 'window', pending: true },
