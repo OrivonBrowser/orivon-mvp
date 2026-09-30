@@ -11,11 +11,12 @@
 // net/socket.ts's: readable-stream 3 defaults autoDestroy to false.
 
 import { Readable, type Duplex } from 'stream'
-import type { ParsedResponseHead } from './parser.js'
+import { combineHeaders, type ParsedResponseHead } from './parser.js'
+import type { ParsedRequestHead } from './request-parser.js'
 
 type ResponseSocket = Duplex & {
-  remoteAddress?: string
-  remotePort?: number
+  remoteAddress?: string | undefined
+  remotePort?: number | undefined
   setTimeout?: (msecs: number, callback?: () => void) => unknown
 }
 
@@ -37,6 +38,8 @@ export class IncomingMessage extends Readable {
   /** The net.Socket (a TLSSocket for https) this response arrived over. */
   socket: ResponseSocket | null
   req: unknown = null
+  /** Set by the first `_read()`; the server dumps a body nobody consumed once its response is done. */
+  _consuming = false
 
   constructor (socket: ResponseSocket | null = null) {
     super({ autoDestroy: true, emitClose: true })
@@ -46,6 +49,7 @@ export class IncomingMessage extends Readable {
   get connection (): ResponseSocket | null { return this.socket }
 
   override _read (): void {
+    this._consuming = true
     // An upgrade response owns no bytes: its socket now belongs to whoever
     // took the 'upgrade' event, and resuming it here would drop their data.
     if (!this.upgrade) this.socket?.resume()
@@ -62,6 +66,29 @@ export class IncomingMessage extends Readable {
     this.headers = head.headers
     this.rawHeaders = head.rawHeaders
   }
+
+  /** http/server-connection.ts calls this once, when the parser finishes a request line and headers. */
+  _setRequestHead (head: ParsedRequestHead): void {
+    this.method = head.method
+    this.url = head.url
+    this.httpVersion = head.httpVersion
+    const [major, minor] = head.httpVersion.split('.')
+    this.httpVersionMajor = Number(major)
+    this.httpVersionMinor = Number(minor)
+    this.headers = head.headers
+    this.rawHeaders = head.rawHeaders
+  }
+
+  _setTrailers (lines: readonly string[]): void {
+    const { headers, rawHeaders } = combineHeaders(lines)
+    this.trailers = headers as Record<string, string>
+    this.rawTrailers = rawHeaders
+  }
+
+  /** Every header name with all its values, in arrival order, as Node's `headersDistinct`. */
+  get headersDistinct (): Record<string, string[]> { return distinct(this.rawHeaders) }
+
+  get trailersDistinct (): Record<string, string[]> { return distinct(this.rawTrailers) }
 
   /** False once the consumer is behind: the caller pauses the socket until `_read` resumes it. */
   _pushBody (chunk: Uint8Array): boolean {
@@ -91,11 +118,22 @@ export class IncomingMessage extends Readable {
    * never attached a handler to from throwing an uncaught 'aborted'.
    */
   override _destroy (error: Error | null, callback: (error?: Error | null) => void): void {
-    if (!this.complete) {
+    // A message whose end was never read counts as aborted even when all of it arrived, as in Node.
+    const state = this as unknown as { _readableState?: { endEmitted?: boolean } }
+    if (!this.complete || state._readableState?.endEmitted !== true) {
       this.aborted = true
       this.emit('aborted')
       if (this.socket !== null && !this.socket.destroyed) this.socket.destroy()
     }
     callback(this.listenerCount('error') > 0 ? error : null)
   }
+}
+
+function distinct (raw: readonly string[]): Record<string, string[]> {
+  const out: Record<string, string[]> = Object.create(null) as Record<string, string[]>
+  for (let i = 0; i + 1 < raw.length; i += 2) {
+    const name = (raw[i] ?? '').toLowerCase()
+    ;(out[name] ??= []).push(raw[i + 1] ?? '')
+  }
+  return out
 }
