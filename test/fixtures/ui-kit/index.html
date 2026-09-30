@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UI kit</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/fixture.css">
+</head>
+<body>
+<main class="page">
+  <h1>UI kit</h1>
+
+  <section class="card" id="buttons">
+    <h2>Buttons</h2>
+    <div class="grid matrix">
+      <span></span><span class="head">Default</span><span class="head">Hover</span><span class="head">Focus</span><span class="head">Pressed</span><span class="head">Disabled</span>
+      <span class="name">.btn</span>
+      <button class="btn" type="button">Open</button>
+      <button class="btn" type="button" data-force="hover">Open</button>
+      <button class="btn" type="button" data-force="focus focus-visible">Open</button>
+      <button class="btn" type="button" data-force="hover active">Open</button>
+      <button class="btn" type="button" disabled>Open</button>
+      <span class="name">.btn.primary</span>
+      <button class="btn primary" type="button">Create</button>
+      <button class="btn primary" type="button" data-force="hover">Create</button>
+      <button class="btn primary" type="button" data-force="focus focus-visible">Create</button>
+      <button class="btn primary" type="button" data-force="hover active">Create</button>
+      <button class="btn primary" type="button" disabled>Create</button>
+      <span class="name">.btn.danger</span>
+      <button class="btn danger" type="button">Delete</button>
+      <button class="btn danger" type="button" data-force="hover">Delete</button>
+      <button class="btn danger" type="button" data-force="focus focus-visible">Delete</button>
+      <button class="btn danger" type="button" data-force="hover active">Delete</button>
+      <button class="btn danger" type="button" disabled>Delete</button>
+      <span class="name">.danger.armed</span>
+      <button class="btn danger armed" type="button">Click again</button>
+      <button class="btn danger armed" type="button" data-force="hover">Click again</button>
+      <button class="btn danger armed" type="button" data-force="focus focus-visible">Click again</button>
+      <button class="btn danger armed" type="button" data-force="hover active">Click again</button>
+      <button class="btn danger armed" type="button" disabled>Click again</button>
+      <span class="name">.btn.small</span>
+      <button class="btn small" type="button">Reload</button>
+      <button class="btn small" type="button" data-force="hover">Reload</button>
+      <button class="btn small" type="button" data-force="focus focus-visible">Reload</button>
+      <button class="btn small" type="button" data-force="hover active">Reload</button>
+      <button class="btn small" type="button" disabled>Reload</button>
+      <span class="name">.btn.icon</span>
+      <button class="btn icon" type="button" aria-label="Download" data-icon="download"></button>
+      <button class="btn icon" type="button" aria-label="Download" data-icon="download" data-force="hover"></button>
+      <button class="btn icon" type="button" aria-label="Download" data-icon="download" data-force="focus focus-visible"></button>
+      <button class="btn icon" type="button" aria-label="Download" data-icon="download" data-force="hover active"></button>
+      <button class="btn icon" type="button" aria-label="Download" data-icon="download" disabled></button>
+      <span class="name">.icon toggle</span>
+      <button class="btn icon" type="button" aria-label="Pin" aria-pressed="true" data-icon="pin"></button>
+      <button class="btn icon" type="button" aria-label="Pin" aria-pressed="true" data-icon="pin" data-force="hover"></button>
+      <button class="btn icon" type="button" aria-label="Pin" aria-pressed="true" data-icon="pin" data-force="focus focus-visible"></button>
+      <button class="btn icon" type="button" aria-label="Pin" aria-pressed="true" data-icon="pin" data-force="hover active"></button>
+      <button class="btn icon" type="button" aria-label="Pin" aria-pressed="true" data-icon="pin" disabled></button>
+      <span class="name">.link-btn</span>
+      <button class="link-btn" type="button">Details</button>
+      <button class="link-btn" type="button" data-force="hover">Details</button>
+      <button class="link-btn" type="button" data-force="focus focus-visible">Details</button>
+      <button class="link-btn" type="button" data-force="hover active">Details</button>
+      <button class="link-btn" type="button" disabled>Details</button>
+    </div>
+    <div class="line" style="margin-top:16px">
+      <span class="name cap" style="margin:0">.btn with icon, .btn-row</span>
+      <button class="btn" type="button"><span data-icon="folderOpen"></span>Show in folder</button>
+      <button class="btn primary" type="button"><span data-icon="download"></span>Download</button>
+      <div class="btn-row" style="flex:1"><button class="btn" type="button">Cancel</button><button class="btn primary" type="button">Save</button></div>
+    </div>
+  </section>
+
+  <section class="card" id="forms">
+    <h2>Choices and text</h2>
+    <div class="two">
+      <div class="stack">
+        <div class="cap">.check (checkbox, radio)</div>
+        <label class="check"><input type="checkbox"><span>Remember this choice</span></label>
+        <label class="check"><input type="checkbox" checked><span>Browsing history</span></label>
+        <label class="check"><input type="checkbox" id="indeterminate"><span>Some of the items</span></label>
+        <label class="check"><input type="checkbox" data-force="focus focus-visible"><span>Focused</span></label>
+        <label class="check" data-force="hover"><input type="checkbox"><span>Hovered</span></label>
+        <label class="check"><input type="checkbox" disabled><span>Disabled</span></label>
+        <label class="check"><input type="checkbox" checked disabled><span>Disabled, on</span></label>
+        <label class="check"><input type="radio" name="r" checked><span>Ask every time</span></label>
+        <label class="check"><input type="radio" name="r"><span>Allow</span></label>
+        <label class="check"><input type="radio" name="r" disabled><span>Never (disabled)</span></label>
+      </div>
+      <div class="stack">
+        <div class="cap">.segmented</div>
+        <div class="segmented" role="group" aria-label="Density"><button type="button" aria-pressed="true">Compact</button><button type="button" aria-pressed="false">Normal</button><button type="button" aria-pressed="false" data-force="hover">Roomy</button></div>
+        <div class="segmented" role="group" aria-label="Focus"><button type="button" aria-pressed="false" data-force="focus focus-visible">List</button><button type="button" aria-pressed="true">Grid</button><button type="button" disabled>Table</button></div>
+        <div class="cap">.switch, .select, .text, .textarea</div>
+        <div class="line"><span class="switch"><input type="checkbox" checked aria-label="On"><span class="track"></span></span><span class="switch"><input type="checkbox" aria-label="Off"><span class="track"></span></span></div>
+        <select class="select" aria-label="Keep history for"><option>90 days</option></select>
+        <input class="text" type="text" placeholder="Name of the new profile" aria-label="Name">
+        <input class="text" type="text" value="Not a valid name" aria-invalid="true" aria-label="Invalid">
+        <textarea class="textarea" placeholder="Notes" aria-label="Notes"></textarea>
+        <textarea class="textarea" aria-invalid="true" aria-label="Invalid notes">Too long to keep</textarea>
+        <textarea class="textarea" disabled aria-label="Disabled notes">Read only for now</textarea>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="feedback">
+    <h2>Progress and status</h2>
+    <div class="two">
+      <div class="stack">
+        <div class="cap">.progress: 0, 40, 100, indeterminate, error, paused</div>
+        <div class="progress" role="progressbar" aria-valuenow="0" style="--value:0"><div class="progress-bar"></div></div>
+        <div class="progress" role="progressbar" aria-valuenow="40" style="--value:.4"><div class="progress-bar"></div></div>
+        <div class="progress" role="progressbar" aria-valuenow="100" style="--value:1"><div class="progress-bar"></div></div>
+        <div class="progress indeterminate" role="progressbar"><div class="progress-bar"></div></div>
+        <div class="progress is-error" role="progressbar" aria-valuenow="60" style="--value:.6"><div class="progress-bar"></div></div>
+        <div class="progress is-paused" role="progressbar" aria-valuenow="60" style="--value:.6"><div class="progress-bar"></div></div>
+        <div class="cap" style="margin-top:6px">.spinner, .skeleton</div>
+        <div class="line"><span class="spinner" role="status" aria-label="Loading"></span><span class="muted" style="color:var(--wink-dim)">Loading downloads</span></div>
+        <div class="tall"><div class="skeleton" style="width:60%"></div><div class="skeleton" style="width:90%"></div><div class="skeleton" style="width:45%"></div></div>
+      </div>
+      <div class="stack">
+        <div class="cap">.badge</div>
+        <div class="line"><span class="badge">Default</span><span class="badge ok">Done</span><span class="badge warn">Paused</span><span class="badge danger">Failed</span></div>
+        <div class="cap" style="margin-top:6px">.chip</div>
+        <div class="line">
+          <button class="chip" type="button" aria-pressed="false">Images</button>
+          <button class="chip" type="button" aria-pressed="true">Documents</button>
+          <button class="chip" type="button" aria-pressed="false" data-force="hover">Hovered</button>
+          <button class="chip" type="button" aria-pressed="false" data-force="focus focus-visible">Focused</button>
+          <button class="chip" type="button" aria-pressed="false" disabled>Disabled</button>
+        </div>
+        <div class="cap" style="margin-top:6px">.tabs</div>
+        <div class="tabs" role="tablist"><button class="tab-btn" role="tab" aria-selected="true">All</button><button class="tab-btn" role="tab" aria-selected="false" data-force="hover">Today</button><button class="tab-btn" role="tab" aria-selected="false" data-force="focus focus-visible">Earlier</button><button class="tab-btn" role="tab" aria-selected="false" disabled>Off</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="banners">
+    <h2>Banners, toast and empty state</h2>
+    <div class="stack">
+      <div class="banner info" role="status"><strong>Heads up. </strong>Downloads keep going after this tab closes.</div>
+      <div class="banner ok" role="status"><strong>Saved. </strong>Your changes are kept on this computer.</div>
+      <div class="banner warn" role="status"><strong>History is off. </strong>New pages are not being remembered. <button class="link-btn" type="button">Turn it on</button></div>
+      <div class="banner error" role="alert"><strong>Could not read the file. </strong>Pick another one, or check that it is not open elsewhere.</div>
+      <div class="banner" role="status">A banner with no variant reads as a warning.</div>
+    </div>
+    <div class="two" style="margin-top:16px">
+      <div class="on-toast stack">
+        <div class="cap">.toast</div>
+        <div><span class="toast" role="status">Bookmark added</span></div>
+        <div><span class="toast" role="status">Download removed<button class="link-btn" type="button">Undo</button></span></div>
+      </div>
+      <div class="stack">
+        <div class="cap">.empty-state, .empty-state.compact</div>
+        <div class="empty-state compact"><span data-icon="download" style="display:contents"></span><p>No downloads yet</p></div>
+      </div>
+    </div>
+    <div class="empty-state" style="margin-top:8px"><span data-icon="star" style="display:contents"></span><p>Bookmarks you add show up here.</p></div>
+  </section>
+
+  <section class="card" id="lists">
+    <h2>Listbox</h2>
+    <div class="two">
+      <ul class="listbox" role="listbox" aria-label="Suggestions">
+        <li class="listbox-item" role="option" aria-selected="true"><span class="item-icon" data-icon="searchGlass"></span><span class="item-title">Orivon <mark>docs</mark> and guides</span><span class="item-sub">https://orivon.example/docs</span><span class="item-meta">Enter</span></li>
+        <li class="listbox-item" role="option" aria-selected="false"><span class="item-icon" data-icon="clock"></span><span class="item-title">Recently closed <mark>docs</mark></span><span class="item-sub">https://example.com/a-very-long-address/that/keeps/going/until/it/must/be/cut/off</span><span class="item-meta">2 h</span></li>
+        <li class="listbox-item" role="option" aria-selected="false" data-force="hover"><span class="item-icon" data-icon="star"></span><span class="item-title">Hovered bookmark</span><span class="item-sub">https://hover.example/</span></li>
+        <li class="listbox-item" role="option" aria-selected="false"><span class="item-icon" data-icon="file"></span><span class="item-title">A title with no address line</span></li>
+        <li class="listbox-item" role="option" aria-selected="false" aria-disabled="true"><span class="item-icon" data-icon="lock"></span><span class="item-title">Not available</span><span class="item-meta">Locked</span></li>
+        <li class="listbox-item" role="option" aria-selected="false" data-force="focus focus-visible" tabindex="0"><span class="item-title">A row with no icon</span><span class="item-sub">Keyboard focused</span></li>
+      </ul>
+      <div>
+        <div class="cap">.tree, .drop-line</div>
+        <ul class="tree" role="tree" aria-label="Bookmarks">
+          <li class="tree-item" role="treeitem" aria-expanded="true" style="--level:0"><button class="tree-toggle" type="button" aria-label="Collapse"></button><span class="item-icon" data-icon="folderOpen"></span><span class="tree-label">Bookmarks bar</span></li>
+          <li class="tree-item" role="treeitem" aria-expanded="true" aria-selected="true" style="--level:1"><button class="tree-toggle" type="button" aria-label="Collapse"></button><span class="item-icon" data-icon="folderOpen"></span><span class="tree-label">Reading list</span></li>
+          <li class="tree-item" role="treeitem" style="--level:2"><button class="tree-toggle" type="button" tabindex="-1" aria-hidden="true"></button><span class="item-icon" data-icon="file"></span><span class="tree-label">An article with a very long title that has to be cut off somewhere</span></li>
+          <li class="drop-line" role="presentation"></li>
+          <li class="tree-item" role="treeitem" style="--level:2" data-force="hover"><button class="tree-toggle" type="button" tabindex="-1" aria-hidden="true"></button><span class="item-icon" data-icon="file"></span><span class="tree-label">Hovered leaf</span></li>
+          <li class="tree-item" role="treeitem" aria-expanded="false" style="--level:1"><button class="tree-toggle" type="button" aria-label="Expand"></button><span class="item-icon" data-icon="folder"></span><span class="tree-label">Recipes</span></li>
+          <li class="tree-item drop-into" role="treeitem" aria-expanded="false" style="--level:1"><button class="tree-toggle" type="button" aria-label="Expand"></button><span class="item-icon" data-icon="folder"></span><span class="tree-label">Drop target</span></li>
+          <li class="tree-item" role="treeitem" style="--level:0"><button class="tree-toggle" type="button" tabindex="-1" aria-hidden="true"></button><span class="item-icon" data-icon="star"></span><span class="tree-label">Other bookmarks</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="sheet">
+    <h2>Sheet</h2>
+    <div class="two">
+      <div class="sheet narrow" role="dialog" aria-labelledby="sheet-title">
+        <h1 class="sheet-title" id="sheet-title">Sign in</h1>
+        <p class="origin">https://accounts.example.com</p>
+        <div class="sheet-body">
+          <label class="field"><span>Username</span><input class="text" type="text" value="ada@example.com"></label>
+          <label class="field"><span>Password</span><input class="text" type="password" value="hunter2hunter2"></label>
+          <label class="check"><input type="checkbox" checked><span>Remember on this device</span></label>
+        </div>
+        <div class="btn-row"><button class="btn" type="button">Not now</button><button class="btn primary" type="button">Sign in</button></div>
+      </div>
+      <div class="sheet narrow" role="dialog" aria-labelledby="sheet-title-2">
+        <h1 class="sheet-title" id="sheet-title-2">Allow this site to use your location?</h1>
+        <p class="origin">https://a-very-long-subdomain.of-some-host.example.org:8443/a/long/path</p>
+        <div class="sheet-body"><div class="banner warn" role="status">It can see where you are for as long as the page is open.</div></div>
+        <div class="btn-row"><button class="btn" type="button">Block</button><button class="btn primary" type="button">Allow</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="icons">
+    <h2>Icons</h2>
+    <div class="icons" id="icon-grid"></div>
+    <div class="sizes" id="sizes"></div>
+  </section>
+</main>
+<script type="module" src="/page.js"></script>
+</body>
+</html>

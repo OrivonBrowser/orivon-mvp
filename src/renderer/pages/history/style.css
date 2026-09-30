@@ -12,14 +12,7 @@
 .toolbar .search { flex: 1 1 auto; max-width: 400px; }
 .toolbar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 
-.banner {
-  margin-bottom: 16px;
-  padding: 10px 14px;
-  border-radius: var(--wradius);
-  background: color-mix(in srgb, var(--wwarn) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--wwarn) 35%, var(--wborder));
-}
-.banner[hidden] { display: none; }
+.banner { margin-bottom: 16px; }
 
 .day { margin-bottom: 22px; }
 .day h2 {
@@ -72,9 +65,6 @@
 .remove .icon { width: 16px; height: 16px; }
 .entry:hover .remove, .remove:focus-visible { opacity: 1; }
 .remove:hover { background: var(--wdanger-wash); color: var(--wdanger); }
-
-.link-btn { padding: 2px 6px; border: none; border-radius: 6px; background: none; color: var(--waccent-text); cursor: pointer; }
-.link-btn:hover { text-decoration: underline; }
 
 .empty {
   display: flex;

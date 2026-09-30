@@ -108,3 +108,144 @@ export function privateIcon (): SVGSVGElement {
     el.append(line(3.8, 14, 2, 10.5), line(20.2, 14, 22, 10.5))
   })
 }
+
+// The icons the shared UI kit and the feature pages draw beyond Settings' own
+// set: file and folder marks, list and toolbar controls, and states (locked,
+// muted, warning). Same grid and stroke as the ones above.
+
+export function downloadIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', '2'), path('M7 10l5 5 5-5', '2'), path('M12 15V3', '2')) })
+}
+
+export function folderIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z', '2')) })
+}
+
+export function folderOpenIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M6 14l1.5-2.9A2 2 0 0 1 9.2 10H20a2 2 0 0 1 1.9 2.5l-1.5 6a2 2 0 0 1-1.9 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.7.9l.8 1.2a2 2 0 0 0 1.7.9H18a2 2 0 0 1 2 2v2', '2'))
+  })
+}
+
+export function fileIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z', '2'), path('M14 2v4a2 2 0 0 0 2 2h4', '2')) })
+}
+
+/** Outline only; a caller that wants it filled (a bookmarked page) sets `fill: currentColor` on it. */
+export function starIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21l1.2-6.9-5-4.9 6.9-1z', '2')) })
+}
+
+export function chevronRightIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M9 18l6-6-6-6', '2')) })
+}
+
+export function chevronDownIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M6 9l6 6 6-6', '2')) })
+}
+
+export function closeIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M18 6L6 18', '2'), path('M6 6l12 12', '2')) })
+}
+
+export function checkIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M20 6L9 17l-5-5', '2')) })
+}
+
+export function plusIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M5 12h14', '2'), path('M12 5v14', '2')) })
+}
+
+export function moreIcon (): SVGSVGElement {
+  return icon((el) => { el.append(circle(12, 12, 1), circle(19, 12, 1), circle(5, 12, 1)) })
+}
+
+export function pinIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M12 17v5', '2'))
+    el.append(path('M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z', '2'))
+  })
+}
+
+export function speakerIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M11 5L6 9H2v6h4l5 4V5z', '2'), path('M15.5 8.5a5 5 0 0 1 0 7', '2'), path('M19 5a10 10 0 0 1 0 14', '2')) })
+}
+
+export function speakerOffIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M11 5L6 9H2v6h4l5 4V5z', '2'), path('M22 9l-6 6', '2'), path('M16 9l6 6', '2')) })
+}
+
+export function warningIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M21.7 18l-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3z', '2'), path('M12 9v4', '2'), path('M12 17h.01', '2')) })
+}
+
+export function lockIcon (): SVGSVGElement {
+  return icon((el) => { el.append(rect(3, 11, 18, 11, 2), path('M7 11V7a5 5 0 0 1 10 0v4', '2')) })
+}
+
+export function keyIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4', '2')) })
+}
+
+export function printerIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M6 9V2h12v7', '2'), path('M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2', '2'), rect(6, 14, 12, 8))
+  })
+}
+
+export function externalLinkIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M15 3h6v6', '2'), path('M10 14L21 3', '2'), path('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6', '2')) })
+}
+
+export function copyIcon (): SVGSVGElement {
+  return icon((el) => { el.append(rect(8, 8, 14, 14, 2), path('M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2', '2')) })
+}
+
+export function pencilIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z', '2'), path('M15 5l4 4', '2')) })
+}
+
+export function refreshIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M21 12a9 9 0 1 1-9-9c2.5 0 4.9 1 6.7 2.7L21 8', '2'), path('M21 3v5h-5', '2')) })
+}
+
+export function homeIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', '2'), path('M9 22V12h6v10', '2')) })
+}
+
+export function panelRightIcon (): SVGSVGElement {
+  return icon((el) => { el.append(rect(3, 3, 18, 18, 2), path('M15 3v18', '2')) })
+}
+
+export function puzzleIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M19.4 7.9c-.05.32.06.65.29.88l1.57 1.57a2.4 2.4 0 0 1 0 3.4l-1.6 1.6a1 1 0 0 1-.84.28c-.47-.07-.8-.48-.97-.93a2.5 2.5 0 1 0-3.2 3.2c.45.17.86.5.93.97a1 1 0 0 1-.28.84l-1.6 1.6a2.4 2.4 0 0 1-3.4 0l-1.57-1.57a1 1 0 0 0-.88-.29c-.49.07-.84.5-1.02.97a2.5 2.5 0 1 1-3.24-3.24c.47-.18.9-.53.97-1.02a1 1 0 0 0-.29-.88L2.7 13.7a2.4 2.4 0 0 1 0-3.4l1.53-1.53c.24-.24.58-.35.92-.3.51.08.88.53 1.07 1.01a2.5 2.5 0 1 0 3.26-3.26c-.48-.2-.93-.56-1.01-1.07-.05-.34.06-.68.3-.92L10.3 2.7a2.4 2.4 0 0 1 3.4 0l1.57 1.57c.23.23.56.34.88.29.49-.07.84-.5 1.02-.97a2.5 2.5 0 1 1 3.24 3.24c-.47.18-.9.53-.97 1.02z', '2'))
+  })
+}
+
+export function pauseIcon (): SVGSVGElement {
+  return icon((el) => { el.append(rect(14, 4, 4, 16, 1), rect(6, 4, 4, 16, 1)) })
+}
+
+export function playIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M6 3l14 9-14 9z', '2')) })
+}
+
+export function eyeIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z', '2'), circle(12, 12, 3)) })
+}
+
+export function eyeOffIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M9.9 9.9a3 3 0 1 0 4.2 4.2', '2'), path('M10.7 5.1A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13.2 13.2 0 0 1-1.7 2.7', '2'))
+    el.append(path('M6.6 6.6A13.2 13.2 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.4-1.6', '2'), path('M2 2l20 20', '2'))
+  })
+}
+
+export function arrowUpIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M5 12l7-7 7 7', '2'), path('M12 19V5', '2')) })
+}
+
+export function arrowDownIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M12 5v14', '2'), path('M19 12l-7 7-7-7', '2')) })
+}
