@@ -5,6 +5,7 @@ import { DatabaseSync as NodeDatabaseSync, constants as nodeConstants } from 'no
 import { beforeAll, describe, expect, it } from 'vitest'
 import { constants } from '../constants.js'
 import { DatabaseSync } from '../database.js'
+import { collectGarbage } from '../../tests/support/collect-garbage.js'
 import { loadTestEngine } from './support/engine.js'
 
 beforeAll(loadTestEngine)
@@ -91,7 +92,14 @@ describe('binding', () => {
     db.prepare('select ? as a, ? as b, ? as c, ? as d, typeof(?) as e').get(null, 'héllo 😀', new Uint8Array([9, 8]), '', new Uint8Array(0))
   ])
   same('a typed array other than Uint8Array binds its bytes', (db) => db.prepare('select ? as b').get(new Uint16Array([1, 2])))
-  same('a boolean cannot be bound', (db) => db.prepare('select ?').get(true as never))
+  // Node before 24.21 refuses a boolean and later Nodes bind it as 1 or 0, so this asserts the
+  // shim's behaviour (the later one) directly instead of comparing with the running Node.
+  it('a boolean binds as 1 or 0', () => {
+    const db = new DatabaseSync(':memory:')
+    const statement = db.prepare('select ? as a, ? as b')
+    expect(statement.get(true as never, false as never)).toEqual({ a: 1, b: 0 })
+    expect(db.prepare('select :t as t').get({ t: true as never })).toEqual({ t: 1 })
+  })
   same('undefined cannot be bound', (db) => db.prepare('select ?').get(undefined as never))
   same('too many parameters', (db) => db.prepare('select ?').get(1, 2))
   same('too few parameters bind NULL', (db) => db.prepare('select ? as x').get())
@@ -157,7 +165,16 @@ describe('the connection', () => {
   same('double-quoted strings may be allowed', (db) => db.prepare('select "abc" as v').get(), { enableDoubleQuotedStringLiterals: true })
   same('JSON functions are present', (db) => db.prepare("select json_extract('{\"a\":[1,2]}', '$.a[1]') as v").get())
   same('sql must be a string', (db) => db.exec(5 as never))
-  same('an empty statement is finalized', (db) => db.prepare('').run())
+  // Node before 24.21 prepares an empty statement to a finalized one; later Nodes refuse it at
+  // prepare. The shim follows the later behaviour, asserted directly for the same reason as the
+  // boolean binding above.
+  it('an empty statement is refused when prepared', () => {
+    const db = new DatabaseSync(':memory:')
+    for (const sql of ['', '   ', '-- nothing\n', ';']) {
+      const error = outcome(() => db.prepare(sql))
+      expect(error).toEqual({ error: expect.objectContaining({ name: 'TypeError', code: 'ERR_INVALID_ARG_VALUE', message: 'The SQL query contains no statements.' }) })
+    }
+  })
   same('a closed database refuses', (db) => { db.close(); return db.exec('select 1') })
   same('closing twice', (db) => { db.close(); return db.close() })
   same('a statement outlives its database as finalized', (db) => { const statement = db.prepare('select 1'); db.close(); return statement.get() })
@@ -196,5 +213,36 @@ describe('members not built refuse by name', () => {
   })
   it('allowExtension', () => {
     expect(() => new DatabaseSync(':memory:', { allowExtension: true })).toThrow(expect.objectContaining({ name: 'OrivonShimError' }))
+  })
+})
+
+describe('lifetime', () => {
+  function prepareOnly (): StatementSyncLike {
+    const db = new DatabaseSync(':memory:')
+    db.exec('create table t(x); insert into t values (1), (2), (3)')
+    return db.prepare('select x from t order by x')
+  }
+  type StatementSyncLike = ReturnType<DatabaseSync['prepare']>
+
+  it('a statement keeps its database open once nothing else references the database', async () => {
+    const statement = prepareOnly()
+    await collectGarbage()
+    expect(statement.all()).toEqual([{ x: 1 }, { x: 2 }, { x: 3 }])
+  })
+
+  it('an iterator keeps its statement and database alive', async () => {
+    const iterator = prepareOnly().iterate()
+    await collectGarbage()
+    expect([...iterator]).toEqual([{ x: 1 }, { x: 2 }, { x: 3 }])
+  })
+
+  it('a database nobody references is closed once its statements are gone too', async () => {
+    const ref = ((): WeakRef<DatabaseSync> => {
+      const db = new DatabaseSync(':memory:')
+      db.prepare('select 1').get()
+      return new WeakRef(db)
+    })()
+    await collectGarbage()
+    expect(ref.deref()).toBeUndefined()
   })
 })

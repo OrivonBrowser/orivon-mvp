@@ -53,6 +53,8 @@ export function finalizeStatement (state: StatementState): void {
 
 const collected = new FinalizationRegistry<StatementState>(finalizeStatement)
 const states = new WeakMap<object, StatementState>()
+/** What a `StatementSync` keeps reachable: its `DatabaseSync`, which closes the connection once nothing references it. */
+const databases = new WeakMap<object, object>()
 
 function stateOf (statement: StatementSync): StatementState {
   const state = states.get(statement)
@@ -70,8 +72,8 @@ function flag (value: unknown, name: string): boolean {
   return value
 }
 
-/** Prepares `sql`, tracked on `database`. An empty statement prepares to nothing, and every call on it says it is finalized, as Node's does. */
-export function prepareStatement (database: DatabaseState, sql: string): StatementSync {
+/** Prepares `sql`, tracked on `database` (the state of `owner`, which the statement keeps alive). An empty statement is refused, as Node's is. */
+export function prepareStatement (owner: object, database: DatabaseState, sql: string): StatementSync {
   const { sqlite3 } = database
   const { capi, wasm } = sqlite3
   const out = wasm.allocPtr()
@@ -80,6 +82,7 @@ export function prepareStatement (database: DatabaseState, sql: string): Stateme
     const rc = capi.sqlite3_prepare_v2(database.pointer, sql, -1, out, 0)
     if (rc !== 0) throw sqliteError(sqlite3, database.pointer)
     pointer = wasm.peekPtr(out)
+    if (pointer === 0) throw invalidArgValue('The SQL query contains no statements.')
   } finally {
     wasm.dealloc(out)
   }
@@ -91,9 +94,10 @@ export function prepareStatement (database: DatabaseState, sql: string): Stateme
     allowBareNamedParameters: database.allowBareNamedParameters,
     allowUnknownNamedParameters: database.allowUnknownNamedParameters
   }
-  if (pointer !== 0) database.statements.add(state)
+  database.statements.add(state)
   const statement = new StatementSync(CONSTRUCT)
   states.set(statement, state)
+  databases.set(statement, owner)
   collected.register(statement, state)
   return statement
 }
@@ -105,6 +109,7 @@ function bindValue (state: StatementState, index: number, value: unknown): void 
   const stmt = state.pointer
   let rc: number
   if (value === null) rc = exports.sqlite3_bind_null(stmt, index)
+  else if (typeof value === 'boolean') rc = exports.sqlite3_bind_int64(stmt, index, value ? 1n : 0n)
   else if (typeof value === 'number') rc = exports.sqlite3_bind_double(stmt, index, value)
   else if (typeof value === 'bigint') {
     if (value > INT64_MAX || value < INT64_MIN) throw invalidArgValue('BigInt value is too large to bind.')
@@ -265,9 +270,11 @@ export class StatementSync {
     const state = live(stateOf(this))
     bindAll(state, args)
     const names = columnNames(state)
+    // The generator reads its state through the statement, so a running iterator keeps the statement (and its database) alive.
+    const statement: StatementSync = this
     return (function * () {
       try {
-        while (live(state) && step(state) === SQLITE_ROW) yield readRow(state, names)
+        while (live(stateOf(statement)) && step(state) === SQLITE_ROW) yield readRow(state, names)
       } finally {
         if (state.pointer !== 0) state.database.sqlite3.wasm.exports.sqlite3_reset(state.pointer)
       }

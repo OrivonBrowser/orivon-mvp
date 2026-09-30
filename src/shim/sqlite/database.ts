@@ -176,7 +176,7 @@ export class DatabaseSync {
   prepare (sql: string): StatementSync {
     const state = live(this.#state())
     if (typeof sql !== 'string') throw invalidArgType('The "sql" argument must be a string.')
-    return prepareStatement(state, sql)
+    return prepareStatement(this, state, sql)
   }
 
   enableDefensive (active: boolean): void {
