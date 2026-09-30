@@ -81,7 +81,10 @@ close.
 
 **Three things cut round trips**, each safe only because one connection uses a file:
 [`buffered-file.ts`](buffered-file.ts) merges writes that continue where the last ended (SQLite writes a journal
-record as three small writes) and flushes before any read, truncate, sync or close; it asks a file's size once;
+record as three small writes) and flushes before any read, size, truncate, sync or close, and where a transaction
+ends (SQLite unlocks the file, or announces the commit's second phase when it keeps its lock), so a commit is in
+the file when it returns even with `pragma synchronous = off`. Its bytes stay pending until a write has
+succeeded, and a failed flush is reported as a write error. It asks a file's size once;
 and `vfs.ts` remembers what `xAccess` said about a path (a journal and a WAL are asked after before every
 read transaction) while some file is open, forgetting it when the last one closes.
 

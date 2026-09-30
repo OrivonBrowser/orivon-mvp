@@ -78,4 +78,27 @@ describe('bufferedFile', () => {
     buffered.write(0, new Uint8Array(10))
     expect(buffered.size()).toBe(10)
   })
+
+  it('flush writes out what is pending and nothing else', () => {
+    const { file, log } = recording()
+    const buffered = bufferedFile(file)
+    buffered.flush()
+    buffered.write(0, new Uint8Array(4))
+    buffered.flush()
+    buffered.flush()
+    expect(log).toEqual(['write 0 4'])
+  })
+
+  it('keeps the pending bytes when the write fails, and writes them again on the next flush', () => {
+    const { file, log, bytes } = recording()
+    let failing = true
+    const flaky: SqliteFile = { ...file, write: (position, data) => { if (failing) throw new Error('disk gone'); file.write(position, data) } }
+    const buffered = bufferedFile(flaky)
+    buffered.write(0, new Uint8Array([7, 8, 9]))
+    expect(() => { buffered.flush() }).toThrow('disk gone')
+    failing = false
+    buffered.flush()
+    expect(log).toEqual(['write 0 3'])
+    expect([...bytes().subarray(0, 3)]).toEqual([7, 8, 9])
+  })
 })

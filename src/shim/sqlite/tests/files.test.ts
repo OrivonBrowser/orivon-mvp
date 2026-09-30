@@ -139,6 +139,47 @@ describe('the rollback journal', () => {
   })
 })
 
+describe('a commit reaches the file without a read, a sync or a close after it', () => {
+  it('with synchronous off, the committed rows are in the file the moment commit returns', () => {
+    const db = new DatabaseSync(DB)
+    db.exec('pragma synchronous = off')
+    db.exec('create table t (id integer primary key, body text)')
+    db.prepare('insert into t (body) values (?)').run('durable')
+    // Whatever the child does next (it may be killed), the file as it is now is what the next open sees.
+    const afterKill = fs.snapshot()
+    db.close()
+    fs.restore(afterKill)
+    const reopened = new DatabaseSync(DB)
+    expect(reopened.prepare('select body from t').all()).toEqual([{ body: 'durable' }])
+    reopened.close()
+  })
+
+  it('also when the connection keeps its lock, where SQLite never unlocks', () => {
+    const db = new DatabaseSync(DB)
+    db.exec('pragma locking_mode = exclusive')
+    db.exec('pragma synchronous = off')
+    db.exec('create table t (id integer primary key, body text)')
+    db.prepare('insert into t (body) values (?)').run('durable')
+    const afterKill = fs.snapshot()
+    db.close()
+    fs.restore(afterKill)
+    const reopened = new DatabaseSync(DB)
+    expect(reopened.prepare('select body from t').all()).toEqual([{ body: 'durable' }])
+    reopened.close()
+  })
+
+  it('a failing write at the end of a commit is reported as a write error', () => {
+    const db = new DatabaseSync(DB)
+    db.exec('pragma synchronous = off')
+    db.exec('create table t (id integer primary key, body text)')
+    fs.hook = (call) => { if (call === 'write') throw new Error('disk gone') }
+    expect(() => db.prepare('insert into t (body) values (?)').run('x')).toThrow(expect.objectContaining({ errstr: expect.stringMatching(/disk I\/O error/) as string }) as Error)
+    fs.hook = () => {}
+    // The VFS is shared by every connection: a file left open would leak into the next test.
+    db.close()
+  })
+})
+
 describe('a crash at any file call of a commit', () => {
   it('leaves the old state or the new one, never a mix', () => {
     const db = new DatabaseSync(DB)

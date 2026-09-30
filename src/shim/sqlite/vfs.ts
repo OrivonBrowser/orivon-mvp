@@ -4,7 +4,7 @@
 // journal is a real file beside the database, so a commit is durable and only
 // the pages a transaction changed are written.
 
-import { bufferedFile } from './buffered-file.js'
+import { bufferedFile, type BufferedFile } from './buffered-file.js'
 import { orivonSqliteFiles, type SqliteFile, type SqliteOpenMode } from './files.js'
 import type { Sqlite3 } from './engine.js'
 
@@ -12,9 +12,13 @@ export const ORIVON_VFS_NAME = 'orivon-fs'
 
 const SECTOR_SIZE = 4096
 const MAX_PATHNAME = 1024
+const LOCK_SHARED = 1
+const FCNTL_COMMIT_PHASETWO = 22
+/** The journal header's fields: the bytes SQLite rewrites at offset 0 to mark records valid or, in exclusive mode, the journal finished. */
+const JOURNAL_HEADER_FIELDS = 28
 
 interface OpenFile {
-  readonly file: SqliteFile
+  readonly file: BufferedFile
   readonly path: string
   readonly deleteOnClose: boolean
 }
@@ -36,6 +40,15 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
     return code
   }
   const cString = (pointer: number): string => wasm.cstrToJs(pointer)
+  /** Writes out a file's pending bytes; a failed write is a write error whichever call asked. */
+  const flushed = (pFile: number): number => {
+    try {
+      open.get(pFile)?.file.flush()
+      return 0
+    } catch (error) {
+      return fail(error, capi.SQLITE_IOERR_WRITE)
+    }
+  }
 
   const ioMethods = new capi.sqlite3_io_methods()
   ioMethods.$iVersion = 1
@@ -59,6 +72,8 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
           }
         },
         xRead (pFile: number, pDest: number, amount: number, offset: number | bigint) {
+          const pending = flushed(pFile)
+          if (pending !== 0) return pending
           try {
             const bytes = open.get(pFile)!.file.read(Number(offset), amount)
             const heap = wasm.heap8u()
@@ -72,13 +87,18 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
         },
         xWrite (pFile: number, pSrc: number, amount: number, offset: number | bigint) {
           try {
-            open.get(pFile)!.file.write(Number(offset), wasm.heap8u().slice(Number(pSrc), Number(pSrc) + amount))
+            const entry = open.get(pFile)!
+            entry.file.write(Number(offset), wasm.heap8u().slice(Number(pSrc), Number(pSrc) + amount))
+            // A connection that keeps its lock ends a transaction by zeroing the journal header, after every signal a commit gives.
+            if (Number(offset) === 0 && amount <= JOURNAL_HEADER_FIELDS && entry.path.endsWith('-journal')) entry.file.flush()
             return 0
           } catch (error) {
             return fail(error, capi.SQLITE_IOERR_WRITE)
           }
         },
         xTruncate (pFile: number, size: number | bigint) {
+          const pending = flushed(pFile)
+          if (pending !== 0) return pending
           try {
             open.get(pFile)!.file.truncate(Number(size))
             return 0
@@ -87,6 +107,8 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
           }
         },
         xSync (pFile: number) {
+          const pending = flushed(pFile)
+          if (pending !== 0) return pending
           try {
             open.get(pFile)!.file.sync()
             return 0
@@ -95,6 +117,8 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
           }
         },
         xFileSize (pFile: number, pSize: number) {
+          const pending = flushed(pFile)
+          if (pending !== 0) return pending
           try {
             wasm.poke64(pSize, BigInt(open.get(pFile)!.file.size()))
             return 0
@@ -103,12 +127,14 @@ export function installOrivonVfs (sqlite3: Sqlite3): void {
           }
         },
         xLock: () => 0,
-        xUnlock: () => 0,
+        // SQLite unlocks when a transaction ends, even where nothing is locked: the moment what it wrote must be in the file.
+        xUnlock: (pFile: number, level: number) => level <= LOCK_SHARED ? flushed(pFile) : 0,
         xCheckReservedLock (_pFile: number, pOut: number) {
           wasm.poke32(pOut, 0)
           return 0
         },
-        xFileControl: () => capi.SQLITE_NOTFOUND,
+        // The end of a commit is also announced here, which is the only signal when the connection keeps its lock (exclusive mode).
+        xFileControl: (pFile: number, op: number) => op === FCNTL_COMMIT_PHASETWO ? flushed(pFile) : capi.SQLITE_NOTFOUND,
         xSectorSize: () => SECTOR_SIZE,
         xDeviceCharacteristics: () => 0
       }

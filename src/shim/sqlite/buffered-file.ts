@@ -2,14 +2,21 @@
 // record as three small writes and a commit as a run of adjacent pages; each
 // call is a round trip to the page, so writes that continue where the last one
 // ended are merged into one, and a file's size is asked for once. Safe because
-// one connection uses a file at a time (vfs.ts): nothing else can write it.
+// one connection uses a file at a time (vfs.ts): nothing else can write it. The
+// VFS writes everything out when a transaction ends, so a commit is in the file
+// before it returns; bytes stay pending until a write has succeeded.
 
 import type { SqliteFile } from './files.js'
 
 /** Pending bytes are written out once they reach this many, well under a broker reply's chunk. */
 export const WRITE_BUFFER_LIMIT = 256 * 1024
 
-export function bufferedFile (file: SqliteFile, limit = WRITE_BUFFER_LIMIT): SqliteFile {
+export interface BufferedFile extends SqliteFile {
+  /** Writes out what is pending, so a caller can tell a failed write from a failed read. The bytes stay pending when the write throws. */
+  flush (): void
+}
+
+export function bufferedFile (file: SqliteFile, limit = WRITE_BUFFER_LIMIT): BufferedFile {
   let size: number | undefined
   let start = 0
   let chunks: Uint8Array[] = []
@@ -22,13 +29,13 @@ export function bufferedFile (file: SqliteFile, limit = WRITE_BUFFER_LIMIT): Sql
       let offset = 0
       for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.length }
     }
-    const at = start
+    file.write(start, merged)
     chunks = []
     length = 0
-    file.write(at, merged)
   }
 
   return {
+    flush,
     read (position, count) {
       flush()
       return file.read(position, count)
@@ -58,8 +65,11 @@ export function bufferedFile (file: SqliteFile, limit = WRITE_BUFFER_LIMIT): Sql
       file.sync()
     },
     close () {
-      flush()
-      file.close()
+      try {
+        flush()
+      } finally {
+        file.close()
+      }
     }
   }
 }
