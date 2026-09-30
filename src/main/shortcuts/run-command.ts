@@ -2,6 +2,7 @@
 // has a method for nearly all of them; this maps a command to that method.
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
 import type { ShellWindow } from '../shell/window-registry.js'
+import { closeOthers, closeToRight, duplicateTab, toggleMute, togglePin } from '../shell/tab-commands.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
 import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
@@ -80,6 +81,11 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.moveToNewWindow':
       if (active !== undefined) moveToNewWindow(target, active.id, deps.openWindow, cascadeFrom(window.getBounds()))
       return
+    case 'tab.duplicate': if (active !== undefined) duplicateTab(tabs, active.id); return
+    case 'tab.pin': if (active !== undefined) togglePin(tabs, active.id); return
+    case 'tab.mute': if (active !== undefined) toggleMute(tabs, active.id); return
+    case 'tab.closeOthers': if (active !== undefined) closeOthers(tabs, active.id); return
+    case 'tab.closeRight': if (active !== undefined) closeToRight(tabs, active.id); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
     case 'profiles.open': tabs.openInternal('profiles'); return
     case 'window.close': window.close(); return
@@ -90,11 +96,6 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'app.quit': deps.quit(); return
     // Ids the tools work reserves: each does nothing until the feature that owns it replaces its line and drops `pending` on its COMMANDS row.
     case 'tab.reopen': return
-    case 'tab.duplicate': return
-    case 'tab.pin': return
-    case 'tab.mute': return
-    case 'tab.closeOthers': return
-    case 'tab.closeRight': return
     case 'tab.search': return
     case 'nav.stop': return
     case 'nav.home': return

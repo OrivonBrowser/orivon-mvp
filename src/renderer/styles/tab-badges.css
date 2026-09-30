@@ -1,0 +1,80 @@
+/* What a tab says about itself beyond its title: pinned, playing sound, muted. Chrome tokens only, so the
+   private window's tinted chrome needs nothing of its own. */
+
+/* A tab is its own container, so the sound badge can leave a narrow one: `.tab` has an explicit min-width, so
+   size containment does not change how wide the flex row makes it. */
+.tab { container-type: inline-size; }
+
+/* The speaker button between the title and the close button. It takes room only while it is there, and the title's
+   ellipsis gives it up. Not a tab stop: the strip is one tablist, and the same action is the Mute Tab command. */
+.tab .tab-audio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: 18px; /* the close button's room, which sits over the tab's right edge */
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wink-dim);
+}
+.tab .tab-audio:hover {
+  color: var(--wink);
+  background: var(--whover-strong);
+}
+.tab .tab-audio svg { width: 14px; height: 14px; }
+.tab.has-sound .title { padding-right: 4px; }
+
+/* Under 72px a tab has no room for it, unless it is the tab in front. */
+@container (max-width: 71px) {
+  .tab:not(.active) .tab-audio { display: none; }
+  .tab:not(.active).has-sound .title { padding-right: 16px; }
+}
+
+/* Pinned: the icon alone, in a fixed narrow tab. No title, no close button (Mod+W and a middle click still close it). */
+.tab.pinned {
+  flex: 0 0 36px;
+  min-width: 36px;
+  max-width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+.tab.pinned .fav { margin-right: 0; }
+.tab.pinned .title { display: none; }
+
+/* A hairline after the last pinned tab. Its own overflow is open (it has no title to clip) so the line can sit in
+   the gap that follows it. */
+.tab.pinned.last-pinned {
+  overflow: visible;
+  margin-right: 8px;
+}
+.tab.pinned.last-pinned::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 6px;
+  width: 1px;
+  height: 16px;
+  background: var(--wborder);
+  pointer-events: none;
+}
+
+/* A pinned tab's sound, as a mark on the corner of its icon: 10px is no target, so it is not a button. */
+.tab .tab-sound-mark {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wink);
+  background: var(--wchrome);
+  pointer-events: none;
+}
+.tab.active .tab-sound-mark { background: var(--wsurface); }
+.tab .tab-sound-mark svg { width: 10px; height: 10px; }
+/* The mark is small, so its strokes are heavier than the 24px icon's own. */
+.tab .tab-sound-mark svg path { stroke-width: 2.8; }

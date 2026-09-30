@@ -1,4 +1,5 @@
 import { overlayClose, overlayToggle } from './actions/overlay.js'
+import { tabMute } from './actions/tab-mute.js'
 import type { WindowContext } from './window-context.js'
 
 /** A call from the chrome that carries arguments and is not a command. `payload` comes from a renderer:
@@ -8,7 +9,8 @@ export type ChromeAction = (payload: unknown, ctx: WindowContext) => unknown
 /** One entry per action, alphabetical by name. */
 export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'overlay.close': overlayClose,
-  'overlay.toggle': overlayToggle
+  'overlay.toggle': overlayToggle,
+  'tab.mute': tabMute
 }
 
 /** Runs the action called `name`. Own keys only: `constructor` or `__proto__` from a renderer must not

@@ -5,11 +5,11 @@ import { runCommand } from '../run-command.js'
 import type { CommandDeps } from '../run-command.js'
 import type { ShellServices } from '../../shell/shell-services.js'
 
-interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null }
-const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, ...extra })
+interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
+const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
 
 function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
-  const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab', 'toggle', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
+  const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
@@ -18,7 +18,11 @@ function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindo
     tabs: {
       getState: () => ({ tabs, activeTabId }),
       tabCount: tabs.length,
-      splits: { toggle: calls['toggle'], focusOther: calls['focusOther'], swap: calls['swap'], rotate: calls['rotate'] },
+      splits: { toggle: calls['toggle'], focusOther: calls['focusOther'], swap: calls['swap'], rotate: calls['rotate'], groups: { partnerOf: () => null } },
+      record: (id: string) => ({ pinned: tabs.find((t) => t.id === id)?.pinned, muted: tabs.find((t) => t.id === id)?.muted, view: { webContents: { isDestroyed: () => false, setAudioMuted: calls['setAudioMuted'] } } }),
+      ids: () => tabs.map((t) => t.id),
+      hasRoom: () => true,
+      liveWebContents: () => undefined,
       faviconFor: () => 'data:icon',
       activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'] }),
       ...calls
@@ -31,6 +35,45 @@ function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindo
   const profiles = { openPrivate: vi.fn() }
   return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles } as unknown as ShellServices, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
 }
+
+describe('the tab-state commands', () => {
+  it('pins the tab in front, and unpins it again', () => {
+    const { target, calls, deps } = harness([tab('a'), tab('b')], 'b')
+    runCommand('tab.pin', target, deps)
+    expect(calls['moveTab']).toHaveBeenCalledWith('b', 0)
+    const pinned = harness([tab('a', { pinned: true }), tab('b', { pinned: true })], 'b')
+    runCommand('tab.pin', pinned.target, pinned.deps)
+    expect(pinned.calls['moveTab']).toHaveBeenCalledWith('b', 1)
+  })
+
+  it('mutes the tab in front on its page and reports the change', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('tab.mute', target, deps)
+    expect(calls['setAudioMuted']).toHaveBeenCalledWith(true)
+    expect(calls['changed']).toHaveBeenCalled()
+  })
+
+  it('closes the other unpinned tabs, or those to the right, of the tab in front', () => {
+    const strip = [tab('a', { pinned: true }), tab('b'), tab('c'), tab('d')]
+    const others = harness(strip, 'c')
+    runCommand('tab.closeOthers', others.target, others.deps)
+    expect(others.calls['closeTab']?.mock.calls.map(([id]) => id)).toEqual(['b', 'd'])
+    const right = harness(strip, 'b')
+    runCommand('tab.closeRight', right.target, right.deps)
+    expect(right.calls['closeTab']?.mock.calls.map(([id]) => id)).toEqual(['c', 'd'])
+  })
+
+  it('opens a copy of the tab in front beside it, and none for the new-tab page', () => {
+    const { target, calls, deps } = harness([tab('a'), tab('b')], 'a')
+    calls['createTab']?.mockReturnValue('c')
+    runCommand('tab.duplicate', target, deps)
+    expect(calls['createTab']).toHaveBeenCalledWith('https://a.example/')
+    expect(calls['moveTab']).toHaveBeenCalledWith('c', 1)
+    const blank = harness([tab('a', { isNewTab: true })], 'a')
+    runCommand('tab.duplicate', blank.target, blank.deps)
+    expect(blank.calls['createTab']).not.toHaveBeenCalled()
+  })
+})
 
 describe('runCommand', () => {
   it('handles every command there is', () => {

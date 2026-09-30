@@ -25,6 +25,13 @@ export function dropIndex (centres: readonly number[], x: number): number {
   return index
 }
 
+/** Keeps a place within the run its tab belongs to (the same rule as main's tab-order.ts, which the renderer does not import):
+ * `count` pinned tabs lead the strip, `length` counts the tabs but the one held. */
+export function clampToRun (index: number, pinned: boolean, count: number, length: number): number {
+  const [low, high] = pinned ? [0, count] : [count, length]
+  return Math.min(Math.max(index, low), high)
+}
+
 /** Whether the pointer is far enough out of the strip (above or below it, or outside the window) that letting go takes the tab out. */
 export function isTornOut (pointer: { x: number, y: number }, view: { width: number, stripHeight: number }): boolean {
   return pointer.y > view.stripHeight + TEAR_DISTANCE_PX || pointer.y < -TEAR_DISTANCE_PX || pointer.x < 0 || pointer.x > view.width
@@ -33,6 +40,8 @@ export function isTornOut (pointer: { x: number, y: number }, view: { width: num
 export interface TabDragHost {
   /** The strip's tab elements, in order, dragged one included. */
   tabs: () => HTMLElement[]
+  /** Whether a tab is pinned: a pinned tab is placed among the pinned ones only, and the others outside them. Absent: none is. */
+  isPinned?: (el: HTMLElement) => boolean
   /** The tab joined to this one in a split, which is dragged along with it. */
   partnerOf: (el: HTMLElement) => HTMLElement | null
   stripHeight: () => number
@@ -88,6 +97,8 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
   let groupWidth = 0
   let firstAt = 0
   let target = 0
+  /** The place a pointer at `x` would drop the tab on, within its own run. */
+  let placeAt = (_x: number): number => 0
 
   const clear = (): void => {
     for (const tab of [...group, ...others]) {
@@ -129,6 +140,9 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
     const rects = group.map((member) => member.getBoundingClientRect())
     groupWidth = Math.max(...rects.map((rect) => rect.right)) - Math.min(...rects.map((rect) => rect.left))
     firstAt = all.indexOf(group[0] ?? el)
+    const pinned = host.isPinned?.(el) === true
+    const pinnedOthers = others.filter((tab) => host.isPinned?.(tab) === true).length
+    placeAt = (x) => clampToRun(dropIndex(natural.map((box) => box.left + box.width / 2), x), pinned, pinnedOthers, others.length)
     target = firstAt
     active = true
     dragging = true
@@ -138,7 +152,7 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
   }
 
   el.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || (event.target as HTMLElement).closest('.close') !== null) return
+    if (event.button !== 0 || (event.target as HTMLElement).closest('.close, .tab-audio') !== null) return
     start = { x: event.clientX, y: event.clientY, grab: event.clientX - el.getBoundingClientRect().left, pointerId: event.pointerId }
     const partner = host.partnerOf(el)
     group = partner === null ? [el] : host.tabs().filter((tab) => tab === el || tab === partner)
@@ -152,7 +166,7 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < DRAG_THRESHOLD_PX) return
       begin()
     }
-    target = dropIndex(natural.map((box) => box.left + box.width / 2), event.clientX)
+    target = placeAt(event.clientX)
     const offset = event.clientX - start.grab - elLeft
     const torn = isTornOut({ x: event.clientX, y: event.clientY }, { width: window.innerWidth, stripHeight: host.stripHeight() })
     for (const member of group) {
