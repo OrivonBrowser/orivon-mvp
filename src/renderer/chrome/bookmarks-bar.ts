@@ -106,7 +106,7 @@ export function createBookmarksBar (): ChromeModule {
   }
 
   function menuAt (el: HTMLElement | null, x: number, y: number): void {
-    act('bookmarks.menu', { id: el?.dataset['id'] ?? null, x, y })
+    act('bookmarks.menu', { id: el?.dataset['id'] ?? null, x, y, ...(el === null || ctxRef === undefined ? {} : { anchor: ctxRef.anchorFor(el) }) })
   }
 
   function onClick (event: MouseEvent): void {

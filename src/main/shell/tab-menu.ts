@@ -67,7 +67,8 @@ export function tabMenuTemplate (model: TabMenuModel, actions: TabMenuActions): 
     { label: 'Close Other Tabs', enabled: model.othersClosable, click: actions.closeOthers },
     { label: 'Close Tabs to the Right', enabled: model.rightClosable, click: actions.closeRight },
     { type: 'separator' },
-    { label: 'Reopen Closed Tab', click: () => { actions.run('tab.reopen') } }
+    { label: 'Reopen Closed Tab', click: () => { actions.run('tab.reopen') } },
+    { label: 'Bookmark All Tabs…', click: () => { actions.run('bookmark.allTabs') } }
   ]
 }
 
