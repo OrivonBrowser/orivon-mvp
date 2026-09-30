@@ -7,9 +7,13 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 |---|---|
 | `context.ts` | `ChromeModule`, `ChromeContext`, `TabDecorator`; the state every module reads; `must`, `hasSite`, `anchorFor` |
 | `modules.ts` | `CHROME_MODULES` and `TAB_DECORATORS`, one line per feature, and `dispatchShellEvent` |
-| `tab-strip.ts` | the tabs, the new-tab button, the empty tail, the cross-window drop mark |
+| `tab-strip.ts` | the tabs (pinned ones in front, the rest in one scrolling run, `#tab-scroll`), the new-tab button, the empty tail, the cross-window drop mark |
+| `tab-badges.ts` | a tab's pinned look, tooltip, accessible name and speaker badge; a `TabDecorator` |
+| `tab-crashed.ts` | a crashed tab's mark; a `TabDecorator` |
+| `contain.ts` | `contained` and `runDecorators`: one feature's throw is logged and the rest run |
 | `tab-search-button.ts` | the button at the strip's right end that opens tab search |
 | `navigation.ts` | back, forward, reload, the address bar |
+| `reload-stop.ts` | Reload becomes Stop after 150 ms of loading |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |

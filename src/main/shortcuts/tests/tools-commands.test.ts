@@ -66,6 +66,10 @@ describe('the page-tools command rows', () => {
     expect(pending).toEqual(ROWS.map(([id]) => id).filter((id) => !LANDED.includes(id)))
   })
 
+  it('gives Home a chord a Mac keyboard has, since most have no Home key', () => {
+    expect(commandById('nav.home')).toMatchObject({ default: 'Alt+Home', macDefault: 'Mod+Shift+H' })
+  })
+
   it('gives find next and previous their function-key aliases', () => {
     expect(commandById('find.next')).toMatchObject({ aliases: ['F3'] })
     expect(commandById('find.previous')).toMatchObject({ aliases: ['Shift+F3'] })

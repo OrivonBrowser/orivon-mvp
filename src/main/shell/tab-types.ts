@@ -78,6 +78,8 @@ export interface ShellState extends TabsSnapshot {
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** Whether the toolbar shows the Home button (`toolbar.home`). */
   homeButton: boolean
+  /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
+  shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
 }
 
 export interface Bounds {
