@@ -36,12 +36,14 @@ export const screenshotPage: OverlayPage = {
       segments.get(area)?.focus()
     })
 
+    // Escape and a click outside close the sheet, but nobody is told so: a way out is on the sheet.
+    const cancel = h('button', { type: 'button', className: 'btn', onclick: () => { overlay.close() } }, 'Cancel')
     const save = h('button', { type: 'button', className: 'btn', onclick: () => { take('save') } }, 'Save…')
     const copy = h('button', { type: 'button', className: 'btn primary', onclick: () => { take('copy') } }, 'Copy')
     content.append(h('div', { className: 'shot', role: 'dialog', ariaLabel: 'Take a screenshot' },
       h('h1', { className: 'sheet-title' }, 'Take a screenshot'),
       h('div', { className: 'sheet-body' }, group),
-      h('div', { className: 'btn-row' }, save, copy)))
+      h('div', { className: 'btn-row' }, cancel, save, copy)))
     paint()
 
     return {
