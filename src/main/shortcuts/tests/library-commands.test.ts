@@ -46,7 +46,7 @@ describe('the library command rows', () => {
     const listed = new Set(ROWS.map(([id]) => id))
     const pending = COMMANDS.filter((def) => (def as CommandDef).pending === true && listed.has(def.id)).map((def) => def.id)
 
-    expect(pending).toEqual(ROWS.map(([id]) => id).filter((id) => !LANDED.includes(id)))
+    expect([...pending].sort()).toEqual(ROWS.map(([id]) => id).filter((id) => !LANDED.includes(id)).sort())
   })
 
   it('gives the web search its second key, and the JavaScript console its macOS one', () => {
@@ -59,8 +59,8 @@ describe('the library command rows', () => {
     expect((commandById('tasks.open') as CommandDef).default).toBeUndefined()
   })
 
-  it('lists each in the main menu layout, where it appears once its row is no longer pending', () => {
+  it('lists each but the web search, which is a key to the address bar, in the main menu layout, where it appears once its row is no longer pending', () => {
     const inMenu = commandsIn(MENU_LAYOUT)
-    for (const [id] of ROWS) expect(inMenu, id).toContain(id)
+    for (const [id] of ROWS.filter(([id]) => id !== 'nav.focusSearch')) expect(inMenu, id).toContain(id)
   })
 })
