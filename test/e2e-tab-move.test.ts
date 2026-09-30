@@ -3,7 +3,7 @@
 // page (its scroll, its script state) rather than loading it again.
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import type { ElectronApplication, Page } from 'playwright'
+import type { ElectronApplication, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
@@ -50,6 +50,16 @@ const runCommand = async (chrome: Page, id: string): Promise<void> => {
 }
 
 const titles = async (chrome: Page): Promise<string[]> => await chrome.locator('.tab .title').allTextContents()
+
+
+/** The strip is rebuilt on every state push, so a tab found visible can be detached for a moment
+ * before its box is read: read it again until the rebuilt element answers. */
+async function boxOf (tab: Locator): Promise<{ x: number, y: number, width: number, height: number }> {
+  let box: { x: number, y: number, width: number, height: number } | null = null
+  await waitFor(async () => { box = await tab.boundingBox().catch(() => null); return box !== null })
+  if (box === null) throw new Error('the tab has no box')
+  return box
+}
 
 it('moves the active tab along the strip with the keys', async () => {
   const { app, chrome } = await launched()
@@ -162,8 +172,7 @@ it('takes a tab out into a window of its own when it is dragged out of the windo
     await openTabs(app, chrome, '/dragged')
     const dragged = chrome.locator('.tab', { hasText: 'Page /dragged' })
     await dragged.waitFor({ state: 'visible' })
-    const box = await dragged.boundingBox()
-    if (box === null) throw new Error('the tab has no box')
+    const box = await boxOf(dragged)
 
     await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await chrome.mouse.down()
@@ -190,8 +199,7 @@ it('opens a tab dragged out over its own page, away from a split edge, in a wind
     await openTabs(app, chrome, '/dropped')
     const dragged = chrome.locator('.tab', { hasText: 'Page /dropped' })
     await dragged.waitFor({ state: 'visible' })
-    const box = await dragged.boundingBox()
-    if (box === null) throw new Error('the tab has no box')
+    const box = await boxOf(dragged)
     const area = await app.evaluate(({ BaseWindow }) => {
       const bounds = BaseWindow.getAllWindows()[0]?.getContentBounds()
       return { width: bounds?.width ?? 0, height: bounds?.height ?? 0 }
@@ -220,8 +228,7 @@ it('shows a tab\'s own new window at once, without waiting on ready-to-show', as
     await openTabs(app, chrome, '/torn')
     const dragged = chrome.locator('.tab', { hasText: 'Page /torn' })
     await dragged.waitFor({ state: 'visible' })
-    const box = await dragged.boundingBox()
-    if (box === null) throw new Error('the tab has no box')
+    const box = await boxOf(dragged)
     const before = Date.now()
     await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await chrome.mouse.down()
