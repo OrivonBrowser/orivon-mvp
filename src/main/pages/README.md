@@ -1,6 +1,6 @@
 # `src/main/pages/`: the shell's own pages
 
-**What lives here.** How Settings, History, Downloads, Profiles, Private, Extensions, About and the task manager exist as pages in
+**What lives here.** How Settings, History, Import, Downloads, Profiles, Private, Extensions, About and the task manager exist as pages in
 tabs (`ADR-0041`). `internal-pages.ts` names them and reads an `orivon://<page>[/path]` address.
 `internal-aliases.ts` reads the names other browsers use for them (`about:version`, `chrome://gpu`), for the address bar alone.
 `route.ts` decides which file such a request may read, and `serve.ts` answers it (with the CSP)
@@ -9,7 +9,7 @@ in-memory session that serves the scheme, and registers it before the app is rea
 records which webContents the shell opened as which page, `internal-tab.ts` keeps such a tab on its page,
 and `internal-ipc.ts` is the single channel pages speak on, checked per call, `pages-domain.ts` lets one page take the person to another,
 `app-domain.ts` starts the browser again for a setting read at start, and `telemetry-domain.ts` is the usage statistics choice. The other
-domains live beside what they serve (`../settings/`, `../history/`, `../browsing/` (bookmarks), `../downloads/`, `../info/`, `../launch/`, `../permissions/`, `../verifier/`, `../self-update/`, `../privacy/`, `../shortcuts/`, `../extensions/`). `pages-subsystem.ts` and
+domains live beside what they serve (`../settings/`, `../history/`, `../browsing/` (bookmarks), `../import/`, `../downloads/`, `../info/`, `../launch/`, `../permissions/`, `../verifier/`, `../self-update/`, `../privacy/`, `../shortcuts/`, `../extensions/`). `pages-subsystem.ts` and
 `start-internal-pages.ts` bring it up.
 
 **What it depends on.** `electron`; [`../settings/`](../settings/) (the settings domain);

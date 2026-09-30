@@ -278,7 +278,8 @@ export class SqliteHistoryStore implements HistoryStore {
 
   importPages (rows: readonly HistoryImportRow[]): number {
     this.drain()
-    return importHistoryRows(this.db, rows)
+    const kept = (this.statements.count.get() as { n: number }).n
+    return importHistoryRows(this.db, rows, Math.max(this.limits.maxPages - kept, 0))
   }
 
   count (): number {
