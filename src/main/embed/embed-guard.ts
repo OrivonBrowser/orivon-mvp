@@ -53,6 +53,11 @@ export function hardenGuest (webPreferences: WebPreferences, params: Record<stri
   webPreferences.webviewTag = false
   webPreferences.plugins = false
   webPreferences.devTools = settings.devTools
+  // Chromium never reports a popup while this is true, and the element sets
+  // it from its own `allowpopups` attribute, which the app need not have
+  // written. The window-open handler ./embed-host.ts installs denies every
+  // window, so allowing the report opens nothing; it is how the app hears of it.
+  ;(webPreferences as WebPreferences & { disablePopups?: boolean }).disablePopups = false
   delete webPreferences.additionalArguments
   delete webPreferences.enableBlinkFeatures
   delete webPreferences.session

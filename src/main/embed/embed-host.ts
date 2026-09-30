@@ -1,6 +1,7 @@
 // ADR-0039's Electron half: turns a `<webview>` attaching inside an app tab
 // into a page the app is allowed to show, and keeps it that way. Every
-// decision is ./embed-guard.ts's; this file is what Electron calls.
+// decision is ./embed-guard.ts's, and what the app is told of a popup or a
+// download (ADR-0047) is ./embed-events.ts's; this file is what Electron calls.
 //
 // Attached through `app.on('web-contents-created')` rather than in
 // tab-view.ts's per-view wiring, for the reason permission-gate.ts gives
@@ -15,7 +16,10 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { requestPartition, withPartition } from '../verifier/partition.js'
+import { EMBED_EVENT_CHANNEL } from '../channels.js'
+import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
 import { embedPartitionFor, guestRequestAllowed, hardenGuest } from './embed-guard.js'
+import { downloadDetail, popupDetail } from './embed-events.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 
 /** Spelled again, not imported: `content-root.ts` lives under `src/loader/`,
@@ -60,15 +64,27 @@ function resolveViaSession (embedSession: Session): (host: string) => Promise<re
   }
 }
 
+/** Tells the app showing guest `guestId` of a window its page asked for or a download it started. */
+interface AppNotifier {
+  popup: (guestId: number, detail: EmbedPopup) => void
+  download: (guestId: number, detail: EmbedDownload) => void
+}
+
 /**
- * Wires one embed partition's session, once per process: no downloads, and
- * every document request judged against the app's LIVE grant, read fresh
- * per request so a revoke or a narrowed re-consent reaches the next load.
- * The permission gate already covers this session through its own
- * `session-created` listener.
+ * Wires one embed partition's session, once per process: every download
+ * cancelled (the app is told, and no byte is kept), and every document
+ * request judged against the app's LIVE grant, read fresh per request so a
+ * revoke or a narrowed re-consent reaches the next load. The permission
+ * gate already covers this session through its own `session-created`
+ * listener.
  */
-function configureEmbedSession (embedSession: Session, appOrigin: string, broker: Broker): void {
-  embedSession.on('will-download', (event) => { event.preventDefault() })
+function configureEmbedSession (embedSession: Session, appOrigin: string, broker: Broker, notify: AppNotifier): void {
+  embedSession.on('will-download', (event, item, guest) => {
+    // The item is gone from the next tick once cancelled: read it first.
+    const detail = downloadDetail({ urlChain: item.getURLChain(), filename: item.getFilename(), mimeType: item.getMimeType(), totalBytes: item.getTotalBytes() })
+    event.preventDefault()
+    notify.download(guest.id, detail)
+  })
   const resolve = resolveViaSession(embedSession)
   embedSession.webRequest.onBeforeRequest((details, callback) => {
     guestRequestAllowed(
@@ -107,7 +123,23 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
 /** Installs the host: `will-attach-webview` and `did-attach-webview` on every WebContents from now on. */
 export function installEmbedHost (broker: Broker, preloadPath = join(import.meta.dirname, '../preload/embed.js')): EmbedHost {
   const owners = new Map<number, string>()
+  /** Guest id -> the page that holds its `<webview>`, where a notice for the guest is sent. */
+  const embedders = new Map<number, WebContents>()
   const configured = new Set<string>()
+
+  function sendToApp (guestId: number, name: 'orivon-popup' | 'orivon-download', detail: EmbedPopup | EmbedDownload): void {
+    const embedder = embedders.get(guestId)
+    if (embedder === undefined || embedder.isDestroyed()) return
+    try {
+      embedder.mainFrame.send(EMBED_EVENT_CHANNEL, guestId, name, detail)
+    } catch {
+      // The page's main frame went away between the check and the send: nobody is left to tell.
+    }
+  }
+  const notify: AppNotifier = {
+    popup: (guestId, detail) => { sendToApp(guestId, 'orivon-popup', detail) },
+    download: (guestId, detail) => { sendToApp(guestId, 'orivon-download', detail) }
+  }
 
   function partitionReady (appOrigin: string): string {
     const partition = embedPartitionFor(appOrigin)
@@ -115,12 +147,12 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
       configured.add(partition)
       const embedSession = electronSession.fromPartition(partition)
       embedSessionOrigins.set(embedSession, appOrigin)
-      configureEmbedSession(embedSession, appOrigin, broker)
+      configureEmbedSession(embedSession, appOrigin, broker, notify)
     }
     return partition
   }
 
-  function adoptGuest (appOrigin: string, guest: WebContents): void {
+  function adoptGuest (appOrigin: string, guest: WebContents, embedder: WebContents): void {
     let registered: { readonly release: () => void }
     try {
       registered = broker.embed.attach(appOrigin, () => { if (!guest.isDestroyed()) guest.close() })
@@ -130,16 +162,24 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
       return
     }
     owners.set(guest.id, appOrigin)
-    // A shown page opens no windows: a popup it asks for goes nowhere, and
-    // the app hears nothing (ADR-0039's stated limit).
-    guest.setWindowOpenHandler(() => ({ action: 'deny' }))
+    embedders.set(guest.id, embedder)
+    // A shown page opens no windows: what it asked for reaches the app as an
+    // event on the element, and the app decides.
+    guest.setWindowOpenHandler((details) => {
+      notify.popup(guest.id, popupDetail(details))
+      return { action: 'deny' }
+    })
     guest.once('destroyed', () => {
       owners.delete(guest.id)
+      embedders.delete(guest.id)
       registered.release()
     })
   }
 
   app.on('web-contents-created', (_event, contents) => {
+    // Denies from the moment a guest exists: `disablePopups` is off (embed-guard.ts), so a
+    // window asked for before `did-attach-webview` would otherwise open under Electron's default.
+    if (contents.getType() === 'webview') contents.setWindowOpenHandler(() => ({ action: 'deny' }))
     contents.on('will-attach-webview', (event, webPreferences, params) => {
       const appOrigin = embedderOrigin(contents)
       if (appOrigin === null || broker.embed.originsSync(appOrigin) === undefined) {
@@ -154,7 +194,7 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
         if (!guest.isDestroyed()) guest.close()
         return
       }
-      adoptGuest(appOrigin, guest)
+      adoptGuest(appOrigin, guest, contents)
     })
   })
 

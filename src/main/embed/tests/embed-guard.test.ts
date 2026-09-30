@@ -65,7 +65,8 @@ describe('hardenGuest', () => {
       allowRunningInsecureContent: false,
       webviewTag: false,
       plugins: false,
-      devTools: false
+      devTools: false,
+      disablePopups: false
     })
     expect(params).toEqual({
       src: 'https://example.com/',

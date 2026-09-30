@@ -7,6 +7,7 @@ vi.mock('../surface/orivon.js', () => ({ exposeOrivon: () => { order.push('orivo
 vi.mock('../expose-child-host-connect.js', () => ({ exposeChildHostConnect: () => { order.push('children') } }))
 vi.mock('../expose-fetch-route.js', () => ({ exposeFetchRoute: () => { order.push('fetch-route') } }))
 vi.mock('../expose-shim-globals.js', () => ({ exposeShimGlobals: () => { order.push('shim-globals') } }))
+vi.mock('../embed-event-relay.js', () => ({ installEmbedEventRelay: () => { order.push('embed-event-relay') } }))
 vi.mock('../manifest-hint.js', () => ({ installManifestHintWatcher: () => { order.push('manifest-hint') } }))
 
 it('installs the children bridge after window.orivon and before the routed installers release the slot', async () => {
