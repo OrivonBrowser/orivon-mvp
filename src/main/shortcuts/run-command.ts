@@ -109,7 +109,6 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'settings.open': tabs.openInternal('settings'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'app.quit': deps.quit(); return
-    // Ids the tools work reserves: each does nothing until the feature that owns it replaces its line and drops `pending` on its COMMANDS row.
     case 'page.print': void printCommand(target); return
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return
