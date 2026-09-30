@@ -9,8 +9,7 @@
 
 /** Exact hosts, never a suffix match -- `accounts.google.com` is Google's
  * sign-in page; `accounts.youtube.com` is its own account chooser, reached
- * mid-flow from a YouTube sign-in link (seen in the redirect chain a probe
- * of the real flow produced). Never `google.com` or `youtube.com` at large:
+ * mid-flow from a YouTube sign-in link. Never `google.com` or `youtube.com` at large:
  * this is the identity's whole surface, and it must not grow it by
  * accident. */
 export const SIGN_IN_HOSTS: readonly string[] = ['accounts.google.com', 'accounts.youtube.com']

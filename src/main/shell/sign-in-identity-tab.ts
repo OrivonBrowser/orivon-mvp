@@ -29,15 +29,11 @@ import { resolveSignInHosts } from './sign-in-identity-test-seam.js'
  * navigation that starts elsewhere from a `loadURL` while the tab is on a
  * sign-in host still leaves with the Firefox User-Agent.
  *
- * Both UA strings are built lazily, only on an actual CHANGE of state: an
- * ordinary tab that never visits a sign-in host must never call
- * `webContents.setUserAgent()` (Electron has no "unset"), and
- * `process.versions.chrome` does not exist outside a real Electron process,
- * which is where `tabs.test.ts` wires this function with a mocked
- * `WebContents`. */
+ * `setUserAgent()` is called only on an actual CHANGE of state: an ordinary
+ * tab that never visits a sign-in host never calls it (Electron has no
+ * "unset"). */
 export function wireSignInIdentity (webContents: WebContents): void {
   const hosts = resolveSignInHosts()
-  let usingFirefoxIdentity = false
   const follow = (url: string): void => {
     let host: string
     try {
@@ -46,11 +42,13 @@ export function wireSignInIdentity (webContents: WebContents): void {
       return
     }
     const shouldUseFirefox = isSignInHost(host, hosts)
-    if (shouldUseFirefox === usingFirefoxIdentity) return
+    // The live string, not a remembered flag: a popup opened from a tab in
+    // the Firefox state starts with that tab's override.
+    const usingFirefox = webContents.getUserAgent().includes('Firefox/')
+    if (shouldUseFirefox === usingFirefox) return
     webContents.setUserAgent(shouldUseFirefox
       ? firefoxUserAgent(process.platform)
       : chromeUserAgent(process.versions.chrome, process.platform))
-    usingFirefoxIdentity = shouldUseFirefox
   }
   webContents.on('will-navigate', (details) => { if (details.isMainFrame) follow(details.url) })
   webContents.on('will-redirect', (details) => { if (details.isMainFrame) follow(details.url) })
