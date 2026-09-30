@@ -1,5 +1,6 @@
 import { barFolder, barItems, barMenu, barMove, barOpen } from './bookmarks-bar/bar-actions.js'
 import { omniboxClose, omniboxPick, omniboxQuery, omniboxSelect } from '../omnibox/omnibox-actions.js'
+import { passwordsKey } from '../passwords/passwords-key-action.js'
 import { homeOpen } from './actions/home-open.js'
 import { overlayClose, overlayToggle } from './actions/overlay.js'
 import { promptAnchorReport } from './actions/prompt-anchor.js'
@@ -24,6 +25,7 @@ export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'omnibox.select': omniboxSelect,
   'overlay.close': overlayClose,
   'overlay.toggle': overlayToggle,
+  'passwords.key': passwordsKey,
   'prompt.anchor': promptAnchorReport,
   'tab.mute': tabMute
 }

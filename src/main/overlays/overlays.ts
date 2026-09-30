@@ -5,6 +5,8 @@ import { screenshotOverlay, toastOverlay } from '../page-tools/page-overlays.js'
 import { qrOverlay } from '../qr/qr-real.js'
 import { sadTabOverlay } from '../sad-tab/sad-tab-overlay.js'
 import { bookmarkFolderOverlay } from '../shell/bookmarks-bar/folder-overlay.js'
+import { passwordFillOverlay, passwordSuggestOverlay } from '../passwords/chooser-overlays.js'
+import { passwordSaveOverlay } from '../passwords/password-overlays.js'
 import { menuOverlay } from '../shell/menu-overlay.js'
 import { omniboxOverlay } from '../omnibox/omnibox-overlay.js'
 import { restoreOverlay } from '../startup/startup-overlays.js'
@@ -16,6 +18,9 @@ export const OVERLAYS: readonly OverlayDef[] = [
   findOverlay,
   menuOverlay,
   omniboxOverlay,
+  passwordFillOverlay,
+  passwordSaveOverlay,
+  passwordSuggestOverlay,
   qrOverlay,
   restoreOverlay,
   sadTabOverlay,

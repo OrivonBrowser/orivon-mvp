@@ -85,6 +85,8 @@ export interface ShellState extends TabsSnapshot {
   showFullUrl: boolean
   /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
   shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
+  /** What the active tab's sign-in form can use, for the address bar's password button (src/main/passwords/). */
+  logins: { readonly count: number, readonly offer: boolean, readonly signUp: boolean }
 }
 
 export interface Bounds {
