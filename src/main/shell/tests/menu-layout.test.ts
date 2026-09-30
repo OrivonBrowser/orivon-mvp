@@ -145,7 +145,7 @@ describe('menuItems', () => {
     const { ctx } = await setup()
     const on = vi.fn(() => true)
     const hint = vi.fn(() => 'note')
-    const items = menuItems(ctx, ['tab.new', 'bookmarks.open', { check: 'bookmark.allTabs', on }, { item: 'import.open', hint }])
+    const items = menuItems(ctx, ['tab.new', 'readingList.open', { check: 'bookmark.allTabs', on }, { item: 'import.open', hint }])
     expect(items).toEqual([expect.objectContaining({ id: 'tab.new' })])
     expect(on).not.toHaveBeenCalled()
     expect(hint).not.toHaveBeenCalled()
@@ -155,9 +155,9 @@ describe('menuItems', () => {
     const { ctx } = await setup()
     const items = menuItems(ctx)
     const submenu = items.find((item) => item.kind === 'submenu' && item.label === 'Bookmarks')
-    expect(submenu).toMatchObject({ items: [expect.objectContaining({ id: 'bookmarks.toggleBar' })] })
+    expect(submenu).toMatchObject({ items: [expect.objectContaining({ id: 'bookmarks.toggleBar' }), expect.objectContaining({ id: 'bookmarks.open', label: 'Bookmark manager' })] })
     const ids = runnableIds(items)
-    for (const id of ['bookmarks.open', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'import.open']) {
+    for (const id of ['bookmark.allTabs', 'readingList.open', 'readingList.add', 'import.open']) {
       expect(ids.has(id as never), id).toBe(false)
     }
   })

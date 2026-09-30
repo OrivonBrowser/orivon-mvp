@@ -5,7 +5,8 @@ import type { WindowContext } from '../window-context.js'
 
 /** Where a click may send a bookmark; the private window is reached from the native menu only. */
 export type ClickDisposition = 'current' | 'background' | 'window'
-export type Disposition = ClickDisposition | 'private'
+/** `tab` is a new tab in front, which only the manager page offers. */
+export type Disposition = ClickDisposition | 'private' | 'tab'
 
 /** The most tabs one "Open all" makes. */
 export const OPEN_ALL_LIMIT = 25
@@ -40,6 +41,9 @@ export function openBookmark (ctx: WindowContext, id: string, disposition: Dispo
       else tabs.navigate(activeTabId, url)
       return true
     }
+    case 'tab':
+      tabs.createTab(url)
+      return true
     case 'background':
       tabs.createTab(url, false)
       return true

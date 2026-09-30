@@ -355,4 +355,10 @@ describe('runCommand', () => {
     runCommand('downloads.open', target, deps)
     expect(calls['openInternal']).toHaveBeenCalledWith('downloads')
   })
+
+  it('opens the Bookmarks page', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('bookmarks.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('bookmarks')
+  })
 })

@@ -8,6 +8,7 @@ export const INTERNAL_PARTITION = 'orivon-internal'
 
 export const INTERNAL_PAGES = [
   'about',
+  'bookmarks',
   'downloads',
   'extensions',
   'history',
