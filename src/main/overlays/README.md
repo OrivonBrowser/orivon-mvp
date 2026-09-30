@@ -14,7 +14,7 @@ an `OverlayDef` to [`overlays.ts`](overlays.ts) and a page to
 | `overlay-ipc.ts` | The one channel a page speaks on, with its sender check |
 | `overlay-view.ts` | One `WebContentsView`: construction, background, navigation lock, focus |
 | `overlay-host.ts` | Per window: when a view exists, where it sits, when it closes, where focus goes |
-| `overlays.ts` | `OVERLAYS`, every overlay the shell can show: today the main menu (`../shell/menu-overlay.ts`) |
+| `overlays.ts` | `OVERLAYS`, every overlay the shell can show: the main menu (`../shell/menu-overlay.ts`) and the find bar (`../find/find-overlay.ts`) |
 
 **Tied to Electron.** `overlay-view.ts` and `overlay-host.ts` import `electron` values;
 `overlay-types.ts`, `overlay-bounds.ts` and `overlay-ipc.ts` need only its types. The types and
@@ -22,7 +22,7 @@ the geometry are the part that survives a change of shell.
 
 **What it depends on.** `electron`, `../channels.ts`, `../shell/` (`renderer-entry.ts`,
 `lock-navigation.ts`, `shell-session.ts`, `theme-colors.ts`, `view-background-test-hook.ts`,
-`window-context.ts` and the `Bounds` type), and `../shell/menu-overlay.ts` (listed in `overlays.ts`).
+`window-context.ts` and the `Bounds` type), `../shell/menu-overlay.ts` and `../find/find-overlay.ts` (listed in `overlays.ts`).
 
 **What it must never import.** A feature. A feature imports `overlay-types.ts` and is listed in
 `overlays.ts`; nothing in this directory reaches into one.

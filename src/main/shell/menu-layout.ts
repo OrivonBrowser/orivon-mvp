@@ -29,6 +29,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   '-',
   { zoom: true },
   '-',
+  'find.open',
   { submenu: 'More tools', items: [
     'split.toggle',
     { check: 'window.alwaysOnTop', on: ({ window }) => window.window.isAlwaysOnTop() },

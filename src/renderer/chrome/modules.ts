@@ -6,6 +6,7 @@ import { createBookmarksBar } from './bookmarks-bar.js'
 import { createCluster } from './cluster.js'
 import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
+import { createReloadStop } from './reload-stop.js'
 import { createSiteBadges } from './site-badges.js'
 import { decorateTabBadges } from './tab-badges.js'
 import { createTabStrip } from './tab-strip.js'
@@ -19,6 +20,7 @@ export const TAB_DECORATORS: readonly TabDecorator[] = [
 export const CHROME_MODULES: readonly ChromeModule[] = [
   createTabStrip(TAB_DECORATORS),
   createNavigation(),
+  createReloadStop(),
   createHomeButton(),
   createSiteBadges(),
   createCluster(),

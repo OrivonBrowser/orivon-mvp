@@ -10,7 +10,7 @@ interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInt
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
 
 function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
-  const calls = Object.fromEntries(['createTab', 'navigate', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
+  const calls = Object.fromEntries(['createTab', 'navigate', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'stop', 'overlayShow', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
@@ -25,9 +25,10 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
       hasRoom: () => true,
       liveWebContents: () => undefined,
       faviconFor: () => 'data:icon',
-      activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'] }),
+      activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'], stop: calls['stop'] }),
       ...calls
     },
+    overlays: { show: calls['overlayShow'], isOpen: () => false, close: vi.fn(), send: vi.fn() },
     shortcutsSuspended: () => false
   } as unknown as ShellWindow
   const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn() }
@@ -235,7 +236,27 @@ describe('runCommand', () => {
   it('toggles developer tools on the active tab\'s page', () => {
     const { target, deps, devtools } = harness([tab('a')], 'a')
     runCommand('devtools.toggle', target, deps)
-    expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith({ reloadIgnoringCache: expect.anything() }, target.window)
+    expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }), target.window)
+  })
+
+  it('stops the active tab\'s load', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+
+    runCommand('nav.stop', target, deps)
+
+    expect(calls['stop']).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the find bar, and opens it with a step for Find next and Find previous while it is closed', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+
+    runCommand('find.open', target, deps)
+    runCommand('find.next', target, deps)
+    runCommand('find.previous', target, deps)
+
+    expect(calls['overlayShow']).toHaveBeenNthCalledWith(1, 'find')
+    expect(calls['overlayShow']).toHaveBeenNthCalledWith(2, 'find', undefined, { step: true })
+    expect(calls['overlayShow']).toHaveBeenNthCalledWith(3, 'find', undefined, { step: false })
   })
 
   it('moves the active tab along the strip, and opens a window for it only when it has company', () => {
