@@ -42,6 +42,7 @@ vi.mock('electron', () => ({
 const { installEmbedHost } = await import('../embed-host.js')
 const { EMBED_EVENT_CHANNEL } = await import('../../channels.js')
 const { embedPartitionFor } = await import('../embed-guard.js')
+const { NOTICES_PER_SECOND } = await import('../embed-events.js')
 
 /** An embedder WebContents: a real EventEmitter (embed-host.ts attaches `will-attach-webview`/`did-attach-webview` to it) with a mutable top-frame URL and a frame that records what is sent to it. */
 function fakeEmbedder (url: string): EventEmitter & { mainFrame: { url: string, send: ReturnType<typeof vi.fn> }, destroyed: boolean } {
@@ -449,6 +450,22 @@ describe('installEmbedHost -- a shown page\'s popups and downloads are told to i
     embedder.destroyed = false
     destroyed()
     handler()({ url: 'https://a.example/y', frameName: '', disposition: 'default', referrer: { url: '' } })
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('sends a page\'s first notices in a second and drops the flood after them, still denying every window', () => {
+    const { embedder, handler } = attached()
+    const outcomes = Array.from({ length: NOTICES_PER_SECOND + 10 }, () =>
+      handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } }))
+    expect(outcomes.every((outcome) => outcome.action === 'deny')).toBe(true)
+    expect(embedder.mainFrame.send).toHaveBeenCalledTimes(NOTICES_PER_SECOND)
+  })
+
+  it('cancels a download that names no page at all', () => {
+    const { embedder, session } = attached()
+    const event = { preventDefault: vi.fn() }
+    willDownload(session)(event, item(), undefined as unknown as { id: number })
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
     expect(embedder.mainFrame.send).not.toHaveBeenCalled()
   })
 

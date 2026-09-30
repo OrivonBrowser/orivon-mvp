@@ -19,7 +19,7 @@ import { requestPartition, withPartition } from '../verifier/partition.js'
 import { EMBED_EVENT_CHANNEL } from '../channels.js'
 import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
 import { embedPartitionFor, guestRequestAllowed, hardenGuest } from './embed-guard.js'
-import { downloadDetail, popupDetail } from './embed-events.js'
+import { createNoticeBudget, downloadDetail, popupDetail } from './embed-events.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 
 /** Spelled again, not imported: `content-root.ts` lives under `src/loader/`,
@@ -83,7 +83,8 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
     // The item is gone from the next tick once cancelled: read it first.
     const detail = downloadDetail({ urlChain: item.getURLChain(), filename: item.getFilename(), mimeType: item.getMimeType(), totalBytes: item.getTotalBytes() })
     event.preventDefault()
-    notify.download(guest.id, detail)
+    // A download that names no page has no app to tell.
+    if (guest !== undefined && guest !== null) notify.download(guest.id, detail)
   })
   const resolve = resolveViaSession(embedSession)
   embedSession.webRequest.onBeforeRequest((details, callback) => {
@@ -123,15 +124,15 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
 /** Installs the host: `will-attach-webview` and `did-attach-webview` on every WebContents from now on. */
 export function installEmbedHost (broker: Broker, preloadPath = join(import.meta.dirname, '../preload/embed.js')): EmbedHost {
   const owners = new Map<number, string>()
-  /** Guest id -> the page that holds its `<webview>`, where a notice for the guest is sent. */
-  const embedders = new Map<number, WebContents>()
+  /** Guest id -> the page that holds its `<webview>`, where a notice for the guest is sent, and how many more this second. */
+  const embedders = new Map<number, { readonly page: WebContents, readonly allow: () => boolean }>()
   const configured = new Set<string>()
 
   function sendToApp (guestId: number, name: 'orivon-popup' | 'orivon-download', detail: EmbedPopup | EmbedDownload): void {
     const embedder = embedders.get(guestId)
-    if (embedder === undefined || embedder.isDestroyed()) return
+    if (embedder === undefined || embedder.page.isDestroyed() || !embedder.allow()) return
     try {
-      embedder.mainFrame.send(EMBED_EVENT_CHANNEL, guestId, name, detail)
+      embedder.page.mainFrame.send(EMBED_EVENT_CHANNEL, guestId, name, detail)
     } catch {
       // The page's main frame went away between the check and the send: nobody is left to tell.
     }
@@ -162,7 +163,7 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
       return
     }
     owners.set(guest.id, appOrigin)
-    embedders.set(guest.id, embedder)
+    embedders.set(guest.id, { page: embedder, allow: createNoticeBudget() })
     // A shown page opens no windows: what it asked for reaches the app as an
     // event on the element, and the app decides.
     guest.setWindowOpenHandler((details) => {

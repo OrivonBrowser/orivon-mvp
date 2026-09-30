@@ -96,6 +96,11 @@ cancels every download after reading the item, then sends the embedder's main fr
 whose `getWebContentsId()` matches and dispatches the event in the main world; an id no element
 matches is dropped. The embedder is recorded at `did-attach-webview`, and forgotten with the guest.
 
+**A shown page cannot flood its app with notices.** The page chooses when it asks for a window,
+and each notice may carry an address up to `LIMITS.embedEventUrlBytes`. Each guest gets a budget
+(`createNoticeBudget`): `NOTICES_PER_SECOND` notices in a second reach the app and the rest are
+dropped. The window is denied and the download cancelled either way.
+
 **`disablePopups` is turned off on every guest, and the window-open handler is set the moment
 the guest exists.** Chromium reports no popup at all while the guest's `disablePopups` is true,
 and Electron derives it from the element's own `allowpopups` attribute, which an app need not

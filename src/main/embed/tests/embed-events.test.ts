@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { LIMITS } from '../../../contracts/index.js'
-import { bareFileName, boundedAddress, downloadDetail, popupDetail } from '../embed-events.js'
+import { bareFileName, boundedAddress, createNoticeBudget, downloadDetail, NOTICES_PER_SECOND, popupDetail } from '../embed-events.js'
 
 describe('boundedAddress', () => {
   it('keeps an address at the limit and empties one byte past it', () => {
@@ -96,5 +96,33 @@ describe('downloadDetail', () => {
 
   it('gives an empty address for an empty chain', () => {
     expect(downloadDetail({ urlChain: [], filename: 'f', mimeType: '', totalBytes: 0 }).url).toBe('')
+  })
+})
+
+describe('createNoticeBudget', () => {
+  it('lets NOTICES_PER_SECOND through in one second and drops the rest', () => {
+    const allow = createNoticeBudget(() => 1_000)
+    const outcomes = Array.from({ length: NOTICES_PER_SECOND + 5 }, () => allow())
+    expect(outcomes.filter(Boolean)).toHaveLength(NOTICES_PER_SECOND)
+    expect(outcomes.slice(NOTICES_PER_SECOND)).toEqual([false, false, false, false, false])
+  })
+
+  it('lets notices through again once the second has passed', () => {
+    let now = 1_000
+    const allow = createNoticeBudget(() => now)
+    for (let i = 0; i < NOTICES_PER_SECOND; i++) allow()
+    expect(allow()).toBe(false)
+    now += 999
+    expect(allow()).toBe(false)
+    now += 1
+    expect(allow()).toBe(true)
+  })
+
+  it('keeps one budget apart from another', () => {
+    const first = createNoticeBudget(() => 0)
+    const second = createNoticeBudget(() => 0)
+    for (let i = 0; i < NOTICES_PER_SECOND; i++) first()
+    expect(first()).toBe(false)
+    expect(second()).toBe(true)
   })
 })

@@ -57,3 +57,28 @@ export function downloadDetail (raw: RawDownload): EmbedDownload {
     totalBytes: Number.isFinite(raw.totalBytes) && raw.totalBytes > 0 ? raw.totalBytes : 0
   }
 }
+
+/** How many notices one shown page may send its app within a second; the rest are dropped. */
+export const NOTICES_PER_SECOND = 20
+
+/**
+ * A shown page chooses when it asks for a window, so nothing else stops it
+ * telling its app of thousands a second, each carrying an address up to
+ * `LIMITS.embedEventUrlBytes`. One of these per shown page lets
+ * `NOTICES_PER_SECOND` through in each second and refuses the rest. The
+ * window is denied and the download cancelled whatever this answers.
+ */
+export function createNoticeBudget (now: () => number = Date.now): () => boolean {
+  let windowStart = Number.NEGATIVE_INFINITY
+  let used = 0
+  return () => {
+    const at = now()
+    if (at - windowStart >= 1000) {
+      windowStart = at
+      used = 0
+    }
+    if (used >= NOTICES_PER_SECOND) return false
+    used += 1
+    return true
+  }
+}
